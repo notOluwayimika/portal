@@ -7,6 +7,7 @@ use App\Models\School;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Contracts\Auth\StatefulGuard;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
@@ -43,12 +44,13 @@ class AuthenticationController extends Controller
         }
         $user->assignRole('admin');
 
-        $this->guard->login($user, $request->boolean('remember'));
-
-
         if ($request->hasSession()) {
             $request->session()->regenerate();
         }
+        $this->guard->login($user, $request->boolean('remember'));
+
+
+
 
         return app(RegisterResponse::class);
     }

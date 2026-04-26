@@ -1,0 +1,52 @@
+<?php
+// app/Models/School.php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class School extends Model
+{
+    use HasUuids;
+
+    protected $fillable = ['name', 'slug'];
+
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(AcademicSession::class);
+    }
+    public function classLevels(): HasMany
+    {
+        return $this->hasMany(ClassLevel::class);
+    }
+    public function arms(): HasMany
+    {
+        return $this->hasMany(Arm::class);
+    }
+    public function subjects(): HasMany
+    {
+        return $this->hasMany(Subject::class);
+    }
+    public function examTypes(): HasMany
+    {
+        return $this->hasMany(ExamType::class);
+    }
+    public function curricula(): HasMany
+    {
+        return $this->hasMany(Curriculum::class);
+    }
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class);
+    }
+    public function gradeBoundaries(): HasMany
+    {
+        return $this->hasMany(GradeBoundary::class);
+    }
+}

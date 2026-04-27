@@ -8,10 +8,13 @@ export default function Welcome({
     canRegister?: boolean;
 }) {
     const { auth } = usePage().props;
-    console.log(auth ?? 'not logged in');
     const getUser = async () => {
-        const response = await axios.get('/api/user');
+        const response = await axios.post('/api/login', {
+            email: 'mkyimika@gmail.com',
+            password: 'password',
+        });
         console.log(response);
+        localStorage.setItem('token', response.data.token);
 
         return response.data;
     };

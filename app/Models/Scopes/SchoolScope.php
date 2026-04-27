@@ -13,8 +13,10 @@ class SchoolScope implements Scope
      */
     public function apply(Builder $builder, Model $model): void
     {
-        if (auth()->check() && auth()->user()->school_id) {
-            $builder->where($model->getTable() . '.school_id', auth()->user()->school_id);
+        $schoolId = session('school_id');
+
+        if ($schoolId) {
+            $builder->where($model->getTable() . '.school_id', $schoolId);
         }
     }
 }

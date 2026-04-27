@@ -1,25 +1,17 @@
 <?php
-
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Cross-Origin Resource Sharing (CORS) Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Here you may configure your settings for cross-origin resource sharing
-    | or "CORS". This determines what cross-origin operations may execute
-    | in web browsers. You are free to adjust these settings as needed.
-    |
-    | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
-    |
-    */
-
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout', '*'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    // Can't use '*' when supports_credentials is true
+    'allowed_origins' => [
+        'http://portal.test',
+        'https://portal.test',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://[::1]:5173',
+    ],
 
     'allowed_origins_patterns' => [],
 
@@ -29,6 +21,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
-
+    // Must be true for Sanctum session cookies to work
+    'supports_credentials' => true,
 ];

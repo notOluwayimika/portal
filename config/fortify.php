@@ -10,7 +10,7 @@ return [
     'username' => 'email',
     'email' => 'email',
     'views' => true,
-    'home' => '/home',
+    'home' => '/dashboard',
     'prefix' => '',
     'domain' => null,
     'lowercase_usernames' => false,

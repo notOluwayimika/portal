@@ -33,6 +33,7 @@ export function NavFooter({
                                     href={toUrl(item.href)}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    className="text-white hover:text-white"
                                 >
                                     {item.icon && (
                                         <item.icon className="h-5 w-5" />

@@ -24,6 +24,8 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, HasUuids;
 
+    protected $keyType = 'string';      // ADD THIS
+    public $incrementing = false;       // ADD THIS
     protected $fillable = ['name', 'email', 'password', 'school_id'];
 
     /**

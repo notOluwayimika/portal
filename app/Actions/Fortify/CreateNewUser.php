@@ -4,8 +4,11 @@ namespace App\Actions\Fortify;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
+use App\Models\Role;
+use App\Models\School;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 
 class CreateNewUser implements CreatesNewUsers
@@ -23,11 +26,19 @@ class CreateNewUser implements CreatesNewUsers
             ...$this->profileRules(),
             'password' => $this->passwordRules(),
         ])->validate();
-
-        return User::create([
+        $school = School::firstOrCreate(['slug' => 'secondary-school'], ["name" => "Secondary School", "slug" => Str::slug("Secondary School")]);
+        $user = $school->users()->create([
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => $input['password'],
         ]);
+        if (!Role::where('name', 'admin')->where('guard_name', 'web')->exists()) {
+            Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        }
+        if (!Role::where('name', 'admin')->where('guard_name', 'api')->exists()) {
+            Role::create(['name' => 'admin', 'guard_name' => 'api']);
+        }
+        $user->assignRole('admin');
+        return $user;
     }
 }

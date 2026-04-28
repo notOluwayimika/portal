@@ -1,5 +1,4 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import axios from 'axios';
 import { dashboard, login, register } from '@/routes';
 
 export default function Welcome({
@@ -8,17 +7,6 @@ export default function Welcome({
     canRegister?: boolean;
 }) {
     const { auth } = usePage().props;
-    const getUser = async () => {
-        const response = await axios.post('/api/login', {
-            email: 'mkyimika@gmail.com',
-            password: 'password',
-        });
-        console.log(response);
-        localStorage.setItem('token', response.data.token);
-
-        return response.data;
-    };
-    getUser();
 
     return (
         <>

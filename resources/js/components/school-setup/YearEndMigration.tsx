@@ -97,48 +97,48 @@ export default function YearEndMigration() {
     }, [toast])
 
     return (
-        <div className="space-y-6">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-8">
+            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-xl font-semibold text-gray-900">Year-end migration</h1>
-                        <p className="text-sm text-gray-600">Complete the migration checklist before promoting students to the next year group.</p>
+                        <p className="mt-2 text-sm text-gray-600">Complete the migration checklist before promoting students to the next year group.</p>
                     </div>
-                    <div className="rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+                    <div className="rounded-full border border-gray-200 bg-gray-50 px-5 py-3 text-sm text-gray-700">
                         {completedCount} of {steps.length} steps completed
                     </div>
                 </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
                 {steps.map((step, index) => {
                     const unlocked = canCheck(index)
                     return (
-                        <div key={step.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                            <div className="flex items-start gap-4">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#185FA5]/10 text-[#185FA5]">
+                        <div key={step.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                            <div className="flex items-start gap-6">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#185FA5]/10 text-[#185FA5]">
                                     <span className="text-sm font-semibold">{step.id}</span>
                                 </div>
                                 <div className="flex-1">
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                         <div>
-                                            <h2 className="text-lg font-semibold text-gray-900">{step.title}</h2>
-                                            <p className="text-sm text-gray-600">{step.description}</p>
+                                            <h2 className="text-lg font-medium text-gray-900">{step.title}</h2>
+                                            <p className="mt-1 text-sm text-gray-600">{step.description}</p>
                                         </div>
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-4">
                                             {step.completed ? (
-                                                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">
                                                     <CheckCircle2 className="h-4 w-4" />
                                                     Completed
                                                 </span>
                                             ) : (
-                                                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">Pending</span>
+                                                <span className="rounded-full bg-gray-100 px-4 py-2 text-xs font-semibold text-gray-700">Pending</span>
                                             )}
                                             <button
                                                 type="button"
                                                 onClick={() => handleToggleStep(index)}
                                                 disabled={!unlocked}
-                                                className={`rounded-lg px-3 py-2 text-sm font-medium ${unlocked ? 'bg-[#185FA5] text-white hover:bg-[#0f4a82]' : 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                                                className={`rounded-lg px-5 py-2.5 text-sm font-medium transition-all ${unlocked ? 'bg-[#185FA5] text-white shadow-sm hover:bg-[#0f4a82] hover:shadow-md' : 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}`}
                                             >
                                                 {step.completed ? 'Undo' : 'Mark done'}
                                             </button>
@@ -156,10 +156,10 @@ export default function YearEndMigration() {
                     type="button"
                     disabled={!canRunMigration || isMigrating}
                     onClick={handleRunMigration}
-                    className={`inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium ${canRunMigration ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-100 text-red-300 cursor-not-allowed'}`}
+                    className={`inline-flex items-center gap-2 rounded-lg px-6 py-3 text-sm font-medium transition-all ${canRunMigration ? 'bg-red-600 text-white shadow-sm hover:bg-red-700 hover:shadow-md' : 'bg-red-100 text-red-300 cursor-not-allowed'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                     <ArrowRightCircle className="h-5 w-5" />
-                    Run Year-End Migration
+                    {isMigrating ? 'Running Migration...' : 'Run Year-End Migration'}
                 </button>
             </div>
 

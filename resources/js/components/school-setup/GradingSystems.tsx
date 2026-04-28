@@ -136,12 +136,12 @@ export default function GradingSystems() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-8">
+            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-xl font-semibold text-gray-900">Grading systems</h1>
-                        <p className="text-sm text-gray-600">Edit band thresholds and preview the resulting grade for each system.</p>
+                        <p className="mt-2 text-sm text-gray-600">Edit band thresholds and preview the resulting grade for each system.</p>
                     </div>
                 </div>
             </div>
@@ -149,70 +149,70 @@ export default function GradingSystems() {
             {systems.map((system) => {
                 const preview = getPreview(system)
                 return (
-                    <div key={system.id} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div key={system.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <h2 className="text-lg font-semibold text-gray-900">{system.name}</h2>
+                                <h2 className="text-lg font-medium text-gray-900">{system.name}</h2>
                                 <p className="mt-2 text-sm text-gray-500">Applied to: {system.applicable_to.join(', ')}</p>
                             </div>
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClasses[system.type]}`}>
+                            <span className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold ${statusClasses[system.type]}`}>
                                 {system.type.toUpperCase()}
                             </span>
                         </div>
 
-                        <div className="mt-6 overflow-x-auto">
+                        <div className="mt-8 overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                <thead>
-                                    <tr className="bg-gray-50">
-                                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Min Score</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Max Score</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Grade</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Label</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-gray-700">GP</th>
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Min Score</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Max Score</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Grade</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Label</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">GP</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200">
+                                <tbody className="divide-y divide-gray-200 bg-white">
                                     {system.bands.map((band) => (
-                                        <tr key={band.id}>
-                                            <td className="px-4 py-3">
+                                        <tr key={band.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4">
                                                 <input
                                                     type="number"
                                                     value={band.min}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'min', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-6 py-4">
                                                 <input
                                                     type="number"
                                                     value={band.max}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'max', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-6 py-4">
                                                 <input
                                                     type="text"
                                                     value={band.grade}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'grade', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-6 py-4">
                                                 <input
                                                     type="text"
                                                     value={band.label}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'label', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-6 py-4">
                                                 <input
                                                     type="number"
                                                     step="0.1"
                                                     value={band.gp}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'gp', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                                 />
                                             </td>
                                         </tr>
@@ -221,31 +221,34 @@ export default function GradingSystems() {
                             </table>
                         </div>
 
-                        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="grid gap-3 sm:flex sm:items-center">
+                        <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                                 <label className="text-sm font-medium text-gray-700">Test a score:</label>
                                 <input
                                     type="number"
                                     value={scoreInput[system.id] ?? ''}
                                     onChange={(event) => setScoreInput((current) => ({ ...current, [system.id]: event.target.value }))}
-                                    className="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                                    className="w-full max-w-xs rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                                     placeholder="Enter score"
                                 />
                                 {preview ? (
-                                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                                    <div className="rounded-xl bg-emerald-50 px-5 py-3 text-sm text-emerald-700 border border-emerald-200">
                                         Grade: <span className="font-semibold">{preview.grade}</span> · GP: <span className="font-semibold">{preview.gp}</span>
                                     </div>
                                 ) : (
-                                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-500">Enter a score to preview grade.</div>
+                                    <div className="rounded-xl bg-gray-50 px-5 py-3 text-sm text-gray-500 border border-gray-200">
+                                        Enter a score to preview grade.
+                                    </div>
                                 )}
                             </div>
                             <button
                                 type="button"
                                 onClick={() => handleSave(system.id)}
-                                className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                                disabled={isSaving[system.id]}
+                                className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Save className="h-4 w-4" />
-                                Save changes
+                                {isSaving[system.id] ? 'Saving...' : 'Save changes'}
                             </button>
                         </div>
                     </div>

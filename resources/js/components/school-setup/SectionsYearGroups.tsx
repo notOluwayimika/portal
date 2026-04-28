@@ -216,15 +216,15 @@ export default function SectionsYearGroups() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="space-y-8">
+            <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
                 <div>
                     <h1 className="text-xl font-semibold text-gray-900">Sections &amp; year groups</h1>
-                    <p className="text-sm text-gray-600">Manage school sections, year groups and class arms.</p>
+                    <p className="mt-2 text-sm text-gray-600">Manage school sections, year groups and class arms.</p>
                 </div>
                 <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
                     onClick={openAddSection}
                 >
                     <Plus className="h-4 w-4" />
@@ -244,23 +244,23 @@ export default function SectionsYearGroups() {
                 sections.map((section) => {
                     const summary = summaryBySection.find((item) => item.id === section.id)
                     return (
-                        <div key={section.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <div key={section.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
                             <button
                                 type="button"
                                 className="w-full text-left"
                                 onClick={() => handleToggleSection(section.id)}
                             >
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-3 w-3 rounded-full bg-[#185FA5]" />
+                                <div className="flex items-center justify-between gap-6">
+                                    <div className="flex items-center gap-4">
+                                        <span className="h-4 w-4 rounded-full bg-[#185FA5]" />
                                         <div>
-                                            <p className="text-lg font-semibold text-gray-900">{section.name}</p>
-                                            <p className="text-sm text-gray-500">
+                                            <p className="text-lg font-medium text-gray-900">{section.name}</p>
+                                            <p className="mt-1 text-sm text-gray-500">
                                                 {summary?.yearGroupCount ?? 0} year groups · {summary?.armCount ?? 0} class arms
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-3">
                                         <span className="text-sm text-gray-500">{expanded.includes(section.id) ? 'Collapse' : 'Expand'}</span>
                                         <Pencil className="h-4 w-4 text-gray-400" />
                                     </div>
@@ -268,24 +268,24 @@ export default function SectionsYearGroups() {
                             </button>
 
                             {expanded.includes(section.id) ? (
-                                <div className="mt-5 space-y-4">
+                                <div className="mt-8 space-y-6">
                                     {section.yearGroups.length === 0 ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600">
                                             No year groups yet. Add one to get started.
                                         </div>
                                     ) : (
                                         section.yearGroups.map((group) => (
-                                            <div key={group.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div key={group.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-6 transition-shadow hover:shadow-md">
+                                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                                     <div>
                                                         <p className="font-medium text-gray-900">{group.name}</p>
                                                     </div>
-                                                    <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="flex flex-wrap items-center gap-3">
                                                         {group.classArms.map((arm) => (
                                                             <button
                                                                 key={arm.id}
                                                                 type="button"
-                                                                className={`${pillClass} ${typeBadge[arm.type].className}`}
+                                                                className={`${pillClass} ${typeBadge[arm.type].className} transition-all hover:scale-105`}
                                                                 onClick={() => openEditArm(section.id, group.id, arm)}
                                                             >
                                                                 {arm.name}
@@ -293,7 +293,7 @@ export default function SectionsYearGroups() {
                                                         ))}
                                                         <button
                                                             type="button"
-                                                            className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                                                            className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400"
                                                             onClick={() => openAddArm(section.id, group.id)}
                                                         >
                                                             <Plus className="h-3.5 w-3.5" />
@@ -301,7 +301,7 @@ export default function SectionsYearGroups() {
                                                         </button>
                                                         <button
                                                             type="button"
-                                                            className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                                                            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400"
                                                             onClick={() => {
                                                                 setDeleteTarget({ type: 'yearGroup', sectionId: section.id, yearGroupId: group.id })
                                                                 setIsConfirmOpen(true)
@@ -316,7 +316,7 @@ export default function SectionsYearGroups() {
                                     )}
                                     <button
                                         type="button"
-                                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400"
                                         onClick={() => openAddYearGroup(section.id)}
                                     >
                                         <Plus className="h-4 w-4" />

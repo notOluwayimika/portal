@@ -46,30 +46,30 @@ function SubjectRow({
     onMove: (subjectId: number, direction: 'up' | 'down') => void
 }) {
     return (
-        <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p className="font-medium text-gray-900">{subject.name}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <p className="text-lg font-medium text-gray-900">{subject.name}</p>
+                <div className="mt-3 flex flex-wrap gap-3">
                     {subject.sections.map((section) => (
                         <span
                             key={`${subject.id}-${section}`}
-                            className={`rounded-full px-2 py-1 text-[11px] font-semibold ${sectionBadgeStyles[section]}`}
+                            className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold ${sectionBadgeStyles[section]}`}
                         >
                             {section}
                         </span>
                     ))}
                     {subject.is_optional ? (
-                        <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-700">
+                        <span className="inline-flex rounded-full bg-gray-100 px-4 py-2 text-xs font-semibold text-gray-700">
                             Optional
                         </span>
                     ) : null}
                 </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
                 <button
                     type="button"
                     onClick={() => onMove(subject.id, 'up')}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
                 >
                     <ChevronUp className="h-4 w-4" />
                     Up
@@ -77,7 +77,7 @@ function SubjectRow({
                 <button
                     type="button"
                     onClick={() => onMove(subject.id, 'down')}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
                 >
                     <ChevronDown className="h-4 w-4" />
                     Down
@@ -85,7 +85,7 @@ function SubjectRow({
                 <button
                     type="button"
                     onClick={() => onEdit(subject)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
                 >
                     <Pencil className="h-4 w-4" />
                     Edit
@@ -93,7 +93,7 @@ function SubjectRow({
                 <button
                     type="button"
                     onClick={() => onDelete(subject)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 transition-all hover:bg-red-100 hover:border-red-300 hover:shadow-sm"
                 >
                     <Trash2 className="h-4 w-4" />
                     Delete
@@ -195,16 +195,16 @@ export default function SubjectManager() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-8">
+            <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-xl font-semibold text-gray-900">Subject manager</h1>
-                    <p className="text-sm text-gray-600">Subject order here defines the order on all result templates. Use the buttons to move subjects up or down.</p>
+                    <p className="mt-2 text-sm text-gray-600">Subject order here defines the order on all result templates. Use the buttons to move subjects up or down.</p>
                 </div>
                 <button
                     type="button"
                     onClick={openAddModal}
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
                 >
                     <Plus className="h-4 w-4" />
                     Add subject
@@ -220,7 +220,7 @@ export default function SubjectManager() {
                     onAction={openAddModal}
                 />
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {orderedSubjects.map((subject) => (
                         <SubjectRow
                             key={subject.id}
@@ -244,14 +244,14 @@ export default function SubjectManager() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm"
                             onClick={() => setIsModalOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                            className="rounded-lg bg-[#185FA5] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
                             onClick={handleSaveSubject}
                         >
                             Save subject
@@ -259,26 +259,26 @@ export default function SubjectManager() {
                     </div>
                 }
             >
-                <div className="space-y-4">
+                <div className="space-y-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Subject name</label>
                         <input
                             type="text"
                             value={name}
                             onChange={(event) => setName(event.target.value)}
-                            className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
                             placeholder="Mathematics"
                         />
                     </div>
                     <div>
-                        <p className="text-sm font-medium text-gray-700">Sections</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <p className="block text-sm font-medium text-gray-700">Sections</p>
+                        <div className="mt-4 flex flex-wrap gap-3">
                             {(['Secondary', 'Primary', 'IFY Abuja', 'IFY PH'] as Subject['sections'][number][]).map((section) => (
                                 <button
                                     key={section}
                                     type="button"
                                     onClick={() => toggleSection(section)}
-                                    className={`rounded-full border px-3 py-1 text-sm font-medium ${sections.includes(section) ? 'border-[#185FA5] bg-[#def1ff] text-[#185FA5]' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                                    className={`rounded-full border px-4 py-2.5 text-sm font-medium transition-all ${sections.includes(section) ? 'border-[#185FA5] bg-[#def1ff] text-[#185FA5] shadow-sm' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-400'}`}
                                 >
                                     {section}
                                 </button>
@@ -286,7 +286,7 @@ export default function SubjectManager() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <label className="flex cursor-pointer items-center gap-3 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-700 transition-all hover:bg-gray-50 hover:border-gray-400">
                             <input
                                 type="checkbox"
                                 checked={isOptional}

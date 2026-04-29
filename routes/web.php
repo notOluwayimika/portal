@@ -12,6 +12,7 @@ Route::inertia('/', 'welcome', [
 Route::middleware(['auth'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
+    Route::inertia('setup', 'admin/school-setup')->name('setup');
 });
 
 

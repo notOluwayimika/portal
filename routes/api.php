@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\SetupController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 // Authentication
@@ -19,6 +20,10 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::post('/sessions', [SessionController::class, 'store']);
     Route::put('/sessions/{id}', [SessionController::class, 'update']);
     Route::delete('/sessions/{id}', [SessionController::class, 'destroy']);
+    Route::post('/sessions/{id}/current', [SessionController::class, 'setCurrent']);
+
+    // get setup data
+    Route::get('/setup-data', [SetupController::class, 'index']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 });

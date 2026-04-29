@@ -10,34 +10,31 @@ use Illuminate\Support\Str;
 
 class GradeBoundarySeeder extends Seeder
 {
-    // Default boundaries applied to every school on creation (exam_type_id = null)
+    // Default school-wide boundaries (exam_type_id = null)
     private const DEFAULTS = [
-        ['min' => 70, 'max' => 101, 'grade' => 'A', 'label' => 'Distinction'],
-        ['min' => 60, 'max' => 70, 'grade' => 'B', 'label' => 'Credit'],
-        ['min' => 50, 'max' => 60, 'grade' => 'C', 'label' => 'Merit'],
-        ['min' => 45, 'max' => 50, 'grade' => 'D', 'label' => 'Pass'],
-        ['min' => 40, 'max' => 45, 'grade' => 'E', 'label' => 'Below Average'],
-        ['min' => 0, 'max' => 40, 'grade' => 'F', 'label' => 'Fail'],
+        ['min_score' => 70, 'max_score' => 101, 'grade' => 'A', 'label' => 'Distinction'],
+        ['min_score' => 60, 'max_score' => 70, 'grade' => 'B', 'label' => 'Credit'],
+        ['min_score' => 50, 'max_score' => 60, 'grade' => 'C', 'label' => 'Merit'],
+        ['min_score' => 45, 'max_score' => 50, 'grade' => 'D', 'label' => 'Pass'],
+        ['min_score' => 40, 'max_score' => 45, 'grade' => 'E', 'label' => 'Below Average'],
+        ['min_score' => 0, 'max_score' => 40, 'grade' => 'F', 'label' => 'Fail'],
     ];
 
     public function run(): void
     {
         foreach (School::all() as $school) {
             foreach (self::DEFAULTS as $boundary) {
-                GradeBoundary::firstOrCreate(
+                GradeBoundary::withoutGlobalScopes()->firstOrCreate(
                     [
                         'school_id' => $school->id,
                         'exam_type_id' => null,
                         'grade' => $boundary['grade'],
                     ],
-                    [
-                        'id' => Str::uuid(),
-                        'min_score' => $boundary['min'],
-                        'max_score' => $boundary['max'],
-                        'label' => $boundary['label'],
-                    ]
+                    array_merge($boundary, ['id' => Str::uuid(), 'school_id' => $school->id])
                 );
             }
         }
+
+        $this->command->info('Grade boundaries seeded.');
     }
 }

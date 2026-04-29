@@ -14,8 +14,7 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('user_id')->nullable()->constrained()->nullOnDelete();
-            $table->string('first_name');
-            $table->string('last_name');
+            $table->string('name');
             $table->string('staff_number')->nullable();
             $table->text('photo')->nullable();
             $table->timestampsTz();

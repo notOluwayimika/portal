@@ -32,12 +32,6 @@ class CreateNewUser implements CreatesNewUsers
             'email' => $input['email'],
             'password' => $input['password'],
         ]);
-        if (!Role::where('name', 'admin')->where('guard_name', 'web')->exists()) {
-            Role::create(['name' => 'admin', 'guard_name' => 'web']);
-        }
-        if (!Role::where('name', 'admin')->where('guard_name', 'api')->exists()) {
-            Role::create(['name' => 'admin', 'guard_name' => 'api']);
-        }
         $user->assignRole('admin');
         return $user;
     }

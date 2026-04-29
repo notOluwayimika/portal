@@ -22,7 +22,7 @@ class ClassLevelArmSeeder extends Seeder
                 foreach ($arms as $arm) {
                     DB::table('class_level_arms')->updateOrInsert(
                         ['class_level_id' => $level->id, 'arm_id' => $arm->id],
-                        ['id' => Str::uuid(), 'class_level_id' => $level->id, 'arm_id' => $arm->id, 'created_at' => now(), 'updated_at' => now()]
+                        ['uuid' => Str::uuid(), 'class_level_id' => $level->id, 'arm_id' => $arm->id, 'created_at' => now(), 'updated_at' => now()]
                     );
                 }
             }

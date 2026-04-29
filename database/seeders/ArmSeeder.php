@@ -18,7 +18,7 @@ class ArmSeeder extends Seeder
             foreach ($arms as $label) {
                 Arm::withoutGlobalScopes()->updateOrCreate(
                     ['school_id' => $school->id, 'label' => $label],
-                    ['id' => Str::uuid(), 'school_id' => $school->id, 'label' => $label]
+                    ['school_id' => $school->id, 'label' => $label]
                 );
             }
         }

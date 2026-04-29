@@ -56,7 +56,7 @@ class CurriculumSubjectSeeder extends Seeder
                 CurriculumSubject::updateOrCreate(
                     ['curriculum_id' => $curriculum->id, 'subject_id' => $subject->id],
                     [
-                        'id' => Str::uuid(),
+
                         'is_compulsory' => $isCompulsory,
                         'display_order' => $order++,
                     ]

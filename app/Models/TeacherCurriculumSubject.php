@@ -3,15 +3,23 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class TeacherCurriculumSubject extends Model
 {
-    use HasUuids;
-
     protected $fillable = ['teacher_id', 'curriculum_subject_id'];
+
+    protected static function booted(): void
+    {
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
+    }
 
     public function teacher(): BelongsTo
     {

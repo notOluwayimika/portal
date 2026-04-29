@@ -4,14 +4,12 @@
 namespace App\Models;
 
 use App\Models\Scopes\SchoolScope;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class GradeBoundary extends Model
 {
-    use HasUuids;
-
     protected $fillable = ['school_id', 'exam_type_id', 'min_score', 'max_score', 'grade', 'label'];
 
     protected $casts = [
@@ -22,6 +20,12 @@ class GradeBoundary extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 
     public function school(): BelongsTo

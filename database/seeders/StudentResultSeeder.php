@@ -43,7 +43,7 @@ class StudentResultSeeder extends Seeder
                     'curriculum_subject_id' => $curriculumSubjectId,
                 ],
                 [
-                    'id' => Str::uuid(),
+
                     'total_score' => $totalScore,
                     'grade' => $grade,
                     'status' => 'draft',

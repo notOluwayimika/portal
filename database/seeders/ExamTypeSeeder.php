@@ -18,7 +18,7 @@ class ExamTypeSeeder extends Seeder
             foreach ($types as $name) {
                 ExamType::withoutGlobalScopes()->updateOrCreate(
                     ['school_id' => $school->id, 'name' => $name, 'slug' => Str::slug($name)],
-                    ['id' => Str::uuid(), 'school_id' => $school->id, 'name' => $name, 'slug' => Str::slug($name)]
+                    ['school_id' => $school->id, 'name' => $name, 'slug' => Str::slug($name)]
                 );
             }
         }

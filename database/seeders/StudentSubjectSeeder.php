@@ -28,7 +28,7 @@ class StudentSubjectSeeder extends Seeder
                         'student_curriculum_id' => $sc->id,
                         'curriculum_subject_id' => $cs->id,
                     ],
-                    ['id' => Str::uuid()]
+                []
                 );
             }
         }

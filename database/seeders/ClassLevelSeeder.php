@@ -25,7 +25,7 @@ class ClassLevelSeeder extends Seeder
             foreach ($levels as $level) {
                 ClassLevel::withoutGlobalScopes()->updateOrCreate(
                     ['school_id' => $school->id, 'name' => $level['name']],
-                    array_merge($level, ['id' => Str::uuid(), 'school_id' => $school->id])
+                    array_merge($level, ['school_id' => $school->id])
                 );
             }
         }

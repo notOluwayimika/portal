@@ -3,14 +3,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class AuditLog extends Model
 {
-    use HasUuids;
-
     // Append-only: disable updated_at
     public const UPDATED_AT = null;
 
@@ -24,6 +22,16 @@ class AuditLog extends Model
     ];
 
     protected $casts = ['payload' => 'array'];
+
+    protected static function booted(): void
+    {
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
+    }
 
     public function user(): BelongsTo
     {

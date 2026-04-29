@@ -45,7 +45,7 @@ class TeacherCurriculumSubjectSeeder extends Seeder
         foreach ($curriculumSubjects as $cs) {
             TeacherCurriculumSubject::updateOrCreate(
                 ['teacher_id' => $teacherId, 'curriculum_subject_id' => $cs->id],
-                ['id' => Str::uuid()]
+                []
             );
         }
     }

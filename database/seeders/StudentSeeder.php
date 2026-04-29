@@ -32,7 +32,7 @@ class StudentSeeder extends Seeder
             Student::withoutGlobalScopes()->updateOrCreate(
                 ['school_id' => $school->id, 'admission_number' => $admissionNumber],
                 [
-                    'id' => Str::uuid(),
+
                     'school_id' => $school->id,
                     'name' => $name,
                     'admission_number' => $admissionNumber,

@@ -29,7 +29,7 @@ class StudentCurriculumSeeder extends Seeder
         foreach ($students as $student) {
             StudentCurriculum::updateOrCreate(
                 ['student_id' => $student->id, 'curriculum_id' => $curriculum->id],
-                ['id' => Str::uuid()]
+                []
             );
         }
 

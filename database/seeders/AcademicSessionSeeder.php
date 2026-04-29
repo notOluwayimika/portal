@@ -24,7 +24,7 @@ class AcademicSessionSeeder extends Seeder
             foreach ($sessionData as $data) {
                 AcademicSession::withoutGlobalScopes()->updateOrCreate(
                     ['school_id' => $school->id, 'name' => $data['name']],
-                    array_merge($data, ['id' => Str::uuid(), 'school_id' => $school->id])
+                    array_merge($data, ['school_id' => $school->id])
                 );
             }
         }

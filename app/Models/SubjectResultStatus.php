@@ -3,14 +3,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class SubjectResultStatus extends Model
 {
-    use HasUuids;
-
     protected $fillable = [
         'curriculum_subject_id',
         'status',
@@ -25,6 +23,16 @@ class SubjectResultStatus extends Model
         'rejected' => ['draft'],
         'approved' => [], // terminal — no further transitions
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
+    }
 
     public function curriculumSubject(): BelongsTo
     {

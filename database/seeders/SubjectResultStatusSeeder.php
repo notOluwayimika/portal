@@ -26,7 +26,7 @@ class SubjectResultStatusSeeder extends Seeder
             SubjectResultStatus::updateOrCreate(
                 ['curriculum_subject_id' => $cs->id],
                 [
-                    'id' => Str::uuid(),
+
                     'status' => 'draft', // All start as draft
                     'updated_by' => $admin->id,
                 ]

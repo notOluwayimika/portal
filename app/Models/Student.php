@@ -4,21 +4,27 @@
 namespace App\Models;
 
 use App\Models\Scopes\SchoolScope;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Student extends Model
 {
-    use HasUuids, SoftDeletes;
+    use SoftDeletes;
 
     protected $fillable = ['school_id', 'user_id', 'first_name', 'last_name', 'admission_number'];
 
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 
     public function school(): BelongsTo

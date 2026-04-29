@@ -45,7 +45,7 @@ class ScoreSeeder extends Seeder
                         'marking_component_id' => $component->id,
                     ],
                     [
-                        'id' => Str::uuid(),
+
                         'curriculum_subject_id' => $ss->curriculum_subject_id,
                         'score' => $score,
                         'created_by' => $teacher->id,

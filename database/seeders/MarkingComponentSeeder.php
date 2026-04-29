@@ -31,7 +31,7 @@ class MarkingComponentSeeder extends Seeder
 
             foreach (self::COMPONENTS as $component) {
                 MarkingComponent::create([
-                    'id' => Str::uuid(),
+
                     'curriculum_subject_id' => $curriculumSubject->id,
                     'name' => $component['name'],
                     'weight' => $component['weight'],

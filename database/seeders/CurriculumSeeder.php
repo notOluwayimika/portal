@@ -43,7 +43,7 @@ class CurriculumSeeder extends Seeder
                     'exam_type_id' => $examType->id,
                 ],
                 [
-                    'id' => Str::uuid(),
+
                     'school_id' => $school->id,
                     'academic_session_id' => $session->id,
                     'class_level_id' => $classLevel->id,

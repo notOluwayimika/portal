@@ -31,7 +31,7 @@ class SubjectSeeder extends Seeder
             foreach (self::SUBJECTS as $subject) {
                 Subject::withoutGlobalScopes()->updateOrCreate(
                     ['school_id' => $school->id, 'name' => $subject['name']],
-                    array_merge($subject, ['id' => Str::uuid(), 'school_id' => $school->id])
+                    array_merge($subject, ['school_id' => $school->id])
                 );
             }
         }

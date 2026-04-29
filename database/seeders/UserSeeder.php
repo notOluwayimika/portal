@@ -71,14 +71,14 @@ class UserSeeder extends Seeder
         $teachers = [
             // Brookstone Schools
             [
-                'id' => Str::uuid(),
+                'uuid' => Str::uuid(),
                 'school_id' => $school->id,
                 'name' => 'Ada Okonkwo',
                 'email' => 'ada.admin@brookstone.test',
                 'password' => Hash::make('password'),
             ],
             [
-                'id' => Str::uuid(),
+                'uuid' => Str::uuid(),
                 'school_id' => $school->id,
                 'name' => 'Emeka Nwosu',
                 'email' => 'emeka.teacher@brookstone.test',
@@ -98,7 +98,7 @@ class UserSeeder extends Seeder
             );
             $user->assignRole('teacher');
             $user->teacher()->create([
-                "id" => Str::uuid(),
+                "uuid" => Str::uuid(),
                 "school_id" => $data['school_id'],
                 "user_id" => $user->id,
                 "name" => $data['name'],

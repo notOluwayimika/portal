@@ -7,12 +7,12 @@ use App\Models\Scopes\SchoolScope;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
@@ -22,10 +22,8 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, HasUuids;
+    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable;
 
-    protected $keyType = 'string';      // ADD THIS
-    public $incrementing = false;       // ADD THIS
     protected $fillable = ['name', 'email', 'password', 'school_id'];
 
     /**
@@ -46,6 +44,12 @@ class User extends Authenticatable
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 
     public function school(): BelongsTo

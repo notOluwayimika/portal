@@ -30,7 +30,7 @@ class GradeBoundarySeeder extends Seeder
                         'exam_type_id' => null,
                         'grade' => $boundary['grade'],
                     ],
-                    array_merge($boundary, ['id' => Str::uuid(), 'school_id' => $school->id])
+                    array_merge($boundary, ['school_id' => $school->id])
                 );
             }
         }

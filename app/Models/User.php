@@ -17,14 +17,14 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable;
 
-    protected $fillable = ['name', 'email', 'password', 'school_id'];
+    protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id'];
+    protected $appends = ['full_name','name'];
 
     /**
      * Get the attributes that should be cast.
@@ -40,11 +40,20 @@ class User extends Authenticatable
         ];
     }
 
-
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
         static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getFullNameAttribute()
+    {
+        return $this->first_name . ' ' . $this->last_name;
+    }
+
+    public function getNameAttribute()
+    {
+        return $this->full_name;
     }
 
     public function getRouteKeyName()
@@ -65,6 +74,4 @@ class User extends Authenticatable
     {
         return $this->hasOne(Student::class, 'user_id');
     }
-
-
 }

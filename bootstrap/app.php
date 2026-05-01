@@ -5,6 +5,17 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Client\ConnectionException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Illuminate\Support\Facades\Log;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -40,4 +51,102 @@ return Application::configure(basePath: dirname(__DIR__))
                 'line' => $e->getLine(),
             ]);
         });
+
+        /*
+        |----------------------------------------------------
+        | Validation
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (ValidationException $e, $request) {
+            return response()->validation_error($e->errors());
+        });
+
+        /*
+        |----------------------------------------------------
+        | Authentication / Authorization
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (AuthenticationException $e) {
+            return response()->unauthorized('Unauthenticated.');
+        });
+
+        $exceptions->renderable(function (AuthorizationException $e) {
+            return response()->forbidden($e->getMessage());
+        });
+
+        /*
+        |----------------------------------------------------
+        | Not Found
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (ModelNotFoundException $e) {
+            return response()->not_found(class_basename($e->getModel()) . ' not found');
+        });
+
+        $exceptions->renderable(function (NotFoundHttpException $e) {
+            return response()->not_found('Resource not found');
+        });
+
+        $exceptions->renderable(function (RouteNotFoundException $e) {
+            return response()->not_found();
+        });
+
+        /*
+        |----------------------------------------------------
+        | HTTP / Request Errors
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (MethodNotAllowedHttpException $e) {
+            return response()->error('HTTP method not allowed');
+        });
+
+        $exceptions->renderable(function (ConnectionException $e) {
+            return response()->error($e->getMessage());
+        });
+
+        /*
+        |----------------------------------------------------
+        | Database
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (QueryException $e) {
+            return handleDatabase($e);
+        });
+
+        /*
+        |----------------------------------------------------
+        | Mail
+        |----------------------------------------------------
+        */
+        $exceptions->renderable(function (TransportException $e) {
+            Log::error('Mail error', [
+                'message' => $e->getMessage(),
+            ]);
+
+            if (str_contains($e->getMessage(), 'getaddrinfo')) {
+                return response()->server_error(
+                    'Cannot connect to mail server',
+                    additional: ['code' => 'MAIL_CONN_001']
+                );
+            }
+
+            return response()->service_unavailable('Mail service unavailable');
+        });
     })->create();
+
+/*
+|--------------------------------------------------------
+| DB handler helper (kept outside for clarity)
+|--------------------------------------------------------
+*/
+function handleDatabase(QueryException $e)
+{
+    $code = $e->errorInfo[1] ?? null;
+
+    return match ($code) {
+        23000 => response()->conflict('Duplicate entry detected'),
+        547 => response()->error('Record has dependencies'),
+        '40001' => response()->error('Transaction conflict, retry'),
+        default => response()->error('Database error'),
+    };
+}

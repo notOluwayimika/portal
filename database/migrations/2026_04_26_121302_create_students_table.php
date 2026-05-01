@@ -12,10 +12,12 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('user_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('admission_number')->nullable();
             $table->string('first_name');
             $table->string('last_name');
             $table->string('middle_name')->nullable();
-            $table->string('admission_number')->nullable();
+            $table->enum('gender', ['male', 'female', 'other'])->nullable();
+            $table->date('date_of_birth')->nullable();
             $table->text('photo')->nullable();
             $table->timestampsTz();
             $table->softDeletesTz();

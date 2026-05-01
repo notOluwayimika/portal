@@ -44,11 +44,11 @@ export function SessionsTab({
             });
 
             if (response.status === 200) {
-                setSessions(response.data.sessions.data ?? []);
+                setSessions(response.data.sessions ?? []);
                 setTotal(response.data.stats.total ?? 0);
                 setTotalActive(response.data.stats.active ?? 0);
                 setTotalInactive(response.data.stats.inactive ?? 0);
-                setPaginationMeta(response.data.sessions ?? paginationMeta);
+                setPaginationMeta(response.data.pagination ?? paginationMeta);
             } else {
                 addToast('Failed to fetch academic sessions.', 'error');
             }
@@ -76,7 +76,6 @@ export function SessionsTab({
         try {
             setLoading(true);
             const response = await axios.post('/api/sessions', newSession);
-            console.log(response);
 
             if (response.status === 201) {
                 setModal(null);

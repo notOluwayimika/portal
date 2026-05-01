@@ -11,12 +11,12 @@ use Illuminate\Support\Str;
 
 class ExamType extends Model
 {
-    protected $fillable = ['school_id', 'name'];
+    protected $fillable = ['school_id', 'name', 'slug'];
 
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()

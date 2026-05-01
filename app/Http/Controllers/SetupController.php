@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\ClassLevelResource;
+use App\Http\Resources\SessionResource;
+use App\Services\ClassLevelService;
+use App\Services\SessionService;
 use Illuminate\Http\Request;
 
 class SetupController extends Controller
@@ -12,17 +16,18 @@ class SetupController extends Controller
         // Return the setup data for the authenticated user
         $school = $user->school;
         // map over ans sort by created at
-        $sessions = $school->sessions->sortBy('created_at');
-        $class_levels = $school->classLevels->load('arms');
-        $arms = $school->arms;
-        $exam_types = $school->examTypes;
-        $subjects = $school->subjects;
-        $grade_boundaries = $school->gradeBoundaries;
-        $students = $school->students;
-        $curricula = $school->curricula;
+        $sessions = count($school->sessions);
+        $class_levels = count($school->classLevels);
+        $arms = count($school->arms);
+        $exam_types = count($school->examTypes);
+        $subjects = count($school->subjects);
+        $grade_boundaries = count($school->gradeBoundaries);
+        $students = count($school->students);
+        $curricula = count($school->curricula);
 
         return response()->json([
             'school' => $school,
+            'current_session' => $school->currentSession,
             'sessions' => $sessions,
             'class_levels' => $class_levels,
             'arms' => $arms,

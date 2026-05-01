@@ -29,8 +29,9 @@ export interface Session {
 }
 export interface ClassLevel {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
+    arms?: Arm[];
     name: string;
     order: number;
     created_at?: string;
@@ -58,8 +59,8 @@ export interface ClassLevelArm {
 
 export interface ExamType {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
     name: string;
     slug: string;
     created_at?: string;
@@ -148,12 +149,13 @@ export interface Curriculum {
 
 export interface SetupData {
     school: School;
-    sessions: Session[];
-    class_levels: ClassLevel[];
-    arms: Arm[];
-    exam_types: ExamType[];
-    subjects: Subject[];
-    grade_boundaries: GradeBoundary[];
-    students: Student[];
-    curricula: Curriculum[];
+    current_session: AcademicSession | null;
+    sessions: number;
+    class_levels: number;
+    arms: number;
+    exam_types: number;
+    subjects: number;
+    grade_boundaries: number;
+    students: number;
+    curricula: number;
 }

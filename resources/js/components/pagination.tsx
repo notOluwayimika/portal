@@ -42,7 +42,7 @@ export function Pagination({
     const to = Math.min(meta.current_page * meta.per_page, meta.total);
 
     return (
-        <div className="flex flex-col items-center gap-3">
+        <div className="m-4 flex flex-col items-center gap-3">
             {/* Info strip */}
             <p className="text-sm text-muted-foreground">
                 Showing{' '}

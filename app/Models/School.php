@@ -13,7 +13,7 @@ class School extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -56,5 +56,9 @@ class School extends Model
     public function gradeBoundaries(): HasMany
     {
         return $this->hasMany(GradeBoundary::class);
+    }
+    public function currentSession()
+    {
+        return $this->hasOne(AcademicSession::class)->where('is_current', true);
     }
 }

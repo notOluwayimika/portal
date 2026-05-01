@@ -12,17 +12,17 @@ interface RelRow {
 }
 
 export function OverviewTab({ data }: { data: SetupData | null }) {
-    const cur = data?.sessions.find((s) => s.is_current);
+    const cur = data?.current_session;
 
     const stats: StatItem[] = [
-        { v: data?.sessions.length, l: 'Sessions' },
-        { v: data?.class_levels.length, l: 'Class Levels' },
-        { v: data?.arms.length, l: 'Arms' },
-        { v: data?.exam_types.length, l: 'Exam Types' },
-        { v: data?.subjects.length, l: 'Subjects' },
-        { v: data?.grade_boundaries.length, l: 'Grade Boundaries' },
-        { v: data?.students.length, l: 'Students' },
-        { v: data?.curricula.length, l: 'Curricula' },
+        { v: data?.sessions, l: 'Sessions' },
+        { v: data?.class_levels, l: 'Class Levels' },
+        { v: data?.arms, l: 'Arms' },
+        { v: data?.exam_types, l: 'Exam Types' },
+        { v: data?.subjects, l: 'Subjects' },
+        { v: data?.grade_boundaries, l: 'Grade Boundaries' },
+        { v: data?.students, l: 'Students' },
+        { v: data?.curricula, l: 'Curricula' },
     ];
 
     const rels: RelRow[] = [

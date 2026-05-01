@@ -23,7 +23,7 @@ class StudentCurriculumSeeder extends Seeder
         // All students go into SS2 curriculum for this seed
         $curriculum = Curriculum::withoutGlobalScopes()
             ->where('school_id', $school->id)
-            ->whereHas('classLevel', fn($q) => $q->where('name', 'SS2'))
+            ->whereHas('classLevelArm.classLevel', fn($q) => $q->where('name', 'SS2'))
             ->firstOrFail();
 
         foreach ($students as $student) {

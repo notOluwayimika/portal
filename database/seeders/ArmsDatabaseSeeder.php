@@ -16,6 +16,8 @@ class ArmsDatabaseSeeder extends Seeder
             UserSeeder::class,
             AcademicSessionSeeder::class,
             ClassLevelSeeder::class,
+            // UpdateClassLevelTypeSeeder::class,
+            StreamSeeder::class,
             ArmSeeder::class,
             ClassLevelArmSeeder::class,
             ExamTypeSeeder::class,

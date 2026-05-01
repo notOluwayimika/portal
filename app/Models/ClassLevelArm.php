@@ -16,4 +16,9 @@ class ClassLevelArm extends Model
     {
         return 'uuid';
     }
+
+    public function classLevel()
+    {
+        return $this->belongsTo(ClassLevel::class);
+    }
 }

@@ -7,11 +7,12 @@ use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class ClassLevel extends Model
 {
-    protected $fillable = ['school_id', 'name', 'order'];
+    protected $fillable = ['school_id', 'name', 'order', 'level_type'];
 
     protected static function booted(): void
     {
@@ -32,5 +33,10 @@ class ClassLevel extends Model
     public function arms(): BelongsToMany
     {
         return $this->belongsToMany(Arm::class, 'class_level_arms');
+    }
+
+    public function streams(): HasMany
+    {
+        return $this->hasMany(Stream::class);
     }
 }

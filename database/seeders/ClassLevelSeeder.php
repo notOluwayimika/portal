@@ -13,12 +13,12 @@ class ClassLevelSeeder extends Seeder
     public function run(): void
     {
         $levels = [
-            ['name' => 'JS1', 'order' => 1],
-            ['name' => 'JS2', 'order' => 2],
-            ['name' => 'JS3', 'order' => 3],
-            ['name' => 'SS1', 'order' => 4],
-            ['name' => 'SS2', 'order' => 5],
-            ['name' => 'SS3', 'order' => 6],
+            ['name' => 'JS1', 'order' => 1, 'level_type' => 'JSS'],
+            ['name' => 'JS2', 'order' => 2, 'level_type' => 'JSS'],
+            ['name' => 'JS3', 'order' => 3, 'level_type' => 'JSS'],
+            ['name' => 'SS1', 'order' => 4, 'level_type' => 'SSS'],
+            ['name' => 'SS2', 'order' => 5, 'level_type' => 'SSS'],
+            ['name' => 'SS3', 'order' => 6, 'level_type' => 'SSS'],
         ];
 
         foreach (School::all() as $school) {

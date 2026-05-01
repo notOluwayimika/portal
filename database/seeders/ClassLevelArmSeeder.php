@@ -5,6 +5,7 @@ namespace Database\Seeders;
 
 use App\Models\Arm;
 use App\Models\ClassLevel;
+use App\Models\Stream;
 use App\Models\School;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -17,13 +18,38 @@ class ClassLevelArmSeeder extends Seeder
         foreach (School::all() as $school) {
             $levels = ClassLevel::withoutGlobalScopes()->where('school_id', $school->id)->get();
             $arms   = Arm::withoutGlobalScopes()->where('school_id', $school->id)->get();
+            $streams = Stream::withoutGlobalScopes()->get();
 
             foreach ($levels as $level) {
                 foreach ($arms as $arm) {
-                    DB::table('class_level_arms')->updateOrInsert(
-                        ['class_level_id' => $level->id, 'arm_id' => $arm->id],
-                        ['uuid' => Str::uuid(), 'class_level_id' => $level->id, 'arm_id' => $arm->id, 'created_at' => now(), 'updated_at' => now()]
-                    );
+                    if ($level->level_type === 'SSS') {
+                        // For SSS levels, we want to create a class_level_arm for each stream
+                        foreach ($streams as $stream) {
+                            DB::table('class_level_arms')->updateOrInsert(
+                                ['class_level_id' => $level->id, 'arm_id' => $arm->id, 'stream_id' => $stream->id],
+                                [
+                                    'uuid' => Str::uuid(), 
+                                    'class_level_id' => $level->id, 
+                                    'arm_id' => $arm->id, 
+                                    'stream_id' => $stream->id,
+                                    'created_at' => now(), 
+                                    'updated_at' => now()
+                                ]
+                            );
+                        }
+                    } else {
+                        // For JSS levels, we create a class_level_arm without stream
+                        DB::table('class_level_arms')->updateOrInsert(
+                            ['class_level_id' => $level->id, 'arm_id' => $arm->id],
+                            [
+                                'uuid' => Str::uuid(), 
+                                'class_level_id' => $level->id, 
+                                'arm_id' => $arm->id, 
+                                'created_at' => now(), 
+                                'updated_at' => now()
+                            ]
+                        );
+                    }
                 }
             }
         }

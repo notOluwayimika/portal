@@ -51,9 +51,9 @@ class Curriculum extends Model
     {
         return $this->belongsTo(AcademicSession::class, 'academic_session_id');
     }
-    public function classLevel(): BelongsTo
+    public function classLevelArm(): BelongsTo
     {
-        return $this->belongsTo(ClassLevel::class);
+        return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
     public function examType(): BelongsTo
     {

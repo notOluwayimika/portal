@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('academic_session_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuid('class_level_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('class_level_arm_id')->constrained('class_level_arms')->cascadeOnDelete();
             $table->foreignUuid('exam_type_id')->constrained()->cascadeOnDelete();
             $table->unsignedSmallInteger('term'); // 1, 2, or 3
             $table->unsignedSmallInteger('min_subjects')->default(1);
@@ -24,7 +24,7 @@ return new class extends Migration {
             $table->timestampsTz();
 
             $table->index(['school_id', 'academic_session_id', 'status']);
-            $table->unique(['school_id', 'academic_session_id', 'class_level_id', 'term', 'exam_type_id'], 'curricula_unique_key');
+            $table->unique(['school_id', 'academic_session_id', 'class_level_arm_id', 'term', 'exam_type_id'], 'curricula_unique_key');
         });
     }
 

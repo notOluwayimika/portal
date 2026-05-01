@@ -27,7 +27,8 @@ class UserSeeder extends Seeder
         $admin = User::firstOrCreate([
             'email' => 'admin@secondary.com',
         ], [
-            'name' => 'Admin User',
+            'first_name' => 'Admin',
+            'last_name' => 'User',
             'password' => Hash::make('password'),
             'school_id' => $school->id,
         ]);
@@ -37,7 +38,8 @@ class UserSeeder extends Seeder
         $headOfSchool = User::firstOrCreate([
             'email' => 'head@example.com',
         ], [
-            'name' => 'Head of School',
+            'first_name' => 'Head',
+            'last_name' => 'of School',
             'password' => Hash::make('password'),
             'school_id' => $school->id,
         ]);
@@ -52,13 +54,15 @@ class UserSeeder extends Seeder
         //     $parent = User::firstOrCreate([
         //         'email' => $studentData['parent_email'],
         //     ], [
-        //         'name' => $studentData['parent_name'],
+        //         'first_name' => $studentData['parent_name'],
+        //         'last_name' => 'Parent',
         //         'password' => Hash::make('password'),
         //         'school_id' => $school->id,
         //     ]);
         //     $parent->assignRole('parent');
         //     $parent->student->create([
-        //         "name" => $studentData['name'],
+        //         "first_name" => $studentData['first_name'],
+        //         "last_name" => $studentData['last_name'],
         //         "school_id" => $school->id,
         //         "user_id" => $parent->id,
         //         "admission_number" => $studentData['admission_number'],
@@ -73,14 +77,16 @@ class UserSeeder extends Seeder
             [
                 'uuid' => Str::uuid(),
                 'school_id' => $school->id,
-                'name' => 'Ada Okonkwo',
+                'first_name' => 'Ada Okonkwo',
+                'last_name' => 'Okonkwo',
                 'email' => 'ada.admin@brookstone.test',
                 'password' => Hash::make('password'),
             ],
             [
                 'uuid' => Str::uuid(),
                 'school_id' => $school->id,
-                'name' => 'Emeka Nwosu',
+                'first_name' => 'Emeka',
+                'last_name' => 'Nwosu',
                 'email' => 'emeka.teacher@brookstone.test',
                 'password' => Hash::make('password'),
             ],
@@ -101,7 +107,8 @@ class UserSeeder extends Seeder
                 "uuid" => Str::uuid(),
                 "school_id" => $data['school_id'],
                 "user_id" => $user->id,
-                "name" => $data['name'],
+                "first_name" => $data['first_name'],
+                "last_name" => $data['last_name'],
                 "staff_number" => "STF-" . uniqid()
             ]);
 

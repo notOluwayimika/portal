@@ -37,10 +37,10 @@ class CurriculumSubjectSeeder extends Seeder
 
     public function run(): void
     {
-        $curricula = Curriculum::withoutGlobalScopes()->with('classLevel')->get();
+        $curricula = Curriculum::withoutGlobalScopes()->with('classLevelArm.classLevel')->get();
 
         foreach ($curricula as $curriculum) {
-            $levelName = $curriculum->classLevel->name;
+            $levelName = $curriculum->classLevelArm->classLevel->name;
             $subjectMap = self::LEVEL_SUBJECTS[$levelName] ?? [];
             $order = 1;
 

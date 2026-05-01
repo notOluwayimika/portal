@@ -5,6 +5,7 @@ namespace Database\Seeders;
 
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
+use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\ExamType;
 use App\Models\School;
@@ -27,26 +28,27 @@ class CurriculumSeeder extends Seeder
             ->where('name', 'First Term Exam')
             ->firstOrFail();
 
-        // Create a curriculum for SS2 and JS1 for term 1
-        $classLevels = ClassLevel::withoutGlobalScopes()
-            ->where('school_id', $school->id)
-            ->whereIn('name', ['SS2', 'JS1'])
+        // Create a curriculum for SS2 and JS1 for term 1, for each arm
+        $classLevelArms = ClassLevelArm::withoutGlobalScopes()
+            ->whereHas('classLevel', function ($q) use ($school) {
+                $q->where('school_id', $school->id)
+                  ->whereIn('name', ['SS2', 'JS1']);
+            })
             ->get();
 
-        foreach ($classLevels as $classLevel) {
+        foreach ($classLevelArms as $classLevelArm) {
             Curriculum::withoutGlobalScopes()->updateOrCreate(
                 [
                     'school_id' => $school->id,
                     'academic_session_id' => $session->id,
-                    'class_level_id' => $classLevel->id,
+                    'class_level_arm_id' => $classLevelArm->id,
                     'term' => 1,
                     'exam_type_id' => $examType->id,
                 ],
                 [
-
                     'school_id' => $school->id,
                     'academic_session_id' => $session->id,
-                    'class_level_id' => $classLevel->id,
+                    'class_level_arm_id' => $classLevelArm->id,
                     'term' => 1,
                     'exam_type_id' => $examType->id,
                     'min_subjects' => 8,

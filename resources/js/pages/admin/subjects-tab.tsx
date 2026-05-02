@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import type { ToastType } from '@/components/toast-item';
 import type { Subject } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 

@@ -14,6 +14,7 @@ class ArmsDatabaseSeeder extends Seeder
             SchoolSeeder::class,
             RoleSeeder::class,
             UserSeeder::class,
+            TeacherSeeder::class,
             AcademicSessionSeeder::class,
             ClassLevelSeeder::class,
             // UpdateClassLevelTypeSeeder::class,

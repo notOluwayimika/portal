@@ -3,7 +3,9 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToSchool;
 use App\Models\Scopes\SchoolScope;
+use App\Concerns\HasAdmissionNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,9 +14,19 @@ use Illuminate\Support\Str;
 
 class Student extends Model
 {
-    use SoftDeletes;
+    use HasAdmissionNumber, SoftDeletes, BelongsToSchool;
 
-    protected $fillable = ['school_id', 'user_id', 'first_name', 'last_name', 'admission_number'];
+    protected $fillable = [
+        'school_id',
+        'user_id',
+        'first_name',
+        'last_name',
+        'middle_name',
+        'admission_number',
+        'gender',
+        'date_of_birth',
+        'photo'
+    ];
 
     protected static function booted(): void
     {
@@ -51,5 +63,10 @@ class Student extends Model
     public function getFullNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    public function getNameAttribute()
+    {
+        return $this->full_name;
     }
 }

@@ -14,9 +14,16 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('user_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('staff_number')->nullable();
             $table->string('first_name');
             $table->string('last_name');
-            $table->string('staff_number')->nullable();
+            $table->enum('gender', ['male', 'female', 'other'])->nullable();
+            $table->date('date_of_birth')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('address')->nullable();
+            $table->string('qualification')->nullable();
+            $table->date('hire_date')->nullable();
+            $table->enum('status', ['active', 'inactive', 'resigned'])->nullable();
             $table->text('photo')->nullable();
             $table->timestampsTz();
             $table->softDeletesTz();

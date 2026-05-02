@@ -71,50 +71,7 @@ class UserSeeder extends Seeder
         // }
 
 
-        // seed teachers
-        $teachers = [
-            // Brookstone Schools
-            [
-                'uuid' => Str::uuid(),
-                'school_id' => $school->id,
-                'first_name' => 'Ada Okonkwo',
-                'last_name' => 'Okonkwo',
-                'email' => 'ada.admin@brookstone.test',
-                'password' => Hash::make('password'),
-            ],
-            [
-                'uuid' => Str::uuid(),
-                'school_id' => $school->id,
-                'first_name' => 'Emeka',
-                'last_name' => 'Nwosu',
-                'email' => 'emeka.teacher@brookstone.test',
-                'password' => Hash::make('password'),
-            ],
-
-        ];
-
-        foreach ($teachers as $data) {
-            $role = 'teacher';
-            unset($data['role']);
-
-            // Bypass global SchoolScope since we're seeding
-            $user = User::withoutGlobalScopes()->updateOrCreate(
-                ['school_id' => $data['school_id'], 'email' => $data['email']],
-                $data
-            );
-            $user->assignRole('teacher');
-            $user->teacher()->create([
-                "uuid" => Str::uuid(),
-                "school_id" => $data['school_id'],
-                "user_id" => $user->id,
-                "first_name" => $data['first_name'],
-                "last_name" => $data['last_name'],
-                "staff_number" => "STF-" . uniqid()
-            ]);
-
-
-            $user->assignRole($role);
-        }
+        // seed teachers - Moved to TeacherSeeder
 
     }
 }

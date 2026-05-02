@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
-import type { ClassLevel } from '@/types/models';
+import type { Arm, ClassLevel, Stream } from '@/types/models';
 import type { ToastType } from '../toast-item';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
@@ -15,12 +15,14 @@ interface ClassLevelForm {
     name: string;
     order: string | number;
 }
-interface Arm {
-    id: string;
-    label: string;
-}
 interface ArmForm {
     label: string;
+}
+
+interface StreamForm {
+    name: string;
+    code: string;
+    sort_order: number;
 }
 
 interface ConfirmTarget<T> {
@@ -34,16 +36,23 @@ export function ClassStructureTab({
 }) {
     const [levels, setLevels] = useState<ClassLevel[]>([]);
     const [arms, setArms] = useState<Arm[]>([]);
+    const [streams, setStreams] = useState<Stream[]>([]);
     const [loading, setLoading] = useState(false);
     const [lvlModal, setLvlModal] = useState<string | null>(null);
     const [armModal, setArmModal] = useState<string | null>(null);
+    const [streamModal, setStreamModal] = useState<string | null>(null);
     const [lvlForm, setLvlForm] = useState<ClassLevelForm>({
         name: '',
         order: '',
     });
     const [armForm, setArmForm] = useState<ArmForm>({ label: '' });
+    const [streamForm, setStreamForm] = useState<StreamForm>({
+        name: '',
+        code: '',
+        sort_order: 0,
+    });
     const [confirm, setConfirm] = useState<ConfirmTarget<
-        ClassLevel | Arm
+        ClassLevel | Arm | Stream
     > | null>(null);
 
     useEffect(() => {
@@ -51,6 +60,7 @@ export function ClassStructureTab({
             const response = await axios.get('/api/class-structure');
             setLevels(response.data.class_levels);
             setArms(response.data.arms);
+            setStreams(response.data.streams);
         };
         fetchClassStructure();
     }, [loading]);
@@ -102,6 +112,55 @@ export function ClassStructureTab({
         }
     };
 
+    const saveStream = async (): Promise<void> => {
+        if (!streamForm.name.trim()) {
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            if (streamModal === 'new') {
+                const response = await axios.post(
+                    '/api/class-structure/streams',
+                    {
+                        name: streamForm.name.trim(),
+                        code: streamForm.code.trim(),
+                        sort_order: streamForm.sort_order,
+                    },
+                );
+
+                if (response.status === 201) {
+                    addToast('Stream saved successfully');
+                    setStreamModal(null);
+                } else {
+                    addToast('Failed to save stream', 'error');
+                }
+            } else {
+                const response = await axios.put(
+                    `/api/class-structure/streams/${streamModal}`,
+                    {
+                        name: streamForm.name.trim(),
+                        code: streamForm.code.trim(),
+                        sort_order: streamForm.sort_order,
+                    },
+                );
+
+                if (response.status === 200) {
+                    addToast('Stream updated successfully', 'info');
+                    setStreamModal(null);
+                } else {
+                    addToast('Failed to update stream', 'error');
+                }
+            }
+        } catch (error) {
+            console.log(error);
+            addToast('Failed to save stream', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const saveArm = async (): Promise<void> => {
         if (!armForm.label.trim()) {
             return;
@@ -147,13 +206,13 @@ export function ClassStructureTab({
 
     const handleDelete = async (
         id: string,
-        type: 'level' | 'arm',
+        type: 'level' | 'arm' | 'stream',
     ): Promise<void> => {
         setLoading(true);
 
         try {
             const response = await axios.delete(
-                `/api/class-structure/${type === 'level' ? 'levels' : 'arms'}/${id}`,
+                `/api/class-structure/${type}s/${id}`,
             );
 
             if (response.status === 200) {
@@ -203,6 +262,19 @@ export function ClassStructureTab({
                     <p>Class levels and their assigned arms</p>
                 </div>
                 <div className="page-hdr-actions">
+                    <button
+                        className="btn btn-outline"
+                        onClick={() => {
+                            setStreamForm({
+                                name: '',
+                                code: '',
+                                sort_order: 0,
+                            });
+                            setStreamModal('new');
+                        }}
+                    >
+                        + New Stream
+                    </button>
                     <button
                         className="btn btn-outline"
                         onClick={() => {
@@ -350,57 +422,120 @@ export function ClassStructureTab({
                         </table>
                     </div>
                 </div>
-
-                <div className="card">
-                    <div className="card-hdr">
-                        <span className="card-hdr-title">Arms</span>
-                    </div>
-                    <div>
-                        {arms.length === 0 && (
-                            <Empty icon="🔤" title="No arms yet" />
-                        )}
-                        {arms.map((a) => (
-                            <div
-                                key={a.id}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '10px 16px',
-                                    borderBottom: '1px solid var(--border)',
-                                }}
-                            >
-                                <span
+                <div className="grid grid-cols-1">
+                    <div className="card">
+                        <div className="card-hdr">
+                            <span className="card-hdr-title">Arms</span>
+                        </div>
+                        <div>
+                            {arms.length === 0 && (
+                                <Empty icon="🔤" title="No arms yet" />
+                            )}
+                            {arms.map((a) => (
+                                <div
+                                    key={a.id}
                                     style={{
-                                        fontFamily: 'var(--mono)',
-                                        fontWeight: 700,
-                                        fontSize: 16,
-                                        color: 'var(--blue-dk)',
-                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '10px 16px',
+                                        borderBottom: '1px solid var(--border)',
                                     }}
                                 >
-                                    {a.label}
-                                </span>
-                                <div className="row-actions">
-                                    <button
-                                        className="btn btn-ghost btn-sm btn-icon"
-                                        onClick={() => {
-                                            setArmForm({ label: a.label });
-                                            setArmModal(a.id);
+                                    <span
+                                        style={{
+                                            fontFamily: 'var(--mono)',
+                                            fontWeight: 700,
+                                            fontSize: 16,
+                                            color: 'var(--blue-dk)',
+                                            flex: 1,
                                         }}
                                     >
-                                        ✏️
-                                    </button>
-                                    <button
-                                        className="btn btn-danger btn-sm btn-icon"
-                                        onClick={() =>
-                                            setConfirm({ type: 'arm', item: a })
-                                        }
-                                    >
-                                        🗑
-                                    </button>
+                                        {a.label}
+                                    </span>
+                                    <div className="row-actions">
+                                        <button
+                                            className="btn btn-ghost btn-sm btn-icon"
+                                            onClick={() => {
+                                                setArmForm({ label: a.label });
+                                                setArmModal(a.id);
+                                            }}
+                                        >
+                                            ✏️
+                                        </button>
+                                        <button
+                                            className="btn btn-danger btn-sm btn-icon"
+                                            onClick={() =>
+                                                setConfirm({
+                                                    type: 'arm',
+                                                    item: a,
+                                                })
+                                            }
+                                        >
+                                            🗑
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div className="card-hdr">
+                            <span className="card-hdr-title">Streams</span>
+                        </div>
+                        <div>
+                            {streams.length === 0 && (
+                                <Empty icon="🔤" title="No streams yet" />
+                            )}
+                            {streams.map((s) => (
+                                <div
+                                    key={s.id}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '10px 16px',
+                                        borderBottom: '1px solid var(--border)',
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            fontFamily: 'var(--mono)',
+                                            fontWeight: 700,
+                                            fontSize: 16,
+                                            color: 'var(--blue-dk)',
+                                            flex: 1,
+                                        }}
+                                    >
+                                        {s.name}
+                                    </span>
+                                    <div className="row-actions">
+                                        <button
+                                            className="btn btn-ghost btn-sm btn-icon"
+                                            onClick={() => {
+                                                setStreamForm({
+                                                    name: s.name,
+                                                    code: s.code,
+                                                    sort_order: s.sort_order,
+                                                });
+                                                setStreamModal(s.id);
+                                            }}
+                                        >
+                                            ✏️
+                                        </button>
+                                        <button
+                                            className="btn btn-danger btn-sm btn-icon"
+                                            onClick={() =>
+                                                setConfirm({
+                                                    type: 'stream',
+                                                    item: s,
+                                                })
+                                            }
+                                        >
+                                            🗑
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -462,7 +597,72 @@ export function ClassStructureTab({
                     </div>
                 </Modal>
             )}
-
+            {streamModal && (
+                <Modal
+                    title={streamModal === 'new' ? 'New Stream' : 'Edit Stream'}
+                    onClose={() => setStreamModal(null)}
+                    footer={
+                        <>
+                            <button
+                                className="btn btn-outline"
+                                onClick={() => setStreamModal(null)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={saveStream}
+                            >
+                                Save
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="form-grid form-grid-2">
+                        <div className="field">
+                            <label>Stream name</label>
+                            <input
+                                placeholder="e.g. Science"
+                                value={streamForm.name}
+                                onChange={(e) =>
+                                    setStreamForm((p) => ({
+                                        ...p,
+                                        name: e.target.value,
+                                    }))
+                                }
+                                autoFocus
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Stream code</label>
+                            <input
+                                placeholder="e.g. SCI"
+                                value={streamForm.code}
+                                onChange={(e) =>
+                                    setStreamForm((p) => ({
+                                        ...p,
+                                        code: e.target.value,
+                                    }))
+                                }
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Display order</label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={streamForm.sort_order}
+                                onChange={(e) =>
+                                    setStreamForm((p) => ({
+                                        ...p,
+                                        sort_order: Number(e.target.value),
+                                    }))
+                                }
+                            />
+                        </div>
+                    </div>
+                </Modal>
+            )}
             {armModal && (
                 <Modal
                     title={armModal === 'new' ? 'New Arm' : 'Edit Arm'}
@@ -511,8 +711,10 @@ export function ClassStructureTab({
                                 (confirm.item as ClassLevel).id,
                                 'level',
                             );
-                        } else {
+                        } else if (confirm.type === 'arm') {
                             handleDelete((confirm.item as Arm).id, 'arm');
+                        } else if (confirm.type === 'stream') {
+                            handleDelete((confirm.item as Stream).id, 'stream');
                         }
 
                         setConfirm(null);

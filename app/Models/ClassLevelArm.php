@@ -7,9 +7,10 @@ use Illuminate\Support\Str;
 
 class ClassLevelArm extends Model
 {
+    protected $fillable = ['stream_id', 'class_level_id', 'arm_id'];
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -20,5 +21,15 @@ class ClassLevelArm extends Model
     public function classLevel()
     {
         return $this->belongsTo(ClassLevel::class);
+    }
+
+    public function arm()
+    {
+        return $this->belongsTo(Arm::class);
+    }
+
+    public function stream()
+    {
+        return $this->belongsTo(Stream::class);
     }
 }

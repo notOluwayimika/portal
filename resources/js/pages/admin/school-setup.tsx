@@ -7,7 +7,9 @@ import { ToastItem } from '@/components/toast-item';
 import type { ToastType } from '@/components/toast-item';
 import type { Toast } from '@/components/toast-item';
 import type { School, SetupData } from '@/types/models';
+import ClassStreamTab from './class-stream-tab';
 import { ExamTypesTab } from './exam-types-tab';
+import { SubjectsTab } from './subjects-tab';
 
 interface Session {
     id: string;
@@ -691,232 +693,6 @@ function StatusPill({ status }: StatusPillProps) {
     const [cls, lbl] = map[status] ?? ['pill-slate', status];
 
     return <span className={`pill ${cls}`}>{lbl}</span>;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SUBJECTS TAB
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface SubjectForm {
-    name: string;
-    code: string;
-}
-
-function SubjectsTab() {
-    const [subjects, setSubjects] = useState<Subject[]>([...seed.subjects]);
-    const [search, setSearch] = useState<string>('');
-    const [modal, setModal] = useState<string | null>(null);
-    const [form, setForm] = useState<SubjectForm>({ name: '', code: '' });
-    const [confirm, setConfirm] = useState<Subject | null>(null);
-
-    const filtered = subjects.filter(
-        (s) =>
-            s.name.toLowerCase().includes(search.toLowerCase()) ||
-            (s.code || '').toLowerCase().includes(search.toLowerCase()),
-    );
-
-    const save = async (): Promise<void> => {
-        if (!form.name.trim()) {
-            return;
-        }
-
-        await delay();
-
-        if (modal === 'new') {
-            setSubjects((p) => [
-                ...p,
-                {
-                    id: uid(),
-                    name: form.name.trim(),
-                    code: form.code.trim().toUpperCase(),
-                },
-            ]);
-        } else {
-            setSubjects((p) =>
-                p.map((s) =>
-                    s.id === modal
-                        ? {
-                              ...s,
-                              name: form.name.trim(),
-                              code: form.code.trim().toUpperCase(),
-                          }
-                        : s,
-                ),
-            );
-        }
-
-        setModal(null);
-    };
-
-    return (
-        <>
-            <div className="page-hdr">
-                <div>
-                    <h1>Subjects</h1>
-                    <p>{subjects.length} subjects in the catalogue</p>
-                </div>
-                <div className="page-hdr-actions">
-                    <div className="search-wrap">
-                        <span className="search-icon">🔍</span>
-                        <input
-                            placeholder="Search…"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            style={{ paddingLeft: 34, width: 220 }}
-                        />
-                    </div>
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            setForm({ name: '', code: '' });
-                            setModal('new');
-                        }}
-                    >
-                        + New Subject
-                    </button>
-                </div>
-            </div>
-            <div className="card">
-                <div className="tbl-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style={{ width: 44 }}>#</th>
-                                <th>Subject name</th>
-                                <th>Code</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length === 0 && (
-                                <tr>
-                                    <td colSpan={4}>
-                                        <Empty
-                                            icon="📚"
-                                            title={
-                                                search
-                                                    ? 'No subjects match'
-                                                    : 'No subjects yet'
-                                            }
-                                        />
-                                    </td>
-                                </tr>
-                            )}
-                            {filtered.map((s, i) => (
-                                <tr key={s.id}>
-                                    <td
-                                        className="muted"
-                                        style={{
-                                            fontFamily: 'var(--mono)',
-                                            fontSize: 12,
-                                        }}
-                                    >
-                                        {i + 1}
-                                    </td>
-                                    <td style={{ fontWeight: 500 }}>
-                                        {s.name}
-                                    </td>
-                                    <td>
-                                        <span className="code-tag">
-                                            {s.code || '—'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div
-                                            className="row-actions"
-                                            style={{
-                                                justifyContent: 'flex-end',
-                                            }}
-                                        >
-                                            <button
-                                                className="btn btn-ghost btn-sm btn-icon"
-                                                onClick={() => {
-                                                    setForm({
-                                                        name: s.name,
-                                                        code: s.code || '',
-                                                    });
-                                                    setModal(s.id);
-                                                }}
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                className="btn btn-danger btn-sm btn-icon"
-                                                onClick={() => setConfirm(s)}
-                                            >
-                                                🗑
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {modal && (
-                <Modal
-                    title={modal === 'new' ? 'New Subject' : 'Edit Subject'}
-                    onClose={() => setModal(null)}
-                    footer={
-                        <>
-                            <button
-                                className="btn btn-outline"
-                                onClick={() => setModal(null)}
-                            >
-                                Cancel
-                            </button>
-                            <button className="btn btn-primary" onClick={save}>
-                                Save
-                            </button>
-                        </>
-                    }
-                >
-                    <div className="form-grid form-grid-2">
-                        <div className="field span-2">
-                            <label>Subject name</label>
-                            <input
-                                placeholder="e.g. Further Mathematics"
-                                value={form.name}
-                                onChange={(e) =>
-                                    setForm((p) => ({
-                                        ...p,
-                                        name: e.target.value,
-                                    }))
-                                }
-                                autoFocus
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Subject code</label>
-                            <input
-                                placeholder="FMT"
-                                value={form.code}
-                                onChange={(e) =>
-                                    setForm((p) => ({
-                                        ...p,
-                                        code: e.target.value,
-                                    }))
-                                }
-                            />
-                        </div>
-                    </div>
-                </Modal>
-            )}
-            {confirm && (
-                <Confirm
-                    msg={`Delete subject "${confirm.name}"?`}
-                    onConfirm={() => {
-                        setSubjects((p) =>
-                            p.filter((s) => s.id !== confirm.id),
-                        );
-                        setConfirm(null);
-                    }}
-                    onClose={() => setConfirm(null)}
-                />
-            )}
-        </>
-    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1829,6 +1605,7 @@ type TabId =
     | 'overview'
     | 'sessions'
     | 'structure'
+    | 'stream'
     | 'exam-types'
     | 'subjects'
     | 'grades'
@@ -1844,6 +1621,7 @@ const TABS: TabConfig[] = [
         count: () => seed.sessions.length,
     },
     { id: 'structure', label: 'Class Structure', icon: '🏫', count: null },
+    { id: 'stream', label: 'Class Stream', icon: '📊', count: null },
     {
         id: 'exam-types',
         label: 'Exam Types',
@@ -1908,10 +1686,12 @@ export default function SchoolSetup() {
                 return <SessionsTab addToast={addToast} />;
             case 'structure':
                 return <ClassStructureTab addToast={addToast} />;
+            case 'stream':
+                return <ClassStreamTab addToast={addToast} />;
             case 'exam-types':
                 return <ExamTypesTab addToast={addToast} />;
             case 'subjects':
-                return <SubjectsTab />;
+                return <SubjectsTab addToast={addToast} />;
             case 'grades':
                 return <GradeBoundariesTab />;
             case 'students':

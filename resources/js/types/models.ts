@@ -40,8 +40,8 @@ export interface ClassLevel {
 
 export interface Arm {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
     label: string;
     created_at?: string;
     updated_at?: string;
@@ -49,10 +49,12 @@ export interface Arm {
 
 export interface ClassLevelArm {
     id: string;
-    class_level_id: string;
+    class_level_id?: string;
     class_level: ClassLevel;
-    arm_id: string;
+    arm_id?: string;
     arm: Arm;
+    stream_id?: string | null;
+    stream: Stream | null;
     created_at?: string;
     updated_at?: string;
 }
@@ -158,4 +160,13 @@ export interface SetupData {
     grade_boundaries: number;
     students: number;
     curricula: number;
+}
+
+export interface Stream {
+    id: string;
+    name: string;
+    code: string;
+    sort_order: number;
+    created_at?: string;
+    updated_at?: string;
 }

@@ -61,4 +61,9 @@ class School extends Model
     {
         return $this->hasOne(AcademicSession::class)->where('is_current', true);
     }
+
+    public function classLevelArms()
+    {
+        return $this->hasMany(ClassLevelArm::class);
+    }
 }

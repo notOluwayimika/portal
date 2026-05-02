@@ -29,6 +29,9 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::post('/sessions/{session:uuid}/current', [SessionController::class, 'setCurrent']);
 
     // protected class structure (level and arms)
+    Route::post('/class-structure', [ClassLevelArmController::class, 'store']);
+    Route::patch('/class-structure/{classLevelArm:uuid}', [ClassLevelArmController::class, 'update']);
+    Route::delete('/class-structure/{classLevelArm:uuid}', [ClassLevelArmController::class, 'destroy']);
     Route::post('/class-structure/toggle', [ClassLevelArmController::class, 'toggle']);
     Route::post('/class-structure/levels', [ClassLevelArmController::class, 'storeLevel']);
     Route::put('/class-structure/levels/{classLevel:uuid}', [ClassLevelArmController::class, 'updateLevel']);
@@ -36,6 +39,9 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::post('/class-structure/arms', [ClassLevelArmController::class, 'storeArm']);
     Route::put('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'updateArm']);
     Route::delete('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'destroyArm']);
+    Route::post('/class-structure/streams', [ClassLevelArmController::class, 'storeStream']);
+    Route::put('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'updateStream']);
+    Route::delete('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'destroyStream']);
 
     // protected exam types routes
     Route::post('/exam-types', [ExamTypeController::class, 'store']);

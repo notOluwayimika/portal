@@ -17,7 +17,7 @@ class ClassLevelArmSeeder extends Seeder
     {
         foreach (School::all() as $school) {
             $levels = ClassLevel::withoutGlobalScopes()->where('school_id', $school->id)->get();
-            $arms   = Arm::withoutGlobalScopes()->where('school_id', $school->id)->get();
+            $arms = Arm::withoutGlobalScopes()->where('school_id', $school->id)->get();
             $streams = Stream::withoutGlobalScopes()->get();
 
             foreach ($levels as $level) {
@@ -26,13 +26,14 @@ class ClassLevelArmSeeder extends Seeder
                         // For SSS levels, we want to create a class_level_arm for each stream
                         foreach ($streams as $stream) {
                             DB::table('class_level_arms')->updateOrInsert(
-                                ['class_level_id' => $level->id, 'arm_id' => $arm->id, 'stream_id' => $stream->id],
+                                ['class_level_id' => $level->id, 'arm_id' => $arm->id, 'stream_id' => $stream->id, 'school_id' => $school->id],
                                 [
-                                    'uuid' => Str::uuid(), 
-                                    'class_level_id' => $level->id, 
-                                    'arm_id' => $arm->id, 
+                                    'uuid' => Str::uuid(),
+                                    'class_level_id' => $level->id,
+                                    'arm_id' => $arm->id,
                                     'stream_id' => $stream->id,
-                                    'created_at' => now(), 
+                                    'school_id' => $school->id,
+                                    'created_at' => now(),
                                     'updated_at' => now()
                                 ]
                             );
@@ -40,12 +41,13 @@ class ClassLevelArmSeeder extends Seeder
                     } else {
                         // For JSS levels, we create a class_level_arm without stream
                         DB::table('class_level_arms')->updateOrInsert(
-                            ['class_level_id' => $level->id, 'arm_id' => $arm->id],
+                            ['class_level_id' => $level->id, 'arm_id' => $arm->id, 'school_id' => $school->id],
                             [
-                                'uuid' => Str::uuid(), 
-                                'class_level_id' => $level->id, 
-                                'arm_id' => $arm->id, 
-                                'created_at' => now(), 
+                                'uuid' => Str::uuid(),
+                                'class_level_id' => $level->id,
+                                'arm_id' => $arm->id,
+                                'school_id' => $school->id,
+                                'created_at' => now(),
                                 'updated_at' => now()
                             ]
                         );

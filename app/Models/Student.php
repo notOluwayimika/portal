@@ -3,6 +3,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToSchool;
 use App\Models\Scopes\SchoolScope;
 use App\Concerns\HasAdmissionNumber;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Support\Str;
 
 class Student extends Model
 {
-    use HasAdmissionNumber, SoftDeletes;
+    use HasAdmissionNumber, SoftDeletes, BelongsToSchool;
 
     protected $fillable = [
         'school_id',

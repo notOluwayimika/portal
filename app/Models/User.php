@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+use App\Concerns\BelongsToSchool;
 use App\Models\Scopes\SchoolScope;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -21,7 +23,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToSchool;
 
     protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id'];
     protected $appends = ['full_name','name'];
@@ -42,8 +44,12 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new SchoolScope());
         static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('super_admin');
     }
 
     public function getFullNameAttribute()

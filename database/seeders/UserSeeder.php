@@ -8,6 +8,7 @@ use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 
 class UserSeeder extends Seeder
 {
@@ -22,6 +23,9 @@ class UserSeeder extends Seeder
         ], [
             'name' => 'Secondary School',
         ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($school->id);
+
 
         // Create admin user
         $admin = User::firstOrCreate([

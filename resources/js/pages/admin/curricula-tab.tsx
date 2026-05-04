@@ -40,6 +40,15 @@ interface CurriculumForm {
     status: Curriculum['status'];
 }
 
+// ─── Filters ───────────────────────────────────────────────────────────────
+
+interface Filters {
+    academic_session_id: string;
+    class_level_id: string;
+    term: string;
+    status: string;
+}
+
 export function CurriculaTab({
     addToast,
 }: {
@@ -60,6 +69,29 @@ export function CurriculaTab({
         total: 0,
     });
     const [loading, setLoading] = useState(false);
+
+    // ─── Filter state ─────────────────────────────────────────────────────
+    const blankFilters: Filters = {
+        academic_session_id: '',
+        class_level_id: '',
+        term: '',
+        status: '',
+    };
+    const [filters, setFilters] = useState<Filters>(blankFilters);
+
+    const flt = <K extends keyof Filters>(k: K, v: Filters[K]): void => {
+        setFilters((p) => ({ ...p, [k]: v }));
+        setPage(1); // reset to first page on filter change
+    };
+
+    const clearFilters = () => {
+        setFilters(blankFilters);
+        setPage(1);
+    };
+
+    const hasActiveFilters = Object.values(filters).some(Boolean);
+    // ─────────────────────────────────────────────────────────────────────
+
     const terms: SelectOption[] = [
         { label: '1st Term', value: '1' },
         { label: '2nd Term', value: '2' },
@@ -70,6 +102,7 @@ export function CurriculaTab({
         { label: 'Draft', value: 'draft' },
         { label: 'Closed', value: 'closed' },
     ];
+
     useEffect(() => {
         const fetchClassStructure = async () => {
             const response = await axios.get('/api/class-structure');
@@ -81,17 +114,34 @@ export function CurriculaTab({
         };
         fetchClassStructure();
     }, []);
+
     useEffect(() => {
         const fetchCurricula = async () => {
             const response = await axios.get('/api/curricula', {
-                params: { limit, page },
+                params: {
+                    limit,
+                    page,
+                    // Only send non-empty filter values
+                    ...(filters.academic_session_id &&
+                        filters.academic_session_id !== 'all' && {
+                            academic_session_id: filters.academic_session_id,
+                        }),
+                    ...(filters.class_level_id &&
+                        filters.class_level_id !== 'all' && {
+                            class_level_id: filters.class_level_id,
+                        }),
+                    ...(filters.term &&
+                        filters.term !== 'all' && { term: filters.term }),
+                    ...(filters.status &&
+                        filters.status !== 'all' && { status: filters.status }),
+                },
             });
             setCurricula(response.data.curricula);
             setPaginationMeta(response.data.pagination ?? paginationMeta);
         };
         fetchCurricula();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading, limit, page]);
+    }, [loading, limit, page, filters]);
 
     const blank: CurriculumForm = {
         academic_session_id: '',
@@ -126,13 +176,12 @@ export function CurriculaTab({
                 status: c.status,
             });
         } else {
-            setForm({
-                ...blank,
-            });
+            setForm({ ...blank });
         }
 
         setModal(c ? c.id : 'new');
     };
+
     const handleDelete = async (id: string): Promise<void> => {
         setLoading(true);
 
@@ -174,7 +223,6 @@ export function CurriculaTab({
                 term: +form.term,
                 min_subjects: +form.min_subjects,
             };
-            // console.log(payload);
 
             if (modal === 'new') {
                 const response = await axios.post('/api/curricula', payload);
@@ -219,6 +267,93 @@ export function CurriculaTab({
                     </button>
                 </div>
             </div>
+
+            {/* ─── Filters ──────────────────────────────────────────────── */}
+            <div className="card p-4" style={{ marginBottom: 12 }}>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 12,
+                        alignItems: 'flex-end',
+                        padding: '4px 0',
+                    }}
+                >
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 180px', marginBottom: 0 }}
+                    >
+                        <label>Session</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All sessions', value: 'all' },
+                                ...sessions,
+                            ]}
+                            value={filters.academic_session_id}
+                            onChange={(v) =>
+                                flt('academic_session_id', String(v))
+                            }
+                            label="All sessions"
+                        />
+                    </div>
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 160px', marginBottom: 0 }}
+                    >
+                        <label>Class level</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All levels', value: 'all' },
+                                ...classLevels,
+                            ]}
+                            value={filters.class_level_id}
+                            onChange={(v) => flt('class_level_id', String(v))}
+                            label="All levels"
+                        />
+                    </div>
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 130px', marginBottom: 0 }}
+                    >
+                        <label>Term</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All terms', value: 'all' },
+                                ...terms,
+                            ]}
+                            value={filters.term}
+                            onChange={(v) => flt('term', String(v))}
+                            label="All terms"
+                        />
+                    </div>
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 130px', marginBottom: 0 }}
+                    >
+                        <label>Status</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All statuses', value: 'all' },
+                                ...statusOptions,
+                            ]}
+                            value={filters.status}
+                            onChange={(v) => flt('status', String(v))}
+                            label="All statuses"
+                        />
+                    </div>
+                    {hasActiveFilters && (
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={clearFilters}
+                            style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
+                        >
+                            ✕ Clear filters
+                        </button>
+                    )}
+                </div>
+            </div>
+            {/* ──────────────────────────────────────────────────────────── */}
+
             <div className="card">
                 <div className="tbl-wrap">
                     <table>
@@ -244,7 +379,11 @@ export function CurriculaTab({
                                         <Empty
                                             icon="📋"
                                             title="No curricula yet"
-                                            sub="Create your first curriculum"
+                                            sub={
+                                                hasActiveFilters
+                                                    ? 'No results match the current filters'
+                                                    : 'Create your first curriculum'
+                                            }
                                         />
                                     </td>
                                 </tr>
@@ -327,6 +466,7 @@ export function CurriculaTab({
                     setLimit={setLimit}
                 />
             </div>
+
             {modal && (
                 <Modal
                     title={

@@ -4,7 +4,7 @@ export interface SelectOption {
     icon?: string;
 }
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     Select,
     SelectContent,
@@ -38,6 +38,10 @@ export default function SingleSelect({
             ),
         );
     }
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setFilteredOptions(options);
+    }, [options]);
 
     return (
         <Select

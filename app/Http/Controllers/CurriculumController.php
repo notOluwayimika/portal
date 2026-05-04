@@ -58,7 +58,6 @@ class CurriculumController extends Controller
                 'result_visible_at' => 'required|date',
                 'status' => 'required|string|in:active,draft,closed',
             ]);
-            \Log::info($request->all());
 
             $school = auth()->user()->school;
             $session = $school->sessions()->where('uuid', $request->academic_session_id)->first();
@@ -94,10 +93,27 @@ class CurriculumController extends Controller
         }
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $school = auth()->user()->school;
-        $curricula = $school->curricula()->paginate(10);
+        $curricula = $school->curricula();
+        // apply filters for academic_session_id, class_level_id, term and status if they exist
+        if ($request->has('academic_session_id')) {
+            $academicSession = $school->sessions()->where('uuid', $request->academic_session_id)->first();
+            $curricula = $curricula->where('academic_session_id', $academicSession->id);
+        }
+        if ($request->has('class_level_id')) {
+            $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
+            $curricula = $curricula->where('class_level_arm_id', $classLevel->id);
+        }
+        if ($request->has('term')) {
+            $curricula = $curricula->where('term', $request->term);
+        }
+        if ($request->has('status')) {
+            $curricula = $curricula->where('status', $request->status);
+        }
+
+        $curricula = $curricula->paginate(10);
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
             "pagination" => [

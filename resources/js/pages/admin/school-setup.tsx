@@ -468,7 +468,7 @@ const TABS: TabConfig[] = [
 ];
 
 export default function SchoolSetup() {
-    const [active, setActive] = useState<TabId>('curricula');
+    const [active, setActive] = useState<TabId>('overview');
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [data, setData] = useState<SetupData | null>(null);
     const { auth } = usePage().props;

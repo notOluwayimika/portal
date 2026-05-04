@@ -13,7 +13,7 @@ class TeacherCurriculumSubject extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -23,7 +23,7 @@ class TeacherCurriculumSubject extends Model
 
     public function teacher(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'teacher_id');
+        return $this->belongsTo(Teacher::class, 'teacher_id');
     }
     public function curriculumSubject(): BelongsTo
     {

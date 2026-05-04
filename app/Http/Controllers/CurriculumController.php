@@ -3,11 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\CurriculumResource;
+use App\Http\Resources\CurriculumSubjectResource;
 use App\Models\Curriculum;
+use App\Models\Subject;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CurriculumController extends Controller
 {
+    public function show(Curriculum $curriculum)
+    {
+        return response()->json(new CurriculumResource($curriculum));
+    }
     public function store(Request $request)
     {
         try {
@@ -124,4 +131,56 @@ class CurriculumController extends Controller
             ],
         ], 200);
     }
+
+    public function reorder(Request $request, Curriculum $curriculum)
+    {
+        try {
+            $request->validate([
+                'order' => 'required|array',
+                'order.*.id' => 'required|string',
+                'order.*.display_order' => 'required|integer|min:1',
+            ]);
+            DB::transaction(function () use ($request, $curriculum) {
+                $order = $request->order;
+
+                foreach ($order as $item) {
+                    $curriculumSubject = $curriculum->curriculumSubjects->where('uuid', $item['id'])->first();
+                    if ($curriculumSubject) {
+                        $curriculumSubject->update(['display_order' => $item['display_order']]);
+                    }
+                }
+
+                return response()->json(['message' => 'Subjects reordered successfully'], 200);
+            });
+        } catch (\Throwable $th) {
+            \Log::error($th->getMessage());
+            return response()->json(['error' => 'Failed to reorder subjects'], 500);
+        }
+
+    }
+
+    public function assignSubject(Curriculum $curriculum, Request $request)
+    {
+        try {
+            $request->validate([
+                'subject_id' => 'required|string|exists:subjects,uuid',
+                'is_compulsory' => 'boolean',
+                'display_order' => 'integer|min:1',
+            ]);
+
+            $subject = Subject::where('uuid', $request->subject_id)->first();
+
+            $curriculumSubject = $curriculum->curriculumSubjects()->create([
+                'subject_id' => $subject->id,
+                'is_compulsory' => $request->is_compulsory,
+                'display_order' => $request->display_order,
+            ]);
+
+            return response()->json(new CurriculumSubjectResource($curriculumSubject), 201);
+        } catch (\Throwable $th) {
+            \Log::error($th->getMessage());
+            return response()->json(['error' => 'Failed to assign subject'], 500);
+        }
+    }
+
 }

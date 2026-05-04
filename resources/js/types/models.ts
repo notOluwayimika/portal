@@ -118,7 +118,8 @@ export interface Teacher {
     school: School;
     user_id?: string;
     user?: User;
-    name: string;
+    first_name: string;
+    last_name: string;
     staff_number: string;
     photo?: string;
     // email: string;
@@ -170,4 +171,17 @@ export interface Stream {
     sort_order: number;
     created_at?: string;
     updated_at?: string;
+}
+
+export interface CurriculumSubject {
+    id: string;
+    curriculum_id: string;
+    subject: Subject;
+    is_compulsory: boolean;
+    display_order: number;
+    teachers: TeacherCurriculumSubject[];
+}
+export interface TeacherCurriculumSubject {
+    id: string;
+    teacher: Teacher;
 }

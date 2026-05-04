@@ -2,13 +2,16 @@
 // CURRICULA TAB
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { Link } from '@inertiajs/react';
 import axios from 'axios';
+import { Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
 import type { ToastType } from '@/components/toast-item';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
+import { show } from '@/routes/setup/curricula';
 import type { Curriculum } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 
@@ -441,6 +444,12 @@ export function CurriculaTab({
                                                 justifyContent: 'flex-end',
                                             }}
                                         >
+                                            <Link
+                                                href={show(c.id)}
+                                                className="btn btn-ghost btn-sm btn-icon"
+                                            >
+                                                <Settings />
+                                            </Link>
                                             <button
                                                 className="btn btn-ghost btn-sm btn-icon"
                                                 onClick={() => open(c)}

@@ -3,11 +3,13 @@
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
 use App\Http\Controllers\CurriculumController;
+use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 // Authentication
@@ -26,7 +28,9 @@ Route::get('/subjects', [SubjectController::class, 'index']);
 Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
 // get curricula
 Route::get('/curricula', [CurriculumController::class, 'index']);
-
+Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+// get teachers
+Route::get('/teachers', [TeacherController::class, 'index']);
 Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 
@@ -68,9 +72,17 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
 
     // protected curricula routes
     Route::post('/curricula', [CurriculumController::class, 'store']);
+    Route::post('/curricula/{curriculum:uuid}/subjects', [CurriculumController::class, 'assignSubject']);
     Route::put('/curricula/{curriculum:uuid}', [CurriculumController::class, 'update']);
+    Route::patch('/curricula/{curriculum:uuid}/subjects/reorder', [CurriculumController::class, 'reorder']);
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
+    // protected curriculum subjects routes
+
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);
 

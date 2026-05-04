@@ -53,6 +53,10 @@ class School extends Model
     {
         return $this->hasMany(Student::class);
     }
+    public function teachers(): HasMany
+    {
+        return $this->hasMany(Teacher::class);
+    }
     public function gradeBoundaries(): HasMany
     {
         return $this->hasMany(GradeBoundary::class);

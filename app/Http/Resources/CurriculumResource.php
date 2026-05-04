@@ -7,11 +7,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class CurriculumResource extends JsonResource
 {
-    /**
-     * Transform the resource into an array.
-     *
-     * @return array<string, mixed>
-     */
+    protected $includeSubjects = true;
+
+    public function withoutSubjects()
+    {
+        $this->includeSubjects = false;
+        return $this;
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -24,6 +27,11 @@ class CurriculumResource extends JsonResource
             "registration_deadline" => $this->registration_deadline,
             "result_visible_at" => $this->result_visible_at,
             "status" => $this->status,
+
+            "curriculum_subjects" => $this->when(
+                $this->includeSubjects,
+                CurriculumSubjectResource::collection($this->curriculumSubjects)
+            ),
         ];
     }
 }

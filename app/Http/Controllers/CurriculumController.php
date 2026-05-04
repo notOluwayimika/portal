@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\CurriculumResource;
+use App\Models\Curriculum;
 use Illuminate\Http\Request;
 
 class CurriculumController extends Controller
@@ -20,14 +21,15 @@ class CurriculumController extends Controller
                 'result_visible_at' => 'required|date',
                 'status' => 'required|string|in:active,draft,closed',
             ]);
+
             $school = auth()->user()->school;
-            $session = $school->sessions()->where('id', $request->academic_session_id)->first();
-            $classLevel = $school->classLevels()->where('id', $request->class_level_id)->first();
-            $examType = $school->examTypes()->where('id', $request->exam_type_id)->first();
+            $session = $school->sessions()->where('uuid', $request->academic_session_id)->first();
+            $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
+            $examType = $school->examTypes()->where('uuid', $request->exam_type_id)->first();
 
             $curriculum = $school->curricula()->create([
                 'academic_session_id' => $session->id,
-                'class_level_id' => $classLevel->id,
+                'class_level_arm_id' => $classLevel->id,
                 'exam_type_id' => $examType->id,
                 'term' => $request->term,
                 'min_subjects' => $request->min_subjects,
@@ -43,7 +45,7 @@ class CurriculumController extends Controller
 
     }
 
-    public function update(Request $request, $curriculum)
+    public function update(Request $request, Curriculum $curriculum)
     {
         try {
             $request->validate([
@@ -56,15 +58,16 @@ class CurriculumController extends Controller
                 'result_visible_at' => 'required|date',
                 'status' => 'required|string|in:active,draft,closed',
             ]);
+            \Log::info($request->all());
 
             $school = auth()->user()->school;
-            $session = $school->sessions()->where('id', $request->academic_session_id)->first();
-            $classLevel = $school->classLevels()->where('id', $request->class_level_id)->first();
-            $examType = $school->examTypes()->where('id', $request->exam_type_id)->first();
+            $session = $school->sessions()->where('uuid', $request->academic_session_id)->first();
+            $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
+            $examType = $school->examTypes()->where('uuid', $request->exam_type_id)->first();
 
             $curriculum->update([
                 'academic_session_id' => $session->id,
-                'class_level_id' => $classLevel->id,
+                'class_level_arm_id' => $classLevel->id,
                 'exam_type_id' => $examType->id,
                 'term' => $request->term,
                 'min_subjects' => $request->min_subjects,
@@ -80,11 +83,11 @@ class CurriculumController extends Controller
         }
     }
 
-    public function destroy($curriculum)
+    public function destroy(Curriculum $curriculum)
     {
         try {
             $curriculum->delete();
-            return response()->json(['message' => 'Curriculum deleted successfully'], 200);
+            return response()->json(['message' => 'Curriculum deleted successfully'], 204);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
             return response()->json(['error' => 'Failed to delete curriculum'], 500);

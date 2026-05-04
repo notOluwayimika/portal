@@ -133,6 +133,22 @@ export function CurriculaTab({
 
         setModal(c ? c.id : 'new');
     };
+    const handleDelete = async (id: string): Promise<void> => {
+        setLoading(true);
+
+        try {
+            const response = await axios.delete(`/api/curricula/${id}`);
+
+            if (response.status === 204) {
+                addToast('Successfully deleted curriculum');
+            }
+        } catch (error) {
+            console.log(error);
+            addToast('Unable to delete curriculum', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const save = async (): Promise<void> => {
         if (
@@ -426,9 +442,7 @@ export function CurriculaTab({
                 <Confirm
                     msg="Delete this curriculum? Any linked scores and results will be affected."
                     onConfirm={() => {
-                        setCurricula((p) =>
-                            p.filter((c) => c.id !== confirm.id),
-                        );
+                        handleDelete(confirm.id);
                         setConfirm(null);
                     }}
                     onClose={() => setConfirm(null)}

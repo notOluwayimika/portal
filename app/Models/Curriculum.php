@@ -16,7 +16,7 @@ class Curriculum extends Model
     protected $fillable = [
         'school_id',
         'academic_session_id',
-        'class_level_id',
+        'class_level_arm_id',
         'exam_type_id',
         'term',
         'min_subjects',
@@ -35,7 +35,7 @@ class Curriculum extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()

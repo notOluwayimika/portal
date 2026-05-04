@@ -81,8 +81,8 @@ export interface Subject {
 
 export interface GradeBoundary {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
     exam_type_id?: string;
     exam_type?: ExamType;
     min_score: number;

@@ -9,6 +9,7 @@ import type { Toast } from '@/components/toast-item';
 import type { School, SetupData } from '@/types/models';
 import ClassStreamTab from './class-stream-tab';
 import { ExamTypesTab } from './exam-types-tab';
+import { GradeBoundariesTab } from './grade-boundaries-tab';
 import { SubjectsTab } from './subjects-tab';
 
 interface Session {
@@ -355,36 +356,41 @@ const css = `
   .school-sub   { font-size: 11.5px; color: var(--text3); margin-top: 1px; }
   .identity-bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-  .tab-row { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; }
-  .tab-row::-webkit-scrollbar { display: none; }
+  .tab-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-row::-webkit-scrollbar { display: none; }
 
-  .tab-btn {
-    display: flex; align-items: center; gap: 7px;
-    height: 46px; padding: 0 18px;
-    font-size: 13.5px; font-weight: 500; color: var(--text2);
-    cursor: pointer; border: none; background: transparent;
-    font-family: var(--font); white-space: nowrap;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color 0.13s;
-    position: relative;
-  }
-  .tab-btn:hover { color: var(--text); }
-  .tab-btn.active {
-    color: var(--blue);
-    font-weight: 600;
-    border-bottom-color: var(--blue);
-  }
-  .tab-icon { font-size: 14px; }
-  .tab-count {
-    font-size: 10.5px; font-weight: 600;
-    background: var(--bg); border: 1px solid var(--border);
-    color: var(--text3); border-radius: 20px;
-    padding: 1px 6px; font-family: var(--mono);
-  }
-  .tab-btn.active .tab-count {
-    background: var(--blue-lt); border-color: var(--blue-mid); color: var(--blue-dk);
-  }
+.tab-btn {
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 13px;
+  border: none; border-radius: 7px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text2); cursor: pointer;
+  background: transparent;
+  font-family: var(--font); white-space: nowrap;
+  transition: all 0.14s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  background: var(--white);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 0.5px var(--border2);
+}
+.tab-icon { font-size: 14px; }
+.tab-count {
+  font-size: 10.5px; font-weight: 600;
+  background: var(--bg); border: none;
+  color: var(--text3); border-radius: 99px;
+  padding: 1px 6px; font-family: var(--mono);
+}
+.tab-btn.active .tab-count {
+  background: var(--blue); color: #fff;
+}
 
   .content-area {
     flex: 1;
@@ -693,536 +699,6 @@ function StatusPill({ status }: StatusPillProps) {
     const [cls, lbl] = map[status] ?? ['pill-slate', status];
 
     return <span className={`pill ${cls}`}>{lbl}</span>;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GRADE BOUNDARIES TAB
-// ═══════════════════════════════════════════════════════════════════════════
-
-type EditingMap = Record<string, GradeBoundary>;
-
-function GradeBoundariesTab() {
-    const [examTypes] = useState<ExamType[]>([...seed.examTypes]);
-    const [boundaries, setBoundaries] = useState<GradeBoundary[]>([
-        ...seed.gradeBoundaries,
-    ]);
-    const [filter, setFilter] = useState<string>('__default__');
-    const [editing, setEditing] = useState<EditingMap>({});
-
-    const displayed = boundaries.filter((b) =>
-        filter === '__default__'
-            ? b.exam_type_id === null
-            : b.exam_type_id === filter,
-    );
-
-    const gradeColor = (g: string): string => {
-        if (['A', 'A*', 'A1'].includes(g)) {
-            return '#15803d';
-        }
-
-        if (['B', 'B2', 'B3'].includes(g)) {
-            return '#1d4ed8';
-        }
-
-        if (['C', 'C4', 'C5', 'C6'].includes(g)) {
-            return '#b45309';
-        }
-
-        return '#b91c1c';
-    };
-
-    const addRow = (): void => {
-        const nb: GradeBoundary = {
-            id: uid(),
-            exam_type_id: filter === '__default__' ? null : filter,
-            min_score: 0,
-            max_score: 0,
-            grade: '',
-            label: '',
-        };
-        setBoundaries((p) => [...p, nb]);
-        setEditing((p) => ({ ...p, [nb.id]: { ...nb } }));
-    };
-
-    const startEdit = (b: GradeBoundary): void =>
-        setEditing((p) => ({ ...p, [b.id]: { ...b } }));
-    const cancelEdit = (id: string): void =>
-        setEditing((p) => {
-            const n = { ...p };
-            delete n[id];
-
-            return n;
-        });
-    const updateEdit = (
-        id: string,
-        k: keyof GradeBoundary,
-        v: string | number | null,
-    ): void => setEditing((p) => ({ ...p, [id]: { ...p[id], [k]: v } }));
-    const saveRow = (id: string): void => {
-        setBoundaries((p) =>
-            p.map((b) => (b.id === id ? { ...b, ...editing[id] } : b)),
-        );
-        cancelEdit(id);
-    };
-    const delRow = (id: string): void => {
-        setBoundaries((p) => p.filter((b) => b.id !== id));
-        cancelEdit(id);
-    };
-
-    return (
-        <>
-            <div className="page-hdr">
-                <div>
-                    <h1>Grade Boundaries</h1>
-                    <p>Map score ranges to grade labels</p>
-                </div>
-                <div className="page-hdr-actions">
-                    <button className="btn btn-primary" onClick={addRow}>
-                        + Add Boundary
-                    </button>
-                </div>
-            </div>
-
-            <div className="filter-row">
-                <button
-                    className={`filter-btn${filter === '__default__' ? 'on' : ''}`}
-                    onClick={() => setFilter('__default__')}
-                >
-                    Default
-                </button>
-                {examTypes.map((et) => (
-                    <button
-                        key={et.id}
-                        className={`filter-btn${filter === et.id ? 'on' : ''}`}
-                        onClick={() => setFilter(et.id)}
-                    >
-                        {et.name}
-                    </button>
-                ))}
-            </div>
-
-            <div className="card">
-                <div
-                    style={{
-                        padding: '12px 16px',
-                        borderBottom: '1px solid var(--border)',
-                        background: 'var(--surface2)',
-                    }}
-                >
-                    <div className="grade-cols">
-                        <span className="grade-col-hdr">Min score</span>
-                        <span className="grade-col-hdr">Max score</span>
-                        <span className="grade-col-hdr">Grade</span>
-                        <span className="grade-col-hdr">Label</span>
-                        <span></span>
-                    </div>
-                </div>
-                <div
-                    style={{
-                        padding: '10px 12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                    }}
-                >
-                    {displayed.length === 0 && (
-                        <Empty
-                            icon="📊"
-                            title="No boundaries"
-                            sub="Click '+ Add Boundary' to get started"
-                        />
-                    )}
-                    {displayed.map((b) => {
-                        const isEd = !!editing[b.id];
-                        const e = editing[b.id] ?? b;
-
-                        return (
-                            <div
-                                key={b.id}
-                                style={{
-                                    background: isEd
-                                        ? 'var(--blue-lt)'
-                                        : 'var(--surface2)',
-                                    border: `1px solid ${isEd ? 'var(--blue-mid)' : 'var(--border)'}`,
-                                    borderRadius: 8,
-                                    padding: '9px 12px',
-                                    transition: 'all 0.15s',
-                                }}
-                            >
-                                <div className="grade-cols">
-                                    {isEd ? (
-                                        <>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="100"
-                                                value={e.min_score}
-                                                onChange={(ev) =>
-                                                    updateEdit(
-                                                        b.id,
-                                                        'min_score',
-                                                        +ev.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="101"
-                                                value={e.max_score}
-                                                onChange={(ev) =>
-                                                    updateEdit(
-                                                        b.id,
-                                                        'max_score',
-                                                        +ev.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                placeholder="A"
-                                                value={e.grade}
-                                                onChange={(ev) =>
-                                                    updateEdit(
-                                                        b.id,
-                                                        'grade',
-                                                        ev.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                placeholder="Distinction"
-                                                value={e.label}
-                                                onChange={(ev) =>
-                                                    updateEdit(
-                                                        b.id,
-                                                        'label',
-                                                        ev.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    gap: 4,
-                                                }}
-                                            >
-                                                <button
-                                                    className="btn btn-primary btn-sm btn-icon"
-                                                    onClick={() =>
-                                                        saveRow(b.id)
-                                                    }
-                                                >
-                                                    ✓
-                                                </button>
-                                                <button
-                                                    className="btn btn-ghost btn-sm btn-icon"
-                                                    onClick={() =>
-                                                        cancelEdit(b.id)
-                                                    }
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span
-                                                style={{
-                                                    fontFamily: 'var(--mono)',
-                                                    fontSize: 13,
-                                                    color: 'var(--text2)',
-                                                }}
-                                            >
-                                                {b.min_score}
-                                            </span>
-                                            <span
-                                                style={{
-                                                    fontFamily: 'var(--mono)',
-                                                    fontSize: 13,
-                                                    color: 'var(--text2)',
-                                                }}
-                                            >
-                                                {b.max_score}
-                                            </span>
-                                            <span
-                                                style={{
-                                                    fontFamily: 'var(--mono)',
-                                                    fontWeight: 700,
-                                                    color: gradeColor(b.grade),
-                                                    fontSize: 14,
-                                                }}
-                                            >
-                                                {b.grade}
-                                            </span>
-                                            <span style={{ fontSize: 13.5 }}>
-                                                {b.label}
-                                            </span>
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    gap: 4,
-                                                }}
-                                            >
-                                                <button
-                                                    className="btn btn-ghost btn-sm btn-icon"
-                                                    onClick={() => startEdit(b)}
-                                                >
-                                                    ✏️
-                                                </button>
-                                                <button
-                                                    className="btn btn-danger btn-sm btn-icon"
-                                                    onClick={() => delRow(b.id)}
-                                                >
-                                                    🗑
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        </>
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STUDENTS TAB
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface StudentForm {
-    first_name: string;
-    last_name: string;
-    admission_number: string;
-}
-
-function StudentsTab() {
-    const [students, setStudents] = useState<Student[]>([...seed.students]);
-    const [search, setSearch] = useState<string>('');
-    const [modal, setModal] = useState<string | null>(null);
-    const [form, setForm] = useState<StudentForm>({
-        first_name: '',
-        last_name: '',
-        admission_number: '',
-    });
-    const [confirm, setConfirm] = useState<Student | null>(null);
-
-    const filtered = students.filter((s) => {
-        const q = search.toLowerCase();
-
-        return (
-            `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
-            (s.admission_number || '').toLowerCase().includes(q)
-        );
-    });
-
-    const open = (s: Student | null = null): void => {
-        setForm(
-            s
-                ? {
-                      first_name: s.first_name,
-                      last_name: s.last_name,
-                      admission_number: s.admission_number || '',
-                  }
-                : { first_name: '', last_name: '', admission_number: '' },
-        );
-        setModal(s ? s.id : 'new');
-    };
-
-    const save = async (): Promise<void> => {
-        if (!form.first_name.trim() || !form.last_name.trim()) {
-            return;
-        }
-
-        await delay();
-
-        if (modal === 'new') {
-            setStudents((p) => [...p, { id: uid(), ...form }]);
-        } else {
-            setStudents((p) =>
-                p.map((s) => (s.id === modal ? { ...s, ...form } : s)),
-            );
-        }
-
-        setModal(null);
-    };
-
-    return (
-        <>
-            <div className="page-hdr">
-                <div>
-                    <h1>Students</h1>
-                    <p>{students.length} students enrolled</p>
-                </div>
-                <div className="page-hdr-actions">
-                    <div className="search-wrap">
-                        <span className="search-icon">🔍</span>
-                        <input
-                            placeholder="Search by name or admission no…"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            style={{ paddingLeft: 34, width: 260 }}
-                        />
-                    </div>
-                    <button className="btn btn-primary" onClick={() => open()}>
-                        + Add Student
-                    </button>
-                </div>
-            </div>
-            <div className="card">
-                <div className="tbl-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style={{ width: 44 }}>#</th>
-                                <th>Full name</th>
-                                <th>Admission number</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.length === 0 && (
-                                <tr>
-                                    <td colSpan={4}>
-                                        <Empty
-                                            icon="👤"
-                                            title={
-                                                search
-                                                    ? 'No students match'
-                                                    : 'No students yet'
-                                            }
-                                        />
-                                    </td>
-                                </tr>
-                            )}
-                            {filtered.map((s, i) => (
-                                <tr key={s.id}>
-                                    <td
-                                        className="muted"
-                                        style={{
-                                            fontFamily: 'var(--mono)',
-                                            fontSize: 12,
-                                        }}
-                                    >
-                                        {i + 1}
-                                    </td>
-                                    <td style={{ fontWeight: 500 }}>
-                                        {s.first_name} {s.last_name}
-                                    </td>
-                                    <td className="mono">
-                                        {s.admission_number || (
-                                            <span
-                                                style={{
-                                                    color: 'var(--text3)',
-                                                }}
-                                            >
-                                                —
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <div
-                                            className="row-actions"
-                                            style={{
-                                                justifyContent: 'flex-end',
-                                            }}
-                                        >
-                                            <button
-                                                className="btn btn-ghost btn-sm btn-icon"
-                                                onClick={() => open(s)}
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                className="btn btn-danger btn-sm btn-icon"
-                                                onClick={() => setConfirm(s)}
-                                            >
-                                                🗑
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {modal && (
-                <Modal
-                    title={modal === 'new' ? 'Add Student' : 'Edit Student'}
-                    onClose={() => setModal(null)}
-                    footer={
-                        <>
-                            <button
-                                className="btn btn-outline"
-                                onClick={() => setModal(null)}
-                            >
-                                Cancel
-                            </button>
-                            <button className="btn btn-primary" onClick={save}>
-                                Save
-                            </button>
-                        </>
-                    }
-                >
-                    <div className="form-grid form-grid-2">
-                        <div className="field">
-                            <label>First name</label>
-                            <input
-                                value={form.first_name}
-                                onChange={(e) =>
-                                    setForm((p) => ({
-                                        ...p,
-                                        first_name: e.target.value,
-                                    }))
-                                }
-                                autoFocus
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Last name</label>
-                            <input
-                                value={form.last_name}
-                                onChange={(e) =>
-                                    setForm((p) => ({
-                                        ...p,
-                                        last_name: e.target.value,
-                                    }))
-                                }
-                            />
-                        </div>
-                        <div className="field span-2">
-                            <label>Admission number</label>
-                            <input
-                                placeholder="GFA/2025/011"
-                                value={form.admission_number}
-                                onChange={(e) =>
-                                    setForm((p) => ({
-                                        ...p,
-                                        admission_number: e.target.value,
-                                    }))
-                                }
-                            />
-                        </div>
-                    </div>
-                </Modal>
-            )}
-            {confirm && (
-                <Confirm
-                    msg={`Remove student "${confirm.first_name} ${confirm.last_name}"?`}
-                    onConfirm={() => {
-                        setStudents((p) =>
-                            p.filter((s) => s.id !== confirm.id),
-                        );
-                        setConfirm(null);
-                    }}
-                    onClose={() => setConfirm(null)}
-                />
-            )}
-        </>
-    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1609,7 +1085,6 @@ type TabId =
     | 'exam-types'
     | 'subjects'
     | 'grades'
-    | 'students'
     | 'curricula';
 
 const TABS: TabConfig[] = [
@@ -1618,7 +1093,7 @@ const TABS: TabConfig[] = [
         id: 'sessions',
         label: 'Sessions',
         icon: '📅',
-        count: () => seed.sessions.length,
+        count: null,
     },
     { id: 'structure', label: 'Class Structure', icon: '🏫', count: null },
     { id: 'stream', label: 'Class Stream', icon: '📊', count: null },
@@ -1626,36 +1101,30 @@ const TABS: TabConfig[] = [
         id: 'exam-types',
         label: 'Exam Types',
         icon: '📝',
-        count: () => seed.examTypes.length,
+        count: null,
     },
     {
         id: 'subjects',
         label: 'Subjects',
         icon: '📚',
-        count: () => seed.subjects.length,
+        count: null,
     },
     {
         id: 'grades',
         label: 'Grade Boundaries',
         icon: '📊',
-        count: () => seed.gradeBoundaries.length,
-    },
-    {
-        id: 'students',
-        label: 'Students',
-        icon: '👤',
-        count: () => seed.students.length,
+        count: null,
     },
     {
         id: 'curricula',
         label: 'Curricula',
         icon: '📋',
-        count: () => seed.curricula.length,
+        count: null,
     },
 ];
 
 export default function SchoolSetup() {
-    const [active, setActive] = useState<TabId>('overview');
+    const [active, setActive] = useState<TabId>('grades');
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [data, setData] = useState<SetupData | null>(null);
 
@@ -1693,9 +1162,7 @@ export default function SchoolSetup() {
             case 'subjects':
                 return <SubjectsTab addToast={addToast} />;
             case 'grades':
-                return <GradeBoundariesTab />;
-            case 'students':
-                return <StudentsTab />;
+                return <GradeBoundariesTab addToast={addToast} />;
             case 'curricula':
                 return <CurriculaTab />;
             default:
@@ -1745,7 +1212,7 @@ export default function SchoolSetup() {
                                     return (
                                         <button
                                             key={t.id}
-                                            className={`tab-btn${active === t.id ? 'active' : ''}`}
+                                            className={`tab-btn ${active === t.id ? 'active' : ''}`}
                                             onClick={() =>
                                                 setActive(t.id as TabId)
                                             }

@@ -2,7 +2,9 @@
 // SUBJECTS TAB
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import axios from 'axios';
+import { useEffect, useState } from 'react';
+import { Pagination } from '@/components/pagination';
 import type { ToastType } from '@/components/toast-item';
 import type { Subject } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
@@ -22,25 +24,92 @@ export function SubjectsTab({
     const [modal, setModal] = useState<string | null>(null);
     const [form, setForm] = useState<SubjectForm>({ name: '', code: '' });
     const [confirm, setConfirm] = useState<Subject | null>(null);
+    const [total, setTotal] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [limit, setLimit] = useState(10);
+    const [page, setPage] = useState(1);
+    const [paginationMeta, setPaginationMeta] = useState({
+        current_page: 1,
+        last_page: 1,
+        per_page: 10,
+        total: 0,
+    });
 
-    const filtered = subjects.filter(
-        (s) =>
-            s.name.toLowerCase().includes(search.toLowerCase()) ||
-            (s.code || '').toLowerCase().includes(search.toLowerCase()),
-    );
+    useEffect(() => {
+        const fetchSubjects = async () => {
+            // Replace this with your actual API call
+            const response = await axios.get('/api/subjects', {
+                params: { limit, page, search },
+            });
+            console.log(response.data);
+
+            if (response.status === 200) {
+                setSubjects(response.data.subjects ?? []);
+                setTotal(response.data.pagination.total ?? 0);
+                setPaginationMeta(response.data.pagination ?? paginationMeta);
+            }
+        };
+
+        fetchSubjects();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, search, limit, page]);
 
     const save = async (): Promise<void> => {
-        if (!form.name.trim()) {
+        if (!form.name.trim() || !form.code.trim()) {
             return;
         }
 
-        if (modal === 'new') {
-            //
-        } else {
-            //
+        try {
+            setLoading(true);
+
+            if (modal === 'new') {
+                const response = await axios.post('/api/subjects', form);
+
+                if (response.status === 201) {
+                    addToast('Subject created successfully', 'success');
+                    setModal(null);
+                } else {
+                    addToast('Failed to create subject', 'error');
+                }
+            } else {
+                const response = await axios.put(
+                    `/api/subjects/${modal}`,
+                    form,
+                );
+
+                if (response.status === 200) {
+                    addToast('Subject updated successfully', 'success');
+                    setModal(null);
+                } else {
+                    addToast('Failed to update subject', 'error');
+                }
+            }
+        } catch (error) {
+            console.log(error);
+            addToast('An error occurred while creating the subject', 'error');
+        } finally {
+            setLoading(false);
         }
 
         setModal(null);
+    };
+    const handleDelete = async (id: string) => {
+        try {
+            setLoading(true);
+            const response = await axios.delete(`/api/subjects/${id}`);
+
+            if (response.status === 204) {
+                addToast('Subject deleted successfully', 'success');
+                setConfirm(null);
+            } else {
+                addToast('Failed to delete subject', 'error');
+            }
+        } catch (error) {
+            console.log(error);
+            addToast('An error occurred while deleting the subject', 'error');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -48,7 +117,7 @@ export function SubjectsTab({
             <div className="page-hdr">
                 <div>
                     <h1>Subjects</h1>
-                    <p>{subjects.length} subjects in the catalogue</p>
+                    <p>{total} subjects in the catalogue</p>
                 </div>
                 <div className="page-hdr-actions">
                     <div className="search-wrap">
@@ -83,7 +152,7 @@ export function SubjectsTab({
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.length === 0 && (
+                            {subjects.length === 0 && (
                                 <tr>
                                     <td colSpan={4}>
                                         <Empty
@@ -97,7 +166,7 @@ export function SubjectsTab({
                                     </td>
                                 </tr>
                             )}
-                            {filtered.map((s, i) => (
+                            {subjects.map((s, i) => (
                                 <tr key={s.id}>
                                     <td
                                         className="muted"
@@ -106,7 +175,7 @@ export function SubjectsTab({
                                             fontSize: 12,
                                         }}
                                     >
-                                        {i + 1}
+                                        {(page - 1) * limit + (i + 1)}
                                     </td>
                                     <td style={{ fontWeight: 500 }}>
                                         {s.name}
@@ -147,6 +216,11 @@ export function SubjectsTab({
                             ))}
                         </tbody>
                     </table>
+                    <Pagination
+                        meta={paginationMeta}
+                        setPage={setPage}
+                        setLimit={setLimit}
+                    />
                 </div>
             </div>
             {modal && (
@@ -161,7 +235,11 @@ export function SubjectsTab({
                             >
                                 Cancel
                             </button>
-                            <button className="btn btn-primary" onClick={save}>
+                            <button
+                                disabled={loading}
+                                className="btn btn-primary"
+                                onClick={save}
+                            >
                                 Save
                             </button>
                         </>
@@ -202,9 +280,7 @@ export function SubjectsTab({
                 <Confirm
                     msg={`Delete subject "${confirm.name}"?`}
                     onConfirm={() => {
-                        setSubjects((p) =>
-                            p.filter((s) => s.id !== confirm.id),
-                        );
+                        handleDelete(confirm.id);
                         setConfirm(null);
                     }}
                     onClose={() => setConfirm(null)}

@@ -63,7 +63,13 @@ return Application::configure(basePath: dirname(__DIR__))
         |----------------------------------------------------
         */
         $exceptions->renderable(function (ValidationException $e, $request) {
-            return response()->validation_error($e->errors());
+            if ($request->is('api/*')) {
+                return response()->validation_error($e->errors());
+            }
+
+            return redirect()->back()
+                ->withErrors($e->errors())
+                ->withInput();
         });
 
         /*
@@ -71,12 +77,20 @@ return Application::configure(basePath: dirname(__DIR__))
         | Authentication / Authorization
         |----------------------------------------------------
         */
-        $exceptions->renderable(function (AuthenticationException $e) {
-            return response()->unauthorized('Unauthenticated.');
+        $exceptions->renderable(function (AuthenticationException $e, $request) {
+            if ($request->is('api/*')) {
+                return response()->unauthorized('Unauthenticated.');
+            }
+
+            return redirect()->route('login');
         });
 
-        $exceptions->renderable(function (AuthorizationException $e) {
-            return response()->forbidden($e->getMessage());
+        $exceptions->renderable(function (AuthorizationException $e, $request) {
+            if ($request->is('api/*')) {
+                return response()->forbidden($e->getMessage());
+            }
+
+            abort(403);
         });
 
         /*

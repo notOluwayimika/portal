@@ -3,8 +3,10 @@
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
 use App\Http\Controllers\ExamTypeController;
+use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
+use App\Http\Controllers\SubjectController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 // Authentication
@@ -17,6 +19,10 @@ Route::get('/sessions', [SessionController::class, 'index']);
 Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
 // get exam types
 Route::get('/exam-types', [ExamTypeController::class, 'index']);
+// get subjects
+Route::get('/subjects', [SubjectController::class, 'index']);
+// get grade boundaries
+Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
 
 
 Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
@@ -47,6 +53,16 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::post('/exam-types', [ExamTypeController::class, 'store']);
     Route::put('/exam-types/{examType:uuid}', [ExamTypeController::class, 'update']);
     Route::delete('/exam-types/{examType:uuid}', [ExamTypeController::class, 'destroy']);
+
+    // protected subject routes
+    Route::post('/subjects', [SubjectController::class, 'store']);
+    Route::put('/subjects/{subject:uuid}', [SubjectController::class, 'update']);
+    Route::delete('/subjects/{subject:uuid}', [SubjectController::class, 'destroy']);
+
+    // protected grade boundary routes
+    Route::post('/grade-boundaries', [GradeBoundaryController::class, 'store']);
+    Route::put('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'update']);
+    Route::delete('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'destroy']);
 
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);

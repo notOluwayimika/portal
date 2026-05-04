@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\TeacherCurriculumSubjectResource;
 use App\Http\Resources\TeacherResource;
+use App\Models\Teacher;
 use Illuminate\Http\Request;
 
 class TeacherController extends Controller
@@ -13,5 +15,11 @@ class TeacherController extends Controller
         $teachers = $school->teachers;
         return TeacherResource::collection($teachers);
 
+    }
+
+    public function getSubjects(Teacher $teacher)
+    {
+        $subjects = $teacher->assignedCurriculumSubjects()->with('curriculumSubject')->get();
+        return response()->json(TeacherCurriculumSubjectResource::collection($subjects));
     }
 }

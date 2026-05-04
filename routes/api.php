@@ -31,6 +31,8 @@ Route::get('/curricula', [CurriculumController::class, 'index']);
 Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
 // get teachers
 Route::get('/teachers', [TeacherController::class, 'index']);
+Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'getSubjects']);
+
 Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 

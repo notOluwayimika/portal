@@ -299,7 +299,6 @@ export function CurriculumDetail({
                 axios.get('/api/subjects'),
                 axios.get('/api/teachers'),
             ]);
-            console.log(currRes, subjRes, teacherRes);
             setCurriculum(currRes.data);
             setCurriculumSubjects(currRes.data.curriculum_subjects ?? []);
             setAllSubjects(subjRes.data.subjects ?? []);

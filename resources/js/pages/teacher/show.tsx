@@ -1,14 +1,12 @@
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { CurriculumDetail } from '@/components/curriculum-detail';
-import { ToastItem } from '@/components/toast-item';
+import { TeacherSubjects } from '@/components/teacher-subjects';
 import type { Toast, ToastType } from '@/components/toast-item';
+import { ToastItem } from '@/components/toast-item';
 
 export default function Show() {
-    // const curriculumId = curriculum.id;
-    const { curriculum } = usePage().props as unknown as { curriculum: any };
-
-    const curriculumId = curriculum.data.id;
+    const { teacher } = usePage().props as unknown as { teacher: any };
+    const teacherId = teacher.data.id;
     const [toasts, setToasts] = useState<Toast[]>([]);
     const toastCounter = useState(0)[0];
     let toastId = toastCounter;
@@ -20,10 +18,10 @@ export default function Show() {
     function dismissToast(id: number) {
         setToasts((t) => t.filter((x) => x.id !== id));
     }
-    function handleBack() {
-        // Implementation for handling back navigation
-        window.history.back();
-    }
+    // function handleBack() {
+    //     // Implementation for handling back navigation
+    //     window.history.back();
+    // }
     const css = `
   :root {
     --white:      #ffffff;
@@ -309,11 +307,7 @@ export default function Show() {
     return (
         <div className="space-y-6 p-10">
             <style>{css}</style>
-            <CurriculumDetail
-                curriculumId={curriculumId}
-                addToast={addToast}
-                onBack={handleBack}
-            />
+            <TeacherSubjects addToast={addToast} teacherId={teacherId} />
             {/* Toasts */}
             <div
                 style={{

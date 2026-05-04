@@ -120,7 +120,7 @@ class CurriculumController extends Controller
             $curricula = $curricula->where('status', $request->status);
         }
 
-        $curricula = $curricula->paginate(10);
+        $curricula = $curricula->paginate($request->integer('per_page', 25));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
             "pagination" => [

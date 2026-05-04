@@ -30,6 +30,9 @@ class StudentRequest extends FormRequest
             'date_of_birth' => ['nullable', 'date'],
             'admission_number' => ['nullable', 'string', 'max:255'],
             'photo' => ['nullable', 'string'],
+            'curriculum_id' => ['required', 'integer', 'exists:curricula,id'],
+            'status' => ['required', 'string', new \Illuminate\Validation\Rules\Enum(\App\Enums\StudentStatusEnum::class)],
+            'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
         ];
     }
 }

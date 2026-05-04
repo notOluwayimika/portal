@@ -96,18 +96,29 @@ export interface GradeBoundary {
 }
 
 export interface Student {
-    id: string;
+    id: number;
+    uuid: string;
     school_id: string;
     school: School;
     user_id?: string;
     user?: User;
-    name: string;
+    first_name: string;
+    last_name: string;
+    middle_name?: string;
+    full_name: string;
     admission_number: string;
     photo?: string;
-    // email: string;
-    // phone: string;
-    // date_of_birth: string;
     gender: string;
+    date_of_birth?: string;
+    status: string;
+    class_details: {
+        level: string;
+        arm: string;
+        stream: string | null;
+        full_class: string;
+    };
+    curriculum_id?: number;
+    promoted_to_id?: number;
     created_at?: string;
     updated_at?: string;
 }

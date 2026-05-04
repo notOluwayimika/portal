@@ -51,6 +51,10 @@ class Student extends Model
     {
         return $this->hasMany(StudentCurriculum::class);
     }
+    public function currentCurriculum(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(StudentCurriculum::class)->where('status', \App\Enums\StudentStatusEnum::ACTIVE);
+    }
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);

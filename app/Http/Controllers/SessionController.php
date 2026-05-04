@@ -116,7 +116,7 @@ class SessionController extends Controller
             }
             $session->update(['is_current' => true]);
 
-            return response()->json(['message' => 'Session set as current successfully'], 200);
+            return response()->json(new SessionResource($session), 200);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to set session as current'], 500);
         }

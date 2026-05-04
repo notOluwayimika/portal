@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
+use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\SessionController;
@@ -23,7 +24,8 @@ Route::get('/exam-types', [ExamTypeController::class, 'index']);
 Route::get('/subjects', [SubjectController::class, 'index']);
 // get grade boundaries
 Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
-
+// get curricula
+Route::get('/curricula', [CurriculumController::class, 'index']);
 
 Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
@@ -63,6 +65,11 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::post('/grade-boundaries', [GradeBoundaryController::class, 'store']);
     Route::put('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'update']);
     Route::delete('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'destroy']);
+
+    // protected curricula routes
+    Route::post('/curricula', [CurriculumController::class, 'store']);
+    Route::put('/curricula/{curriculum:uuid}', [CurriculumController::class, 'update']);
+    Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);

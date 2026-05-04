@@ -18,7 +18,8 @@ class ClassLevelArmResource extends JsonResource
             'id' => $this->uuid,
             'class_level' => new ClassLevelResource($this->classLevel),
             'arm' => new ArmResource($this->arm),
-            'stream' => new StreamResource($this->stream)
+            'stream' => new StreamResource($this->stream),
+            'name' => $this->classLevel->name . ' ' . $this->arm->label . ($this->stream ? ' ' . $this->stream->name : ''),
         ];
     }
 }

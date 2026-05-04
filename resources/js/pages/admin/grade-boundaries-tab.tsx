@@ -156,15 +156,21 @@ export function GradeBoundariesTab({
             setLoading(false);
         }
     };
-    const delRow = (id: string): void => {
-        // try {
-        //     //
-        // } catch (error) {
-        //     // error
-        // }
+    const delRow = async (id: string): Promise<void> => {
+        try {
+            setLoading(true);
+            const response = await axios.delete(`/api/grade-boundaries/${id}`);
 
-        setBoundaries((p) => p.filter((b) => b.id !== id));
-        cancelEdit(id);
+            if (response.status === 204) {
+                addToast('Boundary deleted successfully', 'success');
+            }
+        } catch (error) {
+            console.log(error);
+            addToast('Failed to delete boundary', 'error');
+        } finally {
+            setLoading(false);
+            cancelEdit(id);
+        }
     };
 
     return (
@@ -254,6 +260,7 @@ export function GradeBoundariesTab({
                                                 type="number"
                                                 min="0"
                                                 max="100"
+                                                step={1}
                                                 value={e.min_score}
                                                 onChange={(ev) =>
                                                     updateEdit(

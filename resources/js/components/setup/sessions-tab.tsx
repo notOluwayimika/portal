@@ -12,8 +12,10 @@ interface SessionForm {
 
 export function SessionsTab({
     addToast,
+    setSessionName,
 }: {
     addToast: (message: string, type?: ToastType) => void;
+    setSessionName: (name: string) => void;
 }) {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [modal, setModal] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export function SessionsTab({
     const [totalActive, setTotalActive] = useState(0);
     const [totalInactive, setTotalInactive] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [limit, setLimit] = useState(5);
+    const [limit, setLimit] = useState(10);
     const [page, setPage] = useState(1);
     const [paginationMeta, setPaginationMeta] = useState({
         current_page: 1,
@@ -153,6 +155,7 @@ export function SessionsTab({
 
         if (response.status === 200) {
             addToast(`Session set as current.`, 'info');
+            setSessionName(response.data.name);
         } else {
             addToast('Failed to set session as current.', 'error');
         }

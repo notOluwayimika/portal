@@ -1,3 +1,4 @@
+import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useState, useEffect } from 'react';
 import { ClassStructureTab } from '@/components/setup/class-structure-tab';
@@ -6,286 +7,18 @@ import { SessionsTab } from '@/components/setup/sessions-tab';
 import { ToastItem } from '@/components/toast-item';
 import type { ToastType } from '@/components/toast-item';
 import type { Toast } from '@/components/toast-item';
-import type { School, SetupData } from '@/types/models';
+import type { SetupData } from '@/types/models';
 import ClassStreamTab from './class-stream-tab';
+import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
 import { GradeBoundariesTab } from './grade-boundaries-tab';
 import { SubjectsTab } from './subjects-tab';
-
-interface Session {
-    id: string;
-    name: string;
-    is_current: boolean;
-}
-
-interface ClassLevel {
-    id: string;
-    name: string;
-    order: number;
-}
-
-interface Arm {
-    id: string;
-    label: string;
-}
-
-interface ClassLevelArm {
-    id: string;
-    class_level_id: string;
-    arm_id: string;
-}
-
-interface ExamType {
-    id: string;
-    name: string;
-}
-
-interface Subject {
-    id: string;
-    name: string;
-    code: string;
-}
-
-interface GradeBoundary {
-    id: string;
-    exam_type_id: string | null;
-    min_score: number;
-    max_score: number;
-    grade: string;
-    label: string;
-}
-
-interface Student {
-    id: string;
-    first_name: string;
-    last_name: string;
-    admission_number: string;
-}
-
-interface Curriculum {
-    id: string;
-    session_id: string;
-    class_level_id: string;
-    exam_type_id: string;
-    term: number;
-    min_subjects: number;
-    registration_deadline: string;
-    result_visible_at: string;
-    status: 'draft' | 'active' | 'closed';
-}
-
-interface SeedData {
-    school: School;
-    sessions: Session[];
-    classLevels: ClassLevel[];
-    arms: Arm[];
-    classLevelArms: ClassLevelArm[];
-    examTypes: ExamType[];
-    subjects: Subject[];
-    gradeBoundaries: GradeBoundary[];
-    students: Student[];
-    curricula: Curriculum[];
-}
-
 interface TabConfig {
     id: string;
     label: string;
     icon: string;
     count: (() => number) | null;
 }
-
-// ─── Seed data ─────────────────────────────────────────────────────────────
-let _id = 200;
-const uid = (): string => `id-${++_id}`;
-const delay = (ms = 300): Promise<void> =>
-    new Promise((r) => setTimeout(r, ms));
-
-const seed: SeedData = {
-    school: {
-        id: 'sch-001',
-        name: 'Greenfield Academy',
-        slug: 'greenfield-academy',
-    },
-    sessions: [
-        { id: 'ses-001', name: '2023/2024', is_current: false },
-        { id: 'ses-002', name: '2024/2025', is_current: false },
-        { id: 'ses-003', name: '2025/2026', is_current: true },
-    ],
-    classLevels: [
-        { id: 'cl-1', name: 'JS1', order: 1 },
-        { id: 'cl-2', name: 'JS2', order: 2 },
-        { id: 'cl-3', name: 'JS3', order: 3 },
-        { id: 'cl-4', name: 'SS1', order: 4 },
-        { id: 'cl-5', name: 'SS2', order: 5 },
-        { id: 'cl-6', name: 'SS3', order: 6 },
-    ],
-    arms: [
-        { id: 'arm-1', label: 'A' },
-        { id: 'arm-2', label: 'B' },
-        { id: 'arm-3', label: 'C' },
-    ],
-    classLevelArms: [
-        { id: 'cla-1', class_level_id: 'cl-1', arm_id: 'arm-1' },
-        { id: 'cla-2', class_level_id: 'cl-1', arm_id: 'arm-2' },
-        { id: 'cla-3', class_level_id: 'cl-2', arm_id: 'arm-1' },
-        { id: 'cla-4', class_level_id: 'cl-2', arm_id: 'arm-2' },
-        { id: 'cla-5', class_level_id: 'cl-5', arm_id: 'arm-1' },
-        { id: 'cla-6', class_level_id: 'cl-5', arm_id: 'arm-2' },
-        { id: 'cla-7', class_level_id: 'cl-5', arm_id: 'arm-3' },
-    ],
-    examTypes: [
-        { id: 'et-1', name: 'First Term Exam' },
-        { id: 'et-2', name: 'Second Term Exam' },
-        { id: 'et-3', name: 'Third Term Exam' },
-        { id: 'et-4', name: 'WAEC Mock' },
-    ],
-    subjects: [
-        { id: 'sub-1', name: 'English Language', code: 'ENG' },
-        { id: 'sub-2', name: 'Mathematics', code: 'MTH' },
-        { id: 'sub-3', name: 'Biology', code: 'BIO' },
-        { id: 'sub-4', name: 'Chemistry', code: 'CHM' },
-        { id: 'sub-5', name: 'Physics', code: 'PHY' },
-        { id: 'sub-6', name: 'Economics', code: 'ECO' },
-        { id: 'sub-7', name: 'Government', code: 'GOV' },
-        { id: 'sub-8', name: 'Computer Science', code: 'CSC' },
-    ],
-    gradeBoundaries: [
-        {
-            id: 'gb-1',
-            exam_type_id: null,
-            min_score: 70,
-            max_score: 101,
-            grade: 'A',
-            label: 'Distinction',
-        },
-        {
-            id: 'gb-2',
-            exam_type_id: null,
-            min_score: 60,
-            max_score: 70,
-            grade: 'B',
-            label: 'Credit',
-        },
-        {
-            id: 'gb-3',
-            exam_type_id: null,
-            min_score: 50,
-            max_score: 60,
-            grade: 'C',
-            label: 'Merit',
-        },
-        {
-            id: 'gb-4',
-            exam_type_id: null,
-            min_score: 45,
-            max_score: 50,
-            grade: 'D',
-            label: 'Pass',
-        },
-        {
-            id: 'gb-5',
-            exam_type_id: null,
-            min_score: 40,
-            max_score: 45,
-            grade: 'E',
-            label: 'Below Average',
-        },
-        {
-            id: 'gb-6',
-            exam_type_id: null,
-            min_score: 0,
-            max_score: 40,
-            grade: 'F',
-            label: 'Fail',
-        },
-    ],
-    students: [
-        {
-            id: 'st-1',
-            first_name: 'Chukwuemeka',
-            last_name: 'Obi',
-            admission_number: 'GFA/2025/001',
-        },
-        {
-            id: 'st-2',
-            first_name: 'Amina',
-            last_name: 'Suleiman',
-            admission_number: 'GFA/2025/002',
-        },
-        {
-            id: 'st-3',
-            first_name: 'Tunde',
-            last_name: 'Bakare',
-            admission_number: 'GFA/2025/003',
-        },
-        {
-            id: 'st-4',
-            first_name: 'Ifunanya',
-            last_name: 'Nwachukwu',
-            admission_number: 'GFA/2025/004',
-        },
-        {
-            id: 'st-5',
-            first_name: 'Seun',
-            last_name: 'Afolabi',
-            admission_number: 'GFA/2025/005',
-        },
-        {
-            id: 'st-6',
-            first_name: 'Blessing',
-            last_name: 'Eze',
-            admission_number: 'GFA/2025/006',
-        },
-        {
-            id: 'st-7',
-            first_name: 'Yusuf',
-            last_name: 'Abdullahi',
-            admission_number: 'GFA/2025/007',
-        },
-        {
-            id: 'st-8',
-            first_name: 'Chisom',
-            last_name: 'Okafor',
-            admission_number: 'GFA/2025/008',
-        },
-        {
-            id: 'st-9',
-            first_name: 'Adaeze',
-            last_name: 'Igwe',
-            admission_number: 'GFA/2025/009',
-        },
-        {
-            id: 'st-10',
-            first_name: 'Oluwaseun',
-            last_name: 'Adewale',
-            admission_number: 'GFA/2025/010',
-        },
-    ],
-    curricula: [
-        {
-            id: 'cur-1',
-            session_id: 'ses-003',
-            class_level_id: 'cl-5',
-            exam_type_id: 'et-1',
-            term: 1,
-            min_subjects: 8,
-            registration_deadline: '2025-09-30T23:59',
-            result_visible_at: '2025-12-15T00:00',
-            status: 'active',
-        },
-        {
-            id: 'cur-2',
-            session_id: 'ses-003',
-            class_level_id: 'cl-1',
-            exam_type_id: 'et-1',
-            term: 1,
-            min_subjects: 6,
-            registration_deadline: '2025-09-30T23:59',
-            result_visible_at: '2025-12-15T00:00',
-            status: 'active',
-        },
-    ],
-};
 
 // ─── CSS — strict light mode ────────────────────────────────────────────────
 const css = `
@@ -684,395 +417,6 @@ export function Empty({ icon, title, sub }: EmptyProps) {
     );
 }
 
-// ─── StatusPill ────────────────────────────────────────────────────────────
-
-interface StatusPillProps {
-    status: Curriculum['status'];
-}
-
-function StatusPill({ status }: StatusPillProps) {
-    const map: Record<Curriculum['status'], [string, string]> = {
-        active: ['pill-green', 'Active'],
-        draft: ['pill-amber', 'Draft'],
-        closed: ['pill-slate', 'Closed'],
-    };
-    const [cls, lbl] = map[status] ?? ['pill-slate', status];
-
-    return <span className={`pill ${cls}`}>{lbl}</span>;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CURRICULA TAB
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface CurriculumForm {
-    session_id: string;
-    class_level_id: string;
-    exam_type_id: string;
-    term: string;
-    min_subjects: string;
-    registration_deadline: string;
-    result_visible_at: string;
-    status: Curriculum['status'];
-}
-
-function CurriculaTab() {
-    const [curricula, setCurricula] = useState<Curriculum[]>([
-        ...seed.curricula,
-    ]);
-    const [sessions] = useState<Session[]>([...seed.sessions]);
-    const [classLevels] = useState<ClassLevel[]>([...seed.classLevels]);
-    const [examTypes] = useState<ExamType[]>([...seed.examTypes]);
-    const [modal, setModal] = useState<string | null>(null);
-    const [confirm, setConfirm] = useState<Curriculum | null>(null);
-
-    const blank: CurriculumForm = {
-        session_id: '',
-        class_level_id: '',
-        exam_type_id: '',
-        term: '1',
-        min_subjects: '8',
-        registration_deadline: '',
-        result_visible_at: '',
-        status: 'draft',
-    };
-    const [form, setForm] = useState<CurriculumForm>(blank);
-
-    const name = <T extends { id: string; name: string }>(
-        arr: T[],
-        id: string,
-    ): string => arr.find((x) => x.id === id)?.name ?? '—';
-
-    const fmt = (d: string): string =>
-        d
-            ? new Date(d).toLocaleDateString('en-GB', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-              })
-            : '—';
-
-    const f = <K extends keyof CurriculumForm>(
-        k: K,
-        v: CurriculumForm[K],
-    ): void => setForm((p) => ({ ...p, [k]: v }));
-
-    const open = (c: Curriculum | null = null): void => {
-        if (c) {
-            setForm({
-                session_id: c.session_id,
-                class_level_id: c.class_level_id,
-                exam_type_id: c.exam_type_id,
-                term: String(c.term),
-                min_subjects: String(c.min_subjects),
-                registration_deadline: (c.registration_deadline || '').slice(
-                    0,
-                    16,
-                ),
-                result_visible_at: (c.result_visible_at || '').slice(0, 16),
-                status: c.status,
-            });
-        } else {
-            setForm({
-                ...blank,
-                session_id: sessions.find((s) => s.is_current)?.id ?? '',
-            });
-        }
-
-        setModal(c ? c.id : 'new');
-    };
-
-    const save = async (): Promise<void> => {
-        if (!form.session_id || !form.class_level_id || !form.exam_type_id) {
-            return;
-        }
-
-        await delay();
-        const payload: Omit<Curriculum, 'id'> = {
-            ...form,
-            term: +form.term,
-            min_subjects: +form.min_subjects,
-        };
-
-        if (modal === 'new') {
-            setCurricula((p) => [...p, { id: uid(), ...payload }]);
-        } else {
-            setCurricula((p) =>
-                p.map((c) => (c.id === modal ? { ...c, ...payload } : c)),
-            );
-        }
-
-        setModal(null);
-    };
-
-    return (
-        <>
-            <div className="page-hdr">
-                <div>
-                    <h1>Curricula</h1>
-                    <p>Session × class level × term configurations</p>
-                </div>
-                <div className="page-hdr-actions">
-                    <button className="btn btn-primary" onClick={() => open()}>
-                        + New Curriculum
-                    </button>
-                </div>
-            </div>
-            <div className="card">
-                <div className="tbl-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Session</th>
-                                <th>Level</th>
-                                <th>Term</th>
-                                <th>Exam type</th>
-                                <th style={{ textAlign: 'center' }}>
-                                    Min. subj.
-                                </th>
-                                <th>Reg. deadline</th>
-                                <th>Results visible</th>
-                                <th>Status</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {curricula.length === 0 && (
-                                <tr>
-                                    <td colSpan={9}>
-                                        <Empty
-                                            icon="📋"
-                                            title="No curricula yet"
-                                            sub="Create your first curriculum"
-                                        />
-                                    </td>
-                                </tr>
-                            )}
-                            {curricula.map((c) => (
-                                <tr key={c.id}>
-                                    <td
-                                        style={{
-                                            fontFamily: 'var(--mono)',
-                                            fontWeight: 600,
-                                            fontSize: 12.5,
-                                        }}
-                                    >
-                                        {name(sessions, c.session_id)}
-                                    </td>
-                                    <td>
-                                        <span className="code-tag">
-                                            {name(
-                                                classLevels,
-                                                c.class_level_id,
-                                            )}
-                                        </span>
-                                    </td>
-                                    <td className="muted">Term {c.term}</td>
-                                    <td
-                                        style={{
-                                            fontSize: 12.5,
-                                            color: 'var(--text2)',
-                                        }}
-                                    >
-                                        {name(examTypes, c.exam_type_id)}
-                                    </td>
-                                    <td
-                                        style={{ textAlign: 'center' }}
-                                        className="mono"
-                                    >
-                                        {c.min_subjects}
-                                    </td>
-                                    <td
-                                        className="muted"
-                                        style={{ fontSize: 12.5 }}
-                                    >
-                                        {fmt(c.registration_deadline)}
-                                    </td>
-                                    <td
-                                        className="muted"
-                                        style={{ fontSize: 12.5 }}
-                                    >
-                                        {fmt(c.result_visible_at)}
-                                    </td>
-                                    <td>
-                                        <StatusPill status={c.status} />
-                                    </td>
-                                    <td>
-                                        <div
-                                            className="row-actions"
-                                            style={{
-                                                justifyContent: 'flex-end',
-                                            }}
-                                        >
-                                            <button
-                                                className="btn btn-ghost btn-sm btn-icon"
-                                                onClick={() => open(c)}
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button
-                                                className="btn btn-danger btn-sm btn-icon"
-                                                onClick={() => setConfirm(c)}
-                                            >
-                                                🗑
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {modal && (
-                <Modal
-                    title={
-                        modal === 'new' ? 'New Curriculum' : 'Edit Curriculum'
-                    }
-                    large
-                    onClose={() => setModal(null)}
-                    footer={
-                        <>
-                            <button
-                                className="btn btn-outline"
-                                onClick={() => setModal(null)}
-                            >
-                                Cancel
-                            </button>
-                            <button className="btn btn-primary" onClick={save}>
-                                Save curriculum
-                            </button>
-                        </>
-                    }
-                >
-                    <div className="form-grid form-grid-3">
-                        <div className="field">
-                            <label>Session</label>
-                            <select
-                                value={form.session_id}
-                                onChange={(e) =>
-                                    f('session_id', e.target.value)
-                                }
-                            >
-                                <option value="">Select…</option>
-                                {sessions.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                        {s.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="field">
-                            <label>Class level</label>
-                            <select
-                                value={form.class_level_id}
-                                onChange={(e) =>
-                                    f('class_level_id', e.target.value)
-                                }
-                            >
-                                <option value="">Select…</option>
-                                {[...classLevels]
-                                    .sort((a, b) => a.order - b.order)
-                                    .map((l) => (
-                                        <option key={l.id} value={l.id}>
-                                            {l.name}
-                                        </option>
-                                    ))}
-                            </select>
-                        </div>
-                        <div className="field">
-                            <label>Term</label>
-                            <select
-                                value={form.term}
-                                onChange={(e) => f('term', e.target.value)}
-                            >
-                                <option value="1">Term 1</option>
-                                <option value="2">Term 2</option>
-                                <option value="3">Term 3</option>
-                            </select>
-                        </div>
-                        <div className="field span-2">
-                            <label>Exam type</label>
-                            <select
-                                value={form.exam_type_id}
-                                onChange={(e) =>
-                                    f('exam_type_id', e.target.value)
-                                }
-                            >
-                                <option value="">Select…</option>
-                                {examTypes.map((e) => (
-                                    <option key={e.id} value={e.id}>
-                                        {e.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="field">
-                            <label>Status</label>
-                            <select
-                                value={form.status}
-                                onChange={(e) =>
-                                    f(
-                                        'status',
-                                        e.target.value as Curriculum['status'],
-                                    )
-                                }
-                            >
-                                <option value="draft">Draft</option>
-                                <option value="active">Active</option>
-                                <option value="closed">Closed</option>
-                            </select>
-                        </div>
-                        <div className="field">
-                            <label>Min. subjects</label>
-                            <input
-                                type="number"
-                                min="1"
-                                value={form.min_subjects}
-                                onChange={(e) =>
-                                    f('min_subjects', e.target.value)
-                                }
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Registration deadline</label>
-                            <input
-                                type="datetime-local"
-                                value={form.registration_deadline}
-                                onChange={(e) =>
-                                    f('registration_deadline', e.target.value)
-                                }
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Results visible at</label>
-                            <input
-                                type="datetime-local"
-                                value={form.result_visible_at}
-                                onChange={(e) =>
-                                    f('result_visible_at', e.target.value)
-                                }
-                            />
-                        </div>
-                    </div>
-                </Modal>
-            )}
-            {confirm && (
-                <Confirm
-                    msg="Delete this curriculum? Any linked scores and results will be affected."
-                    onConfirm={() => {
-                        setCurricula((p) =>
-                            p.filter((c) => c.id !== confirm.id),
-                        );
-                        setConfirm(null);
-                    }}
-                    onClose={() => setConfirm(null)}
-                />
-            )}
-        </>
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1124,10 +468,10 @@ const TABS: TabConfig[] = [
 ];
 
 export default function SchoolSetup() {
-    const [active, setActive] = useState<TabId>('grades');
+    const [active, setActive] = useState<TabId>('curricula');
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [data, setData] = useState<SetupData | null>(null);
-
+    const { auth } = usePage().props;
     const toastCounter = useState(0)[0];
     let toastId = toastCounter;
     function addToast(message: string, type: ToastType = 'success') {
@@ -1146,13 +490,21 @@ export default function SchoolSetup() {
         }
         getSetupData();
     }, []);
+    const [sessionName, setSessionName] = useState(
+        auth.school.current_session?.name ?? '',
+    );
 
     const render = () => {
         switch (active) {
             case 'overview':
                 return <OverviewTab data={data} />;
             case 'sessions':
-                return <SessionsTab addToast={addToast} />;
+                return (
+                    <SessionsTab
+                        addToast={addToast}
+                        setSessionName={setSessionName}
+                    />
+                );
             case 'structure':
                 return <ClassStructureTab addToast={addToast} />;
             case 'stream':
@@ -1164,19 +516,17 @@ export default function SchoolSetup() {
             case 'grades':
                 return <GradeBoundariesTab addToast={addToast} />;
             case 'curricula':
-                return <CurriculaTab />;
+                return <CurriculaTab addToast={addToast} />;
             default:
                 return null;
         }
     };
 
-    const initials = seed.school.name
+    const initials = auth.school.name
         .split(' ')
         .map((w) => w[0])
         .slice(0, 2)
         .join('');
-
-    const cur = seed.sessions.find((s) => s.is_current);
 
     return (
         <>
@@ -1189,7 +539,7 @@ export default function SchoolSetup() {
                                 <div className="school-avatar">{initials}</div>
                                 <div>
                                     <div className="school-name">
-                                        {seed.school.name}
+                                        {auth.school.name}
                                     </div>
                                     <div className="school-sub">
                                         School Setup &amp; Configuration
@@ -1200,7 +550,7 @@ export default function SchoolSetup() {
                                         className="pill pill-green"
                                         style={{ fontSize: 12 }}
                                     >
-                                        ● {cur?.name ?? 'No active session'}
+                                        ● {sessionName ?? 'No active session'}
                                     </span>
                                 </div>
                             </div>

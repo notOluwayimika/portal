@@ -35,3 +35,21 @@ export async function getUserFromToken() {
         return null;
     }
 }
+
+export function convertToSelectOptions(
+    collection: { id: string | number; name: string }[],
+) {
+    return collection.map((item) => ({
+        value: item.id,
+        label: item.name,
+    }));
+}
+
+export const fmtDate = (d: string): string =>
+    d
+        ? new Date(d).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : '—';

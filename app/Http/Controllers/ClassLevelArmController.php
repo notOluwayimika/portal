@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ArmResource;
 use App\Http\Resources\ClassLevelArmResource;
 use App\Http\Resources\ClassLevelResource;
+use App\Http\Resources\CurriculumResource;
+use App\Http\Resources\ExamTypeResource;
+use App\Http\Resources\SessionResource;
 use App\Http\Resources\StreamResource;
 use App\Models\Arm;
 use App\Models\ClassLevel;
@@ -21,15 +24,19 @@ class ClassLevelArmController extends Controller
     {
         try {
             $school = Auth::user()->school;
+            $sessions = $school->sessions()->where('is_current', true)->get();
             $classLevels = $school->classLevels;
             $arms = $school->arms;
             $streams = Stream::all();
             $classLevelArms = $school->classLevelArms;
+            $examTypes = $school->examTypes;
             return response()->json([
                 "class_levels" => ClassLevelResource::collection($classLevels),
                 "arms" => ArmResource::collection($arms),
                 "streams" => StreamResource::collection($streams),
-                "class_level_arms" => ClassLevelArmResource::collection($classLevelArms)
+                "class_level_arms" => ClassLevelArmResource::collection($classLevelArms),
+                "exam_types" => ExamTypeResource::collection($examTypes),
+                "sessions" => SessionResource::collection($sessions),
             ], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());

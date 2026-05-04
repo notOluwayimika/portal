@@ -14,6 +14,7 @@ export interface School {
     id: string;
     name: string;
     slug: string;
+    current_session?: AcademicSession;
     created_at?: string;
     updated_at?: string;
 }
@@ -55,6 +56,7 @@ export interface ClassLevelArm {
     arm: Arm;
     stream_id?: string | null;
     stream: Stream | null;
+    name?: string;
     created_at?: string;
     updated_at?: string;
 }
@@ -130,21 +132,20 @@ export interface Teacher {
 
 export interface Curriculum {
     id: string;
-    school_id: string;
-    school: School;
-    academic_session_id: string;
-    academic_session: AcademicSession;
-    class_level_id: string;
-    class_level: ClassLevel;
-    exam_type_id: string;
-    exam_type: ExamType;
+    school_id?: string;
+    school?: School;
+    academic_session_id?: string;
+    academic_session?: AcademicSession;
+    class_level_arm_id?: string;
+
+    class_level_arm?: ClassLevelArm;
+    exam_type_id?: string;
+    exam_type?: ExamType;
     term: number;
     min_subjects: number;
     registration_deadline: string;
     result_visible_at: string;
     status: string;
-    name: string;
-    slug: string;
     created_at?: string;
     updated_at?: string;
 }

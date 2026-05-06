@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { Student, Curriculum } from '@/types/models';
+import { Student } from '@/types/models';
 
 interface StudentFormProps {
     student?: Student | null;
@@ -16,9 +16,19 @@ interface StudentFormProps {
     onCancel: () => void;
 }
 
+interface CurriculumOption {
+    id: number;
+    uuid: string;
+    term: number;
+    class_level: string;
+    arm: string;
+    stream: string;
+}
+
 export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
     const isEdit = !!student;
-    const [curricula, setCurricula] = useState<Curriculum[]>([]);
+    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
+    const [genders, setGenders] = useState<{ name: string; value: string }[]>([])
     const [loading, setLoading] = useState(false);
 
     const { data, setData, post, put, processing, errors, reset } = useForm({
@@ -36,11 +46,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         let isMounted = true;
         const fetchCurricula = async () => {
             try {
-                const response = await axios.get('/api/curricula', {
-                    params: { per_page: 100 }
-                });
+                const response = await axios.get('/api/students/resources');
                 if (isMounted) {
-                    setCurricula(response.data.curricula || []);
+                    setCurricula(response.data.data.curricula || []);
+                    setGenders(response.data.data.genders || []);
                 }
             } catch (error) {
                 console.error('Failed to fetch curricula:', error);
@@ -52,7 +61,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         const options = {
             onSuccess: () => {
                 onSuccess();
@@ -126,11 +135,14 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                             <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="male">Male</SelectItem>
-                            <SelectItem value="female">Female</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
+                            {genders.map((g) => (
+                                <SelectItem key={g.value} value={g.value}>
+                                    {g.name}
+                                </SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
+                    {errors.gender && <p className="text-destructive text-xs">{errors.gender}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -148,12 +160,12 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                     <SearchableSelect
                         placeholder="Search for a class..."
                         options={curricula.map((c) => ({
-                            value: c.uuid || c.id.toString(),
-                            label: `${c.class_level_arm ? `${c.class_level_arm.class_level?.name} - ${c.class_level_arm.arm?.name}` : `Curriculum ${c.id}`} (Term ${c.term})`,
+                            value: c.id.toString(),
+                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''} (Term ${c.term})`,
                         }))}
                         value={curricula.map((c) => ({
-                            value: c.uuid || c.id.toString(),
-                            label: `${c.class_level_arm ? `${c.class_level_arm.class_level?.name} - ${c.class_level_arm.arm?.name}` : `Curriculum ${c.id}`} (Term ${c.term})`,
+                            value: c.id.toString(),
+                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''} (Term ${c.term})`,
                         })).find(opt => opt.value === data.curriculum_id)}
                         onChange={(opt: any) => setData('curriculum_id', opt?.value || '')}
                         error={!!errors.curriculum_id}

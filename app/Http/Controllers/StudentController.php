@@ -3,16 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\DTOs\StudentDto;
+use App\Enums\GenderTypeEnum;
 use App\Http\Requests\StudentRequest;
+use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\StudentResource;
+use App\Models\Curriculum;
 use App\Models\Student;
+use App\Repositories\ClassLevelArmRepository;
 use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
-    public function __construct(protected StudentService $studentService) {}
+    public function __construct(
+        protected StudentService $studentService,
+        protected ClassLevelArmRepository $classLevelArmRepository,
+    ) {}
 
     public function index(Request $request)
     {
@@ -65,5 +72,34 @@ class StudentController extends Controller
     {
         $this->studentService->delete($student);
         return response()->noContent();
+    }
+
+    public function resources()
+    {
+        $curricula = Curriculum::with([
+            'term',
+            'classLevelArm.classLevel',
+            'classLevelArm.arm',
+            'classLevelArm.stream'
+        ])->where('status', 'active')->get();
+
+        $curriculaOptions = $curricula->map(function ($curriculum) {
+            return [
+                'id' => $curriculum->id,
+                'uuid' => $curriculum->uuid,
+                'term' => $curriculum->term?->order,
+                'term_name' => $curriculum->term?->name,
+                'class_level' => $curriculum->classLevelArm?->classLevel?->name,
+                'arm' => $curriculum->classLevelArm?->arm?->label,
+                'stream' => $curriculum->classLevelArm?->stream?->name,
+            ];
+        });
+
+        $genders = GenderTypeEnum::options();
+
+        return Response::success([
+            'curricula' => $curriculaOptions,
+            'genders' => $genders,
+        ]);
     }
 }

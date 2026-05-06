@@ -33,10 +33,9 @@ function StatusPill({ status }: StatusPillProps) {
 }
 
 interface CurriculumForm {
-    academic_session_id: string;
+    term_id: string;
     class_level_id: string;
     exam_type_id: string;
-    term: string;
     min_subjects: string;
     registration_deadline: string;
     result_visible_at: string;
@@ -61,6 +60,8 @@ export function CurriculaTab({
     const [sessions, setSessions] = useState<SelectOption[]>([]);
     const [classLevels, setClassLevels] = useState<SelectOption[]>([]);
     const [examTypes, setExamTypes] = useState<SelectOption[]>([]);
+    const [allTerms, setAllTerms] = useState<any[]>([]); // To store raw term objects
+    const [terms, setTerms] = useState<SelectOption[]>([]); // To store term options
     const [modal, setModal] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<Curriculum | null>(null);
     const [limit, setLimit] = useState(10);
@@ -95,16 +96,13 @@ export function CurriculaTab({
     const hasActiveFilters = Object.values(filters).some(Boolean);
     // ─────────────────────────────────────────────────────────────────────
 
-    const terms: SelectOption[] = [
-        { label: '1st Term', value: '1' },
-        { label: '2nd Term', value: '2' },
-        { label: '3rd Term', value: '3' },
-    ];
     const statusOptions: SelectOption[] = [
         { label: 'Active', value: 'active' },
         { label: 'Draft', value: 'draft' },
         { label: 'Closed', value: 'closed' },
     ];
+
+    const [selectedSessionId, setSelectedSessionId] = useState<string>('');
 
     useEffect(() => {
         const fetchClassStructure = async () => {
@@ -114,9 +112,21 @@ export function CurriculaTab({
                 convertToSelectOptions(response.data.class_level_arms),
             );
             setExamTypes(convertToSelectOptions(response.data.exam_types));
+            setAllTerms(response.data.terms || []);
+            setTerms(convertToSelectOptions(response.data.terms || []));
         };
         fetchClassStructure();
     }, []);
+
+    // Filter terms when session changes
+    useEffect(() => {
+        if (selectedSessionId && selectedSessionId !== 'all') {
+            const sessionTerms = allTerms.filter(t => t.academic_session?.id === selectedSessionId);
+            setTerms(convertToSelectOptions(sessionTerms));
+        } else {
+            setTerms(convertToSelectOptions(allTerms));
+        }
+    }, [selectedSessionId, allTerms]);
 
     useEffect(() => {
         const fetchCurricula = async () => {
@@ -147,10 +157,9 @@ export function CurriculaTab({
     }, [loading, limit, page, filters]);
 
     const blank: CurriculumForm = {
-        academic_session_id: '',
+        term_id: '',
         class_level_id: '',
         exam_type_id: '',
-        term: '',
         min_subjects: '8',
         registration_deadline: '',
         result_visible_at: '',
@@ -165,11 +174,11 @@ export function CurriculaTab({
 
     const open = (c: Curriculum | null = null): void => {
         if (c) {
+            setSelectedSessionId(c.academic_session?.id ?? '');
             setForm({
-                academic_session_id: c.academic_session?.id ?? '',
+                term_id: c.term?.id ?? '',
                 class_level_id: c.class_level_arm?.id ?? '',
                 exam_type_id: c.exam_type?.id ?? '',
-                term: String(c.term),
                 min_subjects: String(c.min_subjects),
                 registration_deadline: (c.registration_deadline || '').slice(
                     0,
@@ -179,6 +188,7 @@ export function CurriculaTab({
                 status: c.status,
             });
         } else {
+            setSelectedSessionId('');
             setForm({ ...blank });
         }
 
@@ -204,26 +214,23 @@ export function CurriculaTab({
 
     const save = async (): Promise<void> => {
         if (
-            !form.academic_session_id ||
+            !form.term_id ||
             !form.class_level_id ||
             !form.exam_type_id ||
-            !form.term ||
             !form.min_subjects ||
             !form.registration_deadline ||
             !form.result_visible_at ||
             !form.status
         ) {
             addToast('Please fill in all required fields.', 'error');
-
             return;
         }
 
         setLoading(true);
 
         try {
-            const payload: Omit<Curriculum, 'id'> = {
+            const payload = {
                 ...form,
-                term: +form.term,
                 min_subjects: +form.min_subjects,
             };
 
@@ -293,9 +300,10 @@ export function CurriculaTab({
                                 ...sessions,
                             ]}
                             value={filters.academic_session_id}
-                            onChange={(v) =>
-                                flt('academic_session_id', String(v))
-                            }
+                            onChange={(v) => {
+                                flt('academic_session_id', String(v));
+                                setSelectedSessionId(String(v));
+                            }}
                             label="All sessions"
                         />
                     </div>
@@ -407,7 +415,7 @@ export function CurriculaTab({
                                             {c.class_level_arm?.name ?? '—'}
                                         </span>
                                     </td>
-                                    <td className="muted">Term {c.term}</td>
+                                    <td className="muted">{c.term?.name ?? `Term ${c.term_id}`}</td>
                                     <td
                                         style={{
                                             fontSize: 12.5,
@@ -506,10 +514,11 @@ export function CurriculaTab({
                             <label>Session</label>
                             <SingleSelect
                                 options={sessions}
-                                value={form.academic_session_id}
-                                onChange={(value) =>
-                                    f('academic_session_id', String(value))
-                                }
+                                value={selectedSessionId}
+                                onChange={(value) => {
+                                    setSelectedSessionId(String(value));
+                                    f('term_id', ''); // Clear term when session changes
+                                }}
                                 label="Session"
                             />
                         </div>
@@ -528,8 +537,8 @@ export function CurriculaTab({
                             <label>Term</label>
                             <SingleSelect
                                 options={terms}
-                                value={form.term}
-                                onChange={(value) => f('term', String(value))}
+                                value={form.term_id}
+                                onChange={(value) => f('term_id', String(value))}
                                 label="Term"
                             />
                         </div>

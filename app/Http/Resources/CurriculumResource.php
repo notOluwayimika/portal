@@ -19,10 +19,10 @@ class CurriculumResource extends JsonResource
     {
         return [
             "id" => $this->uuid,
+            "term" => new TermResource($this->term),
             "academic_session" => new SessionResource($this->academicSession),
             "class_level_arm" => new ClassLevelArmResource($this->classLevelArm),
             "exam_type" => new ExamTypeResource($this->examType),
-            "term" => $this->term,
             "min_subjects" => $this->min_subjects,
             "registration_deadline" => $this->registration_deadline,
             "result_visible_at" => $this->result_visible_at,

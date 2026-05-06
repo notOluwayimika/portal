@@ -15,10 +15,9 @@ class Curriculum extends Model
 
     protected $fillable = [
         'school_id',
-        'academic_session_id',
+        'term_id',
         'class_level_arm_id',
         'exam_type_id',
-        'term',
         'min_subjects',
         'registration_deadline',
         'result_visible_at',
@@ -28,7 +27,7 @@ class Curriculum extends Model
     protected $casts = [
         'registration_deadline' => 'datetime',
         'result_visible_at' => 'datetime',
-        'term' => 'integer',
+        'term_id' => 'integer',
         'min_subjects' => 'integer',
     ];
 
@@ -47,9 +46,13 @@ class Curriculum extends Model
     {
         return $this->belongsTo(School::class);
     }
-    public function academicSession(): BelongsTo
+    public function term(): BelongsTo
     {
-        return $this->belongsTo(AcademicSession::class, 'academic_session_id');
+        return $this->belongsTo(Term::class);
+    }
+    public function academicSession(): \Illuminate\Database\Eloquent\Relations\HasOneThrough
+    {
+        return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');
     }
     public function classLevelArm(): BelongsTo
     {

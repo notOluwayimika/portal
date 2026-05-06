@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class ClassLevelArm extends Model
 {
+
     protected $fillable = ['stream_id', 'class_level_id', 'arm_id'];
     protected static function booted(): void
     {

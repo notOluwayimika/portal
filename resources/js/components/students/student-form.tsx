@@ -161,11 +161,11 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                         placeholder="Search for a class..."
                         options={curricula.map((c) => ({
                             value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''} (Term ${c.term})`,
+                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
                         }))}
                         value={curricula.map((c) => ({
                             value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''} (Term ${c.term})`,
+                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
                         })).find(opt => opt.value === data.curriculum_id)}
                         onChange={(opt: any) => setData('curriculum_id', opt?.value || '')}
                         error={!!errors.curriculum_id}

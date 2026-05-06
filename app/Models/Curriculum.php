@@ -3,6 +3,7 @@
 
 namespace App\Models;
 
+use App\Enums\CurriculaStatusEnum;
 use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,7 @@ class Curriculum extends Model
         'result_visible_at' => 'datetime',
         'term_id' => 'integer',
         'min_subjects' => 'integer',
+        'status' => 'string',
     ];
 
     protected static function booted(): void

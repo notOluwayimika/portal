@@ -90,6 +90,14 @@ class StudentService
         });
     }
 
+    public function updateStatus(Student $student, string $status): void
+    {
+        $latestCurriculum = $student->studentCurricula()->latest('id')->first();
+        if ($latestCurriculum instanceof StudentCurriculum) {
+            $latestCurriculum->update(['status' => $status]);
+        }
+    }
+
     public function delete(Student $student): bool
     {
         return $student->delete();

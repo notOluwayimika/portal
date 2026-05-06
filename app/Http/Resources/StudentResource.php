@@ -14,7 +14,7 @@ class StudentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $currentCurriculum = $this->currentCurriculum;
+        $currentCurriculum = $this->currentCurriculum ?? $this->studentCurricula()->latest('id')->first();
         $curriculum = $currentCurriculum?->curriculum;
         $classLevelArm = $curriculum?->classLevelArm;
 

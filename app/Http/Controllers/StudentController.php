@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\DTOs\StudentDto;
 use App\Enums\CurriculaStatusEnum;
 use App\Enums\GenderTypeEnum;
+use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
@@ -15,6 +16,7 @@ use App\Repositories\ClassLevelArmRepository;
 use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class StudentController extends Controller
 {
@@ -27,7 +29,7 @@ class StudentController extends Controller
     {
         $students = $this->studentService->paginate($request);
         logger('Student', collect($students)->toArray());
-        
+
         return response()->json([
             'data' => StudentResource::collection($students),
             'pagination' => [
@@ -71,6 +73,21 @@ class StudentController extends Controller
 
         if ($request->wantsJson()) {
             return Response::success('Student updated successfully.');
+        }
+
+        return redirect()->route('students.index');
+    }
+
+    public function updateStatus(Request $request, Student $student)
+    {
+        $data = $request->validate([
+            'status' => ['required', 'string', Rule::enum(StudentStatusEnum::class)],
+        ]);
+
+        $this->studentService->updateStatus($student, $data['status']);
+
+        if ($request->wantsJson()) {
+            return Response::success('Student status updated successfully.');
         }
 
         return redirect()->route('students.index');

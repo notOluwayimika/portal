@@ -20,14 +20,10 @@ class Curriculum extends Model
         'class_level_arm_id',
         'exam_type_id',
         'min_subjects',
-        'registration_deadline',
-        'result_visible_at',
         'status',
     ];
 
     protected $casts = [
-        'registration_deadline' => 'datetime',
-        'result_visible_at' => 'datetime',
         'term_id' => 'integer',
         'min_subjects' => 'integer',
         'status' => 'string',
@@ -75,11 +71,11 @@ class Curriculum extends Model
 
     public function isRegistrationOpen(): bool
     {
-        return now()->lessThanOrEqualTo($this->registration_deadline);
+        return $this->term->start_date && now()->lessThanOrEqualTo($this->term->start_date);
     }
 
     public function areResultsVisible(): bool
     {
-        return $this->result_visible_at && now()->greaterThanOrEqualTo($this->result_visible_at);
+        return $this->term->end_date && now()->greaterThanOrEqualTo($this->term->end_date);
     }
 }

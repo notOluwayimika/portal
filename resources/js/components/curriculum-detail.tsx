@@ -509,7 +509,7 @@ export function CurriculumDetail({
     }
 
     const termLabel =
-        ['', '1st', '2nd', '3rd'][curriculum.term] ?? curriculum.term;
+        ['', '1st', '2nd', '3rd'][curriculum.term?.order ?? 0] ?? curriculum.term?.name;
 
     return (
         <>
@@ -552,7 +552,7 @@ export function CurriculumDetail({
                             >
                                 ·
                             </span>
-                            {termLabel} Term
+                            {termLabel}
                         </h1>
                         <p>{curriculum.exam_type?.name ?? '—'}</p>
                     </div>
@@ -582,7 +582,7 @@ export function CurriculumDetail({
                         {curriculum.class_level_arm?.name ?? '—'}
                     </span>
                 </InfoRow>
-                <InfoRow label="Term">{termLabel} Term</InfoRow>
+                <InfoRow label="Term">{termLabel}</InfoRow>
                 <InfoRow label="Exam type">
                     {curriculum.exam_type?.name ?? '—'}
                 </InfoRow>
@@ -590,10 +590,10 @@ export function CurriculumDetail({
                     <span className="mono">{curriculum.min_subjects}</span>
                 </InfoRow>
                 <InfoRow label="Reg. deadline">
-                    {fmtDate(curriculum.registration_deadline)}
+                    {fmtDate(curriculum.term?.start_date)}
                 </InfoRow>
                 <InfoRow label="Results visible">
-                    {fmtDate(curriculum.result_visible_at)}
+                    {fmtDate(curriculum.term?.end_date)}
                 </InfoRow>
                 <InfoRow label="Status">
                     <StatusPill status={curriculum.status} />

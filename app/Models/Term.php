@@ -16,11 +16,15 @@ class Term extends Model
         'slug',
         'order',
         'status',
+        'start_date',
+        'end_date',
     ];
 
     protected $casts = [
         'order' => 'integer',
         'status' => TermStatusEnum::class,
+        'start_date' => 'date',
+        'end_date' => 'date',
     ];
 
     protected static function booted(): void

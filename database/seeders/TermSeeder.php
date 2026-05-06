@@ -21,16 +21,22 @@ class TermSeeder extends Seeder
                     'name' => 'First Term',
                     'slug' => 'first-term',
                     'order' => 1,
+                    'start_date' => now()->startOfYear()->addMonths(8), // Sept
+                    'end_date' => now()->startOfYear()->addMonths(11), // Dec
                 ],
                 [
                     'name' => 'Second Term',
                     'slug' => 'second-term',
                     'order' => 2,
+                    'start_date' => now()->startOfYear()->addMonths(12), // Jan next year
+                    'end_date' => now()->startOfYear()->addMonths(15), // April
                 ],
                 [
                     'name' => 'Third Term',
                     'slug' => 'third-term',
                     'order' => 3,
+                    'start_date' => now()->startOfYear()->addMonths(16), // May
+                    'end_date' => now()->startOfYear()->addMonths(19), // Aug
                 ],
             ];
 

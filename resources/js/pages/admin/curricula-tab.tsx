@@ -37,8 +37,6 @@ interface CurriculumForm {
     class_level_id: string;
     exam_type_id: string;
     min_subjects: string;
-    registration_deadline: string;
-    result_visible_at: string;
     status: Curriculum['status'];
 }
 
@@ -161,8 +159,6 @@ export function CurriculaTab({
         class_level_id: '',
         exam_type_id: '',
         min_subjects: '8',
-        registration_deadline: '',
-        result_visible_at: '',
         status: '',
     };
     const [form, setForm] = useState<CurriculumForm>(blank);
@@ -180,11 +176,6 @@ export function CurriculaTab({
                 class_level_id: c.class_level_arm?.id ?? '',
                 exam_type_id: c.exam_type?.id ?? '',
                 min_subjects: String(c.min_subjects),
-                registration_deadline: (c.registration_deadline || '').slice(
-                    0,
-                    16,
-                ),
-                result_visible_at: (c.result_visible_at || '').slice(0, 16),
                 status: c.status,
             });
         } else {
@@ -218,8 +209,6 @@ export function CurriculaTab({
             !form.class_level_id ||
             !form.exam_type_id ||
             !form.min_subjects ||
-            !form.registration_deadline ||
-            !form.result_visible_at ||
             !form.status
         ) {
             addToast('Please fill in all required fields.', 'error');
@@ -434,13 +423,13 @@ export function CurriculaTab({
                                         className="muted"
                                         style={{ fontSize: 12.5 }}
                                     >
-                                        {fmtDate(c.registration_deadline)}
+                                        {fmtDate(c.term?.start_date)}
                                     </td>
                                     <td
                                         className="muted"
                                         style={{ fontSize: 12.5 }}
                                     >
-                                        {fmtDate(c.result_visible_at)}
+                                        {fmtDate(c.term?.end_date)}
                                     </td>
                                     <td>
                                         <StatusPill status={c.status} />
@@ -570,26 +559,6 @@ export function CurriculaTab({
                                 value={form.min_subjects}
                                 onChange={(e) =>
                                     f('min_subjects', e.target.value)
-                                }
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Registration deadline</label>
-                            <input
-                                type="datetime-local"
-                                value={form.registration_deadline}
-                                onChange={(e) =>
-                                    f('registration_deadline', e.target.value)
-                                }
-                            />
-                        </div>
-                        <div className="field">
-                            <label>Results visible at</label>
-                            <input
-                                type="datetime-local"
-                                value={form.result_visible_at}
-                                onChange={(e) =>
-                                    f('result_visible_at', e.target.value)
                                 }
                             />
                         </div>

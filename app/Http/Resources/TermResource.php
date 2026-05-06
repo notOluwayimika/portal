@@ -20,6 +20,8 @@ class TermResource extends JsonResource
             'slug' => $this->slug,
             'order' => $this->order,
             'status' => $this->status,
+            'start_date' => $this->start_date,
+            'end_date' => $this->end_date,
             'academic_session' => new SessionResource($this->whenLoaded('academicSession')),
         ];
     }

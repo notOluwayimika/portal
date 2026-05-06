@@ -78,13 +78,9 @@ class StudentService
 
             if (isset($attributes['curriculum_id'])) {
                 StudentCurriculum::updateOrCreate(
-                    [
-                        'student_id' => $student->id,
-                        'status' => \App\Enums\StudentStatusEnum::ACTIVE->value,
-                    ],
+                    ['student_id' => $student->id],
                     [
                         'curriculum_id' => $attributes['curriculum_id'],
-                        'status' => $attributes['status'] ?? \App\Enums\StudentStatusEnum::ACTIVE->value,
                         'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                     ]
                 );

@@ -17,7 +17,6 @@ readonly class StudentDto
         public readonly ?string $admission_number,
         public readonly ?string $photo,
         public readonly ?int $curriculum_id = null,
-        public readonly ?string $status = null,
         public readonly ?int $promoted_to_id = null,
     ) {}
 
@@ -34,7 +33,6 @@ readonly class StudentDto
             admission_number: $data['admission_number'] ?? null,
             photo: $data['photo'] ?? null,
             curriculum_id: $data['curriculum_id'] ?? null,
-            status: $data['status'] ?? null,
             promoted_to_id: $data['promoted_to_id'] ?? null,
         );
     }

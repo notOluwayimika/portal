@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\StudentStatusEnum;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -22,6 +23,8 @@ class StudentRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isUpdate = $this->isMethod('PATCH') || $this->isMethod('PUT');
+
         return [
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
@@ -35,8 +38,7 @@ class StudentRequest extends FormRequest
                 'unique:students,admission_number,' . $this->student?->id
             ],
             'photo' => ['nullable', 'string'],
-            'curriculum_id' => ['required', 'integer', 'exists:curricula,id'],
-            'status' => ['required', 'string', new \Illuminate\Validation\Rules\Enum(\App\Enums\StudentStatusEnum::class)],
+            'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],
             'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
         ];
     }

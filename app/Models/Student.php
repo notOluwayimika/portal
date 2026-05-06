@@ -3,6 +3,7 @@
 
 namespace App\Models;
 
+use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Models\Scopes\SchoolScope;
 use App\Concerns\HasAdmissionNumber;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class Student extends Model
 {
-    use HasAdmissionNumber, SoftDeletes, BelongsToSchool;
+    use HasAdmissionNumber, SoftDeletes, BelongsToSchool, AddUuid;
 
     protected $fillable = [
         'school_id',
@@ -27,12 +28,6 @@ class Student extends Model
         'date_of_birth',
         'photo'
     ];
-
-    protected static function booted(): void
-    {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-    }
 
     public function getRouteKeyName()
     {

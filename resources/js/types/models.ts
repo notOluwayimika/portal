@@ -98,8 +98,7 @@ export interface GradeBoundary {
 }
 
 export interface Student {
-    id: number;
-    uuid: string;
+    id: string;
     school_id: string;
     school: School;
     user_id?: string;

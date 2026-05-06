@@ -28,7 +28,12 @@ class StudentRequest extends FormRequest
             'middle_name' => ['nullable', 'string', 'max:255'],
             'gender' => ['required', 'string', 'in:male,female,other'],
             'date_of_birth' => ['nullable', 'date'],
-            'admission_number' => ['nullable', 'string', 'max:255'],
+            'admission_number' => [
+                'nullable',
+                'string',
+                'max:255',
+                'unique:students,admission_number,' . $this->student?->id
+            ],
             'photo' => ['nullable', 'string'],
             'curriculum_id' => ['required', 'integer', 'exists:curricula,id'],
             'status' => ['required', 'string', new \Illuminate\Validation\Rules\Enum(\App\Enums\StudentStatusEnum::class)],

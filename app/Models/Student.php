@@ -73,4 +73,20 @@ class Student extends Model
     {
         return $this->full_name;
     }
+
+    public function getStudentClassAttribute()
+    {
+        $currentCurriculum = $this->currentCurriculum;
+
+        $classLevelArm = $currentCurriculum?->curriculum?->classLevelArm;
+        if (!$classLevelArm) return null;
+
+        $className = $classLevelArm->classLevel?->name . ' ' . $classLevelArm->arm?->label;
+
+        if ($classLevelArm->stream) {
+            $className .= ' (' . $classLevelArm->stream->name . ')';
+        }
+
+        return $className;
+    }
 }

@@ -6,18 +6,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import AppLayout from '@/layouts/app-layout';
-import { Student } from '@/types/models';
+import type{ Student } from '@/types/models';
 import { ToastItem, Toast, ToastType } from '@/components/toast-item';
 import { Pagination } from '@/components/pagination';
 import Modal from '@/components/ui/Modal';
 import { StudentForm } from '@/components/students/student-form';
+import Select from '@/components/ui/base-dropdown';
 
 const breadcrumbs = [
     { title: 'Dashboard', href: '/dashboard' },
     { title: 'Students', href: '/students' },
 ];
 
-export default function StudentList() {
+interface StatusOption {
+    name: string;
+    value: string;
+}
+
+interface StudentListProps {
+    student_statuses: StatusOption[];
+}
+
+export default function StudentList({ student_statuses }: StudentListProps) {
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -81,6 +91,16 @@ export default function StudentList() {
     const handleAdd = () => {
         setCurrentStudent(null);
         setIsModalOpen(true);
+    };
+
+    const handleStatusChange = async (student: Student, newStatus: string) => {
+        try {
+            await axios.patch(`/api/students/${student.id}/status`, { status: newStatus });
+            addToast(`Student status updated to ${newStatus}`);
+            fetchStudents();
+        } catch (error) {
+            addToast('Failed to update student status', 'error');
+        }
     };
 
     const handleEdit = (student: Student) => {
@@ -166,24 +186,27 @@ export default function StudentList() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                                                    student.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                    student.status === 'withdrawn' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                                    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                                }`}>
-                                                    {student.status}
-                                                </span>
+                                                <Select
+                                                    value={student.status}
+                                                    onChange={(val) => val && handleStatusChange(student, String(val))}
+                                                    options={student_statuses?.map(s => ({ label: s.name, value: s.value })) || []}
+                                                    buttonClass={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize border-none hover:bg-opacity-80 transition-colors ${
+                                                        student.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                        student.status === 'withdrawn' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                    }`}
+                                                />
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex justify-end gap-2">
                                                 <Button variant="ghost" size="icon" onClick={() => handleEdit(student)}>
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
-                                                    <Button 
-                                                        variant="ghost" 
-                                                        size="icon" 
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
                                                         className="text-destructive hover:bg-destructive/10"
-                                                        onClick={() => handleDelete(student.uuid)}
+                                                        onClick={() => handleDelete(student.id)}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>

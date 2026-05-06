@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\TermStatusEnum;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,10 +16,15 @@ class Term extends Model
         'slug',
         'order',
         'status',
+        'start_date',
+        'end_date',
     ];
 
     protected $casts = [
         'order' => 'integer',
+        'status' => TermStatusEnum::class,
+        'start_date' => 'date',
+        'end_date' => 'date',
     ];
 
     protected static function booted(): void

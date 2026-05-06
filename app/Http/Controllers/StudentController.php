@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\DTOs\StudentDto;
+use App\Enums\CurriculaStatusEnum;
 use App\Enums\GenderTypeEnum;
+use App\Enums\TermStatusEnum;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\StudentResource;
@@ -81,7 +83,9 @@ class StudentController extends Controller
             'classLevelArm.classLevel',
             'classLevelArm.arm',
             'classLevelArm.stream'
-        ])->where('status', 'active')->get();
+        ])
+        ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
+        ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
         $curriculaOptions = $curricula->map(function ($curriculum) {
             return [

@@ -150,6 +150,8 @@ export interface Term {
     slug: string;
     order: number;
     status: string;
+    start_date?: string;
+    end_date?: string;
     academic_session?: AcademicSession;
 }
 
@@ -166,8 +168,6 @@ export interface Curriculum {
     exam_type_id?: string;
     exam_type?: ExamType;
     min_subjects: number;
-    registration_deadline: string;
-    result_visible_at: string;
     status: string;
     created_at?: string;
     updated_at?: string;

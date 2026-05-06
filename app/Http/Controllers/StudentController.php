@@ -3,21 +3,38 @@
 namespace App\Http\Controllers;
 
 use App\DTOs\StudentDto;
+use App\Enums\GenderTypeEnum;
 use App\Http\Requests\StudentRequest;
+use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\StudentResource;
+use App\Models\Curriculum;
 use App\Models\Student;
+use App\Repositories\ClassLevelArmRepository;
 use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
-    public function __construct(protected StudentService $studentService) {}
+    public function __construct(
+        protected StudentService $studentService,
+        protected ClassLevelArmRepository $classLevelArmRepository,
+    ) {}
 
     public function index(Request $request)
     {
         $students = $this->studentService->paginate($request);
-        return response()->json(StudentResource::collection($students));
+        return response()->json([
+            'data' => StudentResource::collection($students),
+            'pagination' => [
+                'total' => $students->total(),
+                'per_page' => $students->perPage(),
+                'current_page' => $students->currentPage(),
+                'last_page' => $students->lastPage(),
+                'prev_page_url' => $students->previousPageUrl(),
+                'next_page_url' => $students->nextPageUrl(),
+            ],
+        ]);
     }
 
     public function store(StudentRequest $request)
@@ -28,23 +45,61 @@ class StudentController extends Controller
         $dto = StudentDto::fromArray($data);
         $this->studentService->store($dto->toArray());
 
-        return Response::created('Student created successfully.');
+        if ($request->wantsJson()) {
+            return Response::created('Student created successfully.');
+        }
+
+        return redirect()->route('students.index');
     }
 
     public function show(Student $student)
     {
-        return Response::json(StudentResource::make($student));
+        return Response::json(StudentResource::make($this->studentService->show($student)));
     }
 
     public function update(StudentRequest $request, Student $student)
     {
         $this->studentService->update($student, $request->validated());
-        return Response::success('Student updated successfully.');
+
+        if ($request->wantsJson()) {
+            return Response::success('Student updated successfully.');
+        }
+
+        return redirect()->route('students.index');
     }
 
     public function destroy(Student $student)
     {
         $this->studentService->delete($student);
         return response()->noContent();
+    }
+
+    public function resources()
+    {
+        $curricula = Curriculum::with([
+            'term',
+            'classLevelArm.classLevel',
+            'classLevelArm.arm',
+            'classLevelArm.stream'
+        ])->where('status', 'active')->get();
+
+        $curriculaOptions = $curricula->map(function ($curriculum) {
+            return [
+                'id' => $curriculum->id,
+                'uuid' => $curriculum->uuid,
+                'term' => $curriculum->term?->order,
+                'term_name' => $curriculum->term?->name,
+                'class_level' => $curriculum->classLevelArm?->classLevel?->name,
+                'arm' => $curriculum->classLevelArm?->arm?->label,
+                'stream' => $curriculum->classLevelArm?->stream?->name,
+            ];
+        });
+
+        $genders = GenderTypeEnum::options();
+
+        return Response::success([
+            'curricula' => $curriculaOptions,
+            'genders' => $genders,
+        ]);
     }
 }

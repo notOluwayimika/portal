@@ -14,7 +14,7 @@ Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'tenant'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/school-setup')->name('setup');
@@ -23,6 +23,16 @@ Route::middleware(['auth'])->group(function () {
             'curriculum' => new CurriculumResource($curriculum),
         ]);
     })->name('setup.curricula.show');
+
+    // Students
+    Route::get('students', function () {
+        return Inertia::render('admin/students/index');
+    })->name('students.index');
+
+
+
+    Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
+    Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);
 });
 
 Route::middleware(['auth'])->group(function () {

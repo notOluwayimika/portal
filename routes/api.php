@@ -33,8 +33,18 @@ Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']
 Route::get('/teachers', [TeacherController::class, 'index']);
 Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'getSubjects']);
 
-Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
+
+    // Public/Shared data (now protected)
+    Route::get('/sessions', [SessionController::class, 'index']);
+    Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+    Route::get('/exam-types', [ExamTypeController::class, 'index']);
+    Route::get('/subjects', [SubjectController::class, 'index']);
+    Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
+    Route::get('/curricula', [CurriculumController::class, 'index']);
+    Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+    Route::get('/teachers', [TeacherController::class, 'index']);
 
     // protected session routes
     Route::post('/sessions', [SessionController::class, 'store']);
@@ -89,4 +99,6 @@ Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function
     Route::get('/setup-data', [SetupController::class, 'index']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
+
+    require __DIR__ . '/endpoints/student.php';
 });

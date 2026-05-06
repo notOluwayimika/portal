@@ -29,8 +29,13 @@ class AcademicSession extends Model
     {
         return $this->belongsTo(School::class);
     }
-    public function curricula(): HasMany
+    public function terms(): HasMany
     {
-        return $this->hasMany(Curriculum::class, 'academic_session_id');
+        return $this->hasMany(Term::class);
+    }
+
+    public function curricula(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    {
+        return $this->hasManyThrough(Curriculum::class, Term::class);
     }
 }

@@ -13,13 +13,16 @@ export default defineConfig({
         }),
         inertia(),
         react({
-            babel: {
-                plugins: ['babel-plugin-react-compiler'],
-            },
+            // babel: {
+            //     plugins: ['babel-plugin-react-compiler'],
+            // },
         }),
         tailwindcss(),
         wayfinder({
             formVariants: true,
         }),
     ],
+    optimizeDeps: {
+        include: ['react-select', 'react-select/base', 'react-select/async', 'react-select/creatable'],
+    },
 });

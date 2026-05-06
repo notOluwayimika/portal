@@ -61,6 +61,8 @@ export interface ClassLevelArm {
     updated_at?: string;
 }
 
+
+
 export interface ExamType {
     id: string;
     school_id?: string;
@@ -96,18 +98,29 @@ export interface GradeBoundary {
 }
 
 export interface Student {
-    id: string;
+    id: number;
+    uuid: string;
     school_id: string;
     school: School;
     user_id?: string;
     user?: User;
-    name: string;
+    first_name: string;
+    last_name: string;
+    middle_name?: string;
+    full_name: string;
     admission_number: string;
     photo?: string;
-    // email: string;
-    // phone: string;
-    // date_of_birth: string;
     gender: string;
+    date_of_birth?: string;
+    status: string;
+    class_details: {
+        level: string;
+        arm: string;
+        stream: string | null;
+        full_class: string;
+    };
+    curriculum_id?: number;
+    promoted_to_id?: number;
     created_at?: string;
     updated_at?: string;
 }
@@ -131,18 +144,27 @@ export interface Teacher {
     deleted_at?: string;
 }
 
+export interface Term {
+    id: string;
+    name: string;
+    slug: string;
+    order: number;
+    status: string;
+    academic_session?: AcademicSession;
+}
+
 export interface Curriculum {
     id: string;
     school_id?: string;
     school?: School;
-    academic_session_id?: string;
+    term_id?: string;
+    term?: Term;
     academic_session?: AcademicSession;
     class_level_arm_id?: string;
 
     class_level_arm?: ClassLevelArm;
     exam_type_id?: string;
     exam_type?: ExamType;
-    term: number;
     min_subjects: number;
     registration_deadline: string;
     result_visible_at: string;

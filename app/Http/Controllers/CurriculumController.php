@@ -6,6 +6,7 @@ use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Models\Curriculum;
 use App\Models\Subject;
+use App\Models\Term;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -19,10 +20,9 @@ class CurriculumController extends Controller
     {
         try {
             $request->validate([
-                'academic_session_id' => 'required|string',
+                'term_id' => 'required|string|exists:terms,uuid',
                 'class_level_id' => 'required|string',
                 'exam_type_id' => 'required|string',
-                'term' => 'required|integer|min:1|max:4',
                 'min_subjects' => 'required|integer|min:1',
                 'registration_deadline' => 'required|date',
                 'result_visible_at' => 'required|date',
@@ -30,15 +30,14 @@ class CurriculumController extends Controller
             ]);
 
             $school = auth()->user()->school;
-            $session = $school->sessions()->where('uuid', $request->academic_session_id)->first();
+            $term = Term::where('uuid', $request->term_id)->first();
             $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
             $examType = $school->examTypes()->where('uuid', $request->exam_type_id)->first();
 
             $curriculum = $school->curricula()->create([
-                'academic_session_id' => $session->id,
+                'term_id' => $term->id,
                 'class_level_arm_id' => $classLevel->id,
                 'exam_type_id' => $examType->id,
-                'term' => $request->term,
                 'min_subjects' => $request->min_subjects,
                 'registration_deadline' => $request->registration_deadline,
                 'result_visible_at' => $request->result_visible_at,
@@ -56,10 +55,9 @@ class CurriculumController extends Controller
     {
         try {
             $request->validate([
-                'academic_session_id' => 'required|string',
+                'term_id' => 'required|string|exists:terms,uuid',
                 'class_level_id' => 'required|string',
                 'exam_type_id' => 'required|string',
-                'term' => 'required|integer|min:1|max:4',
                 'min_subjects' => 'required|integer|min:1',
                 'registration_deadline' => 'required|date',
                 'result_visible_at' => 'required|date',
@@ -67,15 +65,14 @@ class CurriculumController extends Controller
             ]);
 
             $school = auth()->user()->school;
-            $session = $school->sessions()->where('uuid', $request->academic_session_id)->first();
+            $term = \App\Models\Term::where('uuid', $request->term_id)->first();
             $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
             $examType = $school->examTypes()->where('uuid', $request->exam_type_id)->first();
 
             $curriculum->update([
-                'academic_session_id' => $session->id,
+                'term_id' => $term->id,
                 'class_level_arm_id' => $classLevel->id,
                 'exam_type_id' => $examType->id,
-                'term' => $request->term,
                 'min_subjects' => $request->min_subjects,
                 'registration_deadline' => $request->registration_deadline,
                 'result_visible_at' => $request->result_visible_at,
@@ -104,23 +101,31 @@ class CurriculumController extends Controller
     {
         $school = auth()->user()->school;
         $curricula = $school->curricula();
-        // apply filters for academic_session_id, class_level_id, term and status if they exist
+        // apply filters for term_id, class_level_id and status if they exist
+        if ($request->has('term_id')) {
+            $term = \App\Models\Term::where('uuid', $request->term_id)->first();
+            $curricula = $curricula->where('term_id', $term->id);
+        }
         if ($request->has('academic_session_id')) {
             $academicSession = $school->sessions()->where('uuid', $request->academic_session_id)->first();
-            $curricula = $curricula->where('academic_session_id', $academicSession->id);
+            $curricula = $curricula->whereHas('term', function($q) use ($academicSession) {
+                $q->where('academic_session_id', $academicSession->id);
+            });
         }
         if ($request->has('class_level_id')) {
             $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
             $curricula = $curricula->where('class_level_arm_id', $classLevel->id);
         }
         if ($request->has('term')) {
-            $curricula = $curricula->where('term', $request->term);
+            $curricula = $curricula->whereHas('term', function($q) use ($request) {
+                $q->where('order', $request->term);
+            });
         }
         if ($request->has('status')) {
             $curricula = $curricula->where('status', $request->status);
         }
 
-        $curricula = $curricula->paginate(10);
+        $curricula = $curricula->paginate($request->integer('per_page', 25));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
             "pagination" => [

@@ -10,7 +10,11 @@ use Illuminate\Support\Str;
 
 class StudentCurriculum extends Model
 {
-    protected $fillable = ['student_id', 'curriculum_id'];
+    protected $fillable = ['student_id', 'curriculum_id', 'status', 'promoted_to_id'];
+
+    protected $casts = [
+        'status' => \App\Enums\StudentStatusEnum::class,
+    ];
 
     protected static function booted(): void
     {
@@ -29,6 +33,10 @@ class StudentCurriculum extends Model
     public function curriculum(): BelongsTo
     {
         return $this->belongsTo(Curriculum::class);
+    }
+    public function promotedTo(): BelongsTo
+    {
+        return $this->belongsTo(Curriculum::class, 'promoted_to_id');
     }
     public function studentSubjects(): HasMany
     {

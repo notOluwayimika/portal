@@ -13,9 +13,12 @@ readonly class StudentDto
         public readonly string $last_name,
         public readonly ?string $middle_name,
         public readonly string $gender,
-        public readonly Carbon|string|null $date_of_birth,
-        public readonly string $admission_number,
+        public readonly \Carbon\Carbon|string|null $date_of_birth,
+        public readonly ?string $admission_number,
         public readonly ?string $photo,
+        public readonly ?int $curriculum_id = null,
+        public readonly ?string $status = null,
+        public readonly ?int $promoted_to_id = null,
     ) {}
 
     public static function fromArray(array $data): self
@@ -28,8 +31,11 @@ readonly class StudentDto
             middle_name: $data['middle_name'] ?? null,
             gender: $data['gender'],
             date_of_birth: $data['date_of_birth'] ?? null,
-            admission_number: $data['admission_number'],
+            admission_number: $data['admission_number'] ?? null,
             photo: $data['photo'] ?? null,
+            curriculum_id: $data['curriculum_id'] ?? null,
+            status: $data['status'] ?? null,
+            promoted_to_id: $data['promoted_to_id'] ?? null,
         );
     }
 

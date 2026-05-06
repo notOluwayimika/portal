@@ -29,6 +29,10 @@ class School extends Model
     {
         return $this->hasMany(AcademicSession::class);
     }
+    public function terms(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    {
+        return $this->hasManyThrough(Term::class, AcademicSession::class);
+    }
     public function classLevels(): HasMany
     {
         return $this->hasMany(ClassLevel::class);

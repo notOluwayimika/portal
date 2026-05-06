@@ -9,6 +9,7 @@ use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\ExamTypeResource;
 use App\Http\Resources\SessionResource;
 use App\Http\Resources\StreamResource;
+use App\Http\Resources\TermResource;
 use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
@@ -24,7 +25,7 @@ class ClassLevelArmController extends Controller
     {
         try {
             $school = Auth::user()->school;
-            $sessions = $school->sessions()->where('is_current', true)->get();
+            $sessions = $school->sessions()->with('terms')->where('is_current', true)->get();
             $classLevels = $school->classLevels;
             $arms = $school->arms;
             $streams = Stream::all();
@@ -37,6 +38,7 @@ class ClassLevelArmController extends Controller
                 "class_level_arms" => ClassLevelArmResource::collection($classLevelArms),
                 "exam_types" => ExamTypeResource::collection($examTypes),
                 "sessions" => SessionResource::collection($sessions),
+                "terms" => TermResource::collection($school->terms ?? collect()),
             ], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());

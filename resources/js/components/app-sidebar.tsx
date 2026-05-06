@@ -22,6 +22,11 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
+    {
+        title: 'School Setup',
+        href: '/setup',
+        icon: FolderGit2,
+    },
 ];
 
 const footerNavItems: NavItem[] = [

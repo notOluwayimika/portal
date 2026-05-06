@@ -14,8 +14,10 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->string('name'); // e.g. WAEC, Internal
-            $table->string('slug')->unique();
+            $table->string('slug');
             $table->timestampsTz();
+
+            $table->unique(['school_id', 'slug']);
         });
     }
 

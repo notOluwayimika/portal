@@ -2,6 +2,12 @@
 
 namespace App\Providers;
 
+use App\Repositories\ClassLevel\ClassLevelRepository;
+use App\Repositories\ClassLevel\ClassLevelRepositoryInterface;
+use App\Repositories\Session\SessionRepository;
+use App\Repositories\Session\SessionRepositoryInterface;
+use App\Services\ClassLevelService;
+use App\Services\SessionService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +43,8 @@ class AppServiceProvider extends ServiceProvider
             app()->isProduction(),
         );
 
-        Password::defaults(fn (): ?Password => app()->isProduction()
+        Password::defaults(
+            fn(): ?Password => app()->isProduction()
             ? Password::min(12)
                 ->mixedCase()
                 ->letters()

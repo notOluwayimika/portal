@@ -14,9 +14,11 @@ return new class extends Migration {
             $table->uuid('id')->primary()->unique();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->string('name'); // e.g. "1st term 2025/2026"
-            $table->string('slug')->unique();
+            $table->string('slug');
             $table->boolean('is_current')->default(false);
             $table->timestampsTz();
+
+            $table->unique(['slug', 'school_id']);
         });
     }
 
@@ -25,6 +27,6 @@ return new class extends Migration {
      */
     public function down(): void
     {
-        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('academic_sessions');
     }
 };

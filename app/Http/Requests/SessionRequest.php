@@ -24,7 +24,6 @@ class SessionRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:academic_sessions,slug',
             'is_current' => 'boolean',
         ];
     }

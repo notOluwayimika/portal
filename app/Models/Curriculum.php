@@ -4,21 +4,19 @@
 namespace App\Models;
 
 use App\Models\Scopes\SchoolScope;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Curriculum extends Model
 {
-    use HasUuids;
-
     protected $table = 'curricula';
 
     protected $fillable = [
         'school_id',
         'academic_session_id',
-        'class_level_id',
+        'class_level_arm_id',
         'exam_type_id',
         'term',
         'min_subjects',
@@ -37,6 +35,12 @@ class Curriculum extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 
     public function school(): BelongsTo
@@ -47,9 +51,9 @@ class Curriculum extends Model
     {
         return $this->belongsTo(AcademicSession::class, 'academic_session_id');
     }
-    public function classLevel(): BelongsTo
+    public function classLevelArm(): BelongsTo
     {
-        return $this->belongsTo(ClassLevel::class);
+        return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
     public function examType(): BelongsTo
     {

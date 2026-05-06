@@ -3,14 +3,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class Score extends Model
 {
-    use HasUuids;
-
     protected $fillable = [
         'student_id',
         'curriculum_subject_id',
@@ -27,6 +25,7 @@ class Score extends Model
      */
     protected static function booted(): void
     {
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
         static::saving(function (Score $score) {
             $status = SubjectResultStatus::where('curriculum_subject_id', $score->curriculum_subject_id)
                 ->value('status');
@@ -35,6 +34,11 @@ class Score extends Model
                 throw new \DomainException('Cannot modify scores: subject result is approved.');
             }
         });
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
     }
 
     public function student(): BelongsTo

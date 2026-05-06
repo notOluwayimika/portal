@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import SectionsYearGroups from '@/components/school-setup/SectionsYearGroups'
-import TermsAndSessions from '@/components/school-setup/TermsAndSessions'
-import SubjectManager from '@/components/school-setup/SubjectManager'
-import GradingSystems from '@/components/school-setup/GradingSystems'
-import BoardingHouses from '@/components/school-setup/BoardingHouses'
-import YearEndMigration from '@/components/school-setup/YearEndMigration'
+import { useState } from 'react';
+import BoardingHouses from '@/components/school-setup/BoardingHouses';
+import GradingSystems from '@/components/school-setup/GradingSystems';
+import SectionsYearGroups from '@/components/school-setup/SectionsYearGroups';
+import SubjectManager from '@/components/school-setup/SubjectManager';
+import TermsAndSessions from '@/components/school-setup/TermsAndSessions';
+import YearEndMigration from '@/components/school-setup/YearEndMigration';
 
 const tabs = [
     { id: 'sections', label: 'Sections & Year Groups' },
@@ -13,34 +13,40 @@ const tabs = [
     { id: 'grading', label: 'Grading Systems' },
     { id: 'boarding', label: 'Boarding Houses' },
     { id: 'migration', label: 'Year-End Migration' },
-] as const
+] as const;
 
-type TabId = (typeof tabs)[number]['id']
+type TabId = (typeof tabs)[number]['id'];
 
 export default function SchoolSetup() {
-    const [activeTab, setActiveTab] = useState<TabId>('sections')
+    const [activeTab, setActiveTab] = useState<TabId>('sections');
 
     return (
         <div className="space-y-6 pb-10">
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="space-y-3">
                     <div>
-                        <h1 className="text-2xl font-semibold text-gray-900">School Setup</h1>
-                        <p className="mt-2 text-sm text-gray-600">Configure sections, terms, subjects, grading and more.</p>
+                        <h1 className="text-2xl font-semibold text-gray-900">
+                            School Setup
+                        </h1>
+                        <p className="mt-2 text-sm text-gray-600">
+                            Configure sections, terms, subjects, grading and
+                            more.
+                        </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {tabs.map((tab) => {
-                            const isActive = activeTab === tab.id
+                            const isActive = activeTab === tab.id;
+
                             return (
                                 <button
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
-                                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${isActive ? 'bg-[#185FA5] text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+                                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${isActive ? 'bg-[#185FA5] text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
                                 >
                                     {tab.label}
                                 </button>
-                            )
+                            );
                         })}
                     </div>
                 </div>
@@ -55,5 +61,5 @@ export default function SchoolSetup() {
                 {activeTab === 'migration' && <YearEndMigration />}
             </div>
         </div>
-    )
+    );
 }

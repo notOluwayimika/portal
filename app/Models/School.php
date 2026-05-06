@@ -3,15 +3,23 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class School extends Model
 {
-    use HasUuids;
-
     protected $fillable = ['name', 'slug'];
+
+    protected static function booted(): void
+    {
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'uuid';
+    }
 
     public function users(): HasMany
     {
@@ -45,8 +53,21 @@ class School extends Model
     {
         return $this->hasMany(Student::class);
     }
+    public function teachers(): HasMany
+    {
+        return $this->hasMany(Teacher::class);
+    }
     public function gradeBoundaries(): HasMany
     {
         return $this->hasMany(GradeBoundary::class);
+    }
+    public function currentSession()
+    {
+        return $this->hasOne(AcademicSession::class)->where('is_current', true);
+    }
+
+    public function classLevelArms()
+    {
+        return $this->hasMany(ClassLevelArm::class);
     }
 }

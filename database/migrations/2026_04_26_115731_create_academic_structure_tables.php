@@ -30,8 +30,6 @@ return new class extends Migration {
             $table->foreignUuid('class_level_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('arm_id')->constrained()->cascadeOnDelete();
             $table->timestampsTz();
-
-            $table->unique(['class_level_id', 'arm_id']);
         });
     }
 

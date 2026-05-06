@@ -1,7 +1,15 @@
 <?php
 
 use App\Http\Controllers\Api\AuthenticationController;
+use App\Http\Controllers\ClassLevelArmController;
+use App\Http\Controllers\CurriculumController;
+use App\Http\Controllers\CurriculumSubjectController;
+use App\Http\Controllers\ExamTypeController;
+use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\SetupController;
+use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 // Authentication
@@ -9,16 +17,76 @@ Route::post('/login', [AuthenticationController::class, 'login']);
 Route::post('/register', [AuthenticationController::class, 'register']);
 
 // get sessions
-Route::get('/sessions', [SessionController::class, 'indexApi']);
+Route::get('/sessions', [SessionController::class, 'index']);
+// get class level arm structure
+Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+// get exam types
+Route::get('/exam-types', [ExamTypeController::class, 'index']);
+// get subjects
+Route::get('/subjects', [SubjectController::class, 'index']);
+// get grade boundaries
+Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
+// get curricula
+Route::get('/curricula', [CurriculumController::class, 'index']);
+Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+// get teachers
+Route::get('/teachers', [TeacherController::class, 'index']);
+Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'getSubjects']);
 
 Route::middleware(['auth:sanctum', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 
-    // get sessions
-
+    // protected session routes
     Route::post('/sessions', [SessionController::class, 'store']);
-    Route::put('/sessions/{id}', [SessionController::class, 'update']);
-    Route::delete('/sessions/{id}', [SessionController::class, 'destroy']);
+    Route::put('/sessions/{session:uuid}', [SessionController::class, 'update']);
+    Route::delete('/sessions/{session:uuid}', [SessionController::class, 'destroy']);
+    Route::post('/sessions/{session:uuid}/current', [SessionController::class, 'setCurrent']);
+
+    // protected class structure (level and arms)
+    Route::post('/class-structure', [ClassLevelArmController::class, 'store']);
+    Route::patch('/class-structure/{classLevelArm:uuid}', [ClassLevelArmController::class, 'update']);
+    Route::delete('/class-structure/{classLevelArm:uuid}', [ClassLevelArmController::class, 'destroy']);
+    Route::post('/class-structure/toggle', [ClassLevelArmController::class, 'toggle']);
+    Route::post('/class-structure/levels', [ClassLevelArmController::class, 'storeLevel']);
+    Route::put('/class-structure/levels/{classLevel:uuid}', [ClassLevelArmController::class, 'updateLevel']);
+    Route::delete('/class-structure/levels/{classLevel:uuid}', [ClassLevelArmController::class, 'destroyLevel']);
+    Route::post('/class-structure/arms', [ClassLevelArmController::class, 'storeArm']);
+    Route::put('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'updateArm']);
+    Route::delete('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'destroyArm']);
+    Route::post('/class-structure/streams', [ClassLevelArmController::class, 'storeStream']);
+    Route::put('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'updateStream']);
+    Route::delete('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'destroyStream']);
+
+    // protected exam types routes
+    Route::post('/exam-types', [ExamTypeController::class, 'store']);
+    Route::put('/exam-types/{examType:uuid}', [ExamTypeController::class, 'update']);
+    Route::delete('/exam-types/{examType:uuid}', [ExamTypeController::class, 'destroy']);
+
+    // protected subject routes
+    Route::post('/subjects', [SubjectController::class, 'store']);
+    Route::put('/subjects/{subject:uuid}', [SubjectController::class, 'update']);
+    Route::delete('/subjects/{subject:uuid}', [SubjectController::class, 'destroy']);
+
+    // protected grade boundary routes
+    Route::post('/grade-boundaries', [GradeBoundaryController::class, 'store']);
+    Route::put('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'update']);
+    Route::delete('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'destroy']);
+
+    // protected curricula routes
+    Route::post('/curricula', [CurriculumController::class, 'store']);
+    Route::post('/curricula/{curriculum:uuid}/subjects', [CurriculumController::class, 'assignSubject']);
+    Route::put('/curricula/{curriculum:uuid}', [CurriculumController::class, 'update']);
+    Route::patch('/curricula/{curriculum:uuid}/subjects/reorder', [CurriculumController::class, 'reorder']);
+    Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
+
+    // protected curriculum subjects routes
+
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
+    // get setup data
+    Route::get('/setup-data', [SetupController::class, 'index']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 });

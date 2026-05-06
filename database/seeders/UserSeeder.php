@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 
 class UserSeeder extends Seeder
 {
@@ -17,16 +19,20 @@ class UserSeeder extends Seeder
     {
         // Create or get a school
         $school = School::firstOrCreate([
-            'slug' => 'brookstone-school',
+            'slug' => 'secondary-school',
         ], [
-            'name' => 'Brookstone School',
+            'name' => 'Secondary School',
         ]);
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($school->id);
+
 
         // Create admin user
         $admin = User::firstOrCreate([
-            'email' => 'admin@example.com',
+            'email' => 'admin@secondary.com',
         ], [
-            'name' => 'Admin User',
+            'first_name' => 'Admin',
+            'last_name' => 'User',
             'password' => Hash::make('password'),
             'school_id' => $school->id,
         ]);
@@ -36,46 +42,40 @@ class UserSeeder extends Seeder
         $headOfSchool = User::firstOrCreate([
             'email' => 'head@example.com',
         ], [
-            'name' => 'Head of School',
+            'first_name' => 'Head',
+            'last_name' => 'of School',
             'password' => Hash::make('password'),
             'school_id' => $school->id,
         ]);
         $headOfSchool->assignRole('head_of_school');
 
-        // Create teacher users
-        $teachers = [
-            ['name' => 'Teacher One', 'email' => 'teacher1@example.com'],
-            ['name' => 'Teacher Two', 'email' => 'teacher2@example.com'],
-            ['name' => 'Teacher Three', 'email' => 'teacher3@example.com'],
-        ];
 
-        foreach ($teachers as $teacherData) {
-            $teacher = User::firstOrCreate([
-                'email' => $teacherData['email'],
-            ], [
-                'name' => $teacherData['name'],
-                'password' => Hash::make('password'),
-                'school_id' => $school->id,
-            ]);
-            $teacher->assignRole('teacher');
-        }
 
         // Create parent users
-        $parents = [
-            ['name' => 'Parent One', 'email' => 'parent1@example.com'],
-            ['name' => 'Parent Two', 'email' => 'parent2@example.com'],
-            ['name' => 'Parent Three', 'email' => 'parent3@example.com'],
-        ];
+        // $students = [["name"=> "Student One", "admission_number" => "ADM-001", "photo" => null, "parent_name" => "Parent One", "parent_email" => "parent1@example.com"]];
+        // foreach ($students as $studentData) {
+        //     // Create student user
+        //     $parent = User::firstOrCreate([
+        //         'email' => $studentData['parent_email'],
+        //     ], [
+        //         'first_name' => $studentData['parent_name'],
+        //         'last_name' => 'Parent',
+        //         'password' => Hash::make('password'),
+        //         'school_id' => $school->id,
+        //     ]);
+        //     $parent->assignRole('parent');
+        //     $parent->student->create([
+        //         "first_name" => $studentData['first_name'],
+        //         "last_name" => $studentData['last_name'],
+        //         "school_id" => $school->id,
+        //         "user_id" => $parent->id,
+        //         "admission_number" => $studentData['admission_number'],
+        //         "photo" => $studentData['photo']
+        //     ]);
+        // }
 
-        foreach ($parents as $parentData) {
-            $parent = User::firstOrCreate([
-                'email' => $parentData['email'],
-            ], [
-                'name' => $parentData['name'],
-                'password' => Hash::make('password'),
-                'school_id' => $school->id,
-            ]);
-            $parent->assignRole('parent');
-        }
+
+        // seed teachers - Moved to TeacherSeeder
+
     }
 }

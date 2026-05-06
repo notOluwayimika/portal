@@ -26,6 +26,8 @@ class StudentController extends Controller
     public function index(Request $request)
     {
         $students = $this->studentService->paginate($request);
+        logger('Student', collect($students)->toArray());
+        
         return response()->json([
             'data' => StudentResource::collection($students),
             'pagination' => [
@@ -61,7 +63,11 @@ class StudentController extends Controller
 
     public function update(StudentRequest $request, Student $student)
     {
-        $this->studentService->update($student, $request->validated());
+        $data = $request->validated();
+        $data['school_id'] = $request->user()->school_id;
+
+        $dto = StudentDto::fromArray($data);
+        $this->studentService->update($student, $dto->toArray());
 
         if ($request->wantsJson()) {
             return Response::success('Student updated successfully.');

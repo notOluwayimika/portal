@@ -66,25 +66,21 @@ class StudentService
     public function update(Student $student, array $attributes): Student
     {
         return DB::transaction(function () use ($student, $attributes) {
-            $student->update([
+            $student->update(array_filter([
                 'first_name' => $attributes['first_name'],
                 'last_name' => $attributes['last_name'],
                 'middle_name' => $attributes['middle_name'] ?? null,
                 'gender' => $attributes['gender'],
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
-                'admission_number' => $attributes['admission_number'] ?? null,
+                'admission_number' => $attributes['admission_number'] ?? $student->admission_number,
                 'photo' => $attributes['photo'] ?? null,
-            ]);
+            ], fn($v) => !is_null($v)));
 
             if (isset($attributes['curriculum_id'])) {
                 StudentCurriculum::updateOrCreate(
-                    [
-                        'student_id' => $student->id,
-                        'status' => \App\Enums\StudentStatusEnum::ACTIVE->value,
-                    ],
+                    ['student_id' => $student->id],
                     [
                         'curriculum_id' => $attributes['curriculum_id'],
-                        'status' => $attributes['status'] ?? \App\Enums\StudentStatusEnum::ACTIVE->value,
                         'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                     ]
                 );

@@ -19,8 +19,7 @@ class StudentResource extends JsonResource
         $classLevelArm = $curriculum?->classLevelArm;
 
         return [
-            'id' => $this->id,
-            'uuid' => $this->uuid,
+            'id' => $this->uuid,
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'middle_name' => $this->middle_name,
@@ -32,9 +31,9 @@ class StudentResource extends JsonResource
             'status' => $currentCurriculum?->status,
             'class_details' => [
                 'level' => $classLevelArm?->classLevel?->name,
-                'arm' => $classLevelArm?->arm?->name,
+                'arm' => $classLevelArm?->arm?->label,
                 'stream' => $classLevelArm?->stream?->name,
-                'full_class' => $classLevelArm ? "{$classLevelArm->classLevel->name} - {$classLevelArm->arm->name}" : 'N/A',
+                'full_class' => $this->student_class ?? 'N/A',
             ],
             'curriculum_id' => $curriculum?->id,
             'promoted_to_id' => $currentCurriculum?->promoted_to_id,

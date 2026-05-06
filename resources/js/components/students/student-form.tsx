@@ -1,14 +1,14 @@
 import { useForm } from '@inertiajs/react';
 import axios from 'axios';
 import { Save } from 'lucide-react';
-import { Spinner } from '@/components/ui/spinner';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { Student } from '@/types/models';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import type { Student } from '@/types/models';
 
 interface StudentFormProps {
     student?: Student | null;
@@ -25,21 +25,31 @@ interface CurriculumOption {
     stream: string;
 }
 
+interface StudentFormData {
+    first_name: string;
+    last_name: string;
+    middle_name: string;
+    admission_number: string;
+    gender: string;
+    date_of_birth: string;
+    curriculum_id: string;
+}
+
 export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
     const isEdit = !!student;
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [genders, setGenders] = useState<{ name: string; value: string }[]>([])
     const [loading, setLoading] = useState(false);
+    const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
 
-    const { data, setData, post, put, processing, errors, reset } = useForm({
+    const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
         first_name: student?.first_name || '',
         last_name: student?.last_name || '',
         middle_name: student?.middle_name || '',
-        admission_number: student?.admission_number || '',
+        admission_number: isEdit ? (student?.admission_number || '') : '',
         gender: student?.gender || 'male',
         date_of_birth: student?.date_of_birth || '',
-        curriculum_id: student?.current_curriculum?.curriculum_id?.toString() || '',
-        status: student?.status || 'active',
+        curriculum_id: student?.curriculum_id?.toString() || '',
     });
 
     useEffect(() => {
@@ -47,6 +57,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         const fetchCurricula = async () => {
             try {
                 const response = await axios.get('/api/students/resources');
+
                 if (isMounted) {
                     setCurricula(response.data.data.curricula || []);
                     setGenders(response.data.data.genders || []);
@@ -56,7 +67,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
             }
         };
         fetchCurricula();
-        return () => { isMounted = false; };
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -70,7 +84,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         };
 
         if (isEdit) {
-            put(`/api/students/${student.uuid}`, options);
+            patch(`/api/students/${student.id}`, options);
         } else {
             post('/api/students', options);
         }
@@ -120,12 +134,37 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="admission_number">Admission Number</Label>
-                    <Input
-                        id="admission_number"
-                        value={data.admission_number}
-                        onChange={(e) => setData('admission_number', e.target.value)}
-                    />
+                    <div className="flex items-center gap-2">
+                        <input
+                            id="manual_admission"
+                            type="checkbox"
+                            checked={showAdmissionNumber}
+                            onChange={(e) => {
+                                setShowAdmissionNumber(e.target.checked);
+
+                                if (!e.target.checked) {
+                                    setData('admission_number', '');
+                                }
+                            }}
+                            className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <Label htmlFor="manual_admission" className="cursor-pointer text-sm font-normal">
+                            Manually set admission number
+                        </Label>
+                    </div>
+                    {showAdmissionNumber && (
+                        <>
+                            <Input
+                                id="admission_number"
+                                placeholder="Enter admission number"
+                                value={data.admission_number}
+                                onChange={(e) => setData('admission_number', e.target.value)}
+                            />
+                            {errors.admission_number && (
+                                <p className="text-destructive text-xs">{errors.admission_number}</p>
+                            )}
+                        </>
+                    )}
                 </div>
 
                 <div className="space-y-2">
@@ -156,7 +195,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 </div>
 
                 <div className="space-y-2">
-                    <Label>Assigned Class (Curriculum)</Label>
+                    <Label>Assigned Class</Label>
                     <SearchableSelect
                         placeholder="Search for a class..."
                         options={curricula.map((c) => ({
@@ -171,22 +210,6 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                         error={!!errors.curriculum_id}
                     />
                     {errors.curriculum_id && <p className="text-destructive text-xs">{errors.curriculum_id}</p>}
-                </div>
-
-                <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select value={data.status} onValueChange={(v) => setData('status', v)}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {statuses.map((s) => (
-                                <SelectItem key={s.value} value={s.value}>
-                                    {s.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
                 </div>
             </div>
 

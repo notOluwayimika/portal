@@ -20,7 +20,8 @@ class CurriculumSubjectResource extends JsonResource
             'subject' => new SubjectResource($this->subject),
             'is_compulsory' => $this->is_compulsory,
             'display_order' => $this->display_order,
-            'teachers' => TeacherCurriculumSubjectResource::collection($this->teacherAssignments)
+            'teachers' => TeacherCurriculumSubjectResource::collection($this->teacherAssignments),
+            'marking_components' => MarkingComponentResource::collection($this->markingComponents),
         ];
     }
 }

@@ -16,6 +16,22 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthenticationController::class, 'login']);
 Route::post('/register', [AuthenticationController::class, 'register']);
 
+// get sessions
+Route::get('/sessions', [SessionController::class, 'index']);
+// get class level arm structure
+Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+// get exam types
+Route::get('/exam-types', [ExamTypeController::class, 'index']);
+// get subjects
+Route::get('/subjects', [SubjectController::class, 'index']);
+// get grade boundaries
+Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
+// get curricula
+Route::get('/curricula', [CurriculumController::class, 'index']);
+Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+// get teachers
+Route::get('/teachers', [TeacherController::class, 'index']);
+Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'getSubjects']);
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);

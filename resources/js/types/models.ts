@@ -198,12 +198,22 @@ export interface Stream {
 export interface CurriculumSubject {
     id: string;
     curriculum_id: string;
+    curriculum?: Curriculum;
     subject: Subject;
     is_compulsory: boolean;
     display_order: number;
     teachers: TeacherCurriculumSubject[];
+    marking_components: MarkingComponent[];
 }
 export interface TeacherCurriculumSubject {
     id: string;
     teacher: Teacher;
+    curriculum_subject: CurriculumSubject;
+}
+
+export interface MarkingComponent {
+    id: string;
+    curriculum_subject_id: string;
+    name: string;
+    weight: number; // stored as 0.0–1.0, e.g. 0.3
 }

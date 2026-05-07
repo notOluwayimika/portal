@@ -12,7 +12,7 @@ import SingleSelect from '@/components/single-select';
 import type { ToastType } from '@/components/toast-item';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
-import type { Curriculum } from '@/types/models';
+import type { Curriculum, Term } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 
 // ─── StatusPill ────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export function CurriculaTab({
     const [sessions, setSessions] = useState<SelectOption[]>([]);
     const [classLevels, setClassLevels] = useState<SelectOption[]>([]);
     const [examTypes, setExamTypes] = useState<SelectOption[]>([]);
-    const [allTerms, setAllTerms] = useState<any[]>([]); // To store raw term objects
+    const [allTerms, setAllTerms] = useState<Term[]>([]); // To store raw term objects
     const [terms, setTerms] = useState<SelectOption[]>([]); // To store term options
     const [modal, setModal] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<Curriculum | null>(null);
@@ -119,7 +119,11 @@ export function CurriculaTab({
     // Filter terms when session changes
     useEffect(() => {
         if (selectedSessionId && selectedSessionId !== 'all') {
-            const sessionTerms = allTerms.filter(t => t.academic_session?.id === selectedSessionId);
+            const sessionTerms = allTerms.filter(
+                (t) => t.academic_session?.id === selectedSessionId,
+            );
+            console.log(sessionTerms, allTerms);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setTerms(convertToSelectOptions(sessionTerms));
         } else {
             setTerms(convertToSelectOptions(allTerms));
@@ -212,6 +216,7 @@ export function CurriculaTab({
             !form.status
         ) {
             addToast('Please fill in all required fields.', 'error');
+
             return;
         }
 
@@ -404,7 +409,9 @@ export function CurriculaTab({
                                             {c.class_level_arm?.name ?? '—'}
                                         </span>
                                     </td>
-                                    <td className="muted">{c.term?.name ?? `Term ${c.term_id}`}</td>
+                                    <td className="muted">
+                                        {c.term?.name ?? `Term ${c.term_id}`}
+                                    </td>
                                     <td
                                         style={{
                                             fontSize: 12.5,
@@ -423,13 +430,13 @@ export function CurriculaTab({
                                         className="muted"
                                         style={{ fontSize: 12.5 }}
                                     >
-                                        {fmtDate(c.term?.start_date)}
+                                        {fmtDate(c.term?.start_date ?? '—')}
                                     </td>
                                     <td
                                         className="muted"
                                         style={{ fontSize: 12.5 }}
                                     >
-                                        {fmtDate(c.term?.end_date)}
+                                        {fmtDate(c.term?.end_date ?? '—')}
                                     </td>
                                     <td>
                                         <StatusPill status={c.status} />
@@ -527,7 +534,9 @@ export function CurriculaTab({
                             <SingleSelect
                                 options={terms}
                                 value={form.term_id}
-                                onChange={(value) => f('term_id', String(value))}
+                                onChange={(value) =>
+                                    f('term_id', String(value))
+                                }
                                 label="Term"
                             />
                         </div>

@@ -17,7 +17,13 @@ import type {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-const termLabel = (t: number) => ['', '1st', '2nd', '3rd'][t] ?? String(t);
+const termLabel = (t: { name: string } | number) => {
+    if (typeof t === 'object') {
+        return t.name;
+    }
+
+    return ['', '1st', '2nd', '3rd'][t] ?? String(t);
+};
 
 const pct = (w: number) => `${Math.round(w * 100)}%`;
 

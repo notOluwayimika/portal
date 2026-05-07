@@ -92,6 +92,7 @@ class CurriculumController extends Controller
     public function index(Request $request)
     {
         $school = auth()->user()->school;
+        $limit = $request->integer('limit', 25);
         $curricula = $school->curricula();
         // apply filters for term_id, class_level_id and status if they exist
         if ($request->has('term_id')) {
@@ -100,7 +101,7 @@ class CurriculumController extends Controller
         }
         if ($request->has('academic_session_id')) {
             $academicSession = $school->sessions()->where('uuid', $request->academic_session_id)->first();
-            $curricula = $curricula->whereHas('term', function($q) use ($academicSession) {
+            $curricula = $curricula->whereHas('term', function ($q) use ($academicSession) {
                 $q->where('academic_session_id', $academicSession->id);
             });
         }
@@ -109,15 +110,17 @@ class CurriculumController extends Controller
             $curricula = $curricula->where('class_level_arm_id', $classLevel->id);
         }
         if ($request->has('term')) {
-            $curricula = $curricula->whereHas('term', function($q) use ($request) {
-                $q->where('order', $request->term);
-            });
+            // $curricula = $curricula->whereHas('term', function ($q) use ($request) {
+            //     $q->where('order', $request->term);
+            // });
+            $term = $academicSession->terms()->where('uuid', $request->term)->first();
+            $curricula = $curricula->where('term_id', $term->id);
         }
         if ($request->has('status')) {
             $curricula = $curricula->where('status', $request->status);
         }
 
-        $curricula = $curricula->paginate($request->integer('per_page', 25));
+        $curricula = $curricula->paginate($request->integer('per_page', $limit));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
             "pagination" => [

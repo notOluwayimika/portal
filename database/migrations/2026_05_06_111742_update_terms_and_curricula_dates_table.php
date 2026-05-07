@@ -4,16 +4,15 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
     public function up(): void
     {
         Schema::table('terms', function (Blueprint $table) {
-            $table->timestampTz('start_date')->nullable()->after('status');
-            $table->timestampTz('end_date')->nullable()->after('start_date');
+            // $table->timestampTz('start_date')->nullable()->after('status');
+            // $table->timestampTz('end_date')->nullable()->after('start_date');
             $table->timestampTz('registration_deadline')->nullable();
             $table->timestampTz('result_visible_at')->nullable();
         });

@@ -25,7 +25,11 @@ class ClassLevelArmController extends Controller
     {
         try {
             $school = Auth::user()->school;
-            $sessions = $school->sessions()->with('terms')->where('is_current', true)->get();
+            $sessions = $school->sessions()->with('terms')->get()->map(function ($session) {
+                $session->terms = TermResource::collection($session->terms);
+                return $session;
+            });
+            ;
             $classLevels = $school->classLevels;
             $arms = $school->arms;
             $streams = Stream::all();
@@ -38,7 +42,7 @@ class ClassLevelArmController extends Controller
                 "class_level_arms" => ClassLevelArmResource::collection($classLevelArms),
                 "exam_types" => ExamTypeResource::collection($examTypes),
                 "sessions" => SessionResource::collection($sessions),
-                "terms" => TermResource::collection($school->terms ?? collect()),
+                "terms" => TermResource::collection($school->terms()->with('academicSession')->get() ?? collect()),
             ], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());

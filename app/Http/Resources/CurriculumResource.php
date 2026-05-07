@@ -24,8 +24,6 @@ class CurriculumResource extends JsonResource
             "class_level_arm" => new ClassLevelArmResource($this->classLevelArm),
             "exam_type" => new ExamTypeResource($this->examType),
             "min_subjects" => $this->min_subjects,
-            "registration_deadline" => $this->term?->start_date,
-            "result_visible_at" => $this->term?->end_date,
             "status" => $this->status,
 
             "curriculum_subjects" => $this->when(

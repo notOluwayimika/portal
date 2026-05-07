@@ -99,22 +99,9 @@ class CurriculumController extends Controller
             $term = Term::where('uuid', $request->term_id)->first();
             $curricula = $curricula->where('term_id', $term->id);
         }
-        if ($request->has('academic_session_id')) {
-            $academicSession = $school->sessions()->where('uuid', $request->academic_session_id)->first();
-            $curricula = $curricula->whereHas('term', function ($q) use ($academicSession) {
-                $q->where('academic_session_id', $academicSession->id);
-            });
-        }
         if ($request->has('class_level_id')) {
             $classLevel = $school->classLevelArms()->where('uuid', $request->class_level_id)->first();
             $curricula = $curricula->where('class_level_arm_id', $classLevel->id);
-        }
-        if ($request->has('term')) {
-            // $curricula = $curricula->whereHas('term', function ($q) use ($request) {
-            //     $q->where('order', $request->term);
-            // });
-            $term = $academicSession->terms()->where('uuid', $request->term)->first();
-            $curricula = $curricula->where('term_id', $term->id);
         }
         if ($request->has('status')) {
             $curricula = $curricula->where('status', $request->status);

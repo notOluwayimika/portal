@@ -37,11 +37,12 @@ export async function getUserFromToken() {
 }
 
 export function convertToSelectOptions(
-    collection: { id: string | number; name: string }[],
+    collection: { id: string | number; [key: string]: any }[],
+    nameColumn: string = 'name',
 ) {
     return collection.map((item) => ({
         value: item.id,
-        label: item.name,
+        label: item[nameColumn],
     }));
 }
 
@@ -53,3 +54,8 @@ export const fmtDate = (d: string): string =>
               year: 'numeric',
           })
         : '—';
+
+export function handleBack() {
+    // Implementation for handling back navigation
+    window.history.back();
+}

@@ -61,8 +61,6 @@ export interface ClassLevelArm {
     updated_at?: string;
 }
 
-
-
 export interface ExamType {
     id: string;
     school_id?: string;
@@ -146,12 +144,15 @@ export interface Teacher {
 export interface Term {
     id: string;
     name: string;
+    full_name: string;
     slug: string;
     order: number;
     status: string;
     start_date?: string;
     end_date?: string;
     academic_session?: AcademicSession;
+    registration_deadline?: string;
+    result_visible_at?: string;
 }
 
 export interface Curriculum {

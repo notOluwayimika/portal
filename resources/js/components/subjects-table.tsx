@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/refs */
 
+import { Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import type {
     CurriculumSubject,
@@ -193,7 +194,7 @@ export function SubjectsTable({
                                             style={{
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 4,
+                                                gap: 8,
                                                 padding: '2px 8px 2px 10px',
                                                 borderRadius: 999,
                                                 background:
@@ -203,8 +204,13 @@ export function SubjectsTable({
                                                 fontWeight: 500,
                                             }}
                                         >
-                                            {t.teacher.first_name}{' '}
-                                            {t.teacher.last_name}
+                                            <Link
+                                                href={`/setup/teacher/${t.teacher.id}`}
+                                                className="transition duration-100 hover:text-blue-500"
+                                            >
+                                                {t.teacher.first_name}{' '}
+                                                {t.teacher.last_name}
+                                            </Link>
                                             <button
                                                 onClick={() =>
                                                     onRemoveTeacher(cs, t)

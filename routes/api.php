@@ -10,6 +10,7 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\TeacherController;
+use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 // Authentication
@@ -18,6 +19,8 @@ Route::post('/register', [AuthenticationController::class, 'register']);
 
 // get sessions
 Route::get('/sessions', [SessionController::class, 'index']);
+Route::get('/sessions/{session:uuid}/terms', [TermController::class, 'index']);
+
 // get class level arm structure
 Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
 // get exam types
@@ -90,13 +93,17 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
-
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);
+
+    // protected term routes
+    Route::post('/sessions/{session:uuid}/terms', [TermController::class, 'store']);
+    Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update'])->withoutScopedBindings();
+    Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy'])->withoutScopedBindings();
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 

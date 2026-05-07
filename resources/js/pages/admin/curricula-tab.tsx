@@ -12,7 +12,7 @@ import SingleSelect from '@/components/single-select';
 import type { ToastType } from '@/components/toast-item';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
-import type { Curriculum, Term } from '@/types/models';
+import type { Curriculum } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 
 // ─── StatusPill ────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ interface CurriculumForm {
 // ─── Filters ───────────────────────────────────────────────────────────────
 
 interface Filters {
-    academic_session_id: string;
+    term_id: string;
     class_level_id: string;
     term: string;
     status: string;
@@ -55,10 +55,8 @@ export function CurriculaTab({
     addToast: (message: string, type?: ToastType) => void;
 }) {
     const [curricula, setCurricula] = useState<Curriculum[]>([]);
-    const [sessions, setSessions] = useState<SelectOption[]>([]);
     const [classLevels, setClassLevels] = useState<SelectOption[]>([]);
     const [examTypes, setExamTypes] = useState<SelectOption[]>([]);
-    const [allTerms, setAllTerms] = useState<Term[]>([]); // To store raw term objects
     const [terms, setTerms] = useState<SelectOption[]>([]); // To store term options
     const [modal, setModal] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<Curriculum | null>(null);
@@ -74,7 +72,7 @@ export function CurriculaTab({
 
     // ─── Filter state ─────────────────────────────────────────────────────
     const blankFilters: Filters = {
-        academic_session_id: '',
+        term_id: '',
         class_level_id: '',
         term: '',
         status: '',
@@ -100,36 +98,19 @@ export function CurriculaTab({
         { label: 'Closed', value: 'closed' },
     ];
 
-    const [selectedSessionId, setSelectedSessionId] = useState<string>('');
-
     useEffect(() => {
         const fetchClassStructure = async () => {
             const response = await axios.get('/api/class-structure');
-            setSessions(convertToSelectOptions(response.data.sessions));
             setClassLevels(
                 convertToSelectOptions(response.data.class_level_arms),
             );
             setExamTypes(convertToSelectOptions(response.data.exam_types));
-            setAllTerms(response.data.terms || []);
-            setTerms(convertToSelectOptions(response.data.terms || []));
+            setTerms(
+                convertToSelectOptions(response.data.terms || [], 'full_name'),
+            );
         };
         fetchClassStructure();
     }, []);
-
-    // Filter terms when session changes
-    useEffect(() => {
-        if (selectedSessionId && selectedSessionId !== 'all') {
-            const sessionTerms = allTerms.filter(
-                (t) => t.academic_session?.id === selectedSessionId,
-            );
-            console.log(sessionTerms, allTerms);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setTerms(convertToSelectOptions(sessionTerms));
-        } else {
-            setTerms(convertToSelectOptions(allTerms));
-        }
-    }, [selectedSessionId, allTerms]);
-
     useEffect(() => {
         const fetchCurricula = async () => {
             const response = await axios.get('/api/curricula', {
@@ -137,16 +118,14 @@ export function CurriculaTab({
                     limit,
                     page,
                     // Only send non-empty filter values
-                    ...(filters.academic_session_id &&
-                        filters.academic_session_id !== 'all' && {
-                            academic_session_id: filters.academic_session_id,
+                    ...(filters.term_id &&
+                        filters.term_id !== 'all' && {
+                            term_id: filters.term_id,
                         }),
                     ...(filters.class_level_id &&
                         filters.class_level_id !== 'all' && {
                             class_level_id: filters.class_level_id,
                         }),
-                    ...(filters.term &&
-                        filters.term !== 'all' && { term: filters.term }),
                     ...(filters.status &&
                         filters.status !== 'all' && { status: filters.status }),
                 },
@@ -174,7 +153,6 @@ export function CurriculaTab({
 
     const open = (c: Curriculum | null = null): void => {
         if (c) {
-            setSelectedSessionId(c.academic_session?.id ?? '');
             setForm({
                 term_id: c.term?.id ?? '',
                 class_level_id: c.class_level_arm?.id ?? '',
@@ -183,7 +161,6 @@ export function CurriculaTab({
                 status: c.status,
             });
         } else {
-            setSelectedSessionId('');
             setForm({ ...blank });
         }
 
@@ -285,20 +262,17 @@ export function CurriculaTab({
                 >
                     <div
                         className="field"
-                        style={{ flex: '1 1 180px', marginBottom: 0 }}
+                        style={{ flex: '1 1 130px', marginBottom: 0 }}
                     >
-                        <label>Session</label>
+                        <label>Term</label>
                         <SingleSelect
                             options={[
-                                { label: 'All sessions', value: 'all' },
-                                ...sessions,
+                                { label: 'All terms', value: 'all' },
+                                ...terms,
                             ]}
-                            value={filters.academic_session_id}
-                            onChange={(v) => {
-                                flt('academic_session_id', String(v));
-                                setSelectedSessionId(String(v));
-                            }}
-                            label="All sessions"
+                            value={filters.term_id}
+                            onChange={(v) => flt('term_id', String(v))}
+                            label="All terms"
                         />
                     </div>
                     <div
@@ -316,21 +290,7 @@ export function CurriculaTab({
                             label="All levels"
                         />
                     </div>
-                    <div
-                        className="field"
-                        style={{ flex: '1 1 130px', marginBottom: 0 }}
-                    >
-                        <label>Term</label>
-                        <SingleSelect
-                            options={[
-                                { label: 'All terms', value: 'all' },
-                                ...terms,
-                            ]}
-                            value={filters.term}
-                            onChange={(v) => flt('term', String(v))}
-                            label="All terms"
-                        />
-                    </div>
+
                     <div
                         className="field"
                         style={{ flex: '1 1 130px', marginBottom: 0 }}
@@ -507,15 +467,14 @@ export function CurriculaTab({
                 >
                     <div className="form-grid form-grid-3">
                         <div className="field">
-                            <label>Session</label>
+                            <label>Term</label>
                             <SingleSelect
-                                options={sessions}
-                                value={selectedSessionId}
-                                onChange={(value) => {
-                                    setSelectedSessionId(String(value));
-                                    f('term_id', ''); // Clear term when session changes
-                                }}
-                                label="Session"
+                                options={terms}
+                                value={form.term_id}
+                                onChange={(value) =>
+                                    f('term_id', String(value))
+                                }
+                                label="Term"
                             />
                         </div>
                         <div className="field">
@@ -529,18 +488,8 @@ export function CurriculaTab({
                                 label="Class level"
                             />
                         </div>
+
                         <div className="field">
-                            <label>Term</label>
-                            <SingleSelect
-                                options={terms}
-                                value={form.term_id}
-                                onChange={(value) =>
-                                    f('term_id', String(value))
-                                }
-                                label="Term"
-                            />
-                        </div>
-                        <div className="field span-2">
                             <label>Exam type</label>
                             <SingleSelect
                                 options={examTypes}

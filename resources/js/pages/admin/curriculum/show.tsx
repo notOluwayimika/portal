@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { CurriculumDetail } from '@/components/curriculum-detail';
 import { ToastItem } from '@/components/toast-item';
 import type { Toast, ToastType } from '@/components/toast-item';
+import { handleBack } from '@/helpers';
 
 export default function Show() {
     // const curriculumId = curriculum.id;
@@ -20,10 +21,7 @@ export default function Show() {
     function dismissToast(id: number) {
         setToasts((t) => t.filter((x) => x.id !== id));
     }
-    function handleBack() {
-        // Implementation for handling back navigation
-        window.history.back();
-    }
+
     const css = `
   :root {
     --white:      #ffffff;

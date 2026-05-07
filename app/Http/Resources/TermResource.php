@@ -17,11 +17,14 @@ class TermResource extends JsonResource
         return [
             'id' => $this->uuid,
             'name' => $this->name,
+            'full_name' => $this->academicSession->name . ' - ' . $this->name,
             'slug' => $this->slug,
             'order' => $this->order,
             'status' => $this->status,
             'start_date' => $this->start_date,
             'end_date' => $this->end_date,
+            'registration_deadline' => $this->registration_deadline,
+            'result_visible_at' => $this->result_visible_at,
             'academic_session' => new SessionResource($this->whenLoaded('academicSession')),
         ];
     }

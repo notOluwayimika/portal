@@ -64,50 +64,6 @@ function InfoRow({
     );
 }
 
-// ─── TeacherChip ───────────────────────────────────────────────────────────
-
-// function TeacherChip({
-//     teacherCurriculumSubject,
-//     onRemove,
-// }: {
-//     teacherCurriculumSubject: TeacherCurriculumSubject;
-//     onRemove: () => void;
-// }) {
-//     return (
-//         <span
-//             style={{
-//                 display: 'inline-flex',
-//                 alignItems: 'center',
-//                 gap: 4,
-//                 padding: '2px 8px 2px 10px',
-//                 borderRadius: 999,
-//                 background: 'var(--surface2, #f3f4f6)',
-//                 fontSize: 12,
-//                 color: 'var(--text2)',
-//                 fontWeight: 500,
-//             }}
-//         >
-//             {teacherCurriculumSubject.teacher.first_name}{' '}
-//             {teacherCurriculumSubject.teacher.last_name}
-//             <button
-//                 onClick={onRemove}
-//                 style={{
-//                     background: 'none',
-//                     border: 'none',
-//                     cursor: 'pointer',
-//                     padding: '0 2px',
-//                     color: 'var(--text3)',
-//                     fontSize: 13,
-//                     lineHeight: 1,
-//                 }}
-//                 title="Remove teacher"
-//             >
-//                 ×
-//             </button>
-//         </span>
-//     );
-// }
-
 // ─── AssignSubjectModal ────────────────────────────────────────────────────
 
 interface AssignSubjectModalProps {
@@ -508,9 +464,6 @@ export function CurriculumDetail({
         );
     }
 
-    const termLabel =
-        ['', '1st', '2nd', '3rd'][curriculum.term?.order ?? 0] ?? curriculum.term?.name;
-
     return (
         <>
             {/* ── Header ──────────────────────────────────────────────── */}
@@ -532,7 +485,7 @@ export function CurriculumDetail({
                                 gap: 8,
                             }}
                         >
-                            {curriculum.academic_session?.name ?? '—'}
+                            {curriculum.term?.full_name ?? '—'}
                             <span
                                 style={{
                                     color: 'var(--text3)',
@@ -544,15 +497,6 @@ export function CurriculumDetail({
                             <span className="code-tag">
                                 {curriculum.class_level_arm?.name ?? '—'}
                             </span>
-                            <span
-                                style={{
-                                    color: 'var(--text3)',
-                                    fontWeight: 400,
-                                }}
-                            >
-                                ·
-                            </span>
-                            {termLabel}
                         </h1>
                         <p>{curriculum.exam_type?.name ?? '—'}</p>
                     </div>
@@ -575,25 +519,30 @@ export function CurriculumDetail({
                 }}
             >
                 <InfoRow label="Session">
-                    {curriculum.academic_session?.name ?? '—'}
+                    {curriculum.term?.full_name ?? '—'}
                 </InfoRow>
                 <InfoRow label="Class level">
                     <span className="code-tag">
                         {curriculum.class_level_arm?.name ?? '—'}
                     </span>
                 </InfoRow>
-                <InfoRow label="Term">{termLabel}</InfoRow>
                 <InfoRow label="Exam type">
                     {curriculum.exam_type?.name ?? '—'}
                 </InfoRow>
                 <InfoRow label="Min. subjects">
                     <span className="mono">{curriculum.min_subjects}</span>
                 </InfoRow>
-                <InfoRow label="Reg. deadline">
-                    {fmtDate(curriculum.term?.start_date)}
+                <InfoRow label="Start Date">
+                    {fmtDate(curriculum.term?.start_date ?? '')}
+                </InfoRow>
+                <InfoRow label="End Date">
+                    {fmtDate(curriculum.term?.end_date ?? '')}
+                </InfoRow>
+                <InfoRow label="Registration Deadline">
+                    {fmtDate(curriculum.term?.registration_deadline ?? '')}
                 </InfoRow>
                 <InfoRow label="Results visible">
-                    {fmtDate(curriculum.term?.end_date)}
+                    {fmtDate(curriculum.term?.result_visible_at ?? '')}
                 </InfoRow>
                 <InfoRow label="Status">
                     <StatusPill status={curriculum.status} />

@@ -7,6 +7,8 @@ use App\Enums\CurriculaStatusEnum;
 use App\Enums\GenderTypeEnum;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
+use App\Exports\StudentsExport;
+use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\StudentResource;
@@ -17,6 +19,7 @@ use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
 
 class StudentController extends Controller
 {
@@ -28,7 +31,6 @@ class StudentController extends Controller
     public function index(Request $request)
     {
         $students = $this->studentService->paginate($request);
-        logger('Student', collect($students)->toArray());
 
         return response()->json([
             'data' => StudentResource::collection($students),
@@ -93,6 +95,35 @@ class StudentController extends Controller
         return redirect()->route('students.index');
     }
 
+    public function export(Request $request)
+    {
+        $filename = 'students-' . now()->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new StudentsExport($request), $filename);
+    }
+
+    public function import(ImportStudentRequest $request)
+    {
+        $data     = $request->validated();
+        $schoolId = $request->user()->school_id;
+
+        $result = $this->studentService->import(
+            $data['students'],
+            (int) $data['curriculum_id'],
+            $schoolId,
+        );
+
+        if (!empty($result['errors'])) {
+            return response()->json([
+                'message' => "{$result['saved']} student(s) imported. " . count($result['errors']) . " row(s) had errors and were skipped.",
+                'saved'   => $result['saved'],
+                'errors'  => $result['errors'],
+            ], 422);
+        }
+
+        return Response::success("{$result['saved']} student(s) imported successfully.");
+    }
+
     public function destroy(Student $student)
     {
         $this->studentService->delete($student);
@@ -129,4 +160,21 @@ class StudentController extends Controller
             'genders' => $genders,
         ]);
     }
+
+    // public function resourcesForExcelImport()
+    // {
+    //     $classLevelArmOptions = $this->classLevelArmRepository->getAll()->map(function ($classLevelArm) {
+    //         return [
+    //             'id' => $classLevelArm->id,
+    //             'uuid' => $classLevelArm->uuid,
+    //             'class_level' => $classLevelArm->classLevel?->name,
+    //             'arm' => $classLevelArm->arm?->label,
+    //             'stream' => $classLevelArm->stream?->name,
+    //         ];
+    //     });
+
+    //     return Response::success([
+    //         'class_level_arms' => $classLevelArmOptions,
+    //     ]);
+    // }
 }

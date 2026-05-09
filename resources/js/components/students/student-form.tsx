@@ -41,7 +41,6 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
     const [genders, setGenders] = useState<{ name: string; value: string }[]>([])
     const [loading, setLoading] = useState(false);
     const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
-
     const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
         first_name: student?.first_name || '',
         last_name: student?.last_name || '',

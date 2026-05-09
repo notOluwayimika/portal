@@ -7,6 +7,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->prefix('students')->group(functio
     Route::get('/', [StudentController::class, 'index']);
     Route::post('/', [StudentController::class, 'store']);
     Route::get('/resources', [StudentController::class, 'resources']);
+    Route::get('/export', [StudentController::class, 'export']);
+    Route::post('/import', [StudentController::class, 'import']);
     Route::get('/{student:uuid}', [StudentController::class, 'show']);
     Route::patch('/{student:uuid}', [StudentController::class, 'update']);
     Route::patch('/{student:uuid}/status', [StudentController::class, 'updateStatus']);

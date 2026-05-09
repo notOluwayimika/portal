@@ -38,4 +38,19 @@ enum GenderTypeEnum: string
     {
         return array_map(fn($case) => $case->value, self::cases());
     }
+
+    /**
+     * Normalize a gender string to the canonical DB value.
+     * Accepts common variations (case-insensitive, single letter, etc.).
+     */
+    public static function normalizeGender(?string $value): string
+    {
+        $map = [
+            'm'      => 'male',   'male'   => 'male',   'boy'  => 'male',
+            'f'      => 'female', 'female' => 'female', 'girl' => 'female',
+            'o'      => 'other',  'other'  => 'other',  'others' => 'other',
+        ];
+
+        return $map[strtolower(trim($value ?? ''))] ?? '';
+    }
 }

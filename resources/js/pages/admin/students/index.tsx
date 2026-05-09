@@ -1,9 +1,10 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { Edit, Search, Trash2, UserPlus, GraduationCap } from 'lucide-react';
+import { Download, Edit, FileX, GraduationCap, Search, Trash2, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import { StudentForm } from '@/components/students/student-form';
+import { ImportStudentForm } from '@/components/students/import-student-form';
 import type { Toast, ToastType } from '@/components/toast-item';
 import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
+import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import type { Student } from '@/types/models';
 
 interface StatusOption {
@@ -40,7 +42,8 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         prev_page_url: null,
         next_page_url: null,
     });
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
     let toastCounter = 0;
 
@@ -79,24 +82,56 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [search, page, limit]);
 
-    const handleDelete = async (uuid: string) => {
-        if (!confirm('Are you sure you want to delete this student?')) {
-            return;
-        }
+    const { confirmAndExecute } = useApiSweetAlertConfirmation();
 
-        try {
-            await axios.delete(`/api/students/${uuid}`);
+    const handleDelete = async (student: Student) => {
+        const result = await confirmAndExecute({
+            method: 'delete',
+            url: `/api/students/${student.id}`,
+            sweetAlertTitle: 'Delete Student?',
+            sweetAlertText: `This will permanently remove ${student.first_name} ${student.last_name}. This action cannot be undone.`,
+            sweetAlertIcon: 'warning',
+            confirmButtonText: 'Delete',
+            successMessage: 'Student deleted successfully.',
+            showSuccessAlert: false,
+        });
+        if (result !== false) {
             addToast('Student deleted successfully');
             fetchStudents();
-        } catch (error) {
-            console.log(error);
-            addToast('Failed to delete student', 'error');
         }
     };
 
     const handleAdd = () => {
         setCurrentStudent(null);
-        setIsModalOpen(true);
+        setIsStudentModalOpen(true);
+    };
+
+    const handleStudentImport = () => {
+        setIsImportModalOpen(true);
+    };
+
+    const [exporting, setExporting] = useState(false);
+
+    const handleExport = async () => {
+        try {
+            setExporting(true);
+            const response = await axios.get('/api/students/export', {
+                responseType: 'blob',
+                params: { search },
+            });
+            const url = URL.createObjectURL(new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `students-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch {
+            addToast('Failed to export students', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
     const handleStatusChange = async (student: Student, newStatus: string) => {
@@ -114,11 +149,12 @@ export default function StudentList({ student_statuses }: StudentListProps) {
 
     const handleEdit = (student: Student) => {
         setCurrentStudent(student);
-        setIsModalOpen(true);
+        setIsStudentModalOpen(true);
     };
 
     const handleFormSuccess = () => {
-        setIsModalOpen(false);
+        setIsStudentModalOpen(false);
+        setIsImportModalOpen(false);
         addToast(
             currentStudent
                 ? 'Student updated successfully'
@@ -139,10 +175,20 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                             Manage your school's student records
                         </p>
                     </div>
-                    <Button onClick={handleAdd}>
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        Add Student
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+                            <Download className="mr-1 h-4 w-4" />
+                            {exporting ? 'Exporting…' : 'Export'}
+                        </Button>
+                        <Button variant="outline" onClick={handleStudentImport}>
+                            <FileX className="mr-1 h-4 w-4" />
+                            Import
+                        </Button>
+                        <Button onClick={handleAdd}>
+                            <UserPlus className="mr-1 h-4 w-4" />
+                            Add Student
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="rounded-lg border bg-background shadow-sm">
@@ -282,9 +328,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                         size="icon"
                                                         className="text-destructive hover:bg-destructive/10"
                                                         onClick={() =>
-                                                            handleDelete(
-                                                                student.id,
-                                                            )
+                                                            handleDelete(student)
                                                         }
                                                     >
                                                         <Trash2 className="h-4 w-4" />
@@ -309,15 +353,28 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             </div>
 
             <Modal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                isOpen={isStudentModalOpen}
+                onClose={() => setIsStudentModalOpen(false)}
                 title={currentStudent ? 'Edit Student' : 'Add Student'}
                 size="lg"
             >
                 <StudentForm
                     student={currentStudent}
                     onSuccess={handleFormSuccess}
-                    onCancel={() => setIsModalOpen(false)}
+                    onCancel={() => setIsStudentModalOpen(false)}
+                />
+            </Modal>
+
+            <Modal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                title="Import Students"
+                size="4xl"
+            >
+                <ImportStudentForm
+                    student={currentStudent}
+                    onSuccess={handleFormSuccess}
+                    onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
 

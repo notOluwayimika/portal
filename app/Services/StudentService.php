@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\DTOs\StudentDto;
+use App\Enums\GenderTypeEnum;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -101,5 +104,92 @@ class StudentService
     public function delete(Student $student): bool
     {
         return $student->delete();
+    }
+
+    private function preparedDto(array $row, int $curriculumId, int $schoolId): array
+    {
+        $row['school_id'] = $schoolId;
+        $row['first_name'] = trim($row['first_name']);
+        $row['last_name'] = trim($row['last_name']);
+        $row['middle_name'] = isset($row['middle_name']) ? trim($row['middle_name']) : null;
+        $row['gender'] = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
+        $row['date_of_birth'] = normalizeDate($row['date_of_birth'] ?? null);
+        $row['admission_number'] = isset($row['admission_number']) ? trim($row['admission_number']) : null;
+        $row['photo'] = null;
+        $row['curriculum_id'] = $curriculumId;
+        
+        return StudentDto::fromArray($row)->toArray();
+    }
+
+    /**
+     * Bulk-import students from parsed Excel rows.
+     *
+     * Each row is processed independently: valid rows are persisted, invalid
+     * rows are skipped and their errors are collected.  Returns the count of
+     * saved records and a map of { rowIndex => string[] } for failed rows.
+     */
+    public function import(array $rows, int $curriculumId, int $schoolId): array
+    {
+        $saved  = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $rowErrors = $this->validateImportRow($row, $index, $schoolId);
+
+            if (!empty($rowErrors)) {
+                $errors[$index] = $rowErrors;
+                continue;
+            }
+
+            try {
+                $this->store($this->preparedDto($row, $curriculumId, $schoolId));
+                $saved++;
+            } catch (\Throwable $e) {
+                $errors[$index] = [$e->getMessage()];
+            }
+        }
+
+        return ['saved' => $saved, 'errors' => $errors];
+    }
+
+    /**
+     * Validate a single import row and return any error messages.
+     */
+    private function validateImportRow(array $row, int $index, int $schoolId): array
+    {
+        $errors = [];
+
+        if (empty(trim($row['first_name'] ?? ''))) {
+            $errors[] = 'First name is required.';
+        }
+
+        if (empty(trim($row['last_name'] ?? ''))) {
+            $errors[] = 'Last name is required.';
+        }
+
+        $gender = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
+        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+            $errors[] = "Gender '{$row['gender']}' is not valid. Expected: male, female, or other.";
+        }
+
+        $dob = $row['date_of_birth'] ?? null;
+        if ($dob !== null && $dob !== '') {
+            if (!isValidDate($dob)) {
+                $errors[] = "Date of birth '{$dob}' could not be parsed into a valid date.";
+            }
+        }
+
+        $admissionNumber = isset($row['admission_number']) ? trim($row['admission_number']) : null;
+        if ($admissionNumber) {
+            $exists = Student::where('school_id', $schoolId)
+                ->where('admission_number', $admissionNumber)
+                ->exists();
+
+            if ($exists) {
+                $errors[] = "Admission number '{$admissionNumber}' already exists.";
+            }
+        }
+
+        return $errors;
     }
 }

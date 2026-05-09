@@ -48,3 +48,29 @@ if (!function_exists('isValidDate')) {
         }
     }
 }
+
+if (!function_exists('encodeData')) {
+    /**
+     * Encoding Hashids
+     */
+    function encodeData(int $id): String
+    {
+        $hashIds = new Hashids;
+        $id = $hashIds->encode($id);
+
+        return $id;
+    }
+}
+
+if (!function_exists('decodeData')) {
+    /**
+     * Decoding Hashids
+     */
+    function decodeData(String $data): array
+    {
+        $hashIds = new Hashids;
+        $id = $hashIds->decode($data);
+
+        return $id;
+    }
+}

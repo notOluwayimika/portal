@@ -20,7 +20,7 @@ class CurriculumSubject extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -55,6 +55,11 @@ class CurriculumSubject extends Model
     public function teacherAssignments(): HasMany
     {
         return $this->hasMany(TeacherCurriculumSubject::class);
+    }
+
+    public function studentAssignments(): HasMany
+    {
+        return $this->hasMany(StudentSubject::class);
     }
 
     public function isApproved(): bool

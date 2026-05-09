@@ -202,6 +202,7 @@ export interface CurriculumSubject {
     subject: Subject;
     is_compulsory: boolean;
     display_order: number;
+    students: Student[];
     teachers: TeacherCurriculumSubject[];
     marking_components: MarkingComponent[];
 }

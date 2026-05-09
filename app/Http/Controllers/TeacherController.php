@@ -19,7 +19,7 @@ class TeacherController extends Controller
 
     public function getSubjects(Teacher $teacher)
     {
-        $subjects = $teacher->assignedCurriculumSubjects()->with('curriculumSubject')->get();
+        $subjects = $teacher->assignedCurriculumSubjects()->with(['curriculumSubject.studentAssignments'])->get();
         return response()->json(TeacherCurriculumSubjectResource::collection($subjects));
     }
 }

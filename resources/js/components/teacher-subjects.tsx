@@ -531,6 +531,12 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                                 {tcs.curriculum_subject.subject.code}
                             </span>
                         )}
+                        {tcs.curriculum_subject.students && (
+                            <span className="code-tag">
+                                {tcs.curriculum_subject.students.length}{' '}
+                                students
+                            </span>
+                        )}
                     </div>
                     <div
                         style={{

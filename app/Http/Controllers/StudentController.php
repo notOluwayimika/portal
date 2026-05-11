@@ -12,10 +12,13 @@ use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\CurriculumResource;
+
 use App\Http\Resources\StudentResource;
 use App\Models\Curriculum;
+use App\Models\FileUpload;
 use App\Models\Student;
 use App\Repositories\ClassLevelArmRepository;
+use App\Services\FileUploadService;
 use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
@@ -27,6 +30,7 @@ class StudentController extends Controller
     public function __construct(
         protected StudentService $studentService,
         protected ClassLevelArmRepository $classLevelArmRepository,
+        protected FileUploadService $fileUploadService,
     ) {
     }
 
@@ -51,6 +55,8 @@ class StudentController extends Controller
     {
         $data = $request->validated();
         $data['school_id'] = $request->user()->school_id;
+        $data['photo_id'] = $this->uploadPhoto($request);
+        unset($data['photo']);
 
         $dto = StudentDto::fromArray($data);
         $this->studentService->store($dto->toArray());
@@ -71,6 +77,8 @@ class StudentController extends Controller
     {
         $data = $request->validated();
         $data['school_id'] = $request->user()->school_id;
+        $data['photo_id'] = $this->replacePhoto($request, $student->photo_id);
+        unset($data['photo']);
 
         $dto = StudentDto::fromArray($data);
         $this->studentService->update($student, $dto->toArray());
@@ -153,20 +161,36 @@ class StudentController extends Controller
         ]);
     }
 
-    // public function resourcesForExcelImport()
-    // {
-    //     $classLevelArmOptions = $this->classLevelArmRepository->getAll()->map(function ($classLevelArm) {
-    //         return [
-    //             'id' => $classLevelArm->id,
-    //             'uuid' => $classLevelArm->uuid,
-    //             'class_level' => $classLevelArm->classLevel?->name,
-    //             'arm' => $classLevelArm->arm?->label,
-    //             'stream' => $classLevelArm->stream?->name,
-    //         ];
-    //     });
+    /**
+     * Upload a new photo and return the file_uploads.id, or null if no file present.
+     */
+    private function uploadPhoto(Request $request): ?int
+    {
+        if (!$request->hasFile('photo')) {
+            return null;
+        }
 
-    //     return Response::success([
-    //         'class_level_arms' => $classLevelArmOptions,
-    //     ]);
-    // }
+        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos', true);
+    }
+
+    /**
+     * Upload a new photo, delete the old one, and return the new file_uploads.id.
+     * Returns the existing ID unchanged if no new file is provided.
+     */
+    private function replacePhoto(Request $request, ?int $existingPhotoId): ?int
+    {
+        if (!$request->hasFile('photo')) {
+            return $existingPhotoId;
+        }
+
+        if ($existingPhotoId) {
+            $old = FileUpload::find($existingPhotoId);
+            if ($old) {
+                $this->fileUploadService->unlinkFileUpload($old->folder_path . '/' . $old->name, null);
+                $this->fileUploadService->deleteFileUpload($existingPhotoId);
+            }
+        }
+
+        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos', true);
+    }
 }

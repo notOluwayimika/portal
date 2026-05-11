@@ -15,7 +15,7 @@ readonly class StudentDto
         public readonly string $gender,
         public readonly \Carbon\Carbon|string|null $date_of_birth,
         public readonly ?string $admission_number,
-        public readonly ?string $photo,
+        public readonly ?int $photo_id,
         public readonly ?int $curriculum_id = null,
         public readonly ?int $promoted_to_id = null,
     ) {}
@@ -31,7 +31,7 @@ readonly class StudentDto
             gender: $data['gender'],
             date_of_birth: $data['date_of_birth'] ?? null,
             admission_number: $data['admission_number'] ?? null,
-            photo: $data['photo'] ?? null,
+            photo_id: $data['photo_id'] ?? null,
             curriculum_id: $data['curriculum_id'] ?? null,
             promoted_to_id: $data['promoted_to_id'] ?? null,
         );

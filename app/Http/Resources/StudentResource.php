@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 class StudentResource extends JsonResource
 {
@@ -27,7 +28,10 @@ class StudentResource extends JsonResource
             'admission_number' => $this->admission_number,
             'gender' => $this->gender,
             'date_of_birth' => $this->date_of_birth,
-            'photo' => $this->photo,
+            'photo' => $this->photo ? Storage::disk('s3')->temporaryUrl(
+                    $this->photo,
+                    now()->addMinutes(15)
+                ) : null,
             'status' => $currentCurriculum?->status,
             'class_details' => [
                 'level' => $classLevelArm?->classLevel?->name,

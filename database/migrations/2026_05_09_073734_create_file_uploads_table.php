@@ -15,10 +15,19 @@ class CreateFileUploadsTable extends Migration
     {
         Schema::create('file_uploads', function (Blueprint $table) {
             $table->id();
+            $table->uuid()->unique();
             $table->string('name', 255);
             $table->string('folder_path');
             $table->string('url');
             $table->timestamps();
+
+            $table->index('uuid');
+            $table->index('name');
+        });
+
+        Schema::table('students', function (Blueprint $table) {
+            $table->dropColumn('photo');
+            $table->foreignId('photo_id')->nullable()->constrained('file_uploads')->nullOnDelete();
         });
     }
 
@@ -29,6 +38,12 @@ class CreateFileUploadsTable extends Migration
      */
     public function down()
     {
+        Schema::table('students', function (Blueprint $table) {
+            $table->dropForeign(['photo_id']);
+            $table->dropColumn('photo_id');
+            $table->string('photo')->nullable();
+        });
+
         Schema::dropIfExists('file_uploads');
     }
 }

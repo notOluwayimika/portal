@@ -23,6 +23,7 @@ class StudentService
                     ->orWhere('admission_number', 'LIKE', $searchTerm);
             })
             ->with([
+                'photoFile',
                 'currentCurriculum.curriculum.classLevelArm.classLevel',
                 'currentCurriculum.curriculum.classLevelArm.arm',
                 'currentCurriculum.curriculum.classLevelArm.stream',
@@ -43,7 +44,7 @@ class StudentService
                 'gender' => $attributes['gender'],
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? null,
-                'photo' => $attributes['photo'] ?? null,
+                'photo_id' => $attributes['photo_id'] ?? null,
             ]);
 
             StudentCurriculum::create([
@@ -60,6 +61,7 @@ class StudentService
     public function show(Student $student): Student
     {
         return $student->load([
+            'photoFile',
             'currentCurriculum.curriculum.classLevelArm.classLevel',
             'currentCurriculum.curriculum.classLevelArm.arm',
             'currentCurriculum.curriculum.classLevelArm.stream',
@@ -76,8 +78,7 @@ class StudentService
                 'gender' => $attributes['gender'],
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? $student->admission_number,
-                'photo' => $attributes['photo'] ?? null,
-            ], fn($v) => !is_null($v)));
+            ], fn($v) => !is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
 
             if (isset($attributes['curriculum_id'])) {
                 StudentCurriculum::updateOrCreate(
@@ -115,7 +116,7 @@ class StudentService
         $row['gender'] = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
         $row['date_of_birth'] = normalizeDate($row['date_of_birth'] ?? null);
         $row['admission_number'] = isset($row['admission_number']) ? trim($row['admission_number']) : null;
-        $row['photo'] = null;
+        $row['photo_id'] = null;
         $row['curriculum_id'] = $curriculumId;
         
         return StudentDto::fromArray($row)->toArray();

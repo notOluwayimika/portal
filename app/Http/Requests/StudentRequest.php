@@ -37,7 +37,7 @@ class StudentRequest extends FormRequest
                 'max:255',
                 'unique:students,admission_number,' . $this->student?->id
             ],
-            'photo' => ['nullable', 'string'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
             'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],
             'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
         ];

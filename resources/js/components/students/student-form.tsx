@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ProfileImageUpload } from '@/components/ui/profile-image-upload';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
@@ -33,14 +34,16 @@ interface StudentFormData {
     gender: string;
     date_of_birth: string;
     curriculum_id: string;
+    photo: File | null;
 }
 
 export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
     const isEdit = !!student;
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
-    const [genders, setGenders] = useState<{ name: string; value: string }[]>([])
-    const [loading, setLoading] = useState(false);
+    const [genders, setGenders] = useState<{ name: string; value: string }[]>([]);
     const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
+    const [photoPreview, setPhotoPreview] = useState<string | null>(student?.photo ?? null);
+
     const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
         first_name: student?.first_name || '',
         last_name: student?.last_name || '',
@@ -49,33 +52,34 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         gender: student?.gender || 'male',
         date_of_birth: student?.date_of_birth || '',
         curriculum_id: student?.curriculum_id?.toString() || '',
+        photo: null,
     });
 
     useEffect(() => {
         let isMounted = true;
-        const fetchCurricula = async () => {
-            try {
-                const response = await axios.get('/api/students/resources');
-
-                if (isMounted) {
-                    setCurricula(response.data.data.curricula || []);
-                    setGenders(response.data.data.genders || []);
-                }
-            } catch (error) {
-                console.error('Failed to fetch curricula:', error);
+        axios.get('/api/students/resources').then((res) => {
+            if (isMounted) {
+                setCurricula(res.data.data.curricula || []);
+                setGenders(res.data.data.genders || []);
             }
-        };
-        fetchCurricula();
-
-        return () => {
-            isMounted = false;
-        };
+        }).catch((err) => console.error('Failed to fetch resources:', err));
+        return () => { isMounted = false; };
     }, []);
+
+    const handlePhotoChange = (file: File) => {
+        setData('photo', file);
+        const url = URL.createObjectURL(file);
+        setPhotoPreview((prev) => {
+            if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+            return url;
+        });
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
         const options = {
+            forceFormData: true,
             onSuccess: () => {
                 onSuccess();
                 reset();
@@ -89,18 +93,20 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         }
     };
 
-    const statuses = [
-        { value: 'active', label: 'Active' },
-        { value: 'inactive', label: 'Inactive' },
-        { value: 'withdrawn', label: 'Withdrawn' },
-        { value: 'graduated', label: 'Graduated' },
-        { value: 'suspended', label: 'Suspended' },
-        { value: 'expelled', label: 'Expelled' },
-    ];
+    const curriculaOptions = curricula.map((c) => ({
+        value: c.id.toString(),
+        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
+    }));
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ProfileImageUpload
+                preview={photoPreview}
+                onChange={handlePhotoChange}
+                error={errors.photo}
+            />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                     <Label htmlFor="first_name">First Name</Label>
                     <Input
@@ -140,10 +146,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                             checked={showAdmissionNumber}
                             onChange={(e) => {
                                 setShowAdmissionNumber(e.target.checked);
-
-                                if (!e.target.checked) {
-                                    setData('admission_number', '');
-                                }
+                                if (!e.target.checked) setData('admission_number', '');
                             }}
                             className="h-4 w-4 rounded border-gray-300"
                         />
@@ -197,14 +200,8 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                     <Label>Assigned Class</Label>
                     <SearchableSelect
                         placeholder="Search for a class..."
-                        options={curricula.map((c) => ({
-                            value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-                        }))}
-                        value={curricula.map((c) => ({
-                            value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-                        })).find(opt => opt.value === data.curriculum_id)}
+                        options={curriculaOptions}
+                        value={curriculaOptions.find((opt) => opt.value === data.curriculum_id)}
                         onChange={(opt: any) => setData('curriculum_id', opt?.value || '')}
                         error={!!errors.curriculum_id}
                     />
@@ -212,7 +209,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-3 border-t pt-4">
                 <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>
                     Cancel
                 </Button>

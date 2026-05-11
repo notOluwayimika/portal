@@ -2,292 +2,255 @@
 
 namespace App\Services;
 
-use App\Exceptions\NotFoundException;
 use App\Exceptions\ConflictException;
-use Aws\S3\S3Client;
+use App\Exceptions\NotFoundException;
+use App\Models\FileUpload;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Models\FileUpload;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\File;
-use Barryvdh\DomPDF\Facade as PDF;
-use Dompdf\Dompdf;
-use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 
-class FileUploadService {
-    protected FileUpload $fileUpload;
-    public int $id;
-
-    public function __construct()
-    {
-        $this->fileUpload = new FileUpload;
-    }
+class FileUploadService
+{
+    public function __construct(private FileUpload $fileUpload) {}
 
     private function shouldUseS3(): bool
     {
-        return !empty(env('AWS_ACCESS_KEY_ID')) &&
-            !empty(env('AWS_SECRET_ACCESS_KEY')) &&
-            !empty(env('AWS_BUCKET'));
+        return !empty(config('filesystems.disks.s3.key')) &&
+            !empty(config('filesystems.disks.s3.secret')) &&
+            !empty(config('filesystems.disks.s3.bucket'));
     }
 
-    /**
-     * Get the file upload
-     */
-    public function getFileUpload(String $id, Array $columns=[])  : Object
+    private function getDisk(): string
     {
-        return $this->fileUpload->select($columns)->find($id);
+        return $this->shouldUseS3() ? 's3' : 'public';
     }
 
-    /**
-     * Update a file upload
-     */
-    public function updateFileUpload(String $id, Array $columns=[]) : bool
+    private function storeFile(string $path, string $filePath, string $fileName, string $disk): array
+    {
+        $storageDisk = Storage::disk($disk);
+
+        if ($disk === 's3') {
+            $storageDisk->setVisibility($path, 'public');
+        }
+
+        return [
+            'filename' => $fileName,
+            'filePath' => $disk === 's3' ? config('app.s3_bucket') . '/' . $filePath : $filePath,
+            'url'      => Storage::disk($disk)->url($path),
+        ];
+    }
+
+    public function storeFileUpload(string $name, string $filePath, string $url): object
+    {
+        return $this->fileUpload->create([
+            'name'        => $name,
+            'folder_path' => $filePath,
+            'url'         => $url,
+        ]);
+    }
+
+    public function getFileUpload(string $id, array $columns = []): ?object
+    {
+        return $this->fileUpload->select($columns ?: '*')->find($id);
+    }
+
+    public function updateFileUpload(string $id, array $columns): int
     {
         return $this->fileUpload->where('id', $id)->update($columns);
     }
 
-    /**
-     * delete file upload from database
-     */
-    public function deleteFileUpload(String $id) : bool
+    public function deleteFileUpload(string $id): int
     {
         return $this->fileUpload->where('id', $id)->delete();
     }
 
     /**
-     * Return S3 storage disk
+     * Core upload method - handles single file upload to any disk
      */
-    public function getDisk()
+    private function uploadFile(Request $request, string $filename, string $filePath, ?string $disk = null): ?array
     {
-        return Storage::disk('s3');
-    }
-
-    public function multiFileUploadS3Bucket(Request $request, String $name, String $filePath)
-    {
-        $data = null;
-        if ($request->hasfile($name)) {
-            $data = ['filename' => [], 'path' => null, 'filePath' => $filePath];
-            foreach ($request->file($name) as $file) {
-                $path = $file->store($filePath, 's3');
-                $this->getDisk()->setVisibility($path, 'public');
-                array_push($data['filename'], basename($path));
-            }
-            $data['path'] = config('app.s3_bucket') . '/' . $filePath;
+        if (!$request->hasFile($filename)) {
+            return null;
         }
 
-        return $data;
-    }
-
-    public function uploadFileToS3Bucket(mixed $request, string $filename, string $filePath)
-    {
-        if (!$request->hasFile($filename)) return null;
-
         $file = $request->file($filename);
+        $disk = $disk ?? $this->getDisk();
 
         try {
-            if (!$file->isValid()) throw new FileException(__('Invalid file upload'));
+            if (!$file->isValid()) {
+                throw new FileException(__('Invalid file upload'));
+            }
 
-            $originalName = $file->getClientOriginalName();
-            $fileName = time() . '_' . $originalName;
+            // $fileName = time() . '_' . $file->getClientOriginalName();
+            // $path = $file->storeAs($filePath, $fileName, $disk);
+            $path = $file->store($filePath, $disk);
 
-            $path = $file->storeAs($filePath, $fileName, 's3');
+            if (!$path) {
+                throw new RuntimeException(__('Failed to store file'));
+            }
 
-            if (!$path) throw new RuntimeException(__('Failed to store file on S3'));
-
-            $this->getDisk()->setVisibility($path, 'public');
-
-            return [
-                'filename' => basename($path),
-                'path' => config('app.s3_bucket') . '/' . $filePath,
-                'filePath' => $filePath,
-                'url' => $this->getDisk()->url($path),
-            ];
+            return $this->storeFile($path, $filePath, basename($path), $disk);
         } catch (FileException $e) {
             Log::error('File validation error: ' . $e->getMessage());
             throw $e;
         } catch (RuntimeException $e) {
-            Log::error('S3 upload error: ' . $e->getMessage());
-            throw new RuntimeException(__('File upload failed: ' . $e->getMessage()));
-        } catch (\Exception $e) {
             Log::error('Upload error: ' . $e->getMessage());
-            throw new \Exception(__('An error occurred during file upload'));
+            throw new RuntimeException(__('File upload failed: ') . $e->getMessage());
+        } catch (Exception $e) {
+            Log::error('Upload error: ' . $e->getMessage());
+            throw new Exception(__('An error occurred during file upload'));
         }
     }
 
-    function fileUpload(mixed $request, string $name, string $filePath, ?string $refCode = null)
+    /**
+     * Core multiple files upload method
+     */
+    private function uploadMultipleFiles(Request $request, string $name, string $filePath, string $disk = 's3'): ?array
     {
-        if (!File::exists(public_path($filePath))) {
-            File::makeDirectory(public_path($filePath));
+        if (!$request->hasFile($name)) {
+            return null;
         }
 
-        $fileNameToStore = null;
+        $data = ['filename' => [], 'filePath' => $filePath];
 
-        if ($request->hasFile($name)) {
-
-            $originalTempFile =  $request->file($name);
-            $filenamewithextension = $originalTempFile->getClientOriginalName();
-            $filename              = pathinfo($filenamewithextension, PATHINFO_FILENAME);
-            $extension             = $originalTempFile->getClientOriginalExtension();
-            $fileNameToStore       = $refCode === null
-                ? str_ireplace(' ', '_', $filename) . '_' . time() . '.' . $extension
-                : $refCode . '_' . str_ireplace(' ', '_', $filename) . '_' . encodeData(auth()->user()->id) . '.' . $extension;
-            $originalTempFile->move(public_path($filePath), $fileNameToStore);
+        foreach ($request->file($name) as $file) {
+            $path = $file->store($filePath, $disk);
+            Storage::disk($disk)->setVisibility($path, 'public');
+            $data['filename'][] = basename($path);
         }
+
+        $data['url'] = $disk === 's3' 
+            ? config('app.s3_bucket') . '/' . $filePath 
+            : Storage::disk($disk)->url($filePath);
+
+        return $data;
+    }
+
+    /**
+     * Local file upload (non-cloud storage)
+     */
+    public function fileUpload(Request $request, string $name, string $filePath, ?string $refCode = null): ?string
+    {
+        $fullPath = public_path($filePath);
+
+        if (!File::exists($fullPath)) {
+            File::makeDirectory($fullPath, 0755, true);
+        }
+
+        if (!$request->hasFile($name)) {
+            return null;
+        }
+
+        $file = $request->file($name);
+        $filename = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+        $extension = $file->getClientOriginalExtension();
+
+        $fileNameToStore = $refCode === null
+            ? str_replace(' ', '_', $filename) . '_' . time() . '.' . $extension
+            : $refCode . '_' . str_replace(' ', '_', $filename) . '_' . encodeData(auth()->id()) . '.' . $extension;
+
+        $file->move($fullPath, $fileNameToStore);
 
         return $fileNameToStore;
     }
 
-    /**
-     * Update existing file
-     */
-    public function updateSingleFile(Request $request, int $id, string $name, string $filePath)
+    // Public wrappers that use the core methods
+    public function uploadFileToS3Bucket(Request $request, string $filename, string $filePath): ?array
     {
-        $uploadFile = $this->uploadFileToS3Bucket($request, $name, $filePath);
-        $this->updateFileUpload($id, ['name' => $uploadFile]);
+        return $this->uploadFile($request, $filename, $filePath, 's3');
     }
 
-    /**
-     * Delete a file upload from s3
-     */
-    function unlinkFileUpload(String $path) {
-        if(Storage::disk('s3')->exists($path)) {
-            return Storage::disk('s3')->delete($path);
-        }
-        return false;
-    }
-
-    /**
-     * Delete a file upload from s3
-     */
-    function dynamicallyUnlinkFileUpload(String $path) {
-        $disk = $this->shouldUseS3() ? 's3' : 'local';
-
-        if(Storage::disk($disk)->exists($path)) {
-            return Storage::disk($disk)->delete($path);
-        }
-        return false;
-    }
-
-    /**
-     * get file upload from s3
-     */
-    public function get(string $filename, string $filePath)
+    public function dynamicallyStoreFile(Request $request, string $filename, string $filePath): ?array
     {
-        $headers = [
-            'Content-Type'        => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$filename.'"',
-        ];
-
-        return Response::make(Storage::disk('s3')->get($filePath.'/'.$filename), 200, $headers);
+        return $this->uploadFile($request, $filename, $filePath);
     }
 
-    public function unlinkFileAndUpdate(int $id, String $attr, String $table, String $relatedTable, bool $useDynamic = false)
+    public function multiFileUploadS3Bucket(Request $request, string $name, string $filePath): ?array
     {
-        $model = DB::table($table)->select($attr)->find($id);
-
-        if (!$model) throw new NotFoundException(__('Model not found'), 404);
-
-        $relatedModel = DB::table($relatedTable)->where('id', $model->$attr)->first();
-
-        $unlink = !$useDynamic
-            ? $this->unlinkFileUpload($relatedModel->folder_path.'/'.$relatedModel->name)
-            : $this->dynamicallyUnlinkFileUpload($relatedModel->folder_path.'/'.$relatedModel->name);
-
-        if ($unlink) {
-
-            DB::table($table)->where('id', $id)->update([$attr => null]);
-
-            // Delete file upload
-            $this->deleteFileUpload($model->$attr);
-
-            return true;
-        }
-
-        throw new ConflictException(__('Image/file not deleted'), 409);
+        return $this->uploadMultipleFiles($request, $name, $filePath, 's3');
     }
 
     /**
-     * store the uploaded file
-    */
-    public function storeFileUpload(String $name, String $filePath, String $url) : Object
+     * Store and upload helpers
+     */
+    public function storeAndUploadFile(Request $request, string $name, string $filePath): ?int
     {
-        return $this->fileUpload->create([
-            'name'          => $name,
-            'folder_path'   => $filePath,
-            'url'          => $url,
-        ]);
+        $uploadFile = $this->uploadFile($request, $name, $filePath, $this->getDisk());
+
+        return $uploadFile
+            ? $this->storeFileUpload($uploadFile['filename'], $uploadFile['filePath'], $uploadFile['url'])->id
+            : null;
     }
 
-    /**
-     * upload multiple file and store as an array
-    */
-    public function storeAndUploadMultiFile(mixed $request, String $name, String $filePath)
+    public function storeAndUploadMultiFile(Request $request, string $name, string $filePath): ?int
     {
         $uploadFile = $this->multiFileUploadS3Bucket($request, $name, $filePath);
 
         return $uploadFile
             ? $this->storeFileUpload(json_encode($uploadFile['filename']), $uploadFile['filePath'], $uploadFile['url'])->id
-            : $uploadFile;
+            : null;
+    }
+
+    public function updateSingleFile(Request $request, int $id, string $name, string $filePath): void
+    {
+        $uploadFile = $this->uploadFileToS3Bucket($request, $name, $filePath);
+        if ($uploadFile) {
+            $this->updateFileUpload($id, ['name' => $uploadFile['filename']]);
+        }
     }
 
     /**
-     * upload and store file
-    */
-    public function storeAndUploadFile(mixed $request, ?string $name, string $filePath, bool $useDynamic = false)
+     * Delete a file from storage
+     */
+    public function unlinkFileUpload(string $path, ?string $disk = 's3'): bool
     {
-        $uploadFile = !$useDynamic
-            ? $this->uploadFileToS3Bucket($request, $name, $filePath)
-            : $this->dynamicallyStoreFile($request, $name, $filePath);
-
-        return $uploadFile
-            ? $this->storeFileUpload($uploadFile['filename'], $uploadFile['filePath'], $uploadFile['url'])->id
-            : $uploadFile;
-    }
-
-    // #########################################################################
-    // FILE-UPLOAD DYNAMIC
-    // #########################################################################
-
-    public function dynamicallyStoreFile(Request $request, String $filename, String $filePath)
-    {
-        if ($request->hasFile($filename)) {
-            $disk = $this->shouldUseS3() ? 's3' : 'local';
-            $path = $request->file($filename)->store($filePath, $disk);
-
-            if ($disk === 's3') {
-                Storage::disk('s3')->setVisibility($path, 'public');
-            }
-
-            if ($path) {
-                return [
-                    'filename' => basename($path),
-                    'path' => $filePath,
-                    'filePath' => $this->shouldUseS3() ? config('app.s3_bucket') . '/' . $filePath : $filePath,
-                    'url' => Storage::disk($disk)->url($path),
-                ];
-            }
-        }
-
-        return null;
-    }
-
-    public function dynamicUnlinkFileUpload(string $path, string $folder, string $name)
-    {
-
-        if (File::exists(public_path($folder . '/' . $name))) {
-            File::delete(public_path($folder . '/' . $name));
-        }
+        $disk = $disk ?? $this->getDisk();
 
         try {
-            if (Storage::disk('s3')->exists($path)) {
-                Storage::disk('s3')->delete($path);
+            if (Storage::disk($disk)->exists($path)) {
+                return Storage::disk($disk)->delete($path);
             }
+            return false;
         } catch (\Throwable $th) {
-            //throw $th;
+            Log::warning("Failed to delete file from {$disk}: " . $th->getMessage());
+            return false;
         }
+    }
+
+    /**
+     * Delete file from both local public path and storage disk
+     */
+    public function unlinkFileFromAll(string $path, string $folder, string $name): void
+    {
+        // Delete from local public path
+        File::delete(public_path($folder . '/' . $name));
+
+        // Delete from storage disk (S3 or local)
+        $this->unlinkFileUpload($path);
+    }
+
+    public function unlinkFileAndUpdate(int $id, string $attr, string $table, string $relatedTable, ?string $disk = 's3'): bool
+    {
+        $model = DB::table($table)->select($attr)->find($id);
+
+        if (!$model) {
+            throw new NotFoundException(__('Model not found'), 404);
+        }
+
+        $relatedModel = DB::table($relatedTable)->find($model->$attr);
+
+        if (!$relatedModel || !$this->unlinkFileUpload($relatedModel->folder_path . '/' . $relatedModel->name, $disk)) {
+            throw new ConflictException(__('Image/file not deleted'), 409);
+        }
+
+        DB::table($table)->where('id', $id)->update([$attr => null]);
+        $this->deleteFileUpload($model->$attr);
+
+        return true;
     }
 }

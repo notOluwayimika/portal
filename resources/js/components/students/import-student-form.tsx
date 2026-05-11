@@ -49,8 +49,6 @@ export function ImportStudentForm({
     useEffect(() => {
         let isMounted = true;
         axios.get('/api/students/resources').then((res) => {
-            console.log(res.data);
-
             if (isMounted) {
                 setCurricula(
                     convertToSelectOptions(

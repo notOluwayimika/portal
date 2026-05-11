@@ -162,6 +162,20 @@ class CurriculumController extends Controller
                 'is_compulsory' => $request->is_compulsory,
                 'display_order' => $request->display_order,
             ]);
+            // marking components
+            $marking_components = [
+                [
+                    "name" => "Continuous Assessment",
+                    "weight" => 0.3
+                ],
+                [
+                    "name" => "Examination",
+                    "weight" => 0.7
+                ],
+            ];
+            foreach ($marking_components as $component) {
+                $curriculumSubject->markingComponents()->create($component);
+            }
 
             return response()->json(new CurriculumSubjectResource($curriculumSubject), 201);
         } catch (\Throwable $th) {

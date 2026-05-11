@@ -15,21 +15,14 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { convertToSelectOptions } from '@/helpers';
 import type { Student } from '@/types/models';
+import type { SelectOption } from '../single-select';
 
 interface StudentFormProps {
     student?: Student | null;
     onSuccess: () => void;
     onCancel: () => void;
-}
-
-interface CurriculumOption {
-    id: number;
-    uuid: string;
-    term: number;
-    class_level: string;
-    arm: string;
-    stream: string;
 }
 
 interface StudentFormData {
@@ -49,7 +42,7 @@ export function StudentForm({
     onCancel,
 }: StudentFormProps) {
     const isEdit = !!student;
-    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
+    const [curricula, setCurricula] = useState<SelectOption[]>([]);
     const [genders, setGenders] = useState<{ name: string; value: string }[]>(
         [],
     );
@@ -58,7 +51,7 @@ export function StudentForm({
         student?.photo ?? null,
     );
 
-    const { data, setData, post, patch, processing, errors, reset } =
+    const { data, setData, processing, errors, reset } =
         useForm<StudentFormData>({
             first_name: student?.first_name || '',
             last_name: student?.last_name || '',
@@ -76,7 +69,12 @@ export function StudentForm({
             .get('/api/students/resources')
             .then((res) => {
                 if (isMounted) {
-                    setCurricula(res.data.data.curricula || []);
+                    setCurricula(
+                        convertToSelectOptions(
+                            res.data.data.curricula || [],
+                            'full_name',
+                        ),
+                    );
                     setGenders(res.data.data.genders || []);
                 }
             })
@@ -99,28 +97,42 @@ export function StudentForm({
         });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        const options = {
-            forceFormData: true,
-            onSuccess: () => {
-                onSuccess();
-                reset();
-            },
-        };
+        console.log(data);
+        // const options = {
+        //     forceFormData: true,
+        //     onSuccess: () => {
+        //         onSuccess();
+        //         reset();
+        //     },
+        // };
+        const formData = new FormData();
+        Object.entries(data).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+                formData.append(key, value);
+            }
+        });
 
         if (isEdit) {
-            patch(`/api/students/${student.id}`, options);
+            const response = await axios.patch(
+                `/api/students/${student.id}`,
+                formData,
+            );
+
+            if (response.status === 200 || response.status === 201) {
+                onSuccess();
+                reset();
+            }
         } else {
-            post('/api/students', options);
+            const response = await axios.post('/api/students', formData);
+
+            if (response.status === 201) {
+                onSuccess();
+                reset();
+            }
         }
     };
-
-    const curriculaOptions = curricula.map((c) => ({
-        value: c.id.toString(),
-        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-    }));
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -251,8 +263,8 @@ export function StudentForm({
                     <Label>Assigned Class</Label>
                     <SearchableSelect
                         placeholder="Search for a class..."
-                        options={curriculaOptions}
-                        value={curriculaOptions.find(
+                        options={curricula}
+                        value={curricula.find(
                             (opt) => opt.value === data.curriculum_id,
                         )}
                         onChange={(opt: any) =>

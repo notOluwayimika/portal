@@ -3,9 +3,12 @@
 use App\Enums\StudentStatusEnum;
 use App\Http\Controllers\AuthenticationController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\StudentController;
 use App\Http\Resources\CurriculumResource;
+use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\Teacher;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -33,7 +36,6 @@ Route::middleware(['auth', 'tenant'])->group(function () {
     })->name('students.index');
 
 
-
     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);
 });
@@ -44,6 +46,15 @@ Route::middleware(['auth'])->group(function () {
             'teacher' => new TeacherResource($teacher),
         ]);
     })->name('setup.teachers.show');
+
+    // Curriculum Subject
+    Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
+        $curriculumSubject->load(['curriculum', 'subject', 'markingComponents', 'scores.student', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student']);
+        return Inertia::render('curriculum-subject/show', [
+            'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
+        ]);
+    })->name('setup.curriculumSubjects.show');
+
 });
 
 

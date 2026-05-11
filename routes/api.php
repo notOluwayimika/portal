@@ -6,6 +6,7 @@ use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
+use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SubjectController;
@@ -94,6 +95,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
 
     // protected curriculum subjects routes
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
@@ -104,6 +107,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::post('/sessions/{session:uuid}/terms', [TermController::class, 'store']);
     Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update'])->withoutScopedBindings();
     Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy'])->withoutScopedBindings();
+
+    // protected marking components
+    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
+    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 

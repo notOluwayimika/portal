@@ -28,10 +28,7 @@ class StudentResource extends JsonResource
             'admission_number' => $this->admission_number,
             'gender' => $this->gender,
             'date_of_birth' => $this->date_of_birth,
-            'photo' => $this->photo ? Storage::disk('s3')->temporaryUrl(
-                    $this->photo,
-                    now()->addMinutes(15)
-                ) : null,
+            'photo' => $this->photoFile?->url,
             'status' => $currentCurriculum?->status,
             'class_details' => [
                 'level' => $classLevelArm?->classLevel?->name,

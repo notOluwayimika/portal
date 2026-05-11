@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import type { Teacher } from '@/types/models';
+import { formatDate } from '@/hooks/use-helper';
 
 interface StatusOption {
     name: string;
@@ -177,7 +178,9 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                             <thead>
                                 <tr className="border-b bg-muted/50">
                                     <th className="px-4 py-3 text-left font-medium">Name</th>
-                                    <th className="px-4 py-3 text-left font-medium">Staff #</th>
+                                    <th className="px-4 py-3 text-left font-medium">Staff Number</th>
+                                    <th className="px-4 py-3 text-left font-medium">Qualification</th>
+                                    <th className="px-4 py-3 text-left font-medium">Hire Date</th>
                                     <th className="px-4 py-3 text-left font-medium">Status</th>
                                     <th className="px-4 py-3 text-right font-medium">Actions</th>
                                 </tr>
@@ -217,6 +220,12 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground">
                                                 {teacher.staff_number || '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted-foreground">
+                                                {teacher.qualification || '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted-foreground">
+                                                {formatDate(teacher.hire_date) || '—'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Select

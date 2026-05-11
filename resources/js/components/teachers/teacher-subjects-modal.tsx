@@ -37,6 +37,7 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
     const [assigning, setAssigning]                   = useState(false);
     const [removing, setRemoving]                     = useState<string | null>(null);
     const [subjectsLoading, setSubjectsLoading]       = useState(false);
+    const [filterClass, setFilterClass]               = useState<string>('all');
 
     useEffect(() => {
         axios
@@ -61,6 +62,21 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
     }, [selectedCurriculum]);
 
     const assignedIds = new Set(assignments.map((a) => a.curriculum_subject.id));
+
+    const classOptions = Array.from(
+        new Map(
+            assignments
+                .map((a) => a.curriculum_subject.curriculum?.class_level_arm)
+                .filter(Boolean)
+                .map((arm) => [arm!.name, arm!.name])
+        ).entries()
+    ).sort(([a], [b]) => a.localeCompare(b));
+
+    const visibleAssignments = filterClass === 'all'
+        ? assignments
+        : assignments.filter(
+            (a) => a.curriculum_subject.curriculum?.class_level_arm?.name === filterClass
+        );
 
     const handleAssign = async () => {
         if (!selectedSubject) return;
@@ -150,9 +166,29 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             </div>
 
             <div>
-                <h3 className="mb-2 text-sm font-medium">
-                    Assigned Subjects ({assignments.length})
-                </h3>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-medium">
+                        Assigned Subjects ({visibleAssignments.length}{filterClass !== 'all' && ` of ${assignments.length}`})
+                    </h3>
+                    {assignments.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm text-muted-foreground">Filter:</label>
+                            <div className="w-48">
+                                <SearchableSelect
+                                    placeholder="All classes"
+                                    isClearable
+                                    options={classOptions.map(([value, label]) => ({ value, label }))}
+                                    value={
+                                        filterClass === 'all'
+                                            ? null
+                                            : { value: filterClass, label: filterClass }
+                                    }
+                                    onChange={(opt: any) => setFilterClass(opt ? opt.value : 'all')}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {loading ? (
                     <div className="py-8 text-center">
@@ -162,9 +198,13 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
                     <p className="py-6 text-center text-sm text-muted-foreground">
                         No subjects assigned yet.
                     </p>
+                ) : visibleAssignments.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                        No subjects assigned for this class.
+                    </p>
                 ) : (
                     <div className="divide-y rounded-lg border">
-                        {assignments.map((a) => (
+                        {visibleAssignments.map((a) => (
                             <div key={a.id} className="flex items-center justify-between px-4 py-3">
                                 <div>
                                     <p className="text-sm font-medium">

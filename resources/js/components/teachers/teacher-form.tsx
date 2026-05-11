@@ -1,4 +1,3 @@
-import { useForm } from '@inertiajs/react';
 import axios from 'axios';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -30,13 +29,12 @@ interface TeacherFormData {
     photo: File | null;
 }
 
+type FormErrors = Partial<Record<keyof TeacherFormData, string>>;
+
 export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) {
     const isEdit = !!teacher;
-    const [genders, setGenders] = useState<{ name: string; value: string }[]>([]);
-    const [statuses, setStatuses] = useState<{ name: string; value: string }[]>([]);
-    const [photoPreview, setPhotoPreview] = useState<string | null>(teacher?.photo ?? null);
 
-    const { data, setData, post, patch, processing, errors, reset } = useForm<TeacherFormData>({
+    const initialData: TeacherFormData = {
         first_name:    teacher?.first_name    || '',
         last_name:     teacher?.last_name     || '',
         staff_number:  teacher?.staff_number  || '',
@@ -47,8 +45,21 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
         qualification: teacher?.qualification || '',
         hire_date:     teacher?.hire_date     || '',
         status:        teacher?.status        || 'active',
-        photo: null,
-    });
+        photo:         null,
+    };
+
+    const [data, setFormData]       = useState<TeacherFormData>(initialData);
+    const [processing, setProcessing] = useState(false);
+    const [errors, setErrors]       = useState<FormErrors>({});
+    const [genders, setGenders]     = useState<{ name: string; value: string }[]>([]);
+    const [statuses, setStatuses]   = useState<{ name: string; value: string }[]>([]);
+    const [photoPreview, setPhotoPreview]       = useState<string | null>(teacher?.photo ?? null);
+    const [manualStaffNumber, setManualStaffNumber] = useState(false);
+    const [changeStaffNumber, setChangeStaffNumber] = useState(false);
+
+    const setData = <K extends keyof TeacherFormData>(key: K, value: TeacherFormData[K]) => {
+        setFormData((prev) => ({ ...prev, [key]: value }));
+    };
 
     useEffect(() => {
         let isMounted = true;
@@ -70,16 +81,40 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
         });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const options = {
-            forceFormData: true,
-            onSuccess: () => { onSuccess(); reset(); },
-        };
-        if (isEdit) {
-            patch(`/api/teachers/${teacher.id}`, options);
-        } else {
-            post('/api/teachers', options);
+        setProcessing(true);
+        setErrors({});
+
+        const formData = new FormData();
+        (Object.keys(data) as (keyof TeacherFormData)[]).forEach((key) => {
+            const value = data[key];
+            if (key === 'photo') {
+                if (value instanceof File) formData.append('photo', value);
+            } else if (value !== null && value !== undefined) {
+                formData.append(key, value as string);
+            }
+        });
+
+        try {
+            if (isEdit) {
+                formData.append('_method', 'PATCH');
+                await axios.post(`/api/teachers/${teacher.id}`, formData);
+            } else {
+                await axios.post('/api/teachers', formData);
+            }
+            onSuccess();
+        } catch (err: any) {
+            const raw = err?.response?.data?.errors;
+            if (raw) {
+                const flat: FormErrors = {};
+                (Object.keys(raw) as (keyof TeacherFormData)[]).forEach((k) => {
+                    flat[k] = Array.isArray(raw[k]) ? raw[k][0] : raw[k];
+                });
+                setErrors(flat);
+            }
+        } finally {
+            setProcessing(false);
         }
     };
 
@@ -116,12 +151,57 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
 
                 <div className="space-y-2">
                     <Label htmlFor="staff_number">Staff Number</Label>
-                    <Input
-                        id="staff_number"
-                        placeholder="e.g. STF/2024/001"
-                        value={data.staff_number}
-                        onChange={(e) => setData('staff_number', e.target.value)}
-                    />
+                    {isEdit ? (
+                        <>
+                            <Input
+                                id="staff_number"
+                                value={data.staff_number}
+                                onChange={(e) => setData('staff_number', e.target.value)}
+                                disabled={!changeStaffNumber}
+                                placeholder="e.g. STF/2024/001"
+                            />
+                            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                    type="checkbox"
+                                    checked={changeStaffNumber}
+                                    onChange={(e) => {
+                                        setChangeStaffNumber(e.target.checked);
+                                        if (!e.target.checked) setData('staff_number', teacher?.staff_number || '');
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-input accent-primary"
+                                />
+                                Change staff number
+                            </label>
+                        </>
+                    ) : (
+                        <>
+                            {manualStaffNumber ? (
+                                <Input
+                                    id="staff_number"
+                                    placeholder="e.g. STF/2024/001"
+                                    value={data.staff_number}
+                                    onChange={(e) => setData('staff_number', e.target.value)}
+                                    autoFocus
+                                />
+                            ) : (
+                                <div className="flex h-9 items-center rounded-md border border-dashed border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+                                    Auto-generated on save
+                                </div>
+                            )}
+                            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                    type="checkbox"
+                                    checked={manualStaffNumber}
+                                    onChange={(e) => {
+                                        setManualStaffNumber(e.target.checked);
+                                        if (!e.target.checked) setData('staff_number', '');
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-input accent-primary"
+                                />
+                                Enter staff number manually
+                            </label>
+                        </>
+                    )}
                     {errors.staff_number && <p className="text-destructive text-xs">{errors.staff_number}</p>}
                 </div>
 

@@ -27,7 +27,27 @@ class TeacherService
 
     public function store(array $attributes): Teacher
     {
+        if (empty($attributes['staff_number'])) {
+            $attributes['staff_number'] = $this->generateStaffNumber($attributes['school_id']);
+        }
+
         return Teacher::create($attributes);
+    }
+
+    private function generateStaffNumber(int $schoolId): string
+    {
+        $year   = now()->year;
+        $prefix = "STF/{$year}/";
+
+        $last = Teacher::withTrashed()
+            ->where('school_id', $schoolId)
+            ->where('staff_number', 'LIKE', $prefix . '%')
+            ->orderByDesc('staff_number')
+            ->value('staff_number');
+
+        $next = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
+
+        return $prefix . str_pad($next, 3, '0', STR_PAD_LEFT);
     }
 
     public function show(Teacher $teacher): Teacher

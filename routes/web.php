@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StudentStatusEnum;
+use App\Enums\TeacherStatusEnum;
 use App\Http\Controllers\AuthenticationController;
 use App\Http\Controllers\SessionController;
 use App\Http\Resources\CurriculumResource;
@@ -31,6 +32,13 @@ Route::middleware(['auth', 'tenant'])->group(function () {
             'student_statuses' => StudentStatusEnum::options()
         ]);
     })->name('students.index');
+
+    // Teachers
+    Route::get('teachers', function () {
+        return Inertia::render('admin/teachers/index', [
+            'teacher_statuses' => TeacherStatusEnum::options(),
+        ]);
+    })->name('teachers.index');
 
 
 

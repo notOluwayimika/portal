@@ -7,12 +7,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class TeacherCurriculumSubjectResource extends JsonResource
 {
-
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->uuid,
-            'teacher' => new TeacherResource($this->teacher),
+            'id'                 => $this->uuid,
+            'teacher'            => $this->whenLoaded('teacher', fn() => new TeacherResource($this->teacher)),
             'curriculum_subject' => new CurriculumSubjectResource($this->whenLoaded('curriculumSubject')),
         ];
     }

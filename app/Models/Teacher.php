@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Concerns\AddUuid;
+use App\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Teacher extends Model
 {
-    use \Illuminate\Database\Eloquent\SoftDeletes;
+    use AddUuid, SoftDeletes, BelongsToSchool;
 
     protected $fillable = [
         'school_id',
@@ -23,14 +26,14 @@ class Teacher extends Model
         'qualification',
         'hire_date',
         'status',
-        'photo'
+        'photo_id',
     ];
 
     public $appends = ['full_name', 'name'];
 
-    protected static function booted(): void
+    public function getRouteKeyName(): string
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        return 'uuid';
     }
 
     public function getFullNameAttribute(): string
@@ -43,17 +46,28 @@ class Teacher extends Model
         return $this->full_name;
     }
 
-    public function getRouteKeyName(): string
+    public function getPhotoAttribute(): ?string
     {
-        return 'uuid';
+        return $this->photoFile?->url;
     }
 
-    public function assignedCurriculumSubjects()
+    public function school(): BelongsTo
     {
-        return $this->hasMany(TeacherCurriculumSubject::class, 'teacher_id');
+        return $this->belongsTo(School::class);
     }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function photoFile(): BelongsTo
+    {
+        return $this->belongsTo(FileUpload::class, 'photo_id');
+    }
+
+    public function assignedCurriculumSubjects(): HasMany
+    {
+        return $this->hasMany(TeacherCurriculumSubject::class, 'teacher_id');
     }
 }

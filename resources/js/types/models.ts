@@ -125,20 +125,38 @@ export interface Student {
 export interface Teacher {
     id: string;
     school_id: string;
-    school: School;
+    school?: School;
     user_id?: string;
     user?: User;
     first_name: string;
     last_name: string;
-    staff_number: string;
-    photo?: string;
-    // email: string;
-    // phone: string;
-    // date_of_birth: string;
-    gender: string;
+    full_name: string;
+    staff_number?: string;
+    photo?: string | null;
+    gender?: string;
+    date_of_birth?: string;
+    phone?: string;
+    address?: string;
+    qualification?: string;
+    hire_date?: string;
+    status: string;
     created_at?: string;
     updated_at?: string;
     deleted_at?: string;
+}
+
+export interface TeacherSubjectAssignment {
+    id: string;
+    curriculum_subject: {
+        id: string;
+        subject: { name: string; code?: string };
+        curriculum: {
+            id: string;
+            class_level_arm: { name: string };
+            term?: { name: string };
+        };
+        is_compulsory: boolean;
+    };
 }
 
 export interface Term {

@@ -6,9 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import type { Student } from '@/types/models';
+import { SelectOption } from '../single-select';
+import { convertToSelectOptions } from '@/helpers';
 
 interface StudentFormProps {
     student?: Student | null;
@@ -35,21 +43,28 @@ interface StudentFormData {
     curriculum_id: string;
 }
 
-export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
+export function StudentForm({
+    student,
+    onSuccess,
+    onCancel,
+}: StudentFormProps) {
     const isEdit = !!student;
-    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
-    const [genders, setGenders] = useState<{ name: string; value: string }[]>([])
+    const [curricula, setCurricula] = useState<SelectOption[]>([]);
+    const [genders, setGenders] = useState<{ name: string; value: string }[]>(
+        [],
+    );
     const [loading, setLoading] = useState(false);
     const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
-    const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
-        first_name: student?.first_name || '',
-        last_name: student?.last_name || '',
-        middle_name: student?.middle_name || '',
-        admission_number: isEdit ? (student?.admission_number || '') : '',
-        gender: student?.gender || 'male',
-        date_of_birth: student?.date_of_birth || '',
-        curriculum_id: student?.curriculum_id?.toString() || '',
-    });
+    const { data, setData, post, patch, processing, errors, reset } =
+        useForm<StudentFormData>({
+            first_name: student?.first_name || '',
+            last_name: student?.last_name || '',
+            middle_name: student?.middle_name || '',
+            admission_number: isEdit ? student?.admission_number || '' : '',
+            gender: student?.gender || 'male',
+            date_of_birth: student?.date_of_birth || '',
+            curriculum_id: student?.curriculum_id?.toString() || '',
+        });
 
     useEffect(() => {
         let isMounted = true;
@@ -58,7 +73,12 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 const response = await axios.get('/api/students/resources');
 
                 if (isMounted) {
-                    setCurricula(response.data.data.curricula || []);
+                    setCurricula(
+                        convertToSelectOptions(
+                            response.data.data.curricula || [],
+                            'full_name',
+                        ),
+                    );
                     setGenders(response.data.data.genders || []);
                 }
             } catch (error) {
@@ -100,7 +120,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                     <Label htmlFor="first_name">First Name</Label>
                     <Input
@@ -109,7 +129,11 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                         onChange={(e) => setData('first_name', e.target.value)}
                         required
                     />
-                    {errors.first_name && <p className="text-destructive text-xs">{errors.first_name}</p>}
+                    {errors.first_name && (
+                        <p className="text-xs text-destructive">
+                            {errors.first_name}
+                        </p>
+                    )}
                 </div>
 
                 <div className="space-y-2">
@@ -120,7 +144,11 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                         onChange={(e) => setData('last_name', e.target.value)}
                         required
                     />
-                    {errors.last_name && <p className="text-destructive text-xs">{errors.last_name}</p>}
+                    {errors.last_name && (
+                        <p className="text-xs text-destructive">
+                            {errors.last_name}
+                        </p>
+                    )}
                 </div>
 
                 <div className="space-y-2">
@@ -147,7 +175,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                             }}
                             className="h-4 w-4 rounded border-gray-300"
                         />
-                        <Label htmlFor="manual_admission" className="cursor-pointer text-sm font-normal">
+                        <Label
+                            htmlFor="manual_admission"
+                            className="cursor-pointer text-sm font-normal"
+                        >
                             Manually set admission number
                         </Label>
                     </div>
@@ -157,10 +188,14 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                                 id="admission_number"
                                 placeholder="Enter admission number"
                                 value={data.admission_number}
-                                onChange={(e) => setData('admission_number', e.target.value)}
+                                onChange={(e) =>
+                                    setData('admission_number', e.target.value)
+                                }
                             />
                             {errors.admission_number && (
-                                <p className="text-destructive text-xs">{errors.admission_number}</p>
+                                <p className="text-xs text-destructive">
+                                    {errors.admission_number}
+                                </p>
                             )}
                         </>
                     )}
@@ -168,7 +203,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
 
                 <div className="space-y-2">
                     <Label>Gender</Label>
-                    <Select value={data.gender} onValueChange={(v) => setData('gender', v)}>
+                    <Select
+                        value={data.gender}
+                        onValueChange={(v) => setData('gender', v)}
+                    >
                         <SelectTrigger>
                             <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
@@ -180,7 +218,11 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                             ))}
                         </SelectContent>
                     </Select>
-                    {errors.gender && <p className="text-destructive text-xs">{errors.gender}</p>}
+                    {errors.gender && (
+                        <p className="text-xs text-destructive">
+                            {errors.gender}
+                        </p>
+                    )}
                 </div>
 
                 <div className="space-y-2">
@@ -189,7 +231,9 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                         id="date_of_birth"
                         type="date"
                         value={data.date_of_birth}
-                        onChange={(e) => setData('date_of_birth', e.target.value)}
+                        onChange={(e) =>
+                            setData('date_of_birth', e.target.value)
+                        }
                     />
                 </div>
 
@@ -197,27 +241,38 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                     <Label>Assigned Class</Label>
                     <SearchableSelect
                         placeholder="Search for a class..."
-                        options={curricula.map((c) => ({
-                            value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-                        }))}
-                        value={curricula.map((c) => ({
-                            value: c.id.toString(),
-                            label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-                        })).find(opt => opt.value === data.curriculum_id)}
-                        onChange={(opt: any) => setData('curriculum_id', opt?.value || '')}
+                        options={curricula}
+                        value={curricula.find(
+                            (opt) => opt.value === data.curriculum_id,
+                        )}
+                        onChange={(opt: any) =>
+                            setData('curriculum_id', opt?.value || '')
+                        }
                         error={!!errors.curriculum_id}
                     />
-                    {errors.curriculum_id && <p className="text-destructive text-xs">{errors.curriculum_id}</p>}
+                    {errors.curriculum_id && (
+                        <p className="text-xs text-destructive">
+                            {errors.curriculum_id}
+                        </p>
+                    )}
                 </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>
+            <div className="flex justify-end gap-3 border-t pt-4">
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancel}
+                    disabled={processing}
+                >
                     Cancel
                 </Button>
                 <Button type="submit" disabled={processing}>
-                    {processing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    {processing ? (
+                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                    )}
                     {isEdit ? 'Update Student' : 'Create Student'}
                 </Button>
             </div>

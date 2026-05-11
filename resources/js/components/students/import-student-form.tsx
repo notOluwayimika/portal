@@ -1,28 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Spinner } from '@/components/ui/spinner';
+import { convertToSelectOptions } from '@/helpers';
 import { useExcelImport } from '@/hooks/use-excel-import';
 import { ExcelDateToJSDate } from '@/hooks/use-helper';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import { cn } from '@/lib/utils';
+import type { SelectOption } from '../single-select';
 
 interface ImportStudentFormProps {
     onSuccess: () => void;
     onCancel: () => void;
-}
-
-interface CurriculumOption {
-    id: number;
-    uuid: string;
-    term: number;
-    class_level: string;
-    arm: string;
-    stream: string;
 }
 
 interface StudentRow {
@@ -35,15 +28,19 @@ interface StudentRow {
     [key: string]: unknown;
 }
 
-export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProps) {
+export function ImportStudentForm({
+    onSuccess,
+    onCancel,
+}: ImportStudentFormProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { importExcelData } = useExcelImport();
 
-    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
+    const [curricula, setCurricula] = useState<SelectOption[]>([]);
     const [curriculumId, setCurriculumId] = useState<string>('');
     const [curriculumError, setCurriculumError] = useState('');
 
-    const { confirmAndExecute, loading: posting } = useApiSweetAlertConfirmation();
+    const { confirmAndExecute, loading: posting } =
+        useApiSweetAlertConfirmation();
 
     const [previewData, setPreviewData] = useState<StudentRow[]>([]);
     const [rowErrors, setRowErrors] = useState<Record<number, string[]>>({});
@@ -52,15 +49,22 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
     useEffect(() => {
         let isMounted = true;
         axios.get('/api/students/resources').then((res) => {
-            if (isMounted) setCurricula(res.data.data.curricula || []);
-        });
-        return () => { isMounted = false; };
-    }, []);
+            console.log(res.data);
 
-    const curriculaOptions = curricula.map((c) => ({
-        value: c.id.toString(),
-        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
-    }));
+            if (isMounted) {
+                setCurricula(
+                    convertToSelectOptions(
+                        res.data.data.curricula || [],
+                        'full_name',
+                    ),
+                );
+            }
+        });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setRowErrors({});
@@ -74,9 +78,13 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
     const handleImport = async () => {
         if (!curriculumId) {
             setCurriculumError('Please select a class before importing.');
+
             return;
         }
-        if (!previewData.length) return;
+
+        if (!previewData.length) {
+            return;
+        }
 
         setCurriculumError('');
         setRowErrors({});
@@ -84,7 +92,8 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
         try {
             const result = await confirmAndExecute({
                 sweetAlertTitle: `Import ${previewData.length} Student(s)?`,
-                sweetAlertText: 'Valid rows will be saved. Rows with errors will be reported back.',
+                sweetAlertText:
+                    'Valid rows will be saved. Rows with errors will be reported back.',
                 sweetAlertIcon: 'question',
                 confirmButtonText: 'Import',
                 showSuccessAlert: false,
@@ -94,27 +103,40 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                         curriculum_id: curriculumId,
                         students: previewData,
                     });
+
                     return { ok: true, message: res.data?.message };
                 },
             });
 
-            if (result === false) return;
+            if (result === false) {
+                return;
+            }
 
             if (result.ok) {
-                toast.success(result.message ?? `${previewData.length} student(s) imported successfully.`);
+                toast.success(
+                    result.message ??
+                        `${previewData.length} student(s) imported successfully.`,
+                );
                 onSuccess();
             } else {
                 if (result.saved > 0) {
-                    toast.success(`${result.saved} student(s) imported successfully.`);
+                    toast.success(
+                        `${result.saved} student(s) imported successfully.`,
+                    );
                 }
+
                 setRowErrors(result.errors);
             }
         } catch (err: any) {
             const body = err.response?.data;
+
             if (body?.errors) {
                 if ((body.saved ?? 0) > 0) {
-                    toast.success(`${body.saved} student(s) imported successfully.`);
+                    toast.success(
+                        `${body.saved} student(s) imported successfully.`,
+                    );
                 }
+
                 setRowErrors(body.errors);
             } else {
                 toast.error('Something went wrong. Please try again.');
@@ -131,8 +153,8 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                 <Label>Assigned Class</Label>
                 <SearchableSelect
                     placeholder="Search for a class..."
-                    options={curriculaOptions}
-                    value={curriculaOptions.find((o) => o.value === curriculumId)}
+                    options={curricula}
+                    value={curricula.find((o) => o.value === curriculumId)}
                     onChange={(opt: any) => {
                         setCurriculumId(opt?.value || '');
                         setCurriculumError('');
@@ -140,7 +162,9 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                     error={!!curriculumError}
                 />
                 {curriculumError && (
-                    <p className="text-destructive text-xs">{curriculumError}</p>
+                    <p className="text-xs text-destructive">
+                        {curriculumError}
+                    </p>
                 )}
             </div>
 
@@ -148,7 +172,9 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
             <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-border p-6 text-center">
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                    {selectedFile ? selectedFile.name : 'Select an Excel or CSV file (.xls, .xlsx, .csv)'}
+                    {selectedFile
+                        ? selectedFile.name
+                        : 'Select an Excel or CSV file (.xls, .xlsx, .csv)'}
                 </p>
                 <Button
                     type="button"
@@ -179,15 +205,23 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                     <div className="flex items-start gap-2">
                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                         <div className="text-sm text-destructive">
-                            <p className="font-medium mb-1">{errorCount} row(s) have errors:</p>
+                            <p className="mb-1 font-medium">
+                                {errorCount} row(s) have errors:
+                            </p>
                             <table className="w-full text-xs">
                                 <tbody>
-                                    {Object.entries(rowErrors).map(([idx, messages]) => (
-                                        <tr key={idx}>
-                                            <td className="w-16 py-0.5 font-medium align-top">Row {Number(idx) + 1}</td>
-                                            <td className="py-0.5">{messages.join(', ')}</td>
-                                        </tr>
-                                    ))}
+                                    {Object.entries(rowErrors).map(
+                                        ([idx, messages]) => (
+                                            <tr key={idx}>
+                                                <td className="w-16 py-0.5 align-top font-medium">
+                                                    Row {Number(idx) + 1}
+                                                </td>
+                                                <td className="py-0.5">
+                                                    {messages.join(', ')}
+                                                </td>
+                                            </tr>
+                                        ),
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -205,8 +239,19 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                     <table className="w-full text-sm">
                         <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
                             <tr>
-                                {['S/N', 'First Name', 'Middle Name', 'Last Name', 'Gender', 'Date of Birth', 'Admission #'].map((h) => (
-                                    <th key={h} className="px-3 py-2 text-left text-xs font-medium">
+                                {[
+                                    'S/N',
+                                    'First Name',
+                                    'Middle Name',
+                                    'Last Name',
+                                    'Gender',
+                                    'Date of Birth',
+                                    'Admission #',
+                                ].map((h) => (
+                                    <th
+                                        key={h}
+                                        className="px-3 py-2 text-left text-xs font-medium"
+                                    >
                                         {h}
                                     </th>
                                 ))}
@@ -215,22 +260,42 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
                         <tbody>
                             {previewData.map((row, index) => {
                                 const hasError = !!rowErrors[index];
+
                                 return (
                                     <tr
                                         key={index}
-                                        className={cn('border-t', hasError && 'bg-destructive/10 text-destructive')}
+                                        className={cn(
+                                            'border-t',
+                                            hasError &&
+                                                'bg-destructive/10 text-destructive',
+                                        )}
                                     >
-                                        <td className="px-3 py-2">{index + 1}</td>
-                                        <td className="px-3 py-2">{row.first_name ?? '-'}</td>
-                                        <td className="px-3 py-2">{row.middle_name ?? '-'}</td>
-                                        <td className="px-3 py-2">{row.last_name ?? '-'}</td>
-                                        <td className="px-3 py-2">{row.gender ?? '-'}</td>
                                         <td className="px-3 py-2">
-                                            {typeof row.date_of_birth === 'number'
-                                                ? ExcelDateToJSDate(row.date_of_birth).toLocaleDateString()
+                                            {index + 1}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {row.first_name ?? '-'}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {row.middle_name ?? '-'}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {row.last_name ?? '-'}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {row.gender ?? '-'}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {typeof row.date_of_birth ===
+                                            'number'
+                                                ? ExcelDateToJSDate(
+                                                      row.date_of_birth,
+                                                  ).toLocaleDateString()
                                                 : (row.date_of_birth ?? '-')}
                                         </td>
-                                        <td className="px-3 py-2">{row.admission_number ?? '-'}</td>
+                                        <td className="px-3 py-2">
+                                            {row.admission_number ?? '-'}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -242,24 +307,34 @@ export function ImportStudentForm({ onSuccess, onCancel }: ImportStudentFormProp
             {previewData.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                     {previewData.length} row(s) ready to import
-                    {errorCount > 0 && ` · ${errorCount} with errors (rows in red will be skipped)`}
+                    {errorCount > 0 &&
+                        ` · ${errorCount} with errors (rows in red will be skipped)`}
                 </p>
             )}
 
             {/* Footer */}
             <div className="flex justify-end gap-3 border-t pt-4">
-                <Button type="button" variant="outline" onClick={onCancel} disabled={posting}>
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancel}
+                    disabled={posting}
+                >
                     Cancel
                 </Button>
-                <Button type="button" onClick={handleImport} disabled={posting || previewData.length === 0}>
-                    {posting
-                        ? <Spinner className="mr-2 h-4 w-4 animate-spin" />
-                        : <Upload className="mr-2 h-4 w-4" />
-                    }
+                <Button
+                    type="button"
+                    onClick={handleImport}
+                    disabled={posting || previewData.length === 0}
+                >
+                    {posting ? (
+                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                    )}
                     {previewData.length > 0
                         ? `Import ${previewData.length} Students`
-                        : 'Import Students'
-                    }
+                        : 'Import Students'}
                 </Button>
             </div>
         </form>

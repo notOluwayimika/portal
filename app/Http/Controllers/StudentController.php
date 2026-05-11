@@ -11,6 +11,7 @@ use App\Exports\StudentsExport;
 use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
+use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Models\Curriculum;
 use App\Models\Student;
@@ -26,7 +27,8 @@ class StudentController extends Controller
     public function __construct(
         protected StudentService $studentService,
         protected ClassLevelArmRepository $classLevelArmRepository,
-    ) {}
+    ) {
+    }
 
     public function index(Request $request)
     {
@@ -104,7 +106,7 @@ class StudentController extends Controller
 
     public function import(ImportStudentRequest $request)
     {
-        $data     = $request->validated();
+        $data = $request->validated();
         $schoolId = $request->user()->school_id;
 
         $result = $this->studentService->import(
@@ -116,8 +118,8 @@ class StudentController extends Controller
         if (!empty($result['errors'])) {
             return response()->json([
                 'message' => "{$result['saved']} student(s) imported. " . count($result['errors']) . " row(s) had errors and were skipped.",
-                'saved'   => $result['saved'],
-                'errors'  => $result['errors'],
+                'saved' => $result['saved'],
+                'errors' => $result['errors'],
             ], 422);
         }
 
@@ -138,25 +140,15 @@ class StudentController extends Controller
             'classLevelArm.arm',
             'classLevelArm.stream'
         ])
-        ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
-        ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
+            ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
+            ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
-        $curriculaOptions = $curricula->map(function ($curriculum) {
-            return [
-                'id' => $curriculum->id,
-                'uuid' => $curriculum->uuid,
-                'term' => $curriculum->term?->order,
-                'term_name' => $curriculum->term?->name,
-                'class_level' => $curriculum->classLevelArm?->classLevel?->name,
-                'arm' => $curriculum->classLevelArm?->arm?->label,
-                'stream' => $curriculum->classLevelArm?->stream?->name,
-            ];
-        });
+
 
         $genders = GenderTypeEnum::options();
 
         return Response::success([
-            'curricula' => $curriculaOptions,
+            'curricula' => CurriculumResource::collection($curricula),
             'genders' => $genders,
         ]);
     }

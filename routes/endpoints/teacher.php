@@ -7,6 +7,8 @@ Route::prefix('teachers')->group(function () {
     Route::get('/',                                                      [TeacherController::class, 'index']);
     Route::post('/',                                                     [TeacherController::class, 'store']);
     Route::get('/resources',                                             [TeacherController::class, 'resources']);
+    Route::get('/export',                                                [TeacherController::class, 'export']);
+    Route::post('/import',                                               [TeacherController::class, 'import']);
     Route::get('/{teacher:uuid}',                                        [TeacherController::class, 'show']);
     Route::patch('/{teacher:uuid}',                                      [TeacherController::class, 'update']);
     Route::patch('/{teacher:uuid}/status',                               [TeacherController::class, 'updateStatus']);

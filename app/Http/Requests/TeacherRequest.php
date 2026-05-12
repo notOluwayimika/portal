@@ -19,8 +19,16 @@ class TeacherRequest extends FormRequest
         $isUpdate = $this->isMethod('PATCH') || $this->isMethod('PUT');
 
         return [
+            'school_id'     => [Rule::requiredIf(fn() => auth()->user()?->isSuperAdmin()), 'uuid', 'exists:schools,id'],
             'first_name'    => ['required', 'string', 'max:255'],
             'last_name'     => ['required', 'string', 'max:255'],
+            'email'         => [
+                $isUpdate ? 'sometimes' : 'required',
+                'string',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($this->teacher?->user_id),
+            ],
             'staff_number'  => [
                 'nullable',
                 'string',

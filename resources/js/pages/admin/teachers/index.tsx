@@ -1,8 +1,9 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { BookOpen, Edit, Search, Trash2, UserPlus } from 'lucide-react';
+import { BookOpen, Download, Edit, Search, Trash2, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
+import { ImportTeacherForm } from '@/components/teachers/import-teacher-form';
 import { TeacherForm } from '@/components/teachers/teacher-form';
 import { TeacherSubjectsModal } from '@/components/teachers/teacher-subjects-modal';
 import type { Toast, ToastType } from '@/components/toast-item';
@@ -52,9 +53,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         next_page_url: null,
     });
     const [isFormModalOpen, setIsFormModalOpen]       = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen]   = useState(false);
     const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
     const [currentTeacher, setCurrentTeacher]         = useState<Teacher | null>(null);
     const [curricula, setCurricula]                   = useState<CurriculumOption[]>([]);
+    const [exporting, setExporting]                   = useState(false);
     let toastCounter = 0;
 
     const addToast = (message: string, type: ToastType = 'success') => {
@@ -136,6 +139,32 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         fetchTeachers();
     };
 
+    const handleExport = async () => {
+        try {
+            setExporting(true);
+            const response = await axios.get('/api/teachers/export', {
+                responseType: 'blob',
+                params: { search },
+            });
+            const url = URL.createObjectURL(
+                new Blob([response.data], {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                })
+            );
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `teachers-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch {
+            addToast('Failed to export teachers', 'error');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     const statusBadgeClass = (status: string) => {
         if (status === 'active')   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
         if (status === 'resigned') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
@@ -154,10 +183,23 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                             Manage your school's teaching staff
                         </p>
                     </div>
-                    <Button onClick={handleAdd}>
-                        <UserPlus className="mr-1 h-4 w-4" />
-                        Add Teacher
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+                            {exporting
+                                ? <Spinner className="mr-1 h-4 w-4 animate-spin" />
+                                : <Download className="mr-1 h-4 w-4" />
+                            }
+                            {exporting ? 'Exporting…' : 'Export'}
+                        </Button>
+                        <Button variant="outline" onClick={() => setIsImportModalOpen(true)}>
+                            <Upload className="mr-1 h-4 w-4" />
+                            Import
+                        </Button>
+                        <Button onClick={handleAdd}>
+                            <UserPlus className="mr-1 h-4 w-4" />
+                            Add Teacher
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="rounded-lg border bg-background shadow-sm">
@@ -296,6 +338,18 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                     teacher={currentTeacher}
                     onSuccess={handleFormSuccess}
                     onCancel={() => setIsFormModalOpen(false)}
+                />
+            </Modal>
+
+            <Modal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                title="Import Teachers"
+                size="lg"
+            >
+                <ImportTeacherForm
+                    onSuccess={() => { setIsImportModalOpen(false); fetchTeachers(); }}
+                    onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
 

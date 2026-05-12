@@ -7,10 +7,11 @@ use Carbon\Carbon;
 readonly class TeacherDto
 {
     public function __construct(
-        public readonly ?int    $school_id,
-        public readonly ?int    $user_id,
+        public readonly ?string $school_id,
+        public readonly ?string $user_id,
         public readonly string  $first_name,
         public readonly string  $last_name,
+        public readonly ?string $email,
         public readonly ?string $staff_number,
         public readonly ?string $gender,
         public readonly Carbon|string|null $date_of_birth,
@@ -19,7 +20,7 @@ readonly class TeacherDto
         public readonly ?string $qualification,
         public readonly Carbon|string|null $hire_date,
         public readonly ?string $status,
-        public readonly ?int    $photo_id,
+        public readonly ?int $photo_id,
     ) {}
 
     public static function fromArray(array $data): self
@@ -29,6 +30,7 @@ readonly class TeacherDto
             user_id:       $data['user_id']       ?? null,
             first_name:    $data['first_name'],
             last_name:     $data['last_name'],
+            email:         $data['email']         ?? null,
             staff_number:  $data['staff_number']  ?? null,
             gender:        $data['gender']        ?? null,
             date_of_birth: $data['date_of_birth'] ?? null,
@@ -46,8 +48,9 @@ readonly class TeacherDto
         return get_object_vars($this);
     }
 
-    public function only()
+    public function only(string|array ...$keys): array
     {
-        return array_intersect_key($this->toArray(), array_flip(func_get_args()));
+        $flat = count($keys) === 1 && is_array($keys[0]) ? $keys[0] : $keys;
+        return array_intersect_key($this->toArray(), array_flip($flat));
     }
 }

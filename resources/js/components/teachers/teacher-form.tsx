@@ -18,6 +18,7 @@ interface TeacherFormProps {
 interface TeacherFormData {
     first_name: string;
     last_name: string;
+    email: string;
     staff_number: string;
     gender: string;
     date_of_birth: string;
@@ -37,6 +38,7 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
     const initialData: TeacherFormData = {
         first_name:    teacher?.first_name    || '',
         last_name:     teacher?.last_name     || '',
+        email:         teacher?.email         || '',
         staff_number:  teacher?.staff_number  || '',
         gender:        teacher?.gender        || 'male',
         date_of_birth: teacher?.date_of_birth || '',
@@ -60,6 +62,31 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
     const setData = <K extends keyof TeacherFormData>(key: K, value: TeacherFormData[K]) => {
         setFormData((prev) => ({ ...prev, [key]: value }));
     };
+
+    useEffect(() => {
+        if (!isEdit || !teacher) return;
+        let isMounted = true;
+        axios.get(`/api/teachers/${teacher.id}`).then((res) => {
+            const t = res.data;
+            if (!isMounted || !t) return;
+            setFormData((prev) => ({
+                ...prev,
+                first_name:    t.first_name    || prev.first_name,
+                last_name:     t.last_name     || prev.last_name,
+                email:         t.email         || prev.email,
+                staff_number:  t.staff_number  || prev.staff_number,
+                gender:        t.gender        || prev.gender,
+                date_of_birth: t.date_of_birth || prev.date_of_birth,
+                phone:         t.phone         || prev.phone,
+                address:       t.address       || prev.address,
+                qualification: t.qualification || prev.qualification,
+                hire_date:     t.hire_date     || prev.hire_date,
+                status:        t.status        || prev.status,
+            }));
+            if (t.photo) setPhotoPreview(t.photo);
+        }).catch(() => {});
+        return () => { isMounted = false; };
+    }, [teacher?.id]);
 
     useEffect(() => {
         let isMounted = true;
@@ -147,6 +174,19 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
                         required
                     />
                     {errors.last_name && <p className="text-destructive text-xs">{errors.last_name}</p>}
+                </div>
+
+                <div className="col-span-1 space-y-2 md:col-span-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                        id="email"
+                        type="email"
+                        placeholder="e.g. teacher@school.edu"
+                        value={data.email}
+                        onChange={(e) => setData('email', e.target.value)}
+                        required={!isEdit}
+                    />
+                    {errors.email && <p className="text-destructive text-xs">{errors.email}</p>}
                 </div>
 
                 <div className="space-y-2">

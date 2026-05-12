@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\DTOs\TeacherDto;
+use App\Exports\TeachersExport;
+use Maatwebsite\Excel\Facades\Excel;
 use App\Enums\CurriculaStatusEnum;
 use App\Enums\GenderTypeEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Enums\TermStatusEnum;
+use App\Http\Requests\ImportTeacherRequest;
 use App\Http\Requests\TeacherRequest;
 use App\Http\Resources\TeacherCurriculumSubjectResource;
 use App\Http\Resources\TeacherResource;
@@ -19,7 +22,6 @@ use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\TeacherService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
@@ -27,7 +29,7 @@ use Illuminate\Validation\Rule;
 class TeacherController extends Controller
 {
     public function __construct(
-        protected TeacherService    $teacherService,
+        protected TeacherService $teacherService,
         protected FileUploadService $fileUploadService,
     ) {}
 
@@ -51,17 +53,43 @@ class TeacherController extends Controller
     public function store(TeacherRequest $request)
     {
         $data = $request->validated();
+        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
         $data['photo_id']  = $this->uploadPhoto($request);
         unset($data['photo']);
 
         $dto = TeacherDto::fromArray($data);
-        $this->teacherService->store($dto->toArray());
 
-        User::create($dto->only(['first_name', 'last_name', 'email']) + [
+        $user = User::create($dto->only(['first_name', 'last_name', 'email']) + [
+            'school_id' => $data['school_id'],
             'password'  => Hash::make('password'),
         ]);
 
+        $this->teacherService->store($user, $dto->toArray());
+
         return Response::created('Teacher created successfully.');
+    }
+
+    public function export(Request $request)
+    {
+        $filename = 'teachers-' . now()->format('Y-m-d') . '.xlsx';
+        return Excel::download(new TeachersExport($request), $filename);
+    }
+
+    public function import(ImportTeacherRequest $request)
+    {
+        $data     = $request->validated();
+        $schoolId = session('school_id') ?? $request->user()->school_id;
+        $result   = $this->teacherService->import($data['teachers'], $schoolId);
+
+        if (!empty($result['errors'])) {
+            return response()->json([
+                'message' => "{$result['saved']} teacher(s) imported. " . count($result['errors']) . ' row(s) had errors and were skipped.',
+                'saved'   => $result['saved'],
+                'errors'  => $result['errors'],
+            ], 422);
+        }
+
+        return Response::success("{$result['saved']} teacher(s) imported successfully.");
     }
 
     public function show(Teacher $teacher)
@@ -72,9 +100,7 @@ class TeacherController extends Controller
     public function update(TeacherRequest $request, Teacher $teacher)
     {
         $data = $request->validated();
-        /** @var \App\Models\User $authUser */
-        $authUser          = Auth::user();
-        $data['school_id'] = $authUser->school_id;
+        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
         $data['photo_id']  = $this->replacePhoto($request, $teacher->photo_id);
         unset($data['photo']);
 

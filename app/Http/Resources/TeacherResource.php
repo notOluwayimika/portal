@@ -23,6 +23,7 @@ class TeacherResource extends JsonResource
             'qualification' => $this->qualification,
             'hire_date'     => $this->hire_date,
             'status'        => $this->status,
+            'email'         => $this->whenLoaded('user', fn() => $this->user?->email),
             'photo'         => $this->photo
                 ? Storage::disk('s3')->temporaryUrl($this->photo, now()->addMinutes(15))
                 : null,

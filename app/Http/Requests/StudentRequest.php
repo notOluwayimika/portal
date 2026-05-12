@@ -26,6 +26,8 @@ class StudentRequest extends FormRequest
     {
         $isUpdate = $this->isMethod('PATCH') || $this->isMethod('PUT');
 
+        logger()->info('Validating StudentRequest', [$this->student?->id]);
+
         return [
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
@@ -37,7 +39,7 @@ class StudentRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('students', 'admission_number')
-                    ->ignore($this->student?->id, 'uuid')
+                    ->ignore($this->student?->id, 'id')
             ],
             'photo' => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
             'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],

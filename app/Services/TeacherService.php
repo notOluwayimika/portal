@@ -7,13 +7,18 @@ use App\Enums\GenderTypeEnum;
 use App\Models\FileUpload;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\TeacherAccountCreatedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TeacherService
 {
-    public function __construct(private FileUploadService $fileUploadService) {}
+    public function __construct(
+        private FileUploadService $fileUploadService,
+        private PasswordGeneratorService $passwordGenerator,
+    ) {}
 
     public function paginate(Request $request): LengthAwarePaginator
     {
@@ -50,17 +55,23 @@ class TeacherService
         return TeacherDto::fromArray($data);
     }
 
-    public function processTeacherAccount(Request $request)
+    public function processTeacherAccount(Request $request): void
     {
-        $dto = $this->preparedDto($request);
+        $dto           = $this->preparedDto($request);
+        $plainPassword = $this->passwordGenerator->generate();
 
-        $user = User::create($dto->only(['first_name', 'last_name', 'email', 'school_id']) + [
-            'password'  => Hash::make('password'),
-        ]);
+        $user = DB::transaction(function () use ($dto, $plainPassword) {
+            $user = User::create($dto->only(['first_name', 'last_name', 'email', 'school_id']) + [
+                'password' => $plainPassword,
+            ]);
 
-        $user->assignRole('teacher');
+            $user->assignRole('teacher');
+            $this->store($user, $dto->toArray());
 
-        $this->store($user, $dto->toArray());
+            return $user;
+        });
+
+        $this->notifyTeacher($user, $plainPassword);
     }
 
     private function uploadPhoto(Request $request): ?int
@@ -129,24 +140,49 @@ class TeacherService
             }
 
             try {
-                $attrs = $this->prepareImportRow($row, $schoolId);
+                $attrs         = $this->prepareImportRow($row, $schoolId);
+                $plainPassword = $this->passwordGenerator->generate();
 
-                $user = User::create([
-                    'first_name' => $attrs['first_name'],
-                    'last_name'  => $attrs['last_name'],
-                    'email'      => $attrs['email'],
-                    'school_id'  => $schoolId,
-                    'password'   => Hash::make('password'),
-                ]);
+                $user = DB::transaction(function () use ($attrs, $schoolId, $plainPassword) {
+                    $user = User::create([
+                        'first_name' => $attrs['first_name'],
+                        'last_name'  => $attrs['last_name'],
+                        'email'      => $attrs['email'],
+                        'school_id'  => $schoolId,
+                        'password'   => $plainPassword,
+                    ]);
 
-                $this->store($user, array_diff_key($attrs, ['email' => null]));
+                    $user->assignRole('teacher');
+                    $this->store($user, array_diff_key($attrs, ['email' => null]));
+
+                    return $user;
+                });
+
                 $saved++;
+                $this->notifyTeacher($user, $plainPassword);
             } catch (\Throwable $e) {
                 $errors[$index] = [$e->getMessage()];
             }
         }
 
         return ['saved' => $saved, 'errors' => $errors];
+    }
+
+    private function notifyTeacher(User $user, string $plainPassword): void
+    {
+        try {
+            $schoolName = $user->school?->name ?? config('app.name');
+            $user->notify(new TeacherAccountCreatedNotification(
+                plainPassword: $plainPassword,
+                schoolName:    $schoolName,
+                loginUrl:      url('/login'),
+            ));
+        } catch (\Throwable $e) {
+            Log::error('Failed to send teacher account notification', [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
     }
 
     private function prepareImportRow(array $row, int $schoolId): array

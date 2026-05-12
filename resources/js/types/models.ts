@@ -181,7 +181,7 @@ export interface Curriculum {
     term?: Term;
     academic_session?: AcademicSession;
     class_level_arm_id?: string;
-
+    full_name: string;
     class_level_arm?: ClassLevelArm;
     exam_type_id?: string;
     exam_type?: ExamType;
@@ -220,7 +220,8 @@ export interface CurriculumSubject {
     subject: Subject;
     is_compulsory: boolean;
     display_order: number;
-    students: Student[];
+    students: StudentSubject[];
+    scores?: Score[];
     teachers: TeacherCurriculumSubject[];
     marking_components: MarkingComponent[];
 }
@@ -235,4 +236,25 @@ export interface MarkingComponent {
     curriculum_subject_id: string;
     name: string;
     weight: number; // stored as 0.0–1.0, e.g. 0.3
+}
+
+export interface Score {
+    id: string;
+    student: Student;
+    marking_component: MarkingComponent;
+    created_by: User;
+    score: number;
+}
+
+export interface StudentCurriculum {
+    id: string;
+    student: Student;
+    curriculum: Curriculum;
+    status: string;
+    promoted_to: Curriculum;
+}
+export interface StudentSubject {
+    id: string;
+    student_curriculum: StudentCurriculum;
+    subject: Subject;
 }

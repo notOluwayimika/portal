@@ -22,7 +22,8 @@ class CurriculumSubjectResource extends JsonResource
             'display_order' => $this->display_order,
             'teachers' => TeacherCurriculumSubjectResource::collection($this->teacherAssignments),
             'marking_components' => MarkingComponentResource::collection($this->markingComponents),
-            'students' => StudentCurriculumResource::collection($this->whenLoaded('studentAssignments'))
+            'students' => StudentSubjectResource::collection($this->whenLoaded('studentAssignments')),
+            'scores' => ScoreResource::collection($this->whenLoaded('scores')),
         ];
     }
 }

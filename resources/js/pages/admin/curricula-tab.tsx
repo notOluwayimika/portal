@@ -130,6 +130,7 @@ export function CurriculaTab({
                         filters.status !== 'all' && { status: filters.status }),
                 },
             });
+            console.log(response.data)
             setCurricula(response.data.curricula);
             setPaginationMeta(response.data.pagination ?? paginationMeta);
         };

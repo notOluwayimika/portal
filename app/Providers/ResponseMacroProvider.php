@@ -54,11 +54,12 @@ class ResponseMacroProvider extends ServiceProvider
         });
 
         Response::macro('validation_error', function ($errors, $message = 'There are validation errors', $headers = []) {
+            \Log::error('Validation errors occurred:', ['errors' => $errors]);
             return Response::json(['message' => $message], StatusCode::HTTP_BAD_REQUEST, $headers);
         });
 
         Response::macro('unauthorized', function ($error, $headers = []) {
-        return Response::json(['message' => $error], StatusCode::HTTP_UNAUTHORIZED, $headers);
+            return Response::json(['message' => $error], StatusCode::HTTP_UNAUTHORIZED, $headers);
         });
 
         Response::macro('not_allowed', function ($error, $headers = []) {

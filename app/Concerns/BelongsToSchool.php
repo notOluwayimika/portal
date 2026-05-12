@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Models\Scopes\SchoolScope;
+use Illuminate\Support\Facades\Schema;
 
 trait BelongsToSchool
 {
@@ -12,8 +13,9 @@ trait BelongsToSchool
 
         static::creating(function ($model) {
             if (auth()->check() &&
-                \Illuminate\Support\Facades\Schema::hasColumn($model->getTable(), 'school_id') &&
-                !$model->school_id) {
+                Schema::hasColumn($model->getTable(), 'school_id') &&
+                !$model->school_id
+            ) {
                 $model->school_id = session('school_id') ?? auth()->user()->school_id;
             }
         });

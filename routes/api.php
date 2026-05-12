@@ -10,7 +10,6 @@ use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SubjectController;
-use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -33,10 +32,6 @@ Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class,
 // get curricula
 Route::get('/curricula', [CurriculumController::class, 'index']);
 Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
-// get teachers
-Route::get('/teachers', [TeacherController::class, 'index']);
-Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'getSubjects']);
-
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 
@@ -48,7 +43,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
     Route::get('/curricula', [CurriculumController::class, 'index']);
     Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
-    Route::get('/teachers', [TeacherController::class, 'index']);
 
     // protected session routes
     Route::post('/sessions', [SessionController::class, 'store']);
@@ -115,4 +109,5 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 
     require __DIR__ . '/endpoints/student.php';
+    require __DIR__ . '/endpoints/teacher.php';
 });

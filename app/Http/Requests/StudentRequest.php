@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\StudentStatusEnum;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StudentRequest extends FormRequest
 {
@@ -35,7 +36,8 @@ class StudentRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
-                'unique:students,admission_number,' . $this->student?->id
+                Rule::unique('students', 'admission_number')
+                    ->ignore($this->student?->id, 'uuid')
             ],
             'photo' => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
             'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],

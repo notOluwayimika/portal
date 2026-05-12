@@ -15,10 +15,12 @@ use App\Models\CurriculumSubject;
 use App\Models\FileUpload;
 use App\Models\Teacher;
 use App\Models\TeacherCurriculumSubject;
+use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\TeacherService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
 
@@ -49,14 +51,15 @@ class TeacherController extends Controller
     public function store(TeacherRequest $request)
     {
         $data = $request->validated();
-        /** @var \App\Models\User $authUser */
-        $authUser          = Auth::user();
-        $data['school_id'] = $authUser->school_id;
         $data['photo_id']  = $this->uploadPhoto($request);
         unset($data['photo']);
 
         $dto = TeacherDto::fromArray($data);
         $this->teacherService->store($dto->toArray());
+
+        User::create($dto->only(['first_name', 'last_name', 'email']) + [
+            'password'  => Hash::make('password'),
+        ]);
 
         return Response::created('Teacher created successfully.');
     }

@@ -26,8 +26,7 @@ class TeacherRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('teachers', 'staff_number')
-                    ->where('school_id', $this->user()->school_id)
-                    ->ignore($this->teacher?->id),
+                    ->ignore($this->teacher?->id, 'uuid'),
             ],
             'gender'        => ['nullable', 'string', Rule::in(GenderTypeEnum::values())],
             'date_of_birth' => ['nullable', 'date'],

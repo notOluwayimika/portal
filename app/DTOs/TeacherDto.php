@@ -45,4 +45,9 @@ readonly class TeacherDto
     {
         return get_object_vars($this);
     }
+
+    public function only()
+    {
+        return array_intersect_key($this->toArray(), array_flip(func_get_args()));
+    }
 }

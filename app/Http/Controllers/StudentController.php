@@ -170,7 +170,7 @@ class StudentController extends Controller
             return null;
         }
 
-        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos', true);
+        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos');
     }
 
     /**

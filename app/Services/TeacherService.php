@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\DTOs\TeacherDto;
 use App\Enums\GenderTypeEnum;
+use App\Models\FileUpload;
 use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -11,6 +13,8 @@ use Illuminate\Support\Facades\Hash;
 
 class TeacherService
 {
+    public function __construct(private FileUploadService $fileUploadService) {}
+
     public function paginate(Request $request): LengthAwarePaginator
     {
         return Teacher::query()
@@ -31,6 +35,59 @@ class TeacherService
     public function store(User $user, array $attributes): Teacher
     {
         return $user->teacher()->create($attributes);
+    }
+
+    public function preparedDto(Request $request, ?int $photoId = null): TeacherDto
+    {
+        $data = $request->validated();
+        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
+        $data['photo_id']  = $request->isMethod('post') 
+            ? $this->uploadPhoto($request)
+            : $this->replacePhoto($request, $photoId);
+
+        unset($data['photo']);
+
+        return TeacherDto::fromArray($data);
+    }
+
+    public function processTeacherAccount(Request $request)
+    {
+        $dto = $this->preparedDto($request);
+
+        $user = User::create($dto->only(['first_name', 'last_name', 'email', 'school_id']) + [
+            'password'  => Hash::make('password'),
+        ]);
+
+        $user->assignRole('teacher');
+
+        $this->store($user, $dto->toArray());
+    }
+
+    private function uploadPhoto(Request $request): ?int
+    {
+        if (!$request->hasFile('photo')) {
+            return null;
+        }
+
+        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'teachers/photos');
+    }
+
+    private function replacePhoto(Request $request, ?int $existingPhotoId): ?int
+    {
+        if (!$request->hasFile('photo')) {
+            return $existingPhotoId;
+        }
+
+        if ($existingPhotoId) {
+            $old = $this->fileUploadService->getFileUpload($existingPhotoId);
+
+            if ($old) {
+                $this->fileUploadService->unlinkFileUpload($old->folder_path . '/' . $old->name, null);
+                $this->fileUploadService->deleteFileUpload($existingPhotoId);
+            }
+        }
+
+        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'teachers/photos');
     }
 
     public function show(Teacher $teacher): Teacher

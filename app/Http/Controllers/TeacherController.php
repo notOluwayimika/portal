@@ -52,20 +52,7 @@ class TeacherController extends Controller
 
     public function store(TeacherRequest $request)
     {
-        $data = $request->validated();
-        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
-        $data['photo_id']  = $this->uploadPhoto($request);
-        unset($data['photo']);
-
-        $dto = TeacherDto::fromArray($data);
-
-        $user = User::create($dto->only(['first_name', 'last_name', 'email']) + [
-            'school_id' => $data['school_id'],
-            'password'  => Hash::make('password'),
-        ]);
-
-        $this->teacherService->store($user, $dto->toArray());
-
+        $this->teacherService->processTeacherAccount($request);
         return Response::created('Teacher created successfully.');
     }
 
@@ -99,12 +86,7 @@ class TeacherController extends Controller
 
     public function update(TeacherRequest $request, Teacher $teacher)
     {
-        $data = $request->validated();
-        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
-        $data['photo_id']  = $this->replacePhoto($request, $teacher->photo_id);
-        unset($data['photo']);
-
-        $dto = TeacherDto::fromArray($data);
+        $dto = $this->teacherService->preparedDto($request, $teacher->photo_id);
         $this->teacherService->update($teacher, $dto->toArray());
 
         return Response::success('Teacher updated successfully.');
@@ -224,31 +206,5 @@ class TeacherController extends Controller
             'is_compulsory' => $cs->is_compulsory,
             'display_order' => $cs->display_order,
         ]));
-    }
-
-    private function uploadPhoto(Request $request): ?int
-    {
-        if (!$request->hasFile('photo')) {
-            return null;
-        }
-
-        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'teachers/photos');
-    }
-
-    private function replacePhoto(Request $request, ?int $existingPhotoId): ?int
-    {
-        if (!$request->hasFile('photo')) {
-            return $existingPhotoId;
-        }
-
-        if ($existingPhotoId) {
-            $old = FileUpload::find($existingPhotoId);
-            if ($old) {
-                $this->fileUploadService->unlinkFileUpload($old->folder_path . '/' . $old->name, null);
-                $this->fileUploadService->deleteFileUpload($existingPhotoId);
-            }
-        }
-
-        return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'teachers/photos');
     }
 }

@@ -99,7 +99,6 @@ export function StudentForm({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log(data);
         // const options = {
         //     forceFormData: true,
         //     onSuccess: () => {

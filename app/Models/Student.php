@@ -86,7 +86,8 @@ class Student extends Model
         $currentCurriculum = $this->currentCurriculum;
 
         $classLevelArm = $currentCurriculum?->curriculum?->classLevelArm;
-        if (!$classLevelArm) return null;
+        if (!$classLevelArm)
+            return null;
 
         $className = $classLevelArm->classLevel?->name . ' ' . $classLevelArm->arm?->label;
 

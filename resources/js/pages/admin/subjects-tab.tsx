@@ -41,7 +41,6 @@ export function SubjectsTab({
             const response = await axios.get('/api/subjects', {
                 params: { limit, page, search },
             });
-            console.log(response.data);
 
             if (response.status === 200) {
                 setSubjects(response.data.subjects ?? []);

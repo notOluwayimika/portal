@@ -539,12 +539,13 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                                 {tcs.curriculum_subject.subject.code}
                             </span>
                         )}
-                        {tcs.curriculum_subject.students && (
-                            <span className="code-tag">
-                                {tcs.curriculum_subject.students.length}{' '}
-                                students
-                            </span>
-                        )}
+                        {tcs.curriculum_subject.students &&
+                            tcs.curriculum_subject.students.length > 0 && (
+                                <span className="code-tag">
+                                    {tcs.curriculum_subject.students.length}{' '}
+                                    students
+                                </span>
+                            )}
                     </div>
                     <div
                         style={{
@@ -624,14 +625,18 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                         <WeightBar components={components} />
                     )}
                     {/* view details for a single tcs */}
-                    <div className="flex justify-end">
-                        <Link
-                            className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"
-                            href={`/setup/curriculum-subject/${c.id}`}
-                        >
-                            Assign Scores
-                        </Link>
-                    </div>
+                    {tcs.curriculum_subject.students.length > 0 &&
+                        tcs.curriculum_subject.marking_components.length >
+                            0 && (
+                            <div className="my-2 flex justify-end">
+                                <Link
+                                    className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"
+                                    href={`/setup/curriculum-subject/${c.id}`}
+                                >
+                                    Assign Scores
+                                </Link>
+                            </div>
+                        )}
 
                     <div
                         style={{
@@ -695,7 +700,6 @@ export function TeacherSubjects({
         fetch();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading]);
-
     // derived unique session list for filter dropdown
     const sessions = Array.from(
         new Map(

@@ -7,6 +7,7 @@ import type {
     Score,
     Student,
     StudentSubject,
+    SubjectResultStatus,
 } from '@/types/models';
 
 type CellStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -30,10 +31,10 @@ const fullName = (s: Student) =>
 
 export default function ScoreEntryPage({
     cs,
-    addToast,
+    status,
 }: {
     cs: CurriculumSubject;
-    addToast: (message: string, type?: 'success' | 'error') => void;
+    status: SubjectResultStatus;
 }) {
     const [markingComponents] = useState<MarkingComponent[]>(
         cs.marking_components,
@@ -53,7 +54,6 @@ export default function ScoreEntryPage({
 
         return map;
     }, [scores]);
-    // console.log(initialCells);
 
     const [cells, setCells] = useState<Record<string, CellState>>(initialCells);
     const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
@@ -66,7 +66,9 @@ export default function ScoreEntryPage({
     // Clean up timers on unmount.
     useEffect(() => {
         return () => {
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             Object.values(debounceRef.current).forEach(clearTimeout);
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             Object.values(savedFlashRef.current).forEach(clearTimeout);
         };
     }, []);
@@ -353,6 +355,7 @@ export default function ScoreEntryPage({
                                                     className="px-3 py-2"
                                                 >
                                                     <ScoreCell
+                                                        status={status}
                                                         cell={cell}
                                                         max={maxForComponent(
                                                             mc,
@@ -405,14 +408,15 @@ function ScoreCell({
     max,
     onChange,
     onBlur,
+    status,
 }: {
     cell: CellState;
     max: number;
     onChange: (v: string) => void;
     onBlur: () => void;
+    status: SubjectResultStatus;
 }) {
     const [value, setValue] = useState(cell.value);
-    // console.log(cell);
     const borderClass =
         cell.status === 'error'
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
@@ -431,6 +435,10 @@ function ScoreCell({
                 min={0}
                 max={max}
                 value={value}
+                disabled={
+                    status.status === 'submitted' ||
+                    status.status === 'approved'
+                }
                 onChange={(e) => {
                     setValue(e.target.value);
                     onChange(e.target.value);

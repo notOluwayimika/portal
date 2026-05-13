@@ -7,9 +7,13 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StudentController;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\StudentResource;
+use App\Http\Resources\SubjectResultStatusResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\Student;
+use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -19,8 +23,8 @@ Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
-Route::middleware(['auth', 'tenant'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/school-setup')->name('setup');
     Route::get('setup/curricula/{curriculum:uuid}', function (Curriculum $curriculum) {
@@ -46,22 +50,44 @@ Route::middleware(['auth', 'tenant'])->group(function () {
 
     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);
+
+
+
+    // Review results
+    Route::get('setup/review/results', function () {
+        $subjectResults = SubjectResultStatus::with(['curriculumSubject.teacherAssignments.teacher', 'curriculumSubject.subject', 'curriculumSubject.curriculum.academicSession', 'curriculumSubject.curriculum.examType', 'curriculumSubject.curriculum.term', 'curriculumSubject.curriculum.classLevelArm', 'updatedBy'])->where('status', 'submitted')->get();
+        return Inertia::render('admin/review/index', [
+            'subjectResults' => SubjectResultStatusResource::collection($subjectResults)
+        ]);
+    })->name('setup.review.results');
+
+    // student curricula
+    Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
+        $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo']);
+        return Inertia::render('admin/student-curricula/index', [
+            'student' => new StudentResource($student),
+        ]);
+    })->name('setup.studentCurricula.index');
+
 });
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
+    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+
     Route::get('setup/teacher/{teacher:uuid}', function (Teacher $teacher) {
         return Inertia::render('teacher/show', [
             'teacher' => new TeacherResource($teacher),
         ]);
     })->name('setup.teachers.show');
 
-    // Curriculum Subject
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
-        $curriculumSubject->load(['curriculum', 'subject', 'markingComponents', 'scores.student', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student']);
+        $curriculumSubject->load(['curriculum', 'subject', 'markingComponents', 'scores.student', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student', 'resultStatus']);
+
         return Inertia::render('curriculum-subject/show', [
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
         ]);
     })->name('setup.curriculumSubjects.show');
+
 
 });
 

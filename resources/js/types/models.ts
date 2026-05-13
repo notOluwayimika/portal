@@ -1,5 +1,12 @@
 import type { User } from './auth';
 
+export interface Role {
+    id: number;
+    name: string;
+    guard_name: string;
+    created_at: string;
+    updated_at: string;
+}
 export interface AcademicSession {
     id: string;
     school_id: string;
@@ -118,6 +125,7 @@ export interface Student {
     };
     curriculum_id?: number;
     promoted_to_id?: number;
+    student_curricula: StudentCurriculum[];
     created_at?: string;
     updated_at?: string;
 }
@@ -258,4 +266,13 @@ export interface StudentSubject {
     id: string;
     student_curriculum: StudentCurriculum;
     subject: Subject;
+}
+
+export interface SubjectResultStatus {
+    id: string;
+    status: string;
+    rejection_reason: string;
+    curriculum_subject: CurriculumSubject;
+    updated_at: string;
+    updated_by: User;
 }

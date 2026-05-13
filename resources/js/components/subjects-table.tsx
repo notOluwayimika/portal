@@ -205,11 +205,11 @@ export function SubjectsTable({
                                             }}
                                         >
                                             <Link
-                                                href={`/setup/teacher/${t.teacher.id}`}
+                                                href={`/setup/teacher/${t.teacher?.id}`}
                                                 className="transition duration-100 hover:text-blue-500"
                                             >
-                                                {t.teacher.first_name}{' '}
-                                                {t.teacher.last_name}
+                                                {t.teacher?.first_name}{' '}
+                                                {t.teacher?.last_name}
                                             </Link>
                                             <button
                                                 onClick={() =>

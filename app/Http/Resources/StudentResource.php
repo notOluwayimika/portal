@@ -37,6 +37,7 @@ class StudentResource extends JsonResource
                 'full_class' => $this->student_class ?? 'N/A',
             ],
             'curriculum_id' => $curriculum?->id,
+            'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
             'promoted_to_id' => $currentCurriculum?->promoted_to_id,
         ];
     }

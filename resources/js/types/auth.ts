@@ -1,9 +1,10 @@
-import type { School } from './models';
+import type { Role, School } from './models';
 
 export type User = {
     id: number;
     first_name: string;
     last_name: string;
+    full_name: string;
     email: string;
     avatar?: string;
     email_verified_at: string | null;
@@ -18,6 +19,8 @@ export type User = {
 export type Auth = {
     user: User;
     school: School;
+    roles: string[];
+    rolesFull: Role[];
 };
 
 export type TwoFactorSetupData = {

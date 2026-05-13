@@ -1,6 +1,14 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { BookOpen, Download, Edit, Search, Trash2, Upload, UserPlus } from 'lucide-react';
+import {
+    BookOpen,
+    Download,
+    Edit,
+    Search,
+    Trash2,
+    Upload,
+    UserPlus,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import { ImportTeacherForm } from '@/components/teachers/import-teacher-form';
@@ -14,10 +22,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
+import { formatDate } from '@/hooks/use-helper';
 import { useInitials } from '@/hooks/use-initials';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import type { Teacher } from '@/types/models';
-import { formatDate } from '@/hooks/use-helper';
 
 interface StatusOption {
     name: string;
@@ -38,13 +46,13 @@ interface TeacherListProps {
 
 export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const getInitials = useInitials();
-    const [teachers, setTeachers]                     = useState<Teacher[]>([]);
-    const [loading, setLoading]                       = useState(true);
-    const [search, setSearch]                         = useState('');
-    const [toasts, setToasts]                         = useState<Toast[]>([]);
-    const [page, setPage]                             = useState(1);
-    const [limit, setLimit]                           = useState(25);
-    const [pagination, setPagination]                 = useState({
+    const [teachers, setTeachers] = useState<Teacher[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(25);
+    const [pagination, setPagination] = useState({
         current_page: 1,
         last_page: 1,
         per_page: 25,
@@ -52,12 +60,12 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         prev_page_url: null,
         next_page_url: null,
     });
-    const [isFormModalOpen, setIsFormModalOpen]       = useState(false);
-    const [isImportModalOpen, setIsImportModalOpen]   = useState(false);
+    const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
-    const [currentTeacher, setCurrentTeacher]         = useState<Teacher | null>(null);
-    const [curricula, setCurricula]                   = useState<CurriculumOption[]>([]);
-    const [exporting, setExporting]                   = useState(false);
+    const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
+    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
+    const [exporting, setExporting] = useState(false);
     let toastCounter = 0;
 
     const addToast = (message: string, type: ToastType = 'success') => {
@@ -72,7 +80,10 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 params: { search, page, per_page: limit },
             });
             setTeachers(res.data.data || []);
-            if (res.data.pagination) setPagination(res.data.pagination);
+
+            if (res.data.pagination) {
+                setPagination(res.data.pagination);
+            }
         } catch {
             addToast('Failed to fetch teachers', 'error');
         } finally {
@@ -81,13 +92,17 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     };
 
     useEffect(() => {
-        axios.get('/api/teachers/resources').then((res) => {
-            setCurricula(res.data.data?.curricula || []);
-        }).catch(() => {});
+        axios
+            .get('/api/teachers/resources')
+            .then((res) => {
+                setCurricula(res.data.data?.curricula || []);
+            })
+            .catch(() => {});
     }, []);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(() => { fetchTeachers(); }, [search, page, limit]);
+    useEffect(() => {
+        fetchTeachers();
+    }, [search, page, limit]);
 
     const { confirmAndExecute } = useApiSweetAlertConfirmation();
 
@@ -102,6 +117,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
             successMessage: 'Teacher deleted successfully.',
             showSuccessAlert: false,
         });
+
         if (result !== false) {
             addToast('Teacher deleted successfully');
             fetchTeachers();
@@ -125,7 +141,9 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
 
     const handleStatusChange = async (teacher: Teacher, newStatus: string) => {
         try {
-            await axios.patch(`/api/teachers/${teacher.id}/status`, { status: newStatus });
+            await axios.patch(`/api/teachers/${teacher.id}/status`, {
+                status: newStatus,
+            });
             addToast(`Teacher status updated to ${newStatus}`);
             fetchTeachers();
         } catch {
@@ -135,7 +153,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
 
     const handleFormSuccess = () => {
         setIsFormModalOpen(false);
-        addToast(currentTeacher ? 'Teacher updated successfully' : 'Teacher created successfully');
+        addToast(
+            currentTeacher
+                ? 'Teacher updated successfully'
+                : 'Teacher created successfully',
+        );
         fetchTeachers();
     };
 
@@ -149,7 +171,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
             const url = URL.createObjectURL(
                 new Blob([response.data], {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                })
+                }),
             );
             const link = document.createElement('a');
             link.href = url;
@@ -166,8 +188,14 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     };
 
     const statusBadgeClass = (status: string) => {
-        if (status === 'active')   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-        if (status === 'resigned') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        if (status === 'active') {
+            return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        }
+
+        if (status === 'resigned') {
+            return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        }
+
         return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
     };
 
@@ -184,14 +212,22 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={handleExport} disabled={exporting}>
-                            {exporting
-                                ? <Spinner className="mr-1 h-4 w-4 animate-spin" />
-                                : <Download className="mr-1 h-4 w-4" />
-                            }
+                        <Button
+                            variant="outline"
+                            onClick={handleExport}
+                            disabled={exporting}
+                        >
+                            {exporting ? (
+                                <Spinner className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Download className="mr-1 h-4 w-4" />
+                            )}
                             {exporting ? 'Exporting…' : 'Export'}
                         </Button>
-                        <Button variant="outline" onClick={() => setIsImportModalOpen(true)}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsImportModalOpen(true)}
+                        >
                             <Upload className="mr-1 h-4 w-4" />
                             Import
                         </Button>
@@ -219,24 +255,42 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b bg-muted/50">
-                                    <th className="px-4 py-3 text-left font-medium">Name</th>
-                                    <th className="px-4 py-3 text-left font-medium">Staff Number</th>
-                                    <th className="px-4 py-3 text-left font-medium">Qualification</th>
-                                    <th className="px-4 py-3 text-left font-medium">Hire Date</th>
-                                    <th className="px-4 py-3 text-left font-medium">Status</th>
-                                    <th className="px-4 py-3 text-right font-medium">Actions</th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                        Name
+                                    </th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                        Staff Number
+                                    </th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                        Qualification
+                                    </th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                        Hire Date
+                                    </th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                        Status
+                                    </th>
+                                    <th className="px-4 py-3 text-right font-medium">
+                                        Actions
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={4} className="py-12 text-center">
+                                        <td
+                                            colSpan={4}
+                                            className="py-12 text-center"
+                                        >
                                             <Spinner className="mx-auto" />
                                         </td>
                                     </tr>
                                 ) : (teachers?.length ?? 0) === 0 ? (
                                     <tr>
-                                        <td colSpan={4} className="py-12 text-center text-muted-foreground">
+                                        <td
+                                            colSpan={4}
+                                            className="py-12 text-center text-muted-foreground"
+                                        >
                                             No teachers found.
                                         </td>
                                     </tr>
@@ -250,14 +304,25 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                 <div className="flex items-center gap-3">
                                                     <Avatar className="size-8 overflow-hidden rounded-full">
                                                         <AvatarImage
-                                                            src={teacher?.photo ?? undefined}
-                                                            alt={teacher.full_name}
+                                                            src={
+                                                                teacher?.photo ??
+                                                                undefined
+                                                            }
+                                                            alt={
+                                                                teacher.full_name
+                                                            }
                                                         />
                                                         <AvatarFallback className="rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
-                                                            {getInitials(teacher.full_name)}
+                                                            {getInitials(
+                                                                teacher.full_name,
+                                                            )}
                                                         </AvatarFallback>
                                                     </Avatar>
-                                                    {teacher.full_name}
+                                                    <Link
+                                                        href={`/setup/teacher/${teacher.id}`}
+                                                    >
+                                                        {teacher.full_name}
+                                                    </Link>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground">
@@ -267,19 +332,27 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                 {teacher.qualification || '—'}
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground">
-                                                {formatDate(teacher.hire_date) || '—'}
+                                                {formatDate(
+                                                    teacher.hire_date,
+                                                ) || '—'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Select
                                                     value={teacher.status}
                                                     onChange={(val) =>
-                                                        val && handleStatusChange(teacher, String(val))
+                                                        val &&
+                                                        handleStatusChange(
+                                                            teacher,
+                                                            String(val),
+                                                        )
                                                     }
                                                     options={
-                                                        teacher_statuses?.map((s) => ({
-                                                            label: s.name,
-                                                            value: s.value,
-                                                        })) || []
+                                                        teacher_statuses?.map(
+                                                            (s) => ({
+                                                                label: s.name,
+                                                                value: s.value,
+                                                            }),
+                                                        ) || []
                                                     }
                                                     buttonClass={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize border-none hover:bg-opacity-80 transition-colors ${statusBadgeClass(teacher.status)}`}
                                                 />
@@ -290,14 +363,20 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                         variant="ghost"
                                                         size="icon"
                                                         title="Assigned Subjects"
-                                                        onClick={() => handleOpenSubjects(teacher)}
+                                                        onClick={() =>
+                                                            handleOpenSubjects(
+                                                                teacher,
+                                                            )
+                                                        }
                                                     >
                                                         <BookOpen className="h-4 w-4" />
                                                     </Button>
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        onClick={() => handleEdit(teacher)}
+                                                        onClick={() =>
+                                                            handleEdit(teacher)
+                                                        }
                                                     >
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
@@ -305,7 +384,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="text-destructive hover:bg-destructive/10"
-                                                        onClick={() => handleDelete(teacher)}
+                                                        onClick={() =>
+                                                            handleDelete(
+                                                                teacher,
+                                                            )
+                                                        }
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -348,7 +431,10 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 size="lg"
             >
                 <ImportTeacherForm
-                    onSuccess={() => { setIsImportModalOpen(false); fetchTeachers(); }}
+                    onSuccess={() => {
+                        setIsImportModalOpen(false);
+                        fetchTeachers();
+                    }}
                     onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
@@ -356,7 +442,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
             <Modal
                 isOpen={isSubjectsModalOpen}
                 onClose={() => setIsSubjectsModalOpen(false)}
-                title={currentTeacher ? `Assigned Subjects — ${currentTeacher.full_name}` : 'Assigned Subjects'}
+                title={
+                    currentTeacher
+                        ? `Assigned Subjects — ${currentTeacher.full_name}`
+                        : 'Assigned Subjects'
+                }
                 size="3xl"
             >
                 {currentTeacher && (
@@ -374,7 +464,9 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                         key={toast.id}
                         toast={toast}
                         onDismiss={() =>
-                            setToasts((prev) => prev.filter((t) => t.id !== toast.id))
+                            setToasts((prev) =>
+                                prev.filter((t) => t.id !== toast.id),
+                            )
                         }
                     />
                 ))}

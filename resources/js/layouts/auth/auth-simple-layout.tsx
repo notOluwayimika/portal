@@ -1,37 +1,31 @@
-import { Link } from '@inertiajs/react';
-import AppLogoIcon from '@/components/app-logo-icon';
-import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
-export default function AuthSimpleLayout({
-    children,
-    title,
-    description,
-}: AuthLayoutProps) {
+export default function AuthSimpleLayout({ children, title, description }: AuthLayoutProps) {
     return (
-        <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10">
-            <div className="w-full max-w-sm">
-                <div className="flex flex-col gap-8">
-                    <div className="flex flex-col items-center gap-4">
-                        <Link
-                            href={home()}
-                            className="flex flex-col items-center gap-2 font-medium"
-                        >
-                            <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-md">
-                                <AppLogoIcon className="size-9 fill-current text-[var(--foreground)] dark:text-white" />
-                            </div>
-                            <span className="sr-only">{title}</span>
-                        </Link>
+        <div
+            className="flex min-h-screen flex-col items-center justify-start pt-8 p-4 sm:justify-center sm:p-6"
+            style={{ backgroundColor: '#F5F1E8' }}
+        >
+            <div className="w-full bg-white rounded-2xl px-6 py-8 sm:max-w-[440px] sm:px-9 sm:py-10 lg:max-w-[480px] lg:px-12 lg:py-12">
 
-                        <div className="space-y-2 text-center">
-                            <h1 className="text-xl font-medium">{title}</h1>
-                            <p className="text-center text-sm text-muted-foreground">
-                                {description}
-                            </p>
-                        </div>
+                {/* School branding */}
+                <div className="mb-6 flex flex-col items-center gap-3 text-center">
+                    <img
+                        src="/assets/images/brookstoneLogo.svg"
+                        alt="Brookstone School"
+                        className="h-16 w-auto sm:h-20"
+                        draggable={false}
+                    />
+                    <div className="space-y-1">
+                        <p className="text-base font-semibold tracking-wide text-gray-900">
+                            { title }
+                        </p>
+                        <p className="text-[11px] italic leading-relaxed text-gray-400" style={{ maxWidth: '32ch' }}>
+                           { description }
+                        </p>
                     </div>
-                    {children}
                 </div>
+                {children}
             </div>
         </div>
     );

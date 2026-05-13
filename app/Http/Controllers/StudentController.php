@@ -11,6 +11,7 @@ use App\Exports\StudentsExport;
 use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
+use App\Http\Resources\CurriculumOptionResource;
 use App\Http\Resources\CurriculumResource;
 
 use App\Http\Resources\StudentResource;
@@ -140,6 +141,37 @@ class StudentController extends Controller
         return response()->noContent();
     }
 
+    // public function resources()
+    // {
+    //     $curricula = Curriculum::with([
+    //         'term',
+    //         'classLevelArm.classLevel',
+    //         'classLevelArm.arm',
+    //         'classLevelArm.stream'
+    //     ])
+    //     ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
+    //     ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
+
+    //     $curriculaOptions = $curricula->map(function ($curriculum) {
+    //         return [
+    //             'id' => $curriculum->id,
+    //             'uuid' => $curriculum->uuid,
+    //             'term' => $curriculum->term?->order,
+    //             'term_name' => $curriculum->term?->name,
+    //             'class_level' => $curriculum->classLevelArm?->classLevel?->name,
+    //             'arm' => $curriculum->classLevelArm?->arm?->label,
+    //             'stream' => $curriculum->classLevelArm?->stream?->name,
+    //         ];
+    //     });
+
+    //     $genders = GenderTypeEnum::options();
+
+    //     return Response::success([
+    //         'curricula' => $curriculaOptions,
+    //         'genders' => $genders,
+    //     ]);
+    // }
+
     public function resources()
     {
         $curricula = Curriculum::with([
@@ -151,12 +183,10 @@ class StudentController extends Controller
             ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
             ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
-
-
         $genders = GenderTypeEnum::options();
 
         return Response::success([
-            'curricula' => CurriculumResource::collection($curricula),
+            'curricula' => CurriculumOptionResource::collection($curricula),
             'genders' => $genders,
         ]);
     }

@@ -14,6 +14,7 @@ class CurriculumController extends Controller
 {
     public function show(Curriculum $curriculum)
     {
+        $curriculum->load('curriculumSubjects.teacherAssignments.teacher');
         return response()->json(new CurriculumResource($curriculum));
     }
     public function store(Request $request)
@@ -87,6 +88,10 @@ class CurriculumController extends Controller
             \Log::error($th->getMessage());
             return response()->json(['error' => 'Failed to delete curriculum'], 500);
         }
+    }
+    public function active()
+    {
+        return CurriculumResource::collection(Curriculum::where('status', 'active')->get());
     }
 
     public function index(Request $request)
@@ -162,6 +167,14 @@ class CurriculumController extends Controller
                 'is_compulsory' => $request->is_compulsory,
                 'display_order' => $request->display_order,
             ]);
+
+            $curriculumSubject->resultStatus()->create(
+                [
+                    "status" => "draft",
+                    "rejection_reason" => null,
+                    "updated_by" => auth()->id()
+                ]
+            );
             // marking components
             $marking_components = [
                 [

@@ -73,20 +73,39 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 setGenders(res.data.data.genders || []);
             }
         }).catch((err) => console.error('Failed to fetch resources:', err));
-        return () => { isMounted = false; };
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     const handlePhotoChange = (file: File) => {
         setData('photo', file);
         const url = URL.createObjectURL(file);
         setPhotoPreview((prev) => {
-            if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+            if (prev && prev.startsWith('blob:')) {
+                URL.revokeObjectURL(prev);
+            }
+
             return url;
         });
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        // const options = {
+        //     forceFormData: true,
+        //     onSuccess: () => {
+        //         onSuccess();
+        //         reset();
+        //     },
+        // };
+        const formData = new FormData();
+        Object.entries(data).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+                formData.append(key, value);
+            }
+        });
 
         // Strip transient UI state (looked_up) before sending.
         const payload = guardians.map(({ looked_up: _looked_up, ...rest }) => rest);

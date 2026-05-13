@@ -2,18 +2,77 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RejectSubjectResultRequest;
 use App\Http\Requests\UpsertScoreRequest;
 use App\Http\Resources\MarkingComponentResource;
+use App\Http\Resources\SubjectResultStatusResource;
 use App\Models\CurriculumSubject;
+use App\Models\GradeBoundary;
 use App\Models\Score;
 use App\Models\Student;
+use App\Models\StudentResult;
 use App\Models\StudentSubject;
+use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
+use App\Models\TeacherCurriculumSubject;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CurriculumSubjectController extends Controller
 {
+    protected function handleStudentResults(CurriculumSubject $curriculumSubject, string $status = 'approved')
+    {
+        $curriculumSubject->load(['studentResults', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student', 'curriculum.examType']);
+        $gradeBoundaries = GradeBoundary::where('exam_type_id', $curriculumSubject->curriculum->exam_type_id)->orWhere('exam_type_id', null)->get();
+        $studentAssignments = $curriculumSubject->studentAssignments;
+        foreach ($studentAssignments as $assignment) {
+            $scores = $curriculumSubject->scores()->where('student_id', $assignment->studentCurriculum->student->id)->get();
+            $total = 0;
+            foreach ($scores as $score) {
+                $total += $score->score;
+            }
+            $grade = $gradeBoundaries->where('min_score', '<=', $total)->where('max_score', '>=', $total)->first();
+            StudentResult::updateOrCreate([
+                'student_id' => $assignment->studentCurriculum->student->id,
+                'curriculum_subject_id' => $curriculumSubject->id,
+            ], [
+                'status' => $status,
+                'total_score' => $total,
+                'grade' => $grade ? $grade->grade : null,
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+            ]);
+        }
+    }
+
+    protected function isTeacher($user): bool
+    {
+        return $user && $user->hasRole('teacher');
+    }
+
+    protected function isReviewer($user): bool
+    {
+        return $user && ($user->hasRole('admin') || $user->hasRole('head_of_school'));
+    }
+
+    protected function present(SubjectResultStatus $s): array
+    {
+        return [
+            'status' => $s->status,
+            'rejection_reason' => $s->rejection_reason,
+            'updated_at' => optional($s->updated_at)->toIso8601String(),
+            'updated_by' => $s->updatedBy
+                ? [
+                    'id' => $s->updatedBy->id,
+                    'name' => trim(($s->updatedBy->name ?? '')) ?: $s->updatedBy->email,
+                    'role' => $s->updatedBy->role ?? null,
+                ]
+                : null,
+        ];
+    }
+
     public function update(Request $request, CurriculumSubject $curriculumSubject)
     {
         try {
@@ -138,5 +197,82 @@ class CurriculumSubjectController extends Controller
             return response()->json(['error' => 'Failed to assign score'], 500);
         }
 
+    }
+    public function submit(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($this->isTeacher($user), 403);
+
+
+        // Ensure the teacher actually owns this curriculum_subject via teacher_curriculum_subjects.
+        abort_unless(
+            TeacherCurriculumSubject::where('teacher_id', optional($user->teacher)->id)
+                ->where('curriculum_subject_id', $curriculumSubject->id)
+                ->exists(),
+            403,
+        );
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'submitted',
+                    'rejection_reason' => null,
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+    public function approve(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($this->isReviewer($user), 403);
+
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'approved',
+                    'rejection_reason' => null,
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+
+    public function reject(
+        RejectSubjectResultRequest $request,
+        CurriculumSubject $curriculumSubject
+    ): JsonResponse {
+        $user = $request->user();
+        abort_unless($this->isReviewer($user), 403);
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user, $request) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'rejected',
+                    'rejection_reason' => $request->validated('rejection_reason'),
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+
+    public function getResultStatus(CurriculumSubject $curriculumSubject)
+    {
+        $status = $curriculumSubject->resultStatus;
+
+        return response()->json(new SubjectResultStatusResource($status), 200);
     }
 }

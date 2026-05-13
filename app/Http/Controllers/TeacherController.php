@@ -147,6 +147,7 @@ class TeacherController extends Controller
                 'curriculumSubject.curriculum.classLevelArm.arm',
                 'curriculumSubject.curriculum.classLevelArm.stream',
                 'curriculumSubject.curriculum.term',
+                'curriculumSubject.studentAssignments'
             ])
             ->get();
 

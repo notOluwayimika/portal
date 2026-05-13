@@ -203,7 +203,6 @@ export function SessionsTab({
             );
 
             if (response.status === 200) {
-                console.log(response.data);
                 setTerms(response.data.terms ?? response.data.data ?? []);
             } else {
                 addToast('Failed to fetch terms.', 'error');

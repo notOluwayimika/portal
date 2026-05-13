@@ -18,8 +18,4 @@ class Role extends SpatieRole
         return 'uuid';
     }
 
-    public function users(): BelongsToMany
-    {
-        return $this->belongsToMany(User::class, 'user_roles');
-    }
 }

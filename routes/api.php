@@ -9,7 +9,9 @@ use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
+use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +33,7 @@ Route::get('/subjects', [SubjectController::class, 'index']);
 Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
 // get curricula
 Route::get('/curricula', [CurriculumController::class, 'index']);
+Route::get('/curricula/active', [CurriculumController::class, 'active']);
 Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
@@ -88,9 +91,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
+
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
-    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
-    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
+
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
@@ -106,9 +111,27 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
     Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
 
+    // student curricula
+    Route::post('/students/{student:uuid}/curricula/promote', [StudentCurriculumController::class, 'promote']);
+    Route::post('/students/{student:uuid}/curricula', [StudentCurriculumController::class, 'register']);
+    Route::patch('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'updateStatus']);
+
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 
     require __DIR__ . '/endpoints/student.php';
     require __DIR__ . '/endpoints/teacher.php';
     require __DIR__ . '/endpoints/guardian.php';
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
+    // assign score and marking component for teachers;
+    Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'subjects']);
+    // protected marking components
+    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
+    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
+    // protected curriculum subject
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/result-status', [CurriculumSubjectController::class, 'getResultStatus']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
+    Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
 });

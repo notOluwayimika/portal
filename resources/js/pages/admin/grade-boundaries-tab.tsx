@@ -33,7 +33,6 @@ export function GradeBoundariesTab({
     useEffect(() => {
         const fetchBoundaries = async () => {
             if (filter) {
-                console.log(loading);
                 const response = await axios.get(
                     `/api/grade-boundaries/${filter}`,
                 );
@@ -89,8 +88,6 @@ export function GradeBoundariesTab({
         setMode(null);
 
         try {
-            console.log(loading);
-
             setEditing((p) => {
                 const n = { ...p };
                 delete n[id];

@@ -1,5 +1,12 @@
-import { Link } from '@inertiajs/react';
-import { BookOpen, BookUser, FolderGit2, LayoutGrid, Users } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import {
+    BookUser,
+    FolderGit2,
+    LayoutGrid,
+    PanelsTopLeft,
+    Users,
+} from 'lucide-react';
+import { useMemo } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -14,14 +21,16 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-import type { NavItem } from '@/types';
+import type { NavItem, User } from '@/types';
 
-const mainNavItems: NavItem[] = [
+const sharedNavItems: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
     },
+];
+const adminNavItems: NavItem[] = [
     {
         title: 'Students',
         href: '/students',
@@ -37,22 +46,53 @@ const mainNavItems: NavItem[] = [
         href: '/setup',
         icon: FolderGit2,
     },
+    {
+        title: 'Review Results',
+        href: '/setup/review/results',
+        icon: PanelsTopLeft,
+    },
 ];
 
 const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
+    // {
+    //     title: 'Repository',
+    //     href: 'https://github.com/laravel/react-starter-kit',
+    //     icon: FolderGit2,
+    // },
+    // {
+    //     title: 'Documentation',
+    //     href: 'https://laravel.com/docs/starter-kits#react',
+    //     icon: BookOpen,
+    // },
 ];
 
 export function AppSidebar() {
+    const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
+        auth: { roles: string[] };
+    }>().props;
+    const role = auth.roles[0];
+    const teacherNavItems: NavItem[] = [];
+    const teacher = auth.user.teacher;
+
+    if (teacher) {
+        teacherNavItems.push({
+            title: 'My Subjects',
+            href: `/setup/teacher/${teacher.uuid}`,
+            icon: BookUser,
+        });
+    }
+
+    const roleMap: Record<string, NavItem[]> = {
+        admin: adminNavItems,
+        head_of_school: adminNavItems,
+        teacher: teacherNavItems,
+    };
+    const mainNavItems = useMemo(() => {
+        const roleItems = roleMap[role] ?? [];
+
+        return [...roleItems, ...sharedNavItems];
+    }, [role]);
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>

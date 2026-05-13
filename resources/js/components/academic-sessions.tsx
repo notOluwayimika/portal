@@ -627,7 +627,6 @@ export default function AcademicSessions() {
             const response = await axios.get('/api/sessions', {
                 params: { limit, page, filter, search },
             });
-            console.log(response);
 
             if (response.status === 200) {
                 setSessions(response.data.data ?? []);

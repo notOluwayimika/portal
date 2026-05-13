@@ -16,7 +16,6 @@ class CurriculumOptionResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'uuid' => $this->uuid,
             'term' => $this->term?->order,
             'term_name' => $this->term?->name,
             'class_level' => $this->classLevelArm?->classLevel?->name,

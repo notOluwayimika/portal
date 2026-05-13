@@ -19,6 +19,7 @@ use App\Models\Curriculum;
 use App\Models\FileUpload;
 use App\Models\Student;
 use App\Repositories\ClassLevelArmRepository;
+use App\Repositories\CurriculumRepository;
 use App\Services\FileUploadService;
 use App\Services\StudentService;
 use Illuminate\Support\Facades\Response;
@@ -140,37 +141,6 @@ class StudentController extends Controller
         $this->studentService->delete($student);
         return response()->noContent();
     }
-
-    // public function resources()
-    // {
-    //     $curricula = Curriculum::with([
-    //         'term',
-    //         'classLevelArm.classLevel',
-    //         'classLevelArm.arm',
-    //         'classLevelArm.stream'
-    //     ])
-    //     ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
-    //     ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
-
-    //     $curriculaOptions = $curricula->map(function ($curriculum) {
-    //         return [
-    //             'id' => $curriculum->id,
-    //             'uuid' => $curriculum->uuid,
-    //             'term' => $curriculum->term?->order,
-    //             'term_name' => $curriculum->term?->name,
-    //             'class_level' => $curriculum->classLevelArm?->classLevel?->name,
-    //             'arm' => $curriculum->classLevelArm?->arm?->label,
-    //             'stream' => $curriculum->classLevelArm?->stream?->name,
-    //         ];
-    //     });
-
-    //     $genders = GenderTypeEnum::options();
-
-    //     return Response::success([
-    //         'curricula' => $curriculaOptions,
-    //         'genders' => $genders,
-    //     ]);
-    // }
 
     public function resources()
     {

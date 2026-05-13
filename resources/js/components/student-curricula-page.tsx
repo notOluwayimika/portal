@@ -278,7 +278,6 @@ export default function StudentCurriculaPage({
                             {filtered.map((sc) => {
                                 const busy = !!rowBusy[sc.id];
                                 const err = rowError[sc.id];
-                                console.log(sc);
 
                                 return (
                                     <tr

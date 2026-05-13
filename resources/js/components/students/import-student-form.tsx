@@ -6,12 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Spinner } from '@/components/ui/spinner';
-import { convertToSelectOptions } from '@/helpers';
 import { useExcelImport } from '@/hooks/use-excel-import';
 import { ExcelDateToJSDate } from '@/hooks/use-helper';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import { cn } from '@/lib/utils';
-import type { SelectOption } from '../single-select';
 
 interface ImportStudentFormProps {
     onSuccess: () => void;
@@ -28,6 +26,14 @@ interface StudentRow {
     [key: string]: unknown;
 }
 
+interface CurriculumOption {
+    id: number;
+    term: number;
+    class_level: string;
+    arm: string;
+    stream: string;
+}
+
 export function ImportStudentForm({
     onSuccess,
     onCancel,
@@ -35,7 +41,7 @@ export function ImportStudentForm({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { importExcelData } = useExcelImport();
 
-    const [curricula, setCurricula] = useState<SelectOption[]>([]);
+    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [curriculumId, setCurriculumId] = useState<string>('');
     const [curriculumError, setCurriculumError] = useState('');
 
@@ -50,12 +56,7 @@ export function ImportStudentForm({
         let isMounted = true;
         axios.get('/api/students/resources').then((res) => {
             if (isMounted) {
-                setCurricula(
-                    convertToSelectOptions(
-                        res.data.data.curricula || [],
-                        'full_name',
-                    ),
-                );
+                setCurricula(res.data.data.curricula || []);
             }
         });
 
@@ -144,6 +145,11 @@ export function ImportStudentForm({
 
     const errorCount = Object.keys(rowErrors).length;
 
+    const curriculaOptions = curricula.map((c) => ({
+        value: c.id.toString(),
+        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
+    }));
+
     return (
         <form className="space-y-4">
             {/* Class selector */}
@@ -151,8 +157,8 @@ export function ImportStudentForm({
                 <Label>Assigned Class</Label>
                 <SearchableSelect
                     placeholder="Search for a class..."
-                    options={curricula}
-                    value={curricula.find((o) => o.value === curriculumId)}
+                    options={curriculaOptions}
+                    value={curriculaOptions.find((o) => o.value === curriculumId)}
                     onChange={(opt: any) => {
                         setCurriculumId(opt?.value || '');
                         setCurriculumError('');

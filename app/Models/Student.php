@@ -7,6 +7,7 @@ use App\Concerns\BelongsToSchool;
 use App\Concerns\HasAdmissionNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -64,6 +65,18 @@ class Student extends Model
     public function results(): HasMany
     {
         return $this->hasMany(StudentResult::class);
+    }
+
+    public function guardians(): BelongsToMany
+    {
+        return $this->belongsToMany(Guardian::class, 'guardian_student')
+            ->withPivot(['relationship', 'is_primary', 'can_login'])
+            ->withTimestamps();
+    }
+
+    public function primaryGuardian(): BelongsToMany
+    {
+        return $this->guardians()->wherePivot('is_primary', true);
     }
 
     public function getPhotoAttribute(): ?string

@@ -120,6 +120,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
 
     require __DIR__ . '/endpoints/student.php';
     require __DIR__ . '/endpoints/teacher.php';
+    require __DIR__ . '/endpoints/guardian.php';
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {

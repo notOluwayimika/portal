@@ -39,6 +39,19 @@ class StudentResource extends JsonResource
             'curriculum_id' => $curriculum?->id,
             'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
             'promoted_to_id' => $currentCurriculum?->promoted_to_id,
+            'guardians' => $this->whenLoaded('guardians', fn() => $this->guardians->map(fn($g) => [
+                'id'           => $g->uuid,
+                'full_name'    => $g->full_name,
+                'first_name'   => $g->first_name,
+                'last_name'    => $g->last_name,
+                'phone'        => $g->phone,
+                'email'        => $g->user?->email,
+                'occupation'   => $g->occupation,
+                'photo'        => $g->photoFile?->url,
+                'relationship' => $g->pivot->relationship,
+                'is_primary'   => (bool) $g->pivot->is_primary,
+                'can_login'    => (bool) $g->pivot->can_login,
+            ])),
         ];
     }
 }

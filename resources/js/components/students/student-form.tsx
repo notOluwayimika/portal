@@ -7,22 +7,27 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ProfileImageUpload } from '@/components/ui/profile-image-upload';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { convertToSelectOptions } from '@/helpers';
 import type { Student } from '@/types/models';
-import type { SelectOption } from '../single-select';
+import {
+    GuardianSubForm,
+    emptyGuardianEntry,
+    type GuardianFormEntry,
+} from '@/components/students/guardian-sub-form';
 
 interface StudentFormProps {
     student?: Student | null;
     onSuccess: () => void;
     onCancel: () => void;
+}
+
+interface CurriculumOption {
+    id: number;
+    term: number;
+    class_level: string;
+    arm: string;
+    stream: string;
 }
 
 interface StudentFormData {
@@ -34,51 +39,40 @@ interface StudentFormData {
     date_of_birth: string;
     curriculum_id: string;
     photo: File | null;
+    guardians: string; // JSON-encoded GuardianFormEntry[] (multipart-safe)
 }
 
-export function StudentForm({
-    student,
-    onSuccess,
-    onCancel,
-}: StudentFormProps) {
+export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
     const isEdit = !!student;
-    const [curricula, setCurricula] = useState<SelectOption[]>([]);
-    const [genders, setGenders] = useState<{ name: string; value: string }[]>(
-        [],
-    );
+    const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
+    const [genders, setGenders] = useState<{ name: string; value: string }[]>([]);
     const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
-    const [photoPreview, setPhotoPreview] = useState<string | null>(
-        student?.photo ?? null,
+    const [photoPreview, setPhotoPreview] = useState<string | null>(student?.photo ?? null);
+
+    const [guardians, setGuardians] = useState<GuardianFormEntry[]>(() =>
+        isEdit ? [] : [emptyGuardianEntry({ is_primary: true })]
     );
 
-    const { data, setData, processing, errors, reset } =
-        useForm<StudentFormData>({
-            first_name: student?.first_name || '',
-            last_name: student?.last_name || '',
-            middle_name: student?.middle_name || '',
-            admission_number: isEdit ? student?.admission_number || '' : '',
-            gender: student?.gender || 'male',
-            date_of_birth: student?.date_of_birth || '',
-            curriculum_id: student?.curriculum_id?.toString() || '',
-            photo: null,
-        });
+    const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
+        first_name: student?.first_name || '',
+        last_name: student?.last_name || '',
+        middle_name: student?.middle_name || '',
+        admission_number: isEdit ? (student?.admission_number || '') : '',
+        gender: student?.gender || 'male',
+        date_of_birth: student?.date_of_birth || '',
+        curriculum_id: student?.curriculum_id?.toString() || '',
+        photo: null,
+        guardians: '',
+    });
 
     useEffect(() => {
         let isMounted = true;
-        axios
-            .get('/api/students/resources')
-            .then((res) => {
-                if (isMounted) {
-                    setCurricula(
-                        convertToSelectOptions(
-                            res.data.data.curricula || [],
-                            'full_name',
-                        ),
-                    );
-                    setGenders(res.data.data.genders || []);
-                }
-            })
-            .catch((err) => console.error('Failed to fetch resources:', err));
+        axios.get('/api/students/resources').then((res) => {
+            if (isMounted) {
+                setCurricula(res.data.data.curricula || []);
+                setGenders(res.data.data.genders || []);
+            }
+        }).catch((err) => console.error('Failed to fetch resources:', err));
 
         return () => {
             isMounted = false;
@@ -97,7 +91,7 @@ export function StudentForm({
         });
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         // const options = {
         //     forceFormData: true,
@@ -113,25 +107,36 @@ export function StudentForm({
             }
         });
 
+        // Strip transient UI state (looked_up) before sending.
+        const payload = guardians.map(({ looked_up: _looked_up, ...rest }) => rest);
+        setData('guardians', JSON.stringify(payload));
+
+        const options = {
+            forceFormData: true,
+            onSuccess: () => {
+                onSuccess();
+                reset();
+                setGuardians(isEdit ? [] : [emptyGuardianEntry({ is_primary: true })]);
+            },
+        };
+
         if (isEdit) {
-            const response = await axios.patch(
-                `/api/students/${student.id}`,
-                formData,
-            );
-
-            if (response.status === 200 || response.status === 201) {
-                onSuccess();
-                reset();
-            }
+            patch(`/api/students/${student.id}`, options);
         } else {
-            const response = await axios.post('/api/students', formData);
-
-            if (response.status === 201) {
-                onSuccess();
-                reset();
-            }
+            post('/api/students', options);
         }
     };
+
+    const curriculaOptions = curricula.map((c) => ({
+        value: c.id.toString(),
+        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
+    }));
+
+    // Pull out nested guardian errors so the sub-form can surface them.
+    const guardianErrors: Record<string, string> = {};
+    Object.entries(errors).forEach(([key, val]) => {
+        if (key.startsWith('guardians')) guardianErrors[key] = val as string;
+    });
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -150,11 +155,7 @@ export function StudentForm({
                         onChange={(e) => setData('first_name', e.target.value)}
                         required
                     />
-                    {errors.first_name && (
-                        <p className="text-xs text-destructive">
-                            {errors.first_name}
-                        </p>
-                    )}
+                    {errors.first_name && <p className="text-destructive text-xs">{errors.first_name}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -165,11 +166,7 @@ export function StudentForm({
                         onChange={(e) => setData('last_name', e.target.value)}
                         required
                     />
-                    {errors.last_name && (
-                        <p className="text-xs text-destructive">
-                            {errors.last_name}
-                        </p>
-                    )}
+                    {errors.last_name && <p className="text-destructive text-xs">{errors.last_name}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -189,17 +186,11 @@ export function StudentForm({
                             checked={showAdmissionNumber}
                             onChange={(e) => {
                                 setShowAdmissionNumber(e.target.checked);
-
-                                if (!e.target.checked) {
-                                    setData('admission_number', '');
-                                }
+                                if (!e.target.checked) setData('admission_number', '');
                             }}
                             className="h-4 w-4 rounded border-gray-300"
                         />
-                        <Label
-                            htmlFor="manual_admission"
-                            className="cursor-pointer text-sm font-normal"
-                        >
+                        <Label htmlFor="manual_admission" className="cursor-pointer text-sm font-normal">
                             Manually set admission number
                         </Label>
                     </div>
@@ -209,14 +200,10 @@ export function StudentForm({
                                 id="admission_number"
                                 placeholder="Enter admission number"
                                 value={data.admission_number}
-                                onChange={(e) =>
-                                    setData('admission_number', e.target.value)
-                                }
+                                onChange={(e) => setData('admission_number', e.target.value)}
                             />
                             {errors.admission_number && (
-                                <p className="text-xs text-destructive">
-                                    {errors.admission_number}
-                                </p>
+                                <p className="text-destructive text-xs">{errors.admission_number}</p>
                             )}
                         </>
                     )}
@@ -224,10 +211,7 @@ export function StudentForm({
 
                 <div className="space-y-2">
                     <Label>Gender</Label>
-                    <Select
-                        value={data.gender}
-                        onValueChange={(v) => setData('gender', v)}
-                    >
+                    <Select value={data.gender} onValueChange={(v) => setData('gender', v)}>
                         <SelectTrigger>
                             <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
@@ -239,11 +223,7 @@ export function StudentForm({
                             ))}
                         </SelectContent>
                     </Select>
-                    {errors.gender && (
-                        <p className="text-xs text-destructive">
-                            {errors.gender}
-                        </p>
-                    )}
+                    {errors.gender && <p className="text-destructive text-xs">{errors.gender}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -252,9 +232,7 @@ export function StudentForm({
                         id="date_of_birth"
                         type="date"
                         value={data.date_of_birth}
-                        onChange={(e) =>
-                            setData('date_of_birth', e.target.value)
-                        }
+                        onChange={(e) => setData('date_of_birth', e.target.value)}
                     />
                 </div>
 
@@ -262,38 +240,25 @@ export function StudentForm({
                     <Label>Assigned Class</Label>
                     <SearchableSelect
                         placeholder="Search for a class..."
-                        options={curricula}
-                        value={curricula.find(
-                            (opt) => opt.value === data.curriculum_id,
-                        )}
-                        onChange={(opt: any) =>
-                            setData('curriculum_id', opt?.value || '')
-                        }
+                        options={curriculaOptions}
+                        value={curriculaOptions.find((opt) => opt.value === data.curriculum_id)}
+                        onChange={(opt: any) => setData('curriculum_id', opt?.value || '')}
                         error={!!errors.curriculum_id}
                     />
-                    {errors.curriculum_id && (
-                        <p className="text-xs text-destructive">
-                            {errors.curriculum_id}
-                        </p>
-                    )}
+                    {errors.curriculum_id && <p className="text-destructive text-xs">{errors.curriculum_id}</p>}
                 </div>
             </div>
 
+            {!isEdit && (
+                <GuardianSubForm value={guardians} onChange={setGuardians} errors={guardianErrors} />
+            )}
+
             <div className="flex justify-end gap-3 border-t pt-4">
-                <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onCancel}
-                    disabled={processing}
-                >
+                <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>
                     Cancel
                 </Button>
                 <Button type="submit" disabled={processing}>
-                    {processing ? (
-                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <Save className="mr-2 h-4 w-4" />
-                    )}
+                    {processing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     {isEdit ? 'Update Student' : 'Create Student'}
                 </Button>
             </div>

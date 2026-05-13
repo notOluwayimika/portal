@@ -25,7 +25,7 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToSchool;
 
-    protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id'];
+    protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id', 'disabled_at'];
     protected $appends = ['full_name','name'];
 
     /**
@@ -39,6 +39,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'disabled_at' => 'datetime',
         ];
     }
 
@@ -79,5 +80,25 @@ class User extends Authenticatable
     public function student()
     {
         return $this->hasOne(Student::class, 'user_id');
+    }
+
+    public function guardian()
+    {
+        return $this->hasOne(Guardian::class, 'user_id');
+    }
+
+    public function isDisabled(): bool
+    {
+        return !is_null($this->disabled_at);
+    }
+
+    /**
+     * Block login for disabled accounts via Laravel's auth contract hook.
+     * Returns the cleartext password when the account is active; an
+     * unguessable value when disabled so password verification fails.
+     */
+    public function getAuthPassword(): string
+    {
+        return $this->isDisabled() ? '$2y$12$disabled.account.cannot.login.' . bin2hex(random_bytes(8)) : $this->password;
     }
 }

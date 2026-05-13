@@ -19,9 +19,13 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 
-Route::inertia('/', 'welcome', [
-    'canRegister' => Features::enabled(Features::registration()),
-])->name('home');
+Route::get('/', function () {
+    return Inertia::render('auth/login', [
+        'canResetPassword' => Features::enabled(Features::resetPasswords()),
+        'canRegister'      => Features::enabled(Features::registration()),
+        'status'           => session('status'),
+    ]);
+})->middleware('guest')->name('home');
 
 Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
 

@@ -10,6 +10,11 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import type { Student } from '@/types/models';
+import {
+    GuardianSubForm,
+    emptyGuardianEntry,
+    type GuardianFormEntry,
+} from '@/components/students/guardian-sub-form';
 
 interface StudentFormProps {
     student?: Student | null;
@@ -34,6 +39,7 @@ interface StudentFormData {
     date_of_birth: string;
     curriculum_id: string;
     photo: File | null;
+    guardians: string; // JSON-encoded GuardianFormEntry[] (multipart-safe)
 }
 
 export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
@@ -42,6 +48,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
     const [genders, setGenders] = useState<{ name: string; value: string }[]>([]);
     const [showAdmissionNumber, setShowAdmissionNumber] = useState(false);
     const [photoPreview, setPhotoPreview] = useState<string | null>(student?.photo ?? null);
+
+    const [guardians, setGuardians] = useState<GuardianFormEntry[]>(() =>
+        isEdit ? [] : [emptyGuardianEntry({ is_primary: true })]
+    );
 
     const { data, setData, post, patch, processing, errors, reset } = useForm<StudentFormData>({
         first_name: student?.first_name || '',
@@ -52,6 +62,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         date_of_birth: student?.date_of_birth || '',
         curriculum_id: student?.curriculum_id?.toString() || '',
         photo: null,
+        guardians: '',
     });
 
     useEffect(() => {
@@ -77,11 +88,16 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
+        // Strip transient UI state (looked_up) before sending.
+        const payload = guardians.map(({ looked_up: _looked_up, ...rest }) => rest);
+        setData('guardians', JSON.stringify(payload));
+
         const options = {
             forceFormData: true,
             onSuccess: () => {
                 onSuccess();
                 reset();
+                setGuardians(isEdit ? [] : [emptyGuardianEntry({ is_primary: true })]);
             },
         };
 
@@ -96,6 +112,12 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         value: c.id.toString(),
         label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
     }));
+
+    // Pull out nested guardian errors so the sub-form can surface them.
+    const guardianErrors: Record<string, string> = {};
+    Object.entries(errors).forEach(([key, val]) => {
+        if (key.startsWith('guardians')) guardianErrors[key] = val as string;
+    });
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -207,6 +229,10 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                     {errors.curriculum_id && <p className="text-destructive text-xs">{errors.curriculum_id}</p>}
                 </div>
             </div>
+
+            {!isEdit && (
+                <GuardianSubForm value={guardians} onChange={setGuardians} errors={guardianErrors} />
+            )}
 
             <div className="flex justify-end gap-3 border-t pt-4">
                 <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>

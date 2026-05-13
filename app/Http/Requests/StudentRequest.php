@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\GuardianIdTypeEnum;
 use App\Enums\GuardianRelationshipEnum;
+use App\Enums\MaritalStatusEnum;
 use App\Rules\ExactlyOnePrimaryGuardian;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -89,7 +90,7 @@ class StudentRequest extends FormRequest
             'guardians.*.postal_code'       => ['nullable', 'string', 'max:50'],
             'guardians.*.occupation'        => ['nullable', 'string', 'max:255'],
             'guardians.*.employer_name'     => ['nullable', 'string', 'max:255'],
-            'guardians.*.marital_status'    => ['nullable', 'string', 'max:100'],
+            'guardians.*.marital_status'    => ['nullable', 'string', Rule::in(MaritalStatusEnum::values())],
             'guardians.*.emergency_contact' => ['nullable', 'string', 'max:255'],
             'guardians.*.id_type'           => ['nullable', 'string', Rule::in(GuardianIdTypeEnum::values())],
             'guardians.*.id_number'         => ['nullable', 'string', 'max:255'],

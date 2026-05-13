@@ -41,15 +41,16 @@ export interface GuardianFormEntry {
     id_expiry_date?: string;
 }
 
-interface Option {
+export interface Option {
     name: string;
     value: string;
 }
 
-interface GuardianResources {
+export interface GuardianResources {
     genders: Option[];
     id_types: Option[];
     relationships: Option[];
+    marital_statuses: Option[];
 }
 
 interface GuardianSubFormProps {
@@ -72,7 +73,7 @@ export function emptyGuardianEntry(overrides: Partial<GuardianFormEntry> = {}): 
 }
 
 export function GuardianSubForm({ value, onChange, errors = {} }: GuardianSubFormProps) {
-    const [resources, setResources] = useState<GuardianResources>({ genders: [], id_types: [], relationships: [] });
+    const [resources, setResources] = useState<GuardianResources>({ genders: [], id_types: [], relationships: [], marital_statuses: [] });
 
     useEffect(() => {
         let mounted = true;
@@ -164,7 +165,7 @@ interface GuardianRowProps {
     getError: (field: string) => string | undefined;
 }
 
-function GuardianRow({ index, entry, resources, onChange, onRemove, canRemove, getError }: GuardianRowProps) {
+export function GuardianRow({ index, entry, resources, onChange, onRemove, canRemove, getError }: GuardianRowProps) {
     const { status, result, error: lookupError, lookup, reset: resetLookup } = useGuardianLookup();
     const [identifierDraft, setIdentifierDraft] = useState(entry.identifier ?? '');
 
@@ -410,7 +411,17 @@ function NewGuardianBody({ entry, resources, onChange, getError }: NewBodyProps)
                 </Field>
 
                 <Field label="Marital Status">
-                    <Input value={entry.marital_status ?? ''} onChange={(e) => onChange({ marital_status: e.target.value })} />
+                    <Select
+                        value={entry.marital_status ?? ''}
+                        onValueChange={(v) => onChange({ marital_status: v })}
+                    >
+                        <SelectTrigger><SelectValue placeholder="Select marital status" /></SelectTrigger>
+                        <SelectContent>
+                            {resources.marital_statuses.map((m) => (
+                                <SelectItem key={m.value} value={m.value}>{m.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </Field>
                 <Field label="Emergency Contact">
                     <Input value={entry.emergency_contact ?? ''} onChange={(e) => onChange({ emergency_contact: e.target.value })} />

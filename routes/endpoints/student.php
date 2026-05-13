@@ -3,7 +3,7 @@
 use App\Http\Controllers\StudentController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum', 'tenant'])->prefix('students')->group(function () {
+Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
     Route::post('/', [StudentController::class, 'store']);
     Route::get('/resources', [StudentController::class, 'resources']);

@@ -1,9 +1,10 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, Search, Trash2, UserPlus } from 'lucide-react';
+import { Download, Edit, FileX, GraduationCap, Search, Trash2, Users, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import { StudentForm } from '@/components/students/student-form';
+import { StudentGuardiansPanel } from '@/components/students/student-guardians-panel';
 import { ImportStudentForm } from '@/components/students/import-student-form';
 import type { Toast, ToastType } from '@/components/toast-item';
 import { ToastItem } from '@/components/toast-item';
@@ -44,6 +45,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     });
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [guardiansPanelStudent, setGuardiansPanelStudent] = useState<Student | null>(null);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
     let toastCounter = 0;
 
@@ -317,6 +319,16 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
+                                                        title="Manage guardians"
+                                                        onClick={() =>
+                                                            setGuardiansPanelStudent(student)
+                                                        }
+                                                    >
+                                                        <Users className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
                                                         onClick={() =>
                                                             handleEdit(student)
                                                         }
@@ -364,6 +376,14 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     onCancel={() => setIsStudentModalOpen(false)}
                 />
             </Modal>
+
+            <StudentGuardiansPanel
+                isOpen={!!guardiansPanelStudent}
+                onClose={() => setGuardiansPanelStudent(null)}
+                studentUuid={guardiansPanelStudent?.id ?? ''}
+                studentName={guardiansPanelStudent?.full_name ?? ''}
+                onChanged={fetchStudents}
+            />
 
             <Modal
                 isOpen={isImportModalOpen}

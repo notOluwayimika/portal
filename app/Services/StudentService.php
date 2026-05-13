@@ -65,6 +65,8 @@ class StudentService
             'currentCurriculum.curriculum.classLevelArm.classLevel',
             'currentCurriculum.curriculum.classLevelArm.arm',
             'currentCurriculum.curriculum.classLevelArm.stream',
+            'guardians.user',
+            'guardians.photoFile',
         ]);
     }
 

@@ -6,7 +6,11 @@ use App\Enums\GenderTypeEnum;
 use App\Enums\GuardianIdTypeEnum;
 use App\Enums\GuardianRelationshipEnum;
 use App\Enums\GuardianStatusEnum;
+use App\Enums\MaritalStatusEnum;
+use App\Http\Requests\GuardianUpdateRequest;
+use App\Http\Requests\PivotUpdateRequest;
 use App\Http\Resources\GuardianResource;
+use App\Http\Resources\StudentResource;
 use App\Models\Guardian;
 use App\Models\Student;
 use App\Services\GuardianService;
@@ -74,10 +78,11 @@ class GuardianController extends Controller
     public function resources()
     {
         return Response::success([
-            'genders'       => GenderTypeEnum::options(),
-            'statuses'      => GuardianStatusEnum::options(),
-            'id_types'      => GuardianIdTypeEnum::options(),
-            'relationships' => GuardianRelationshipEnum::options(),
+            'genders'          => GenderTypeEnum::options(),
+            'statuses'         => GuardianStatusEnum::options(),
+            'id_types'         => GuardianIdTypeEnum::options(),
+            'relationships'    => GuardianRelationshipEnum::options(),
+            'marital_statuses' => MaritalStatusEnum::options(),
         ]);
     }
 
@@ -139,10 +144,96 @@ class GuardianController extends Controller
 
     /**
      * DELETE /api/students/{student:uuid}/guardians/{guardian:uuid}
+     *
+     * Guards:
+     *  - Student must keep at least one guardian (422 otherwise).
+     *  - If the detached guardian was primary, `replacement_primary_guardian_uuid` is required.
      */
-    public function detach(Student $student, Guardian $guardian)
+    public function detach(Request $request, Student $student, Guardian $guardian)
     {
-        $student->guardians()->detach($guardian->id);
+        abort_unless($request->user()?->can('guardian.detach'), 403);
+
+        $data = $request->validate([
+            'replacement_primary_guardian_uuid' => ['nullable', 'uuid'],
+        ]);
+
+        $this->guardianService->detachFromStudent(
+            $student,
+            $guardian,
+            $data['replacement_primary_guardian_uuid'] ?? null,
+        );
+
         return response()->noContent();
+    }
+
+    /**
+     * PUT /api/guardians/{guardian:uuid}
+     * Returns the impact: how many students will see the change.
+     */
+    public function update(GuardianUpdateRequest $request, Guardian $guardian)
+    {
+        $updated = $this->guardianService->update($guardian, $request->validated());
+
+        return Response::success([
+            'message'                => 'Guardian updated successfully.',
+            'affected_student_count' => $updated->students()->count(),
+            'data'                   => GuardianResource::make($updated->load('user', 'photoFile')),
+        ]);
+    }
+
+    /**
+     * GET /api/guardians/{guardian:uuid}/students
+     * Lists students attached to this guardian (used by the impact-confirmation modal).
+     */
+    public function students(Guardian $guardian)
+    {
+        abort_unless(request()->user()?->can('guardian.view'), 403);
+
+        $students = $this->guardianService->studentsFor($guardian);
+
+        return response()->json([
+            'data' => $students->map(fn($s) => [
+                'id'           => $s->uuid,
+                'full_name'    => $s->full_name,
+                'admission_number' => $s->admission_number,
+                'relationship' => $s->pivot->relationship,
+                'is_primary'   => (bool) $s->pivot->is_primary,
+                'can_login'    => (bool) $s->pivot->can_login,
+            ]),
+        ]);
+    }
+
+    /**
+     * PUT /api/students/{student:uuid}/guardians/{guardian:uuid}
+     * Update pivot-only fields (relationship, is_primary, can_login).
+     */
+    public function updatePivot(PivotUpdateRequest $request, Student $student, Guardian $guardian)
+    {
+        $pivot = $this->guardianService->updatePivot($student, $guardian, $request->validated());
+
+        return Response::success([
+            'message' => 'Guardian relationship updated.',
+            'pivot'   => [
+                'relationship' => $pivot->relationship,
+                'is_primary'   => (bool) $pivot->is_primary,
+                'can_login'    => (bool) $pivot->can_login,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/guardians/{guardian:uuid}/enable-login
+     * Explicit admin-triggered login enablement, independent of any pivot edit.
+     */
+    public function enableLogin(Request $request, Guardian $guardian)
+    {
+        abort_unless($request->user()?->can('guardian.enable_login'), 403);
+
+        $this->guardianService->enableLogin($guardian, $guardian->students()->pluck('first_name')->toArray());
+
+        return Response::success([
+            'message' => 'Login enabled for guardian.',
+            'data'    => GuardianResource::make($guardian->fresh(['user', 'photoFile'])),
+        ]);
     }
 }

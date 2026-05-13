@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\GuardianIdTypeEnum;
 use App\Enums\GuardianStatusEnum;
+use App\Enums\MaritalStatusEnum;
 use App\Models\Guardian;
 use App\Models\School;
 use App\Models\User;
@@ -33,7 +34,7 @@ class GuardianFactory extends Factory
             'postal_code'       => fake()->postcode(),
             'occupation'        => fake()->jobTitle(),
             'employer_name'     => fake()->company(),
-            'marital_status'    => fake()->randomElement(['single', 'married', 'divorced', 'widowed']),
+            'marital_status'    => fake()->randomElement(MaritalStatusEnum::values()),
             'emergency_contact' => fake()->phoneNumber(),
             'photo_id'          => null,
             'id_type'           => fake()->randomElement(GuardianIdTypeEnum::values()),

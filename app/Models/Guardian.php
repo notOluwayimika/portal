@@ -8,10 +8,28 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class Guardian extends Model
 {
-    use AddUuid, BelongsToSchool, SoftDeletes;
+    use AddUuid, BelongsToSchool, SoftDeletes, LogsActivity;
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'first_name', 'middle_name', 'last_name', 'gender',
+                'phone', 'whatsapp_number',
+                'city', 'state', 'country', 'postal_code',
+                'occupation', 'employer_name', 'marital_status', 'emergency_contact',
+                'id_type', 'id_number', 'id_expiry_date',
+                'status', 'photo_id',
+            ])
+            ->logOnlyDirty()
+            ->dontLogEmptyChanges()
+            ->useLogName('guardian');
+    }
 
     protected $fillable = [
         'school_id',

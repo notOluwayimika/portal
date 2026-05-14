@@ -11,8 +11,12 @@ Route::prefix('guardians')->group(function () {
     Route::get('/{guardian:uuid}/students',     [GuardianController::class, 'students']);
     Route::put('/{guardian:uuid}',              [GuardianController::class, 'update']);
     Route::patch('/{guardian:uuid}',            [GuardianController::class, 'update']);
-    Route::post('/{guardian:uuid}/enable-login', [GuardianController::class, 'enableLogin']);
-    Route::delete('/{guardian:uuid}',           [GuardianController::class, 'destroy']);
+    Route::post('/{guardian:uuid}/enable-login',    [GuardianController::class, 'enableLogin']);
+    Route::post('/{guardian:uuid}/disable-login',   [GuardianController::class, 'disableLogin']);
+    Route::post('/{guardian:uuid}/reset-password',  [GuardianController::class, 'resetPassword']);
+    Route::post('/{guardian:uuid}/resend-invitation', [GuardianController::class, 'resendInvitation']);
+    Route::get('/{guardian:uuid}/activity',         [GuardianController::class, 'activity']);
+    Route::delete('/{guardian:uuid}',               [GuardianController::class, 'destroy']);
 });
 
 Route::post('/students/{student:uuid}/guardians',                       [GuardianController::class, 'attach']);

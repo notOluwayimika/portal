@@ -48,9 +48,13 @@ class StudentResource extends JsonResource
                 'email'        => $g->user?->email,
                 'occupation'   => $g->occupation,
                 'photo'        => $g->photoFile?->url,
+                'gender'       => $g->gender,
+                'city'         => $g->city,
+                'country'      => $g->country,
                 'relationship' => $g->pivot->relationship,
                 'is_primary'   => (bool) $g->pivot->is_primary,
                 'can_login'    => (bool) $g->pivot->can_login,
+                'deleted_at'   => $g->deleted_at,
             ])),
         ];
     }

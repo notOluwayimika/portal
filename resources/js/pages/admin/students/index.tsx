@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
 import { Download, Edit, FileX, GraduationCap, Search, Trash2, Users, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -271,7 +271,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                             )}
                                                         </AvatarFallback>
                                                     </Avatar>
-                                                    {student.full_name}
+                                                    <Link href={`/students/${student.id}`} className="hover:text-primary hover:underline transition-colors">
+                                                        {student.full_name}
+                                                    </Link>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">

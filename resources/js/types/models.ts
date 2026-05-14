@@ -102,6 +102,50 @@ export interface GradeBoundary {
     updated_at?: string;
 }
 
+export interface GuardianPivot {
+    relationship: string;
+    is_primary: boolean;
+    can_login: boolean;
+}
+
+export interface Guardian {
+    id: string;
+    full_name: string;
+    first_name?: string;
+    middle_name?: string | null;
+    last_name?: string;
+    gender?: string | null;
+    marital_status?: string | null;
+    phone?: string;
+    whatsapp_number?: string | null;
+    email?: string | null;
+    photo?: string | null;
+    occupation?: string | null;
+    employer_name?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    postal_code?: string | null;
+    emergency_contact?: string | null;
+    id_type?: string | null;
+    id_number?: string | null;
+    id_expiry_date?: string | null;
+    status?: string;
+    // pivot fields (present when loaded via student.guardians)
+    relationship?: string;
+    is_primary?: boolean;
+    can_login?: boolean;
+    pivot?: GuardianPivot;
+    // login-state fields (present on guardian profile page)
+    has_login?: boolean;
+    user_disabled_at?: string | null;
+    email_verified_at?: string | null;
+    never_activated?: boolean;
+    deleted_at?: string | null;
+    // linked students (on guardian profile)
+    students?: (Student & { pivot: GuardianPivot })[];
+}
+
 export interface Student {
     id: string;
     school_id: string;
@@ -125,6 +169,7 @@ export interface Student {
     };
     curriculum_id?: number;
     promoted_to_id?: number;
+    guardians?: Guardian[];
     student_curricula: StudentCurriculum[];
     created_at?: string;
     updated_at?: string;

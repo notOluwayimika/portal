@@ -42,6 +42,11 @@ const adminNavItems: NavItem[] = [
         icon: BookUser,
     },
     {
+        title: 'Guardians',
+        href: '/guardians',
+        icon: Users,
+    },
+    {
         title: 'School Setup',
         href: '/setup',
         icon: FolderGit2,

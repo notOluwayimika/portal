@@ -7,11 +7,13 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StudentController;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\GuardianResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\SubjectResultStatusResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
@@ -44,6 +46,26 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         ]);
     })->name('students.index');
 
+    Route::get('students/{student:uuid}', function (Student $student) {
+        $student->load([
+            'photoFile',
+            'currentCurriculum.curriculum.classLevelArm.classLevel',
+            'currentCurriculum.curriculum.classLevelArm.arm',
+            'currentCurriculum.curriculum.classLevelArm.stream',
+            'currentCurriculum.curriculum.term',
+            'guardians.user',
+            'guardians.photoFile',
+            'studentCurricula.curriculum.classLevelArm.classLevel',
+            'studentCurricula.curriculum.classLevelArm.arm',
+            'studentCurricula.curriculum.term',
+        ]);
+
+        return Inertia::render('admin/students/show', [
+            'student'          => new StudentResource($student),
+            'student_statuses' => StudentStatusEnum::options(),
+        ]);
+    })->name('students.show');
+
     // Teachers
     Route::get('teachers', function () {
         return Inertia::render('admin/teachers/index', [
@@ -51,6 +73,20 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         ]);
     })->name('teachers.index');
 
+
+    // Guardian profile
+    Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
+        $guardian->load([
+            'user', 'photoFile',
+            'students.photoFile',
+            'students.currentCurriculum.curriculum.classLevelArm.classLevel',
+            'students.currentCurriculum.curriculum.classLevelArm.arm',
+            'students.currentCurriculum.curriculum.term',
+        ]);
+        return Inertia::render('admin/guardians/show', [
+            'guardian' => new GuardianResource($guardian),
+        ]);
+    })->name('guardians.show');
 
     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);

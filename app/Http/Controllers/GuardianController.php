@@ -10,11 +10,11 @@ use App\Enums\MaritalStatusEnum;
 use App\Http\Requests\GuardianUpdateRequest;
 use App\Http\Requests\PivotUpdateRequest;
 use App\Http\Resources\GuardianResource;
-use App\Http\Resources\StudentResource;
 use App\Models\Guardian;
 use App\Models\Student;
 use App\Services\GuardianService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
 
@@ -235,5 +235,139 @@ class GuardianController extends Controller
             'message' => 'Login enabled for guardian.',
             'data'    => GuardianResource::make($guardian->fresh(['user', 'photoFile'])),
         ]);
+    }
+
+    /**
+     * POST /api/guardians/{guardian:uuid}/disable-login
+     * Admin-triggered login disable (sets User.disabled_at regardless of pivot state).
+     */
+    public function disableLogin(Request $request, Guardian $guardian)
+    {
+        abort_unless($request->user()?->can('guardian.enable_login'), 403);
+
+        $this->guardianService->disableLogin($guardian);
+
+        return Response::success([
+            'message' => 'Login disabled for guardian.',
+            'data'    => GuardianResource::make($guardian->fresh(['user', 'photoFile'])),
+        ]);
+    }
+
+    /**
+     * POST /api/guardians/{guardian:uuid}/reset-password
+     * Sends a password-reset link to the guardian's registered email.
+     */
+    public function resetPassword(Request $request, Guardian $guardian)
+    {
+        abort_unless($request->user()?->can('guardian.update_credentials'), 403);
+
+        $guardian->load('user');
+        $user = $guardian->user;
+
+        abort_unless($user && $user->email && !str_ends_with($user->email, '@no-email.local'), 422,
+            'This guardian has no valid email address for a password reset.');
+
+        Password::broker()->sendResetLink(['email' => $user->email]);
+
+        return Response::success(['message' => 'Password reset link sent to guardian\'s email.']);
+    }
+
+    /**
+     * POST /api/guardians/{guardian:uuid}/resend-invitation
+     * Re-sends the initial login invitation to a guardian who has never activated their account.
+     */
+    public function resendInvitation(Request $request, Guardian $guardian)
+    {
+        abort_unless($request->user()?->can('guardian.enable_login'), 403);
+
+        $studentNames = $guardian->students()->pluck('first_name')->toArray();
+
+        $this->guardianService->resendInvitation($guardian, $studentNames);
+
+        return Response::success(['message' => 'Invitation resent to guardian.']);
+    }
+
+    /**
+     * GET /api/guardians/{guardian:uuid}/activity
+     * Returns the last 10 activity log entries for this guardian.
+     */
+    public function activity(Request $request, Guardian $guardian)
+    {
+        abort_unless($request->user()?->can('guardian.view'), 403);
+
+        $logs = $guardian->activities()
+            ->with('causer')
+            ->latest()
+            ->limit(10)
+            ->get()
+            ->map(fn($a) => [
+                'id'          => $a->id,
+                'event'       => $a->event,
+                'description' => $a->description,
+                'properties'  => $a->properties,
+                'causer_name' => $a->causer?->full_name ?? $a->causer?->name,
+                'created_at'  => $a->created_at->toIso8601String(),
+            ]);
+
+        return response()->json(['data' => $logs]);
+    }
+}
+            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
+            'subject' => ['required', 'string', 'max:255'],
+            'body' => ['required', 'string'],
+            'channels' => ['required', 'array', 'min:1'],
+        ]);
+
+        BulkMessageGuardiansJob::dispatch(
+            $data['guardian_ids'],
+            $data['subject'],
+            $data['body'],
+            $data['channels']
+        );
+
+        return Response::success('Bulk message queued successfully.');
+    }
+
+    public function bulkEnableLogin(Request $request)
+    {
+        abort_unless($request->user()?->can('guardian.enable_login'), 403);
+
+        $data = $request->validate([
+            'guardian_ids' => ['required', 'array'],
+            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
+        ]);
+
+        BulkEnableGuardianLoginJob::dispatch($data['guardian_ids'], $request->user()->school_id);
+
+        return Response::success('Bulk login enable queued successfully.');
+    }
+
+    public function bulkDisableLogin(Request $request)
+    {
+        abort_unless($request->user()?->can('guardian.enable_login'), 403);
+
+        $data = $request->validate([
+            'guardian_ids' => ['required', 'array'],
+            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
+        ]);
+
+        $this->guardianService->bulkDisableLogin($data['guardian_ids'], $request->user()->school_id);
+
+        return Response::success('Bulk login disable processed successfully.');
+    }
+
+    public function bulkStatus(Request $request)
+    {
+        abort_unless($request->user()?->can('guardian.update'), 403);
+
+        $data = $request->validate([
+            'guardian_ids' => ['required', 'array'],
+            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
+            'status' => ['required', 'string', Rule::in(GuardianStatusEnum::values())],
+        ]);
+
+        $this->guardianService->bulkUpdateStatus($data['guardian_ids'], $data['status'], $request->user()->school_id);
+
+        return Response::success('Bulk status update processed successfully.');
     }
 }

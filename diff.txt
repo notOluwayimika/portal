@@ -1,0 +1,436 @@
+﻿diff --git a/app/Http/Controllers/GuardianController.php b/app/Http/Controllers/GuardianController.php
+index ab92e7e..73b58a4 100644
+--- a/app/Http/Controllers/GuardianController.php
++++ b/app/Http/Controllers/GuardianController.php
+@@ -10,11 +10,11 @@
+ use App\Http\Requests\GuardianUpdateRequest;
+ use App\Http\Requests\PivotUpdateRequest;
+ use App\Http\Resources\GuardianResource;
+-use App\Http\Resources\StudentResource;
+ use App\Models\Guardian;
+ use App\Models\Student;
+ use App\Services\GuardianService;
+ use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Password;
+ use Illuminate\Support\Facades\Response;
+ use Illuminate\Validation\Rule;
+ 
+@@ -236,4 +236,138 @@ public function enableLogin(Request $request, Guardian $guardian)
+             'data'    => GuardianResource::make($guardian->fresh(['user', 'photoFile'])),
+         ]);
+     }
++
++    /**
++     * POST /api/guardians/{guardian:uuid}/disable-login
++     * Admin-triggered login disable (sets User.disabled_at regardless of pivot state).
++     */
++    public function disableLogin(Request $request, Guardian $guardian)
++    {
++        abort_unless($request->user()?->can('guardian.enable_login'), 403);
++
++        $this->guardianService->disableLogin($guardian);
++
++        return Response::success([
++            'message' => 'Login disabled for guardian.',
++            'data'    => GuardianResource::make($guardian->fresh(['user', 'photoFile'])),
++        ]);
++    }
++
++    /**
++     * POST /api/guardians/{guardian:uuid}/reset-password
++     * Sends a password-reset link to the guardian's registered email.
++     */
++    public function resetPassword(Request $request, Guardian $guardian)
++    {
++        abort_unless($request->user()?->can('guardian.update_credentials'), 403);
++
++        $guardian->load('user');
++        $user = $guardian->user;
++
++        abort_unless($user && $user->email && !str_ends_with($user->email, '@no-email.local'), 422,
++            'This guardian has no valid email address for a password reset.');
++
++        Password::broker()->sendResetLink(['email' => $user->email]);
++
++        return Response::success(['message' => 'Password reset link sent to guardian\'s email.']);
++    }
++
++    /**
++     * POST /api/guardians/{guardian:uuid}/resend-invitation
++     * Re-sends the initial login invitation to a guardian who has never activated their account.
++     */
++    public function resendInvitation(Request $request, Guardian $guardian)
++    {
++        abort_unless($request->user()?->can('guardian.enable_login'), 403);
++
++        $studentNames = $guardian->students()->pluck('first_name')->toArray();
++
++        $this->guardianService->resendInvitation($guardian, $studentNames);
++
++        return Response::success(['message' => 'Invitation resent to guardian.']);
++    }
++
++    /**
++     * GET /api/guardians/{guardian:uuid}/activity
++     * Returns the last 10 activity log entries for this guardian.
++     */
++    public function activity(Request $request, Guardian $guardian)
++    {
++        abort_unless($request->user()?->can('guardian.view'), 403);
++
++        $logs = $guardian->activities()
++            ->with('causer')
++            ->latest()
++            ->limit(10)
++            ->get()
++            ->map(fn($a) => [
++                'id'          => $a->id,
++                'event'       => $a->event,
++                'description' => $a->description,
++                'properties'  => $a->properties,
++                'causer_name' => $a->causer?->full_name ?? $a->causer?->name,
++                'created_at'  => $a->created_at->toIso8601String(),
++            ]);
++
++        return response()->json(['data' => $logs]);
++    }
++}
++            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
++            'subject' => ['required', 'string', 'max:255'],
++            'body' => ['required', 'string'],
++            'channels' => ['required', 'array', 'min:1'],
++        ]);
++
++        BulkMessageGuardiansJob::dispatch(
++            $data['guardian_ids'],
++            $data['subject'],
++            $data['body'],
++            $data['channels']
++        );
++
++        return Response::success('Bulk message queued successfully.');
++    }
++
++    public function bulkEnableLogin(Request $request)
++    {
++        abort_unless($request->user()?->can('guardian.enable_login'), 403);
++
++        $data = $request->validate([
++            'guardian_ids' => ['required', 'array'],
++            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
++        ]);
++
++        BulkEnableGuardianLoginJob::dispatch($data['guardian_ids'], $request->user()->school_id);
++
++        return Response::success('Bulk login enable queued successfully.');
++    }
++
++    public function bulkDisableLogin(Request $request)
++    {
++        abort_unless($request->user()?->can('guardian.enable_login'), 403);
++
++        $data = $request->validate([
++            'guardian_ids' => ['required', 'array'],
++            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
++        ]);
++
++        $this->guardianService->bulkDisableLogin($data['guardian_ids'], $request->user()->school_id);
++
++        return Response::success('Bulk login disable processed successfully.');
++    }
++
++    public function bulkStatus(Request $request)
++    {
++        abort_unless($request->user()?->can('guardian.update'), 403);
++
++        $data = $request->validate([
++            'guardian_ids' => ['required', 'array'],
++            'guardian_ids.*' => ['integer', 'exists:guardians,id'],
++            'status' => ['required', 'string', Rule::in(GuardianStatusEnum::values())],
++        ]);
++
++        $this->guardianService->bulkUpdateStatus($data['guardian_ids'], $data['status'], $request->user()->school_id);
++
++        return Response::success('Bulk status update processed successfully.');
++    }
+ }
+diff --git a/app/Http/Resources/GuardianResource.php b/app/Http/Resources/GuardianResource.php
+index 4e637b7..b3b99bc 100644
+--- a/app/Http/Resources/GuardianResource.php
++++ b/app/Http/Resources/GuardianResource.php
+@@ -30,7 +30,12 @@ public function toArray(Request $request): array
+             'id_number'         => $this->id_number,
+             'id_expiry_date'    => $this->id_expiry_date,
+             'status'            => $this->status,
++            'deleted_at'        => $this->deleted_at?->toIso8601String(),
+             'email'             => $this->whenLoaded('user', fn() => $this->user?->email),
++            'has_login'         => $this->whenLoaded('user', fn() => $this->user !== null && $this->user->disabled_at === null),
++            'user_disabled_at'  => $this->whenLoaded('user', fn() => $this->user?->disabled_at?->toIso8601String()),
++            'email_verified_at' => $this->whenLoaded('user', fn() => $this->user?->email_verified_at?->toIso8601String()),
++            'never_activated'   => $this->whenLoaded('user', fn() => $this->user !== null && $this->user->email_verified_at === null),
+             'photo'             => $this->photoFile?->url,
+             'pivot'             => $this->whenPivotLoaded('guardian_student', fn() => [
+                 'relationship' => $this->pivot->relationship,
+diff --git a/app/Http/Resources/StudentResource.php b/app/Http/Resources/StudentResource.php
+index 97046bf..be47699 100644
+--- a/app/Http/Resources/StudentResource.php
++++ b/app/Http/Resources/StudentResource.php
+@@ -48,9 +48,13 @@ public function toArray(Request $request): array
+                 'email'        => $g->user?->email,
+                 'occupation'   => $g->occupation,
+                 'photo'        => $g->photoFile?->url,
++                'gender'       => $g->gender,
++                'city'         => $g->city,
++                'country'      => $g->country,
+                 'relationship' => $g->pivot->relationship,
+                 'is_primary'   => (bool) $g->pivot->is_primary,
+                 'can_login'    => (bool) $g->pivot->can_login,
++                'deleted_at'   => $g->deleted_at,
+             ])),
+         ];
+     }
+diff --git a/app/Services/GuardianService.php b/app/Services/GuardianService.php
+index ffec863..7169cef 100644
+--- a/app/Services/GuardianService.php
++++ b/app/Services/GuardianService.php
+@@ -417,6 +417,55 @@ public function enableLogin(Guardian $guardian, array $studentNames = []): void
+         }
+     }
+ 
++    /**
++     * Explicitly disable a guardian's login access (admin-triggered, not pivot-cascaded).
++     * Sets disabled_at on the User regardless of pivot state.
++     */
++    public function disableLogin(Guardian $guardian): void
++    {
++        $user = $guardian->user;
++
++        if (!$user || $user->isDisabled()) {
++            return;
++        }
++
++        $user->update(['disabled_at' => now()]);
++
++        activity('guardian')
++            ->performedOn($guardian)
++            ->causedBy(auth()->user())
++            ->event('login_disabled')
++            ->log('Login disabled by admin');
++    }
++
++    /**
++     * Re-send the initial invitation to a guardian whose account has never been activated.
++     * Generates a fresh password and re-queues the notification.
++     *
++     * @throws ValidationException if the guardian has already activated their account.
++     */
++    public function resendInvitation(Guardian $guardian, array $studentNames = []): void
++    {
++        $user = $guardian->user;
++
++        if (!$user || $user->email_verified_at !== null) {
++            throw ValidationException::withMessages([
++                'guardian_id' => 'Invitation can only be resent to guardians who have never activated their account.',
++            ]);
++        }
++
++        $plainPassword = $this->passwordGenerator->generate();
++        $user->update(['password' => $plainPassword]);
++
++        $this->notifyGuardian($user, $plainPassword, $studentNames);
++
++        activity('guardian')
++            ->performedOn($guardian)
++            ->causedBy(auth()->user())
++            ->event('login_resent')
++            ->log('Invitation resent by admin');
++    }
++
+     /**
+      * Disable the guardian's User account only if no remaining pivot has can_login=true.
+      */
+diff --git a/resources/js/components/app-sidebar.tsx b/resources/js/components/app-sidebar.tsx
+index c4f12a0..c74de2a 100644
+--- a/resources/js/components/app-sidebar.tsx
++++ b/resources/js/components/app-sidebar.tsx
+@@ -41,6 +41,11 @@ const adminNavItems: NavItem[] = [
+         href: '/teachers',
+         icon: BookUser,
+     },
++    {
++        title: 'Guardians',
++        href: '/guardians',
++        icon: Users,
++    },
+     {
+         title: 'School Setup',
+         href: '/setup',
+diff --git a/resources/js/pages/admin/students/index.tsx b/resources/js/pages/admin/students/index.tsx
+index ff24c91..fc16ebd 100644
+--- a/resources/js/pages/admin/students/index.tsx
++++ b/resources/js/pages/admin/students/index.tsx
+@@ -1,4 +1,4 @@
+-import { Head } from '@inertiajs/react';
++import { Head, Link } from '@inertiajs/react';
+ import axios from 'axios';
+ import { Download, Edit, FileX, GraduationCap, Search, Trash2, Users, UserPlus } from 'lucide-react';
+ import { useEffect, useState } from 'react';
+@@ -271,7 +271,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
+                                                             )}
+                                                         </AvatarFallback>
+                                                     </Avatar>
+-                                                    {student.full_name}
++                                                    <Link href={`/students/${student.id}`} className="hover:text-primary hover:underline transition-colors">
++                                                        {student.full_name}
++                                                    </Link>
+                                                 </div>
+                                             </td>
+                                             <td className="px-4 py-3">
+diff --git a/resources/js/types/models.ts b/resources/js/types/models.ts
+index 14c5b0b..63cca59 100644
+--- a/resources/js/types/models.ts
++++ b/resources/js/types/models.ts
+@@ -102,6 +102,50 @@ export interface GradeBoundary {
+     updated_at?: string;
+ }
+ 
++export interface GuardianPivot {
++    relationship: string;
++    is_primary: boolean;
++    can_login: boolean;
++}
++
++export interface Guardian {
++    id: string;
++    full_name: string;
++    first_name?: string;
++    middle_name?: string | null;
++    last_name?: string;
++    gender?: string | null;
++    marital_status?: string | null;
++    phone?: string;
++    whatsapp_number?: string | null;
++    email?: string | null;
++    photo?: string | null;
++    occupation?: string | null;
++    employer_name?: string | null;
++    city?: string | null;
++    state?: string | null;
++    country?: string | null;
++    postal_code?: string | null;
++    emergency_contact?: string | null;
++    id_type?: string | null;
++    id_number?: string | null;
++    id_expiry_date?: string | null;
++    status?: string;
++    // pivot fields (present when loaded via student.guardians)
++    relationship?: string;
++    is_primary?: boolean;
++    can_login?: boolean;
++    pivot?: GuardianPivot;
++    // login-state fields (present on guardian profile page)
++    has_login?: boolean;
++    user_disabled_at?: string | null;
++    email_verified_at?: string | null;
++    never_activated?: boolean;
++    deleted_at?: string | null;
++    // linked students (on guardian profile)
++    students?: (Student & { pivot: GuardianPivot })[];
++}
++
+ export interface Student {
+     id: string;
+     school_id: string;
+@@ -125,6 +169,7 @@ export interface Student {
+     };
+     curriculum_id?: number;
+     promoted_to_id?: number;
++    guardians?: Guardian[];
+     student_curricula: StudentCurriculum[];
+     created_at?: string;
+     updated_at?: string;
+diff --git a/routes/endpoints/guardian.php b/routes/endpoints/guardian.php
+index ed8ee33..77fb3f2 100644
+--- a/routes/endpoints/guardian.php
++++ b/routes/endpoints/guardian.php
+@@ -11,8 +11,12 @@
+     Route::get('/{guardian:uuid}/students',     [GuardianController::class, 'students']);
+     Route::put('/{guardian:uuid}',              [GuardianController::class, 'update']);
+     Route::patch('/{guardian:uuid}',            [GuardianController::class, 'update']);
+-    Route::post('/{guardian:uuid}/enable-login', [GuardianController::class, 'enableLogin']);
+-    Route::delete('/{guardian:uuid}',           [GuardianController::class, 'destroy']);
++    Route::post('/{guardian:uuid}/enable-login',    [GuardianController::class, 'enableLogin']);
++    Route::post('/{guardian:uuid}/disable-login',   [GuardianController::class, 'disableLogin']);
++    Route::post('/{guardian:uuid}/reset-password',  [GuardianController::class, 'resetPassword']);
++    Route::post('/{guardian:uuid}/resend-invitation', [GuardianController::class, 'resendInvitation']);
++    Route::get('/{guardian:uuid}/activity',         [GuardianController::class, 'activity']);
++    Route::delete('/{guardian:uuid}',               [GuardianController::class, 'destroy']);
+ });
+ 
+ Route::post('/students/{student:uuid}/guardians',                       [GuardianController::class, 'attach']);
+diff --git a/routes/web.php b/routes/web.php
+index 453f86b..f46cfbd 100644
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -7,11 +7,13 @@
+ use App\Http\Controllers\StudentController;
+ use App\Http\Resources\CurriculumResource;
+ use App\Http\Resources\CurriculumSubjectResource;
++use App\Http\Resources\GuardianResource;
+ use App\Http\Resources\StudentResource;
+ use App\Http\Resources\SubjectResultStatusResource;
+ use App\Http\Resources\TeacherResource;
+ use App\Models\Curriculum;
+ use App\Models\CurriculumSubject;
++use App\Models\Guardian;
+ use App\Models\Student;
+ use App\Models\SubjectResultStatus;
+ use App\Models\Teacher;
+@@ -44,6 +46,26 @@
+         ]);
+     })->name('students.index');
+ 
++    Route::get('students/{student:uuid}', function (Student $student) {
++        $student->load([
++            'photoFile',
++            'currentCurriculum.curriculum.classLevelArm.classLevel',
++            'currentCurriculum.curriculum.classLevelArm.arm',
++            'currentCurriculum.curriculum.classLevelArm.stream',
++            'currentCurriculum.curriculum.term',
++            'guardians.user',
++            'guardians.photoFile',
++            'studentCurricula.curriculum.classLevelArm.classLevel',
++            'studentCurricula.curriculum.classLevelArm.arm',
++            'studentCurricula.curriculum.term',
++        ]);
++
++        return Inertia::render('admin/students/show', [
++            'student'          => new StudentResource($student),
++            'student_statuses' => StudentStatusEnum::options(),
++        ]);
++    })->name('students.show');
++
+     // Teachers
+     Route::get('teachers', function () {
+         return Inertia::render('admin/teachers/index', [
+@@ -52,6 +74,20 @@
+     })->name('teachers.index');
+ 
+ 
++    // Guardian profile
++    Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
++        $guardian->load([
++            'user', 'photoFile',
++            'students.photoFile',
++            'students.currentCurriculum.curriculum.classLevelArm.classLevel',
++            'students.currentCurriculum.curriculum.classLevelArm.arm',
++            'students.currentCurriculum.curriculum.term',
++        ]);
++        return Inertia::render('admin/guardians/show', [
++            'guardian' => new GuardianResource($guardian),
++        ]);
++    })->name('guardians.show');
++
+     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
+     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);
+ 

@@ -418,6 +418,55 @@ class GuardianService
     }
 
     /**
+     * Explicitly disable a guardian's login access (admin-triggered, not pivot-cascaded).
+     * Sets disabled_at on the User regardless of pivot state.
+     */
+    public function disableLogin(Guardian $guardian): void
+    {
+        $user = $guardian->user;
+
+        if (!$user || $user->isDisabled()) {
+            return;
+        }
+
+        $user->update(['disabled_at' => now()]);
+
+        activity('guardian')
+            ->performedOn($guardian)
+            ->causedBy(auth()->user())
+            ->event('login_disabled')
+            ->log('Login disabled by admin');
+    }
+
+    /**
+     * Re-send the initial invitation to a guardian whose account has never been activated.
+     * Generates a fresh password and re-queues the notification.
+     *
+     * @throws ValidationException if the guardian has already activated their account.
+     */
+    public function resendInvitation(Guardian $guardian, array $studentNames = []): void
+    {
+        $user = $guardian->user;
+
+        if (!$user || $user->email_verified_at !== null) {
+            throw ValidationException::withMessages([
+                'guardian_id' => 'Invitation can only be resent to guardians who have never activated their account.',
+            ]);
+        }
+
+        $plainPassword = $this->passwordGenerator->generate();
+        $user->update(['password' => $plainPassword]);
+
+        $this->notifyGuardian($user, $plainPassword, $studentNames);
+
+        activity('guardian')
+            ->performedOn($guardian)
+            ->causedBy(auth()->user())
+            ->event('login_resent')
+            ->log('Invitation resent by admin');
+    }
+
+    /**
      * Disable the guardian's User account only if no remaining pivot has can_login=true.
      */
     private function cascadeDisableIfNoLoginPivots(Guardian $guardian): void

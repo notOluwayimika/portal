@@ -406,3 +406,24 @@
 .border-muted-700  { border-color: var(--muted-700); }
 .border-muted-800  { border-color: var(--muted-800); }
 .border-muted-900  { border-color: var(--muted-900); }
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e1;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #334155;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}

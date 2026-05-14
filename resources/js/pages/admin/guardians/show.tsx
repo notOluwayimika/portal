@@ -1,4 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import {
     Briefcase,
     ChevronDown,
@@ -6,6 +7,7 @@ import {
     Edit,
     MapPin,
     Phone,
+    RotateCcw,
     User2,
     Users,
 } from 'lucide-react';
@@ -54,11 +56,15 @@ function statusColor(status: string | undefined) {
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
     if (!value) return null;
     return (
-        <div>
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="mt-0.5 text-sm">{value}</dd>
+        <div className="space-y-1.5">
+            <dt className="text-xs font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
+            <dd className="text-[15px] font-semibold text-slate-700">{value}</dd>
         </div>
     );
+}
+
+function isSyntheticEmail(email?: string | null): boolean {
+    return !!email && email.endsWith('@no-email.local');
 }
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
@@ -115,16 +121,17 @@ export default function GuardianProfile() {
                 ))}
             </div>
 
-            <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-4 md:p-6">
+            <div className="min-h-screen bg-[#f5f7fb] py-8 px-4 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-7xl space-y-8">
 
-                {/* ── Back nav ──────────────────────────────────────────── */}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Link href="/" className="hover:underline">Home</Link>
-                    <span>/</span>
-                    <span>Guardians</span>
-                    <span>/</span>
-                    <span className="text-foreground">{guardian.full_name}</span>
-                </div>
+                    {/* ── Breadcrumbs ──────────────────────────────────────────── */}
+                    <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground/60">
+                        <Link href="/" className="transition-colors hover:text-primary">Home</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <Link href="/guardians" className="transition-colors hover:text-primary">Guardians</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <span className="text-foreground/80">{guardian.full_name}</span>
+                    </nav>
 
                 {/* ── Soft-deleted banner ───────────────────────────────── */}
                 {isSoftDeleted && (
@@ -135,185 +142,231 @@ export default function GuardianProfile() {
                     </div>
                 )}
 
-                {/* ── Header card ───────────────────────────────────────── */}
-                <div className="rounded-xl border bg-card p-6 shadow-sm">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex items-start gap-4">
-                            <Avatar className="size-16 rounded-full border-2 border-muted">
-                                <AvatarImage src={guardian.photo ?? undefined} alt={guardian.full_name} />
-                                <AvatarFallback className="rounded-full bg-neutral-200 text-lg font-bold text-black dark:bg-neutral-700 dark:text-white">
-                                    {getInitials(guardian.full_name)}
-                                </AvatarFallback>
-                            </Avatar>
-
-                            <div className="space-y-2">
-                                <h1 className="text-xl font-bold tracking-tight">{guardian.full_name}</h1>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {guardian.status && (
-                                        <Badge className={`capitalize ${statusColor(guardian.status)}`}>
-                                            {guardian.status}
-                                        </Badge>
-                                    )}
-                                    {guardian.has_login && (
-                                        <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-400">
-                                            Has Login Access
-                                        </Badge>
-                                    )}
+                    {/* ── Premium Hero Card ───────────────────────────────────────── */}
+                    <div className="relative overflow-hidden rounded-[2rem] border border-white bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
+                                <div className="relative">
+                                    <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
+                                    <Avatar className="relative size-24 rounded-full border-4 border-white shadow-sm ring-1 ring-black/5">
+                                        <AvatarImage src={guardian.photo ?? undefined} alt={guardian.full_name} className="object-cover" />
+                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-2xl font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                            {getInitials(guardian.full_name)}
+                                        </AvatarFallback>
+                                    </Avatar>
                                 </div>
-                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                    {guardian.phone && (
-                                        <span className="inline-flex items-center gap-1">
-                                            <Phone className="h-3 w-3" /> {guardian.phone}
-                                        </span>
-                                    )}
-                                    {guardian.occupation && (
-                                        <span className="inline-flex items-center gap-1">
-                                            <Briefcase className="h-3 w-3" /> {guardian.occupation}
-                                        </span>
-                                    )}
+
+                                <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                                        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                            {guardian.full_name}
+                                        </h1>
+                                        <div className="flex gap-2">
+                                            {guardian.status && (
+                                                <Badge className={`rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm ${statusColor(guardian.status)}`}>
+                                                    {guardian.status}
+                                                </Badge>
+                                            )}
+                                            {guardian.has_login && (
+                                                <Badge className="rounded-full bg-indigo-50 px-3 py-0.5 text-[11px] font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400">
+                                                    Has Login Access
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-slate-500 sm:justify-start">
+                                        {guardian.phone && (
+                                            <span className="inline-flex items-center gap-2">
+                                                <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                                                    <Phone className="h-3 w-3" />
+                                                </div>
+                                                {guardian.phone}
+                                            </span>
+                                        )}
+                                        {guardian.email && (
+                                            <span className="inline-flex items-center gap-2">
+                                                <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                                                    <User2 className="h-3 w-3" />
+                                                </div>
+                                                {guardian.email}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Action buttons */}
+                            {!isSoftDeleted && (
+                                <div className="flex shrink-0 items-center justify-center gap-3">
+                                    <Button
+                                        onClick={() => setShowEdit(true)}
+                                        className="rounded-xl bg-indigo-600 px-6 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    >
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        Edit Guardian
+                                    </Button>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                                                More
+                                                <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-56 rounded-xl p-1 shadow-xl">
+                                            <DropdownMenuItem onClick={() => setShowEdit(true)} className="rounded-lg py-2 cursor-pointer">
+                                                <Edit className="mr-2 h-4 w-4 text-slate-500" />
+                                                Edit Details
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                disabled={!guardian.email || isSyntheticEmail(guardian.email)}
+                                                onClick={() => {
+                                                    if (window.confirm(`Send a password reset link to ${guardian.email}?`)) {
+                                                        axios.post(`/api/guardians/${guardian.id}/reset-password`)
+                                                            .then(() => addToast('Password reset link sent.'))
+                                                            .catch((err) => addToast(err.response?.data?.message ?? 'Failed to send reset link.', 'error'));
+                                                    }
+                                                }}
+                                                className="rounded-lg py-2 cursor-pointer"
+                                            >
+                                                <RotateCcw className="mr-2 h-4 w-4 text-slate-500" />
+                                                Reset Password
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ── Two-column content area ──────────────────────────── */}
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+
+                        {/* Left column (2/3 width on lg) */}
+                        <div className="space-y-8 lg:col-span-2">
+
+                            {/* Personal & Contact Details */}
+                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
+                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+                                            <User2 className="h-5 w-5 text-indigo-600" />
+                                        </div>
+                                        Personal & Contact Details
+                                    </CardTitle>
+                                    {!isSoftDeleted && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => setShowEdit(true)}
+                                            className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                </CardHeader>
+                                <CardContent className="p-8">
+                                    <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                        <DetailRow label="First Name"  value={guardian.first_name} />
+                                        <DetailRow label="Middle Name" value={guardian.middle_name} />
+                                        <DetailRow label="Last Name"   value={guardian.last_name} />
+                                        <DetailRow label="Gender"      value={guardian.gender} />
+                                        <DetailRow label="Marital Status" value={guardian.marital_status} />
+                                        <DetailRow label="Phone"       value={guardian.phone} />
+                                        <DetailRow label="WhatsApp"    value={guardian.whatsapp_number} />
+                                        <DetailRow label="Email"       value={guardian.email} />
+                                    </dl>
+
+                                    {(guardian.city || guardian.state || guardian.country || guardian.postal_code) && (
+                                        <>
+                                            <div className="mt-12 mb-6 flex items-center gap-3 text-sm font-bold tracking-wide text-slate-400 uppercase">
+                                                <MapPin className="h-4 w-4" />
+                                                Address Information
+                                            </div>
+                                            <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                                <DetailRow label="City"        value={guardian.city} />
+                                                <DetailRow label="State"       value={guardian.state} />
+                                                <DetailRow label="Country"     value={guardian.country} />
+                                                <DetailRow label="Postal Code" value={guardian.postal_code} />
+                                            </dl>
+                                        </>
+                                    )}
+
+                                    {(guardian.occupation || guardian.employer_name || guardian.emergency_contact) && (
+                                        <>
+                                            <div className="mt-12 mb-6 flex items-center gap-3 text-sm font-bold tracking-wide text-slate-400 uppercase">
+                                                <Briefcase className="h-4 w-4" />
+                                                Work & Emergency
+                                            </div>
+                                            <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                                <DetailRow label="Occupation"       value={guardian.occupation} />
+                                                <DetailRow label="Employer"         value={guardian.employer_name} />
+                                                <DetailRow label="Emergency Contact" value={guardian.emergency_contact} />
+                                            </dl>
+                                        </>
+                                    )}
+
+                                    {(guardian.id_type || guardian.id_number || guardian.id_expiry_date) && (
+                                        <>
+                                            <div className="mt-12 mb-6 flex items-center gap-3 text-sm font-bold tracking-wide text-slate-400 uppercase">
+                                                <CreditCard className="h-4 w-4" />
+                                                Identity Documents
+                                            </div>
+                                            <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                                <DetailRow label="ID Type"        value={guardian.id_type} />
+                                                <DetailRow label="ID Number"      value={guardian.id_number} />
+                                                <DetailRow label="ID Expiry Date" value={guardian.id_expiry_date} />
+                                            </dl>
+                                        </>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Linked Students */}
+                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
+                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+                                            <Users className="h-5 w-5 text-indigo-600" />
+                                        </div>
+                                        Linked Children ({linkedStudents.length})
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="p-1">
+                                    {linkedStudents.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                                            <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-slate-50 text-slate-300">
+                                                <Users className="h-10 w-10" />
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-slate-900">No children linked yet</h3>
+                                            <p className="mt-2 max-w-[280px] text-sm text-slate-500">
+                                                You can link this guardian to a student from the student's profile page.
+                                            </p>
+                                            <Button variant="link" className="mt-4 font-semibold text-indigo-600">
+                                                Link from a student profile
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                            {linkedStudents.map((s) => (
+                                                <StudentCard key={s.id} student={s} />
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
                         </div>
 
-                        {/* Action buttons */}
-                        {!isSoftDeleted && (
-                            <div className="flex shrink-0 items-center gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setShowEdit(true)}
-                                >
-                                    <Edit className="mr-2 h-3.5 w-3.5" />
-                                    Edit Guardian
-                                </Button>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm">
-                                            More
-                                            <ChevronDown className="ml-1 h-3.5 w-3.5" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={() => setShowEdit(true)}>
-                                            <Edit className="mr-2 h-4 w-4" />
-                                            Edit Details
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                        {/* Right column (1/3 width on lg) */}
+                        <div className="space-y-8">
+                            <LoginAccessCard
+                                guardian={guardian}
+                                onUpdate={handleLoginUpdate}
+                                onError={(msg) => addToast(msg, 'error')}
+                            />
 
-                {/* ── Two-column content area ──────────────────────────── */}
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-
-                    {/* Left column (2/3 width on lg) */}
-                    <div className="space-y-6 lg:col-span-2">
-
-                        {/* Personal & Contact Details */}
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between pb-3">
-                                <CardTitle className="flex items-center gap-2 text-base">
-                                    <User2 className="h-4 w-4 text-muted-foreground" />
-                                    Personal & Contact Details
-                                </CardTitle>
-                                {!isSoftDeleted && (
-                                    <Button size="sm" variant="ghost" onClick={() => setShowEdit(true)}>
-                                        <Edit className="h-3.5 w-3.5" />
-                                    </Button>
-                                )}
-                            </CardHeader>
-                            <CardContent>
-                                <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-                                    <DetailRow label="First Name"  value={guardian.first_name} />
-                                    <DetailRow label="Middle Name" value={guardian.middle_name} />
-                                    <DetailRow label="Last Name"   value={guardian.last_name} />
-                                    <DetailRow label="Gender"      value={guardian.gender} />
-                                    <DetailRow label="Marital Status" value={guardian.marital_status} />
-                                    <DetailRow label="Phone"       value={guardian.phone} />
-                                    <DetailRow label="WhatsApp"    value={guardian.whatsapp_number} />
-                                    <DetailRow label="Email"       value={guardian.email} />
-                                </dl>
-
-                                {(guardian.city || guardian.state || guardian.country || guardian.postal_code) && (
-                                    <>
-                                        <div className="my-4 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                            <MapPin className="h-3.5 w-3.5" />
-                                            Address
-                                        </div>
-                                        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-                                            <DetailRow label="City"        value={guardian.city} />
-                                            <DetailRow label="State"       value={guardian.state} />
-                                            <DetailRow label="Country"     value={guardian.country} />
-                                            <DetailRow label="Postal Code" value={guardian.postal_code} />
-                                        </dl>
-                                    </>
-                                )}
-
-                                {(guardian.occupation || guardian.employer_name || guardian.emergency_contact) && (
-                                    <>
-                                        <div className="my-4 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                            <Briefcase className="h-3.5 w-3.5" />
-                                            Employment & Emergency
-                                        </div>
-                                        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-                                            <DetailRow label="Occupation"       value={guardian.occupation} />
-                                            <DetailRow label="Employer"         value={guardian.employer_name} />
-                                            <DetailRow label="Emergency Contact" value={guardian.emergency_contact} />
-                                        </dl>
-                                    </>
-                                )}
-
-                                {(guardian.id_type || guardian.id_number || guardian.id_expiry_date) && (
-                                    <>
-                                        <div className="my-4 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                            <CreditCard className="h-3.5 w-3.5" />
-                                            Identification
-                                        </div>
-                                        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-                                            <DetailRow label="ID Type"        value={guardian.id_type} />
-                                            <DetailRow label="ID Number"      value={guardian.id_number} />
-                                            <DetailRow label="ID Expiry Date" value={guardian.id_expiry_date} />
-                                        </dl>
-                                    </>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        {/* Linked Students */}
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="flex items-center gap-2 text-base">
-                                    <Users className="h-4 w-4 text-muted-foreground" />
-                                    Children in this School ({linkedStudents.length})
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                {linkedStudents.length === 0 ? (
-                                    <p className="text-xs text-muted-foreground">
-                                        This guardian has no children linked. Link them from a student profile.
-                                    </p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {linkedStudents.map((s) => (
-                                            <StudentCard key={s.id} student={s} />
-                                        ))}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Right column (1/3 width on lg) */}
-                    <div className="space-y-6">
-                        <LoginAccessCard
-                            guardian={guardian}
-                            onUpdate={handleLoginUpdate}
-                            onError={(msg) => addToast(msg, 'error')}
-                        />
-
-                        <ActivityLogCard guardianId={guardian.id} refreshKey={activityRefreshKey} />
+                            <ActivityLogCard guardianId={guardian.id} refreshKey={activityRefreshKey} />
+                        </div>
                     </div>
                 </div>
             </div>

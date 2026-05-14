@@ -49,6 +49,8 @@ function relativeTime(iso: string): string {
     return new Date(iso).toLocaleDateString();
 }
 
+import { Clock, History } from 'lucide-react';
+
 export function ActivityLogCard({ guardianId, refreshKey }: ActivityLogCardProps) {
     const [entries, setEntries] = useState<ActivityEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -63,47 +65,70 @@ export function ActivityLogCard({ guardianId, refreshKey }: ActivityLogCardProps
     }, [guardianId, refreshKey]);
 
     return (
-        <Card>
-            <CardHeader className="pb-3">
+        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-6 py-5">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Recent Activity</CardTitle>
-                    <Link href={`/guardians/${guardianId}/audit`} className="text-xs text-primary hover:underline">View Full History →</Link>
+                    <CardTitle className="flex items-center gap-3 text-base font-bold text-slate-800">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+                            <History className="h-4 w-4 text-indigo-600" />
+                        </div>
+                        Recent Activity
+                    </CardTitle>
+                    <Link
+                        href={`/guardians/${guardianId}/audit`}
+                        className="text-[11px] font-bold tracking-wide text-indigo-600 uppercase hover:text-indigo-700"
+                    >
+                        Full History →
+                    </Link>
                 </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
                 {loading ? (
-                    <div className="space-y-3">
+                    <div className="space-y-6">
                         {[...Array(4)].map((_, i) => (
-                            <div key={i} className="flex gap-3">
-                                <Skeleton className="h-4 w-24" />
+                            <div key={i} className="flex gap-4">
+                                <Skeleton className="h-4 w-16" />
                                 <Skeleton className="h-4 flex-1" />
                             </div>
                         ))}
                     </div>
                 ) : entries.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No activity recorded yet.</p>
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-slate-50 text-slate-300">
+                            <Clock className="h-6 w-6" />
+                        </div>
+                        <p className="text-xs font-medium text-slate-500">No activity recorded yet.</p>
+                    </div>
                 ) : (
-                    <ol className="space-y-2">
+                    <div className="relative space-y-6 before:absolute before:left-[3px] before:top-2 before:h-[calc(100%-16px)] before:w-[2px] before:bg-slate-100">
                         {entries.map((entry) => (
-                            <li key={entry.id} className="flex gap-3 text-xs">
-                                <time
-                                    className="w-20 shrink-0 text-muted-foreground"
-                                    title={new Date(entry.created_at).toLocaleString()}
-                                >
-                                    {relativeTime(entry.created_at)}
-                                </time>
-                                <span className="flex-1">
-                                    <span className="font-medium">{eventLabel(entry.event)}</span>
-                                    {entry.causer_name && (
-                                        <span className="text-muted-foreground"> by {entry.causer_name}</span>
-                                    )}
-                                    {entry.description && (
-                                        <span className="text-muted-foreground"> — {entry.description}</span>
-                                    )}
-                                </span>
-                            </li>
+                            <div key={entry.id} className="relative pl-7">
+                                {/* Marker */}
+                                <div className="absolute left-0 top-1.5 size-[8px] rounded-full border-2 border-white bg-indigo-500 ring-4 ring-indigo-50 dark:ring-indigo-950/30" />
+
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[13px] font-bold text-slate-800">
+                                            {eventLabel(entry.event)}
+                                        </span>
+                                        <time
+                                            className="text-[10px] font-bold tracking-wider text-slate-400 uppercase"
+                                            title={new Date(entry.created_at).toLocaleString()}
+                                        >
+                                            {relativeTime(entry.created_at)}
+                                        </time>
+                                    </div>
+
+                                    <p className="text-[12px] leading-relaxed text-slate-500">
+                                        {entry.description || "System action performed"}
+                                        {entry.causer_name && (
+                                            <span className="font-semibold text-slate-400"> • By {entry.causer_name}</span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
                         ))}
-                    </ol>
+                    </div>
                 )}
             </CardContent>
         </Card>

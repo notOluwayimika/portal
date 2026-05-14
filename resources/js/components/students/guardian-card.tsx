@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import {
+    ArrowRight,
     Edit,
     ExternalLink,
     LogIn,
@@ -46,151 +47,89 @@ export function GuardianCard({
         .join(', ');
 
     return (
-        <div
-            className={`relative rounded-xl border p-5 transition-shadow hover:shadow-md ${
-                isSoftDeleted
-                    ? 'border-dashed border-muted-foreground/30 bg-muted/30 opacity-60'
-                    : 'bg-card'
-            }`}
-        >
-            <div className="flex items-start gap-4">
-                {/* Avatar */}
-                <Avatar className="size-12 shrink-0 rounded-full">
-                    <AvatarImage
-                        src={guardian.photo ?? undefined}
-                        alt={guardian.full_name}
-                    />
-                    <AvatarFallback className="rounded-full bg-neutral-200 text-sm font-semibold text-black dark:bg-neutral-700 dark:text-white">
+        <div className={`group relative flex items-center gap-5 rounded-2xl border border-slate-100 bg-white p-5 transition-all hover:border-indigo-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card ${isSoftDeleted ? 'opacity-60' : ''}`}>
+            <div className="relative">
+                <Avatar className="size-14 shrink-0 rounded-full border-2 border-white shadow-sm ring-1 ring-slate-100">
+                    <AvatarImage src={guardian.photo ?? undefined} alt={guardian.full_name} className="object-cover" />
+                    <AvatarFallback className="rounded-full bg-slate-50 text-base font-bold text-slate-400">
                         {getInitials(guardian.full_name)}
                     </AvatarFallback>
                 </Avatar>
+                {guardian.is_primary && (
+                    <div className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm ring-2 ring-white">
+                        <span className="text-[10px] font-bold">P</span>
+                    </div>
+                )}
+            </div>
 
-                {/* Details */}
-                <div className="min-w-0 flex-1 space-y-2">
-                    {/* Name + badges */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                            href={`/guardians/${guardian.id}`}
-                            className="text-sm font-semibold hover:underline"
-                        >
-                            {guardian.full_name}
-                        </Link>
-                        <Badge
-                            variant="outline"
-                            className="text-xs capitalize"
-                        >
+            <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                    <Link
+                        href={`/guardians/${guardian.id}`}
+                        className="text-[15px] font-bold tracking-tight text-slate-800 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400"
+                    >
+                        {guardian.full_name}
+                    </Link>
+                    <div className="flex gap-2">
+                        <Badge className="rounded-full bg-slate-50 px-2.5 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-400">
                             {guardian.relationship}
                         </Badge>
-                        {guardian.is_primary && (
-                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-400">
-                                Primary
-                            </Badge>
-                        )}
                         {guardian.can_login && (
-                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-400">
+                            <Badge className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 shadow-sm hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400">
                                 Can Login
                             </Badge>
                         )}
-                        {isSoftDeleted && (
-                            <Badge variant="destructive">Deleted</Badge>
-                        )}
+                        {isSoftDeleted && <Badge variant="destructive" className="rounded-full px-2.5 py-0.5 text-[10px] font-bold">Deleted</Badge>}
                     </div>
-
-                    {/* Contact info */}
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        {guardian.phone && (
-                            <span className="inline-flex items-center gap-1">
-                                <Phone className="h-3 w-3" />
-                                {guardian.phone}
-                            </span>
-                        )}
-                        {guardian.email && (
-                            <span className="inline-flex items-center gap-1">
-                                <Mail className="h-3 w-3" />
-                                {guardian.email}
-                            </span>
-                        )}
-                        {location && (
-                            <span className="inline-flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {location}
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Action buttons — hidden on mobile, shown via dropdown instead */}
-                    {!isSoftDeleted && (
-                        <div className="hidden gap-2 pt-1 sm:flex">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => onEditPivot(guardian)}
-                                className="h-7 text-xs"
-                            >
-                                <Edit className="mr-1 h-3 w-3" />
-                                Edit Relationship
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive h-7 text-xs"
-                                onClick={() => onDetach(guardian)}
-                                disabled={isOnlyGuardian}
-                                title={
-                                    isOnlyGuardian
-                                        ? 'Add another guardian before removing this one'
-                                        : undefined
-                                }
-                            >
-                                <UserMinus className="mr-1 h-3 w-3" />
-                                Remove
-                            </Button>
-                        </div>
-                    )}
                 </div>
 
-                {/* Dropdown actions (always visible, primary action entry on mobile) */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-semibold text-slate-400">
+                    {guardian.phone && (
+                        <span className="inline-flex items-center gap-1.5 text-slate-500">
+                            <Phone className="h-3.5 w-3.5 text-slate-300" />
+                            {guardian.phone}
+                        </span>
+                    )}
+                    {guardian.email && (
+                        <span className="inline-flex items-center gap-1.5 text-slate-500">
+                            <Mail className="h-3.5 w-3.5 text-slate-300" />
+                            {guardian.email}
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-1">
                 {!isSoftDeleted && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                aria-label={`Actions for ${guardian.full_name}`}
-                            >
+                            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-50">
                                 <MoreHorizontal className="h-4 w-4" />
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
+                        <DropdownMenuContent align="end" className="w-56 rounded-xl p-1 shadow-xl">
+                            <DropdownMenuItem asChild className="rounded-lg py-2 cursor-pointer">
                                 <Link href={`/guardians/${guardian.id}`}>
-                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    <ExternalLink className="mr-2 h-4 w-4 text-slate-500" />
                                     View Full Details
                                 </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                onClick={() => onEditPivot(guardian)}
-                            >
-                                <Edit className="mr-2 h-4 w-4" />
+                            <DropdownMenuItem onClick={() => onEditPivot(guardian)} className="rounded-lg py-2 cursor-pointer">
+                                <Edit className="mr-2 h-4 w-4 text-slate-500" />
                                 Edit Relationship
                             </DropdownMenuItem>
                             {!guardian.can_login && onEnableLogin && (
-                                <DropdownMenuItem
-                                    onClick={() => onEnableLogin(guardian)}
-                                >
-                                    <LogIn className="mr-2 h-4 w-4" />
+                                <DropdownMenuItem onClick={() => onEnableLogin(guardian)} className="rounded-lg py-2 cursor-pointer">
+                                    <LogIn className="mr-2 h-4 w-4 text-slate-500" />
                                     Enable Login
                                 </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                                variant="destructive"
                                 onClick={() => onDetach(guardian)}
                                 disabled={isOnlyGuardian}
+                                className="rounded-lg py-2 cursor-pointer text-red-600 focus:text-red-600"
                             >
                                 <UserMinus className="mr-2 h-4 w-4" />
                                 Remove from Student
@@ -198,6 +137,13 @@ export function GuardianCard({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
+
+                <Button asChild variant="ghost" size="sm" className="shrink-0 rounded-xl px-3 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600">
+                    <Link href={`/guardians/${guardian.id}`}>
+                        <span className="mr-1.5 text-xs font-bold">Details</span>
+                        <ArrowRight className="h-4 w-4" />
+                    </Link>
+                </Button>
             </div>
         </div>
     );

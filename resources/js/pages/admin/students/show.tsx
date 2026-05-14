@@ -1,7 +1,6 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
-    AlertTriangle,
     ArrowLeft,
     BookOpen,
     Calendar,
@@ -11,6 +10,10 @@ import {
     Edit,
     FileText,
     GraduationCap,
+    Info,
+    Mail,
+    MapPin,
+    Phone,
     Plus,
     Printer,
     User2,
@@ -59,20 +62,28 @@ interface ShowPageProps {
     student_statuses: StatusOption[];
 }
 
-/* ─── Helpers ──────────────────────────────────────────────────────────────── */
-
 function statusColor(status: string | undefined) {
     switch (status) {
-        case 'active':
-            return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
-        case 'graduated':
-            return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400';
+        case 'active':    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
+        case 'graduated': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400';
         case 'withdrawn':
-        case 'expelled':
-            return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
-        default:
-            return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+        case 'expelled':  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
+        default:          return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
     }
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+    if (!value) return null;
+    return (
+        <div className="space-y-1.5">
+            <dt className="text-xs font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
+            <dd className="text-[15px] font-semibold text-slate-700">{value}</dd>
+        </div>
+    );
+}
+
+function isSyntheticEmail(email?: string | null): boolean {
+    return !!email && email.endsWith('@no-email.local');
 }
 
 /* ─── Page ─────────────────────────────────────────────────────────────────── */
@@ -135,222 +146,210 @@ export default function StudentProfile() {
         <>
             <Head title={`${student.full_name} — Student Profile`} />
 
-            <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-4 md:p-6">
-                {/* ── Breadcrumb / Back ────────────────────────────────── */}
-                <div className="flex items-center gap-3">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        asChild
-                        className="gap-1.5 text-muted-foreground"
-                    >
-                        <Link href="/students">
-                            <ArrowLeft className="h-4 w-4" />
-                            Back to Students
-                        </Link>
-                    </Button>
-                </div>
+            <div className="min-h-screen bg-[#f5f7fb] py-8 px-4 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-7xl space-y-8">
 
-                {/* ── Student Header ──────────────────────────────────── */}
-                <div className="rounded-xl border bg-card p-6 shadow-sm">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex items-start gap-4">
-                            <Avatar className="size-16 rounded-full border-2 border-muted">
-                                <AvatarImage
-                                    src={student.photo}
-                                    alt={student.full_name}
-                                />
-                                <AvatarFallback className="rounded-full bg-neutral-200 text-lg font-bold text-black dark:bg-neutral-700 dark:text-white">
-                                    {getInitials(student.full_name)}
-                                </AvatarFallback>
-                            </Avatar>
+                    {/* ── Breadcrumbs ──────────────────────────────────────────── */}
+                    <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground/60">
+                        <Link href="/" className="transition-colors hover:text-primary">Home</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <Link href="/students" className="transition-colors hover:text-primary">Students</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <span className="text-foreground/80">{student.full_name}</span>
+                    </nav>
 
-                            <div className="space-y-1.5">
-                                <h1 className="text-xl font-bold tracking-tight">
-                                    {student.full_name}
-                                </h1>
-                                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                                    {student.admission_number && (
-                                        <span className="font-mono text-xs">
-                                            #{student.admission_number}
+                    {/* ── Premium Hero Card ───────────────────────────────────────── */}
+                    <div className="relative overflow-hidden rounded-[2rem] border border-white bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
+                                <div className="relative">
+                                    <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
+                                    <Avatar className="relative size-24 rounded-full border-4 border-white shadow-sm ring-1 ring-black/5">
+                                        <AvatarImage src={student.photo ?? undefined} alt={student.full_name} className="object-cover" />
+                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-2xl font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                            {getInitials(student.full_name)}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                                        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                            {student.full_name}
+                                        </h1>
+                                        <div className="flex gap-2">
+                                            {student.status && (
+                                                <Badge className={`rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm ${statusColor(student.status)}`}>
+                                                    {student.status}
+                                                </Badge>
+                                            )}
+                                            {student.admission_number && (
+                                                <Badge className="rounded-full bg-slate-50 px-3 py-0.5 text-[11px] font-semibold text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                                                    #{student.admission_number}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-slate-500 sm:justify-start">
+                                        <span className="inline-flex items-center gap-2">
+                                            <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                                                <GraduationCap className="h-3 w-3" />
+                                            </div>
+                                            {student.class_details?.full_class ?? 'N/A'}
                                         </span>
-                                    )}
-                                    <span className="flex items-center gap-1">
-                                        <GraduationCap className="h-3.5 w-3.5" />
-                                        {student.class_details?.full_class ?? 'N/A'}
-                                    </span>
-                                    <Badge
-                                        className={`${statusColor(student.status)} border-none text-xs capitalize`}
-                                    >
-                                        {student.status ?? 'unknown'}
-                                    </Badge>
+                                        {student.gender && (
+                                            <span className="inline-flex items-center gap-2">
+                                                <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                                                    <User2 className="h-3 w-3" />
+                                                </div>
+                                                <span className="capitalize">{student.gender}</span>
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Action buttons */}
-                        <div className="flex shrink-0 gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setShowEditModal(true)}
-                            >
-                                <Edit className="mr-1 h-4 w-4" />
-                                Edit Student
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                disabled
-                                title="Coming soon"
-                            >
-                                <Printer className="mr-1 h-4 w-4" />
-                                Print
-                            </Button>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm">
-                                        More
-                                        <ChevronDown className="ml-1 h-3 w-3" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem disabled>
-                                        Deactivate
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled>
-                                        Transfer Class
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled>
-                                        Archive
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                            {/* Action buttons */}
+                            <div className="flex shrink-0 items-center justify-center gap-3">
+                                <Button
+                                    onClick={() => setShowEditModal(true)}
+                                    className="rounded-xl bg-indigo-600 px-6 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                >
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit Student
+                                </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="outline" className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                                            More
+                                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48 rounded-xl p-1 shadow-xl">
+                                        <DropdownMenuItem onClick={() => setShowEditModal(true)} className="rounded-lg py-2 cursor-pointer">
+                                            <Edit className="mr-2 h-4 w-4 text-slate-500" />
+                                            Edit Details
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem disabled className="rounded-lg py-2 cursor-not-allowed opacity-50">
+                                            <Printer className="mr-2 h-4 w-4 text-slate-500" />
+                                            Print Profile
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* ── Personal Details Card ───────────────────────────── */}
-                <Card>
-                    <CardHeader className="flex-row items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                            <User2 className="h-4 w-4" />
-                            Personal Details
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm sm:grid-cols-3 lg:grid-cols-4">
-                            <DetailItem
-                                label="First Name"
-                                value={student.first_name}
+                    {/* ── Two-column content area ──────────────────────────── */}
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+
+                        {/* Left column (2/3 width on lg) */}
+                        <div className="space-y-8 lg:col-span-2">
+
+                            {/* Personal Details */}
+                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
+                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+                                            <User2 className="h-5 w-5 text-indigo-600" />
+                                        </div>
+                                        Personal Details
+                                    </CardTitle>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setShowEditModal(true)}
+                                        className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                                    >
+                                        <Edit className="h-4 w-4" />
+                                    </Button>
+                                </CardHeader>
+                                <CardContent className="p-8">
+                                    <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                        <DetailRow label="First Name"  value={student.first_name} />
+                                        <DetailRow label="Middle Name" value={student.middle_name} />
+                                        <DetailRow label="Last Name"   value={student.last_name} />
+                                        <DetailRow label="Gender"      value={student.gender} />
+                                        <DetailRow label="Date of Birth" value={student.date_of_birth} />
+                                        <DetailRow label="Admission Number" value={student.admission_number} />
+                                        <DetailRow label="Current Class" value={student.class_details?.full_class} />
+                                        <DetailRow label="Status" value={student.status} />
+                                    </dl>
+                                </CardContent>
+                            </Card>
+
+                            {/* Guardians Section */}
+                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
+                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+                                            <Users className="h-5 w-5 text-indigo-600" />
+                                        </div>
+                                        Guardians ({guardians.length})
+                                    </CardTitle>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setShowAddGuardian(true)}
+                                        className="rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+                                    >
+                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        Add Guardian
+                                    </Button>
+                                </CardHeader>
+                                <CardContent className="p-8">
+                                    {hasNoGuardians ? (
+                                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                                            <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-amber-50 text-amber-500">
+                                                <Info className="h-10 w-10" />
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-slate-900">No guardians linked</h3>
+                                            <p className="mt-2 max-w-[280px] text-sm text-slate-500">
+                                                Every student should have at least one guardian for communication and emergency.
+                                            </p>
+                                            <Button
+                                                onClick={() => setShowAddGuardian(true)}
+                                                variant="link"
+                                                className="mt-4 font-semibold text-indigo-600"
+                                            >
+                                                Add the first guardian
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {guardians.map((g) => (
+                                                <GuardianCard
+                                                    key={g.id}
+                                                    guardian={g}
+                                                    studentUuid={student.id}
+                                                    isOnlyGuardian={guardians.length === 1}
+                                                    onEditPivot={setPivotGuardian}
+                                                    onDetach={setDetachTarget}
+                                                    onEnableLogin={handleEnableLogin}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* Right column (1/3 width on lg) */}
+                        <div className="space-y-8">
+                            <PlaceholderCard
+                                icon={<BookOpen className="h-5 w-5 text-indigo-600" />}
+                                title="Academic Records"
                             />
-                            <DetailItem
-                                label="Last Name"
-                                value={student.last_name}
+                            <PlaceholderCard
+                                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
+                                title="Attendance"
                             />
-                            <DetailItem
-                                label="Middle Name"
-                                value={student.middle_name || '—'}
-                            />
-                            <DetailItem
-                                label="Gender"
-                                value={student.gender}
-                                capitalize
-                            />
-                            <DetailItem
-                                label="Date of Birth"
-                                value={student.date_of_birth || '—'}
-                            />
-                            <DetailItem
-                                label="Admission #"
-                                value={student.admission_number || '—'}
-                                mono
-                            />
-                            <DetailItem
-                                label="Class"
-                                value={
-                                    student.class_details?.full_class ?? 'N/A'
-                                }
-                            />
-                            <DetailItem
-                                label="Status"
-                                value={student.status ?? 'unknown'}
-                                capitalize
+                            <PlaceholderCard
+                                icon={<CreditCard className="h-5 w-5 text-indigo-600" />}
+                                title="Fees & Payments"
                             />
                         </div>
-                    </CardContent>
-                </Card>
-
-                {/* ── Guardians Section ────────────────────────────────── */}
-                <Card>
-                    <CardHeader className="flex-row items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                            <Users className="h-4 w-4" />
-                            Guardians ({guardians.length})
-                        </CardTitle>
-                        <Button
-                            size="sm"
-                            onClick={() => setShowAddGuardian(true)}
-                        >
-                            <Plus className="mr-1 h-4 w-4" />
-                            Add Guardian
-                        </Button>
-                    </CardHeader>
-                    <CardContent>
-                        {/* Warning: no guardians */}
-                        {hasNoGuardians && (
-                            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-8 text-center dark:border-amber-700 dark:bg-amber-950/30">
-                                <AlertTriangle className="h-8 w-8 text-amber-500" />
-                                <div>
-                                    <p className="font-semibold text-amber-800 dark:text-amber-300">
-                                        No guardians attached
-                                    </p>
-                                    <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
-                                        Every student should have at least one
-                                        guardian. Click the button above to add
-                                        one.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Guardian cards */}
-                        {!hasNoGuardians && (
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {guardians.map((g) => (
-                                    <GuardianCard
-                                        key={g.id}
-                                        guardian={g}
-                                        studentUuid={student.id}
-                                        isOnlyGuardian={guardians.length === 1}
-                                        onEditPivot={setPivotGuardian}
-                                        onDetach={setDetachTarget}
-                                        onEnableLogin={handleEnableLogin}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* ── Placeholder Sections ────────────────────────────── */}
-                <div className="grid gap-4 md:grid-cols-2">
-                    <PlaceholderCard
-                        icon={<BookOpen className="h-5 w-5" />}
-                        title="Academic Records"
-                    />
-                    <PlaceholderCard
-                        icon={<Calendar className="h-5 w-5" />}
-                        title="Attendance"
-                    />
-                    <PlaceholderCard
-                        icon={<CreditCard className="h-5 w-5" />}
-                        title="Fees & Payments"
-                    />
-                    <PlaceholderCard
-                        icon={<FileText className="h-5 w-5" />}
-                        title="Notes & Documents"
-                    />
+                    </div>
                 </div>
             </div>
 
@@ -439,29 +438,6 @@ export default function StudentProfile() {
 
 /* ─── Sub-components ───────────────────────────────────────────────────────── */
 
-function DetailItem({
-    label,
-    value,
-    capitalize,
-    mono,
-}: {
-    label: string;
-    value: string;
-    capitalize?: boolean;
-    mono?: boolean;
-}) {
-    return (
-        <div>
-            <p className="text-xs font-medium text-muted-foreground">{label}</p>
-            <p
-                className={`mt-0.5 font-medium ${capitalize ? 'capitalize' : ''} ${mono ? 'font-mono text-xs' : ''}`}
-            >
-                {value}
-            </p>
-        </div>
-    );
-}
-
 function PlaceholderCard({
     icon,
     title,
@@ -470,18 +446,23 @@ function PlaceholderCard({
     title: string;
 }) {
     return (
-        <Card className="opacity-60">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                    {icon}
+        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-6 py-5">
+                <CardTitle className="flex items-center gap-3 text-base font-bold text-slate-800">
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+                        {icon}
+                    </div>
                     {title}
                 </CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className="flex flex-col items-center gap-2 py-6 text-center">
-                    <ClipboardList className="h-8 w-8 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground">
+            <CardContent className="p-6">
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                    <ClipboardList className="h-8 w-8 text-slate-200" />
+                    <p className="text-xs font-bold tracking-tight text-slate-400 uppercase">
                         Coming soon
+                    </p>
+                    <p className="max-w-[200px] text-xs text-slate-400">
+                        Detailed {title.toLowerCase()} tracking will be available in the next update.
                     </p>
                 </div>
             </CardContent>

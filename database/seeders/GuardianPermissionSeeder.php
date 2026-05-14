@@ -19,12 +19,17 @@ class GuardianPermissionSeeder extends Seeder
         'guardian.update_credentials',
         'guardian.detach',
         'guardian.enable_login',
+        'guardian.create',
+        'guardian.export',
+        'guardian.message',
+        'guardian.view_audit',
     ];
 
     private const REGISTRAR_PERMISSIONS = [
         'guardian.view',
         'guardian.update',
         'guardian.detach',
+        'guardian.create',
     ];
 
     public function run(): void

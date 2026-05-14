@@ -74,6 +74,13 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     })->name('teachers.index');
 
 
+    // Guardian index
+    Route::get('guardians', function () {
+        return Inertia::render('admin/guardians/index', [
+            'guardian_statuses' => \App\Enums\GuardianStatusEnum::options(),
+        ]);
+    })->name('guardians.index');
+
     // Guardian profile
     Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
         $guardian->load([
@@ -87,6 +94,14 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
             'guardian' => new GuardianResource($guardian),
         ]);
     })->name('guardians.show');
+
+    // Guardian audit history
+    Route::get('guardians/{guardian:uuid}/audit', function (Guardian $guardian) {
+        $guardian->load(['user']);
+        return Inertia::render('admin/guardians/audit', [
+            'guardian' => new GuardianResource($guardian),
+        ]);
+    })->name('guardians.audit');
 
     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);

@@ -1,0 +1,290 @@
+import { Head } from '@inertiajs/react';
+import axios from 'axios';
+import { Download, UserPlus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AddStandaloneGuardianModal } from '@/components/guardians/add-standalone-guardian-modal';
+import { BulkActionBar } from '@/components/guardians/bulk-action-bar';
+import { GuardianFilterBar } from '@/components/guardians/guardian-filter-bar';
+import { GuardianTable } from '@/components/guardians/guardian-table';
+import { MessageComposerModal } from '@/components/guardians/message-composer-modal';
+import { Pagination } from '@/components/pagination';
+import type { Toast, ToastType } from '@/components/toast-item';
+import { ToastItem } from '@/components/toast-item';
+import { Button } from '@/components/ui/button';
+import type { Guardian } from '@/types/models';
+
+interface Option { name: string; value: string; }
+
+interface Props {
+    guardian_statuses: Option[];
+}
+
+type SortCol = 'name' | 'phone' | 'students_count' | 'created_at';
+
+const DEFAULT_PAGINATION = {
+    current_page: 1, last_page: 1, per_page: 25,
+    total: 0, prev_page_url: null, next_page_url: null,
+};
+
+let toastCounter = 0;
+
+export default function GuardianIndex({ guardian_statuses }: Props) {
+    const [guardians, setGuardians]     = useState<Guardian[]>([]);
+    const [loading, setLoading]         = useState(true);
+    const [pagination, setPagination]   = useState(DEFAULT_PAGINATION);
+    const [page, setPage]               = useState(1);
+    const [limit, setLimit]             = useState(25);
+
+    // Filters
+    const [search, setSearch]                   = useState('');
+    const [statusFilter, setStatusFilter]       = useState('');
+    const [loginFilter, setLoginFilter]         = useState('');
+    const [childrenFilter, setChildrenFilter]   = useState('');
+    const [dateFrom, setDateFrom]               = useState('');
+    const [dateTo, setDateTo]                   = useState('');
+    const [sortBy, setSortBy]                   = useState<SortCol>('created_at');
+    const [sortDir, setSortDir]                 = useState<'asc' | 'desc'>('desc');
+
+    // Selection
+    const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set());
+    const [selectAllMatching, setSelectAllMatching] = useState(false);
+
+    // Modals
+    const [showAdd, setShowAdd]         = useState(false);
+    const [showMessage, setShowMessage] = useState(false);
+
+    const [toasts, setToasts] = useState<Toast[]>([]);
+
+    const addToast = (message: string, type: ToastType = 'success') => {
+        const id = ++toastCounter;
+        setToasts(prev => [...prev, { id, message, type }]);
+    };
+
+    const fetchGuardians = async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get('/api/guardians', {
+                params: {
+                    search, page, per_page: limit,
+                    status: statusFilter || undefined,
+                    login_access: loginFilter || undefined,
+                    children_count: childrenFilter || undefined,
+                    date_from: dateFrom || undefined,
+                    date_to: dateTo || undefined,
+                    sort_by: sortBy,
+                    sort_dir: sortDir,
+                },
+            });
+            setGuardians(res.data.data ?? []);
+            setPagination(res.data.pagination ?? DEFAULT_PAGINATION);
+        } catch {
+            addToast('Failed to fetch guardians', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reset to page 1 + clear selection when filters change
+    const filtersRef = useRef({ search, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir });
+    useEffect(() => {
+        const prev = filtersRef.current;
+        const filterChanged = prev.search !== search || prev.statusFilter !== statusFilter ||
+            prev.loginFilter !== loginFilter || prev.childrenFilter !== childrenFilter ||
+            prev.dateFrom !== dateFrom || prev.dateTo !== dateTo ||
+            prev.sortBy !== sortBy || prev.sortDir !== sortDir;
+        filtersRef.current = { search, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir };
+        if (filterChanged) {
+            setPage(1);
+            setSelectedIds(new Set());
+            setSelectAllMatching(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [search, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir]);
+
+    useEffect(() => {
+        fetchGuardians();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [search, page, limit, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir]);
+
+    const handleSort = (col: SortCol) => {
+        if (col === sortBy) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        else { setSortBy(col); setSortDir('desc'); }
+    };
+
+    const toggleSelect = (id: string) => {
+        setSelectAllMatching(false);
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleAll = (checked: boolean) => {
+        setSelectAllMatching(false);
+        setSelectedIds(checked ? new Set(guardians.map(g => g.id)) : new Set());
+    };
+
+    const isAllSelected = guardians.length > 0 && guardians.every(g => selectedIds.has(g.id));
+
+    // Resolve which guardian IDs to send for bulk ops.
+    // When selectAllMatching=true we send the IDs of the current page as a proxy;
+    // the server side should ideally support a "select all matching" flag, but for now
+    // we just send the visible page selection.
+    const selectedNumericIds = () => {
+        // GuardianTable uses uuid as id; backend bulk routes accept numeric ids.
+        // We need the numeric id from the guardian objects.
+        const uuids = selectAllMatching ? guardians.map(g => g.id) : Array.from(selectedIds);
+        return guardians.filter(g => uuids.includes(g.id)).map(g => g.id);
+    };
+
+    const bulkPost = async (url: string, extra: Record<string, unknown> = {}) => {
+        try {
+            const ids = selectedNumericIds();
+            await axios.post(url, { guardian_ids: ids, ...extra });
+            addToast('Action completed successfully');
+            setSelectedIds(new Set());
+            setSelectAllMatching(false);
+            fetchGuardians();
+        } catch {
+            addToast('Action failed', 'error');
+        }
+    };
+
+    const handleExport = () => {
+        const params = new URLSearchParams({
+            search, status: statusFilter, login_access: loginFilter,
+            children_count: childrenFilter, date_from: dateFrom, date_to: dateTo,
+        });
+        window.location.href = `/api/guardians/export?${params}`;
+    };
+
+    const handleSingleAction = async (action: string, guardian: Guardian) => {
+        if (action === 'enable-login') {
+            if (!window.confirm(`Enable login for ${guardian.full_name}?`)) return;
+            try {
+                await axios.post(`/api/guardians/${guardian.id}/enable-login`);
+                addToast('Login enabled');
+                fetchGuardians();
+            } catch { addToast('Failed', 'error'); }
+        } else if (action === 'disable-login') {
+            if (!window.confirm(`Disable login for ${guardian.full_name}?`)) return;
+            try {
+                await axios.post(`/api/guardians/${guardian.id}/disable-login`);
+                addToast('Login disabled');
+                fetchGuardians();
+            } catch { addToast('Failed', 'error'); }
+        } else if (action.startsWith('status-')) {
+            const status = action.replace('status-', '');
+            try {
+                await axios.patch(`/api/guardians/${guardian.id}`, { status });
+                addToast(`Status updated to ${status}`);
+                fetchGuardians();
+            } catch { addToast('Failed', 'error'); }
+        }
+    };
+
+    const selectedCount = selectAllMatching ? pagination.total : selectedIds.size;
+
+    return (
+        <>
+            <Head title="Guardians" />
+
+            <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4 pb-20">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold">Guardians</h1>
+                        <p className="text-sm text-muted-foreground">
+                            Manage guardian accounts and access
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={handleExport}>
+                            <Download className="mr-1 h-4 w-4" />
+                            Export
+                        </Button>
+                        <Button onClick={() => setShowAdd(true)}>
+                            <UserPlus className="mr-1 h-4 w-4" />
+                            Add Guardian
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="rounded-lg border bg-background shadow-sm">
+                    <GuardianFilterBar
+                        search={search}
+                        onSearch={setSearch}
+                        statusFilter={statusFilter}
+                        onStatusFilter={setStatusFilter}
+                        loginFilter={loginFilter}
+                        onLoginFilter={setLoginFilter}
+                        childrenFilter={childrenFilter}
+                        onChildrenFilter={setChildrenFilter}
+                        dateFrom={dateFrom}
+                        onDateFrom={setDateFrom}
+                        dateTo={dateTo}
+                        onDateTo={setDateTo}
+                        total={pagination.total}
+                        showing={guardians.length}
+                        guardianStatuses={guardian_statuses}
+                    />
+
+                    <GuardianTable
+                        guardians={guardians}
+                        loading={loading}
+                        selectedIds={selectedIds}
+                        onToggleSelect={toggleSelect}
+                        onToggleAll={toggleAll}
+                        isAllSelected={isAllSelected}
+                        sortBy={sortBy}
+                        sortDir={sortDir}
+                        onSort={handleSort}
+                        onSingleAction={handleSingleAction}
+                    />
+                </div>
+
+                <div className="mt-auto border-t bg-background/50 p-4">
+                    <Pagination meta={pagination} setPage={setPage} setLimit={setLimit} />
+                </div>
+            </div>
+
+            <BulkActionBar
+                count={selectedCount}
+                totalMatching={pagination.total}
+                selectAllMatching={selectAllMatching}
+                onSelectAllMatching={() => setSelectAllMatching(true)}
+                onClearSelection={() => { setSelectedIds(new Set()); setSelectAllMatching(false); }}
+                onMessage={() => setShowMessage(true)}
+                onExport={handleExport}
+                onEnableLogin={() => bulkPost('/api/guardians/bulk-enable-login')}
+                onDisableLogin={() => bulkPost('/api/guardians/bulk-disable-login')}
+                onChangeStatus={(s) => bulkPost('/api/guardians/bulk-status', { status: s })}
+            />
+
+            <AddStandaloneGuardianModal
+                isOpen={showAdd}
+                onClose={() => setShowAdd(false)}
+            />
+
+            <MessageComposerModal
+                isOpen={showMessage}
+                onClose={() => setShowMessage(false)}
+                guardianIds={Array.from(selectedIds) as unknown as number[]}
+                onSent={() => addToast('Message queued successfully')}
+            />
+
+            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
+                {toasts.map(t => (
+                    <ToastItem key={t.id} toast={t} onDismiss={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+                ))}
+            </div>
+        </>
+    );
+}
+
+GuardianIndex.layout = {
+    breadcrumbs: [
+        { title: 'Dashboard', href: '/dashboard' },
+        { title: 'Guardians', href: '/guardians' },
+    ],
+};

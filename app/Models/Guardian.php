@@ -8,12 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Models\Concerns\HasActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
 class Guardian extends Model
 {
-    use AddUuid, BelongsToSchool, SoftDeletes, LogsActivity;
+    use AddUuid, BelongsToSchool, SoftDeletes, HasActivity;
 
     public function getActivitylogOptions(): LogOptions
     {

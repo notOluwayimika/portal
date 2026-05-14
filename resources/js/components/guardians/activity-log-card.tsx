@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import {
@@ -19,6 +20,7 @@ interface ActivityEntry {
 
 interface ActivityLogCardProps {
     guardianId: string;
+    refreshKey?: number;
 }
 
 function eventLabel(event: string): string {
@@ -47,7 +49,7 @@ function relativeTime(iso: string): string {
     return new Date(iso).toLocaleDateString();
 }
 
-export function ActivityLogCard({ guardianId }: ActivityLogCardProps) {
+export function ActivityLogCard({ guardianId, refreshKey }: ActivityLogCardProps) {
     const [entries, setEntries] = useState<ActivityEntry[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -58,14 +60,14 @@ export function ActivityLogCard({ guardianId }: ActivityLogCardProps) {
             .then((res) => setEntries(res.data?.data ?? []))
             .catch(() => setEntries([]))
             .finally(() => setLoading(false));
-    }, [guardianId]);
+    }, [guardianId, refreshKey]);
 
     return (
         <Card>
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-base">Recent Activity</CardTitle>
-                    <span className="text-xs text-muted-foreground">Coming soon: full history</span>
+                    <Link href={`/guardians/${guardianId}/audit`} className="text-xs text-primary hover:underline">View Full History →</Link>
                 </div>
             </CardHeader>
             <CardContent>

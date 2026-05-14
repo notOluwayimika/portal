@@ -131,6 +131,7 @@ export interface Guardian {
     id_number?: string | null;
     id_expiry_date?: string | null;
     status?: string;
+    students_count?: number;
     // pivot fields (present when loaded via student.guardians)
     relationship?: string;
     is_primary?: boolean;

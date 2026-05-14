@@ -30,6 +30,7 @@ class GuardianResource extends JsonResource
             'id_number'         => $this->id_number,
             'id_expiry_date'    => $this->id_expiry_date,
             'status'            => $this->status,
+            'students_count'    => $this->whenCounted('students'),
             'deleted_at'        => $this->deleted_at?->toIso8601String(),
             'email'             => $this->whenLoaded('user', fn() => $this->user?->email),
             'has_login'         => $this->whenLoaded('user', fn() => $this->user !== null && $this->user->disabled_at === null),

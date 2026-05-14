@@ -25,19 +25,66 @@ class GuardianService
 
     public function paginate(Request $request): LengthAwarePaginator
     {
+        $sortBy  = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
+        $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
+        $column  = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
+
         return Guardian::query()
+            ->leftJoin('users', 'users.id', '=', 'guardians.user_id')
+            ->select('guardians.*')
+            ->withCount('students')
             ->when($request->search, function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
                 $q->where(function ($inner) use ($term) {
-                    $inner->where('first_name', 'LIKE', $term)
-                          ->orWhere('last_name', 'LIKE', $term)
-                          ->orWhere('phone', 'LIKE', $term);
+                    $inner->where('guardians.first_name', 'LIKE', $term)
+                          ->orWhere('guardians.last_name', 'LIKE', $term)
+                          ->orWhere('guardians.phone', 'LIKE', $term)
+                          ->orWhere('guardians.whatsapp_number', 'LIKE', $term)
+                          ->orWhere('users.email', 'LIKE', $term);
                 });
             })
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->status, fn($q) => $q->where('guardians.status', $request->status))
+            ->when($request->login_access === 'has_login', fn($q) => $q->whereNotNull('users.id')->whereNull('users.disabled_at'))
+            ->when($request->login_access === 'no_login', fn($q) => $q->where(fn($inner) => $inner->whereNull('users.id')->orWhereNotNull('users.disabled_at')))
+            ->when($request->children_count === '1',   fn($q) => $q->havingRaw('students_count = 1'))
+            ->when($request->children_count === '2-3', fn($q) => $q->havingRaw('students_count BETWEEN 2 AND 3'))
+            ->when($request->children_count === '4+',  fn($q) => $q->havingRaw('students_count >= 4'))
+            ->when($request->date_from, fn($q) => $q->whereDate('guardians.created_at', '>=', $request->date_from))
+            ->when($request->date_to,   fn($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
             ->with(['photoFile', 'user'])
-            ->latest()
+            ->orderBy($column, $sortDir)
             ->paginate($request->integer('per_page', 25));
+    }
+
+    public function bulkUpdateStatus(array $ids, string $status, int $schoolId): int
+    {
+        $guardians = Guardian::whereIn('id', $ids)->where('school_id', $schoolId)->get();
+
+        foreach ($guardians as $guardian) {
+            $guardian->update(['status' => $status]);
+            activity('guardian')
+                ->performedOn($guardian)
+                ->causedBy(auth()->user())
+                ->event('status_updated')
+                ->log("Status changed to {$status} via bulk action");
+        }
+
+        return $guardians->count();
+    }
+
+    public function bulkDisableLogin(array $ids, int $schoolId): int
+    {
+        $guardians = Guardian::whereIn('id', $ids)->where('school_id', $schoolId)->with('user')->get();
+        $count = 0;
+
+        foreach ($guardians as $guardian) {
+            if ($guardian->user && !$guardian->user->isDisabled()) {
+                $this->disableLogin($guardian);
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     public function show(Guardian $guardian): Guardian
@@ -376,9 +423,6 @@ class GuardianService
         // Scenario 1: shouldn't happen with current schema (user_id is NOT NULL),
         // but guard anyway in case of future changes.
         if (!$user) {
-            // No user exists — we need an email to create one. The caller (controller)
-            // should have validated that an identifier is available. Fall back to phone
-            // synthetic email so the row can be created; the notifier will skip delivery.
             $email = $guardian->phone ? "{$guardian->phone}@no-email.local" : sprintf('guardian+%s@no-email.local', Str::random(12));
             $plainPassword = $this->passwordGenerator->generate();
             $newUser = User::create([
@@ -391,6 +435,12 @@ class GuardianService
             $newUser->assignRole('parent');
             $guardian->update(['user_id' => $newUser->id]);
             $this->notifyGuardian($newUser, $plainPassword, $studentNames);
+
+            activity('guardian')
+                ->performedOn($guardian)
+                ->causedBy(auth()->user())
+                ->event('login_enabled')
+                ->log('Login enabled by admin (new account created)');
             return;
         }
 
@@ -402,12 +452,17 @@ class GuardianService
                 'password'    => $plainPassword,
             ]);
 
-            // Make sure the role is still attached for the current team.
             if (!$user->hasRole('parent')) {
                 $user->assignRole('parent');
             }
 
             $this->notifyGuardian($user, $plainPassword, $studentNames);
+
+            activity('guardian')
+                ->performedOn($guardian)
+                ->causedBy(auth()->user())
+                ->event('login_enabled')
+                ->log('Login re-enabled by admin');
             return;
         }
 
@@ -415,6 +470,12 @@ class GuardianService
         if (!$user->hasRole('parent')) {
             $user->assignRole('parent');
         }
+
+        activity('guardian')
+            ->performedOn($guardian)
+            ->causedBy(auth()->user())
+            ->event('login_enabled')
+            ->log('Login enabled by admin');
     }
 
     /**

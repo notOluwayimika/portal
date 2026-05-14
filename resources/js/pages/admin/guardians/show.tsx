@@ -1,6 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
-    ArrowLeft,
     Briefcase,
     ChevronDown,
     CreditCard,
@@ -30,7 +29,6 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useInitials } from '@/hooks/use-initials';
@@ -81,6 +79,8 @@ export default function GuardianProfile() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     let toastCounter = 0;
 
+    const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+
     const addToast = (message: string, type: ToastType = 'success') => {
         const id = ++toastCounter;
         setToasts((prev) => [...prev, { id, message, type }]);
@@ -96,6 +96,7 @@ export default function GuardianProfile() {
 
     const handleLoginUpdate = (updated: Guardian) => {
         setGuardian((prev) => ({ ...prev, ...updated }));
+        setActivityRefreshKey((k) => k + 1);
         addToast('Login access updated.');
     };
 
@@ -109,7 +110,7 @@ export default function GuardianProfile() {
                     <ToastItem
                         key={t.id}
                         toast={t}
-                        onDismiss={(id) => setToasts((prev) => prev.filter((x) => x.id !== id))}
+                        onDismiss={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
                     />
                 ))}
             </div>
@@ -312,7 +313,7 @@ export default function GuardianProfile() {
                             onError={(msg) => addToast(msg, 'error')}
                         />
 
-                        <ActivityLogCard guardianId={guardian.id} />
+                        <ActivityLogCard guardianId={guardian.id} refreshKey={activityRefreshKey} />
                     </div>
                 </div>
             </div>

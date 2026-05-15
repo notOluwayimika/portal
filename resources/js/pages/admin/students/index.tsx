@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, Search, Trash2, Users, UserPlus } from 'lucide-react';
+import { Download, Edit, FileX, GraduationCap, Save, Search, Trash2, Users, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import { StudentForm } from '@/components/students/student-form';
@@ -44,6 +44,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         next_page_url: null,
     });
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+    const [studentFormProcessing, setStudentFormProcessing] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [guardiansPanelStudent, setGuardiansPanelStudent] = useState<Student | null>(null);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
@@ -371,11 +372,23 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                 onClose={() => setIsStudentModalOpen(false)}
                 title={currentStudent ? 'Edit Student' : 'Add Student'}
                 size="lg"
+                footer={
+                    <div className="flex justify-end gap-3">
+                        <Button type="button" variant="outline" onClick={() => setIsStudentModalOpen(false)} disabled={studentFormProcessing}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" form="student-form" disabled={studentFormProcessing}>
+                            {studentFormProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            {currentStudent ? 'Update Student' : 'Create Student'}
+                        </Button>
+                    </div>
+                }
             >
                 <StudentForm
                     student={currentStudent}
                     onSuccess={handleFormSuccess}
                     onCancel={() => setIsStudentModalOpen(false)}
+                    onProcessingChange={setStudentFormProcessing}
                 />
             </Modal>
 

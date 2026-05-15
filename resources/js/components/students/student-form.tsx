@@ -20,6 +20,8 @@ interface StudentFormProps {
     student?: Student | null;
     onSuccess: () => void;
     onCancel: () => void;
+    formId?: string;
+    onProcessingChange?: (v: boolean) => void;
 }
 
 interface CurriculumOption {
@@ -42,7 +44,7 @@ interface StudentFormData {
     guardians: string; // JSON-encoded GuardianFormEntry[] (multipart-safe)
 }
 
-export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) {
+export function StudentForm({ student, onSuccess, onCancel, formId = 'student-form', onProcessingChange }: StudentFormProps) {
     const isEdit = !!student;
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [genders, setGenders] = useState<{ name: string; value: string }[]>([]);
@@ -64,6 +66,8 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
         photo: null,
         guardians: '',
     });
+
+    useEffect(() => { onProcessingChange?.(processing); }, [processing]);
 
     useEffect(() => {
         let isMounted = true;
@@ -139,7 +143,7 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
     });
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form id={formId} onSubmit={handleSubmit} className="space-y-6">
             <ProfileImageUpload
                 preview={photoPreview}
                 onChange={handlePhotoChange}
@@ -253,15 +257,6 @@ export function StudentForm({ student, onSuccess, onCancel }: StudentFormProps) 
                 <GuardianSubForm value={guardians} onChange={setGuardians} errors={guardianErrors} />
             )}
 
-            <div className="flex justify-end gap-3 border-t pt-4">
-                <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>
-                    Cancel
-                </Button>
-                <Button type="submit" disabled={processing}>
-                    {processing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    {isEdit ? 'Update Student' : 'Create Student'}
-                </Button>
-            </div>
         </form>
     );
 }

@@ -13,6 +13,8 @@ interface TeacherFormProps {
     teacher?: Teacher | null;
     onSuccess: () => void;
     onCancel: () => void;
+    formId?: string;
+    onProcessingChange?: (v: boolean) => void;
 }
 
 interface TeacherFormData {
@@ -32,7 +34,7 @@ interface TeacherFormData {
 
 type FormErrors = Partial<Record<keyof TeacherFormData, string>>;
 
-export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) {
+export function TeacherForm({ teacher, onSuccess, onCancel, formId = 'teacher-form', onProcessingChange }: TeacherFormProps) {
     const isEdit = !!teacher;
 
     const initialData: TeacherFormData = {
@@ -52,6 +54,8 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
 
     const [data, setFormData]       = useState<TeacherFormData>(initialData);
     const [processing, setProcessing] = useState(false);
+
+    useEffect(() => { onProcessingChange?.(processing); }, [processing]);
     const [errors, setErrors]       = useState<FormErrors>({});
     const [genders, setGenders]     = useState<{ name: string; value: string }[]>([]);
     const [statuses, setStatuses]   = useState<{ name: string; value: string }[]>([]);
@@ -146,7 +150,7 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form id={formId} onSubmit={handleSubmit} className="space-y-6">
             <ProfileImageUpload
                 preview={photoPreview}
                 onChange={handlePhotoChange}
@@ -336,15 +340,6 @@ export function TeacherForm({ teacher, onSuccess, onCancel }: TeacherFormProps) 
                 </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t pt-4">
-                <Button type="button" variant="outline" onClick={onCancel} disabled={processing}>
-                    Cancel
-                </Button>
-                <Button type="submit" disabled={processing}>
-                    {processing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    {isEdit ? 'Update Teacher' : 'Create Teacher'}
-                </Button>
-            </div>
         </form>
     );
 }

@@ -77,7 +77,20 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
     );
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Add Guardian" size="4xl">
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Add Guardian"
+            size="4xl"
+            footer={
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+                    <Button onClick={handleSubmit} disabled={submitting}>
+                        {submitting ? 'Saving…' : 'Add Guardian'}
+                    </Button>
+                </div>
+            }
+        >
             <div className="space-y-6">
                 {/* Personal */}
                 <section>
@@ -193,12 +206,6 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
                     ))}
                 </section>
 
-                <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
-                    <Button onClick={handleSubmit} disabled={submitting}>
-                        {submitting ? 'Saving…' : 'Add Guardian'}
-                    </Button>
-                </div>
             </div>
         </Modal>
     );

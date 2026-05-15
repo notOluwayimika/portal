@@ -4,6 +4,7 @@ import {
     BookOpen,
     Download,
     Edit,
+    Save,
     Search,
     Trash2,
     Upload,
@@ -61,6 +62,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         next_page_url: null,
     });
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+    const [teacherFormProcessing, setTeacherFormProcessing] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
     const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
@@ -416,11 +418,23 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 onClose={() => setIsFormModalOpen(false)}
                 title={currentTeacher ? 'Edit Teacher' : 'Add Teacher'}
                 size="lg"
+                footer={
+                    <div className="flex justify-end gap-3">
+                        <Button type="button" variant="outline" onClick={() => setIsFormModalOpen(false)} disabled={teacherFormProcessing}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" form="teacher-form" disabled={teacherFormProcessing}>
+                            {teacherFormProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            {currentTeacher ? 'Update Teacher' : 'Create Teacher'}
+                        </Button>
+                    </div>
+                }
             >
                 <TeacherForm
                     teacher={currentTeacher}
                     onSuccess={handleFormSuccess}
                     onCancel={() => setIsFormModalOpen(false)}
+                    onProcessingChange={setTeacherFormProcessing}
                 />
             </Modal>
 

@@ -241,7 +241,7 @@ export default function GuardianImport() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => setShowColumns(true)}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
                                     <BookOpen className="mr-1.5 h-4 w-4" />
                                     Column Reference

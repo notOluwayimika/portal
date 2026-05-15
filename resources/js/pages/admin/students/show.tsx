@@ -216,7 +216,7 @@ export default function StudentProfile() {
                                 </Button>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button size="sm" variant="outline" className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                                        <Button size="sm" variant="outline" className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white">
                                             More
                                             <ChevronDown className="ml-1.5 h-4 w-4 opacity-50" />
                                         </Button>

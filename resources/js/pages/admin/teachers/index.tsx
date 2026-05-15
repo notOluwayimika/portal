@@ -232,7 +232,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => setIsImportModalOpen(true)}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
                                     <Upload className="mr-1.5 h-4 w-4" />
                                     Import
@@ -242,7 +242,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                     variant="outline"
                                     onClick={handleExport}
                                     disabled={exporting}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
                                     {exporting ? (
                                         <Spinner className="mr-1.5 h-4 w-4 animate-spin" />

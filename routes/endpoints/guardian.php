@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\GuardianController;
+use App\Http\Controllers\GuardianImportController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('guardians')->group(function () {
@@ -11,6 +12,13 @@ Route::prefix('guardians')->group(function () {
     Route::post('/bulk-enable-login',                [GuardianController::class, 'bulkEnableLogin']);
     Route::post('/bulk-disable-login',               [GuardianController::class, 'bulkDisableLogin']);
     Route::post('/bulk-status',                      [GuardianController::class, 'bulkStatus']);
+
+    Route::get('/import/template',                   [GuardianImportController::class, 'template']);
+    Route::post('/import',                           [GuardianImportController::class, 'store']);
+    Route::get('/imports',                           [GuardianImportController::class, 'index']);
+    Route::get('/import/{import:uuid}/status',       [GuardianImportController::class, 'status']);
+    Route::get('/import/{import:uuid}/report',       [GuardianImportController::class, 'report']);
+
     Route::get('/',                                  [GuardianController::class, 'index']);
     Route::post('/',                                 [GuardianController::class, 'store']);
     Route::get('/{guardian:uuid}',                   [GuardianController::class, 'show']);

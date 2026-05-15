@@ -1,6 +1,6 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, UserPlus } from 'lucide-react';
+import { Download, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AddStandaloneGuardianModal } from '@/components/guardians/add-standalone-guardian-modal';
 import { BulkActionBar } from '@/components/guardians/bulk-action-bar';
@@ -199,6 +199,12 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <Link href="/guardians/import">
+                            <Button variant="outline" type="button">
+                                <Upload className="mr-1 h-4 w-4" />
+                                Import
+                            </Button>
+                        </Link>
                         <Button variant="outline" onClick={handleExport}>
                             <Download className="mr-1 h-4 w-4" />
                             Export

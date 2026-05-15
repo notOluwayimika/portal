@@ -195,7 +195,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     size="sm"
                                     variant="outline"
                                     onClick={handleStudentImport}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
                                     <FileX className="mr-1.5 h-4 w-4" />
                                     Import
@@ -205,7 +205,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     variant="outline"
                                     onClick={handleExport}
                                     disabled={exporting}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
                                     <Download className="mr-1.5 h-4 w-4" />
                                     {exporting ? 'Exporting…' : 'Export'}

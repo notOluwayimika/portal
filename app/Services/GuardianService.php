@@ -130,7 +130,7 @@ class GuardianService
     }
 
     /**
-     * Case A: create a brand-new User + Guardian + assign `parent` role.
+     * Case A: create a brand-new User + Guardian + assign `guardian` role.
      * Wrapped in a DB::transaction. The notification is queued AFTER the transaction
      * commits so that a rollback never leaves a stranded email in flight.
      *
@@ -151,7 +151,7 @@ class GuardianService
                 'password'   => $plainPassword,
             ]);
 
-            $user->assignRole('parent');
+            $user->assignRole('guardian');
 
             $guardian = $user->guardian()->create(array_merge($attributes, [
                 'school_id' => $schoolId,
@@ -432,7 +432,7 @@ class GuardianService
                 'school_id'  => $guardian->school_id,
                 'password'   => $plainPassword,
             ]);
-            $newUser->assignRole('parent');
+            $newUser->assignRole('guardian');
             $guardian->update(['user_id' => $newUser->id]);
             $this->notifyGuardian($newUser, $plainPassword, $studentNames);
 
@@ -452,8 +452,8 @@ class GuardianService
                 'password'    => $plainPassword,
             ]);
 
-            if (!$user->hasRole('parent')) {
-                $user->assignRole('parent');
+            if (!$user->hasRole('guardian')) {
+                $user->assignRole('guardian');
             }
 
             $this->notifyGuardian($user, $plainPassword, $studentNames);
@@ -467,8 +467,8 @@ class GuardianService
         }
 
         // Scenario 3: already active — make sure the role is in place, then no-op.
-        if (!$user->hasRole('parent')) {
-            $user->assignRole('parent');
+        if (!$user->hasRole('guardian')) {
+            $user->assignRole('guardian');
         }
 
         activity('guardian')

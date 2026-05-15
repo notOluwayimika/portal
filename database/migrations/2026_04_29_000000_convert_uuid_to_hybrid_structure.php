@@ -15,7 +15,7 @@ return new class extends Migration {
         Schema::disableForeignKeyConstraints();
 
         // Tables to convert - in REVERSE dependency order for dropping FKs
-        // Process leaf tables first (those with outgoing FKs), then parent tables
+        // Process leaf tables first (those with outgoing FKs), then guardians tables
         $tables = [
             // Leaf tables (many FKs pointing out)
             'audit_logs',
@@ -66,7 +66,7 @@ return new class extends Migration {
     private function convertTableToHybridStructure(string $table): void
     {
         // Check if already migrated
-        if (Schema::hasColumn($table, 'uuid') && Schema::hasColumn($table, 'id') && 
+        if (Schema::hasColumn($table, 'uuid') && Schema::hasColumn($table, 'id') &&
             $this->getColumnType($table, 'id') === 'bigint') {
             return;
         }
@@ -83,7 +83,7 @@ return new class extends Migration {
         }
 
         $idColumnInfo = DB::selectOne(
-            "SELECT COLUMN_TYPE, COLUMN_KEY FROM INFORMATION_SCHEMA.COLUMNS 
+            "SELECT COLUMN_TYPE, COLUMN_KEY FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
             [DB::connection()->getDatabaseName(), $table, $idColumn]
         );
@@ -123,7 +123,7 @@ return new class extends Migration {
         // Get all foreign keys that point TO this table using KEY_COLUMN_USAGE
         try {
             $foreignKeys = DB::select(
-                "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+                "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
                  WHERE REFERENCED_TABLE_NAME = ? AND TABLE_SCHEMA = ?",
                 [$table, DB::connection()->getDatabaseName()]
             );
@@ -144,7 +144,7 @@ return new class extends Migration {
     {
         try {
             $result = DB::selectOne(
-                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
                 [DB::connection()->getDatabaseName(), $table, $column]
             );

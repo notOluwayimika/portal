@@ -16,7 +16,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin',  'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'parent', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'guardian', 'guard_name' => 'web']);
     Notification::fake();
 });
 
@@ -37,7 +37,7 @@ function makeGuardian(School $school, ?User $user = null, bool $withEmail = true
         'school_id' => $school->id,
         'email'     => $withEmail ? fake()->unique()->safeEmail() : 'guardian+' . fake()->unique()->lexify('????') . '@no-email.local',
     ]);
-    $u->assignRole('parent');
+    $u->assignRole('guardian');
 
     return Guardian::factory()->create([
         'school_id' => $school->id,

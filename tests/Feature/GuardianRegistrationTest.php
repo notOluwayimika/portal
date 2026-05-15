@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'parent', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'guardian', 'guard_name' => 'web']);
     Notification::fake();
 });
 
@@ -65,7 +65,7 @@ it('registers a student with one new guardian (Case A)', function () {
 
     $guardianUser = User::where('email', 'john.doe@example.test')->first();
     expect($guardianUser)->not->toBeNull();
-    expect($guardianUser->hasRole('parent'))->toBeTrue();
+    expect($guardianUser->hasRole('guardian'))->toBeTrue();
 
     $guardian = Guardian::where('user_id', $guardianUser->id)->first();
     expect($guardian)->not->toBeNull();
@@ -94,9 +94,9 @@ it('registers a student with an existing guardian (Case B) without creating a du
     $sibling          = Student::factory()->create(['school_id' => $school->id]);
     $existingUser     = User::factory()->create([
         'school_id' => $school->id,
-        'email'     => 'existing.parent@example.test',
+        'email'     => 'existing.guardian@example.test',
     ]);
-    $existingUser->assignRole('parent');
+    $existingUser->assignRole('guardian');
     $existingGuardian = Guardian::factory()->create([
         'school_id' => $school->id,
         'user_id'   => $existingUser->id,
@@ -116,7 +116,7 @@ it('registers a student with an existing guardian (Case B) without creating a du
         'relationship' => 'mother',
         'is_primary'   => true,
         'can_login'    => false,
-        'identifier'   => 'existing.parent@example.test',
+        'identifier'   => 'existing.guardian@example.test',
     ]]);
 
     $response = $this->actingAs($admin)->postJson('/api/students', $payload);
@@ -141,7 +141,7 @@ it('registers a student with mixed guardians (one new, one existing)', function 
 
     $sibling          = Student::factory()->create(['school_id' => $school->id]);
     $existingUser     = User::factory()->create(['school_id' => $school->id, 'email' => 'mom@example.test']);
-    $existingUser->assignRole('parent');
+    $existingUser->assignRole('guardian');
     $existingGuardian = Guardian::factory()->create([
         'school_id' => $school->id,
         'user_id'   => $existingUser->id,
@@ -246,7 +246,7 @@ it('rejects registration when more than one guardian is primary', function () {
     $response->assertJsonValidationErrors(['guardians']);
 });
 
-it('assigns parent role and only sends notification when can_login is true', function () {
+it('assigns guardian role and only sends notification when can_login is true', function () {
     [$school, $admin] = makeAdmin();
     $curriculum       = curriculumFor($school);
 
@@ -266,7 +266,7 @@ it('assigns parent role and only sends notification when can_login is true', fun
 
     $guardian = Guardian::where('first_name', 'NoLogin')->first();
     expect($guardian)->not->toBeNull();
-    expect($guardian->user->hasRole('parent'))->toBeTrue();
+    expect($guardian->user->hasRole('guardian'))->toBeTrue();
 
     Notification::assertNothingSentTo($guardian->user);
 });

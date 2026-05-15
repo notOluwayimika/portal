@@ -71,57 +71,57 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
     const loginStatusBadge = () => {
         if (hasLogin) {
             return (
-                <Badge className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-600 shadow-sm hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400">
-                    <LogIn className="mr-1.5 h-3 w-3" />
+                <Badge className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 shadow-sm hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    <LogIn className="mr-1 h-3 w-3" />
                     Login Enabled
                 </Badge>
             );
         }
         if (isDisabled) {
             return (
-                <Badge className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-600 shadow-sm hover:bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400">
-                    <ShieldOff className="mr-1.5 h-3 w-3" />
+                <Badge className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-600 shadow-sm hover:bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400">
+                    <ShieldOff className="mr-1 h-3 w-3" />
                     Login Disabled
                 </Badge>
             );
         }
         return (
-            <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] font-bold text-slate-500 shadow-sm">
+            <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm">
                 No Account
             </Badge>
         );
     };
 
     return (
-        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-6 py-5">
-                <CardTitle className="flex items-center gap-3 text-base font-bold text-slate-800">
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
+                <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                    <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
                         <KeyRound className="h-4 w-4 text-indigo-600" />
                     </div>
                     Login Access
                 </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-6">
-                <div className="flex flex-col gap-4">
+            <CardContent className="p-4 space-y-4">
+                <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold tracking-wide text-slate-400 uppercase">Status</span>
+                        <span className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">Status</span>
                         {loginStatusBadge()}
                     </div>
 
                     {guardian.email && !isSyntheticEmail(guardian.email) && (
-                        <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+                        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
                             <div className="flex items-center gap-2 overflow-hidden">
-                                <Mail className="h-4 w-4 shrink-0 text-slate-400" />
-                                <span className="truncate text-sm font-semibold text-slate-600">{guardian.email}</span>
+                                <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                <span className="truncate text-xs font-semibold text-slate-600">{guardian.email}</span>
                             </div>
                         </div>
                     )}
                 </div>
 
                 {guardian.email_verified_at && (
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-3 text-center">
-                        <p className="text-[11px] font-bold text-emerald-700">
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50/30 px-3 py-2 text-center">
+                        <p className="text-[10px] font-bold text-emerald-700">
                             ✓ Account activated on {new Date(guardian.email_verified_at).toLocaleDateString()}
                         </p>
                     </div>
@@ -131,8 +131,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     {/* Enable login */}
                     {(noAccount || isDisabled) && (
                         <Button
+                            size="sm"
                             variant="outline"
-                            className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'enable',
@@ -143,9 +144,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'enable' ? (
-                                <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
                             ) : (
-                                <LogIn className="mr-3 h-4 w-4 text-slate-400 group-hover:text-indigo-600" />
+                                <LogIn className="mr-2 h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-600" />
                             )}
                             Enable Access
                         </Button>
@@ -154,8 +155,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     {/* Disable login */}
                     {hasLogin && (
                         <Button
+                            size="sm"
                             variant="outline"
-                            className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'disable',
@@ -166,9 +168,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'disable' ? (
-                                <Spinner className="mr-3 h-4 w-4 animate-spin text-amber-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-amber-600" />
                             ) : (
-                                <ShieldOff className="mr-3 h-4 w-4 text-slate-400" />
+                                <ShieldOff className="mr-2 h-3.5 w-3.5 text-slate-400" />
                             )}
                             Disable Access
                         </Button>
@@ -177,8 +179,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     {/* Reset password */}
                     {hasRealEmail && (
                         <Button
+                            size="sm"
                             variant="outline"
-                            className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'reset',
@@ -189,9 +192,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'reset' ? (
-                                <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
                             ) : (
-                                <RotateCcw className="mr-3 h-4 w-4 text-slate-400" />
+                                <RotateCcw className="mr-2 h-3.5 w-3.5 text-slate-400" />
                             )}
                             Reset Password
                         </Button>
@@ -200,8 +203,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     {/* Resend invitation */}
                     {!!guardian.never_activated && hasRealEmail && (
                         <Button
+                            size="sm"
                             variant="outline"
-                            className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'resend',
@@ -212,9 +216,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'resend' ? (
-                                <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
                             ) : (
-                                <RotateCcw className="mr-3 h-4 w-4 text-slate-400" />
+                                <RotateCcw className="mr-2 h-3.5 w-3.5 text-slate-400" />
                             )}
                             Resend Invitation
                         </Button>
@@ -222,8 +226,8 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                 </div>
 
                 {noAccount && (
-                    <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-100">
-                        <p className="text-center text-xs font-medium leading-relaxed text-slate-500">
+                    <div className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+                        <p className="text-center text-[11px] font-medium leading-relaxed text-slate-500">
                             {hasRealEmail
                                 ? "This guardian doesn't have an active login account yet."
                                 : "A valid email address is required to enable login access for this guardian."}

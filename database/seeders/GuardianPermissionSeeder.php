@@ -23,6 +23,7 @@ class GuardianPermissionSeeder extends Seeder
         'guardian.export',
         'guardian.message',
         'guardian.view_audit',
+        'guardian.import',
     ];
 
     private const REGISTRAR_PERMISSIONS = [

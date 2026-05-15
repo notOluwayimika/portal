@@ -1,6 +1,7 @@
 import axios from 'axios';
-import { KeyRound, LogIn, LogOut, Mail, RotateCcw, ShieldOff } from 'lucide-react';
+import { KeyRound, LogIn, Mail, RotateCcw, ShieldOff } from 'lucide-react';
 import { useState } from 'react';
+import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,34 +27,45 @@ function isSyntheticEmail(email?: string | null): boolean {
 
 export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCardProps) {
     const [busy, setBusy] = useState<ActionKey | null>(null);
+    const { confirmAndExecute } = useApiSweetAlertConfirmation();
 
-    const user = guardian;
     const hasRealEmail = !!guardian.email && !isSyntheticEmail(guardian.email);
 
     const hasLogin    = !!guardian.has_login;
     const isDisabled  = !guardian.has_login && !!guardian.user_disabled_at;
     const noAccount   = !guardian.has_login && !guardian.user_disabled_at;
 
-    const perform = async (key: ActionKey, endpoint: string) => {
-        if (busy) return;
-        setBusy(key);
-        try {
-            const res = await axios.post(`/api/guardians/${guardian.id}/${endpoint}`);
-            const updated = res.data?.data;
-            if (updated) onUpdate(updated);
-        } catch (err: unknown) {
-            const msg =
-                (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-                'Action failed. Please try again.';
-            onError(msg);
-            setBusy(null);
-            return;
-        }
-        setBusy(null);
-    };
-
-    const confirm = (msg: string, action: () => void) => {
-        if (window.confirm(msg)) action();
+    const swalAction = async (
+        key: ActionKey,
+        endpoint: string,
+        title: string,
+        text: string,
+        confirmText = 'Yes, proceed',
+    ) => {
+        await confirmAndExecute({
+            sweetAlertTitle:   title,
+            sweetAlertText:    text,
+            sweetAlertIcon:    'warning',
+            confirmButtonText: confirmText,
+            showSuccessAlert:  false,
+            showErrorAlert:    false,
+            onConfirm: async () => {
+                setBusy(key);
+                try {
+                    const res = await axios.post(`/api/guardians/${guardian.id}/${endpoint}`);
+                    // enable/disable-login return a flat JsonResource (no data wrapper)
+                    const updated: Guardian = res.data?.data ?? res.data;
+                    if (updated) onUpdate(updated);
+                } catch (err: unknown) {
+                    const msg =
+                        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+                        'Action failed. Please try again.';
+                    onError(msg);
+                } finally {
+                    setBusy(null);
+                }
+            },
+        });
     };
 
     const loginStatusBadge = () => {
@@ -122,12 +134,13 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             variant="outline"
                             className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
-                            onClick={() =>
-                                confirm(
-                                    `Enable login access for ${guardian.full_name}?`,
-                                    () => perform('enable', 'enable-login'),
-                                )
-                            }
+                            onClick={() => swalAction(
+                                'enable',
+                                'enable-login',
+                                'Enable Login Access',
+                                `${guardian.full_name} will receive their credentials and be able to sign in.`,
+                                'Yes, enable',
+                            )}
                         >
                             {busy === 'enable' ? (
                                 <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />
@@ -144,12 +157,13 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             variant="outline"
                             className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100"
                             disabled={!!busy}
-                            onClick={() =>
-                                confirm(
-                                    `Disable login access for ${guardian.full_name}? They will no longer be able to sign in.`,
-                                    () => perform('disable', 'disable-login'),
-                                )
-                            }
+                            onClick={() => swalAction(
+                                'disable',
+                                'disable-login',
+                                'Disable Login Access',
+                                `${guardian.full_name} will no longer be able to sign in.`,
+                                'Yes, disable',
+                            )}
                         >
                             {busy === 'disable' ? (
                                 <Spinner className="mr-3 h-4 w-4 animate-spin text-amber-600" />
@@ -166,12 +180,13 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             variant="outline"
                             className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
-                            onClick={() =>
-                                confirm(
-                                    `Send a password reset link to ${guardian.email}?`,
-                                    () => perform('reset', 'reset-password'),
-                                )
-                            }
+                            onClick={() => swalAction(
+                                'reset',
+                                'reset-password',
+                                'Reset Password',
+                                `A password reset link will be sent to ${guardian.email}.`,
+                                'Yes, send link',
+                            )}
                         >
                             {busy === 'reset' ? (
                                 <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />
@@ -188,12 +203,13 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             variant="outline"
                             className="h-11 justify-start rounded-xl border-slate-200 font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
                             disabled={!!busy}
-                            onClick={() =>
-                                confirm(
-                                    `Resend the login invitation to ${guardian.email}?`,
-                                    () => perform('resend', 'resend-invitation'),
-                                )
-                            }
+                            onClick={() => swalAction(
+                                'resend',
+                                'resend-invitation',
+                                'Resend Invitation',
+                                `A new invitation will be sent to ${guardian.email}.`,
+                                'Yes, resend',
+                            )}
                         >
                             {busy === 'resend' ? (
                                 <Spinner className="mr-3 h-4 w-4 animate-spin text-indigo-600" />

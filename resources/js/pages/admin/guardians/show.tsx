@@ -38,7 +38,7 @@ import type { Guardian, GuardianPivot, Student } from '@/types/models';
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 
-interface ShowPageProps {
+interface ShowPageProps extends Record<string, unknown> {
     guardian: { data: Guardian & { students?: (Student & { pivot: GuardianPivot })[] } };
 }
 
@@ -332,7 +332,7 @@ export default function GuardianProfile() {
                                         Linked Children ({linkedStudents.length})
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent className="p-1">
+                                <CardContent className="p-5">
                                     {linkedStudents.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-12 text-center">
                                             <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-slate-50 text-slate-300">
@@ -347,7 +347,7 @@ export default function GuardianProfile() {
                                             </Button>
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <div className="flex flex-col gap-4">
                                             {linkedStudents.map((s) => (
                                                 <StudentCard key={s.id} student={s} />
                                             ))}

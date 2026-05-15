@@ -146,8 +146,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher'])->grou
 
 });
 
-// Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
-Route::middleware(['auth', 'tenant'])->group(function () {
+Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
     Route::inertia('parent/dashboard', 'parent/dashboard')->name('parent.dashboard');
 });
 

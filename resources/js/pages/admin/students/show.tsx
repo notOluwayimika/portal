@@ -75,9 +75,9 @@ function statusColor(status: string | undefined) {
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
     if (!value) return null;
     return (
-        <div className="space-y-1.5">
-            <dt className="text-xs font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
-            <dd className="text-[15px] font-semibold text-slate-700">{value}</dd>
+        <div className="space-y-1">
+            <dt className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
+            <dd className="text-sm font-semibold text-slate-700">{value}</dd>
         </div>
     );
 }
@@ -146,8 +146,8 @@ export default function StudentProfile() {
         <>
             <Head title={`${student.full_name} — Student Profile`} />
 
-            <div className="min-h-screen bg-[#f5f7fb] py-8 px-4 sm:px-6 lg:px-8">
-                <div className="mx-auto max-w-7xl space-y-8">
+            <div className="min-h-screen bg-[#f5f7fb] py-5 px-4 sm:px-6 lg:px-8 dark:bg-background">
+                <div className="mx-auto max-w-7xl space-y-5">
 
                     {/* ── Breadcrumbs ──────────────────────────────────────────── */}
                     <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground/60">
@@ -159,50 +159,44 @@ export default function StudentProfile() {
                     </nav>
 
                     {/* ── Premium Hero Card ───────────────────────────────────────── */}
-                    <div className="relative overflow-hidden rounded-[2rem] border border-white bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
-                        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
-                                <div className="relative">
-                                    <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
-                                    <Avatar className="relative size-24 rounded-full border-4 border-white shadow-sm ring-1 ring-black/5">
+                    <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="relative shrink-0">
+                                    <div className="absolute -inset-0.5 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
+                                    <Avatar className="relative size-14 rounded-full border-2 border-white shadow-sm ring-1 ring-black/5">
                                         <AvatarImage src={student.photo ?? undefined} alt={student.full_name} className="object-cover" />
-                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-2xl font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-base font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
                                             {getInitials(student.full_name)}
                                         </AvatarFallback>
                                     </Avatar>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-                                        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                <div className="space-y-1.5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                                             {student.full_name}
                                         </h1>
-                                        <div className="flex gap-2">
-                                            {student.status && (
-                                                <Badge className={`rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm ${statusColor(student.status)}`}>
-                                                    {student.status}
-                                                </Badge>
-                                            )}
-                                            {student.admission_number && (
-                                                <Badge className="rounded-full bg-slate-50 px-3 py-0.5 text-[11px] font-semibold text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
-                                                    #{student.admission_number}
-                                                </Badge>
-                                            )}
-                                        </div>
+                                        {student.status && (
+                                            <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize shadow-sm ${statusColor(student.status)}`}>
+                                                {student.status}
+                                            </Badge>
+                                        )}
+                                        {student.admission_number && (
+                                            <Badge className="rounded-full bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
+                                                #{student.admission_number}
+                                            </Badge>
+                                        )}
                                     </div>
 
-                                    <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-slate-500 sm:justify-start">
-                                        <span className="inline-flex items-center gap-2">
-                                            <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                                                <GraduationCap className="h-3 w-3" />
-                                            </div>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500">
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <GraduationCap className="h-3 w-3" />
                                             {student.class_details?.full_class ?? 'N/A'}
                                         </span>
                                         {student.gender && (
-                                            <span className="inline-flex items-center gap-2">
-                                                <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                                                    <User2 className="h-3 w-3" />
-                                                </div>
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <User2 className="h-3 w-3" />
                                                 <span className="capitalize">{student.gender}</span>
                                             </span>
                                         )}
@@ -211,19 +205,20 @@ export default function StudentProfile() {
                             </div>
 
                             {/* Action buttons */}
-                            <div className="flex shrink-0 items-center justify-center gap-3">
+                            <div className="flex shrink-0 items-center gap-2">
                                 <Button
+                                    size="sm"
                                     onClick={() => setShowEditModal(true)}
-                                    className="rounded-xl bg-indigo-600 px-6 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
                                 >
-                                    <Edit className="mr-2 h-4 w-4" />
+                                    <Edit className="mr-1.5 h-4 w-4" />
                                     Edit Student
                                 </Button>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                                        <Button size="sm" variant="outline" className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50">
                                             More
-                                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                                            <ChevronDown className="ml-1.5 h-4 w-4 opacity-50" />
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48 rounded-xl p-1 shadow-xl">
@@ -242,17 +237,17 @@ export default function StudentProfile() {
                     </div>
 
                     {/* ── Two-column content area ──────────────────────────── */}
-                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
 
                         {/* Left column (2/3 width on lg) */}
-                        <div className="space-y-8 lg:col-span-2">
+                        <div className="space-y-5 lg:col-span-2">
 
                             {/* Personal Details */}
-                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
-                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
-                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-                                            <User2 className="h-5 w-5 text-indigo-600" />
+                            <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
+                                    <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                                        <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                            <User2 className="h-4 w-4 text-indigo-600" />
                                         </div>
                                         Personal Details
                                     </CardTitle>
@@ -265,8 +260,8 @@ export default function StudentProfile() {
                                         <Edit className="h-4 w-4" />
                                     </Button>
                                 </CardHeader>
-                                <CardContent className="p-8">
-                                    <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+                                <CardContent className="p-5">
+                                    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                                         <DetailRow label="First Name"  value={student.first_name} />
                                         <DetailRow label="Middle Name" value={student.middle_name} />
                                         <DetailRow label="Last Name"   value={student.last_name} />
@@ -280,43 +275,44 @@ export default function StudentProfile() {
                             </Card>
 
                             {/* Guardians Section */}
-                            <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
-                                    <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
-                                        <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-                                            <Users className="h-5 w-5 text-indigo-600" />
+                            <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
+                                    <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                                        <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                            <Users className="h-4 w-4 text-indigo-600" />
                                         </div>
                                         Guardians ({guardians.length})
                                     </CardTitle>
                                     <Button
                                         size="sm"
                                         onClick={() => setShowAddGuardian(true)}
-                                        className="rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+                                        className="rounded-lg bg-indigo-600 px-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
                                     >
-                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" />
                                         Add Guardian
                                     </Button>
                                 </CardHeader>
-                                <CardContent className="p-8">
+                                <CardContent className="p-4">
                                     {hasNoGuardians ? (
-                                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                                            <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-amber-50 text-amber-500">
-                                                <Info className="h-10 w-10" />
+                                        <div className="flex flex-col items-center justify-center py-8 text-center">
+                                            <div className="mb-3 flex size-14 items-center justify-center rounded-full bg-amber-50 text-amber-500">
+                                                <Info className="h-7 w-7" />
                                             </div>
-                                            <h3 className="text-lg font-semibold text-slate-900">No guardians linked</h3>
-                                            <p className="mt-2 max-w-[280px] text-sm text-slate-500">
+                                            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">No guardians linked</h3>
+                                            <p className="mt-1 max-w-[280px] text-xs text-slate-500">
                                                 Every student should have at least one guardian for communication and emergency.
                                             </p>
                                             <Button
+                                                size="sm"
                                                 onClick={() => setShowAddGuardian(true)}
                                                 variant="link"
-                                                className="mt-4 font-semibold text-indigo-600"
+                                                className="mt-2 font-semibold text-indigo-600"
                                             >
                                                 Add the first guardian
                                             </Button>
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-1 gap-4">
+                                        <div className="grid grid-cols-1 gap-3">
                                             {guardians.map((g) => (
                                                 <GuardianCard
                                                     key={g.id}
@@ -335,17 +331,17 @@ export default function StudentProfile() {
                         </div>
 
                         {/* Right column (1/3 width on lg) */}
-                        <div className="space-y-8">
+                        <div className="space-y-5">
                             <PlaceholderCard
-                                icon={<BookOpen className="h-5 w-5 text-indigo-600" />}
+                                icon={<BookOpen className="h-4 w-4 text-indigo-600" />}
                                 title="Academic Records"
                             />
                             <PlaceholderCard
-                                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
+                                icon={<Calendar className="h-4 w-4 text-indigo-600" />}
                                 title="Attendance"
                             />
                             <PlaceholderCard
-                                icon={<CreditCard className="h-5 w-5 text-indigo-600" />}
+                                icon={<CreditCard className="h-4 w-4 text-indigo-600" />}
                                 title="Fees & Payments"
                             />
                         </div>
@@ -446,22 +442,22 @@ function PlaceholderCard({
     title: string;
 }) {
     return (
-        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-6 py-5">
-                <CardTitle className="flex items-center gap-3 text-base font-bold text-slate-800">
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
+                <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                    <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
                         {icon}
                     </div>
                     {title}
                 </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
-                <div className="flex flex-col items-center gap-3 py-6 text-center">
-                    <ClipboardList className="h-8 w-8 text-slate-200" />
-                    <p className="text-xs font-bold tracking-tight text-slate-400 uppercase">
+            <CardContent className="p-4">
+                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                    <ClipboardList className="h-7 w-7 text-slate-200" />
+                    <p className="text-[10px] font-bold tracking-tight text-slate-400 uppercase">
                         Coming soon
                     </p>
-                    <p className="max-w-[200px] text-xs text-slate-400">
+                    <p className="max-w-[200px] text-[11px] text-slate-400">
                         Detailed {title.toLowerCase()} tracking will be available in the next update.
                     </p>
                 </div>

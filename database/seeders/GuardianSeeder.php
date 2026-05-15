@@ -65,7 +65,7 @@ class GuardianSeeder extends Seeder
                 ]
             );
 
-            $user->assignRole('parent');
+            $user->assignRole('guardian');
 
             $guardian = Guardian::withoutGlobalScopes()->updateOrCreate(
                 ['school_id' => $school->id, 'user_id' => $user->id],

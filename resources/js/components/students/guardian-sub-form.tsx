@@ -301,7 +301,7 @@ function ExistingGuardianBody({
                 <Label>Look up existing guardian (email or phone)</Label>
                 <div className="flex gap-2">
                     <Input
-                        placeholder="parent@example.com or 08012345678"
+                        placeholder="guardian@example.com or 08012345678"
                         value={identifierDraft}
                         onChange={(e) => setIdentifierDraft(e.target.value)}
                         onKeyDown={(e) => {

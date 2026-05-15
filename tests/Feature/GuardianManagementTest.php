@@ -14,7 +14,7 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    foreach (['admin', 'parent', 'registrar'] as $role) {
+    foreach (['admin', 'guardian', 'registrar'] as $role) {
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
     }
     foreach ([
@@ -55,8 +55,8 @@ function setupGuardianLinkedToTwoStudents(School $school): array
     $studentA = Student::factory()->create(['school_id' => $school->id]);
     $studentB = Student::factory()->create(['school_id' => $school->id]);
 
-    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'shared.parent@example.test']);
-    $user->assignRole('parent');
+    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'shared.guardian@example.test']);
+    $user->assignRole('guardian');
     $guardian = Guardian::factory()->create([
         'school_id' => $school->id,
         'user_id'   => $user->id,
@@ -171,7 +171,7 @@ it('demoting can_login on the last pivot disables the user account', function ()
     $student = Student::factory()->create(['school_id' => $school->id]);
 
     $u1 = User::factory()->create(['school_id' => $school->id]);
-    $u1->assignRole('parent');
+    $u1->assignRole('guardian');
     $g1 = Guardian::factory()->create(['school_id' => $school->id, 'user_id' => $u1->id]);
     $u2 = User::factory()->create(['school_id' => $school->id]);
     $g2 = Guardian::factory()->create(['school_id' => $school->id, 'user_id' => $u2->id]);
@@ -206,7 +206,7 @@ it('explicit enable-login on a disabled guardian re-enables and notifies', funct
         'school_id'   => $school->id,
         'disabled_at' => now(),
     ]);
-    $user->assignRole('parent');
+    $user->assignRole('guardian');
     $guardian = Guardian::factory()->create(['school_id' => $school->id, 'user_id' => $user->id]);
     $student->guardians()->attach($guardian->id, ['relationship' => 'father', 'is_primary' => true, 'can_login' => false]);
 
@@ -232,7 +232,7 @@ it('registrar cannot change a login-enabled guardians email (credential permissi
 
     $guardian->refresh()->load('user');
     expect($guardian->occupation)->toBe('Doctor');
-    expect($guardian->user->email)->toBe('shared.parent@example.test'); // unchanged
+    expect($guardian->user->email)->toBe('shared.guardian@example.test'); // unchanged
 });
 
 it('admin can change a login-enabled guardians email with credential permission', function () {

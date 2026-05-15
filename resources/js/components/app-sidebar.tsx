@@ -58,6 +58,14 @@ const adminNavItems: NavItem[] = [
     },
 ];
 
+const guardianNavItems: NavItem[] = [
+    {
+        title: 'My Dashboard',
+        href: '/parent/dashboard',
+        icon: LayoutGrid,
+    },
+];
+
 const footerNavItems: NavItem[] = [
     // {
     //     title: 'Repository',
@@ -91,6 +99,7 @@ export function AppSidebar() {
         admin: adminNavItems,
         head_of_school: adminNavItems,
         teacher: teacherNavItems,
+        guardian: guardianNavItems,
     };
     const mainNavItems = useMemo(() => {
         const roleItems = roleMap[role] ?? [];

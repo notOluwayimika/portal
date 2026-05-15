@@ -19,7 +19,7 @@ class StudentCurriculumResource extends JsonResource
             'student' => new StudentResource($this->whenLoaded('student')),
             'curriculum' => new CurriculumResource($this->whenLoaded('curriculum')),
             'promoted_to' => new CurriculumResource($this->whenLoaded('promotedTo')),
-            'subjects' => SubjectResource::collection($this->whenLoaded('studentSubjects')),
+            'subjects' => StudentSubjectResource::collection($this->whenLoaded('studentSubjects')),
             'status' => $this->status,
         ];
     }

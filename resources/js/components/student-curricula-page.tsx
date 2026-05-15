@@ -1,6 +1,8 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
+import { handleBack } from '@/helpers';
+import StudentProfile from '@/pages/admin/students/show';
 import type { Curriculum, Student, StudentCurriculum } from '@/types/models';
 
 // ---------- Types ----------
@@ -53,6 +55,8 @@ export default function StudentCurriculaPage({
     const [items, setItems] = useState<StudentCurriculum[]>(
         student.student_curricula,
     );
+    const { auth } = usePage().props;
+    const role = auth.roles[0];
     const [eligible, setEligible] = useState<Curriculum[]>([]);
     const [filter, setFilter] = useState<FilterValue>('all');
     const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
@@ -202,18 +206,41 @@ export default function StudentCurriculaPage({
     return (
         <>
             <Head title={`Curricula – ${fullName(student)}`} />
+            <div className="flex">
+                <button
+                    className="btn btn-ghost btn-sm btn-icon cursor-pointer p-4"
+                    onClick={handleBack}
+                    title="Back to curricula"
+                    style={{ fontSize: 14 }}
+                >
+                    ← Go back
+                </button>
+            </div>
 
             <div className="mx-auto max-w-7xl space-y-6 p-6">
                 {/* Header */}
                 <div className="rounded-lg border bg-white p-5 shadow-sm">
-                    <h1 className="text-xl font-semibold text-gray-900">
-                        {fullName(student)}
-                    </h1>
-                    {student.admission_number && (
-                        <p className="mt-1 text-sm text-gray-500">
-                            {student.admission_number}
-                        </p>
-                    )}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            {' '}
+                            <h1 className="text-xl font-semibold text-gray-900">
+                                {fullName(student)}
+                            </h1>
+                            {student.admission_number && (
+                                <p className="mt-1 text-sm text-gray-500">
+                                    {student.admission_number}
+                                </p>
+                            )}
+                        </div>
+                        <div>
+                            <Link
+                                href={`/students/${student.id}/results/active`}
+                                className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                            >
+                                View active result
+                            </Link>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Filter pills + register */}
@@ -234,22 +261,24 @@ export default function StudentCurriculaPage({
                         ))}
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setRegisterError(null);
-                            setRegisterOpen(true);
-                        }}
-                        disabled={eligible.length === 0}
-                        title={
-                            eligible.length === 0
-                                ? 'No eligible curricula available'
-                                : undefined
-                        }
-                        className="inline-flex items-center rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                    >
-                        Register in a curriculum
-                    </button>
+                    {(role === 'admin' || role === 'head_of_school') && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setRegisterError(null);
+                                setRegisterOpen(true);
+                            }}
+                            disabled={eligible.length === 0}
+                            title={
+                                eligible.length === 0
+                                    ? 'No eligible curricula available'
+                                    : undefined
+                            }
+                            className="inline-flex items-center rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        >
+                            Register in a curriculum
+                        </button>
+                    )}
                 </div>
 
                 {/* Table */}
@@ -335,27 +364,44 @@ export default function StudentCurriculaPage({
                                             )}
                                         </Td>
                                         <Td className="text-right">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setPromoteTarget(sc)
-                                                }
-                                                disabled={
-                                                    busy ||
-                                                    sc.status !== 'active' ||
-                                                    eligible.length === 0
-                                                }
-                                                title={
-                                                    sc.status !== 'active'
-                                                        ? 'Only active enrollments can be promoted'
-                                                        : eligible.length === 0
-                                                          ? 'No eligible curricula available'
-                                                          : undefined
-                                                }
-                                                className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                                            >
-                                                Promote
-                                            </button>
+                                            <div className="flex gap-4">
+                                                <Link
+                                                    href={`/students/${student.id}/results/${sc.id}`}
+                                                    className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                >
+                                                    View Result
+                                                </Link>
+                                                {(role === 'admin' ||
+                                                    role ===
+                                                        'head_of_school') && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setPromoteTarget(sc)
+                                                        }
+                                                        disabled={
+                                                            busy ||
+                                                            sc.status !==
+                                                                'active' ||
+                                                            eligible.length ===
+                                                                0
+                                                        }
+                                                        title={
+                                                            sc.status !==
+                                                            'active'
+                                                                ? 'Only active enrollments can be promoted'
+                                                                : eligible.length ===
+                                                                    0
+                                                                  ? 'No eligible curricula available'
+                                                                  : undefined
+                                                        }
+                                                        className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                    >
+                                                        Promote
+                                                    </button>
+                                                )}
+                                            </div>
+
                                             {err && (
                                                 <p className="mt-1 text-xs text-red-600">
                                                     {err}

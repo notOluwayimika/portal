@@ -73,6 +73,7 @@ export function GradeBoundariesTab({
             max_score: 0,
             grade: '',
             label: '',
+            grade_point: '',
         };
         setMode('add');
         setBoundaries((p) => [...p, nb]);
@@ -215,6 +216,7 @@ export function GradeBoundariesTab({
                         <span className="grade-col-hdr">Max score</span>
                         <span className="grade-col-hdr">Grade</span>
                         <span className="grade-col-hdr">Label</span>
+                        <span className="grade-col-hdr">Grade Point</span>
                         <span></span>
                     </div>
                 </div>
@@ -302,6 +304,17 @@ export function GradeBoundariesTab({
                                                     )
                                                 }
                                             />
+                                            <input
+                                                placeholder="5.0"
+                                                value={e.grade_point}
+                                                onChange={(ev) =>
+                                                    updateEdit(
+                                                        b.id,
+                                                        'grade_point',
+                                                        ev.target.value,
+                                                    )
+                                                }
+                                            />
                                             <div
                                                 style={{
                                                     display: 'flex',
@@ -358,6 +371,9 @@ export function GradeBoundariesTab({
                                             </span>
                                             <span style={{ fontSize: 13.5 }}>
                                                 {b.label}
+                                            </span>
+                                            <span style={{ fontSize: 13.5 }}>
+                                                {b.grade_point}
                                             </span>
                                             <div
                                                 style={{

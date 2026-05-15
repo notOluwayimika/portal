@@ -33,12 +33,7 @@ import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -64,11 +59,15 @@ interface ShowPageProps {
 
 function statusColor(status: string | undefined) {
     switch (status) {
-        case 'active':    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
-        case 'graduated': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400';
+        case 'active':
+            return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
+        case 'graduated':
+            return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400';
         case 'withdrawn':
-        case 'expelled':  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
-        default:          return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+        case 'expelled':
+            return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
+        default:
+            return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
     }
 }
 
@@ -76,8 +75,12 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
     if (!value) return null;
     return (
         <div className="space-y-1.5">
-            <dt className="text-xs font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
-            <dd className="text-[15px] font-semibold text-slate-700">{value}</dd>
+            <dt className="text-xs font-bold tracking-wide text-slate-400 uppercase">
+                {label}
+            </dt>
+            <dd className="text-[15px] font-semibold text-slate-700">
+                {value}
+            </dd>
         </div>
     );
 }
@@ -89,7 +92,8 @@ function isSyntheticEmail(email?: string | null): boolean {
 /* ─── Page ─────────────────────────────────────────────────────────────────── */
 
 export default function StudentProfile() {
-    const { student: studentWrapper } = usePage<ShowPageProps>().props as unknown as ShowPageProps;
+    const { student: studentWrapper } = usePage<ShowPageProps>()
+        .props as unknown as ShowPageProps;
     const student = studentWrapper.data;
     const getInitials = useInitials();
 
@@ -146,16 +150,31 @@ export default function StudentProfile() {
         <>
             <Head title={`${student.full_name} — Student Profile`} />
 
-            <div className="min-h-screen bg-[#f5f7fb] py-8 px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-[#f5f7fb] px-4 py-8 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-7xl space-y-8">
-
                     {/* ── Breadcrumbs ──────────────────────────────────────────── */}
                     <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground/60">
-                        <Link href="/" className="transition-colors hover:text-primary">Home</Link>
-                        <span className="select-none text-muted-foreground/30">/</span>
-                        <Link href="/students" className="transition-colors hover:text-primary">Students</Link>
-                        <span className="select-none text-muted-foreground/30">/</span>
-                        <span className="text-foreground/80">{student.full_name}</span>
+                        <Link
+                            href="/"
+                            className="transition-colors hover:text-primary"
+                        >
+                            Home
+                        </Link>
+                        <span className="text-muted-foreground/30 select-none">
+                            /
+                        </span>
+                        <Link
+                            href="/students"
+                            className="transition-colors hover:text-primary"
+                        >
+                            Students
+                        </Link>
+                        <span className="text-muted-foreground/30 select-none">
+                            /
+                        </span>
+                        <span className="text-foreground/80">
+                            {student.full_name}
+                        </span>
                     </nav>
 
                     {/* ── Premium Hero Card ───────────────────────────────────────── */}
@@ -165,7 +184,11 @@ export default function StudentProfile() {
                                 <div className="relative">
                                     <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
                                     <Avatar className="relative size-24 rounded-full border-4 border-white shadow-sm ring-1 ring-black/5">
-                                        <AvatarImage src={student.photo ?? undefined} alt={student.full_name} className="object-cover" />
+                                        <AvatarImage
+                                            src={student.photo ?? undefined}
+                                            alt={student.full_name}
+                                            className="object-cover"
+                                        />
                                         <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-2xl font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
                                             {getInitials(student.full_name)}
                                         </AvatarFallback>
@@ -179,7 +202,9 @@ export default function StudentProfile() {
                                         </h1>
                                         <div className="flex gap-2">
                                             {student.status && (
-                                                <Badge className={`rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm ${statusColor(student.status)}`}>
+                                                <Badge
+                                                    className={`rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm ${statusColor(student.status)}`}
+                                                >
                                                     {student.status}
                                                 </Badge>
                                             )}
@@ -196,14 +221,17 @@ export default function StudentProfile() {
                                             <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
                                                 <GraduationCap className="h-3 w-3" />
                                             </div>
-                                            {student.class_details?.full_class ?? 'N/A'}
+                                            {student.class_details
+                                                ?.full_class ?? 'N/A'}
                                         </span>
                                         {student.gender && (
                                             <span className="inline-flex items-center gap-2">
                                                 <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
                                                     <User2 className="h-3 w-3" />
                                                 </div>
-                                                <span className="capitalize">{student.gender}</span>
+                                                <span className="capitalize">
+                                                    {student.gender}
+                                                </span>
                                             </span>
                                         )}
                                     </div>
@@ -219,19 +247,39 @@ export default function StudentProfile() {
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit Student
                                 </Button>
+                                <Link
+                                    href={`http://portal.test/setup/student-curricula/${student.id}`}
+                                    className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"
+                                >
+                                    View Academic Records
+                                </Link>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                                        <Button
+                                            variant="outline"
+                                            className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                        >
                                             More
                                             <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
                                         </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48 rounded-xl p-1 shadow-xl">
-                                        <DropdownMenuItem onClick={() => setShowEditModal(true)} className="rounded-lg py-2 cursor-pointer">
+                                    <DropdownMenuContent
+                                        align="end"
+                                        className="w-48 rounded-xl p-1 shadow-xl"
+                                    >
+                                        <DropdownMenuItem
+                                            onClick={() =>
+                                                setShowEditModal(true)
+                                            }
+                                            className="cursor-pointer rounded-lg py-2"
+                                        >
                                             <Edit className="mr-2 h-4 w-4 text-slate-500" />
                                             Edit Details
                                         </DropdownMenuItem>
-                                        <DropdownMenuItem disabled className="rounded-lg py-2 cursor-not-allowed opacity-50">
+                                        <DropdownMenuItem
+                                            disabled
+                                            className="cursor-not-allowed rounded-lg py-2 opacity-50"
+                                        >
                                             <Printer className="mr-2 h-4 w-4 text-slate-500" />
                                             Print Profile
                                         </DropdownMenuItem>
@@ -243,10 +291,8 @@ export default function StudentProfile() {
 
                     {/* ── Two-column content area ──────────────────────────── */}
                     <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-
                         {/* Left column (2/3 width on lg) */}
                         <div className="space-y-8 lg:col-span-2">
-
                             {/* Personal Details */}
                             <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                                 <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
@@ -267,14 +313,41 @@ export default function StudentProfile() {
                                 </CardHeader>
                                 <CardContent className="p-8">
                                     <dl className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
-                                        <DetailRow label="First Name"  value={student.first_name} />
-                                        <DetailRow label="Middle Name" value={student.middle_name} />
-                                        <DetailRow label="Last Name"   value={student.last_name} />
-                                        <DetailRow label="Gender"      value={student.gender} />
-                                        <DetailRow label="Date of Birth" value={student.date_of_birth} />
-                                        <DetailRow label="Admission Number" value={student.admission_number} />
-                                        <DetailRow label="Current Class" value={student.class_details?.full_class} />
-                                        <DetailRow label="Status" value={student.status} />
+                                        <DetailRow
+                                            label="First Name"
+                                            value={student.first_name}
+                                        />
+                                        <DetailRow
+                                            label="Middle Name"
+                                            value={student.middle_name}
+                                        />
+                                        <DetailRow
+                                            label="Last Name"
+                                            value={student.last_name}
+                                        />
+                                        <DetailRow
+                                            label="Gender"
+                                            value={student.gender}
+                                        />
+                                        <DetailRow
+                                            label="Date of Birth"
+                                            value={student.date_of_birth}
+                                        />
+                                        <DetailRow
+                                            label="Admission Number"
+                                            value={student.admission_number}
+                                        />
+                                        <DetailRow
+                                            label="Current Class"
+                                            value={
+                                                student.class_details
+                                                    ?.full_class
+                                            }
+                                        />
+                                        <DetailRow
+                                            label="Status"
+                                            value={student.status}
+                                        />
                                     </dl>
                                 </CardContent>
                             </Card>
@@ -303,12 +376,18 @@ export default function StudentProfile() {
                                             <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-amber-50 text-amber-500">
                                                 <Info className="h-10 w-10" />
                                             </div>
-                                            <h3 className="text-lg font-semibold text-slate-900">No guardians linked</h3>
+                                            <h3 className="text-lg font-semibold text-slate-900">
+                                                No guardians linked
+                                            </h3>
                                             <p className="mt-2 max-w-[280px] text-sm text-slate-500">
-                                                Every student should have at least one guardian for communication and emergency.
+                                                Every student should have at
+                                                least one guardian for
+                                                communication and emergency.
                                             </p>
                                             <Button
-                                                onClick={() => setShowAddGuardian(true)}
+                                                onClick={() =>
+                                                    setShowAddGuardian(true)
+                                                }
                                                 variant="link"
                                                 className="mt-4 font-semibold text-indigo-600"
                                             >
@@ -322,10 +401,16 @@ export default function StudentProfile() {
                                                     key={g.id}
                                                     guardian={g}
                                                     studentUuid={student.id}
-                                                    isOnlyGuardian={guardians.length === 1}
-                                                    onEditPivot={setPivotGuardian}
+                                                    isOnlyGuardian={
+                                                        guardians.length === 1
+                                                    }
+                                                    onEditPivot={
+                                                        setPivotGuardian
+                                                    }
                                                     onDetach={setDetachTarget}
-                                                    onEnableLogin={handleEnableLogin}
+                                                    onEnableLogin={
+                                                        handleEnableLogin
+                                                    }
                                                 />
                                             ))}
                                         </div>
@@ -337,15 +422,21 @@ export default function StudentProfile() {
                         {/* Right column (1/3 width on lg) */}
                         <div className="space-y-8">
                             <PlaceholderCard
-                                icon={<BookOpen className="h-5 w-5 text-indigo-600" />}
+                                icon={
+                                    <BookOpen className="h-5 w-5 text-indigo-600" />
+                                }
                                 title="Academic Records"
                             />
                             <PlaceholderCard
-                                icon={<Calendar className="h-5 w-5 text-indigo-600" />}
+                                icon={
+                                    <Calendar className="h-5 w-5 text-indigo-600" />
+                                }
                                 title="Attendance"
                             />
                             <PlaceholderCard
-                                icon={<CreditCard className="h-5 w-5 text-indigo-600" />}
+                                icon={
+                                    <CreditCard className="h-5 w-5 text-indigo-600" />
+                                }
                                 title="Fees & Payments"
                             />
                         </div>
@@ -462,7 +553,8 @@ function PlaceholderCard({
                         Coming soon
                     </p>
                     <p className="max-w-[200px] text-xs text-slate-400">
-                        Detailed {title.toLowerCase()} tracking will be available in the next update.
+                        Detailed {title.toLowerCase()} tracking will be
+                        available in the next update.
                     </p>
                 </div>
             </CardContent>

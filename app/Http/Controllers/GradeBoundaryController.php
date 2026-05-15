@@ -25,6 +25,7 @@ class GradeBoundaryController extends Controller
                 'max_score' => 'required|decimal:0,2|min:0',
                 'grade' => 'required|string|max:10',
                 'label' => 'required|string|max:255',
+                'grade_point' => 'required|string|max:10'
             ]);
             $school = auth()->user()->school;
             $examType = ExamType::where('uuid', $validated['exam_type_id'])->first();
@@ -47,6 +48,7 @@ class GradeBoundaryController extends Controller
                 'max_score' => 'required|decimal:0,2|min:0',
                 'grade' => 'required|string|max:10',
                 'label' => 'required|string|max:255',
+                'grade_point' => 'required|string|max:10'
             ]);
 
             $gradeBoundary->update($validated);

@@ -74,14 +74,15 @@ export interface ExamType {
     school?: School;
     name: string;
     slug: string;
+    grade_boundaries?: GradeBoundary[];
     created_at?: string;
     updated_at?: string;
 }
 
 export interface Subject {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
     name: string;
     code: string;
     created_at?: string;
@@ -97,6 +98,7 @@ export interface GradeBoundary {
     min_score: number;
     max_score: number;
     grade: string;
+    grade_point: string;
     label: string;
     created_at?: string;
     updated_at?: string;
@@ -273,12 +275,15 @@ export interface CurriculumSubject {
     curriculum_id: string;
     curriculum?: Curriculum;
     subject: Subject;
+    subject_id?: number;
     is_compulsory: boolean;
     display_order: number;
-    students: StudentSubject[];
+    students?: StudentSubject[];
     scores?: Score[];
-    teachers: TeacherCurriculumSubject[];
-    marking_components: MarkingComponent[];
+    teachers?: TeacherCurriculumSubject[];
+    marking_components?: MarkingComponent[];
+    student_results: StudentResult[];
+    result_status?: SubjectResultStatus;
 }
 export interface TeacherCurriculumSubject {
     id: string;
@@ -306,12 +311,13 @@ export interface StudentCurriculum {
     student: Student;
     curriculum: Curriculum;
     status: string;
-    promoted_to: Curriculum;
+    promoted_to?: Curriculum;
+    subjects?: StudentSubject[];
 }
 export interface StudentSubject {
     id: string;
     student_curriculum: StudentCurriculum;
-    subject: Subject;
+    curriculum_subject: CurriculumSubject;
 }
 
 export interface SubjectResultStatus {
@@ -321,4 +327,13 @@ export interface SubjectResultStatus {
     curriculum_subject: CurriculumSubject;
     updated_at: string;
     updated_by: User;
+}
+
+export interface StudentResult {
+    id: string;
+    student_id?: number;
+    student?: Student;
+    total_score: string | number;
+    grade: string;
+    status: string;
 }

@@ -7,14 +7,18 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StudentController;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\GradeBoundaryResource;
 use App\Http\Resources\GuardianResource;
+use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\SubjectResultStatusResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\GradeBoundary;
 use App\Models\Guardian;
 use App\Models\Student;
+use App\Models\StudentCurriculum;
 use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
 use Illuminate\Support\Facades\Route;
@@ -24,8 +28,8 @@ use Laravel\Fortify\Features;
 Route::get('/', function () {
     return Inertia::render('auth/login', [
         'canResetPassword' => Features::enabled(Features::resetPasswords()),
-        'canRegister'      => Features::enabled(Features::registration()),
-        'status'           => session('status'),
+        'canRegister' => Features::enabled(Features::registration()),
+        'status' => session('status'),
     ]);
 })->middleware('guest')->name('home');
 
@@ -61,7 +65,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         ]);
 
         return Inertia::render('admin/students/show', [
-            'student'          => new StudentResource($student),
+            'student' => new StudentResource($student),
             'student_statuses' => StudentStatusEnum::options(),
         ]);
     })->name('students.show');
@@ -84,7 +88,8 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     // Guardian profile
     Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
         $guardian->load([
-            'user', 'photoFile',
+            'user',
+            'photoFile',
             'students.photoFile',
             'students.currentCurriculum.curriculum.classLevelArm.classLevel',
             'students.currentCurriculum.curriculum.classLevelArm.arm',
@@ -126,7 +131,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
 
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
 
     Route::get('setup/teacher/{teacher:uuid}', function (Teacher $teacher) {
@@ -144,6 +149,39 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher'])->grou
     })->name('setup.curriculumSubjects.show');
 
 
+});
+
+Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->group(function () {
+    Route::get('students/{student:uuid}/results/active', function (Student $student) {
+        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject'])->where('student_id', $student->id)->where('status', 'active')->get();
+
+        $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
+        // return response()->json([
+        //     'student' => new StudentResource($student),
+        //     'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
+        //     'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
+        // ]);
+        return Inertia::render('student/results/active', [
+            'student' => new StudentResource($student),
+            'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
+            'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
+        ]);
+    })->name('admin.dashboard');
+    Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
+        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject'])->where('student_id', $student->id)->where('id', $studentCurriculum->id)->get();
+
+        $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
+        // return response()->json([
+        //     'student' => new StudentResource($student),
+        //     'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
+        //     'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
+        // ]);
+        return Inertia::render('student/results/active', [
+            'student' => new StudentResource($student),
+            'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
+            'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
+        ]);
+    })->name('admin.dashboard')->withoutScopedBindings();
 });
 
 Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {

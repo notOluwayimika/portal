@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type {
     MarkingComponent,
+    Teacher,
     TeacherCurriculumSubject,
 } from '@/types/models';
 // import { fmtDate } from '@/helpers';
@@ -625,9 +626,16 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                         <WeightBar components={components} />
                     )}
                     {/* view details for a single tcs */}
-                    {tcs.curriculum_subject.students.length > 0 &&
-                        tcs.curriculum_subject.marking_components.length >
-                            0 && (
+                    {(tcs?.curriculum_subject?.students?.length ?? 0) > 0 &&
+                        (tcs?.curriculum_subject?.marking_components?.length ??
+                            0) > 0 &&
+                        Math.ceil(
+                            (components ?? []).reduce(
+                                (sum, component) =>
+                                    sum + Number(component?.weight ?? 0),
+                                0,
+                            ) * 100,
+                        ) === 100 && (
                             <div className="my-2 flex justify-end">
                                 <Link
                                     className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"
@@ -674,6 +682,7 @@ export function TeacherSubjects({
     teacherId: string;
 }) {
     const [subjects, setSubjects] = useState<TeacherCurriculumSubject[]>([]);
+    const [teacher, setTeacher] = useState<Teacher | null>(null);
     const [fetching, setFetching] = useState(true);
     const [loading] = useState(false);
 
@@ -690,7 +699,9 @@ export function TeacherSubjects({
                 const res = await axios.get(
                     `/api/teachers/${teacherId}/subjects`,
                 );
+                const response = await axios.get(`/api/teachers/${teacherId}`);
                 setSubjects(res.data ?? []);
+                setTeacher(response.data ?? null);
             } catch {
                 addToast('Failed to load subjects', 'error');
             } finally {
@@ -767,7 +778,7 @@ export function TeacherSubjects({
             {/* ── Header ──────────────────────────────────────────── */}
             <div className="page-hdr">
                 <div>
-                    <h1>Teacher Subjects</h1>
+                    <h1>{teacher?.full_name}'s Subjects</h1>
                     <p>
                         {subjects.length} subject
                         {subjects.length !== 1 ? 's' : ''} assigned to{' '}

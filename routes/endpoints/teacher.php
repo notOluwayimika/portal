@@ -9,7 +9,6 @@ Route::prefix('teachers')->group(function () {
     Route::get('/resources', [TeacherController::class, 'resources']);
     Route::get('/export', [TeacherController::class, 'export']);
     Route::post('/import', [TeacherController::class, 'import']);
-    Route::get('/{teacher:uuid}', [TeacherController::class, 'show']);
     Route::patch('/{teacher:uuid}', [TeacherController::class, 'update']);
     Route::patch('/{teacher:uuid}/status', [TeacherController::class, 'updateStatus']);
     Route::delete('/{teacher:uuid}', [TeacherController::class, 'destroy']);

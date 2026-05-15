@@ -43,6 +43,25 @@ class GuardianResource extends JsonResource
                 'is_primary'   => (bool) $this->pivot->is_primary,
                 'can_login'    => (bool) $this->pivot->can_login,
             ]),
+            'students'          => $this->whenLoaded('students', fn() => $this->students->map(fn($s) => [
+                'id'               => $s->uuid,
+                'full_name'        => $s->full_name,
+                'first_name'       => $s->first_name,
+                'last_name'        => $s->last_name,
+                'admission_number' => $s->admission_number,
+                'photo'            => $s->photoFile?->url,
+                'status'           => $s->currentCurriculum?->status,
+                'class_details'    => [
+                    'level'      => $s->currentCurriculum?->curriculum?->classLevelArm?->classLevel?->name,
+                    'arm'        => $s->currentCurriculum?->curriculum?->classLevelArm?->arm?->label,
+                    'full_class' => $s->student_class ?? 'N/A',
+                ],
+                'pivot'            => [
+                    'relationship' => $s->pivot->relationship,
+                    'is_primary'   => (bool) $s->pivot->is_primary,
+                    'can_login'    => (bool) $s->pivot->can_login,
+                ],
+            ])),
         ];
     }
 }

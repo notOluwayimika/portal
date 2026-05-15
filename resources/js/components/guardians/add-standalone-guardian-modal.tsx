@@ -78,7 +78,7 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Add Guardian" size="4xl">
-            <div className="space-y-6 overflow-y-auto max-h-[75vh] pr-1">
+            <div className="space-y-6">
                 {/* Personal */}
                 <section>
                     <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personal</p>

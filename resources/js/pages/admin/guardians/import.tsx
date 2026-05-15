@@ -438,7 +438,7 @@ export default function GuardianImport() {
                                 </Badge>
                             </CardHeader>
                             <CardContent className="p-0">
-                                <div className="max-h-80 overflow-auto">
+                                <div className="max-h-80 overflow-auto custom-scrollbar">
                                     <table className="w-full text-xs">
                                         <thead className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-sm dark:bg-slate-900/80">
                                             <tr>
@@ -503,7 +503,7 @@ export default function GuardianImport() {
                                     </p>
                                 </div>
                             ) : (
-                                <div className="overflow-x-auto">
+                                <div className="overflow-x-auto custom-scrollbar">
                                     <table className="w-full text-xs">
                                         <thead className="bg-slate-50/50 dark:bg-slate-900/30">
                                             <tr>
@@ -576,7 +576,7 @@ export default function GuardianImport() {
                             Column headers are matched case-insensitively and spaces are converted to underscores.
                         </span>
                     </div>
-                    <div className="max-h-[60vh] overflow-auto rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="max-h-[60vh] overflow-auto custom-scrollbar rounded-xl border border-slate-100 dark:border-slate-800">
                         <table className="w-full text-sm">
                             <thead className="sticky top-0 bg-slate-50/80 backdrop-blur-sm dark:bg-slate-900/80">
                                 <tr>

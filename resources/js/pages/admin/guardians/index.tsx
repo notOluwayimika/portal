@@ -1,6 +1,6 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, UserPlus } from 'lucide-react';
+import { Download, Upload, UserPlus, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AddStandaloneGuardianModal } from '@/components/guardians/add-standalone-guardian-modal';
 import { BulkActionBar } from '@/components/guardians/bulk-action-bar';
@@ -190,61 +190,96 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
         <>
             <Head title="Guardians" />
 
-            <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4 pb-20">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold">Guardians</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Manage guardian accounts and access
-                        </p>
+            <div className="min-h-screen bg-[#f5f7fb] py-5 px-4 sm:px-6 lg:px-8 pb-24 dark:bg-background">
+                <div className="mx-auto max-w-7xl space-y-5">
+
+                    {/* ── Hero Card ─────────────────────────────────────────────── */}
+                    <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                    <Users className="h-6 w-6 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                        Guardians
+                                    </h1>
+                                    <p className="text-xs text-slate-500">
+                                        Manage guardian accounts, login access, and student links.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                <Link href="/guardians/import">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        type="button"
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Upload className="mr-1.5 h-4 w-4" />
+                                        Import
+                                    </Button>
+                                </Link>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleExport}
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                >
+                                    <Download className="mr-1.5 h-4 w-4" />
+                                    Export
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => setShowAdd(true)}
+                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                >
+                                    <UserPlus className="mr-1.5 h-4 w-4" />
+                                    Add Guardian
+                                </Button>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleExport}>
-                            <Download className="mr-1 h-4 w-4" />
-                            Export
-                        </Button>
-                        <Button onClick={() => setShowAdd(true)}>
-                            <UserPlus className="mr-1 h-4 w-4" />
-                            Add Guardian
-                        </Button>
+
+                    {/* ── Filters + Table Card ─────────────────────────────────── */}
+                    <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
+                        <GuardianFilterBar
+                            search={search}
+                            onSearch={setSearch}
+                            statusFilter={statusFilter}
+                            onStatusFilter={setStatusFilter}
+                            loginFilter={loginFilter}
+                            onLoginFilter={setLoginFilter}
+                            childrenFilter={childrenFilter}
+                            onChildrenFilter={setChildrenFilter}
+                            dateFrom={dateFrom}
+                            onDateFrom={setDateFrom}
+                            dateTo={dateTo}
+                            onDateTo={setDateTo}
+                            total={pagination.total}
+                            showing={guardians.length}
+                            guardianStatuses={guardian_statuses}
+                        />
+
+                        <GuardianTable
+                            guardians={guardians}
+                            loading={loading}
+                            selectedIds={selectedIds}
+                            onToggleSelect={toggleSelect}
+                            onToggleAll={toggleAll}
+                            isAllSelected={isAllSelected}
+                            sortBy={sortBy}
+                            sortDir={sortDir}
+                            onSort={handleSort}
+                            onSingleAction={handleSingleAction}
+                        />
+
+                        <div className="border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30">
+                            <Pagination meta={pagination} setPage={setPage} setLimit={setLimit} />
+                        </div>
                     </div>
-                </div>
-
-                <div className="rounded-lg border bg-background shadow-sm">
-                    <GuardianFilterBar
-                        search={search}
-                        onSearch={setSearch}
-                        statusFilter={statusFilter}
-                        onStatusFilter={setStatusFilter}
-                        loginFilter={loginFilter}
-                        onLoginFilter={setLoginFilter}
-                        childrenFilter={childrenFilter}
-                        onChildrenFilter={setChildrenFilter}
-                        dateFrom={dateFrom}
-                        onDateFrom={setDateFrom}
-                        dateTo={dateTo}
-                        onDateTo={setDateTo}
-                        total={pagination.total}
-                        showing={guardians.length}
-                        guardianStatuses={guardian_statuses}
-                    />
-
-                    <GuardianTable
-                        guardians={guardians}
-                        loading={loading}
-                        selectedIds={selectedIds}
-                        onToggleSelect={toggleSelect}
-                        onToggleAll={toggleAll}
-                        isAllSelected={isAllSelected}
-                        sortBy={sortBy}
-                        sortDir={sortDir}
-                        onSort={handleSort}
-                        onSingleAction={handleSingleAction}
-                    />
-                </div>
-
-                <div className="mt-auto border-t bg-background/50 p-4">
-                    <Pagination meta={pagination} setPage={setPage} setLimit={setLimit} />
                 </div>
             </div>
 

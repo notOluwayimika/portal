@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Notifications\GuardianAccountCreatedNotification;
 use App\Repositories\GuardianRepository;
+use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -139,6 +140,18 @@ class GuardianService
     public function createGuardianWithUser(array $attributes, int $schoolId, bool $canLogin, ?string $email): array
     {
         $plainPassword = $this->passwordGenerator->generate();
+
+        // Normalize at the storage boundary so import/lookup/registration all share one canonical form.
+        if (isset($attributes['phone'])) {
+            $attributes['phone'] = PhoneNormalizer::normalize($attributes['phone']) ?? $attributes['phone'];
+        }
+        if (isset($attributes['whatsapp_number'])) {
+            $attributes['whatsapp_number'] = PhoneNormalizer::normalize($attributes['whatsapp_number']) ?? $attributes['whatsapp_number'];
+        }
+        if (isset($attributes['emergency_contact'])) {
+            $attributes['emergency_contact'] = PhoneNormalizer::normalize($attributes['emergency_contact']) ?? $attributes['emergency_contact'];
+        }
+        $email = $email ? Str::lower($email) : null;
 
         return DB::transaction(function () use ($attributes, $schoolId, $canLogin, $email, $plainPassword) {
             $userEmail = $email ?: $this->syntheticEmail($schoolId);

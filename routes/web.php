@@ -85,6 +85,11 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         ]);
     })->name('guardians.index');
 
+    // Bulk guardian import (must come before /{guardian:uuid} so it isn't shadowed).
+    Route::get('guardians/import', function () {
+        return Inertia::render('admin/guardians/import');
+    })->name('guardians.import');
+
     // Guardian profile
     Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
         $guardian->load([
@@ -107,6 +112,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
             'guardian' => new GuardianResource($guardian),
         ]);
     })->name('guardians.audit');
+
 
     Route::post('students', [App\Http\Controllers\StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);

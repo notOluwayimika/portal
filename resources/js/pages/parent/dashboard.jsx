@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Head } from '@inertiajs/react';
-import { 
-  Bell, ChevronRight, Download, FileText, Home, Lock, LogOut, Mail, Menu, MessageSquare, 
-  Phone, User, Users, X, AlertCircle, Calendar, Clock, CheckCircle2, Award, 
-  ArrowRight, CreditCard as FinanceIcon, Layout, FileBarChart, ExternalLink
+import {
+  AlertCircle, ArrowRight, Award, Bell, Calendar, CheckCircle2,
+  ChevronRight, Clock, CreditCard as FinanceIcon, Download, FileBarChart,
+  Layout, Lock, Mail, MessageSquare, Phone, User, Users, X,
 } from 'lucide-react';
 
 // =======================================================
@@ -152,7 +152,7 @@ const Toast = ({ toasts, onDismiss }) => {
   return (
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3">
       {toasts.map((toast) => (
-        <div 
+        <div
           key={toast.id}
           className="flex items-center gap-3 bg-gray-900 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in slide-in-from-right-full duration-300 min-w-[300px]"
         >
@@ -160,7 +160,7 @@ const Toast = ({ toasts, onDismiss }) => {
             <CheckCircle2 className="w-4 h-4 text-green-400" />
           </div>
           <span className="text-sm font-medium">{toast.message}</span>
-          <button 
+          <button
             onClick={() => onDismiss(toast.id)}
             className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
           >
@@ -176,7 +176,7 @@ const DebtBanner = ({ child, onDismiss, onPay }) => {
   if (!child.has_fee_debt) return null;
 
   return (
-    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center gap-4 transition-all hover:shadow-md">
+    <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4 transition-all hover:shadow-md">
       <div className="bg-red-100 p-3 rounded-xl shrink-0">
         <AlertCircle className="w-6 h-6 text-red-600" />
       </div>
@@ -185,13 +185,13 @@ const DebtBanner = ({ child, onDismiss, onPay }) => {
         <p className="text-red-700 text-sm">Result access is restricted until payment is made.</p>
       </div>
       <div className="flex items-center gap-3 w-full sm:w-auto justify-center">
-        <button 
+        <button
           onClick={onPay}
           className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-xl font-medium text-sm transition-colors shadow-sm active:scale-95"
         >
           Pay Now
         </button>
-        <button 
+        <button
           onClick={onDismiss}
           className="p-2 hover:bg-red-100 rounded-xl transition-colors text-red-400 hover:text-red-600"
         >
@@ -210,13 +210,12 @@ const ChildHeroCard = ({ child }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-8 overflow-hidden relative">
-      {/* Decorative element */}
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 overflow-hidden relative">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gray-50 rounded-full -mr-16 -mt-16 opacity-50" />
-      
+
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
         <div className="flex items-center gap-5">
-          <div 
+          <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-lg"
             style={{ backgroundColor: child.avatar_colour }}
           >
@@ -307,7 +306,7 @@ const NoticesCard = ({ notices, onAction }) => {
           View all notices <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
-      
+
       <div className="space-y-4 flex-1">
         {notices.map((notice, idx) => (
           <div key={idx} className="group p-4 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100 cursor-pointer">
@@ -345,7 +344,7 @@ const FeeSummaryCard = ({ child, onAction }) => {
         <FinanceIcon className="w-5 h-5 text-red-500" />
         Fee Summary
       </h2>
-      
+
       <div className="mb-6">
         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-4">Current Term</span>
         <h3 className="text-xl font-bold text-gray-800">{child.current_term} {child.current_session}</h3>
@@ -360,9 +359,9 @@ const FeeSummaryCard = ({ child, onAction }) => {
           <span className="text-gray-500 font-medium">Amount paid</span>
           <span className="text-green-600 font-bold">₦{child.has_fee_debt ? "665,000" : "850,000"}</span>
         </div>
-        
+
         <div className="h-px bg-gray-100 my-4" />
-        
+
         <div className="flex justify-between items-center">
           <span className="text-gray-900 font-bold">Balance due</span>
           <span className={`text-xl font-black ${child.has_fee_debt ? 'text-red-600' : 'text-green-600'}`}>
@@ -373,7 +372,7 @@ const FeeSummaryCard = ({ child, onAction }) => {
 
       <div className="mt-8 space-y-3">
         {child.has_fee_debt ? (
-          <button 
+          <button
             onClick={() => onAction('payment')}
             className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl shadow-lg shadow-red-100 transition-all active:scale-95"
           >
@@ -385,7 +384,7 @@ const FeeSummaryCard = ({ child, onAction }) => {
             All fees paid for this term
           </div>
         )}
-        <button 
+        <button
           onClick={() => onAction('statement')}
           className="w-full text-sm font-semibold text-gray-500 hover:text-gray-900 py-2 transition-colors flex items-center justify-center gap-1"
         >
@@ -401,7 +400,7 @@ const AttendanceCard = ({ child, onAction }) => {
   const radius = 35;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (pct / 100) * circumference;
-  
+
   const getColor = (p) => {
     if (p >= 90) return '#10b981';
     if (p >= 75) return '#f59e0b';
@@ -434,8 +433,8 @@ const AttendanceCard = ({ child, onAction }) => {
         <div className="relative w-32 h-32 flex items-center justify-center">
           <svg className="w-full h-full transform -rotate-90">
             <circle cx="64" cy="64" r={radius} fill="transparent" stroke="#f3f4f6" strokeWidth="8" />
-            <circle 
-              cx="64" cy="64" r={radius} fill="transparent" stroke={getColor(pct)} strokeWidth="8" 
+            <circle
+              cx="64" cy="64" r={radius} fill="transparent" stroke={getColor(pct)} strokeWidth="8"
               strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
               className="transition-all duration-1000 ease-out"
             />
@@ -445,7 +444,7 @@ const AttendanceCard = ({ child, onAction }) => {
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Present</span>
           </div>
         </div>
-        
+
         <div className="flex gap-2 mt-4">
           <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold">56 days present</span>
           <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold">4 absences</span>
@@ -478,7 +477,7 @@ const AttendanceCard = ({ child, onAction }) => {
 
 const ResultsCard = ({ child, onAction }) => {
   const results = child.results || [];
-  
+
   if (child.result_locked) {
     return (
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 overflow-hidden relative">
@@ -486,9 +485,8 @@ const ResultsCard = ({ child, onAction }) => {
           <FileBarChart className="w-5 h-5 text-indigo-500" />
           Academic Results
         </h2>
-        
+
         <div className="relative">
-          {/* Blurred preview */}
           <div className="blur-md select-none opacity-20 space-y-4">
             {[1,2,3,4,5].map(i => (
               <div key={i} className="flex items-center justify-between p-4 bg-gray-100 rounded-2xl">
@@ -498,8 +496,7 @@ const ResultsCard = ({ child, onAction }) => {
               </div>
             ))}
           </div>
-          
-          {/* Locked overlay */}
+
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[2px] rounded-3xl">
             <div className="bg-red-50 p-4 rounded-full mb-4 animate-bounce">
               <Lock className="w-10 h-10 text-red-600" />
@@ -508,7 +505,7 @@ const ResultsCard = ({ child, onAction }) => {
             <p className="text-gray-600 text-center max-w-sm mb-6 px-4">
               {child.first_name}'s {child.current_term} results are ready. Clear the outstanding balance of ₦{child.outstanding_balance.toLocaleString()} to unlock.
             </p>
-            <button 
+            <button
               onClick={() => onAction('unlock')}
               className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-2xl shadow-xl shadow-red-100 transition-all active:scale-95 flex items-center gap-2"
             >
@@ -560,9 +557,9 @@ const ResultsCard = ({ child, onAction }) => {
                   <div className="flex flex-col items-center gap-1">
                     <span className="text-sm font-black text-gray-900">{r.score}</span>
                     <div className="w-12 h-1 bg-gray-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full ${r.score >= 70 ? 'bg-green-500' : r.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} 
-                        style={{ width: `${r.score}%` }} 
+                      <div
+                        className={`h-full ${r.score >= 70 ? 'bg-green-500' : r.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                        style={{ width: `${r.score}%` }}
                       />
                     </div>
                   </div>
@@ -592,13 +589,13 @@ const ResultsCard = ({ child, onAction }) => {
           </div>
         </div>
         <div className="flex gap-3 w-full sm:w-auto">
-          <button 
+          <button
             onClick={() => onAction('download')}
             className="flex-1 sm:flex-none text-xs font-bold text-gray-600 hover:text-gray-900 px-4 py-2 rounded-xl border border-gray-200 bg-white transition-all flex items-center justify-center gap-2"
           >
             Download PDF <Download className="w-3 h-3" />
           </button>
-          <button 
+          <button
             onClick={() => onAction('analysis')}
             className="flex-1 sm:flex-none text-xs font-bold text-indigo-600 hover:text-indigo-800 px-4 py-2 transition-all flex items-center justify-center gap-1"
           >
@@ -625,11 +622,11 @@ const TimetableCard = ({ timetable, onAction }) => {
 
       <div className="space-y-3 flex-1">
         {timetable.map((lesson, idx) => (
-          <div 
-            key={idx} 
+          <div
+            key={idx}
             className={`p-3 rounded-2xl border transition-all ${
-              lesson.status === 'current' 
-                ? 'bg-blue-50 border-blue-100 shadow-sm' 
+              lesson.status === 'current'
+                ? 'bg-blue-50 border-blue-100 shadow-sm'
                 : lesson.status === 'done'
                 ? 'bg-gray-50/50 border-transparent opacity-60'
                 : 'bg-white border-gray-100'
@@ -709,21 +706,21 @@ const QuickContactCard = ({ contacts, onAction }) => {
       <div className="bg-purple-50 p-5 rounded-3xl flex-1">
         <h3 className="text-xs font-bold text-purple-900 mb-4 uppercase tracking-widest">Message the school</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <select 
+          <select
             value={to}
             onChange={(e) => setTo(e.target.value)}
             className="w-full bg-white border border-purple-100 rounded-xl px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
           >
             {contacts.map(c => <option key={c.office}>{c.office}</option>)}
           </select>
-          <textarea 
+          <textarea
             value={msg}
             onChange={(e) => setMsg(e.target.value)}
             placeholder="Write a message to the school..."
             rows={3}
             className="w-full bg-white border border-purple-100 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
           />
-          <button 
+          <button
             type="submit"
             className="w-full bg-[#185FA5] hover:bg-[#0f4a82] text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
           >
@@ -751,7 +748,7 @@ const NotificationDropdown = ({ isOpen, onClose, notifications }) => {
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       ref={dropdownRef}
       className="absolute right-0 mt-3 w-[320px] bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in duration-200 origin-top-right"
     >
@@ -779,97 +776,6 @@ const NotificationDropdown = ({ isOpen, onClose, notifications }) => {
   );
 };
 
-const MobileSidebar = ({ isOpen, onClose, activeChildId, setActiveChildId, childrenData, parentData }) => {
-  return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-[60] transition-opacity duration-300 md:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
-        onClick={onClose}
-      />
-      
-      {/* Drawer */}
-      <div 
-        className={`fixed top-0 left-0 bottom-0 w-[280px] bg-white z-[70] shadow-2xl transition-transform duration-300 transform md:hidden ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
-      >
-        <div className="p-6 h-full flex flex-col">
-          <div className="flex items-center justify-between mb-8">
-            <div className="bg-[#185FA5] w-8 h-8 rounded-lg flex items-center justify-center">
-              <Layout className="w-5 h-5 text-white" />
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
-
-          <nav className="space-y-2 mb-8">
-            <button className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 text-[#185FA5] rounded-2xl font-bold text-sm">
-              <Home className="w-5 h-5" /> Dashboard
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:bg-gray-50 rounded-2xl font-medium text-sm transition-all">
-              <FinanceIcon className="w-5 h-5" /> Fees & Payments
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:bg-gray-50 rounded-2xl font-medium text-sm transition-all">
-              <FileBarChart className="w-5 h-5" /> Results
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:bg-gray-50 rounded-2xl font-medium text-sm transition-all">
-              <MessageSquare className="w-5 h-5" /> Messages
-            </button>
-          </nav>
-
-          <div className="mt-4 mb-auto">
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 px-4">My Children</h4>
-            <div className="space-y-3">
-              {childrenData.map(child => (
-                <button 
-                  key={child.id}
-                  onClick={() => { setActiveChildId(child.id); onClose(); }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all border ${
-                    activeChildId === child.id 
-                      ? 'bg-white border-blue-100 shadow-sm' 
-                      : 'border-transparent hover:bg-gray-50'
-                  }`}
-                >
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                    style={{ backgroundColor: child.avatar_colour }}
-                  >
-                    {child.initials}
-                  </div>
-                  <div className="text-left min-w-0">
-                    <p className={`text-sm font-bold truncate ${activeChildId === child.id ? 'text-gray-900' : 'text-gray-600'}`}>
-                      {child.first_name}
-                    </p>
-                    <p className="text-[10px] text-gray-400 font-medium truncate">{child.year_group}</p>
-                  </div>
-                  {activeChildId === child.id && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-gray-100">
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-sm">
-                {parentData.avatar_initials}
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-gray-900 truncate">{parentData.name}</p>
-                <p className="text-[10px] text-gray-400 truncate">{parentData.email}</p>
-              </div>
-            </div>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-2xl font-bold text-sm transition-all mt-2">
-              <LogOut className="w-5 h-5" /> Logout
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
 // =======================================================
 // MAIN COMPONENT
 // =======================================================
@@ -878,7 +784,6 @@ export default function ParentDashboard() {
   const [activeChildId, setActiveChildId] = useState(PARENT_DATA.children[0].id);
   const [isBannerDismissed, setIsBannerDismissed] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const activeChild = PARENT_DATA.children.find(c => c.id === activeChildId);
@@ -922,117 +827,33 @@ export default function ParentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-gray-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+    <>
       <Head title="Parent Dashboard" />
 
-      {/* Sidebar - Desktop */}
-      <aside className="fixed top-0 left-0 bottom-0 w-[280px] bg-white border-r border-gray-100 z-50 hidden lg:flex flex-col">
-        <div className="p-8">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="bg-[#185FA5] w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-100">
-              <Layout className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="font-black text-xl tracking-tight text-gray-900">Brookstone</h1>
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-[0.2em] leading-none">Parent Portal</p>
-            </div>
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+        {/* Page header: welcome + child switcher + notifications */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+              Welcome back, {PARENT_DATA.name.split(' ')[1]}!
+            </h3>
+            <p className="text-gray-500 mt-1 font-medium flex items-center gap-2 text-sm">
+              Here's what's happening with your children today at Brookstone.
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
+            </p>
           </div>
 
-          <nav className="space-y-1.5">
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 px-4">Main Menu</h4>
-            <button className="w-full flex items-center gap-3 px-4 py-3.5 bg-blue-50 text-[#185FA5] rounded-2xl font-bold text-sm transition-all group">
-              <Home className="w-5 h-5 group-hover:scale-110 transition-transform" /> Dashboard
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-2xl font-semibold text-sm transition-all group">
-              <FinanceIcon className="w-5 h-5 group-hover:scale-110 transition-transform" /> Fees & Payments
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-2xl font-semibold text-sm transition-all group">
-              <FileBarChart className="w-5 h-5 group-hover:scale-110 transition-transform" /> Results
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-2xl font-semibold text-sm transition-all group relative">
-              <MessageSquare className="w-5 h-5 group-hover:scale-110 transition-transform" /> Messages
-              <span className="ml-auto bg-red-500 w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white font-bold">2</span>
-            </button>
-          </nav>
-
-          <div className="mt-12">
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 px-4">My Children</h4>
-            <div className="space-y-2">
-              {PARENT_DATA.children.map(child => (
-                <button 
-                  key={child.id}
-                  onClick={() => setActiveChildId(child.id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all border ${
-                    activeChildId === child.id 
-                      ? 'bg-white border-blue-100 shadow-xl shadow-blue-900/5' 
-                      : 'border-transparent hover:bg-gray-50 hover:scale-[1.02]'
-                  }`}
-                >
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0 shadow-sm"
-                    style={{ backgroundColor: child.avatar_colour }}
-                  >
-                    {child.initials}
-                  </div>
-                  <div className="text-left min-w-0">
-                    <p className={`text-sm font-bold truncate ${activeChildId === child.id ? 'text-gray-900' : 'text-gray-600'}`}>
-                      {child.first_name}
-                    </p>
-                    <p className="text-[10px] text-gray-400 font-bold truncate uppercase tracking-tighter">{child.year_group}</p>
-                  </div>
-                  {activeChildId === child.id && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-auto p-6 border-t border-gray-50">
-          <div className="bg-gray-50 rounded-3xl p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white shadow-sm flex items-center justify-center text-gray-900 font-black text-sm">
-              {PARENT_DATA.avatar_initials}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate">{PARENT_DATA.name}</p>
-              <p className="text-[10px] font-medium text-gray-400 truncate">{PARENT_DATA.email}</p>
-            </div>
-            <button className="ml-auto p-2 hover:bg-white rounded-xl transition-colors text-gray-400 hover:text-red-500">
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="lg:ml-[280px] min-h-screen flex flex-col">
-        {/* Top Bar */}
-        <header className="sticky top-0 bg-white/80 backdrop-blur-xl border-b border-gray-100 z-40 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              <Menu className="w-6 h-6 text-gray-600" />
-            </button>
-            <div className="hidden sm:block">
-              <h2 className="text-xl font-black text-gray-900 tracking-tight">Parent Dashboard</h2>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] leading-none mt-1">Brookstone School Portal</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* Child pills on mobile top bar */}
-            <div className="hidden md:flex gap-1 bg-gray-50 p-1 rounded-2xl">
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Child switcher */}
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl">
               {PARENT_DATA.children.map(child => (
                 <button
                   key={child.id}
                   onClick={() => setActiveChildId(child.id)}
                   className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    activeChildId === child.id 
-                      ? 'bg-white text-gray-900 shadow-sm' 
-                      : 'text-gray-400 hover:text-gray-600'
+                    activeChildId === child.id
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   {child.first_name}
@@ -1040,122 +861,84 @@ export default function ParentDashboard() {
               ))}
             </div>
 
+            {/* Notification bell */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsNotifOpen(!isNotifOpen)}
-                className={`p-3 rounded-2xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                className={`p-2.5 rounded-2xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
               </button>
-              <NotificationDropdown 
-                isOpen={isNotifOpen} 
-                onClose={() => setIsNotifOpen(false)} 
+              <NotificationDropdown
+                isOpen={isNotifOpen}
+                onClose={() => setIsNotifOpen(false)}
                 notifications={NOTIFICATIONS}
               />
             </div>
-
-            <button className="hidden sm:flex items-center gap-3 p-1.5 pr-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center text-gray-900 font-black text-xs group-hover:scale-95 transition-transform">
-                {PARENT_DATA.avatar_initials}
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-gray-900 leading-none mb-1">My Account</p>
-                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter leading-none">Guardian</p>
-              </div>
-            </button>
-          </div>
-        </header>
-
-        {/* Dashboard Content */}
-        <div className="p-6 lg:p-10 flex-1">
-          <div className="max-w-7xl mx-auto">
-            {/* Welcome message */}
-            <div className="mb-8">
-              <h3 className="text-3xl font-black text-gray-900 tracking-tight">
-                Welcome back, {PARENT_DATA.name.split(' ')[1]}! 👋
-              </h3>
-              <p className="text-gray-500 mt-2 font-medium flex items-center gap-2">
-                Here's what's happening with your children today at Brookstone.
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
-              </p>
-            </div>
-
-            {/* Debt Banner */}
-            {!isBannerDismissed && (
-              <DebtBanner 
-                child={activeChild} 
-                onDismiss={() => setIsBannerDismissed(true)} 
-                onPay={() => handleAction('payment')}
-              />
-            )}
-
-            {/* Hero Card */}
-            <ChildHeroCard child={activeChild} />
-
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-              {/* Row 1 */}
-              <NoticesCard 
-                notices={activeChild.notices} 
-                onAction={() => handleAction('notices')}
-              />
-              <FeeSummaryCard 
-                child={activeChild} 
-                onAction={(type) => handleAction(type)}
-              />
-
-              {/* Row 2 */}
-              <AttendanceCard 
-                child={activeChild} 
-                onAction={() => handleAction('attendance')}
-              />
-              <ResultsCard 
-                child={activeChild} 
-                onAction={(type) => handleAction(type)}
-              />
-
-              {/* Row 3 */}
-              <TimetableCard 
-                timetable={activeChild.timetable} 
-                onAction={() => handleAction('timetable')}
-              />
-              <QuickContactCard 
-                contacts={CONTACTS} 
-                onAction={(type, data) => handleAction(type, data)}
-              />
-            </div>
-            
-            {/* Footer */}
-            <footer className="mt-16 pt-8 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center text-gray-400">
-                  <Layout className="w-4 h-4" />
-                </div>
-                <span>Brookstone School Management System</span>
-              </div>
-              <div className="flex gap-6">
-                <a href="#" className="hover:text-blue-600 transition-colors">Support</a>
-                <a href="#" className="hover:text-blue-600 transition-colors">Privacy</a>
-                <a href="#" className="hover:text-blue-600 transition-colors">Terms</a>
-              </div>
-            </footer>
           </div>
         </div>
-      </main>
 
-      {/* Mobile Sidebar Drawer */}
-      <MobileSidebar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)}
-        activeChildId={activeChildId}
-        setActiveChildId={setActiveChildId}
-        childrenData={PARENT_DATA.children}
-        parentData={PARENT_DATA}
-      />
+        {/* Debt Banner */}
+        {!isBannerDismissed && (
+          <DebtBanner
+            child={activeChild}
+            onDismiss={() => setIsBannerDismissed(true)}
+            onPay={() => handleAction('payment')}
+          />
+        )}
 
-      {/* Toast System */}
+        {/* Hero Card */}
+        <ChildHeroCard child={activeChild} />
+
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <NoticesCard
+            notices={activeChild.notices}
+            onAction={() => handleAction('notices')}
+          />
+          <FeeSummaryCard
+            child={activeChild}
+            onAction={(type) => handleAction(type)}
+          />
+
+          <AttendanceCard
+            child={activeChild}
+            onAction={() => handleAction('attendance')}
+          />
+          <ResultsCard
+            child={activeChild}
+            onAction={(type) => handleAction(type)}
+          />
+
+          <TimetableCard
+            timetable={activeChild.timetable}
+            onAction={() => handleAction('timetable')}
+          />
+          <QuickContactCard
+            contacts={CONTACTS}
+            onAction={(type, data) => handleAction(type, data)}
+          />
+        </div>
+
+        {/* Footer */}
+        <footer className="mt-4 pt-8 border-t border-sidebar-border/50 flex flex-col sm:flex-row justify-between items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
+          <span>Brookstone School Management System</span>
+          <div className="flex gap-6">
+            <a href="#" className="hover:text-blue-600 transition-colors">Support</a>
+            <a href="#" className="hover:text-blue-600 transition-colors">Privacy</a>
+            <a href="#" className="hover:text-blue-600 transition-colors">Terms</a>
+          </div>
+        </footer>
+      </div>
+
       <Toast toasts={toasts} onDismiss={removeToast} />
-    </div>
+    </>
   );
 }
+
+ParentDashboard.layout = {
+  breadcrumbs: [
+    { title: 'Parent Dashboard', href: '/parent/dashboard' },
+  ],
+};

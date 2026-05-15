@@ -13,7 +13,6 @@ use App\Services\GuardianImportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
-use Maatwebsite\Excel\HeadingRowImport;
 
 class GuardianImportController extends Controller
 {
@@ -158,15 +157,31 @@ class GuardianImportController extends Controller
     }
 
     /**
-     * Best-effort row count by peeking at the file. Excludes the header row.
+     * Best-effort row count by peeking at the file. Counts only the first sheet
+     * and excludes the header row and fully-empty trailing rows.
      */
     private function countRows(string $absolutePath): int
     {
         try {
-            $rows = Excel::toArray(new class {}, $absolutePath);
-            $sheet = $rows[0] ?? [];
-            $count = count($sheet);
-            return max(0, $count - 1); // minus header
+            $sheets = Excel::toArray(new class {}, $absolutePath);
+            $sheet  = $sheets[0] ?? [];
+
+            if (count($sheet) <= 1) {
+                return 0;
+            }
+
+            // Drop the header row, then non-empty data rows.
+            $dataRows = array_slice($sheet, 1);
+            $nonEmpty = array_filter($dataRows, function ($row) {
+                foreach ((array) $row as $value) {
+                    if ($value === null) continue;
+                    if (is_string($value) && trim($value) === '') continue;
+                    return true;
+                }
+                return false;
+            });
+
+            return count($nonEmpty);
         } catch (\Throwable) {
             return 0;
         }

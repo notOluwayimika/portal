@@ -1,9 +1,26 @@
-import { Head } from '@inertiajs/react';
-import { AlertTriangle, Download, FileText, Loader2, Upload } from 'lucide-react';
+import { Head, Link } from '@inertiajs/react';
+import {
+    AlertTriangle,
+    BookOpen,
+    CheckCircle2,
+    Clock,
+    Download,
+    FileSpreadsheet,
+    FileText,
+    History,
+    Image as ImageIcon,
+    Info,
+    Loader2,
+    Upload,
+    UploadCloud,
+    XCircle,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import Modal from '@/components/ui/Modal';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Spinner } from '@/components/ui/spinner';
 import { GUARDIAN_IMPORT_COLUMNS } from '@/constants/guardian-import-columns';
@@ -39,6 +56,47 @@ function validateRowClientSide(row: Row): string[] {
     return errors;
 }
 
+function statusBadge(status: GuardianImportRecord['status']) {
+    switch (status) {
+        case 'completed':
+            return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
+        case 'failed':
+            return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
+        case 'processing':
+            return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400';
+        case 'queued':
+        default:
+            return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    }
+}
+
+function statusIcon(status: GuardianImportRecord['status']) {
+    switch (status) {
+        case 'completed': return <CheckCircle2 className="h-3.5 w-3.5" />;
+        case 'failed':    return <XCircle      className="h-3.5 w-3.5" />;
+        case 'processing':return <Loader2      className="h-3.5 w-3.5 animate-spin" />;
+        case 'queued':
+        default:          return <Clock        className="h-3.5 w-3.5" />;
+    }
+}
+
+function SummaryStat({
+    label, value, accent,
+}: { label: string; value: number; accent: 'emerald' | 'red' | 'amber' | 'indigo' }) {
+    const colors = {
+        emerald: 'text-emerald-600 dark:text-emerald-400',
+        red:     'text-red-600 dark:text-red-400',
+        amber:   'text-amber-600 dark:text-amber-400',
+        indigo:  'text-indigo-600 dark:text-indigo-400',
+    }[accent];
+    return (
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-white/5 dark:bg-card">
+            <p className="text-xs font-bold tracking-wide text-slate-400 uppercase">{label}</p>
+            <p className={cn('mt-2 text-3xl font-extrabold tracking-tight', colors)}>{value}</p>
+        </div>
+    );
+}
+
 export default function GuardianImport() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { importExcelData } = useExcelImport();
@@ -47,6 +105,7 @@ export default function GuardianImport() {
     const [previewData, setPreviewData]   = useState<Row[]>([]);
     const [updateExistingLinks, setUpdateExistingLinks] = useState(false);
     const [showColumns, setShowColumns]   = useState(false);
+    const [dragOver, setDragOver]         = useState(false);
 
     const [submitting, setSubmitting]     = useState(false);
     const [active, setActive]             = useState<GuardianImportRecord | null>(null);
@@ -62,10 +121,13 @@ export default function GuardianImport() {
     }, [previewData]);
 
     const clientErrorCount = Object.keys(clientErrors).length;
+    const isInFlight = active && (active.status === 'queued' || active.status === 'processing');
+    const progressPct = active && active.total_rows > 0
+        ? Math.min(100, Math.round((active.processed_rows / active.total_rows) * 100))
+        : 0;
 
     useEffect(() => { void refreshRecent(); }, []);
 
-    // Poll while active import is in flight.
     useEffect(() => {
         if (!active || active.status === 'completed' || active.status === 'failed') return;
         const id = setInterval(async () => {
@@ -98,6 +160,21 @@ export default function GuardianImport() {
             setPreviewData(jsonData);
         });
         e.target.value = '';
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        // Synthesize a change event the hook understands.
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        if (fileInputRef.current) {
+            fileInputRef.current.files = dt.files;
+            const synthetic = { target: fileInputRef.current } as unknown as React.ChangeEvent<HTMLInputElement>;
+            handleFileChange(synthetic);
+        }
     };
 
     const handleSubmit = async () => {
@@ -133,260 +210,426 @@ export default function GuardianImport() {
         <>
             <Head title="Import Guardians" />
 
-            <div className="flex h-full flex-1 flex-col gap-6 p-4 pb-20">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold">Import Guardians</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Bulk-onboard guardians from a spreadsheet and link them to students.
-                        </p>
-                    </div>
-                    <div className="flex gap-2">
-                        <a href={guardianImports.templateUrl()} download>
-                            <Button variant="outline" type="button">
-                                <Download className="mr-1 h-4 w-4" />
-                                Download Template
-                            </Button>
-                        </a>
-                        <Button variant="outline" type="button" onClick={() => setShowColumns(true)}>
-                            <FileText className="mr-1 h-4 w-4" />
-                            View column descriptions
-                        </Button>
-                    </div>
-                </div>
+            <div className="min-h-screen bg-[#f5f7fb] py-8 px-4 sm:px-6 lg:px-8 dark:bg-background">
+                <div className="mx-auto max-w-7xl space-y-8">
 
-                {/* Photo banner */}
-                <div className="rounded-md border border-amber-300/40 bg-amber-50 p-3 text-sm dark:bg-amber-950/30">
-                    Photos are not included in bulk import. Add guardian photos individually via the guardian profile page after import.
-                </div>
+                    {/* ── Breadcrumbs ──────────────────────────────────────────── */}
+                    <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground/60">
+                        <Link href="/" className="transition-colors hover:text-primary">Home</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <Link href="/guardians" className="transition-colors hover:text-primary">Guardians</Link>
+                        <span className="select-none text-muted-foreground/30">/</span>
+                        <span className="text-foreground/80">Import</span>
+                    </nav>
 
-                {/* Upload area */}
-                <div className="rounded-lg border bg-background shadow-sm">
-                    <div className="flex flex-col items-center gap-3 p-8 text-center">
-                        <Upload className="h-8 w-8 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground">
-                            {selectedFile ? selectedFile.name : 'Select an Excel or CSV file (.xls, .xlsx, .csv)'}
-                        </p>
-                        <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                            Browse File
-                        </Button>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".xls,.xlsx,.csv"
-                            className="hidden"
-                            onChange={handleFileChange}
-                        />
-                    </div>
+                    {/* ── Hero Card ─────────────────────────────────────────────── */}
+                    <div className="relative overflow-hidden rounded-[2rem] border border-white bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
+                                <div className="relative">
+                                    <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
+                                    <div className="relative flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                        <UploadCloud className="h-9 w-9 text-indigo-600" />
+                                    </div>
+                                </div>
 
-                    <div className="flex items-center justify-between gap-4 border-t px-6 py-3 text-sm">
-                        <label className="flex items-center gap-2">
-                            <Checkbox
-                                checked={updateExistingLinks}
-                                onCheckedChange={(v) => setUpdateExistingLinks(Boolean(v))}
-                            />
-                            <span>Update existing student-guardian links if found</span>
-                        </label>
-                        <Button
-                            type="button"
-                            onClick={handleSubmit}
-                            disabled={!selectedFile || submitting}
-                        >
-                            {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                            {previewData.length > 0 ? `Import ${previewData.length} Row(s)` : 'Import'}
-                        </Button>
-                    </div>
-                </div>
+                                <div className="space-y-3">
+                                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                        Bulk Guardian Import
+                                    </h1>
+                                    <p className="max-w-xl text-sm font-medium text-slate-500">
+                                        Onboard many guardians at once from a spreadsheet. Duplicates are detected
+                                        by phone or email, so the same parent across multiple siblings is linked,
+                                        not duplicated.
+                                    </p>
+                                </div>
+                            </div>
 
-                {/* Client-side errors */}
-                {clientErrorCount > 0 && (
-                    <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                        <div className="flex items-start gap-2">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <div>
-                                <p className="mb-1 font-medium">{clientErrorCount} row(s) have missing required fields:</p>
-                                <table className="w-full text-xs">
-                                    <tbody>
-                                        {Object.entries(clientErrors).slice(0, 10).map(([idx, msgs]) => (
-                                            <tr key={idx}>
-                                                <td className="w-16 py-0.5 align-top font-medium">Row {Number(idx) + 1}</td>
-                                                <td className="py-0.5">{msgs.join(', ')}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div className="flex shrink-0 flex-wrap items-center justify-center gap-3">
+                                <a href={guardianImports.templateUrl()} download>
+                                    <Button className="rounded-xl bg-indigo-600 px-6 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95">
+                                        <Download className="mr-2 h-4 w-4" />
+                                        Download Template
+                                    </Button>
+                                </a>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowColumns(true)}
+                                    className="rounded-xl border-slate-200 px-4 font-semibold text-slate-700 transition-all hover:bg-slate-50"
+                                >
+                                    <BookOpen className="mr-2 h-4 w-4" />
+                                    Column Reference
+                                </Button>
                             </div>
                         </div>
                     </div>
-                )}
 
-                {/* Preview */}
-                {previewData.length > 0 && (
-                    <div className="rounded-md border">
-                        <div className="border-b bg-muted/50 px-4 py-2 text-sm font-medium">
-                            Preview ({previewData.length} row{previewData.length === 1 ? '' : 's'})
+                    {/* ── Photo notice ─────────────────────────────────────────── */}
+                    <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
+                        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-amber-200/60 dark:bg-amber-900/40 dark:ring-amber-500/30">
+                            <ImageIcon className="h-4 w-4 text-amber-600 dark:text-amber-300" />
                         </div>
-                        <div className="max-h-72 overflow-auto">
-                            <table className="w-full text-sm">
-                                <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
-                                    <tr>
-                                        <th className="px-3 py-2 text-left text-xs font-medium">S/N</th>
-                                        {PREVIEW_COLUMNS.map((c) => (
-                                            <th key={c.key} className="px-3 py-2 text-left text-xs font-medium">{c.label}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {previewData.map((row, i) => {
-                                        const hasError = !!clientErrors[i];
-                                        return (
-                                            <tr
-                                                key={i}
-                                                className={cn('border-t', hasError && 'bg-destructive/10 text-destructive')}
-                                            >
-                                                <td className="px-3 py-2">{i + 1}</td>
+                        <div className="space-y-0.5">
+                            <p className="font-semibold">Photos are not part of bulk import.</p>
+                            <p className="text-amber-700/90 dark:text-amber-200/80">
+                                Add guardian photos individually on each guardian's profile page after the import completes.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* ── Active Import Card (only when one is in flight or just finished) ── */}
+                    {active && (
+                        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800 dark:text-slate-100">
+                                    <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                        <FileSpreadsheet className="h-5 w-5 text-indigo-600" />
+                                    </div>
+                                    Current Import
+                                </CardTitle>
+                                <Badge className={cn('rounded-full px-3 py-0.5 text-[11px] font-semibold capitalize shadow-sm inline-flex items-center gap-1.5', statusBadge(active.status))}>
+                                    {statusIcon(active.status)}
+                                    {active.status}
+                                </Badge>
+                            </CardHeader>
+                            <CardContent className="space-y-6 p-8">
+                                <div>
+                                    <p className="text-xs font-bold tracking-wide text-slate-400 uppercase">File</p>
+                                    <p className="mt-1 text-[15px] font-semibold text-slate-700 dark:text-slate-200">{active.file_name}</p>
+                                </div>
+
+                                {isInFlight && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="font-medium text-slate-600 dark:text-slate-300">
+                                                Processing row {active.processed_rows} of {active.total_rows}
+                                            </span>
+                                            <span className="font-semibold text-indigo-600">{progressPct}%</span>
+                                        </div>
+                                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                            <div
+                                                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
+                                                style={{ width: `${progressPct}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {active.status === 'completed' && (
+                                    <>
+                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                                            <SummaryStat label="Total"     value={active.total_rows} accent="indigo" />
+                                            <SummaryStat label="Succeeded" value={active.succeeded}  accent="emerald" />
+                                            <SummaryStat label="Failed"    value={active.failed}     accent="red" />
+                                            <SummaryStat label="Skipped"   value={active.skipped}    accent="amber" />
+                                        </div>
+                                        {active.has_report && (
+                                            <a href={guardianImports.reportUrl(active.uuid)} className="inline-block">
+                                                <Button variant="outline" className="rounded-xl border-slate-200 font-semibold text-slate-700 hover:bg-slate-50">
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    Download per-row report
+                                                </Button>
+                                            </a>
+                                        )}
+                                    </>
+                                )}
+
+                                {active.status === 'failed' && active.error && (
+                                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                                        {active.error}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* ── Upload Card ──────────────────────────────────────────── */}
+                    <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                        <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                            <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800 dark:text-slate-100">
+                                <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                    <Upload className="h-5 w-5 text-indigo-600" />
+                                </div>
+                                Upload Spreadsheet
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6 p-8">
+                            <div
+                                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                                onDragLeave={() => setDragOver(false)}
+                                onDrop={handleDrop}
+                                onClick={() => fileInputRef.current?.click()}
+                                className={cn(
+                                    'flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed p-10 text-center transition-all',
+                                    dragOver
+                                        ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20'
+                                        : 'border-slate-200 bg-slate-50/30 hover:border-indigo-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50',
+                                )}
+                            >
+                                <div className="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                    <UploadCloud className="h-7 w-7 text-indigo-500" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                        {selectedFile ? selectedFile.name : 'Drag & drop your spreadsheet here'}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                        or <span className="font-semibold text-indigo-600">click to browse</span> — supports .xls, .xlsx, .csv
+                                    </p>
+                                </div>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".xls,.xlsx,.csv"
+                                    className="hidden"
+                                    onChange={handleFileChange}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <label className="flex items-start gap-3 rounded-xl bg-slate-50/70 p-3 text-sm dark:bg-slate-900/40">
+                                    <Checkbox
+                                        checked={updateExistingLinks}
+                                        onCheckedChange={(v) => setUpdateExistingLinks(Boolean(v))}
+                                        className="mt-0.5"
+                                    />
+                                    <span>
+                                        <span className="block font-semibold text-slate-700 dark:text-slate-200">
+                                            Update existing student-guardian links
+                                        </span>
+                                        <span className="block text-xs text-slate-500">
+                                            When a guardian is already linked to a student, refresh their relationship,
+                                            primary flag, and login flag from the file.
+                                        </span>
+                                    </span>
+                                </label>
+                                <Button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={!selectedFile || submitting}
+                                    className="rounded-xl bg-indigo-600 px-6 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95 disabled:opacity-50"
+                                >
+                                    {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                    {previewData.length > 0 ? `Import ${previewData.length} Row(s)` : 'Import'}
+                                </Button>
+                            </div>
+
+                            {/* Client-side errors */}
+                            {clientErrorCount > 0 && (
+                                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                                    <div className="flex items-start gap-3">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                        <div>
+                                            <p className="mb-2 font-semibold">{clientErrorCount} row(s) have missing required fields</p>
+                                            <table className="w-full text-xs">
+                                                <tbody>
+                                                    {Object.entries(clientErrors).slice(0, 10).map(([idx, msgs]) => (
+                                                        <tr key={idx}>
+                                                            <td className="w-16 py-0.5 align-top font-medium">Row {Number(idx) + 1}</td>
+                                                            <td className="py-0.5">{msgs.join(', ')}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {Object.keys(clientErrors).length > 10 && (
+                                                <p className="mt-2 text-xs opacity-80">
+                                                    Showing 10 of {Object.keys(clientErrors).length} — see preview below.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* ── Preview Card ─────────────────────────────────────────── */}
+                    {previewData.length > 0 && (
+                        <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                                <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800 dark:text-slate-100">
+                                    <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                        <FileSpreadsheet className="h-5 w-5 text-indigo-600" />
+                                    </div>
+                                    Preview
+                                </CardTitle>
+                                <Badge className="rounded-full bg-indigo-50 px-3 py-0.5 text-[11px] font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400">
+                                    {previewData.length} row{previewData.length === 1 ? '' : 's'}
+                                </Badge>
+                            </CardHeader>
+                            <CardContent className="p-0">
+                                <div className="max-h-96 overflow-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-sm dark:bg-slate-900/80">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">#</th>
                                                 {PREVIEW_COLUMNS.map((c) => (
-                                                    <td key={c.key} className="px-3 py-2">
-                                                        {row[c.key] === undefined || row[c.key] === null || row[c.key] === ''
-                                                            ? '-'
-                                                            : String(row[c.key])}
-                                                    </td>
+                                                    <th key={c.key} className="px-4 py-3 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">
+                                                        {c.label}
+                                                    </th>
                                                 ))}
                                             </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                        </thead>
+                                        <tbody>
+                                            {previewData.map((row, i) => {
+                                                const hasError = !!clientErrors[i];
+                                                return (
+                                                    <tr
+                                                        key={i}
+                                                        className={cn(
+                                                            'border-t border-slate-100 dark:border-slate-800',
+                                                            hasError
+                                                                ? 'bg-destructive/5 text-destructive'
+                                                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-900/30',
+                                                        )}
+                                                    >
+                                                        <td className="px-4 py-3 font-semibold">{i + 1}</td>
+                                                        {PREVIEW_COLUMNS.map((c) => (
+                                                            <td key={c.key} className="px-4 py-3">
+                                                                {row[c.key] === undefined || row[c.key] === null || row[c.key] === ''
+                                                                    ? <span className="text-slate-300">—</span>
+                                                                    : String(row[c.key])}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* ── Recent Imports Card ──────────────────────────────────── */}
+                    <Card className="overflow-hidden rounded-[1.5rem] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                        <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-8 py-6">
+                            <CardTitle className="flex items-center gap-3 text-lg font-bold text-slate-800 dark:text-slate-100">
+                                <div className="flex size-9 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                    <History className="h-5 w-5 text-indigo-600" />
+                                </div>
+                                Recent Imports
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            {recent.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <div className="mb-4 flex size-20 items-center justify-center rounded-full bg-slate-50 text-slate-300 dark:bg-slate-900">
+                                        <History className="h-10 w-10" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">No imports yet</h3>
+                                    <p className="mt-2 max-w-[320px] text-sm text-slate-500">
+                                        Imports you run will appear here with status, counts, and a report you can re-download.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-slate-50/50 dark:bg-slate-900/30">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">File</th>
+                                                <th className="px-6 py-3 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Date</th>
+                                                <th className="px-6 py-3 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Status</th>
+                                                <th className="px-6 py-3 text-right text-xs font-bold tracking-wide text-slate-400 uppercase">Succeeded</th>
+                                                <th className="px-6 py-3 text-right text-xs font-bold tracking-wide text-slate-400 uppercase">Failed</th>
+                                                <th className="px-6 py-3 text-right text-xs font-bold tracking-wide text-slate-400 uppercase">Skipped</th>
+                                                <th className="px-6 py-3 text-right text-xs font-bold tracking-wide text-slate-400 uppercase">Report</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {recent.map((r) => (
+                                                <tr key={r.uuid} className="border-t border-slate-100 hover:bg-slate-50/40 dark:border-slate-800 dark:hover:bg-slate-900/30">
+                                                    <td className="px-6 py-4 font-semibold text-slate-700 dark:text-slate-200">
+                                                        <div className="flex items-center gap-3">
+                                                            <FileSpreadsheet className="h-4 w-4 text-slate-400" />
+                                                            <span className="max-w-[260px] truncate">{r.file_name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-500">
+                                                        {r.created_at ? new Date(r.created_at).toLocaleString() : '—'}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <Badge className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize shadow-sm inline-flex items-center gap-1.5', statusBadge(r.status))}>
+                                                            {statusIcon(r.status)}
+                                                            {r.status}
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right font-semibold text-emerald-600">{r.succeeded}</td>
+                                                    <td className="px-6 py-4 text-right font-semibold text-red-600">{r.failed}</td>
+                                                    <td className="px-6 py-4 text-right font-semibold text-amber-600">{r.skipped}</td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        {r.has_report ? (
+                                                            <a
+                                                                href={guardianImports.reportUrl(r.uuid)}
+                                                                className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline"
+                                                            >
+                                                                <Download className="h-3.5 w-3.5" />
+                                                                Download
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-slate-300">—</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+
+            {/* ── Column Reference Modal ───────────────────────────────────── */}
+            <Modal
+                isOpen={showColumns}
+                onClose={() => setShowColumns(false)}
+                title="Import Column Reference"
+                size="4xl"
+            >
+                <div className="space-y-3">
+                    <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-950/30 dark:text-indigo-200">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                            Required columns must be filled on every row. Optional columns can be left blank.
+                            Column headers are matched case-insensitively and spaces are converted to underscores.
+                        </span>
                     </div>
-                )}
-
-                {/* Active import status */}
-                {active && (
-                    <div className="rounded-md border bg-background p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between">
-                            <div>
-                                <h2 className="font-semibold">Current Import</h2>
-                                <p className="text-xs text-muted-foreground">{active.file_name}</p>
-                            </div>
-                            <span className={cn(
-                                'rounded-full px-2 py-0.5 text-xs font-medium',
-                                active.status === 'completed' && 'bg-emerald-100 text-emerald-800',
-                                active.status === 'failed' && 'bg-destructive/15 text-destructive',
-                                (active.status === 'queued' || active.status === 'processing') && 'bg-amber-100 text-amber-800',
-                            )}>
-                                {active.status}
-                            </span>
-                        </div>
-
-                        {(active.status === 'queued' || active.status === 'processing') && (
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Processing row {active.processed_rows} of {active.total_rows}…
-                            </div>
-                        )}
-
-                        {active.status === 'completed' && (
-                            <div className="flex flex-wrap gap-4 text-sm">
-                                <div><span className="font-medium">Succeeded:</span> {active.succeeded}</div>
-                                <div><span className="font-medium">Failed:</span> {active.failed}</div>
-                                <div><span className="font-medium">Skipped:</span> {active.skipped}</div>
-                                {active.has_report && (
-                                    <a href={guardianImports.reportUrl(active.uuid)} className="ml-auto">
-                                        <Button variant="outline" size="sm">
-                                            <Download className="mr-1 h-4 w-4" />
-                                            Download report
-                                        </Button>
-                                    </a>
-                                )}
-                            </div>
-                        )}
-
-                        {active.status === 'failed' && (
-                            <p className="text-sm text-destructive">{active.error}</p>
-                        )}
-                    </div>
-                )}
-
-                {/* Recent imports */}
-                <div className="rounded-md border">
-                    <div className="border-b bg-muted/50 px-4 py-2 text-sm font-medium">Recent Imports</div>
-                    {recent.length === 0 ? (
-                        <p className="p-6 text-center text-sm text-muted-foreground">No imports yet.</p>
-                    ) : (
+                    <div className="max-h-[60vh] overflow-auto rounded-xl border border-slate-100 dark:border-slate-800">
                         <table className="w-full text-sm">
-                            <thead className="bg-muted/30">
+                            <thead className="sticky top-0 bg-slate-50/80 backdrop-blur-sm dark:bg-slate-900/80">
                                 <tr>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">File</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">Date</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">Status</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">Succeeded</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">Failed</th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium">Skipped</th>
-                                    <th className="px-3 py-2 text-right text-xs font-medium">Report</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Column</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Group</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Required</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Format</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Example</th>
+                                    <th className="px-3 py-2 text-left text-xs font-bold tracking-wide text-slate-400 uppercase">Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {recent.map((r) => (
-                                    <tr key={r.uuid} className="border-t">
-                                        <td className="px-3 py-2">{r.file_name}</td>
+                                {GUARDIAN_IMPORT_COLUMNS.map((c) => (
+                                    <tr key={c.name} className="border-t border-slate-100 dark:border-slate-800">
+                                        <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{c.name}</td>
+                                        <td className="px-3 py-2 text-slate-500">{c.group}</td>
                                         <td className="px-3 py-2">
-                                            {r.created_at ? new Date(r.created_at).toLocaleString() : '-'}
+                                            {c.required ? (
+                                                <Badge className="rounded-full bg-red-100 px-2 py-0 text-[10px] font-semibold text-red-700 shadow-sm hover:bg-red-100 dark:bg-red-900/40 dark:text-red-400">
+                                                    Required
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-xs text-slate-400">Optional</span>
+                                            )}
                                         </td>
-                                        <td className="px-3 py-2">{r.status}</td>
-                                        <td className="px-3 py-2">{r.succeeded}</td>
-                                        <td className="px-3 py-2">{r.failed}</td>
-                                        <td className="px-3 py-2">{r.skipped}</td>
-                                        <td className="px-3 py-2 text-right">
-                                            {r.has_report ? (
-                                                <a
-                                                    href={guardianImports.reportUrl(r.uuid)}
-                                                    className="text-primary underline underline-offset-4"
-                                                >
-                                                    Download
-                                                </a>
-                                            ) : '—'}
-                                        </td>
+                                        <td className="px-3 py-2"><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">{c.format}</code></td>
+                                        <td className="px-3 py-2"><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">{c.example}</code></td>
+                                        <td className="px-3 py-2 text-xs text-slate-500">{c.notes || '—'}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                    )}
-                </div>
-            </div>
-
-            <Modal
-                isOpen={showColumns}
-                onClose={() => setShowColumns(false)}
-                title="Import Columns"
-                size="4xl"
-            >
-                <div className="max-h-[70vh] overflow-auto">
-                    <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
-                            <tr>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Column</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Group</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Required</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Format</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Example</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium">Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {GUARDIAN_IMPORT_COLUMNS.map((c) => (
-                                <tr key={c.name} className="border-t">
-                                    <td className="px-3 py-2 font-medium">{c.name}</td>
-                                    <td className="px-3 py-2">{c.group}</td>
-                                    <td className="px-3 py-2">{c.required ? 'Yes' : 'No'}</td>
-                                    <td className="px-3 py-2"><code className="text-xs">{c.format}</code></td>
-                                    <td className="px-3 py-2"><code className="text-xs">{c.example}</code></td>
-                                    <td className="px-3 py-2 text-muted-foreground">{c.notes}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    </div>
                 </div>
             </Modal>
         </>

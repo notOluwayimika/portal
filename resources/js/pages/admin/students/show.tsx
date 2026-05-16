@@ -16,6 +16,7 @@ import {
     Phone,
     Plus,
     Printer,
+    Save,
     User2,
     Users,
 } from 'lucide-react';
@@ -46,7 +47,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Modal from '@/components/ui/Modal';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import type { Guardian, Student } from '@/types/models';
 
@@ -95,6 +96,7 @@ export default function StudentProfile() {
 
     // Modals
     const [showEditModal, setShowEditModal] = useState(false);
+    const [editProcessing, setEditProcessing] = useState(false);
     const [showAddGuardian, setShowAddGuardian] = useState(false);
     const [pivotGuardian, setPivotGuardian] = useState<Guardian | null>(null);
     const [detachTarget, setDetachTarget] = useState<Guardian | null>(null);
@@ -357,9 +359,22 @@ export default function StudentProfile() {
                 onClose={() => setShowEditModal(false)}
                 title="Edit Student"
                 size="lg"
+                footer={
+                    <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setShowEditModal(false)} disabled={editProcessing}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" form="student-form" disabled={editProcessing}>
+                            {editProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Save Changes
+                        </Button>
+                    </div>
+                }
             >
                 <StudentForm
                     student={student}
+                    formId="student-form"
+                    onProcessingChange={setEditProcessing}
                     onSuccess={() => {
                         setShowEditModal(false);
                         addToast('Student updated successfully');

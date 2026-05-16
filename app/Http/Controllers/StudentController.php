@@ -193,8 +193,6 @@ class StudentController extends Controller
 
     /**
      * Process a single guardian entry from the student registration form.
-     * Case A (mode=new):  create User + Guardian + assign role, then attach.
-     * Case B (mode=existing): resolve by guardian_id/identifier within school, then attach only.
      */
     private function processGuardianEntry(Student $student, array $entry, int $schoolId, array &$deferredNotifications): void
     {

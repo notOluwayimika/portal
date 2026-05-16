@@ -132,6 +132,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
     // assign score and marking component for teachers;
     Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'subjects']);
+    Route::get('/teachers/{teacher:uuid}', [TeacherController::class, 'show']);
     // protected marking components
     Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
     Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);

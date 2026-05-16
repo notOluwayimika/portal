@@ -24,7 +24,8 @@ class CurriculumSubjectResource extends JsonResource
             'marking_components' => MarkingComponentResource::collection($this->markingComponents),
             'students' => StudentSubjectResource::collection($this->whenLoaded('studentAssignments')),
             'scores' => ScoreResource::collection($this->whenLoaded('scores')),
-            'result_status' => new SubjectResultStatusResource($this->whenLoaded('resultStatus'))
+            'result_status' => new SubjectResultStatusResource($this->whenLoaded('resultStatus')),
+            'student_results' => StudentResultResource::collection($this->whenLoaded('studentResults'))
         ];
     }
 }

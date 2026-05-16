@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class GradeBoundary extends Model
 {
-    protected $fillable = ['school_id', 'exam_type_id', 'min_score', 'max_score', 'grade', 'label'];
+    protected $fillable = ['school_id', 'exam_type_id', 'min_score', 'max_score', 'grade', 'label', 'grade_point'];
 
     protected $casts = [
         'min_score' => 'decimal:2',
@@ -20,7 +20,7 @@ class GradeBoundary extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()

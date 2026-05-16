@@ -103,7 +103,7 @@ class StudentCurriculumController extends Controller
 
             $from->update([
                 'status' => StudentStatusEnum::PROMOTED,
-                'promoted_to_id' => $target->id,
+                'promoted_to_id' => $new->id,
             ]);
 
             return [$from, $new];

@@ -278,7 +278,7 @@ const css = `
   .stat-val   { font-size: 28px; font-weight: 700; font-family: var(--mono); color: var(--text); line-height: 1; }
   .stat-lbl   { font-size: 12px; color: var(--text3); margin-top: 5px; font-weight: 500; }
 
-  .grade-cols { display: grid; grid-template-columns: 100px 100px 80px 1fr 72px; gap: 8px; align-items: center; }
+  .grade-cols { display: grid; grid-template-columns: 100px 100px 80px 1fr 72px 80px; gap: 8px; align-items: center; }
   .grade-col-hdr { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
 
   .filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }

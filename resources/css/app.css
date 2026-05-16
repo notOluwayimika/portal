@@ -67,7 +67,7 @@
     /* ========================
        BASE (Clean Neutral UI)
     ======================== */
-    --background: oklch(0.98 0.01 260);   /* light gray */
+    --background: oklch(100% 0.00011 271.152);   /* light gray */
     --foreground: oklch(0.2 0.02 260);
 
     --card: oklch(1 0 0);
@@ -204,7 +204,7 @@
     }
 
     body {
-        @apply bg-background text-foreground;
+        @apply bg-white text-foreground;
     }
 }
 

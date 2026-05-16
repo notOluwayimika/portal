@@ -20,6 +20,7 @@ class GradeBoundaryResource extends JsonResource
             'max_score' => $this->max_score,
             'grade' => $this->grade,
             'label' => $this->label,
+            'grade_point' => $this->grade_point
         ];
     }
 }

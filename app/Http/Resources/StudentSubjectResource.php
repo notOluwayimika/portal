@@ -17,7 +17,7 @@ class StudentSubjectResource extends JsonResource
         return [
             "id" => $this->uuid,
             "student_curriculum" => $this->studentCurriculum ? new StudentCurriculumResource($this->studentCurriculum) : null,
-            "subject" => $this->curriculumSubject ? new SubjectResource($this->curriculumSubject) : null
+            "curriculum_subject" => $this->curriculumSubject ? new CurriculumSubjectResource($this->curriculumSubject) : null
         ];
     }
 }

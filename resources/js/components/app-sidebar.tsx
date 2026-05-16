@@ -4,6 +4,7 @@ import {
     FolderGit2,
     LayoutGrid,
     PanelsTopLeft,
+    ScrollText,
     Users,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -55,6 +56,11 @@ const adminNavItems: NavItem[] = [
         title: 'Review Results',
         href: '/setup/review/results',
         icon: PanelsTopLeft,
+    },
+    {
+        title: 'Activity Log',
+        href: '/activity-logs',
+        icon: ScrollText,
     },
 ];
 

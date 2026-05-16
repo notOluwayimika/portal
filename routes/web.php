@@ -90,6 +90,16 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         return Inertia::render('admin/guardians/import');
     })->name('guardians.import');
 
+    // Activity log (read-only audit feed). Per-action access is gated by
+    // activity_log.* permissions in the API layer.
+    Route::get('activity-logs', function () {
+        return Inertia::render('admin/activity-logs/index');
+    })->name('activity-logs.index');
+
+    Route::get('activity-logs/{id}', function (string $id) {
+        return Inertia::render('admin/activity-logs/index', ['initialActivityId' => $id]);
+    })->whereNumber('id')->name('activity-logs.show');
+
     // Guardian profile
     Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
         $guardian->load([

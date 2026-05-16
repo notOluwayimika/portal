@@ -21,7 +21,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Activity log services read their config-backed arrays; bind their
+        // ::make() factories so the container can resolve them (and anything
+        // that depends on them, e.g. ActivityLogQueryService).
+        $this->app->bind(
+            \App\Services\ActivityLog\ActivitySensitiveService::class,
+            fn () => \App\Services\ActivityLog\ActivitySensitiveService::make(),
+        );
+        $this->app->bind(
+            \App\Services\ActivityLog\ActivitySeverityService::class,
+            fn () => \App\Services\ActivityLog\ActivitySeverityService::make(),
+        );
     }
 
     /**

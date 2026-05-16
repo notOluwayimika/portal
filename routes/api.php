@@ -123,6 +123,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     require __DIR__ . '/endpoints/guardian.php';
 });
 
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
+    // Activity log module (read-only audit feed). Fine-grained access is
+    // gated per-endpoint by activity_log.* permissions.
+    require __DIR__ . '/endpoints/activity-log.php';
+});
+
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
     // assign score and marking component for teachers;
     Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'subjects']);

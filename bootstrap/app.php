@@ -161,14 +161,16 @@ return Application::configure(basePath: dirname(__DIR__))
 | DB handler helper (kept outside for clarity)
 |--------------------------------------------------------
 */
-function handleDatabase(QueryException $e)
-{
-    $code = $e->errorInfo[1] ?? null;
+if (! function_exists('handleDatabase')) {
+    function handleDatabase(QueryException $e)
+    {
+        $code = $e->errorInfo[1] ?? null;
 
-    return match ($code) {
-        23000 => response()->conflict('Duplicate entry detected'),
-        547 => response()->error('Record has dependencies'),
-        '40001' => response()->error('Transaction conflict, retry'),
-        default => response()->error('Database error'),
-    };
+        return match ($code) {
+            23000 => response()->conflict('Duplicate entry detected'),
+            547 => response()->error('Record has dependencies'),
+            '40001' => response()->error('Transaction conflict, retry'),
+            default => response()->error('Database error'),
+        };
+    }
 }

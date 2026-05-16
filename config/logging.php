@@ -127,6 +127,18 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        /*
+         * Records activities written without a resolvable school_id.
+         * Monitor this for sustained writes after Phase 0 — they indicate a
+         * gap in tenant resolution that needs investigation.
+         */
+        'activity-log-untagged' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/activity-log-untagged.log'),
+            'level' => 'warning',
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

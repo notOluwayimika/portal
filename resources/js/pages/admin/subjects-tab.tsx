@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import type { ToastType } from '@/components/toast-item';
 import type { Subject } from '@/types/models';
+import { Pencil, Search, Trash2 } from 'lucide-react';
 import { Confirm, Empty, Modal } from './school-setup';
 
 interface SubjectForm {
@@ -120,7 +121,19 @@ export function SubjectsTab({
                 </div>
                 <div className="page-hdr-actions">
                     <div className="search-wrap">
-                        <span className="search-icon">🔍</span>
+                        <Search
+                            className="search-icon"
+                            style={{
+                                position: 'absolute',
+                                left: 10,
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                color: 'var(--text3)',
+                                width: 14,
+                                height: 14,
+                                pointerEvents: 'none',
+                            }}
+                        />
                         <input
                             placeholder="Search…"
                             value={search}
@@ -201,13 +214,13 @@ export function SubjectsTab({
                                                     setModal(s.id);
                                                 }}
                                             >
-                                                ✏️
+                                                <Pencil className="h-3 w-3" />
                                             </button>
                                             <button
                                                 className="btn btn-danger btn-sm btn-icon"
                                                 onClick={() => setConfirm(s)}
                                             >
-                                                🗑
+                                                <Trash2 className="h-3 w-3" />
                                             </button>
                                         </div>
                                     </td>

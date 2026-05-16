@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
 import type { Session, Term } from '@/types/models';
+import { BookOpen, Pencil, Trash2 } from 'lucide-react';
 import { Pagination } from '../pagination';
 import type { ToastType } from '../toast-item';
 
@@ -541,7 +542,8 @@ export function SessionsTab({
                                                 onClick={() => openTerms(s)}
                                                 title="Manage terms"
                                             >
-                                                📚 Terms
+                                                <BookOpen className="h-3.5 w-3.5" />
+                                                Terms
                                             </button>
                                             {!s.is_current && (
                                                 <button
@@ -557,13 +559,13 @@ export function SessionsTab({
                                                 className="btn btn-ghost btn-sm btn-icon"
                                                 onClick={() => open(s)}
                                             >
-                                                ✏️
+                                                <Pencil className="h-3 w-3" />
                                             </button>
                                             <button
                                                 className="btn btn-danger btn-sm btn-icon"
                                                 onClick={() => setConfirm(s)}
                                             >
-                                                🗑
+                                                <Trash2 className="h-3 w-3" />
                                             </button>
                                         </div>
                                     </td>
@@ -770,7 +772,7 @@ export function SessionsTab({
                                                                 openTermForm(t)
                                                             }
                                                         >
-                                                            ✏️
+                                                            <Pencil className="h-3 w-3" />
                                                         </button>
                                                         <button
                                                             className="btn btn-danger btn-sm btn-icon"
@@ -780,7 +782,7 @@ export function SessionsTab({
                                                                 )
                                                             }
                                                         >
-                                                            🗑
+                                                            <Trash2 className="h-3 w-3" />
                                                         </button>
                                                     </div>
                                                 </td>

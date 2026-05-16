@@ -1,7 +1,9 @@
 import axios from 'axios';
+import { Trash2 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type { Arm, ClassLevel, ClassLevelArm, Stream } from '@/types/models';
+import { Empty } from '@/pages/admin/school-setup';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -16,10 +18,10 @@ export default function ClassStreamTab({
     const [arms, setArms] = useState<Arm[]>([]);
     const [streams, setStreams] = useState<Stream[]>([]);
     const [entries, setEntries] = useState<ClassLevelArm[]>([]);
-    // Add form state
     const [selLevel, setSelLevel] = useState('');
     const [selArm, setSelArm] = useState('');
     const [selStream, setSelStream] = useState('');
+
     useEffect(() => {
         const fetchClassStructure = async () => {
             const response = await axios.get('/api/class-structure');
@@ -31,11 +33,8 @@ export default function ClassStreamTab({
         fetchClassStructure();
     }, [loading]);
 
-    // Filters
     const [filterLevel, setFilterLevel] = useState('');
     const [filterStream, setFilterStream] = useState('');
-
-    // ── Lookup helpers ──────────────────────────────────────────────────────────
 
     const levelMap = useMemo(
         () => Object.fromEntries(classLevels.map((c) => [c.id, c])),
@@ -60,15 +59,12 @@ export default function ClassStreamTab({
         });
     }, [entries, levelMap, streams, filterLevel, filterStream]);
 
-    // ── Add entry ───────────────────────────────────────────────────────────────
-
     const handleAdd = async () => {
         try {
             setLoading(true);
 
             if (!selLevel || !selArm) {
                 addToast('Select a class level and arm first.', 'error');
-
                 return;
             }
 
@@ -95,25 +91,18 @@ export default function ClassStreamTab({
         }
     };
 
-    // ── Update stream ───────────────────────────────────────────────────────────
-
     const handleStreamChange = async (entryId: string, streamId: string) => {
         try {
             setLoading(true);
-
-            // handle update logic
-            const payload = {
-                stream_id: streamId,
-            };
             const response = await axios.patch(
                 `/api/class-structure/${entryId}`,
-                payload,
+                { stream_id: streamId },
             );
 
             if (response.status != 200) {
                 addToast(response.data.error, 'error');
             } else {
-                addToast('Class arm saved.', 'success');
+                addToast('Stream updated.', 'success');
             }
         } catch (error) {
             console.log(error);
@@ -122,8 +111,6 @@ export default function ClassStreamTab({
             setLoading(false);
         }
     };
-
-    // ── Remove entry ────────────────────────────────────────────────────────────
 
     const handleRemove = async (id: string) => {
         try {
@@ -146,396 +133,260 @@ export default function ClassStreamTab({
         }
     };
 
-    // ── Render ──────────────────────────────────────────────────────────────────
-
     return (
-        <div style={{ fontFamily: 'inherit', fontSize: 14 }}>
-            {/* Header */}
-            <div
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 16,
-                }}
-            >
-                <h3
-                    style={{
-                        fontSize: 15,
-                        fontWeight: 500,
-                        margin: 0,
-                        color: 'var(--color-text-primary, #111)',
-                    }}
-                >
-                    Class level arms
-                </h3>
-                <span
-                    style={{
-                        fontSize: 11,
-                        padding: '2px 8px',
-                        borderRadius: 99,
-                        background:
-                            'var(--color-background-secondary, #f4f4f4)',
-                        color: 'var(--color-text-secondary, #666)',
-                    }}
-                >
-                    {entries.length}{' '}
-                    {entries.length === 1 ? 'entry' : 'entries'}
-                </span>
+        <div>
+            <div className="page-hdr">
+                <div>
+                    <h1>Class Level Arms</h1>
+                    <p>
+                        {entries.length}{' '}
+                        {entries.length === 1 ? 'entry' : 'entries'} configured
+                    </p>
+                </div>
             </div>
 
             {/* Add toolbar */}
-            <div
-                style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginBottom: 12,
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                }}
-            >
-                <Select
-                    value={selLevel}
-                    onChange={setSelLevel}
-                    placeholder="Class level…"
+            <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-hdr">
+                    <span className="card-hdr-title">Add entry</span>
+                    <span className="card-hdr-sub">
+                        Select level, arm and optional stream
+                    </span>
+                </div>
+                <div
+                    style={{
+                        padding: '12px 16px',
+                        display: 'flex',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                    }}
                 >
-                    {classLevels.map((c) => (
-                        <option key={c.id} value={c.id}>
-                            {c.name}
-                        </option>
-                    ))}
-                </Select>
-
-                <Select value={selArm} onChange={setSelArm} placeholder="Arm…">
-                    {arms.map((a) => (
-                        <option key={a.id} value={a.id}>
-                            {a.label}
-                        </option>
-                    ))}
-                </Select>
-
-                <Select
-                    value={selStream}
-                    onChange={setSelStream}
-                    placeholder="Stream (optional)…"
-                >
-                    {streams.map((s) => (
-                        <option key={s.id} value={s.id}>
-                            {s.name}
-                        </option>
-                    ))}
-                </Select>
-
-                <button
-                    onClick={handleAdd}
-                    disabled={loading}
-                    style={primaryBtnStyle}
-                >
-                    {loading ? 'Saving…' : '+ Add arm'}
-                </button>
+                    <select
+                        value={selLevel}
+                        onChange={(e) => setSelLevel(e.target.value)}
+                        style={{ minWidth: 140 }}
+                    >
+                        <option value="">Class level…</option>
+                        {classLevels.map((c) => (
+                            <option key={c.id} value={c.id}>
+                                {c.name}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={selArm}
+                        onChange={(e) => setSelArm(e.target.value)}
+                        style={{ minWidth: 80 }}
+                    >
+                        <option value="">Arm…</option>
+                        {arms.map((a) => (
+                            <option key={a.id} value={a.id}>
+                                {a.label}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={selStream}
+                        onChange={(e) => setSelStream(e.target.value)}
+                        style={{ minWidth: 160 }}
+                    >
+                        <option value="">Stream (optional)…</option>
+                        {streams.map((s) => (
+                            <option key={s.id} value={s.id}>
+                                {s.name}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleAdd}
+                        disabled={loading}
+                    >
+                        {loading ? 'Saving…' : '+ Add arm'}
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
-            <div
-                style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginBottom: 16,
-                    flexWrap: 'wrap',
-                }}
-            >
-                <Select
-                    value={filterLevel}
-                    onChange={setFilterLevel}
-                    placeholder="All levels"
-                    small
+            <div className="filter-row">
+                <button
+                    className={
+                        filterLevel === '' ? 'filter-btn on' : 'filter-btn'
+                    }
+                    onClick={() => setFilterLevel('')}
                 >
-                    {classLevels.map((c) => (
-                        <option key={c.id} value={c.id}>
-                            {c.name}
-                        </option>
-                    ))}
-                </Select>
-
-                <Select
-                    value={filterStream}
-                    onChange={setFilterStream}
-                    placeholder="All streams"
-                    small
+                    All levels
+                </button>
+                {classLevels.map((c) => (
+                    <button
+                        key={c.id}
+                        className={
+                            filterLevel === c.id
+                                ? 'filter-btn on'
+                                : 'filter-btn'
+                        }
+                        onClick={() => setFilterLevel(c.id)}
+                    >
+                        {c.name}
+                    </button>
+                ))}
+                <span
+                    style={{
+                        color: 'var(--border2)',
+                        padding: '0 4px',
+                        alignSelf: 'center',
+                    }}
                 >
-                    <option value="__none__">No stream</option>
-                    {streams.map((s) => (
-                        <option key={s.id} value={s.id}>
-                            {s.name}
-                        </option>
-                    ))}
-                </Select>
+                    |
+                </span>
+                <button
+                    className={
+                        filterStream === '' ? 'filter-btn on' : 'filter-btn'
+                    }
+                    onClick={() => setFilterStream('')}
+                >
+                    All streams
+                </button>
+                <button
+                    className={
+                        filterStream === '__none__'
+                            ? 'filter-btn on'
+                            : 'filter-btn'
+                    }
+                    onClick={() => setFilterStream('__none__')}
+                >
+                    No stream
+                </button>
+                {streams.map((s) => (
+                    <button
+                        key={s.id}
+                        className={
+                            filterStream === s.id
+                                ? 'filter-btn on'
+                                : 'filter-btn'
+                        }
+                        onClick={() => setFilterStream(s.id)}
+                    >
+                        {s.name}
+                    </button>
+                ))}
             </div>
 
             {/* Table */}
-            <div
-                style={{
-                    border: '0.5px solid var(--color-border-tertiary, #e5e5e5)',
-                    borderRadius: 10,
-                    overflow: 'hidden',
-                }}
-            >
-                <table
-                    style={{
-                        width: '100%',
-                        borderCollapse: 'collapse',
-                        fontSize: 13,
-                    }}
-                >
-                    <thead>
-                        <tr
-                            style={{
-                                background:
-                                    'var(--color-background-secondary, #f9f9f9)',
-                            }}
-                        >
-                            {['Class level', 'Arm', 'Stream', ''].map(
-                                (h, i) => (
-                                    <th
-                                        key={i}
-                                        style={{
-                                            textAlign: 'left',
-                                            padding: '8px 12px',
-                                            fontSize: 11,
-                                            fontWeight: 500,
-                                            color: 'var(--color-text-secondary, #888)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.04em',
-                                            borderBottom:
-                                                '0.5px solid var(--color-border-tertiary, #e5e5e5)',
-                                        }}
-                                    >
-                                        {h}
-                                    </th>
-                                ),
-                            )}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filtered.length === 0 ? (
+            <div className="card">
+                <div className="tbl-wrap">
+                    <table>
+                        <thead>
                             <tr>
-                                <td
-                                    colSpan={5}
-                                    style={{
-                                        textAlign: 'center',
-                                        padding: '2.5rem 1rem',
-                                        color: 'var(--color-text-tertiary, #bbb)',
-                                        fontSize: 14,
-                                    }}
-                                >
-                                    No entries match the current filters.
-                                </td>
+                                <th>Class level</th>
+                                <th>Arm</th>
+                                <th>Stream</th>
+                                <th style={{ textAlign: 'right' }}></th>
                             </tr>
-                        ) : (
-                            filtered.map((entry, idx) => {
-                                const lvl = levelMap[`${entry.class_level.id}`];
-                                const arm = armMap[`${entry.arm.id}`];
-                                const isLoading = loading;
+                        </thead>
+                        <tbody>
+                            {filtered.length === 0 ? (
+                                <tr>
+                                    <td colSpan={4}>
+                                        <Empty
+                                            icon="📊"
+                                            title="No entries match"
+                                            sub="Adjust filters or add a new entry above"
+                                        />
+                                    </td>
+                                </tr>
+                            ) : (
+                                filtered.map((entry) => {
+                                    const lvl =
+                                        levelMap[`${entry.class_level.id}`];
+                                    const arm = armMap[`${entry.arm.id}`];
 
-                                return (
-                                    <tr
-                                        key={entry.id}
-                                        style={{
-                                            borderBottom:
-                                                idx < filtered.length - 1
-                                                    ? '0.5px solid var(--color-border-tertiary, #e5e5e5)'
-                                                    : 'none',
-                                            opacity: isLoading ? 0.5 : 1,
-                                            transition: 'background 0.1s',
-                                        }}
-                                        onMouseEnter={(e) =>
-                                            ((
-                                                e.currentTarget as HTMLElement
-                                            ).style.background =
-                                                'var(--color-background-secondary, #f9f9f9)')
-                                        }
-                                        onMouseLeave={(e) =>
-                                            ((
-                                                e.currentTarget as HTMLElement
-                                            ).style.background = 'transparent')
-                                        }
-                                    >
-                                        {/* Class level */}
-                                        <td style={tdStyle}>
-                                            <span style={{ fontWeight: 500 }}>
-                                                {lvl?.name ?? '—'}
-                                            </span>
-                                        </td>
-
-                                        {/* Arm */}
-                                        <td style={tdStyle}>
-                                            {arm?.label ?? '—'}
-                                        </td>
-
-                                        {/* Stream inline select */}
-                                        <td style={tdStyle}>
-                                            <select
-                                                value={entry?.stream?.id ?? ''}
-                                                onChange={(e) =>
-                                                    handleStreamChange(
-                                                        entry.id,
-                                                        e.target.value,
-                                                    )
-                                                }
-                                                disabled={isLoading}
-                                                style={streamSelectStyle}
-                                            >
-                                                <option value="">
-                                                    — none —
-                                                </option>
-                                                {streams.map((s) => (
-                                                    <option
-                                                        key={s.id}
-                                                        value={s.id}
-                                                    >
-                                                        {s.name}
-                                                        {s.code
-                                                            ? ` (${s.code})`
-                                                            : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
-
-                                        {/* Actions */}
-                                        <td
+                                    return (
+                                        <tr
+                                            key={entry.id}
                                             style={{
-                                                ...tdStyle,
-                                                textAlign: 'right',
+                                                opacity: loading ? 0.5 : 1,
                                             }}
                                         >
-                                            <button
-                                                onClick={() =>
-                                                    handleRemove(entry.id)
-                                                }
-                                                disabled={isLoading}
-                                                style={removeBtnStyle}
-                                                onMouseEnter={(e) => {
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.background =
-                                                        '#FCEBEB';
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.color = '#A32D2D';
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.borderColor =
-                                                        '#F09595';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.background =
-                                                        'transparent';
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.color =
-                                                        'var(--color-text-secondary, #888)';
-                                                    (
-                                                        e.currentTarget as HTMLElement
-                                                    ).style.borderColor =
-                                                        'var(--color-border-secondary, #ddd)';
-                                                }}
-                                            >
-                                                Remove
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+                                            <td>
+                                                <span
+                                                    style={{
+                                                        fontFamily: 'var(--mono)',
+                                                        fontWeight: 700,
+                                                    }}
+                                                >
+                                                    {lvl?.name ?? '—'}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span className="pill pill-blue">
+                                                    {arm?.label ?? '—'}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <select
+                                                    value={
+                                                        entry?.stream?.id ?? ''
+                                                    }
+                                                    onChange={(e) =>
+                                                        handleStreamChange(
+                                                            entry.id,
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    disabled={loading}
+                                                    style={{
+                                                        height: 28,
+                                                        fontSize: 12,
+                                                        padding: '0 6px',
+                                                    }}
+                                                >
+                                                    <option value="">
+                                                        — none —
+                                                    </option>
+                                                    {streams.map((s) => (
+                                                        <option
+                                                            key={s.id}
+                                                            value={s.id}
+                                                        >
+                                                            {s.name}
+                                                            {s.code
+                                                                ? ` (${s.code})`
+                                                                : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <div
+                                                    className="row-actions"
+                                                    style={{
+                                                        justifyContent:
+                                                            'flex-end',
+                                                    }}
+                                                >
+                                                    <button
+                                                        className="btn btn-danger btn-sm btn-icon"
+                                                        onClick={() =>
+                                                            handleRemove(
+                                                                entry.id,
+                                                            )
+                                                        }
+                                                        disabled={loading}
+                                                    >
+                                                        <Trash2 className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );
 }
-
-// ─── Sub-component: Select ────────────────────────────────────────────────────
-
-function Select({
-    value,
-    onChange,
-    placeholder,
-    children,
-    small = false,
-}: {
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    children: React.ReactNode;
-    small?: boolean;
-}) {
-    return (
-        <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            style={{
-                height: small ? 30 : 36,
-                fontSize: small ? 12 : 14,
-                borderRadius: 8,
-                border: '0.5px solid var(--color-border-secondary, #ddd)',
-                padding: '0 10px',
-                background: 'var(--color-background-primary, #fff)',
-                color: value
-                    ? 'var(--color-text-primary, #111)'
-                    : 'var(--color-text-secondary, #888)',
-                minWidth: small ? 110 : 140,
-                cursor: 'pointer',
-            }}
-        >
-            {placeholder && <option value="">{placeholder}</option>}
-            {children}
-        </select>
-    );
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const tdStyle: React.CSSProperties = {
-    padding: '9px 12px',
-    color: 'var(--color-text-primary, #111)',
-    verticalAlign: 'middle',
-};
-
-const streamSelectStyle: React.CSSProperties = {
-    height: 28,
-    fontSize: 12,
-    borderRadius: 8,
-    border: '0.5px solid var(--color-border-secondary, #ddd)',
-    padding: '0 6px',
-    background: 'var(--color-background-primary, #fff)',
-    color: 'var(--color-text-primary, #111)',
-    cursor: 'pointer',
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-    height: 36,
-    padding: '0 16px',
-    fontSize: 14,
-    borderRadius: 8,
-    border: 'none',
-    background: '#185FA5',
-    color: '#fff',
-    cursor: 'pointer',
-    fontWeight: 500,
-    whiteSpace: 'nowrap',
-};
-
-const removeBtnStyle: React.CSSProperties = {
-    height: 28,
-    padding: '0 10px',
-    fontSize: 12,
-    borderRadius: 8,
-    border: '0.5px solid var(--color-border-secondary, #ddd)',
-    background: 'transparent',
-    color: 'var(--color-text-secondary, #888)',
-    cursor: 'pointer',
-    transition: 'background 0.1s, color 0.1s, border-color 0.1s',
-};

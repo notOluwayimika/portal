@@ -48,3 +48,45 @@ function something()
 {
     // ..
 }
+
+/**
+ * Create a School row. The project has no SchoolFactory, and School only
+ * needs name + slug (uuid is auto-generated in the model's booted hook).
+ */
+function al_makeSchool(): \App\Models\School
+{
+    return \App\Models\School::create([
+        'name' => 'Test School ' . \Illuminate\Support\Str::random(6),
+        'slug' => (string) \Illuminate\Support\Str::uuid(),
+    ]);
+}
+
+/**
+ * Create a User row directly. The bundled UserFactory is out of sync with
+ * the schema (it inserts a `name` column that doesn't exist), so tests
+ * build users from the real columns instead.
+ */
+function al_makeUser(int|string $schoolId): \App\Models\User
+{
+    return \App\Models\User::forceCreate([
+        'uuid'       => (string) \Illuminate\Support\Str::uuid(),
+        'first_name' => 'Test',
+        'last_name'  => 'User ' . \Illuminate\Support\Str::random(5),
+        'email'      => \Illuminate\Support\Str::uuid() . '@example.test',
+        'password'   => bcrypt('password'),
+        'school_id'  => $schoolId,
+    ]);
+}
+
+function al_makeGuardian(int|string $schoolId, int|string $userId): \App\Models\Guardian
+{
+    return \App\Models\Guardian::forceCreate([
+        'uuid'       => (string) \Illuminate\Support\Str::uuid(),
+        'school_id'  => $schoolId,
+        'user_id'    => $userId,
+        'first_name' => 'Guardian',
+        'last_name'  => 'Test',
+        'phone'      => '0800' . random_int(1000000, 9999999),
+        'status'     => 'active',
+    ]);
+}

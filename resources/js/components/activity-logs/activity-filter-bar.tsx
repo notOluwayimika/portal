@@ -69,21 +69,22 @@ function MultiSelect<T extends string | number>({
                             No options
                         </p>
                     )}
-                    {values.map((v) => (
-                        <label
-                            key={String(v)}
-                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                            <input
-                                type="checkbox"
-                                checked={(selected ?? []).includes(v)}
-                                onChange={() =>
-                                    onChange(toggle(selected, v))
-                                }
-                            />
-                            {render ? render(v) : String(v)}
-                        </label>
-                    ))}
+                    {Array.isArray(values) &&
+                        values.map((v) => (
+                            <label
+                                key={String(v)}
+                                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={(selected ?? []).includes(v)}
+                                    onChange={() =>
+                                        onChange(toggle(selected, v))
+                                    }
+                                />
+                                {render ? render(v) : String(v)}
+                            </label>
+                        ))}
                 </div>
             )}
         </div>
@@ -184,11 +185,12 @@ export function ActivityFilterBar({
             />
             <MultiSelect<number | string>
                 label="User"
-                values={(options?.causers ?? []).map((c) => c.id)}
+                values={(Array.isArray(options?.causers) ? options.causers : []).map((c) => c.id)}
                 selected={filters.causer_id}
                 render={(id) =>
-                    options?.causers.find((c) => c.id === id)?.name ??
-                    String(id)
+                    (Array.isArray(options?.causers) ? options.causers : []).find(
+                        (c) => c.id === id,
+                    )?.name ?? String(id)
                 }
                 onChange={(v) => set({ causer_id: v })}
             />

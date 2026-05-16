@@ -182,7 +182,7 @@ export function ActivityTimeline({
         <div className="space-y-6">
             {Object.entries(groups).map(([label, rows]) => (
                 <section key={label}>
-                    <header className="sticky top-0 z-10 mb-1 flex items-center justify-between bg-[#f5f7fb]/90 py-1.5 backdrop-blur dark:bg-background/90">
+                    <header className="sticky top-0 z-10 mb-1 flex items-center justify-between bg-[#f5f7fb]/90 px-3 py-1.5 backdrop-blur dark:bg-background/90">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             {label}
                         </h3>

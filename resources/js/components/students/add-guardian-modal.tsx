@@ -48,7 +48,7 @@ export function AddGuardianModal({
             .catch(() => {});
     }, [isOpen, forcePrimary]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setErrors({});
         setSubmitting(true);
@@ -106,8 +106,24 @@ export function AddGuardianModal({
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Add guardian for ${studentName}`} size="3xl">
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title={`Add guardian for ${studentName}`}
+            size="3xl"
+            footer={
+                <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+                        Cancel
+                    </Button>
+                    <Button type="submit" form="add-guardian-form" disabled={submitting}>
+                        {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        Add Guardian
+                    </Button>
+                </div>
+            }
+        >
+            <form id="add-guardian-form" onSubmit={handleSubmit} className="space-y-4">
                 {forcePrimary && (
                     <p className="bg-primary/10 text-primary rounded-md p-3 text-xs">
                         This student has no guardians yet — the one you add will be set as the primary guardian.
@@ -127,16 +143,6 @@ export function AddGuardianModal({
                 {errors._general && (
                     <p className="text-destructive text-xs">{errors._general}</p>
                 )}
-
-                <div className="flex items-center justify-end gap-2 border-t pt-3">
-                    <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" disabled={submitting}>
-                        {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                        Add Guardian
-                    </Button>
-                </div>
             </form>
         </Modal>
     );

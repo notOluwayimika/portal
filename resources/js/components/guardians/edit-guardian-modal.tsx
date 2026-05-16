@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Save } from 'lucide-react';
+import { Briefcase, CreditCard, MapPin, Phone, Save, User2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MultiStudentConfirmModal } from '@/components/guardians/multi-student-confirm-modal';
 import { MultiStudentWarning } from '@/components/guardians/multi-student-warning';
@@ -121,7 +121,7 @@ export function EditGuardianModal({
             setForm((f) => ({ ...f, [key]: e.target.value })),
     });
 
-    const handleSaveClick = (e: React.FormEvent) => {
+    const handleSaveClick = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (linkedStudents.length > 1) {
             setShowConfirm(true);
@@ -191,8 +191,24 @@ export function EditGuardianModal({
 
     return (
         <>
-            <Modal isOpen={isOpen} onClose={onClose} title="Edit Guardian" size="3xl">
-                <form onSubmit={handleSaveClick} className="space-y-5">
+            <Modal
+                isOpen={isOpen}
+                onClose={onClose}
+                title="Edit Guardian"
+                size="3xl"
+                footer={
+                    <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" form="edit-guardian-form" disabled={submitting}>
+                            {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Save Changes
+                        </Button>
+                    </div>
+                }
+            >
+                <form id="edit-guardian-form" onSubmit={handleSaveClick} className="space-y-5">
                     {linkedStudents.length > 1 && (
                         <MultiStudentWarning students={linkedStudents} />
                     )}
@@ -201,7 +217,11 @@ export function EditGuardianModal({
                         <p className="text-destructive text-xs">{errors._general}</p>
                     )}
 
-                    {/* Name */}
+                    {/* ── Personal Information ── */}
+                    <div className="flex items-center gap-2 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                        <User2 className="h-3.5 w-3.5" />
+                        Personal Information
+                    </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div className="space-y-1">
                             <Label htmlFor="eg-first_name">First Name <span className="text-destructive">*</span></Label>
@@ -218,14 +238,16 @@ export function EditGuardianModal({
                             <FieldError msg={errors.last_name} />
                         </div>
                     </div>
-
-                    {/* Identity */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <SelectField id="eg-gender" label="Gender" fieldKey="gender" options={resources.genders} />
                         <SelectField id="eg-marital_status" label="Marital Status" fieldKey="marital_status" options={resources.marital_statuses} />
                     </div>
 
-                    {/* Contact */}
+                    {/* ── Contact Details ── */}
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                        <Phone className="h-3.5 w-3.5" />
+                        Contact Details
+                    </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-1">
                             <Label htmlFor="eg-phone">Phone <span className="text-destructive">*</span></Label>
@@ -237,14 +259,17 @@ export function EditGuardianModal({
                             <Input id="eg-whatsapp" {...field('whatsapp_number')} />
                         </div>
                     </div>
-
                     <div className="space-y-1">
                         <Label htmlFor="eg-email">Email</Label>
                         <Input id="eg-email" type="email" {...field('email')} />
                         <FieldError msg={errors.email} />
                     </div>
 
-                    {/* Address */}
+                    {/* ── Address ── */}
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Address
+                    </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-1">
                             <Label htmlFor="eg-city">City</Label>
@@ -264,7 +289,11 @@ export function EditGuardianModal({
                         </div>
                     </div>
 
-                    {/* Employment */}
+                    {/* ── Work & Emergency ── */}
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                        <Briefcase className="h-3.5 w-3.5" />
+                        Work & Emergency
+                    </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-1">
                             <Label htmlFor="eg-occupation">Occupation</Label>
@@ -275,13 +304,16 @@ export function EditGuardianModal({
                             <Input id="eg-employer_name" {...field('employer_name')} />
                         </div>
                     </div>
-
                     <div className="space-y-1">
                         <Label htmlFor="eg-emergency_contact">Emergency Contact</Label>
                         <Input id="eg-emergency_contact" {...field('emergency_contact')} />
                     </div>
 
-                    {/* ID */}
+                    {/* ── Identity Documents ── */}
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                        <CreditCard className="h-3.5 w-3.5" />
+                        Identity Documents
+                    </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <SelectField id="eg-id_type" label="ID Type" fieldKey="id_type" options={resources.id_types} />
                         <div className="space-y-1">
@@ -294,15 +326,6 @@ export function EditGuardianModal({
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 border-t pt-3">
-                        <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={submitting}>
-                            {submitting ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Changes
-                        </Button>
-                    </div>
                 </form>
             </Modal>
 

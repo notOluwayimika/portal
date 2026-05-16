@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react';
+import { Calendar, ListFilter, Search, SlidersHorizontal, Tag, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -118,119 +118,136 @@ export function ActivityFilterBar({
     ).length;
 
     return (
-        <div className="space-y-3 rounded-xl border bg-white p-4 dark:bg-slate-900/40">
-            <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                    value={filters.search ?? ''}
-                    onChange={(e) => set({ search: e.target.value })}
-                    placeholder="Search description or user… (Ctrl+K)"
-                    className="pl-9"
-                />
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-                {DATE_PRESETS.map((p) => (
-                    <button
-                        key={p.label}
-                        type="button"
-                        onClick={() =>
-                            set({ date_from: p.from(), date_to: undefined })
-                        }
-                        className="rounded-full border px-3 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <input
-                    type="date"
-                    value={filters.date_from ?? ''}
-                    onChange={(e) =>
-                        set({ date_from: e.target.value || undefined })
-                    }
-                    className="rounded-md border bg-white px-3 py-2 text-sm dark:bg-slate-900/40"
-                    aria-label="Date from"
-                />
-                <input
-                    type="date"
-                    value={filters.date_to ?? ''}
-                    onChange={(e) =>
-                        set({ date_to: e.target.value || undefined })
-                    }
-                    className="rounded-md border bg-white px-3 py-2 text-sm dark:bg-slate-900/40"
-                    aria-label="Date to"
-                />
-            </div>
-
-            <MultiSelect<Severity>
-                label="Severity"
-                values={SEVERITIES}
-                selected={filters.severity}
-                onChange={(v) => set({ severity: v })}
-            />
-            <MultiSelect<string>
-                label="Event"
-                values={options?.events ?? []}
-                selected={filters.event}
-                onChange={(v) => set({ event: v })}
-            />
-            <MultiSelect<string>
-                label="Category"
-                values={options?.log_names ?? []}
-                selected={filters.log_name}
-                onChange={(v) => set({ log_name: v })}
-            />
-            <MultiSelect<number | string>
-                label="User"
-                values={(Array.isArray(options?.causers) ? options.causers : []).map((c) => c.id)}
-                selected={filters.causer_id}
-                render={(id) =>
-                    (Array.isArray(options?.causers) ? options.causers : []).find(
-                        (c) => c.id === id,
-                    )?.name ?? String(id)
-                }
-                onChange={(v) => set({ causer_id: v })}
-            />
-
-            <Input
-                value={filters.batch_uuid ?? ''}
-                onChange={(e) =>
-                    set({ batch_uuid: e.target.value || undefined })
-                }
-                placeholder="Batch UUID"
-            />
-
-            {capabilities.canViewSystem && (
-                <label className="flex items-center gap-2 text-sm">
-                    <input
-                        type="checkbox"
-                        checked={filters.include_system ?? false}
-                        onChange={(e) =>
-                            set({ include_system: e.target.checked })
-                        }
-                    />
-                    Include system events
-                </label>
-            )}
-
-            <div className="flex items-center gap-2 pt-1">
+        <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-slate-900/40">
+            {/* Card header */}
+            <div className="flex items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
+                <div className="flex items-center gap-2.5">
+                    <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                        <ListFilter className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Filters</span>
+                </div>
                 {activeCount > 0 && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onClear}
-                        className="gap-1"
-                    >
-                        <X className="h-3 w-3" />
-                        Clear ({activeCount})
-                    </Button>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+                        {activeCount} active
+                    </span>
                 )}
-                <Button variant="outline" size="sm" onClick={onSavePreset}>
-                    Save filter
-                </Button>
+            </div>
+
+            <div className="space-y-3 p-4">
+                {/* Search */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        value={filters.search ?? ''}
+                        onChange={(e) => set({ search: e.target.value })}
+                        placeholder="Search description or user… (Ctrl+K)"
+                        className="pl-9"
+                    />
+                </div>
+
+                {/* ── Date Range ── */}
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Date Range
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {DATE_PRESETS.map((p) => (
+                        <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => set({ date_from: p.from(), date_to: undefined })}
+                            className="rounded-full border px-3 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <input
+                        type="date"
+                        value={filters.date_from ?? ''}
+                        onChange={(e) => set({ date_from: e.target.value || undefined })}
+                        className="rounded-md border bg-white px-3 py-2 text-sm dark:bg-slate-900/40"
+                        aria-label="Date from"
+                    />
+                    <input
+                        type="date"
+                        value={filters.date_to ?? ''}
+                        onChange={(e) => set({ date_to: e.target.value || undefined })}
+                        className="rounded-md border bg-white px-3 py-2 text-sm dark:bg-slate-900/40"
+                        aria-label="Date to"
+                    />
+                </div>
+
+                {/* ── Filters ── */}
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                    <Tag className="h-3.5 w-3.5" />
+                    Filters
+                </div>
+                <MultiSelect<Severity>
+                    label="Severity"
+                    values={SEVERITIES}
+                    selected={filters.severity}
+                    onChange={(v) => set({ severity: v })}
+                />
+                <MultiSelect<string>
+                    label="Event"
+                    values={options?.events ?? []}
+                    selected={filters.event}
+                    onChange={(v) => set({ event: v })}
+                />
+                <MultiSelect<string>
+                    label="Category"
+                    values={options?.log_names ?? []}
+                    selected={filters.log_name}
+                    onChange={(v) => set({ log_name: v })}
+                />
+                <MultiSelect<number | string>
+                    label="User"
+                    values={(Array.isArray(options?.causers) ? options.causers : []).map((c) => c.id)}
+                    selected={filters.causer_id}
+                    render={(id) =>
+                        (Array.isArray(options?.causers) ? options.causers : []).find(
+                            (c) => c.id === id,
+                        )?.name ?? String(id)
+                    }
+                    onChange={(v) => set({ causer_id: v })}
+                />
+
+                {/* ── Advanced ── */}
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Advanced
+                </div>
+                <Input
+                    value={filters.batch_uuid ?? ''}
+                    onChange={(e) => set({ batch_uuid: e.target.value || undefined })}
+                    placeholder="Batch UUID"
+                />
+                {capabilities.canViewSystem && (
+                    <label className="flex items-center gap-2 text-sm">
+                        <input
+                            type="checkbox"
+                            checked={filters.include_system ?? false}
+                            onChange={(e) => set({ include_system: e.target.checked })}
+                        />
+                        Include system events
+                    </label>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
+                    {activeCount > 0 && (
+                        <Button variant="outline" size="sm" onClick={onClear} className="gap-1">
+                            <X className="h-3 w-3" />
+                            Clear ({activeCount})
+                        </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={onSavePreset}>
+                        Save filter
+                    </Button>
+                </div>
             </div>
         </div>
     );

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type { ExamType, GradeBoundary } from '@/types/models';
+import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { Empty } from './school-setup';
 
 type EditingMap = Record<string, GradeBoundary>;
@@ -195,7 +196,7 @@ export function GradeBoundariesTab({
                 {examTypes.map((et) => (
                     <button
                         key={et.id}
-                        className={`filter-btn${filter === et.id ? 'on' : ''}`}
+                        className={filter === et.id ? 'filter-btn on' : 'filter-btn'}
                         onClick={() => setFilter(et.id)}
                     >
                         {et.name}
@@ -327,7 +328,7 @@ export function GradeBoundariesTab({
                                                         saveRow(b.id)
                                                     }
                                                 >
-                                                    ✓
+                                                    <Check className="h-3 w-3" />
                                                 </button>
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
@@ -335,7 +336,7 @@ export function GradeBoundariesTab({
                                                         cancelEdit(b.id)
                                                     }
                                                 >
-                                                    ✕
+                                                    <X className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </>
@@ -385,13 +386,13 @@ export function GradeBoundariesTab({
                                                     className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() => startEdit(b)}
                                                 >
-                                                    ✏️
+                                                    <Pencil className="h-3 w-3" />
                                                 </button>
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
                                                     onClick={() => delRow(b.id)}
                                                 >
-                                                    🗑
+                                                    <Trash2 className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </>

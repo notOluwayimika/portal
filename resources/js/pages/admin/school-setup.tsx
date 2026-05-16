@@ -8,6 +8,16 @@ import { ToastItem } from '@/components/toast-item';
 import type { ToastType } from '@/components/toast-item';
 import type { Toast } from '@/components/toast-item';
 import type { SetupData } from '@/types/models';
+import {
+    BarChart2,
+    BookOpen,
+    Calendar,
+    FileText,
+    GraduationCap,
+    GitBranch,
+    LayoutDashboard,
+    Layers,
+} from 'lucide-react';
 import ClassStreamTab from './class-stream-tab';
 import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
@@ -16,7 +26,7 @@ import { SubjectsTab } from './subjects-tab';
 interface TabConfig {
     id: string;
     label: string;
-    icon: string;
+    icon: React.ReactNode;
     count: (() => number) | null;
 }
 
@@ -80,7 +90,8 @@ const css = `
   }
   .school-avatar {
     width: 38px; height: 38px; border-radius: 10px;
-    background: var(--blue); color: #fff;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.28);
     display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 700; letter-spacing: -0.5px;
     flex-shrink: 0;
@@ -432,39 +443,14 @@ type TabId =
     | 'curricula';
 
 const TABS: TabConfig[] = [
-    { id: 'overview', label: 'Overview', icon: '⊞', count: null },
-    {
-        id: 'sessions',
-        label: 'Sessions',
-        icon: '📅',
-        count: null,
-    },
-    { id: 'structure', label: 'Class Structure', icon: '🏫', count: null },
-    { id: 'stream', label: 'Class Stream', icon: '📊', count: null },
-    {
-        id: 'exam-types',
-        label: 'Exam Types',
-        icon: '📝',
-        count: null,
-    },
-    {
-        id: 'subjects',
-        label: 'Subjects',
-        icon: '📚',
-        count: null,
-    },
-    {
-        id: 'grades',
-        label: 'Grade Boundaries',
-        icon: '📊',
-        count: null,
-    },
-    {
-        id: 'curricula',
-        label: 'Curricula',
-        icon: '📋',
-        count: null,
-    },
+    { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-[14px] w-[14px]" />, count: null },
+    { id: 'sessions', label: 'Sessions', icon: <Calendar className="h-[14px] w-[14px]" />, count: null },
+    { id: 'structure', label: 'Class Structure', icon: <Layers className="h-[14px] w-[14px]" />, count: null },
+    { id: 'stream', label: 'Class Stream', icon: <GitBranch className="h-[14px] w-[14px]" />, count: null },
+    { id: 'exam-types', label: 'Exam Types', icon: <FileText className="h-[14px] w-[14px]" />, count: null },
+    { id: 'subjects', label: 'Subjects', icon: <BookOpen className="h-[14px] w-[14px]" />, count: null },
+    { id: 'grades', label: 'Grade Boundaries', icon: <BarChart2 className="h-[14px] w-[14px]" />, count: null },
+    { id: 'curricula', label: 'Curricula', icon: <GraduationCap className="h-[14px] w-[14px]" />, count: null },
 ];
 
 export default function SchoolSetup() {
@@ -567,9 +553,7 @@ export default function SchoolSetup() {
                                                 setActive(t.id as TabId)
                                             }
                                         >
-                                            <span className="tab-icon">
-                                                {t.icon}
-                                            </span>
+                                            {t.icon}
                                             {t.label}
                                             {count != null && (
                                                 <span className="tab-count">

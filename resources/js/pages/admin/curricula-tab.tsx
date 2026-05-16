@@ -4,7 +4,7 @@
 
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Settings } from 'lucide-react';
+import { Pencil, Settings, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import type { SelectOption } from '@/components/single-select';
@@ -418,13 +418,13 @@ export function CurriculaTab({
                                                 className="btn btn-ghost btn-sm btn-icon"
                                                 onClick={() => open(c)}
                                             >
-                                                ✏️
+                                                <Pencil className="h-3 w-3" />
                                             </button>
                                             <button
                                                 className="btn btn-danger btn-sm btn-icon"
                                                 onClick={() => setConfirm(c)}
                                             >
-                                                🗑
+                                                <Trash2 className="h-3 w-3" />
                                             </button>
                                         </div>
                                     </td>

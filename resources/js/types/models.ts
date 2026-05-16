@@ -248,17 +248,30 @@ export interface Curriculum {
     updated_at?: string;
 }
 
+export interface SetupCurrentTerm {
+    name: string;
+    order: number;
+    status: string;
+    start_date: string | null;
+    end_date: string | null;
+}
+
 export interface SetupData {
     school: School;
     current_session: AcademicSession | null;
+    current_term: SetupCurrentTerm | null;
+    terms_in_session: number;
     sessions: number;
     class_levels: number;
     arms: number;
+    class_level_arms: number;
     exam_types: number;
     subjects: number;
     grade_boundaries: number;
-    students: number;
     curricula: number;
+    students: number;
+    teachers: number;
+    guardians: number;
 }
 
 export interface Stream {

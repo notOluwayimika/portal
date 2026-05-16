@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
 import type { Arm, ClassLevel, Stream } from '@/types/models';
+import { Pencil, Trash2 } from 'lucide-react';
 import type { ToastType } from '../toast-item';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
@@ -401,7 +402,7 @@ export function ClassStructureTab({
                                                         setLvlModal(l.id);
                                                     }}
                                                 >
-                                                    ✏️
+                                                    <Pencil className="h-3 w-3" />
                                                 </button>
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
@@ -412,7 +413,7 @@ export function ClassStructureTab({
                                                         })
                                                     }
                                                 >
-                                                    🗑
+                                                    <Trash2 className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </td>
@@ -460,7 +461,7 @@ export function ClassStructureTab({
                                                 setArmModal(a.id);
                                             }}
                                         >
-                                            ✏️
+                                            <Pencil className="h-3 w-3" />
                                         </button>
                                         <button
                                             className="btn btn-danger btn-sm btn-icon"
@@ -471,7 +472,7 @@ export function ClassStructureTab({
                                                 })
                                             }
                                         >
-                                            🗑
+                                            <Trash2 className="h-3 w-3" />
                                         </button>
                                     </div>
                                 </div>
@@ -519,7 +520,7 @@ export function ClassStructureTab({
                                                 setStreamModal(s.id);
                                             }}
                                         >
-                                            ✏️
+                                            <Pencil className="h-3 w-3" />
                                         </button>
                                         <button
                                             className="btn btn-danger btn-sm btn-icon"
@@ -530,7 +531,7 @@ export function ClassStructureTab({
                                                 })
                                             }
                                         >
-                                            🗑
+                                            <Trash2 className="h-3 w-3" />
                                         </button>
                                     </div>
                                 </div>

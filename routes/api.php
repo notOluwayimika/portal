@@ -16,6 +16,7 @@ use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
 // Authentication
 Route::post('/login', [AuthenticationController::class, 'login']);
 Route::post('/register', [AuthenticationController::class, 'register']);
@@ -38,6 +39,9 @@ Route::get('/curricula/active', [CurriculumController::class, 'active']);
 Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
+
+    // Dashboard analytics API
+    require __DIR__ . '/endpoints/dashboard.php';
 
     // Public/Shared data (now protected)
     Route::get('/sessions', [SessionController::class, 'index']);

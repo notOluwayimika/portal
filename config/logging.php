@@ -127,6 +127,12 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'dashboard-analysis' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/dashboard-analysis.log'),
+            'level' => 'debug',
+        ],
+
         /*
          * Records activities written without a resolvable school_id.
          * Monitor this for sustained writes after Phase 0 — they indicate a

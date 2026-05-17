@@ -3,6 +3,7 @@
 use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Http\Controllers\AuthenticationController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StudentController;
 use App\Http\Resources\CurriculumResource;
@@ -148,7 +149,9 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
 });
 
 Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'show'])->name('dashboard');
+    Route::post('dashboard/refresh', [DashboardController::class, 'refresh'])->middleware('throttle:1,1')->name('dashboard.refresh');
+    Route::get('dashboard/onboarding', [DashboardController::class, 'onboardingState'])->name('dashboard.onboarding');
 
     Route::get('setup/teacher/{teacher:uuid}', function (Teacher $teacher) {
         return Inertia::render('teacher/show', [

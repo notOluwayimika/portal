@@ -275,4 +275,41 @@ class CurriculumSubjectController extends Controller
 
         return response()->json(new SubjectResultStatusResource($status), 200);
     }
+
+    /**
+     * PATCH /api/curriculum-subjects/{curriculumSubject}/archive
+     * Soft-archive a curriculum subject so it cannot be added to new enrollments.
+     * Existing student_subjects rows are unaffected.
+     */
+    public function archive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        abort_unless($request->user()->can('curriculum_subject.archive'), 403);
+        abort_if($curriculumSubject->isArchived(), 409, 'This subject is already archived.');
+
+        $curriculumSubject->update([
+            'active'               => false,
+            'archived_at'          => now(),
+            'archived_by_user_id'  => $request->user()->id,
+        ]);
+
+        return response()->json(['message' => 'Subject archived successfully.']);
+    }
+
+    /**
+     * PATCH /api/curriculum-subjects/{curriculumSubject}/unarchive
+     * Restore an archived curriculum subject so it can be added to enrollments again.
+     */
+    public function unarchive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        abort_unless($request->user()->can('curriculum_subject.restore'), 403);
+        abort_unless($curriculumSubject->isArchived(), 409, 'This subject is not archived.');
+
+        $curriculumSubject->update([
+            'active'               => true,
+            'archived_at'          => null,
+            'archived_by_user_id'  => null,
+        ]);
+
+        return response()->json(['message' => 'Subject restored successfully.']);
+    }
 }

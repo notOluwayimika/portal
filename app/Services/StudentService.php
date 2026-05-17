@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DTOs\StudentDto;
 use App\Enums\GenderTypeEnum;
+use App\Models\Curriculum;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use Carbon\Carbon;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 class StudentService
 {
+    public function __construct(
+        private CurriculumEnrollmentService $enrollmentService
+    ) {}
+
     public function paginate(Request $request): LengthAwarePaginator
     {
         return Student::query()
@@ -36,23 +41,28 @@ class StudentService
     {
         return DB::transaction(function () use ($attributes) {
             $student = Student::create([
-                'school_id' => $attributes['school_id'],
-                'user_id' => $attributes['user_id'] ?? null,
-                'first_name' => $attributes['first_name'],
-                'last_name' => $attributes['last_name'],
-                'middle_name' => $attributes['middle_name'] ?? null,
-                'gender' => $attributes['gender'],
-                'date_of_birth' => $attributes['date_of_birth'] ?? null,
+                'school_id'        => $attributes['school_id'],
+                'user_id'          => $attributes['user_id'] ?? null,
+                'first_name'       => $attributes['first_name'],
+                'last_name'        => $attributes['last_name'],
+                'middle_name'      => $attributes['middle_name'] ?? null,
+                'gender'           => $attributes['gender'],
+                'date_of_birth'    => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? null,
-                'photo_id' => $attributes['photo_id'] ?? null,
+                'photo_id'         => $attributes['photo_id'] ?? null,
             ]);
 
-            StudentCurriculum::create([
-                'student_id' => $student->id,
-                'curriculum_id' => $attributes['curriculum_id'],
-                'status' => $attributes['status'] ?? \App\Enums\StudentStatusEnum::ACTIVE->value,
-                'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
-            ]);
+            $curriculum = Curriculum::findOrFail($attributes['curriculum_id']);
+
+            $this->enrollmentService->enroll(
+                $student,
+                $curriculum,
+                auth()->user(),
+                [
+                    'status'         => $attributes['status'] ?? null,
+                    'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
+                ]
+            );
 
             return $student;
         });

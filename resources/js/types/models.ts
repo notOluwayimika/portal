@@ -291,6 +291,9 @@ export interface CurriculumSubject {
     subject_id?: number;
     is_compulsory: boolean;
     display_order: number;
+    active: boolean;
+    archived_at?: string | null;
+    archived_by_user_id?: number | null;
     students?: StudentSubject[];
     scores?: Score[];
     teachers?: TeacherCurriculumSubject[];
@@ -326,11 +329,42 @@ export interface StudentCurriculum {
     status: string;
     promoted_to?: Curriculum;
     subjects?: StudentSubject[];
+    ended_at?: string | null;
+    ended_by_user_id?: number | null;
+    end_reason?: string | null;
+    is_ended?: boolean;
 }
+
+export type StudentSubjectStatus = 'active' | 'dropped';
+
 export interface StudentSubject {
     id: string;
-    student_curriculum: StudentCurriculum;
+    status: StudentSubjectStatus;
+    student_curriculum?: StudentCurriculum;
     curriculum_subject: CurriculumSubject;
+    dropped_at?: string | null;
+    drop_reason?: string | null;
+    dropped_by?: { id: number; full_name: string } | null;
+    restored_at?: string | null;
+    restored_by?: { id: number; full_name: string } | null;
+}
+
+export interface StudentSubjectsGrouped {
+    enrollment: {
+        id: string;
+        ended_at: string | null;
+        is_ended: boolean;
+    };
+    compulsory_active: StudentSubject[];
+    optional_active: StudentSubject[];
+    optional_dropped: StudentSubject[];
+    optional_available: Array<{
+        id: string;
+        subject_name: string;
+        subject_code: string | null;
+        is_compulsory: boolean;
+        active: boolean;
+    }>;
 }
 
 export interface SubjectResultStatus {

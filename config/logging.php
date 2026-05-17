@@ -139,6 +139,18 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         * Records StudentCurriculum rows created without going through
+         * CurriculumEnrollmentService (e.g. raw SQL, seeders, bulk imports).
+         * Sustained writes here indicate a bypass that needs investigation.
+         */
+        'academic-anomalies' => [
+            'driver' => 'single',
+            'path'   => storage_path('logs/academic-anomalies.log'),
+            'level'  => 'warning',
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

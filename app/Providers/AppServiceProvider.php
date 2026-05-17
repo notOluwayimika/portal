@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\StudentCurriculum;
+use App\Observers\StudentCurriculumObserver;
 use App\Repositories\ClassLevel\ClassLevelRepository;
 use App\Repositories\ClassLevel\ClassLevelRepositoryInterface;
 use App\Repositories\Session\SessionRepository;
@@ -40,6 +42,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        StudentCurriculum::observe(StudentCurriculumObserver::class);
     }
 
     /**

@@ -29,6 +29,7 @@ import {
     DetachGuardianModal,
     type StudentGuardian,
 } from '@/components/students/student-guardians-panel';
+import { StudentSubjectsSection } from '@/components/students/subjects/student-subjects-section';
 import type { Toast, ToastType } from '@/components/toast-item';
 import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -56,6 +57,7 @@ interface StatusOption {
 interface ShowPageProps {
     student: { data: Student };
     student_statuses: StatusOption[];
+    [key: string]: unknown;
 }
 
 function statusColor(status: string | undefined) {
@@ -138,9 +140,9 @@ export default function StudentProfile() {
         phone: g.phone,
         email: g.email,
         occupation: g.occupation,
-        relationship: g.relationship,
-        is_primary: g.is_primary,
-        can_login: g.can_login,
+        relationship: g.relationship ?? '',
+        is_primary: g.is_primary ?? false,
+        can_login: g.can_login ?? false,
     });
 
     const guardians = student.guardians ?? [];
@@ -243,7 +245,7 @@ export default function StudentProfile() {
                                     Edit Student
                                 </Button>
                                 <Link
-                                    href={`http://portal.test/setup/student-curricula/${student.id}`}
+                                    href={`/setup/student-curricula/${student.id}`}
                                     className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"
                                 >
                                     View Academic Records
@@ -414,6 +416,9 @@ export default function StudentProfile() {
                                     )}
                                 </CardContent>
                             </Card>
+
+                            {/* Subjects Section */}
+                            <StudentSubjectsSection student={student} />
                         </div>
 
                         {/* Right column (1/3 width on lg) */}

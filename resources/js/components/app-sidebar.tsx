@@ -1,10 +1,12 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
-    BookUser,
-    FolderGit2,
-    LayoutGrid,
-    PanelsTopLeft,
-    ScrollText,
+    BookOpen,
+    Building2,
+    ClipboardList,
+    GraduationCap,
+    History,
+    LayoutDashboard,
+    UserCog,
     Users,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -20,98 +22,119 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-import type { NavItem, User } from '@/types';
+import type { NavGroup, NavItem, User } from '@/types';
+import type { Teacher } from '@/types/models';
 
-const sharedNavItems: NavItem[] = [
+const dashboardGroup: NavGroup = {
+    items: [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+            icon: LayoutDashboard,
+        },
+    ],
+};
+
+const adminNavGroups: NavGroup[] = [
     {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-];
-const adminNavItems: NavItem[] = [
-    {
-        title: 'Students',
-        href: '/students',
-        icon: Users,
-    },
-    {
-        title: 'Teachers',
-        href: '/teachers',
-        icon: BookUser,
-    },
-    {
-        title: 'Guardians',
-        href: '/guardians',
-        icon: Users,
-    },
-    {
-        title: 'School Setup',
-        href: '/setup',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Review Results',
-        href: '/setup/review/results',
-        icon: PanelsTopLeft,
+        label: 'People',
+        items: [
+            {
+                title: 'Students',
+                href: '/students',
+                icon: GraduationCap,
+            },
+            {
+                title: 'Teachers',
+                href: '/teachers',
+                icon: UserCog,
+            },
+            {
+                title: 'Guardians',
+                href: '/guardians',
+                icon: Users,
+            },
+        ],
     },
     {
-        title: 'Activity Log',
-        href: '/activity-logs',
-        icon: ScrollText,
+        label: 'Academic',
+        items: [
+            {
+                title: 'School Setup',
+                href: '/setup',
+                icon: Building2,
+            },
+            {
+                title: 'Review Results',
+                href: '/setup/review/results',
+                icon: ClipboardList,
+            },
+        ],
+    },
+    {
+        label: 'System',
+        items: [
+            {
+                title: 'Activity Log',
+                href: '/activity-logs',
+                icon: History,
+            },
+        ],
     },
 ];
 
-const guardianNavItems: NavItem[] = [
+const guardianNavGroups: NavGroup[] = [
     {
-        title: 'My Dashboard',
-        href: '/parent/dashboard',
-        icon: LayoutGrid,
+        items: [
+            {
+                title: 'My Dashboard',
+                href: '/parent/dashboard',
+                icon: LayoutDashboard,
+            },
+        ],
     },
 ];
 
-const footerNavItems: NavItem[] = [
-    // {
-    //     title: 'Repository',
-    //     href: 'https://github.com/laravel/react-starter-kit',
-    //     icon: FolderGit2,
-    // },
-    // {
-    //     title: 'Documentation',
-    //     href: 'https://laravel.com/docs/starter-kits#react',
-    //     icon: BookOpen,
-    // },
-];
+const footerNavItems: NavItem[] = [];
 
 export function AppSidebar() {
     const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
         auth: { roles: string[] };
     }>().props;
     const role = auth.roles[0];
-    const teacherNavItems: NavItem[] = [];
-    const teacher = auth.user.teacher;
 
-    if (teacher) {
-        teacherNavItems.push({
-            title: 'My Subjects',
-            href: `/setup/teacher/${teacher.uuid}`,
-            icon: BookUser,
-        });
-    }
+    const navGroups = useMemo(() => {
+        if (role === 'guardian') {
+            return guardianNavGroups;
+        }
 
-    const roleMap: Record<string, NavItem[]> = {
-        admin: adminNavItems,
-        head_of_school: adminNavItems,
-        teacher: teacherNavItems,
-        guardian: guardianNavItems,
-    };
-    const mainNavItems = useMemo(() => {
-        const roleItems = roleMap[role] ?? [];
+        if (role === 'teacher') {
+            const teacher = auth.user.teacher as Teacher | undefined;
+            const teacherGroups: NavGroup[] = [dashboardGroup];
+            if (teacher) {
+                teacherGroups.push({
+                    label: 'Teaching',
+                    items: [
+                        {
+                            title: 'My Subjects',
+                            href: `/setup/teacher/${teacher.id}`,
+                            icon: BookOpen,
+                        },
+                    ],
+                });
+            }
+            return teacherGroups;
+        }
 
-        return [...roleItems, ...sharedNavItems];
-    }, [role]);
+        if (role === 'admin' || role === 'head_of_school') {
+            return [dashboardGroup, ...adminNavGroups];
+        }
+
+        return [dashboardGroup];
+    }, [role, auth.user.teacher]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -127,8 +150,10 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
-                <NavMain items={mainNavItems} />
+            <SidebarSeparator className="bg-white/20" />
+
+            <SidebarContent className="gap-0 pt-3">
+                <NavMain groups={navGroups} />
             </SidebarContent>
 
             <SidebarFooter>

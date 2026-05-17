@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\StudentStatusEnum;
+use App\Exceptions\BusinessRuleException;
 use App\Http\Requests\PromoteStudentRequest;
 use App\Http\Requests\RegisterStudentCurriculumRequest;
+use App\Http\Requests\StudentSubject\UnenrollStudentRequest;
 use App\Http\Requests\UpdateStudentCurriculumStatusRequest;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\StudentCurriculumResource;
@@ -12,6 +14,7 @@ use App\Models\Curriculum;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
+use App\Services\CurriculumEnrollmentService;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +22,38 @@ use Illuminate\Support\Facades\DB;
 
 class StudentCurriculumController extends Controller
 {
+    public function __construct(private CurriculumEnrollmentService $enrollmentService) {}
+
+    /**
+     * PATCH /api/students/{student}/enrollments/{studentCurriculum}/end
+     * End (unenroll) a student from a curriculum. Does NOT delete student_subjects.
+     */
+    public function unenroll(
+        UnenrollStudentRequest $request,
+        Student $student,
+        StudentCurriculum $studentCurriculum
+    ): JsonResponse {
+        abort_unless($studentCurriculum->student_id === $student->id, 404);
+        abort_unless($student->school_id === $request->user()->school_id, 403);
+
+        try {
+            $enrollment = $this->enrollmentService->unenroll(
+                $studentCurriculum,
+                $request->user(),
+                $request->validated('reason')
+            );
+
+            $enrollment->load(['curriculum.examType', 'curriculum.classLevelArm.classLevel', 'curriculum.academicSession']);
+
+            return response()->json([
+                'message' => 'Enrollment ended successfully.',
+                'data'    => new StudentCurriculumResource($enrollment),
+            ]);
+        } catch (BusinessRuleException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+    }
+
     /**
      * Update the student_curricula.status field (active|promoted|repeated|withdrawn).
      */

@@ -88,9 +88,11 @@ class ActivityResource extends JsonResource
         }
 
         $subject = $this->subject;
+        $props   = $this->properties ?? [];
         $label = $subject->full_name
             ?? $subject->name
             ?? trim(($subject->first_name ?? '') . ' ' . ($subject->last_name ?? ''))
+            ?: ($props['subject_name'] ?? null)
             ?: "{$basename} #{$subject->getKey()}";
 
         return [

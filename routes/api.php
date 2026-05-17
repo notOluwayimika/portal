@@ -10,6 +10,7 @@ use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\StudentCurriculumController;
+use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
@@ -115,6 +116,24 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::post('/students/{student:uuid}/curricula/promote', [StudentCurriculumController::class, 'promote']);
     Route::post('/students/{student:uuid}/curricula', [StudentCurriculumController::class, 'register']);
     Route::patch('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'updateStatus']);
+
+    // student subject management
+    // withoutScopedBindings: prevents Laravel auto-scoping {studentCurriculum} to {student}
+    // (it would look for $student->studentCurriculums() but the relation is studentCurricula()).
+    Route::prefix('students/{student:uuid}/enrollments/{studentCurriculum:uuid}')
+        ->withoutScopedBindings()
+        ->group(function () {
+            Route::get('subjects',                                          [StudentSubjectController::class, 'index']);
+            Route::post('subjects',                                         [StudentSubjectController::class, 'store']);
+            Route::patch('subjects/{studentSubject:uuid}/drop',             [StudentSubjectController::class, 'drop']);
+            Route::patch('subjects/{studentSubject:uuid}/restore',          [StudentSubjectController::class, 'restore']);
+            Route::get('subjects/history',                                  [StudentSubjectController::class, 'history']);
+            Route::patch('end',                                             [StudentCurriculumController::class, 'unenroll']);
+        });
+
+    // curriculum subject archival
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive',   [CurriculumSubjectController::class, 'archive']);
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 

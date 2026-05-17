@@ -29,6 +29,7 @@ import {
     DetachGuardianModal,
     type StudentGuardian,
 } from '@/components/students/student-guardians-panel';
+import { StudentSubjectsSection } from '@/components/students/subjects/student-subjects-section';
 import type { Toast, ToastType } from '@/components/toast-item';
 import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -414,6 +415,9 @@ export default function StudentProfile() {
                                     )}
                                 </CardContent>
                             </Card>
+
+                            {/* Subjects Section */}
+                            <StudentSubjectsSection student={student} />
                         </div>
 
                         {/* Right column (1/3 width on lg) */}

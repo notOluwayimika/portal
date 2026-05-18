@@ -9,6 +9,8 @@ use App\Enums\GuardianStatusEnum;
 use App\Enums\MaritalStatusEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class GuardianRequest extends FormRequest
 {
@@ -51,5 +53,14 @@ class GuardianRequest extends FormRequest
             'relationship'      => ['nullable', 'string', Rule::in(GuardianRelationshipEnum::values())],
             'photo'             => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
         ];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        throw new HttpResponseException(response()->json([
+            'status' => 'error',
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422));
     }
 }

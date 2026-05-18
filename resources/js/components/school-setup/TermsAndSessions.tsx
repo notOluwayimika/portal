@@ -155,18 +155,18 @@ export default function TermsAndSessions() {
 
     return (
         <div className="space-y-8">
-            <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Terms &amp; sessions</h1>
-                    <p className="mt-2 text-sm text-gray-600">Manage academic sessions, term dates, and current term status.</p>
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Terms &amp; sessions</h1>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">Manage academic sessions, term dates, and current term status.</p>
                 </div>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-5 py-3">
-                        <CalendarDays className="h-5 w-5 text-gray-500" />
+                    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
+                        <CalendarDays className="h-5 w-5 text-gray-500 dark:text-slate-400" />
                         <select
                             value={selectedSessionId}
                             onChange={(event) => setSelectedSessionId(Number(event.target.value))}
-                            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                         >
                             {sessions.map((session) => (
                                 <option key={session.id} value={session.id}>
@@ -177,7 +177,7 @@ export default function TermsAndSessions() {
                     </div>
                     <button
                         type="button"
-                        className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                         onClick={openNewSessionModal}
                     >
                         <span>+ New session</span>
@@ -196,11 +196,11 @@ export default function TermsAndSessions() {
             ) : (
                 <div className="space-y-6">
                     {selectedSession.terms.map((term) => (
-                        <div key={term.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                        <div key={term.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                             <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
-                                    <p className="text-lg font-medium text-gray-900">{term.name}</p>
-                                    <p className="mt-2 text-sm text-gray-500">{term.start_date || 'Start date unset'} — {term.end_date || 'End date unset'}</p>
+                                    <p className="text-lg font-medium text-gray-900 dark:text-white">{term.name}</p>
+                                    <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">{term.start_date || 'Start date unset'} — {term.end_date || 'End date unset'}</p>
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <span className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold ${statusClasses[term.status]}`}>
@@ -208,7 +208,7 @@ export default function TermsAndSessions() {
                                     </span>
                                     <button
                                         type="button"
-                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
+                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                         onClick={() => openEditTermModal(term)}
                                     >
                                         <Pencil className="h-4 w-4" />
@@ -229,7 +229,7 @@ export default function TermsAndSessions() {
                             <div className="mt-6 flex flex-wrap gap-3">
                                 <button
                                     type="button"
-                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
+                                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                     onClick={() => handleSetActiveStatus(term.id)}
                                 >
                                     Set active
@@ -258,14 +258,14 @@ export default function TermsAndSessions() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm"
+                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => setIsSessionModalOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                             onClick={handleCreateSession}
                         >
                             Create session
@@ -280,7 +280,7 @@ export default function TermsAndSessions() {
                             type="text"
                             value={newSessionName}
                             onChange={(event) => setNewSessionName(event.target.value)}
-                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                             placeholder="2026/2027"
                         />
                     </div>
@@ -298,7 +298,7 @@ export default function TermsAndSessions() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm"
+                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => {
                                 setIsTermModalOpen(false)
                                 setEditTerm(null)
@@ -308,7 +308,7 @@ export default function TermsAndSessions() {
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                             onClick={handleSaveTerm}
                         >
                             Save term
@@ -323,7 +323,7 @@ export default function TermsAndSessions() {
                             type="text"
                             value={termName}
                             onChange={(event) => setTermName(event.target.value)}
-                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                     </div>
                     <div className="grid gap-6 sm:grid-cols-2">
@@ -333,7 +333,7 @@ export default function TermsAndSessions() {
                                 type="date"
                                 value={termStartDate}
                                 onChange={(event) => setTermStartDate(event.target.value)}
-                                className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                             />
                         </div>
                         <div>
@@ -342,7 +342,7 @@ export default function TermsAndSessions() {
                                 type="date"
                                 value={termEndDate}
                                 onChange={(event) => setTermEndDate(event.target.value)}
-                                className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                             />
                         </div>
                     </div>
@@ -351,7 +351,7 @@ export default function TermsAndSessions() {
                         <select
                             value={termStatus}
                             onChange={(event) => setTermStatus(event.target.value as Term['status'])}
-                            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                             <option value="completed">Completed</option>
                             <option value="active">Active</option>

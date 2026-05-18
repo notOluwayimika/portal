@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Download, ShieldCheck, Slash, ArrowRightCircle } from 'lucide-react'
+import { CheckCircle2, ArrowRightCircle } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import Modal from '@/components/ui/Modal'
 import Toast from '@/components/ui/Toast'
 
 interface MigrationStep {
@@ -47,7 +46,6 @@ const initialSteps: MigrationStep[] = [
 export default function YearEndMigration() {
     const [steps, setSteps] = useState<MigrationStep[]>(initialSteps)
     const [isConfirmOpen, setIsConfirmOpen] = useState(false)
-    const [confirmationText, setConfirmationText] = useState('')
     const [isMigrating, setIsMigrating] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
@@ -86,7 +84,6 @@ export default function YearEndMigration() {
             setIsConfirmOpen(false)
             setToast({ message: 'Migration complete. All students have been promoted.', type: 'success' })
             setSteps(initialSteps)
-            setConfirmationText('')
         }, 1500)
     }
 
@@ -98,13 +95,13 @@ export default function YearEndMigration() {
 
     return (
         <div className="space-y-8">
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900">Year-end migration</h1>
-                        <p className="mt-2 text-sm text-gray-600">Complete the migration checklist before promoting students to the next year group.</p>
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Year-end migration</h1>
+                        <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">Complete the migration checklist before promoting students to the next year group.</p>
                     </div>
-                    <div className="rounded-full border border-gray-200 bg-gray-50 px-5 py-3 text-sm text-gray-700">
+                    <div className="rounded-full border border-gray-200 bg-gray-50 px-5 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         {completedCount} of {steps.length} steps completed
                     </div>
                 </div>
@@ -114,16 +111,16 @@ export default function YearEndMigration() {
                 {steps.map((step, index) => {
                     const unlocked = canCheck(index)
                     return (
-                        <div key={step.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                        <div key={step.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                             <div className="flex items-start gap-6">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#185FA5]/10 text-[#185FA5]">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                                     <span className="text-sm font-semibold">{step.id}</span>
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                         <div>
-                                            <h2 className="text-lg font-medium text-gray-900">{step.title}</h2>
-                                            <p className="mt-1 text-sm text-gray-600">{step.description}</p>
+                                            <h2 className="text-lg font-medium text-gray-900 dark:text-white">{step.title}</h2>
+                                            <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">{step.description}</p>
                                         </div>
                                         <div className="flex items-center gap-4">
                                             {step.completed ? (
@@ -132,13 +129,13 @@ export default function YearEndMigration() {
                                                     Completed
                                                 </span>
                                             ) : (
-                                                <span className="rounded-full bg-gray-100 px-4 py-2 text-xs font-semibold text-gray-700">Pending</span>
+                                                <span className="rounded-full bg-gray-100 px-4 py-2 text-xs font-semibold text-gray-700 dark:bg-slate-700 dark:text-slate-300">Pending</span>
                                             )}
                                             <button
                                                 type="button"
                                                 onClick={() => handleToggleStep(index)}
                                                 disabled={!unlocked}
-                                                className={`rounded-lg px-5 py-2.5 text-sm font-medium transition-all ${unlocked ? 'bg-[#185FA5] text-white shadow-sm hover:bg-[#0f4a82] hover:shadow-md' : 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                                                className={`rounded-lg px-5 py-2.5 text-sm font-medium transition-all ${unlocked ? 'bg-primary text-white shadow-sm hover:bg-primary/90 hover:shadow-md' : 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500'}`}
                                             >
                                                 {step.completed ? 'Undo' : 'Mark done'}
                                             </button>

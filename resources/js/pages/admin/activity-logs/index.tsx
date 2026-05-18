@@ -171,9 +171,9 @@ export default function ActivityLogIndex() {
                         <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="relative shrink-0">
-                                    <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
-                                    <div className="relative flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-indigo-100 dark:from-indigo-950/50 dark:to-violet-950/50 dark:ring-indigo-900">
-                                        <ActivityIcon className="h-6 w-6 text-indigo-600" />
+                                    <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-tr from-primary to-violet-500 opacity-10 blur" />
+                                    <div className="relative flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-violet-50 shadow-sm ring-1 ring-primary/20 dark:from-primary/20 dark:to-violet-950/50 dark:ring-primary/20">
+                                        <ActivityIcon className="h-6 w-6 text-primary" />
                                     </div>
                                 </div>
                                 <div>
@@ -249,7 +249,7 @@ export default function ActivityLogIndex() {
                             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                                 <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                     <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                        <ActivityIcon className="h-4 w-4 text-indigo-600" />
+                                        <ActivityIcon className="h-4 w-4 text-primary" />
                                     </div>
                                     Activity Feed
                                 </CardTitle>

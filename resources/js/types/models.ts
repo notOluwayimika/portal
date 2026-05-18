@@ -145,6 +145,7 @@ export interface Guardian {
     email_verified_at?: string | null;
     never_activated?: boolean;
     deleted_at?: string | null;
+    created_at?: string;
     // linked students (on guardian profile)
     students?: (Student & { pivot: GuardianPivot })[];
 }

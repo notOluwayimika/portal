@@ -21,7 +21,7 @@ const PARENT_DATA = {
       first_name: "John",
       last_name: "Adeyemi",
       initials: "JA",
-      avatar_colour: "#185FA5",
+      avatar_colour: "#2c197a",
       section: "Secondary",
       year_group: "Year 10",
       class_arm: "10A (IGCSE)",
@@ -210,7 +210,7 @@ const ChildHeroCard = ({ child }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 overflow-hidden relative">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 overflow-hidden relative dark:bg-slate-900 dark:border-slate-700">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gray-50 rounded-full -mr-16 -mt-16 opacity-50" />
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
@@ -222,7 +222,7 @@ const ChildHeroCard = ({ child }) => {
             {child.initials}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{child.first_name} {child.last_name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{child.first_name} {child.last_name}</h1>
             <div className="flex flex-wrap gap-2 mt-2">
               <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
                 {child.section}
@@ -255,7 +255,7 @@ const ChildHeroCard = ({ child }) => {
               )}
             </div>
           </div>
-          <div className="text-center sm:text-left px-4 border-y sm:border-y-0 sm:border-x border-gray-100 py-4 sm:py-0">
+          <div className="text-center sm:text-left px-4 border-y sm:border-y-0 sm:border-x border-gray-100 py-4 sm:py-0 dark:border-slate-700">
             <p className="text-gray-400 text-xs uppercase font-bold tracking-widest mb-1">Attendance</p>
             <div className={`font-bold text-2xl ${getAttendanceColor(child.attendance_percent).split(' ')[0]}`}>
               {child.attendance_percent}%
@@ -296,9 +296,9 @@ const NoticesCard = ({ notices, onAction }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 flex flex-col h-full">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 flex flex-col h-full dark:bg-slate-900 dark:border-slate-700">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
           <Bell className="w-5 h-5 text-blue-600" />
           Latest Notices
         </h2>
@@ -309,14 +309,14 @@ const NoticesCard = ({ notices, onAction }) => {
 
       <div className="space-y-4 flex-1">
         {notices.map((notice, idx) => (
-          <div key={idx} className="group p-4 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100 cursor-pointer">
+          <div key={idx} className="group p-4 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100 cursor-pointer dark:hover:bg-slate-800 dark:hover:border-slate-700">
             <div className="flex gap-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${getBadgeStyles(notice.badge_colour)}`}>
                 {getIcon(notice.type)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h3 className="font-bold text-[13px] text-gray-900 line-clamp-1">{notice.title}</h3>
+                  <h3 className="font-bold text-[13px] text-gray-900 dark:text-white line-clamp-1">{notice.title}</h3>
                   <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getBadgeStyles(notice.badge_colour)}`}>
                     {notice.type}
                   </span>
@@ -339,31 +339,31 @@ const NoticesCard = ({ notices, onAction }) => {
 
 const FeeSummaryCard = ({ child, onAction }) => {
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col">
-      <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col dark:bg-slate-900 dark:border-slate-700">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
         <FinanceIcon className="w-5 h-5 text-red-500" />
         Fee Summary
       </h2>
 
       <div className="mb-6">
         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-4">Current Term</span>
-        <h3 className="text-xl font-bold text-gray-800">{child.current_term} {child.current_session}</h3>
+        <h3 className="text-xl font-bold text-gray-800 dark:text-slate-200">{child.current_term} {child.current_session}</h3>
       </div>
 
       <div className="space-y-4 flex-1">
         <div className="flex justify-between items-center text-sm">
           <span className="text-gray-500 font-medium">Term fees</span>
-          <span className="text-gray-900 font-bold">₦850,000</span>
+          <span className="text-gray-900 font-bold dark:text-white">₦850,000</span>
         </div>
         <div className="flex justify-between items-center text-sm">
           <span className="text-gray-500 font-medium">Amount paid</span>
           <span className="text-green-600 font-bold">₦{child.has_fee_debt ? "665,000" : "850,000"}</span>
         </div>
 
-        <div className="h-px bg-gray-100 my-4" />
+        <div className="h-px bg-gray-100 my-4 dark:bg-slate-700" />
 
         <div className="flex justify-between items-center">
-          <span className="text-gray-900 font-bold">Balance due</span>
+          <span className="text-gray-900 font-bold dark:text-white">Balance due</span>
           <span className={`text-xl font-black ${child.has_fee_debt ? 'text-red-600' : 'text-green-600'}`}>
             ₦{child.outstanding_balance.toLocaleString()}
           </span>
@@ -379,14 +379,14 @@ const FeeSummaryCard = ({ child, onAction }) => {
             Clear Balance
           </button>
         ) : (
-          <div className="bg-green-50 border border-green-100 p-4 rounded-2xl flex items-center justify-center gap-2 text-green-700 font-bold text-sm">
+          <div className="bg-green-50 border border-green-100 p-4 rounded-2xl flex items-center justify-center gap-2 text-green-700 font-bold text-sm dark:bg-green-950/20 dark:border-green-900/40 dark:text-green-400">
             <CheckCircle2 className="w-5 h-5" />
             All fees paid for this term
           </div>
         )}
         <button
           onClick={() => onAction('statement')}
-          className="w-full text-sm font-semibold text-gray-500 hover:text-gray-900 py-2 transition-colors flex items-center justify-center gap-1"
+          className="w-full text-sm font-semibold text-gray-500 hover:text-gray-900 py-2 transition-colors flex items-center justify-center gap-1 dark:text-slate-400 dark:hover:text-white"
         >
           View full statement <ArrowRight className="w-4 h-4" />
         </button>
@@ -423,8 +423,8 @@ const AttendanceCard = ({ child, onAction }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col">
-      <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col dark:bg-slate-900 dark:border-slate-700">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
         <Layout className="w-5 h-5 text-teal-500" />
         Attendance This Term
       </h2>
@@ -440,15 +440,15 @@ const AttendanceCard = ({ child, onAction }) => {
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-black text-gray-900">{pct}%</span>
+            <span className="text-2xl font-black text-gray-900 dark:text-white">{pct}%</span>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Present</span>
           </div>
         </div>
 
         <div className="flex gap-2 mt-4">
-          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold">56 days present</span>
-          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold">4 absences</span>
-          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold">0 late</span>
+          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold dark:bg-slate-800 dark:text-slate-400">56 days present</span>
+          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold dark:bg-slate-800 dark:text-slate-400">4 absences</span>
+          <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg text-gray-600 font-bold dark:bg-slate-800 dark:text-slate-400">0 late</span>
         </div>
       </div>
 
@@ -480,9 +480,9 @@ const ResultsCard = ({ child, onAction }) => {
 
   if (child.result_locked) {
     return (
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 overflow-hidden relative">
+      <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 overflow-hidden relative dark:bg-slate-900 dark:border-slate-700">
         <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-          <FileBarChart className="w-5 h-5 text-indigo-500" />
+          <FileBarChart className="w-5 h-5 text-primary" />
           Academic Results
         </h2>
 
@@ -497,12 +497,12 @@ const ResultsCard = ({ child, onAction }) => {
             ))}
           </div>
 
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[2px] rounded-3xl">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[2px] rounded-3xl dark:bg-slate-900/60">
             <div className="bg-red-50 p-4 rounded-full mb-4 animate-bounce">
               <Lock className="w-10 h-10 text-red-600" />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 mb-2">Results Locked</h3>
-            <p className="text-gray-600 text-center max-w-sm mb-6 px-4">
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Results Locked</h3>
+            <p className="text-gray-600 dark:text-slate-400 text-center max-w-sm mb-6 px-4">
               {child.first_name}'s {child.current_term} results are ready. Clear the outstanding balance of ₦{child.outstanding_balance.toLocaleString()} to unlock.
             </p>
             <button
@@ -521,10 +521,10 @@ const ResultsCard = ({ child, onAction }) => {
   }
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 lg:col-span-2 dark:bg-slate-900 dark:border-slate-700">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-          <FileBarChart className="w-5 h-5 text-indigo-500" />
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <FileBarChart className="w-5 h-5 text-primary" />
           Academic Results
         </h2>
         <div className="flex gap-2">
@@ -537,26 +537,26 @@ const ResultsCard = ({ child, onAction }) => {
       <div className="overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-100">
+            <tr className="border-b border-gray-100 dark:border-slate-700">
               <th className="text-left py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Subject</th>
               <th className="text-center py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Score</th>
               <th className="text-left py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">Grade</th>
               <th className="text-right py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-gray-50 dark:divide-slate-700">
             {results.map((r, i) => (
-              <tr key={i} className="group hover:bg-gray-50 transition-colors">
+              <tr key={i} className="group hover:bg-gray-50 transition-colors dark:hover:bg-slate-800">
                 <td className="py-4">
                   <div className="flex flex-col">
-                    <span className="text-sm font-bold text-gray-800">{r.subject}</span>
+                    <span className="text-sm font-bold text-gray-800 dark:text-slate-200">{r.subject}</span>
                     <span className="text-[10px] text-gray-400 sm:hidden">{r.grade}</span>
                   </div>
                 </td>
                 <td className="py-4 text-center">
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-sm font-black text-gray-900">{r.score}</span>
-                    <div className="w-12 h-1 bg-gray-100 rounded-full overflow-hidden">
+                    <span className="text-sm font-black text-gray-900 dark:text-white">{r.score}</span>
+                    <div className="w-12 h-1 bg-gray-100 rounded-full overflow-hidden dark:bg-slate-700">
                       <div
                         className={`h-full ${r.score >= 70 ? 'bg-green-500' : r.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
                         style={{ width: `${r.score}%` }}
@@ -565,7 +565,7 @@ const ResultsCard = ({ child, onAction }) => {
                   </div>
                 </td>
                 <td className="py-4 text-left hidden sm:table-cell">
-                  <span className="text-xs font-semibold text-gray-600">{r.grade}</span>
+                  <span className="text-xs font-semibold text-gray-600 dark:text-slate-400">{r.grade}</span>
                 </td>
                 <td className="py-4 text-right">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.score >= 50 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
@@ -578,26 +578,26 @@ const ResultsCard = ({ child, onAction }) => {
         </table>
       </div>
 
-      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between p-4 bg-gray-50 rounded-2xl gap-4">
+      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between p-4 bg-gray-50 rounded-2xl gap-4 dark:bg-slate-800">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-            <Award className="w-5 h-5 text-indigo-600" />
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center dark:bg-primary/10">
+            <Award className="w-5 h-5 text-primary" />
           </div>
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Class Position</p>
-            <p className="text-sm font-black text-gray-900">3rd of 28 students</p>
+            <p className="text-sm font-black text-gray-900 dark:text-white">3rd of 28 students</p>
           </div>
         </div>
         <div className="flex gap-3 w-full sm:w-auto">
           <button
             onClick={() => onAction('download')}
-            className="flex-1 sm:flex-none text-xs font-bold text-gray-600 hover:text-gray-900 px-4 py-2 rounded-xl border border-gray-200 bg-white transition-all flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-none text-xs font-bold text-gray-600 hover:text-gray-900 px-4 py-2 rounded-xl border border-gray-200 bg-white transition-all flex items-center justify-center gap-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:text-white"
           >
             Download PDF <Download className="w-3 h-3" />
           </button>
           <button
             onClick={() => onAction('analysis')}
-            className="flex-1 sm:flex-none text-xs font-bold text-indigo-600 hover:text-indigo-800 px-4 py-2 transition-all flex items-center justify-center gap-1"
+            className="flex-1 sm:flex-none text-xs font-bold text-primary hover:text-primary px-4 py-2 transition-all flex items-center justify-center gap-1"
           >
             Full Analysis <ArrowRight className="w-3 h-3" />
           </button>
@@ -609,9 +609,9 @@ const ResultsCard = ({ child, onAction }) => {
 
 const TimetableCard = ({ timetable, onAction }) => {
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col dark:bg-slate-900 dark:border-slate-700">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
           <Calendar className="w-5 h-5 text-orange-500" />
           Today's Timetable
         </h2>
@@ -628,8 +628,8 @@ const TimetableCard = ({ timetable, onAction }) => {
               lesson.status === 'current'
                 ? 'bg-blue-50 border-blue-100 shadow-sm'
                 : lesson.status === 'done'
-                ? 'bg-gray-50/50 border-transparent opacity-60'
-                : 'bg-white border-gray-100'
+                ? 'bg-gray-50/50 border-transparent opacity-60 dark:bg-slate-800/30'
+                : 'bg-white border-gray-100 dark:bg-slate-800 dark:border-slate-700'
             }`}
           >
             <div className="flex justify-between items-start gap-3">
@@ -643,7 +643,7 @@ const TimetableCard = ({ timetable, onAction }) => {
                     <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Now</span>
                   )}
                 </div>
-                <h4 className={`text-sm font-bold ${lesson.status === 'current' ? 'text-blue-900' : 'text-gray-800'}`}>
+                <h4 className={`text-sm font-bold ${lesson.status === 'current' ? 'text-blue-900 dark:text-blue-300' : 'text-gray-800 dark:text-slate-200'}`}>
                   {lesson.subject}
                 </h4>
                 <div className="flex items-center justify-between mt-1">
@@ -678,24 +678,24 @@ const QuickContactCard = ({ contacts, onAction }) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col">
-      <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 h-full flex flex-col dark:bg-slate-900 dark:border-slate-700">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
         <MessageSquare className="w-5 h-5 text-purple-500" />
         Quick Contact
       </h2>
 
       <div className="space-y-3 mb-8">
         {contacts.map((c, i) => (
-          <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer group">
+          <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer group dark:bg-slate-800 dark:hover:bg-slate-700">
             <div>
-              <p className="text-xs font-bold text-gray-800">{c.office}</p>
+              <p className="text-xs font-bold text-gray-800 dark:text-slate-200">{c.office}</p>
               <p className="text-[10px] text-gray-500">{c.phone}</p>
             </div>
             <div className="flex gap-2">
-              <button className="p-2 bg-white rounded-xl shadow-sm text-gray-400 group-hover:text-blue-600 transition-colors">
+              <button className="p-2 bg-white rounded-xl shadow-sm text-gray-400 group-hover:text-blue-600 transition-colors dark:bg-slate-700 dark:text-slate-400">
                 <Phone className="w-4 h-4" />
               </button>
-              <button className="p-2 bg-white rounded-xl shadow-sm text-gray-400 group-hover:text-purple-600 transition-colors">
+              <button className="p-2 bg-white rounded-xl shadow-sm text-gray-400 group-hover:text-purple-600 transition-colors dark:bg-slate-700 dark:text-slate-400">
                 <Mail className="w-4 h-4" />
               </button>
             </div>
@@ -703,13 +703,13 @@ const QuickContactCard = ({ contacts, onAction }) => {
         ))}
       </div>
 
-      <div className="bg-purple-50 p-5 rounded-3xl flex-1">
-        <h3 className="text-xs font-bold text-purple-900 mb-4 uppercase tracking-widest">Message the school</h3>
+      <div className="bg-purple-50 p-5 rounded-3xl flex-1 dark:bg-purple-950/20">
+        <h3 className="text-xs font-bold text-purple-900 dark:text-purple-300 mb-4 uppercase tracking-widest">Message the school</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <select
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="w-full bg-white border border-purple-100 rounded-xl px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            className="w-full bg-white border border-purple-100 rounded-xl px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200"
           >
             {contacts.map(c => <option key={c.office}>{c.office}</option>)}
           </select>
@@ -718,11 +718,11 @@ const QuickContactCard = ({ contacts, onAction }) => {
             onChange={(e) => setMsg(e.target.value)}
             placeholder="Write a message to the school..."
             rows={3}
-            className="w-full bg-white border border-purple-100 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+            className="w-full bg-white border border-purple-100 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-500"
           />
           <button
             type="submit"
-            className="w-full bg-[#185FA5] hover:bg-[#0f4a82] text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+            className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
           >
             Send Message <Mail className="w-4 h-4" />
           </button>
@@ -750,25 +750,25 @@ const NotificationDropdown = ({ isOpen, onClose, notifications }) => {
   return (
     <div
       ref={dropdownRef}
-      className="absolute right-0 mt-3 w-[320px] bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in duration-200 origin-top-right"
+      className="absolute right-0 mt-3 w-[320px] bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in duration-200 origin-top-right dark:bg-slate-900 dark:border-slate-700"
     >
-      <div className="p-4 border-b border-gray-50 flex items-center justify-between">
-        <h3 className="font-black text-gray-900">Notifications</h3>
+      <div className="p-4 border-b border-gray-50 flex items-center justify-between dark:border-slate-700">
+        <h3 className="font-black text-gray-900 dark:text-white">Notifications</h3>
         <button className="text-xs font-bold text-blue-600 hover:text-blue-800">Mark all as read</button>
       </div>
       <div className="max-h-[360px] overflow-y-auto">
         {notifications.map((n) => (
-          <div key={n.id} className="p-4 hover:bg-gray-50 transition-colors cursor-pointer flex gap-4 items-start border-b border-gray-50/50">
+          <div key={n.id} className="p-4 hover:bg-gray-50 transition-colors cursor-pointer flex gap-4 items-start border-b border-gray-50/50 dark:hover:bg-slate-800 dark:border-slate-700/50">
             <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.unread ? `bg-${n.color}-500 shadow-[0_0_8px] shadow-${n.color}-500/50` : 'border border-gray-300'}`} />
             <div className="flex-1">
-              <p className={`text-sm ${n.unread ? 'font-bold text-gray-900' : 'text-gray-600'}`}>{n.title}</p>
+              <p className={`text-sm ${n.unread ? 'font-bold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-slate-400'}`}>{n.title}</p>
               <p className="text-[10px] text-gray-400 mt-1 font-medium">{n.time}</p>
             </div>
           </div>
         ))}
       </div>
       <div className="p-4 text-center">
-        <button className="text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors flex items-center justify-center gap-1 mx-auto">
+        <button className="text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors flex items-center justify-center gap-1 mx-auto dark:text-slate-400 dark:hover:text-white">
           View all notifications <ChevronRight className="w-3 h-3" />
         </button>
       </div>
@@ -834,7 +834,7 @@ export default function ParentDashboard() {
         {/* Page header: welcome + child switcher + notifications */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
               Welcome back, {PARENT_DATA.name.split(' ')[1]}!
             </h3>
             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2 text-sm">
@@ -845,15 +845,15 @@ export default function ParentDashboard() {
 
           <div className="flex items-center gap-3 shrink-0">
             {/* Child switcher */}
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl dark:bg-slate-800">
               {PARENT_DATA.children.map(child => (
                 <button
                   key={child.id}
                   onClick={() => setActiveChildId(child.id)}
                   className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     activeChildId === child.id
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? 'bg-white text-gray-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   {child.first_name}
@@ -865,10 +865,10 @@ export default function ParentDashboard() {
             <div className="relative">
               <button
                 onClick={() => setIsNotifOpen(!isNotifOpen)}
-                className={`p-2.5 rounded-2xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                className={`p-2.5 rounded-2xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/30' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'}`}
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full dark:border-slate-900" />
               </button>
               <NotificationDropdown
                 isOpen={isNotifOpen}

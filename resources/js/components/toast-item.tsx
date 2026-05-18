@@ -1,5 +1,3 @@
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
 import { useEffect } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -10,6 +8,12 @@ export interface Toast {
     type: ToastType;
 }
 
+const typeClasses: Record<ToastType, string> = {
+    success: 'bg-[#EAF3DE] border border-[#C0DD97] text-[#3B6D11] dark:bg-green-950/60 dark:border-green-800 dark:text-green-300',
+    error:   'bg-[#FCEBEB] border border-[#F7C1C1] text-[#A32D2D] dark:bg-red-950/60 dark:border-red-800 dark:text-red-300',
+    info:    'bg-[#EEEDFE] border border-[#CECBF6] text-[#3C3489] dark:bg-primary/10 dark:border-primary/30 dark:text-primary',
+};
+
 export function ToastItem({
     toast,
     onDismiss,
@@ -19,45 +23,19 @@ export function ToastItem({
 }) {
     useEffect(() => {
         const t = setTimeout(onDismiss, 3200);
-
         return () => clearTimeout(t);
     }, []);
 
-    const colors = {
-        success: { bg: '#EAF3DE', border: '#C0DD97', text: '#3B6D11' },
-        error: { bg: '#FCEBEB', border: '#F7C1C1', text: '#A32D2D' },
-        info: { bg: '#EEEDFE', border: '#CECBF6', text: '#3C3489' },
-    }[toast.type];
-
     return (
         <div
-            style={{
-                background: colors.bg,
-                border: `1px solid ${colors.border}`,
-                color: colors.text,
-                borderRadius: 10,
-                padding: '11px 16px',
-                fontSize: 13,
-                fontWeight: 500,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-                animation: 'slideIn 0.2s ease',
-            }}
+            className={`flex items-center justify-between gap-3 rounded-[10px] px-4 py-[11px] text-[13px] font-medium shadow-[0_4px_16px_rgba(0,0,0,0.08)] ${typeClasses[toast.type]}`}
+            style={{ animation: 'slideIn 0.2s ease' }}
         >
             {toast.message}
             <button
                 onClick={onDismiss}
-                style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'inherit',
-                    lineHeight: 1,
-                    padding: 0,
-                }}
+                className="shrink-0 leading-none opacity-70 hover:opacity-100"
+                aria-label="Dismiss"
             >
                 ✕
             </button>

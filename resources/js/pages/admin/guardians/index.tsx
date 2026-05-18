@@ -197,8 +197,8 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
-                                    <Users className="h-6 w-6 text-indigo-600" />
+                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-primary/20 dark:to-violet-950/50">
+                                    <Users className="h-6 w-6 text-primary" />
                                 </div>
                                 <div>
                                     <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
@@ -234,7 +234,7 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
                                 <Button
                                     size="sm"
                                     onClick={() => setShowAdd(true)}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    className="rounded-lg bg-primary px-4 font-semibold text-white shadow-md transition-all hover:bg-primary/90 hover:shadow-lg active:scale-95"
                                 >
                                     <UserPlus className="mr-1.5 h-4 w-4" />
                                     Add Guardian

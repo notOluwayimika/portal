@@ -45,7 +45,7 @@ function statusBadge(status?: string) {
         status === 'active'   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
         status === 'inactive' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
         status === 'blocked'  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                'bg-gray-100 text-gray-500';
+                                'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
     return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${cls}`}>{status ?? '—'}</span>;
 }
 
@@ -65,7 +65,7 @@ export function GuardianTable({
                 <button
                     type="button"
                     onClick={() => onSort(col)}
-                    className="flex items-center gap-1 whitespace-nowrap select-none hover:text-slate-600"
+                    className="flex items-center gap-1 whitespace-nowrap select-none hover:text-slate-600 dark:hover:text-slate-200"
                 >
                     {label}
                     <Icon className={`h-3 w-3 shrink-0${active ? '' : ' opacity-40'}`} />

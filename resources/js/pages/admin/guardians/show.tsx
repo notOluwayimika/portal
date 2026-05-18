@@ -58,7 +58,7 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
     return (
         <div className="space-y-1">
             <dt className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
-            <dd className="text-sm font-semibold text-slate-700">{value}</dd>
+            <dd className="text-sm font-semibold text-slate-700 dark:text-slate-300">{value}</dd>
         </div>
     );
 }
@@ -147,10 +147,10 @@ export default function GuardianProfile() {
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-4">
                                 <div className="relative shrink-0">
-                                    <div className="absolute -inset-0.5 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
+                                    <div className="absolute -inset-0.5 rounded-full bg-gradient-to-tr from-primary to-violet-500 opacity-10 blur" />
                                     <Avatar className="relative size-14 rounded-full border-2 border-white shadow-sm ring-1 ring-black/5">
                                         <AvatarImage src={guardian.photo ?? undefined} alt={guardian.full_name} className="object-cover" />
-                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-indigo-50 to-violet-50 text-base font-bold text-indigo-600 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                        <AvatarFallback className="rounded-full bg-gradient-to-br from-primary/10 to-violet-50 text-base font-bold text-primary dark:from-primary/20 dark:to-violet-950/50">
                                             {getInitials(guardian.full_name)}
                                         </AvatarFallback>
                                     </Avatar>
@@ -167,13 +167,13 @@ export default function GuardianProfile() {
                                             </Badge>
                                         )}
                                         {guardian.has_login && (
-                                            <Badge className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400">
+                                            <Badge className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold text-primary shadow-sm hover:bg-primary/10 dark:bg-primary/10 dark:text-primary">
                                                 Has Login
                                             </Badge>
                                         )}
                                     </div>
 
-                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500">
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
                                         {guardian.phone && (
                                             <span className="inline-flex items-center gap-1.5">
                                                 <Phone className="h-3 w-3" />
@@ -196,7 +196,7 @@ export default function GuardianProfile() {
                                     <Button
                                         size="sm"
                                         onClick={() => setShowEdit(true)}
-                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                        className="rounded-lg bg-primary px-4 font-semibold text-white shadow-md transition-all hover:bg-primary/90 hover:shadow-lg active:scale-95"
                                     >
                                         <Edit className="mr-1.5 h-4 w-4" />
                                         Edit Guardian
@@ -245,7 +245,7 @@ export default function GuardianProfile() {
                                 <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                                     <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                            <User2 className="h-4 w-4 text-indigo-600" />
+                                            <User2 className="h-4 w-4 text-primary" />
                                         </div>
                                         Personal & Contact Details
                                     </CardTitle>
@@ -254,7 +254,7 @@ export default function GuardianProfile() {
                                             size="sm"
                                             variant="ghost"
                                             onClick={() => setShowEdit(true)}
-                                            className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                                            className="rounded-lg text-slate-500 hover:bg-white hover:text-primary hover:shadow-sm"
                                         >
                                             <Edit className="h-4 w-4" />
                                         </Button>
@@ -322,7 +322,7 @@ export default function GuardianProfile() {
                                 <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                                     <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                            <Users className="h-4 w-4 text-indigo-600" />
+                                            <Users className="h-4 w-4 text-primary" />
                                         </div>
                                         Linked Children ({linkedStudents.length})
                                     </CardTitle>
@@ -337,7 +337,7 @@ export default function GuardianProfile() {
                                             <p className="mt-1 max-w-[280px] text-xs text-slate-500">
                                                 You can link this guardian to a student from the student's profile page.
                                             </p>
-                                            <Button size="sm" variant="link" className="mt-2 font-semibold text-indigo-600">
+                                            <Button size="sm" variant="link" className="mt-2 font-semibold text-primary">
                                                 Link from a student profile
                                             </Button>
                                         </div>

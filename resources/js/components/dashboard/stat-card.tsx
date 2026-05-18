@@ -16,9 +16,9 @@ interface StatCardProps {
 
 export function StatCard({ label, value, subText, tone }: StatCardProps) {
     return (
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="text-2xl font-medium text-slate-900 mt-1">{value}</p>
+        <div className="bg-white border border-slate-200 rounded-lg p-4 dark:bg-slate-900 dark:border-slate-700">
+            <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="text-2xl font-medium text-slate-900 mt-1 dark:text-white">{value}</p>
             <p className={`text-xs mt-1 ${toneClass[tone]}`}>{subText}</p>
         </div>
     );

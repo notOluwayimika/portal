@@ -22,13 +22,13 @@ export default function SchoolSetup() {
 
     return (
         <div className="space-y-6 pb-10">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div className="space-y-3">
                     <div>
-                        <h1 className="text-2xl font-semibold text-gray-900">
+                        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
                             School Setup
                         </h1>
-                        <p className="mt-2 text-sm text-gray-600">
+                        <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
                             Configure sections, terms, subjects, grading and
                             more.
                         </p>
@@ -42,7 +42,7 @@ export default function SchoolSetup() {
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveTab(tab.id)}
-                                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${isActive ? 'bg-[#185FA5] text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
+                                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${isActive ? 'bg-primary text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'}`}
                                 >
                                     {tab.label}
                                 </button>

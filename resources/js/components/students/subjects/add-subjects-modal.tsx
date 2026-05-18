@@ -121,7 +121,7 @@ export function AddSubjectsModal({
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
-                        className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm placeholder-slate-400 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm placeholder-slate-400 focus:border-primary focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         placeholder="Search subjects…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -137,7 +137,7 @@ export function AddSubjectsModal({
                                 <label className="flex cursor-pointer items-center gap-3 px-1 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                     <input
                                         type="checkbox"
-                                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
                                         checked={selected.has(item.id)}
                                         onChange={() => toggleItem(item.id)}
                                     />

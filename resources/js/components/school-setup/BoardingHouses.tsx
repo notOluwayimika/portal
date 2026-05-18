@@ -106,19 +106,19 @@ export default function BoardingHouses() {
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Boarding houses</h1>
-                    <p className="mt-2 text-sm text-gray-600">Manage boarding houses and assign year groups for each house.</p>
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Boarding houses</h1>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">Manage boarding houses and assign year groups for each house.</p>
                 </div>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <div className="rounded-full border border-gray-200 bg-gray-50 px-5 py-3 text-sm text-gray-700">
+                    <div className="rounded-full border border-gray-200 bg-gray-50 px-5 py-3 text-sm text-gray-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         {counts.total} houses · {counts.boys} boys · {counts.girls} girls
                     </div>
                     <button
                         type="button"
                         onClick={openAddHouse}
-                        className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                     >
                         <Plus className="h-4 w-4" />
                         Add house
@@ -135,17 +135,17 @@ export default function BoardingHouses() {
                     onAction={openAddHouse}
                 />
             ) : (
-                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     {/* Tab Navigation */}
-                    <div className="border-b border-gray-200">
+                    <div className="border-b border-gray-200 dark:border-slate-700">
                         <div className="flex">
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('boys')}
                                 className={`flex items-center gap-3 px-8 py-5 text-sm font-medium transition-all ${
                                     activeTab === 'boys'
-                                        ? 'border-b-2 border-[#185FA5] text-[#185FA5] bg-blue-50/50'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                        ? 'border-b-2 border-primary text-primary bg-blue-50/50'
+                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
                                 }`}
                             >
                                 <Users className="h-5 w-5" />
@@ -156,8 +156,8 @@ export default function BoardingHouses() {
                                 onClick={() => setActiveTab('girls')}
                                 className={`flex items-center gap-3 px-8 py-5 text-sm font-medium transition-all ${
                                     activeTab === 'girls'
-                                        ? 'border-b-2 border-[#185FA5] text-[#185FA5] bg-pink-50/50'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                        ? 'border-b-2 border-primary text-primary bg-pink-50/50 dark:bg-pink-950/20'
+                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'
                                 }`}
                             >
                                 <UserCheck className="h-5 w-5" />
@@ -173,13 +173,13 @@ export default function BoardingHouses() {
                                 <div className="mx-auto h-12 w-12 text-gray-400">
                                     <Users className="h-12 w-12" />
                                 </div>
-                                <h3 className="mt-4 text-sm font-medium text-gray-900">No {currentGender.toLowerCase()} houses</h3>
-                                <p className="mt-1 text-sm text-gray-500">Get started by adding a {currentGender.toLowerCase()} house.</p>
+                                <h3 className="mt-4 text-sm font-medium text-gray-900 dark:text-white">No {currentGender.toLowerCase()} houses</h3>
+                                <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Get started by adding a {currentGender.toLowerCase()} house.</p>
                                 <div className="mt-6">
                                     <button
                                         type="button"
                                         onClick={openAddHouse}
-                                        className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                                        className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                                     >
                                         <Plus className="h-4 w-4" />
                                         Add {currentGender.toLowerCase()} house
@@ -188,35 +188,35 @@ export default function BoardingHouses() {
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                                    <thead className="bg-gray-50 dark:bg-slate-800">
                                         <tr>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-slate-400">
                                                 House Name
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-slate-400">
                                                 Year Groups
                                             </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-slate-400">
                                                 Gender
                                             </th>
-                                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-slate-400">
                                                 Actions
                                             </th>
                                         </tr>
                                     </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
+                                    <tbody className="bg-white divide-y divide-gray-200 dark:bg-slate-900 dark:divide-slate-700">
                                         {currentHouses.map((house) => (
-                                            <tr key={house.id} className="hover:bg-gray-50 transition-colors">
+                                            <tr key={house.id} className="hover:bg-gray-50 transition-colors dark:hover:bg-slate-800/50">
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-gray-900">{house.name}</div>
+                                                    <div className="text-sm font-medium text-gray-900 dark:text-white">{house.name}</div>
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex flex-wrap gap-2">
                                                         {house.year_groups.map((group) => (
                                                             <span
                                                                 key={group}
-                                                                className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                                                                className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-slate-700 dark:text-slate-300"
                                                             >
                                                                 {group}
                                                             </span>
@@ -237,7 +237,7 @@ export default function BoardingHouses() {
                                                         <button
                                                             type="button"
                                                             onClick={() => openEditHouse(house)}
-                                                            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm"
+                                                            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                         >
                                                             <Edit3 className="h-4 w-4" />
                                                             Edit
@@ -273,14 +273,14 @@ export default function BoardingHouses() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm"
+                            className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => setIsModalOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                             onClick={handleSaveHouse}
                         >
                             Save house
@@ -295,7 +295,7 @@ export default function BoardingHouses() {
                             type="text"
                             value={houseName}
                             onChange={(event) => setHouseName(event.target.value)}
-                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                             placeholder="Phoenix"
                         />
                     </div>
@@ -304,7 +304,7 @@ export default function BoardingHouses() {
                         <select
                             value={gender}
                             onChange={(event) => setGender(event.target.value as BoardingHouse['gender'])}
-                            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                         >
                             <option value="Boys">Boys</option>
                             <option value="Girls">Girls</option>
@@ -316,13 +316,13 @@ export default function BoardingHouses() {
                             {yearGroups.map((group) => (
                                 <label
                                     key={group}
-                                    className={`flex cursor-pointer items-center gap-4 rounded-lg border px-4 py-3 text-sm transition-all ${selectedYearGroups.includes(group) ? 'border-[#185FA5] bg-[#def1ff] text-[#185FA5]' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'}`}
+                                    className={`flex cursor-pointer items-center gap-4 rounded-lg border px-4 py-3 text-sm transition-all ${selectedYearGroups.includes(group) ? 'border-primary bg-primary-50 text-primary dark:bg-primary/10 dark:text-primary dark:border-primary/40' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
                                 >
                                     <input
                                         type="checkbox"
                                         checked={selectedYearGroups.includes(group)}
                                         onChange={() => toggleYearGroup(group)}
-                                        className="h-4 w-4 rounded border-gray-300 text-[#185FA5] focus:ring-[#185FA5]"
+                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                                     />
                                     {group}
                                 </label>

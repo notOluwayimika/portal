@@ -107,7 +107,7 @@ const footerNavItems: NavItem[] = [];
 
 export function AppSidebar() {
     const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
-        auth: { roles: string[] };
+        auth: { roles: string[]; user: User };
     }>().props;
     const role = auth.roles[0];
 
@@ -155,7 +155,7 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarSeparator className="bg-white/20" />
+            <SidebarSeparator className="bg-white/20 dark:bg-slate-700/40" />
 
             <SidebarContent className="gap-0 pt-3">
                 <NavMain groups={navGroups} />

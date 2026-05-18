@@ -7,8 +7,8 @@ const toneStyles: Record<Tone, { text: string; bg: string; arrow: string }> = {
     up: { text: 'text-green-600', bg: 'bg-green-50', arrow: '↑' },
     down: { text: 'text-red-600', bg: 'bg-red-50', arrow: '↓' },
     warning: { text: 'text-amber-600', bg: 'bg-amber-50', arrow: '!' },
-    muted: { text: 'text-slate-400', bg: 'bg-slate-50', arrow: '' },
-    neutral: { text: 'text-slate-600', bg: 'bg-slate-50', arrow: '→' },
+    muted: { text: 'text-slate-400', bg: 'bg-slate-50 dark:bg-slate-800', arrow: '' },
+    neutral: { text: 'text-slate-600', bg: 'bg-slate-50 dark:bg-slate-800', arrow: '→' },
 };
 
 const toneColor: Record<Tone, string> = {
@@ -35,10 +35,10 @@ export function KpiCard({ label, value, subText, tone = 'neutral', sparklineData
     return (
         <Wrapper
             {...(href ? { href } : {})}
-            className="bg-white border border-slate-200 rounded-lg p-4 block hover:border-slate-300 transition-colors"
+            className="bg-white border border-slate-200 rounded-lg p-4 block hover:border-slate-300 transition-colors dark:bg-slate-900 dark:border-slate-700 dark:hover:border-slate-600"
         >
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="text-2xl font-medium text-slate-900 mt-1 tabular-nums">
+            <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="text-2xl font-medium text-slate-900 mt-1 tabular-nums dark:text-white">
                 {typeof value === 'number' ? value.toLocaleString() : value}
             </p>
             {subText && (

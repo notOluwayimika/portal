@@ -4,7 +4,7 @@ const statusBadge: Record<StatusTone, string> = {
     green: 'bg-green-50 text-green-700',
     amber: 'bg-amber-50 text-amber-700',
     red: 'bg-red-50 text-red-700',
-    blue: 'bg-blue-50 text-[#185FA5]',
+    blue: 'bg-blue-50 text-primary',
 };
 
 const rows = [
@@ -17,14 +17,14 @@ const rows = [
 
 export function StudentActivityTable() {
     return (
-        <div className="bg-white border border-slate-200 rounded-lg p-4 col-span-2">
+        <div className="bg-white border border-slate-200 rounded-lg p-4 col-span-2 dark:bg-slate-900 dark:border-slate-700">
             <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-slate-900">Recent student activity</p>
-                <a href="#" className="text-xs text-[#185FA5] hover:underline">See all</a>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Recent student activity</p>
+                <a href="#" className="text-xs text-primary hover:underline">See all</a>
             </div>
             <table className="w-full">
                 <thead>
-                    <tr className="border-b border-slate-100">
+                    <tr className="border-b border-slate-100 dark:border-slate-700">
                         <th className="text-left text-[11px] font-medium text-slate-400 pb-2 pr-3">Student</th>
                         <th className="text-left text-[11px] font-medium text-slate-400 pb-2 pr-3">Section</th>
                         <th className="text-left text-[11px] font-medium text-slate-400 pb-2 pr-3">Class</th>
@@ -34,11 +34,11 @@ export function StudentActivityTable() {
                 </thead>
                 <tbody>
                     {rows.map((row, i) => (
-                        <tr key={i} className="border-b border-slate-50 last:border-0">
-                            <td className="py-2.5 text-xs text-slate-900 pr-3">{row.name}</td>
-                            <td className="py-2.5 text-xs text-slate-600 pr-3">{row.section}</td>
-                            <td className="py-2.5 text-xs text-slate-600 pr-3">{row.klass}</td>
-                            <td className="py-2.5 text-xs text-slate-600 pr-3">{row.action}</td>
+                        <tr key={i} className="border-b border-slate-50 last:border-0 dark:border-slate-700/50">
+                            <td className="py-2.5 text-xs text-slate-900 dark:text-slate-100 pr-3">{row.name}</td>
+                            <td className="py-2.5 text-xs text-slate-600 dark:text-slate-400 pr-3">{row.section}</td>
+                            <td className="py-2.5 text-xs text-slate-600 dark:text-slate-400 pr-3">{row.klass}</td>
+                            <td className="py-2.5 text-xs text-slate-600 dark:text-slate-400 pr-3">{row.action}</td>
                             <td className="py-2.5">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${statusBadge[row.tone]}`}>
                                     {row.status}

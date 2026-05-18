@@ -22,7 +22,7 @@ export function OnboardingStep({
     return (
         <div
             className={`border rounded-lg p-4 transition-colors ${
-                isComplete ? 'border-green-100 bg-green-50/40' : 'border-slate-200 bg-white'
+                isComplete ? 'border-green-100 bg-green-50/40 dark:border-green-900/40 dark:bg-green-950/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
             }`}
             aria-label={isComplete ? `${title} — completed` : `${title} — pending`}
         >
@@ -40,7 +40,7 @@ export function OnboardingStep({
                             <p className="text-[11px] text-slate-400 mb-0.5">
                                 Step {stepNumber} of {totalSteps}
                             </p>
-                            <p className={`text-sm font-medium ${isComplete ? 'text-slate-500 line-through decoration-slate-300' : 'text-slate-900'}`}>
+                            <p className={`text-sm font-medium ${isComplete ? 'text-slate-500 line-through decoration-slate-300' : 'text-slate-900 dark:text-slate-100'}`}>
                                 {title}
                             </p>
                             <p className="text-xs text-slate-500 mt-0.5">{description}</p>
@@ -48,7 +48,7 @@ export function OnboardingStep({
                         {!isComplete && (
                             <a
                                 href={actionHref}
-                                className="inline-flex items-center gap-1 text-xs font-medium text-[#185FA5] hover:underline shrink-0"
+                                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline shrink-0"
                             >
                                 {actionLabel} →
                             </a>

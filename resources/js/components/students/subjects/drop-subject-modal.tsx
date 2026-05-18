@@ -86,7 +86,7 @@ export function DropSubjectModal({
                         Reason (optional)
                     </label>
                     <textarea
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:border-primary focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         rows={3}
                         maxLength={MAX_REASON}
                         value={reason}

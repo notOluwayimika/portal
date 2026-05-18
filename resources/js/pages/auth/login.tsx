@@ -5,7 +5,6 @@ import TextLink from '@/components/text-link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
@@ -55,7 +54,7 @@ const underlineCls =
 //     { label: 'Facebook', icon: <FacebookIcon /> },
 // ];
 
-export default function Login({ status, canResetPassword, canRegister }: Props) {
+export default function Login({ status, canResetPassword }: Props) {
     const [showPassword, setShowPassword] = useState(false);
 
     return (
@@ -114,7 +113,7 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
                                     type="button"
                                     onClick={() => setShowPassword((v) => !v)}
                                     tabIndex={-1}
-                                    className="absolute right-0 inset-y-0 text-sm font-medium text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:underline"
+                                    className="absolute right-0 inset-y-0 text-sm font-medium text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:underline dark:text-slate-400 dark:hover:text-slate-200"
                                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                                 >
                                     {showPassword ? 'Hide' : 'Show'}

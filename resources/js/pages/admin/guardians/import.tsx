@@ -62,7 +62,7 @@ function statusBadge(status: GuardianImportRecord['status']) {
         case 'failed':
             return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
         case 'processing':
-            return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400';
+            return 'bg-primary/10 text-primary dark:bg-primary/10 dark:text-primary';
         case 'queued':
         default:
             return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
@@ -86,7 +86,7 @@ function SummaryStat({
         emerald: 'text-emerald-600 dark:text-emerald-400',
         red:     'text-red-600 dark:text-red-400',
         amber:   'text-amber-600 dark:text-amber-400',
-        indigo:  'text-indigo-600 dark:text-indigo-400',
+        indigo:  'text-primary dark:text-primary',
     }[accent];
     return (
         <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm dark:border-white/5 dark:bg-card">
@@ -216,8 +216,8 @@ export default function GuardianImport() {
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
-                                    <UploadCloud className="h-6 w-6 text-indigo-600" />
+                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-primary/20 dark:to-violet-950/50">
+                                    <UploadCloud className="h-6 w-6 text-primary" />
                                 </div>
                                 <div>
                                     <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
@@ -232,7 +232,7 @@ export default function GuardianImport() {
 
                             <div className="flex shrink-0 flex-wrap items-center gap-2">
                                 <a href={guardianImports.templateUrl()} download>
-                                    <Button size="sm" className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95">
+                                    <Button size="sm" className="rounded-lg bg-primary px-4 font-semibold text-white shadow-md transition-all hover:bg-primary/90 hover:shadow-lg active:scale-95">
                                         <Download className="mr-1.5 h-4 w-4" />
                                         Download Template
                                     </Button>
@@ -265,7 +265,7 @@ export default function GuardianImport() {
                             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                                 <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                     <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                        <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
+                                        <FileSpreadsheet className="h-4 w-4 text-primary" />
                                     </div>
                                     Current Import
                                 </CardTitle>
@@ -286,11 +286,11 @@ export default function GuardianImport() {
                                             <span className="font-medium text-slate-600 dark:text-slate-300">
                                                 Processing row {active.processed_rows} of {active.total_rows}
                                             </span>
-                                            <span className="font-semibold text-indigo-600">{progressPct}%</span>
+                                            <span className="font-semibold text-primary">{progressPct}%</span>
                                         </div>
                                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                             <div
-                                                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
+                                                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all"
                                                 style={{ width: `${progressPct}%` }}
                                             />
                                         </div>
@@ -330,7 +330,7 @@ export default function GuardianImport() {
                         <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                             <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                 <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                    <Upload className="h-4 w-4 text-indigo-600" />
+                                    <Upload className="h-4 w-4 text-primary" />
                                 </div>
                                 Upload Spreadsheet
                             </CardTitle>
@@ -344,18 +344,18 @@ export default function GuardianImport() {
                                 className={cn(
                                     'flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-6 text-center transition-all',
                                     dragOver
-                                        ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20'
-                                        : 'border-slate-200 bg-slate-50/30 hover:border-indigo-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50',
+                                        ? 'border-primary/20 bg-primary/10/50 dark:bg-primary/10'
+                                        : 'border-slate-200 bg-slate-50/30 hover:border-primary/20 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50',
                                 )}
                             >
                                 <div className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                    <UploadCloud className="h-5 w-5 text-indigo-500" />
+                                    <UploadCloud className="h-5 w-5 text-primary" />
                                 </div>
                                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                                     {selectedFile ? selectedFile.name : 'Drag & drop your spreadsheet here'}
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                    or <span className="font-semibold text-indigo-600">click to browse</span> — supports .xls, .xlsx, .csv
+                                    or <span className="font-semibold text-primary">click to browse</span> — supports .xls, .xlsx, .csv
                                 </p>
                                 <input
                                     ref={fileInputRef}
@@ -387,7 +387,7 @@ export default function GuardianImport() {
                                     size="sm"
                                     onClick={handleSubmit}
                                     disabled={!selectedFile || submitting}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95 disabled:opacity-50"
+                                    className="rounded-lg bg-primary px-4 font-semibold text-white shadow-md transition-all hover:bg-primary/90 hover:shadow-lg active:scale-95 disabled:opacity-50"
                                 >
                                     {submitting ? <Spinner className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
                                     {previewData.length > 0 ? `Import ${previewData.length} Row(s)` : 'Import'}
@@ -429,11 +429,11 @@ export default function GuardianImport() {
                             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                                 <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                     <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                        <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
+                                        <FileSpreadsheet className="h-4 w-4 text-primary" />
                                     </div>
                                     Preview
                                 </CardTitle>
-                                <Badge className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400">
+                                <Badge className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold text-primary shadow-sm hover:bg-primary/10 dark:bg-primary/10 dark:text-primary">
                                     {previewData.length} row{previewData.length === 1 ? '' : 's'}
                                 </Badge>
                             </CardHeader>
@@ -486,7 +486,7 @@ export default function GuardianImport() {
                         <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                             <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                                 <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                                    <History className="h-4 w-4 text-indigo-600" />
+                                    <History className="h-4 w-4 text-primary" />
                                 </div>
                                 Recent Imports
                             </CardTitle>
@@ -541,7 +541,7 @@ export default function GuardianImport() {
                                                         {r.has_report ? (
                                                             <a
                                                                 href={guardianImports.reportUrl(r.uuid)}
-                                                                className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline"
+                                                                className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
                                                             >
                                                                 <Download className="h-3 w-3" />
                                                                 Download
@@ -569,7 +569,7 @@ export default function GuardianImport() {
                 size="4xl"
             >
                 <div className="space-y-3">
-                    <div className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-950/30 dark:text-indigo-200">
+                    <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/10 p-3 text-xs text-primary dark:border-primary/30 dark:bg-primary/10 dark:text-primary">
                         <Info className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>
                             Required columns must be filled on every row. Optional columns can be left blank.

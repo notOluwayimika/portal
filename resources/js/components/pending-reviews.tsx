@@ -129,12 +129,12 @@ export default function PendingReviewsPage({
 
             <div className="mx-auto max-w-7xl space-y-6 p-6">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                         Pending reviews
                     </h1>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
                         Submitted results awaiting approval.{' '}
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-gray-900 dark:text-white">
                             {items.length}
                         </span>{' '}
                         item{items.length === 1 ? '' : 's'} in queue.
@@ -147,13 +147,13 @@ export default function PendingReviewsPage({
                         placeholder="Search subject, class, teacher…"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        className="w-80 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        className="w-80 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
                     />
                 </div>
 
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50 dark:bg-slate-800">
                             <tr>
                                 <Th>Subject</Th>
                                 <Th>Class</Th>
@@ -165,7 +165,7 @@ export default function PendingReviewsPage({
                                 <Th className="text-right">Actions</Th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {filtered.length === 0 && (
                                 <tr>
                                     <td
@@ -188,10 +188,10 @@ export default function PendingReviewsPage({
                                 return (
                                     <tr
                                         key={item.id}
-                                        className="hover:bg-gray-50"
+                                        className="hover:bg-gray-50 dark:hover:bg-slate-800/50"
                                     >
                                         <Td>
-                                            <div className="font-medium text-gray-900">
+                                            <div className="font-medium text-gray-900 dark:text-white">
                                                 {item.curriculum_subject
                                                     ?.subject?.name ?? '—'}
                                             </div>
@@ -244,7 +244,7 @@ export default function PendingReviewsPage({
                                                 <a
                                                     target="_blank"
                                                     href={`/setup/curriculum-subject/${item.curriculum_subject?.id}`}
-                                                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                                                    className="text-sm font-medium text-primary hover:text-primary"
                                                 >
                                                     View
                                                 </a>
@@ -383,14 +383,14 @@ function RejectModal({
             aria-modal="true"
             aria-labelledby="reject-modal-title"
         >
-            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900 dark:border dark:border-slate-700">
                 <h3
                     id="reject-modal-title"
-                    className="text-base font-semibold text-gray-900"
+                    className="text-base font-semibold text-gray-900 dark:text-white"
                 >
                     Reject submission
                 </h3>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
                     {item.curriculum_subject.subject.name}
                     {item.curriculum_subject.curriculum?.class_level_arm?.name
                         ? ` · ${item.curriculum_subject.curriculum.class_level_arm.name}`
@@ -424,7 +424,7 @@ function RejectModal({
                         type="button"
                         onClick={handleClose}
                         disabled={busy}
-                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         Cancel
                     </button>

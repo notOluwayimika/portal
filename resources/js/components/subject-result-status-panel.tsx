@@ -138,7 +138,7 @@ export default function SubjectResultStatusPanel({
     };
 
     return (
-        <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <div className="rounded-lg border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 space-y-2">
                     <div className="flex items-center gap-3">
@@ -155,7 +155,7 @@ export default function SubjectResultStatusPanel({
                     {current.updated_by && (
                         <p className="text-sm text-gray-600">
                             Last updated by{' '}
-                            <span className="font-medium text-gray-900">
+                            <span className="font-medium text-gray-900 dark:text-white">
                                 {current.updated_by.full_name}
                             </span>
                             {/* {current.updated_by.role && (
@@ -205,7 +205,7 @@ export default function SubjectResultStatusPanel({
                                 current.status === 'approved' ||
                                 current.status === 'submitted'
                             }
-                            className="inline-flex items-center rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                            className="inline-flex items-center rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                             {busy === 'submit'
                                 ? 'Submitting…'
@@ -296,21 +296,21 @@ function RejectModal({
             aria-modal="true"
             aria-labelledby="reject-modal-title"
         >
-            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900 dark:border dark:border-slate-700">
                 <h3
                     id="reject-modal-title"
-                    className="text-base font-semibold text-gray-900"
+                    className="text-base font-semibold text-gray-900 dark:text-white"
                 >
                     Reject submission
                 </h3>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
                     Let the teacher know what needs to change before they can
                     resubmit.
                 </p>
 
                 <label
                     htmlFor="rejection_reason"
-                    className="mt-4 block text-sm font-medium text-gray-700"
+                    className="mt-4 block text-sm font-medium text-gray-700 dark:text-slate-300"
                 >
                     Rejection reason
                 </label>
@@ -336,7 +336,7 @@ function RejectModal({
                             onClose();
                         }}
                         disabled={busy}
-                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         Cancel
                     </button>

@@ -97,7 +97,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
             <CardHeader className="border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                 <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                     <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                        <KeyRound className="h-4 w-4 text-indigo-600" />
+                        <KeyRound className="h-4 w-4 text-primary" />
                     </div>
                     Login Access
                 </CardTitle>
@@ -110,18 +110,18 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     </div>
 
                     {guardian.email && !isSyntheticEmail(guardian.email) && (
-                        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+                        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
                             <div className="flex items-center gap-2 overflow-hidden">
                                 <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                <span className="truncate text-xs font-semibold text-slate-600">{guardian.email}</span>
+                                <span className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">{guardian.email}</span>
                             </div>
                         </div>
                     )}
                 </div>
 
                 {guardian.email_verified_at && (
-                    <div className="rounded-lg border border-emerald-100 bg-emerald-50/30 px-3 py-2 text-center">
-                        <p className="text-[10px] font-bold text-emerald-700">
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50/30 px-3 py-2 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
                             ✓ Account activated on {new Date(guardian.email_verified_at).toLocaleDateString()}
                         </p>
                     </div>
@@ -133,7 +133,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-primary/10 hover:text-primary hover:border-primary/20 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-primary/10 dark:hover:text-primary dark:hover:border-primary/30"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'enable',
@@ -144,9 +144,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'enable' ? (
-                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
                             ) : (
-                                <LogIn className="mr-2 h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-600" />
+                                <LogIn className="mr-2 h-3.5 w-3.5 text-slate-400 group-hover:text-primary" />
                             )}
                             Enable Access
                         </Button>
@@ -157,7 +157,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400 dark:hover:border-amber-900/60"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'disable',
@@ -181,7 +181,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-primary/10 hover:text-primary hover:border-primary/20 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-primary/10 dark:hover:text-primary dark:hover:border-primary/30"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'reset',
@@ -192,7 +192,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'reset' ? (
-                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
                             ) : (
                                 <RotateCcw className="mr-2 h-3.5 w-3.5 text-slate-400" />
                             )}
@@ -205,7 +205,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-primary/10 hover:text-primary hover:border-primary/20 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-primary/10 dark:hover:text-primary dark:hover:border-primary/30"
                             disabled={!!busy}
                             onClick={() => swalAction(
                                 'resend',
@@ -216,7 +216,7 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                             )}
                         >
                             {busy === 'resend' ? (
-                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
+                                <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
                             ) : (
                                 <RotateCcw className="mr-2 h-3.5 w-3.5 text-slate-400" />
                             )}
@@ -226,8 +226,8 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                 </div>
 
                 {noAccount && (
-                    <div className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
-                        <p className="text-center text-[11px] font-medium leading-relaxed text-slate-500">
+                    <div className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+                        <p className="text-center text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
                             {hasRealEmail
                                 ? "This guardian doesn't have an active login account yet."
                                 : "A valid email address is required to enable login access for this guardian."}

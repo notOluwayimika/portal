@@ -77,28 +77,29 @@
     --popover-foreground: oklch(0.2 0.02 260);
 
     /* ========================
-       🎓 PRIMARY (INDIGO)
-       #2B197A
+       🎓 PRIMARY (PURPLE)
+       #2c197a
     ======================== */
-    --primary: oklch(0.32 0.12 275);
-    --primary-foreground: oklch(0.98 0.01 260);
+    --primary: oklch(0.29 0.20 282);
+    --primary-foreground: oklch(0.98 0.01 282);
 
-    --primary-50: oklch(0.95 0.02 275);
-    --primary-100: oklch(0.88 0.04 275);
-    --primary-200: oklch(0.75 0.07 275);
-    --primary-300: oklch(0.62 0.09 275);
-    --primary-400: oklch(0.48 0.11 275);
-    --primary-500: oklch(0.32 0.12 275); /* main */
-    --primary-600: oklch(0.26 0.13 275);
-    --primary-700: oklch(0.21 0.14 275);
-    --primary-800: oklch(0.16 0.15 275);
-    --primary-900: oklch(0.12 0.16 275);
+    --primary-50: oklch(0.97 0.02 282);
+    --primary-100: oklch(0.93 0.05 282);
+    --primary-200: oklch(0.84 0.10 282);
+    --primary-300: oklch(0.70 0.15 282);
+    --primary-400: oklch(0.52 0.18 282);
+    --primary-500: oklch(0.29 0.20 282); /* main ≈ #2c197a */
+    --primary-600: oklch(0.24 0.17 282);
+    --primary-700: oklch(0.19 0.13 282);
+    --primary-800: oklch(0.15 0.10 282);
+    --primary-900: oklch(0.11 0.07 282);
 
     /* ========================
-       ⚪ SECONDARY (UI GRAY)
+       🟡 SECONDARY (GOLD)
+       #eab306
     ======================== */
-    --secondary: oklch(0.95 0.01 260);
-    --secondary-foreground: oklch(0.3 0.02 260);
+    --secondary: oklch(0.795 0.184 86);
+    --secondary-foreground: oklch(0.15 0.04 86);
 
     /* ========================
        🧊 MUTED
@@ -142,17 +143,17 @@
     /* ========================
        📌 SIDEBAR (PORTAL STYLE)
     ======================== */
-    --sidebar: var(--primary);
-    --sidebar-foreground: oklch(0.98 0.01 260);
+    --sidebar: oklch(0.20 0.15 282);   /* deep purple — matches brand primary */
+    --sidebar-foreground: oklch(0.98 0.01 282);
 
-    --sidebar-primary: oklch(0.42 0.12 275);
+    --sidebar-primary: oklch(0.29 0.20 282);
     --sidebar-primary-foreground: white;
 
-    --sidebar-accent: oklch(0.38 0.11 275);
+    --sidebar-accent: oklch(0.25 0.17 282);
     --sidebar-accent-foreground: white;
 
-    --sidebar-border: oklch(0.25 0.05 275);
-    --sidebar-ring: oklch(0.6 0.12 275);
+    --sidebar-border: oklch(0.17 0.10 282);
+    --sidebar-ring: oklch(0.52 0.18 282);
 }
 
 .dark {
@@ -165,11 +166,11 @@
     --popover: oklch(0.22 0.02 260);
     --popover-foreground: oklch(0.95 0.01 260);
 
-    --primary: oklch(0.6 0.12 275);
-    --primary-foreground: oklch(0.15 0.02 260);
+    --primary: oklch(0.68 0.16 282);
+    --primary-foreground: oklch(0.10 0.04 282);
 
-    --secondary: oklch(0.28 0.02 260);
-    --secondary-foreground: oklch(0.95 0.01 260);
+    --secondary: oklch(0.83 0.18 86);
+    --secondary-foreground: oklch(0.12 0.04 86);
 
     --muted: oklch(0.28 0.02 260);
     --muted-foreground: oklch(0.7 0.02 260);
@@ -185,17 +186,17 @@
     --ring: var(--primary);
 
     /* Sidebar stays strong */
-    --sidebar: oklch(0.2 0.03 275);
-    --sidebar-foreground: oklch(0.95 0.01 260);
+    --sidebar: oklch(0.17 0.13 282);
+    --sidebar-foreground: oklch(0.95 0.01 282);
 
-    --sidebar-primary: oklch(0.5 0.12 275);
+    --sidebar-primary: oklch(0.25 0.18 282);
     --sidebar-primary-foreground: white;
 
-    --sidebar-accent: oklch(0.35 0.1 275);
+    --sidebar-accent: oklch(0.22 0.15 282);
     --sidebar-accent-foreground: white;
 
-    --sidebar-border: oklch(0.3 0.02 260);
-    --sidebar-ring: oklch(0.6 0.12 275);
+    --sidebar-border: oklch(0.14 0.08 282);
+    --sidebar-ring: oklch(0.52 0.18 282);
 }
 
 @layer base {
@@ -406,6 +407,17 @@
 .border-muted-700  { border-color: var(--muted-700); }
 .border-muted-800  { border-color: var(--muted-800); }
 .border-muted-900  { border-color: var(--muted-900); }
+
+/* Dark mode: primary action buttons switch to secondary (gold) */
+.dark button.bg-primary,
+.dark a.bg-primary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+}
+.dark button.bg-primary:hover,
+.dark a.bg-primary:hover {
+    background-color: color-mix(in oklch, var(--secondary) 80%, transparent);
+}
 
 /* Custom Scrollbar — slim, rounded, works on both axes. */
 .custom-scrollbar {

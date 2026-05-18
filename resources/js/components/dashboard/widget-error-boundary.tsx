@@ -23,7 +23,7 @@ export class WidgetErrorBoundary extends Component<Props, State> {
     render() {
         if (this.state.hasError) {
             return (
-                <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center gap-2 text-slate-400">
+                <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center gap-2 text-slate-400 dark:bg-slate-900 dark:border-slate-700">
                     <span className="text-xs">Widget unavailable</span>
                 </div>
             );

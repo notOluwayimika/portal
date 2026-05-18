@@ -70,13 +70,13 @@ export function ActivityLogCard({ guardianId, refreshKey }: ActivityLogCardProps
                 <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                            <History className="h-4 w-4 text-indigo-600" />
+                            <History className="h-4 w-4 text-primary" />
                         </div>
                         Recent Activity
                     </CardTitle>
                     <Link
                         href={`/guardians/${guardianId}/audit`}
-                        className="text-[10px] font-bold tracking-wide text-indigo-600 uppercase hover:text-indigo-700"
+                        className="text-[10px] font-bold tracking-wide text-primary uppercase hover:text-primary"
                     >
                         Full History →
                     </Link>
@@ -94,17 +94,17 @@ export function ActivityLogCard({ guardianId, refreshKey }: ActivityLogCardProps
                     </div>
                 ) : entries.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-6 text-center">
-                        <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-slate-50 text-slate-300">
+                        <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-slate-50 text-slate-300 dark:bg-slate-800 dark:text-slate-600">
                             <Clock className="h-5 w-5" />
                         </div>
-                        <p className="text-xs font-medium text-slate-500">No activity recorded yet.</p>
+                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">No activity recorded yet.</p>
                     </div>
                 ) : (
-                    <div className="relative space-y-4 before:absolute before:left-[3px] before:top-2 before:h-[calc(100%-16px)] before:w-[2px] before:bg-slate-100">
+                    <div className="relative space-y-4 before:absolute before:left-[3px] before:top-2 before:h-[calc(100%-16px)] before:w-[2px] before:bg-slate-100 dark:before:bg-slate-700">
                         {entries.map((entry) => (
                             <div key={entry.id} className="relative pl-6">
                                 {/* Marker */}
-                                <div className="absolute left-0 top-1.5 size-[8px] rounded-full border-2 border-white bg-indigo-500 ring-4 ring-indigo-50 dark:ring-indigo-950/30" />
+                                <div className="absolute left-0 top-1.5 size-[8px] rounded-full border-2 border-white bg-primary ring-4 ring-primary/20 dark:ring-primary/20/30" />
 
                                 <div className="space-y-0.5">
                                     <div className="flex items-center justify-between gap-2">

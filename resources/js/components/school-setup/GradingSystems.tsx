@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
-import { CheckCircle2, Save } from 'lucide-react'
-import Modal from '@/components/ui/Modal'
+import { useState } from 'react'
+import { Save } from 'lucide-react'
 import Toast from '@/components/ui/Toast'
 
 interface GradeBand {
@@ -137,11 +136,11 @@ export default function GradingSystems() {
 
     return (
         <div className="space-y-8">
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900">Grading systems</h1>
-                        <p className="mt-2 text-sm text-gray-600">Edit band thresholds and preview the resulting grade for each system.</p>
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Grading systems</h1>
+                        <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">Edit band thresholds and preview the resulting grade for each system.</p>
                     </div>
                 </div>
             </div>
@@ -149,11 +148,11 @@ export default function GradingSystems() {
             {systems.map((system) => {
                 const preview = getPreview(system)
                 return (
-                    <div key={system.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                    <div key={system.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <h2 className="text-lg font-medium text-gray-900">{system.name}</h2>
-                                <p className="mt-2 text-sm text-gray-500">Applied to: {system.applicable_to.join(', ')}</p>
+                                <h2 className="text-lg font-medium text-gray-900 dark:text-white">{system.name}</h2>
+                                <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">Applied to: {system.applicable_to.join(', ')}</p>
                             </div>
                             <span className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold ${statusClasses[system.type]}`}>
                                 {system.type.toUpperCase()}
@@ -161,25 +160,25 @@ export default function GradingSystems() {
                         </div>
 
                         <div className="mt-8 overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                <thead className="bg-gray-50">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-slate-700">
+                                <thead className="bg-gray-50 dark:bg-slate-800">
                                     <tr>
-                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Min Score</th>
-                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Max Score</th>
-                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Grade</th>
-                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">Label</th>
-                                        <th className="px-6 py-4 text-left font-semibold text-gray-700">GP</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700 dark:text-slate-300">Min Score</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700 dark:text-slate-300">Max Score</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700 dark:text-slate-300">Grade</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700 dark:text-slate-300">Label</th>
+                                        <th className="px-6 py-4 text-left font-semibold text-gray-700 dark:text-slate-300">GP</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200 bg-white">
+                                <tbody className="divide-y divide-gray-200 bg-white dark:divide-slate-700 dark:bg-slate-900">
                                     {system.bands.map((band) => (
-                                        <tr key={band.id} className="hover:bg-gray-50 transition-colors">
+                                        <tr key={band.id} className="hover:bg-gray-50 transition-colors dark:hover:bg-slate-800/50">
                                             <td className="px-6 py-4">
                                                 <input
                                                     type="number"
                                                     value={band.min}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'min', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                                 />
                                             </td>
                                             <td className="px-6 py-4">
@@ -187,7 +186,7 @@ export default function GradingSystems() {
                                                     type="number"
                                                     value={band.max}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'max', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                                 />
                                             </td>
                                             <td className="px-6 py-4">
@@ -195,7 +194,7 @@ export default function GradingSystems() {
                                                     type="text"
                                                     value={band.grade}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'grade', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                                 />
                                             </td>
                                             <td className="px-6 py-4">
@@ -203,7 +202,7 @@ export default function GradingSystems() {
                                                     type="text"
                                                     value={band.label}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'label', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                                 />
                                             </td>
                                             <td className="px-6 py-4">
@@ -212,7 +211,7 @@ export default function GradingSystems() {
                                                     step="0.1"
                                                     value={band.gp}
                                                     onChange={(event) => handleBandChange(system.id, band.id, 'gp', event.target.value)}
-                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                                 />
                                             </td>
                                         </tr>
@@ -223,12 +222,12 @@ export default function GradingSystems() {
 
                         <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                                <label className="text-sm font-medium text-gray-700">Test a score:</label>
+                                <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Test a score:</label>
                                 <input
                                     type="number"
                                     value={scoreInput[system.id] ?? ''}
                                     onChange={(event) => setScoreInput((current) => ({ ...current, [system.id]: event.target.value }))}
-                                    className="w-full max-w-xs rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-[#185FA5] focus:outline-none focus:ring-2 focus:ring-[#185FA5]/20"
+                                    className="w-full max-w-xs rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                                     placeholder="Enter score"
                                 />
                                 {preview ? (
@@ -236,7 +235,7 @@ export default function GradingSystems() {
                                         Grade: <span className="font-semibold">{preview.grade}</span> · GP: <span className="font-semibold">{preview.gp}</span>
                                     </div>
                                 ) : (
-                                    <div className="rounded-xl bg-gray-50 px-5 py-3 text-sm text-gray-500 border border-gray-200">
+                                    <div className="rounded-xl bg-gray-50 px-5 py-3 text-sm text-gray-500 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                                         Enter a score to preview grade.
                                     </div>
                                 )}
@@ -245,7 +244,7 @@ export default function GradingSystems() {
                                 type="button"
                                 onClick={() => handleSave(system.id)}
                                 disabled={isSaving[system.id]}
-                                className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Save className="h-4 w-4" />
                                 {isSaving[system.id] ? 'Saving...' : 'Save changes'}

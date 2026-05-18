@@ -20,7 +20,7 @@ const STATUS_OPTIONS: { value: StudentCurriculumStatus; label: string }[] = [
 
 const STATUS_BADGE: Record<StudentCurriculumStatus, string> = {
     active: 'bg-green-50 text-green-800 ring-green-200',
-    promoted: 'bg-indigo-50 text-indigo-800 ring-indigo-200',
+    promoted: 'bg-primary/10 text-primary ring-primary/20',
     repeated: 'bg-amber-50 text-amber-800 ring-amber-200',
     withdrawn: 'bg-gray-100 text-gray-700 ring-gray-200',
 };
@@ -219,11 +219,11 @@ export default function StudentCurriculaPage({
 
             <div className="mx-auto max-w-7xl space-y-6 p-6">
                 {/* Header */}
-                <div className="rounded-lg border bg-white p-5 shadow-sm">
+                <div className="rounded-lg border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <div className="flex items-center justify-between">
                         <div>
                             {' '}
-                            <h1 className="text-xl font-semibold text-gray-900">
+                            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                                 {fullName(student)}
                             </h1>
                             {student.admission_number && (
@@ -235,7 +235,7 @@ export default function StudentCurriculaPage({
                         <div>
                             <Link
                                 href={`/students/${student.id}/results/active`}
-                                className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                className="inline-flex items-center rounded-md bg-primary px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                                 View active result
                             </Link>
@@ -282,9 +282,9 @@ export default function StudentCurriculaPage({
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50 dark:bg-slate-800">
                             <tr>
                                 <Th>Curriculum</Th>
                                 <Th>Status</Th>
@@ -292,7 +292,7 @@ export default function StudentCurriculaPage({
                                 <Th className="text-right">Actions</Th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {filtered.length === 0 && (
                                 <tr>
                                     <td
@@ -311,10 +311,10 @@ export default function StudentCurriculaPage({
                                 return (
                                     <tr
                                         key={sc.id}
-                                        className="hover:bg-gray-50"
+                                        className="hover:bg-gray-50 dark:hover:bg-slate-800/50"
                                     >
                                         <Td>
-                                            <div className="font-medium text-gray-900">
+                                            <div className="font-medium text-gray-900 dark:text-white">
                                                 {formatCurriculum(
                                                     sc.curriculum,
                                                 )}
@@ -337,7 +337,7 @@ export default function StudentCurriculaPage({
                                                         )
                                                     }
                                                     disabled={busy}
-                                                    className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                                                    className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none disabled:opacity-50"
                                                 >
                                                     {STATUS_OPTIONS.map((o) => (
                                                         <option
@@ -367,7 +367,7 @@ export default function StudentCurriculaPage({
                                             <div className="flex gap-4">
                                                 <Link
                                                     href={`/students/${student.id}/results/${sc.id}`}
-                                                    className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                    className="inline-flex items-center rounded-md bg-primary px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                                                 >
                                                     View Result
                                                 </Link>
@@ -395,7 +395,7 @@ export default function StudentCurriculaPage({
                                                                   ? 'No eligible curricula available'
                                                                   : undefined
                                                         }
-                                                        className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                        className="inline-flex items-center rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                                                     >
                                                         Promote
                                                     </button>
@@ -413,7 +413,7 @@ export default function StudentCurriculaPage({
                                                                     0
                                                             }
                                                             href={`/setup/student-curricula/${sc.id}/subjects`}
-                                                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                            className="inline-flex items-center rounded-md bg-primary px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                                                         >
                                                             Manage Subjects
                                                         </Link>
@@ -471,8 +471,8 @@ function FilterPill({
             onClick={onClick}
             className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                 active
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
         >
             {label}
@@ -568,17 +568,17 @@ function PromoteModal({
             aria-modal="true"
             aria-labelledby="promote-modal-title"
         >
-            <div className="flex w-full max-w-lg flex-col rounded-lg bg-white shadow-xl">
-                <div className="border-b p-5">
+            <div className="flex w-full max-w-lg flex-col rounded-lg bg-white shadow-xl dark:bg-slate-900 dark:border dark:border-slate-700">
+                <div className="border-b p-5 dark:border-slate-700">
                     <h3
                         id="promote-modal-title"
-                        className="text-base font-semibold text-gray-900"
+                        className="text-base font-semibold text-gray-900 dark:text-white"
                     >
                         Promote student
                     </h3>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
                         Promoting from{' '}
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-gray-900 dark:text-white">
                             {formatCurriculum(source.curriculum)}
                         </span>
                         .
@@ -588,7 +588,7 @@ function PromoteModal({
                 <div className="p-5">
                     <label
                         htmlFor="promote-search"
-                        className="block text-sm font-medium text-gray-700"
+                        className="block text-sm font-medium text-gray-700 dark:text-slate-300"
                     >
                         Choose target curriculum
                     </label>
@@ -599,27 +599,27 @@ function PromoteModal({
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         autoFocus
-                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
                     />
 
-                    <div className="mt-3 max-h-64 overflow-y-auto rounded-md border">
+                    <div className="mt-3 max-h-64 overflow-y-auto rounded-md border dark:border-slate-700">
                         {filtered.length === 0 ? (
-                            <div className="px-3 py-8 text-center text-sm text-gray-500">
+                            <div className="px-3 py-8 text-center text-sm text-gray-500 dark:text-slate-400">
                                 {eligible.length === 0
                                     ? 'No eligible curricula available.'
                                     : 'No matches for that search.'}
                             </div>
                         ) : (
-                            <ul className="divide-y divide-gray-100">
+                            <ul className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {filtered.map((c) => {
                                     const isSelected = selected === c.id;
 
                                     return (
                                         <li key={c.id}>
                                             <label
-                                                className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 ${
+                                                className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 ${
                                                     isSelected
-                                                        ? 'bg-indigo-50'
+                                                        ? 'bg-primary/10 dark:bg-primary/10'
                                                         : ''
                                                 }`}
                                             >
@@ -630,9 +630,9 @@ function PromoteModal({
                                                     onChange={() =>
                                                         setSelected(c.id)
                                                     }
-                                                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                                    className="h-4 w-4 text-primary focus:ring-primary"
                                                 />
-                                                <span className="flex-1 text-gray-800">
+                                                <span className="flex-1 text-gray-800 dark:text-slate-200">
                                                     {formatCurriculum(c)}
                                                 </span>
                                             </label>
@@ -644,12 +644,12 @@ function PromoteModal({
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3">
+                <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
                     <button
                         type="button"
                         onClick={handleClose}
                         disabled={busy}
-                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         Cancel
                     </button>
@@ -657,7 +657,7 @@ function PromoteModal({
                         type="button"
                         onClick={() => selected && onConfirm(selected)}
                         disabled={busy || !selected}
-                        className="rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                        className="rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         {busy ? 'Promoting…' : 'Confirm promotion'}
                     </button>
@@ -727,15 +727,15 @@ function RegisterModal({
             aria-modal="true"
             aria-labelledby="register-modal-title"
         >
-            <div className="flex w-full max-w-lg flex-col rounded-lg bg-white shadow-xl">
-                <div className="border-b p-5">
+            <div className="flex w-full max-w-lg flex-col rounded-lg bg-white shadow-xl dark:bg-slate-900 dark:border dark:border-slate-700">
+                <div className="border-b p-5 dark:border-slate-700">
                     <h3
                         id="register-modal-title"
-                        className="text-base font-semibold text-gray-900"
+                        className="text-base font-semibold text-gray-900 dark:text-white"
                     >
                         Register in a curriculum
                     </h3>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
                         Pick a curriculum to enroll this student in. A new
                         active enrollment will be created.
                     </p>
@@ -744,7 +744,7 @@ function RegisterModal({
                 <div className="p-5">
                     <label
                         htmlFor="register-search"
-                        className="block text-sm font-medium text-gray-700"
+                        className="block text-sm font-medium text-gray-700 dark:text-slate-300"
                     >
                         Choose curriculum
                     </label>
@@ -758,15 +758,15 @@ function RegisterModal({
                         className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                     />
 
-                    <div className="mt-3 max-h-64 overflow-y-auto rounded-md border">
+                    <div className="mt-3 max-h-64 overflow-y-auto rounded-md border dark:border-slate-700">
                         {filtered.length === 0 ? (
-                            <div className="px-3 py-8 text-center text-sm text-gray-500">
+                            <div className="px-3 py-8 text-center text-sm text-gray-500 dark:text-slate-400">
                                 {eligible.length === 0
                                     ? 'No eligible curricula available.'
                                     : 'No matches for that search.'}
                             </div>
                         ) : (
-                            <ul className="divide-y divide-gray-100">
+                            <ul className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {filtered.map((c) => {
                                     const isSelected = selected === c.id;
 
@@ -788,7 +788,7 @@ function RegisterModal({
                                                     }
                                                     className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
                                                 />
-                                                <span className="flex-1 text-gray-800">
+                                                <span className="flex-1 text-gray-800 dark:text-slate-200">
                                                     {formatCurriculum(c)}
                                                 </span>
                                             </label>
@@ -806,12 +806,12 @@ function RegisterModal({
                     )}
                 </div>
 
-                <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3">
+                <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
                     <button
                         type="button"
                         onClick={handleClose}
                         disabled={busy}
-                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         Cancel
                     </button>

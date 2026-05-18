@@ -72,7 +72,7 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
             <Head title="Dashboard" />
 
             {analysis.is_onboarding_state ? (
-                <div className="p-5 bg-slate-50 min-h-full">
+                <div className="p-5 bg-slate-50 dark:bg-slate-950 min-h-full">
                     <DashboardOnboarding onboarding={onboarding} schoolName={analysis.school_name} />
 
                     {/* Hybrid preview: show available KPI widgets even during onboarding */}
@@ -101,7 +101,7 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                     )}
                 </div>
             ) : (
-                <div className="p-5 bg-slate-50 min-h-full">
+                <div className="p-5 bg-slate-50 dark:bg-slate-950 min-h-full">
                     {/* Row 1: KPI strip */}
                     {kpiWidgets.length > 0 && (
                         <div
@@ -186,7 +186,7 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                     )}
 
                     {/* Row 5: Footer / meta */}
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 mt-2">
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700 mt-2">
                         <p className="text-xs text-slate-400">
                             {lastRefreshedAt
                                 ? `Dashboard data refreshed ${timeAgoLabel(lastRefreshedAt)}`
@@ -195,7 +195,7 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                         <button
                             onClick={handleRefresh}
                             disabled={refreshing}
-                            className="inline-flex items-center gap-1.5 text-xs text-[#185FA5] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
                             {refreshing ? 'Refreshing…' : 'Refresh dashboard'}

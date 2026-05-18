@@ -27,15 +27,15 @@ interface ActivityFeedWidgetProps {
 
 export function ActivityFeedWidget({ activities, viewAllHref = '/activity-logs' }: ActivityFeedWidgetProps) {
     return (
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-4 dark:bg-slate-900 dark:border-slate-700">
             <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-slate-900">Activity log</p>
-                <a href={viewAllHref} className="text-xs text-[#185FA5] hover:underline">
+                <p className="text-sm font-medium text-slate-900 dark:text-white">Activity log</p>
+                <a href={viewAllHref} className="text-xs text-primary hover:underline">
                     View all
                 </a>
             </div>
             {activities.length === 0 ? (
-                <p className="text-xs text-slate-400">No recent activity</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">No recent activity</p>
             ) : (
                 <div className="space-y-3">
                     {activities.map((item, i) => {
@@ -44,8 +44,8 @@ export function ActivityFeedWidget({ activities, viewAllHref = '/activity-logs' 
                             <div key={i} className="flex gap-2.5">
                                 <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${dotColor}`} />
                                 <div>
-                                    <p className="text-xs text-slate-700 leading-snug">{item.description}</p>
-                                    <p className="text-[11px] text-slate-400 mt-0.5">{timeAgo(item.created_at)}</p>
+                                    <p className="text-xs text-slate-700 leading-snug dark:text-slate-300">{item.description}</p>
+                                    <p className="text-[11px] text-slate-400 mt-0.5 dark:text-slate-500">{timeAgo(item.created_at)}</p>
                                 </div>
                             </div>
                         );

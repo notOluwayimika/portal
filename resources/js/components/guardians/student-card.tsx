@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
-import type { Guardian, GuardianPivot, Student } from '@/types/models';
+import type { GuardianPivot, Student } from '@/types/models';
 
 interface StudentCardProps {
     student: Student & { pivot: GuardianPivot };
@@ -18,16 +18,16 @@ export function StudentCard({ student }: StudentCardProps) {
     const getInitials = useInitials();
 
     return (
-        <div className="group relative flex items-center gap-5 rounded-2xl border border-slate-100 bg-white p-5 transition-all hover:border-indigo-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+        <div className="group relative flex items-center gap-5 rounded-2xl border border-slate-100 bg-white p-5 transition-all hover:border-primary/20 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
             <div className="relative">
-                <Avatar className="size-14 shrink-0 rounded-full border-2 border-white shadow-sm ring-1 ring-slate-100">
+                <Avatar className="size-14 shrink-0 rounded-full border-2 border-white shadow-sm ring-1 ring-slate-100 dark:ring-slate-700">
                     <AvatarImage src={student.photo ?? undefined} alt={student.full_name} className="object-cover" />
-                    <AvatarFallback className="rounded-full bg-slate-50 text-base font-bold text-slate-400">
+                    <AvatarFallback className="rounded-full bg-slate-50 text-base font-bold text-slate-400 dark:bg-slate-800 dark:text-slate-400">
                         {getInitials(student.full_name)}
                     </AvatarFallback>
                 </Avatar>
                 {student.pivot.is_primary && (
-                    <div className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm ring-2 ring-white">
+                    <div className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-primary text-white shadow-sm ring-2 ring-white">
                         <span className="text-[10px] font-bold">P</span>
                     </div>
                 )}
@@ -39,7 +39,7 @@ export function StudentCard({ student }: StudentCardProps) {
                         {student.full_name}
                     </span>
                     {student.pivot.is_primary && (
-                        <Badge className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-600 shadow-sm hover:bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400">
+                        <Badge className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary shadow-sm hover:bg-primary/10 dark:bg-primary/10 dark:text-primary">
                             Primary Guardian
                         </Badge>
                     )}
@@ -64,7 +64,7 @@ export function StudentCard({ student }: StudentCardProps) {
                 </div>
             </div>
 
-            <Button asChild variant="ghost" size="sm" className="shrink-0 rounded-xl px-3 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600">
+            <Button asChild variant="ghost" size="sm" className="shrink-0 rounded-xl px-3 text-slate-400 transition-all hover:bg-primary/10 hover:text-primary">
                 <Link href={`/students/${student.id}`}>
                     <span className="mr-1.5 text-xs font-bold">View</span>
                     <ArrowRight className="h-4 w-4" />

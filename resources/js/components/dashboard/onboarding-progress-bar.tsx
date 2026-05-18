@@ -16,7 +16,7 @@ export function OnboardingProgressBar({ completed, total }: OnboardingProgressBa
             </div>
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                    className="h-full rounded-full bg-[#185FA5] transition-all duration-500"
+                    className="h-full rounded-full bg-primary transition-all duration-500"
                     style={{ width: `${pct}%` }}
                 />
             </div>

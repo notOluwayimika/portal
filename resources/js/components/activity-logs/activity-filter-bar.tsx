@@ -123,12 +123,12 @@ export function ActivityFilterBar({
             <div className="flex items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                 <div className="flex items-center gap-2.5">
                     <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                        <ListFilter className="h-4 w-4 text-indigo-600" />
+                        <ListFilter className="h-4 w-4 text-primary" />
                     </div>
                     <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Filters</span>
                 </div>
                 {activeCount > 0 && (
-                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary dark:bg-primary/10 dark:text-primary">
                         {activeCount} active
                     </span>
                 )}

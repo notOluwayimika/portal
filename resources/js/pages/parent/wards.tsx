@@ -154,7 +154,7 @@ export default function Wards() {
                                 className={[
                                     'group flex min-w-[220px] items-center gap-3 rounded-xl border px-4 py-3 text-left transition',
                                     isActive
-                                        ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-600/20'
+                                        ? 'border-primary/20 bg-primary/10 ring-2 ring-primary/20/20'
                                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
                                 ].join(' ')}
                             >
@@ -179,7 +179,7 @@ export default function Wards() {
                                     className={[
                                         'h-4 w-4 transition',
                                         isActive
-                                            ? 'text-indigo-600'
+                                            ? 'text-primary'
                                             : 'text-gray-400',
                                     ].join(' ')}
                                 />
@@ -193,7 +193,7 @@ export default function Wards() {
             {active && (
                 <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                     {/* Header */}
-                    <div className="flex flex-col gap-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white p-6 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-4 border-b border-gray-100 bg-gradient-to-r from-primary/5 to-white p-6 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-4">
                             <Avatar ward={active} size={64} />
                             <div>
@@ -221,14 +221,14 @@ export default function Wards() {
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Link
                                 href={`/students/${active.id}/results/active`}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90 focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:outline-none"
                             >
                                 <FileText className="h-4 w-4" />
                                 View Current Result
                             </Link>
                             <Link
                                 href={`/setup/student-curricula/${active.id}`}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:outline-none"
                             >
                                 <GraduationCap className="h-4 w-4" />
                                 View Academic Records
@@ -305,7 +305,7 @@ function Avatar({ ward, size = 40 }: { ward: Ward; size?: number }) {
     return (
         <div
             style={style}
-            className="flex shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-semibold text-white ring-2 ring-white"
+            className="flex shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white ring-2 ring-white"
         >
             {initials(ward)}
         </div>

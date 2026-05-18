@@ -179,7 +179,7 @@ export function StudentForm({ student, onSuccess, onCancel, formId = 'student-fo
                                 setShowAdmissionNumber(e.target.checked);
                                 if (!e.target.checked) setFields((f) => ({ ...f, admission_number: '' }));
                             }}
-                            className="h-4 w-4 rounded border-gray-300"
+                            className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:checked:bg-primary"
                         />
                         <Label htmlFor="manual_admission" className="cursor-pointer text-sm font-normal">
                             Manually set admission number

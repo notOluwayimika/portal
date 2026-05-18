@@ -29,7 +29,7 @@ export function ActivityStatCard({
             ? 'text-red-500 dark:text-red-400'
             : tone === 'warning'
               ? 'text-amber-500 dark:text-amber-400'
-              : 'text-indigo-600 dark:text-indigo-400';
+              : 'text-primary dark:text-primary';
 
     return (
         <button

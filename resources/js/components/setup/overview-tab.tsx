@@ -47,7 +47,7 @@ function StatCard({
 }) {
     const styles = {
         neutral: { bg: 'bg-slate-50 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700', icon: 'text-slate-500' },
-        indigo:  { bg: 'bg-indigo-50 ring-indigo-100 dark:bg-indigo-950/40 dark:ring-indigo-900', icon: 'text-indigo-600 dark:text-indigo-400' },
+        indigo:  { bg: 'bg-primary/10 ring-primary/20 dark:bg-primary/10 dark:ring-primary/20', icon: 'text-primary dark:text-primary' },
         emerald: { bg: 'bg-emerald-50 ring-emerald-100 dark:bg-emerald-950/40 dark:ring-emerald-900', icon: 'text-emerald-600 dark:text-emerald-400' },
         amber:   { bg: 'bg-amber-50 ring-amber-100 dark:bg-amber-950/40 dark:ring-amber-900', icon: 'text-amber-600 dark:text-amber-400' },
         violet:  { bg: 'bg-violet-50 ring-violet-100 dark:bg-violet-950/40 dark:ring-violet-900', icon: 'text-violet-600 dark:text-violet-400' },
@@ -142,9 +142,9 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-4">
                         <div className="relative shrink-0">
-                            <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-10 blur" />
-                            <div className="relative flex size-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-indigo-100 dark:from-indigo-950/50 dark:to-violet-950/50 dark:ring-indigo-900">
-                                <School className="h-7 w-7 text-indigo-600" />
+                            <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-tr from-primary to-violet-500 opacity-10 blur" />
+                            <div className="relative flex size-14 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-violet-50 shadow-sm ring-1 ring-primary/20 dark:from-primary/20 dark:to-violet-950/50 dark:ring-primary/20">
+                                <School className="h-7 w-7 text-primary" />
                             </div>
                         </div>
                         <div className="space-y-1.5">
@@ -162,7 +162,7 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                                     </Badge>
                                 )}
                                 {term && (
-                                    <Badge className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-700 shadow-sm dark:bg-indigo-900/30 dark:text-indigo-400">
+                                    <Badge className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold text-primary shadow-sm dark:bg-primary/10 dark:text-primary">
                                         {ordinal(term.order)} Term
                                     </Badge>
                                 )}
@@ -181,7 +181,7 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                         </div>
                         <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div
-                                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
+                                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all"
                                 style={{ width: `${pct}%` }}
                             />
                         </div>
@@ -207,7 +207,7 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                 <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] lg:col-span-2">
                     <CardHeader className="flex flex-row items-center gap-2.5 border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                            <CalendarDays className="h-4 w-4 text-indigo-600" />
+                            <CalendarDays className="h-4 w-4 text-primary" />
                         </div>
                         <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100">
                             Current Session
@@ -257,7 +257,7 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                 <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] lg:col-span-3">
                     <CardHeader className="flex flex-row items-center gap-2.5 border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                            <Layers className="h-4 w-4 text-indigo-600" />
+                            <Layers className="h-4 w-4 text-primary" />
                         </div>
                         <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100">
                             Academic Structure
@@ -292,7 +292,7 @@ export function OverviewTab({ data }: { data: SetupData | null }) {
                 <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 bg-slate-50/30 px-5 py-3">
                     <div className="flex items-center gap-2.5">
                         <div className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                            <CheckCircle2 className="h-4 w-4 text-indigo-600" />
+                            <CheckCircle2 className="h-4 w-4 text-primary" />
                         </div>
                         <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100">
                             Setup Checklist

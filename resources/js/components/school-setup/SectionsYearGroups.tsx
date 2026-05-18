@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus, Pencil, X } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import EmptyState from '@/components/ui/EmptyState'
@@ -217,14 +217,14 @@ export default function SectionsYearGroups() {
 
     return (
         <div className="space-y-8">
-            <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+            <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Sections &amp; year groups</h1>
-                    <p className="mt-2 text-sm text-gray-600">Manage school sections, year groups and class arms.</p>
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Sections &amp; year groups</h1>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">Manage school sections, year groups and class arms.</p>
                 </div>
                 <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#185FA5] px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#0f4a82] hover:shadow-md"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                     onClick={openAddSection}
                 >
                     <Plus className="h-4 w-4" />
@@ -244,7 +244,7 @@ export default function SectionsYearGroups() {
                 sections.map((section) => {
                     const summary = summaryBySection.find((item) => item.id === section.id)
                     return (
-                        <div key={section.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                        <div key={section.id} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900">
                             <button
                                 type="button"
                                 className="w-full text-left"
@@ -252,17 +252,17 @@ export default function SectionsYearGroups() {
                             >
                                 <div className="flex items-center justify-between gap-6">
                                     <div className="flex items-center gap-4">
-                                        <span className="h-4 w-4 rounded-full bg-[#185FA5]" />
+                                        <span className="h-4 w-4 rounded-full bg-primary" />
                                         <div>
-                                            <p className="text-lg font-medium text-gray-900">{section.name}</p>
-                                            <p className="mt-1 text-sm text-gray-500">
+                                            <p className="text-lg font-medium text-gray-900 dark:text-white">{section.name}</p>
+                                            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
                                                 {summary?.yearGroupCount ?? 0} year groups · {summary?.armCount ?? 0} class arms
                                             </p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <span className="text-sm text-gray-500">{expanded.includes(section.id) ? 'Collapse' : 'Expand'}</span>
-                                        <Pencil className="h-4 w-4 text-gray-400" />
+                                        <span className="text-sm text-gray-500 dark:text-slate-400">{expanded.includes(section.id) ? 'Collapse' : 'Expand'}</span>
+                                        <Pencil className="h-4 w-4 text-gray-400 dark:text-slate-500" />
                                     </div>
                                 </div>
                             </button>
@@ -270,15 +270,15 @@ export default function SectionsYearGroups() {
                             {expanded.includes(section.id) ? (
                                 <div className="mt-8 space-y-6">
                                     {section.yearGroups.length === 0 ? (
-                                        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600">
+                                        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
                                             No year groups yet. Add one to get started.
                                         </div>
                                     ) : (
                                         section.yearGroups.map((group) => (
-                                            <div key={group.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-6 transition-shadow hover:shadow-md">
+                                            <div key={group.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-6 transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-800/50">
                                                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                                     <div>
-                                                        <p className="font-medium text-gray-900">{group.name}</p>
+                                                        <p className="font-medium text-gray-900 dark:text-white">{group.name}</p>
                                                     </div>
                                                     <div className="flex flex-wrap items-center gap-3">
                                                         {group.classArms.map((arm) => (
@@ -293,7 +293,7 @@ export default function SectionsYearGroups() {
                                                         ))}
                                                         <button
                                                             type="button"
-                                                            className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400"
+                                                            className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                             onClick={() => openAddArm(section.id, group.id)}
                                                         >
                                                             <Plus className="h-3.5 w-3.5" />
@@ -301,7 +301,7 @@ export default function SectionsYearGroups() {
                                                         </button>
                                                         <button
                                                             type="button"
-                                                            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400"
+                                                            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-600 transition-all hover:bg-gray-100 hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                             onClick={() => {
                                                                 setDeleteTarget({ type: 'yearGroup', sectionId: section.id, yearGroupId: group.id })
                                                                 setIsConfirmOpen(true)
@@ -316,7 +316,7 @@ export default function SectionsYearGroups() {
                                     )}
                                     <button
                                         type="button"
-                                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400"
+                                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                         onClick={() => openAddYearGroup(section.id)}
                                     >
                                         <Plus className="h-4 w-4" />
@@ -347,14 +347,14 @@ export default function SectionsYearGroups() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => setIsSectionModalOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
                             onClick={handleAddSection}
                         >
                             Save section
@@ -363,12 +363,12 @@ export default function SectionsYearGroups() {
                 }
             >
                 <div className="space-y-4">
-                    <label className="block text-sm font-medium text-gray-700">Section name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Section name</label>
                     <input
                         type="text"
                         value={sectionName}
                         onChange={(event) => setSectionName(event.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                         placeholder="Secondary School"
                     />
                 </div>
@@ -382,14 +382,14 @@ export default function SectionsYearGroups() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => setIsYearGroupModalOpen(false)}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
                             onClick={handleAddYearGroup}
                         >
                             Save year group
@@ -398,12 +398,12 @@ export default function SectionsYearGroups() {
                 }
             >
                 <div className="space-y-4">
-                    <label className="block text-sm font-medium text-gray-700">Year group name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Year group name</label>
                     <input
                         type="text"
                         value={yearGroupName}
                         onChange={(event) => setYearGroupName(event.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                         placeholder="Year 13"
                     />
                 </div>
@@ -420,7 +420,7 @@ export default function SectionsYearGroups() {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+                            className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             onClick={() => {
                                 setIsArmModalOpen(false)
                                 setActiveArm(null)
@@ -430,7 +430,7 @@ export default function SectionsYearGroups() {
                         </button>
                         <button
                             type="button"
-                            className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f4a82]"
+                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
                             onClick={handleSaveArm}
                         >
                             Save arm
@@ -439,19 +439,19 @@ export default function SectionsYearGroups() {
                 }
             >
                 <div className="space-y-4">
-                    <label className="block text-sm font-medium text-gray-700">Arm name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Arm name</label>
                     <input
                         type="text"
                         value={newArmName}
                         onChange={(event) => setNewArmName(event.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500"
                         placeholder="7C"
                     />
-                    <label className="block text-sm font-medium text-gray-700">Curriculum type</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">Curriculum type</label>
                     <select
                         value={newArmType}
                         onChange={(event) => setNewArmType(event.target.value as ClassArm['type'])}
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5] focus:border-transparent"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     >
                         <option value="IGCSE">IGCSE</option>
                         <option value="WAEC">WAEC</option>

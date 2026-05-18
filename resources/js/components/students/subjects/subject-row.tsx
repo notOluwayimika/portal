@@ -70,7 +70,7 @@ export function SubjectRow({ subject, isEnrollmentEnded, onDrop, onRestore }: Su
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 gap-1 text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                            className="h-7 gap-1 text-xs text-slate-500 hover:text-primary dark:hover:text-primary"
                             onClick={() => onRestore(subject)}
                             disabled={isArchived}
                             title={isArchived ? 'Cannot restore: subject archived in curriculum' : undefined}

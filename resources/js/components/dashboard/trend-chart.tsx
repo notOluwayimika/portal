@@ -8,11 +8,11 @@ interface TrendChartProps {
     fullSize?: boolean;
 }
 
-export function TrendChart({ data, label, color = '#185FA5', fullSize = false }: TrendChartProps) {
+export function TrendChart({ data, label, color = '#2c197a', fullSize = false }: TrendChartProps) {
     if (data.length === 0) {
         return (
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-900 mb-2">{label}</p>
+            <div className="bg-white border border-slate-200 rounded-lg p-4 dark:bg-slate-900 dark:border-slate-700">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-2">{label}</p>
                 <p className="text-xs text-slate-400">No activity data in the last 30 days</p>
             </div>
         );
@@ -24,8 +24,8 @@ export function TrendChart({ data, label, color = '#185FA5', fullSize = false }:
     }));
 
     return (
-        <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <p className="text-sm font-medium text-slate-900 mb-3">{label}</p>
+        <div className="bg-white border border-slate-200 rounded-lg p-4 dark:bg-slate-900 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">{label}</p>
             <div className={fullSize ? 'h-52' : 'h-32'}>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={formatted}>
@@ -37,7 +37,7 @@ export function TrendChart({ data, label, color = '#185FA5', fullSize = false }:
                         </defs>
                         {fullSize && (
                             <>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" strokeOpacity={0.4} />
                                 <XAxis
                                     dataKey="dateLabel"
                                     tick={{ fontSize: 10, fill: '#94a3b8' }}

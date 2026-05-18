@@ -176,16 +176,16 @@ function CurriculumCard({
     }, [rows]);
 
     return (
-        <div className="student-result-card mb-8 overflow-hidden rounded-lg border border-slate-300">
+        <div className="student-result-card mb-8 overflow-hidden rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900">
             <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                    <h2 className="text-base font-bold text-black">
+                    <h2 className="text-base font-bold text-black dark:text-white">
                         {examName}
                     </h2>
-                    <p className="text-xs text-black">
+                    <p className="text-xs text-black dark:text-slate-300">
                         Name Of Student: {student.full_name}
                     </p>
-                    <p className="text-xs text-black">
+                    <p className="text-xs text-black dark:text-slate-300">
                         form: {student.class_details.full_class}
                     </p>
                 </div>
@@ -197,7 +197,7 @@ function CurriculumCard({
             <div className="overflow-x-auto">
                 <table className="my-4 w-full border-collapse text-sm">
                     <thead>
-                        <tr className="bg-blue-100 text-left text-black">
+                        <tr className="bg-blue-100 text-left text-black dark:bg-blue-950/30 dark:text-slate-200">
                             <th className="border border-slate-300 px-3 py-2 font-semibold">
                                 Subject
                             </th>
@@ -222,10 +222,10 @@ function CurriculumCard({
                         {rows.map((r, i) => (
                             <tr
                                 key={r.key}
-                                className={i % 2 ? 'bg-slate-50' : 'bg-white'}
+                                className={i % 2 ? 'bg-slate-50 dark:bg-slate-800' : 'bg-white dark:bg-slate-900'}
                             >
-                                <td className="border border-slate-300 px-3 py-2">
-                                    <span className="font-medium text-slate-800">
+                                <td className="border border-slate-300 px-3 py-2 dark:border-slate-600">
+                                    <span className="font-medium text-slate-800 dark:text-slate-200">
                                         {r.name}
                                     </span>
                                     {/* {r.code && (
@@ -269,7 +269,7 @@ function CurriculumCard({
                     </tbody>
                     {overall != null && (
                         <tfoot>
-                            <tr className="bg-blue-50 font-semibold text-black">
+                            <tr className="bg-blue-50 font-semibold text-black dark:bg-blue-950/20 dark:text-white">
                                 <td className="border border-slate-300 px-3 py-2">
                                     Overall Average
                                 </td>
@@ -295,14 +295,14 @@ interface GradeKeyTableProps {
 
 function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
     return (
-        <div className="overflow-hidden rounded-lg border border-slate-300 shadow-sm">
+        <div className="overflow-hidden rounded-lg border border-slate-300 shadow-sm dark:border-slate-600 dark:bg-slate-900">
             <div className="bg-slate-700 px-4 py-2">
                 <h3 className="text-sm font-bold text-white">Keys</h3>
             </div>
             <div className="overflow-x-auto">
                 <table className="my-4 w-full border-collapse text-sm">
                     <thead>
-                        <tr className="bg-slate-100 text-left text-slate-700">
+                        <tr className="bg-slate-100 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             <th className="border border-slate-300 px-3 py-2 font-semibold">
                                 Grade
                             </th>
@@ -321,10 +321,10 @@ function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
                         {boundaries.map((b, i) => (
                             <tr
                                 key={b.id ?? b.grade}
-                                className={i % 2 ? 'bg-slate-50' : 'bg-white'}
+                                className={i % 2 ? 'bg-slate-50 dark:bg-slate-800' : 'bg-white dark:bg-slate-900'}
                             >
                                 <td
-                                    className={`border border-slate-300 px-3 py-2 font-bold text-black`}
+                                    className={`border border-slate-300 px-3 py-2 font-bold text-black dark:border-slate-600 dark:text-white`}
                                 >
                                     {b.grade}
                                 </td>
@@ -390,7 +390,7 @@ export default function StudentResultTable() {
                 </div>
             </div>
 
-            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800">
+            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800 dark:text-slate-200">
                 <div className="flex items-center justify-between print:hidden">
                     <button
                         className="btn btn-ghost btn-sm btn-icon cursor-pointer p-4"
@@ -421,7 +421,7 @@ export default function StudentResultTable() {
                 </div>
 
                 {curricula.length === 0 && (
-                    <p className="rounded border border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    <p className="rounded border border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
                         No results to display, once the results are available
                         you will be able to view them here.
                     </p>

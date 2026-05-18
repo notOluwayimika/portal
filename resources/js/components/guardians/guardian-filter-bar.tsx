@@ -114,7 +114,7 @@ export function GuardianFilterBar({
                     <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
                         placeholder="Search by name, phone, or email…"
-                        className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
+                        className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-slate-700 dark:bg-slate-900"
                         defaultValue={search}
                         onChange={(e) => handleSearch(e.target.value)}
                     />
@@ -122,7 +122,7 @@ export function GuardianFilterBar({
 
                 <div className="flex items-center gap-2 sm:ml-auto">
                     {activeCount > 0 && (
-                        <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-indigo-50 px-1.5 text-[10px] font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+                        <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary dark:bg-primary/10 dark:text-primary">
                             {activeCount} active
                         </span>
                     )}
@@ -133,7 +133,7 @@ export function GuardianFilterBar({
                             size="sm"
                             variant="ghost"
                             onClick={clearAll}
-                            className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                         >
                             <X className="mr-1 h-3.5 w-3.5" />
                             Clear

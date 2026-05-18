@@ -250,8 +250,8 @@ export default function ScoreEntryPage({
 
             <div className="mx-auto max-w-7xl space-y-6 p-6">
                 {/* Header */}
-                <div className="rounded-lg border bg-white p-5 shadow-sm">
-                    <h1 className="text-xl font-semibold text-gray-900">
+                <div className="rounded-lg border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                         {cs.subject?.name}
                     </h1>
                     <p className="mt-1 text-sm text-gray-600">
@@ -274,7 +274,7 @@ export default function ScoreEntryPage({
                         placeholder="Search by name or admission number…"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        className="w-72 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        className="w-72 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
                     />
                     <div className="flex items-center gap-4 text-xs text-gray-500">
                         <Legend status="saving" label="Saving" />
@@ -284,30 +284,30 @@ export default function ScoreEntryPage({
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50 dark:bg-slate-800">
                             <tr>
-                                <th className="sticky left-0 z-10 w-64 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700">
+                                <th className="sticky left-0 z-10 w-64 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 dark:bg-slate-800 dark:text-slate-300">
                                     Student
                                 </th>
                                 {markingComponents?.map((mc) => (
                                     <th
                                         key={mc.id}
-                                        className="px-3 py-3 text-left font-medium text-gray-700"
+                                        className="px-3 py-3 text-left font-medium text-gray-700 dark:text-slate-300"
                                     >
                                         <div>{mc.name}</div>
-                                        <div className="text-xs font-normal text-gray-500">
+                                        <div className="text-xs font-normal text-gray-500 dark:text-slate-400">
                                             / {maxForComponent(mc)}
                                         </div>
                                     </th>
                                 ))}
-                                <th className="px-3 py-3 text-right font-medium text-gray-700">
+                                <th className="px-3 py-3 text-right font-medium text-gray-700 dark:text-slate-300">
                                     Total
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {filteredStudents?.length === 0 && (
                                 <tr>
                                     <td
@@ -324,9 +324,9 @@ export default function ScoreEntryPage({
                                 );
 
                                 return (
-                                    <tr key={s.id} className="hover:bg-gray-50">
-                                        <td className="sticky left-0 z-10 w-64 bg-white px-4 py-2 align-middle">
-                                            <div className="font-medium text-gray-900">
+                                    <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                        <td className="sticky left-0 z-10 w-64 bg-white px-4 py-2 align-middle dark:bg-slate-900">
+                                            <div className="font-medium text-gray-900 dark:text-white">
                                                 {fullName(
                                                     s.student_curriculum
                                                         .student,
@@ -381,7 +381,7 @@ export default function ScoreEntryPage({
                                                 </td>
                                             );
                                         })}
-                                        <td className="px-3 py-2 text-right font-semibold text-gray-900">
+                                        <td className="px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
                                             {total === null ? (
                                                 <span className="text-gray-400">
                                                     —
@@ -424,7 +424,7 @@ function ScoreCell({
               ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500'
               : cell.status === 'saved'
                 ? 'border-green-400 focus:border-green-500 focus:ring-green-500'
-                : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500';
+                : 'border-gray-300 focus:border-primary focus:ring-primary';
 
     return (
         <div className="relative">

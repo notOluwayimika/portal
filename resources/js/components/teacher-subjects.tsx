@@ -422,7 +422,9 @@ interface SubjectCardProps {
 
 function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
-    const components = tcs.curriculum_subject.marking_components;
+
+    const components = tcs.curriculum_subject?.marking_components;
+    console.log(tcs);
 
     const handleAdd = async (name: string, weight: number) => {
         try {

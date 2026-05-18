@@ -31,19 +31,20 @@ class TeacherController extends Controller
     public function __construct(
         protected TeacherService $teacherService,
         protected FileUploadService $fileUploadService,
-    ) {}
+    ) {
+    }
 
     public function index(Request $request)
     {
         $teachers = $this->teacherService->paginate($request);
 
         return response()->json([
-            'data'       => TeacherResource::collection($teachers),
+            'data' => TeacherResource::collection($teachers),
             'pagination' => [
-                'total'         => $teachers->total(),
-                'per_page'      => $teachers->perPage(),
-                'current_page'  => $teachers->currentPage(),
-                'last_page'     => $teachers->lastPage(),
+                'total' => $teachers->total(),
+                'per_page' => $teachers->perPage(),
+                'current_page' => $teachers->currentPage(),
+                'last_page' => $teachers->lastPage(),
                 'prev_page_url' => $teachers->previousPageUrl(),
                 'next_page_url' => $teachers->nextPageUrl(),
             ],
@@ -64,15 +65,15 @@ class TeacherController extends Controller
 
     public function import(ImportTeacherRequest $request)
     {
-        $data     = $request->validated();
+        $data = $request->validated();
         $schoolId = session('school_id') ?? $request->user()->school_id;
-        $result   = $this->teacherService->import($data['teachers'], $schoolId);
+        $result = $this->teacherService->import($data['teachers'], $schoolId);
 
         if (!empty($result['errors'])) {
             return response()->json([
                 'message' => "{$result['saved']} teacher(s) imported. " . count($result['errors']) . ' row(s) had errors and were skipped.',
-                'saved'   => $result['saved'],
-                'errors'  => $result['errors'],
+                'saved' => $result['saved'],
+                'errors' => $result['errors'],
             ], 422);
         }
 
@@ -122,19 +123,19 @@ class TeacherController extends Controller
             ->get();
 
         $curriculaOptions = $curricula->map(fn($curriculum) => [
-            'id'         => $curriculum->id,
-            'uuid'       => $curriculum->uuid,
-            'term'       => $curriculum->term?->order,
-            'term_name'  => $curriculum->term?->name,
+            'id' => $curriculum->id,
+            'uuid' => $curriculum->uuid,
+            'term' => $curriculum->term?->order,
+            'term_name' => $curriculum->term?->name,
             'class_level' => $curriculum->classLevelArm?->classLevel?->name,
-            'arm'        => $curriculum->classLevelArm?->arm?->label,
-            'stream'     => $curriculum->classLevelArm?->stream?->name,
+            'arm' => $curriculum->classLevelArm?->arm?->label,
+            'stream' => $curriculum->classLevelArm?->stream?->name,
         ]);
 
         return Response::success([
             'curricula' => $curriculaOptions,
-            'genders'   => GenderTypeEnum::options(),
-            'statuses'  => TeacherStatusEnum::options(),
+            'genders' => GenderTypeEnum::options(),
+            'statuses' => TeacherStatusEnum::options(),
         ]);
     }
 
@@ -147,7 +148,8 @@ class TeacherController extends Controller
                 'curriculumSubject.curriculum.classLevelArm.arm',
                 'curriculumSubject.curriculum.classLevelArm.stream',
                 'curriculumSubject.curriculum.term',
-                'curriculumSubject.studentAssignments'
+                'curriculumSubject.studentAssignments',
+                'curriculumSubject.markingComponents'
             ])
             ->get();
 
@@ -173,7 +175,7 @@ class TeacherController extends Controller
         }
 
         $assignment = TeacherCurriculumSubject::create([
-            'teacher_id'            => $teacher->id,
+            'teacher_id' => $teacher->id,
             'curriculum_subject_id' => $curriculumSubject->id,
         ]);
 
@@ -196,14 +198,14 @@ class TeacherController extends Controller
     public function curriculumSubjects(Curriculum $curriculum)
     {
         $subjects = $curriculum->curriculumSubjects()
-            ->with('subject')
+            ->with(['subject', 'markingComponents'])
             ->orderBy('display_order')
             ->get();
 
         return Response::success($subjects->map(fn($cs) => [
-            'id'            => $cs->uuid,
-            'subject_name'  => $cs->subject?->name,
-            'subject_code'  => $cs->subject?->code,
+            'id' => $cs->uuid,
+            'subject_name' => $cs->subject?->name,
+            'subject_code' => $cs->subject?->code,
             'is_compulsory' => $cs->is_compulsory,
             'display_order' => $cs->display_order,
         ]));

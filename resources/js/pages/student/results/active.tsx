@@ -400,13 +400,15 @@ export default function StudentResultTable() {
                     >
                         ← Go back
                     </button>
-                    <button
-                        type="button"
-                        onClick={handlePrint}
-                        className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-800"
-                    >
-                        Print / Save as PDF
-                    </button>
+                    {curricula.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={handlePrint}
+                            className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-800"
+                        >
+                            Print / Save as PDF
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex items-center justify-center">
@@ -420,7 +422,8 @@ export default function StudentResultTable() {
 
                 {curricula.length === 0 && (
                     <p className="rounded border border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                        No student curricula to display.
+                        No results to display, once the results are available
+                        you will be able to view them here.
                     </p>
                 )}
                 <div className="space-y-8">

@@ -400,6 +400,24 @@ export default function StudentCurriculaPage({
                                                         Promote
                                                     </button>
                                                 )}
+                                                {sc.status === 'active' &&
+                                                    (role === 'admin' ||
+                                                        role ===
+                                                            'head_of_school') && (
+                                                        <Link
+                                                            disabled={
+                                                                busy ||
+                                                                sc.status !==
+                                                                    'active' ||
+                                                                eligible.length ===
+                                                                    0
+                                                            }
+                                                            href={`/setup/student-curricula/${sc.id}/subjects`}
+                                                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                                                        >
+                                                            Manage Subjects
+                                                        </Link>
+                                                    )}
                                             </div>
 
                                             {err && (

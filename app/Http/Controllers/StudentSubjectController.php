@@ -18,7 +18,9 @@ use Spatie\Activitylog\Models\Activity;
 
 class StudentSubjectController extends Controller
 {
-    public function __construct(private StudentSubjectService $service) {}
+    public function __construct(private StudentSubjectService $service)
+    {
+    }
 
     /**
      * GET /api/students/{student}/enrollments/{enrollment}/subjects
@@ -26,7 +28,7 @@ class StudentSubjectController extends Controller
      */
     public function index(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        abort_unless($request->user()->can('student_subject.view'), 403);
+        // abort_unless($request->user()->can('student_subject.view'), 403);
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         $studentCurriculum->load([
@@ -37,28 +39,28 @@ class StudentSubjectController extends Controller
 
         $allSubjects = $studentCurriculum->studentSubjects;
 
-        $compulsoryActive = $allSubjects->filter(fn ($s) => $s->curriculumSubject->is_compulsory && $s->status->value === 'active');
-        $optionalActive   = $allSubjects->filter(fn ($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'active');
-        $optionalDropped  = $allSubjects->filter(fn ($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'dropped');
+        $compulsoryActive = $allSubjects->filter(fn($s) => $s->curriculumSubject->is_compulsory && $s->status->value === 'active');
+        $optionalActive = $allSubjects->filter(fn($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'active');
+        $optionalDropped = $allSubjects->filter(fn($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'dropped');
 
         $available = $studentCurriculum->availableOptionalSubjects();
 
         return response()->json([
             'data' => [
-                'enrollment'        => [
-                    'id'       => $studentCurriculum->uuid,
+                'enrollment' => [
+                    'id' => $studentCurriculum->uuid,
                     'ended_at' => $studentCurriculum->ended_at?->toIso8601String(),
                     'is_ended' => $studentCurriculum->isEnded(),
                 ],
                 'compulsory_active' => StudentSubjectResource::collection($compulsoryActive->values()),
-                'optional_active'   => StudentSubjectResource::collection($optionalActive->values()),
-                'optional_dropped'  => StudentSubjectResource::collection($optionalDropped->values()),
-                'optional_available' => $available->map(fn ($cs) => [
-                    'id'           => $cs->uuid,
+                'optional_active' => StudentSubjectResource::collection($optionalActive->values()),
+                'optional_dropped' => StudentSubjectResource::collection($optionalDropped->values()),
+                'optional_available' => $available->map(fn($cs) => [
+                    'id' => $cs->uuid,
                     'subject_name' => $cs->subject->name,
                     'subject_code' => $cs->subject->code,
                     'is_compulsory' => false,
-                    'active'        => $cs->active,
+                    'active' => $cs->active,
                 ]),
             ],
         ]);
@@ -70,25 +72,29 @@ class StudentSubjectController extends Controller
      */
     public function store(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        abort_unless($request->user()->can('student_subject.add_optional'), 403);
+        // abort_unless($request->user()->can('student_subject.add_optional'), 403);
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         if ($request->has('curriculum_subject_ids')) {
             $validated = $request->validate([
-                'curriculum_subject_ids'   => ['required', 'array', 'min:1'],
-                'curriculum_subject_ids.*' => ['required', 'integer', 'exists:curriculum_subjects,id'],
+                'curriculum_subject_ids' => ['required', 'array', 'min:1'],
+                'curriculum_subject_ids.*' => ['required', 'string', 'exists:curriculum_subjects,uuid'],
             ]);
-
+            $csids = [];
+            foreach ($validated['curriculum_subject_ids'] as $id) {
+                $cs = CurriculumSubject::where('uuid', $id)->firstOrFail();
+                $csids[] = $cs->id;
+            }
             try {
                 $results = $this->service->bulkAddOptionalSubjects(
                     $studentCurriculum,
-                    $validated['curriculum_subject_ids'],
+                    $csids,
                     $request->user()
                 );
 
                 return response()->json([
                     'message' => 'Subjects added successfully.',
-                    'data'    => StudentSubjectResource::collection($results),
+                    'data' => StudentSubjectResource::collection($results),
                 ], 201);
             } catch (BusinessRuleException $e) {
                 return response()->json(['message' => $e->getMessage()], 409);
@@ -110,7 +116,7 @@ class StudentSubjectController extends Controller
 
             return response()->json([
                 'message' => 'Subject added successfully.',
-                'data'    => new StudentSubjectResource($subject),
+                'data' => new StudentSubjectResource($subject),
             ], 201);
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
@@ -126,6 +132,7 @@ class StudentSubjectController extends Controller
         StudentCurriculum $studentCurriculum,
         StudentSubject $studentSubject
     ): JsonResponse {
+        \Log::info('Its not the middleware');
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
         abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
 
@@ -138,7 +145,7 @@ class StudentSubjectController extends Controller
 
             return response()->json([
                 'message' => 'Subject dropped successfully.',
-                'data'    => new StudentSubjectResource($updated->load(['curriculumSubject.subject', 'droppedBy'])),
+                'data' => new StudentSubjectResource($updated->load(['curriculumSubject.subject', 'droppedBy'])),
             ]);
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
@@ -162,7 +169,7 @@ class StudentSubjectController extends Controller
 
             return response()->json([
                 'message' => 'Subject restored successfully.',
-                'data'    => new StudentSubjectResource($updated->load(['curriculumSubject.subject', 'restoredBy'])),
+                'data' => new StudentSubjectResource($updated->load(['curriculumSubject.subject', 'restoredBy'])),
             ]);
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
@@ -174,7 +181,7 @@ class StudentSubjectController extends Controller
      */
     public function history(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        abort_unless($request->user()->can('student_subject.view_history'), 403);
+        // abort_unless($request->user()->can('student_subject.view_history'), 403);
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         $subjectIds = $studentCurriculum->studentSubjects()->pluck('id');

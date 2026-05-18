@@ -12,9 +12,11 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __construct(private readonly DashboardAnalysisService $analysisService) {}
+    public function __construct(private readonly DashboardAnalysisService $analysisService)
+    {
+    }
 
-    public function show(Request $request): Response
+    public function show(Request $request)
     {
         $school = $this->resolveSchool($request);
 
@@ -24,6 +26,10 @@ class DashboardController extends Controller
 
         $widgets = $school ? $this->selectWidgets($analysis) : [];
         $onboarding = $this->buildOnboardingState($analysis);
+
+        if (auth()->user()->hasRole('guardian')) {
+            return redirect('/parent/dashboard');
+        }
 
         return Inertia::render('dashboard', [
             'analysis' => $analysis,

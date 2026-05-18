@@ -39,7 +39,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user() ? $request->user()->load('teacher') : null,
+                'user' => $request->user() ? $request->user()->load(['teacher', 'guardian']) : null,
                 'school' => $request->user() ? $request->user()->school->load('currentSession') : null,
                 'roles' => $request->user() ? $request->user()->getRoleNames() : [],
                 'rolesFull' => $request->user() ? $request->user()->roles : [],

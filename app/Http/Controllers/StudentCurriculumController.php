@@ -22,7 +22,9 @@ use Illuminate\Support\Facades\DB;
 
 class StudentCurriculumController extends Controller
 {
-    public function __construct(private CurriculumEnrollmentService $enrollmentService) {}
+    public function __construct(private CurriculumEnrollmentService $enrollmentService)
+    {
+    }
 
     /**
      * PATCH /api/students/{student}/enrollments/{studentCurriculum}/end
@@ -47,7 +49,7 @@ class StudentCurriculumController extends Controller
 
             return response()->json([
                 'message' => 'Enrollment ended successfully.',
-                'data'    => new StudentCurriculumResource($enrollment),
+                'data' => new StudentCurriculumResource($enrollment),
             ]);
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
@@ -123,18 +125,12 @@ class StudentCurriculumController extends Controller
         );
 
         [$from, $new] = DB::transaction(function () use ($student, $from, $target) {
-            $subjects = $target->curriculumSubjects;
+
             $new = StudentCurriculum::create([
                 'student_id' => $student->id,
                 'curriculum_id' => $target->id,
                 'status' => 'active',
             ]);
-            foreach ($subjects as $subject) {
-                StudentSubject::create([
-                    'student_curriculum_id' => $new->id,
-                    'curriculum_subject_id' => $subject->id,
-                ]);
-            }
 
             $from->update([
                 'status' => StudentStatusEnum::PROMOTED,
@@ -186,14 +182,6 @@ class StudentCurriculumController extends Controller
                 'curriculum_id' => $target->id,
                 'status' => 'active',
             ]);
-            $subjects = $target->curriculumSubjects;
-
-            foreach ($subjects as $subject) {
-                StudentSubject::create([
-                    'student_curriculum_id' => $sc->id,
-                    'curriculum_subject_id' => $subject->id,
-                ]);
-            }
             $sc->load(['curriculum.examType', 'curriculum.classLevelArm.classLevel', 'curriculum.academicSession', 'promotedTo']);
 
             return response()->json([

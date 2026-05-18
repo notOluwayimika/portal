@@ -1,11 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
-import type { Student, StudentSubject, StudentSubjectsGrouped } from '@/types/models';
 import axios from 'axios';
 import { BookOpen, ChevronDown, Clock, History, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import type {
+    Student,
+    StudentCurriculum,
+    StudentSubject,
+    StudentSubjectsGrouped,
+} from '@/types/models';
 import { AddSubjectsModal } from './add-subjects-modal';
 import { DropSubjectModal } from './drop-subject-modal';
 import { RestoreSubjectModal } from './restore-subject-modal';
@@ -14,9 +19,13 @@ import { SubjectListGroup } from './subject-list-group';
 
 interface StudentSubjectsSectionProps {
     student: Student;
+    studentCurriculum?: StudentCurriculum | null;
 }
 
-export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps) {
+export function StudentSubjectsSection({
+    student,
+    studentCurriculum = null,
+}: StudentSubjectsSectionProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [grouped, setGrouped] = useState<StudentSubjectsGrouped | null>(null);
@@ -24,22 +33,30 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
 
     const [addOpen, setAddOpen] = useState(false);
     const [dropSubject, setDropSubject] = useState<StudentSubject | null>(null);
-    const [restoreSubject, setRestoreSubject] = useState<StudentSubject | null>(null);
+    const [restoreSubject, setRestoreSubject] = useState<StudentSubject | null>(
+        null,
+    );
     const [historyOpen, setHistoryOpen] = useState(false);
 
     // Use the first active enrollment (ended_at IS NULL).
     const enrollments = student.student_curricula ?? [];
-    const activeEnrollment = enrollments.find((e) => !e.ended_at) ?? enrollments[0];
-    const enrollmentId = activeEnrollment?.id;
+    const activeEnrollment =
+        enrollments.find((e) => !e.ended_at) ?? enrollments[0];
+    const enrollmentId = studentCurriculum
+        ? studentCurriculum.id
+        : activeEnrollment?.id;
 
     async function fetchSubjects() {
-        if (!enrollmentId) return;
+        if (!enrollmentId) {
+            return;
+        }
+
         setLoading(true);
         setError(null);
 
         try {
             const res = await axios.get(
-                `/api/students/${student.id}/enrollments/${enrollmentId}/subjects`
+                `/api/students/${student.id}/enrollments/${studentCurriculum ? studentCurriculum.id : enrollmentId}/subjects`,
             );
             setGrouped(res.data?.data ?? null);
         } catch {
@@ -63,7 +80,9 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-sm text-slate-400">No curriculum enrollment found.</p>
+                    <p className="text-sm text-slate-400">
+                        No curriculum enrollment found.
+                    </p>
                 </CardContent>
             </Card>
         );
@@ -71,7 +90,8 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
 
     const isEnded = grouped?.enrollment?.is_ended ?? false;
     const activeCount =
-        (grouped?.compulsory_active.length ?? 0) + (grouped?.optional_active.length ?? 0);
+        (grouped?.compulsory_active.length ?? 0) +
+        (grouped?.optional_active.length ?? 0);
     const droppedCount = grouped?.optional_dropped.length ?? 0;
 
     const autoHideDropped = droppedCount > 3;
@@ -109,7 +129,9 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
                         <div className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                             <Clock className="h-3.5 w-3.5 shrink-0" />
                             This enrollment ended on{' '}
-                            {new Date(grouped.enrollment.ended_at).toLocaleDateString(undefined, {
+                            {new Date(
+                                grouped.enrollment.ended_at,
+                            ).toLocaleDateString(undefined, {
                                 day: 'numeric',
                                 month: 'long',
                                 year: 'numeric',
@@ -125,14 +147,17 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
                     )}
 
                     {error && (
-                        <p className="py-4 text-center text-sm text-red-500">{error}</p>
+                        <p className="py-4 text-center text-sm text-red-500">
+                            {error}
+                        </p>
                     )}
 
                     {!loading && !error && grouped && (
                         <>
                             {grouped.compulsory_active.length === 0 && (
                                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
-                                    This curriculum has no compulsory subjects. Verify the curriculum setup.
+                                    This curriculum has no compulsory subjects.
+                                    Verify the curriculum setup.
                                 </div>
                             )}
 
@@ -153,7 +178,7 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
                                 {droppedCount > 0 && (
                                     <div>
                                         <div className="flex items-center justify-between px-3 pb-1">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            <p className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
                                                 Optional — Dropped
                                             </p>
                                             {autoHideDropped && (
@@ -161,9 +186,15 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
                                                     variant="ghost"
                                                     size="sm"
                                                     className="h-6 gap-1 text-[10px] text-slate-400"
-                                                    onClick={() => setShowDropped((v) => !v)}
+                                                    onClick={() =>
+                                                        setShowDropped(
+                                                            (v) => !v,
+                                                        )
+                                                    }
                                                 >
-                                                    {showDropped ? 'Hide' : `Show (${droppedCount})`}
+                                                    {showDropped
+                                                        ? 'Hide'
+                                                        : `Show (${droppedCount})`}
                                                     <ChevronDown
                                                         className={`h-3 w-3 transition-transform ${showDropped ? 'rotate-180' : ''}`}
                                                     />
@@ -173,15 +204,23 @@ export function StudentSubjectsSection({ student }: StudentSubjectsSectionProps)
 
                                         {(!autoHideDropped || showDropped) && (
                                             <div className="space-y-0.5">
-                                                {grouped.optional_dropped.map((subject) => (
-                                                    <SubjectListGroup
-                                                        key={subject.id}
-                                                        title=""
-                                                        subjects={[subject]}
-                                                        isEnrollmentEnded={isEnded}
-                                                        onRestore={(s) => setRestoreSubject(s)}
-                                                    />
-                                                ))}
+                                                {grouped.optional_dropped.map(
+                                                    (subject) => (
+                                                        <SubjectListGroup
+                                                            key={subject.id}
+                                                            title=""
+                                                            subjects={[subject]}
+                                                            isEnrollmentEnded={
+                                                                isEnded
+                                                            }
+                                                            onRestore={(s) =>
+                                                                setRestoreSubject(
+                                                                    s,
+                                                                )
+                                                            }
+                                                        />
+                                                    ),
+                                                )}
                                             </div>
                                         )}
                                     </div>

@@ -6,6 +6,7 @@ use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
+use App\Http\Controllers\GuardianController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
@@ -127,16 +128,16 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::prefix('students/{student:uuid}/enrollments/{studentCurriculum:uuid}')
         ->withoutScopedBindings()
         ->group(function () {
-            Route::get('subjects',                                          [StudentSubjectController::class, 'index']);
-            Route::post('subjects',                                         [StudentSubjectController::class, 'store']);
-            Route::patch('subjects/{studentSubject:uuid}/drop',             [StudentSubjectController::class, 'drop']);
-            Route::patch('subjects/{studentSubject:uuid}/restore',          [StudentSubjectController::class, 'restore']);
-            Route::get('subjects/history',                                  [StudentSubjectController::class, 'history']);
-            Route::patch('end',                                             [StudentCurriculumController::class, 'unenroll']);
+            Route::get('subjects', [StudentSubjectController::class, 'index']);
+            Route::post('subjects', [StudentSubjectController::class, 'store']);
+            Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop']);
+            Route::patch('subjects/{studentSubject:uuid}/restore', [StudentSubjectController::class, 'restore']);
+            Route::get('subjects/history', [StudentSubjectController::class, 'history']);
+            Route::patch('end', [StudentCurriculumController::class, 'unenroll']);
         });
 
     // curriculum subject archival
-    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive',   [CurriculumSubjectController::class, 'archive']);
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive', [CurriculumSubjectController::class, 'archive']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
@@ -164,4 +165,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
+    // protected guardian routes
+    Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
 });

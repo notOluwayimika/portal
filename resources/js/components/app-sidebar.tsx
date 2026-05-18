@@ -94,6 +94,11 @@ const guardianNavGroups: NavGroup[] = [
                 href: '/parent/dashboard',
                 icon: LayoutDashboard,
             },
+            {
+                title: 'My Wards',
+                href: '/parent/wards',
+                icon: Users,
+            },
         ],
     },
 ];

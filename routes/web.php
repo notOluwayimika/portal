@@ -38,6 +38,8 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
 
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/school-setup')->name('setup');
+
+    // Route::get('setup/')
     Route::get('setup/curricula/{curriculum:uuid}', function (Curriculum $curriculum) {
         return Inertia::render('admin/curriculum/show', [
             'curriculum' => new CurriculumResource($curriculum),
@@ -138,13 +140,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         ]);
     })->name('setup.review.results');
 
-    // student curricula
-    Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
-        $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo']);
-        return Inertia::render('admin/student-curricula/index', [
-            'student' => new StudentResource($student),
-        ]);
-    })->name('setup.studentCurricula.index');
+
 
 });
 
@@ -167,19 +163,45 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
         ]);
     })->name('setup.curriculumSubjects.show');
 
+    // student curricula
+    Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
+        $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo', 'studentCurricula.curriculum.term']);
+
+        return Inertia::render('admin/student-curricula/index', [
+            'student' => new StudentResource($student),
+        ]);
+    })->name('setup.studentCurricula.index');
+
+    Route::get('setup/student-curricula/{studentCurriculum:uuid}/subjects', function (StudentCurriculum $studentCurriculum) {
+        $studentCurriculum->load(['student']);
+
+        return Inertia::render('admin/student-curricula/show', [
+            'student' => new StudentResource($studentCurriculum->student),
+            'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
+        ]);
+    })->name('setup.studentCurricula.index');
+
 
 });
 
 Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->group(function () {
     Route::get('students/{student:uuid}/results/active', function (Student $student) {
-        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject'])->where('student_id', $student->id)->where('status', 'active')->get();
+        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject', 'curriculum.term'])->where('student_id', $student->id)->where('status', 'active')->get();
 
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
-        // return response()->json([
-        //     'student' => new StudentResource($student),
-        //     'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
-        //     'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
-        // ]);
+
+        if (auth()->user()->hasRole('guardian')) {
+
+            $studentCurricula = $studentCurricula->filter(function ($studentCurriculum) {
+
+                $deadline = $studentCurriculum?->curriculum?->term?->result_visible_at;
+                if (is_null($deadline)) {
+                    return true;
+                }
+
+                return now()->greaterThan($deadline);
+            })->values();
+        }
         return Inertia::render('student/results/active', [
             'student' => new StudentResource($student),
             'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
@@ -190,11 +212,18 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
         $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject'])->where('student_id', $student->id)->where('id', $studentCurriculum->id)->get();
 
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
-        // return response()->json([
-        //     'student' => new StudentResource($student),
-        //     'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
-        //     'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
-        // ]);
+        if (auth()->user()->hasRole('guardian')) {
+
+            $studentCurricula = $studentCurricula->filter(function ($studentCurriculum) {
+
+                $deadline = $studentCurriculum?->curriculum?->term?->result_visible_at;
+                if (is_null($deadline)) {
+                    return true;
+                }
+
+                return now()->greaterThan($deadline);
+            })->values();
+        }
         return Inertia::render('student/results/active', [
             'student' => new StudentResource($student),
             'studentCurricula' => StudentCurriculumResource::collection($studentCurricula),
@@ -205,6 +234,7 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
 
 Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
     Route::inertia('parent/dashboard', 'parent/dashboard')->name('parent.dashboard');
+    Route::inertia('parent/wards', 'parent/wards')->name('parent.wards');
 });
 
 

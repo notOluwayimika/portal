@@ -6,6 +6,8 @@ use App\Enums\GenderTypeEnum;
 use App\Enums\TeacherStatusEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class TeacherRequest extends FormRequest
 {
@@ -45,5 +47,14 @@ class TeacherRequest extends FormRequest
             'status'        => [$isUpdate ? 'sometimes' : 'nullable', 'string', Rule::enum(TeacherStatusEnum::class)],
             'photo'         => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
         ];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        throw new HttpResponseException(response()->json([
+            'status' => 'error',
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422));
     }
 }

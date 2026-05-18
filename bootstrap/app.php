@@ -132,7 +132,14 @@ return Application::configure(basePath: dirname(__DIR__))
         |----------------------------------------------------
         */
         $exceptions->renderable(function (QueryException $e) {
-            return handleDatabase($e);
+            $code = $e->errorInfo[1] ?? null;
+
+            return match ($code) {
+                23000   => response()->conflict('Duplicate entry detected'),
+                547     => response()->error('Record has dependencies'),
+                '40001' => response()->error('Transaction conflict, retry'),
+                default => response()->error('Database error'),
+            };
         });
 
         /*
@@ -156,21 +163,3 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })->create();
 
-/*
-|--------------------------------------------------------
-| DB handler helper (kept outside for clarity)
-|--------------------------------------------------------
-*/
-if (! function_exists('handleDatabase')) {
-    function handleDatabase(QueryException $e)
-    {
-        $code = $e->errorInfo[1] ?? null;
-
-        return match ($code) {
-            23000 => response()->conflict('Duplicate entry detected'),
-            547 => response()->error('Record has dependencies'),
-            '40001' => response()->error('Transaction conflict, retry'),
-            default => response()->error('Database error'),
-        };
-    }
-}

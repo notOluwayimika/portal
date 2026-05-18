@@ -11,6 +11,7 @@
 
 namespace App\Services;
 
+use App\Enums\StudentStatusEnum;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Curriculum;
 use App\Models\Student;
@@ -27,7 +28,7 @@ class CurriculumEnrollmentService
     public function enroll(
         Student $student,
         Curriculum $curriculum,
-        User $performedBy,
+        User $_performedBy,
         array $options = []
     ): StudentCurriculum {
         if ($curriculum->school_id !== $student->school_id) {
@@ -47,7 +48,7 @@ class CurriculumEnrollmentService
             $enrollment = StudentCurriculum::create([
                 'student_id'     => $student->id,
                 'curriculum_id'  => $curriculum->id,
-                'status'         => $options['status'] ?? null,
+                'status'         => $options['status'] ?? StudentStatusEnum::ACTIVE,
                 'promoted_to_id' => $options['promoted_to_id'] ?? null,
             ]);
 

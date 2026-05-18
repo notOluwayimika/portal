@@ -4,11 +4,13 @@
 // Inline expand → manage marking_components for that subject.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type {
     MarkingComponent,
+    Teacher,
     TeacherCurriculumSubject,
 } from '@/types/models';
 // import { fmtDate } from '@/helpers';
@@ -17,12 +19,18 @@ import type {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-const termLabel = (t: number) => ['', '1st', '2nd', '3rd'][t] ?? String(t);
+const termLabel = (t: { name: string } | number) => {
+    if (typeof t === 'object') {
+        return t.name;
+    }
+
+    return ['', '1st', '2nd', '3rd'][t] ?? String(t);
+};
 
 const pct = (w: number) => `${Math.round(w * 100)}%`;
 
 function totalWeight(components: MarkingComponent[]) {
-    return components.reduce((s, c) => s + Number(c.weight), 0);
+    return components.reduce((s, c) => s + Number(c?.weight ?? '0'), 0);
 }
 
 function WeightBar({ components }: { components: MarkingComponent[] }) {
@@ -414,7 +422,9 @@ interface SubjectCardProps {
 
 function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
-    const components = tcs.curriculum_subject.marking_components;
+
+    const components = tcs.curriculum_subject?.marking_components;
+    console.log(tcs);
 
     const handleAdd = async (name: string, weight: number) => {
         try {
@@ -422,7 +432,7 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                 `/api/curriculum-subjects/${tcs.curriculum_subject.id}/marking-components`,
                 { name, weight },
             );
-            const created: MarkingComponent = res.data.marking_component;
+            const created: MarkingComponent = res.data.data;
             onComponentsChange(tcs.curriculum_subject.id, [
                 ...components,
                 created,
@@ -439,7 +449,7 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                 name,
                 weight,
             });
-            const updated: MarkingComponent = res.data.marking_component;
+            const updated: MarkingComponent = res.data.data;
             onComponentsChange(
                 tcs.curriculum_subject.id,
                 components.map((c) => (c.id === id ? updated : c)),
@@ -452,12 +462,19 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
 
     const handleDelete = async (id: string) => {
         try {
-            await axios.delete(`/api/marking-components/${id}`);
-            onComponentsChange(
-                tcs.curriculum_subject.id,
-                components.filter((c) => c.id !== id),
+            const response = await axios.delete(
+                `/api/marking-components/${id}`,
             );
-            addToast('Component removed', 'success');
+
+            if (response.status === 200) {
+                onComponentsChange(
+                    tcs.curriculum_subject.id,
+                    components.filter((c) => c.id !== id),
+                );
+                addToast('Component removed', 'success');
+            } else {
+                addToast('Failed to delete component', 'error');
+            }
         } catch {
             addToast('Failed to delete component', 'error');
         }
@@ -525,6 +542,13 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                                 {tcs.curriculum_subject.subject.code}
                             </span>
                         )}
+                        {tcs.curriculum_subject.students &&
+                            tcs.curriculum_subject.students.length > 0 && (
+                                <span className="code-tag">
+                                    {tcs.curriculum_subject.students.length}{' '}
+                                    students
+                                </span>
+                            )}
                     </div>
                     <div
                         style={{
@@ -603,6 +627,26 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                     {components.length > 0 && (
                         <WeightBar components={components} />
                     )}
+                    {/* view details for a single tcs */}
+                    {(tcs?.curriculum_subject?.students?.length ?? 0) > 0 &&
+                        (tcs?.curriculum_subject?.marking_components?.length ??
+                            0) > 0 &&
+                        Math.ceil(
+                            (components ?? []).reduce(
+                                (sum, component) =>
+                                    sum + Number(component?.weight ?? 0),
+                                0,
+                            ) * 100,
+                        ) === 100 && (
+                            <div className="my-2 flex justify-end">
+                                <Link
+                                    className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"
+                                    href={`/setup/curriculum-subject/${c.id}`}
+                                >
+                                    Assign Scores
+                                </Link>
+                            </div>
+                        )}
 
                     <div
                         style={{
@@ -640,6 +684,7 @@ export function TeacherSubjects({
     teacherId: string;
 }) {
     const [subjects, setSubjects] = useState<TeacherCurriculumSubject[]>([]);
+    const [teacher, setTeacher] = useState<Teacher | null>(null);
     const [fetching, setFetching] = useState(true);
     const [loading] = useState(false);
 
@@ -656,8 +701,9 @@ export function TeacherSubjects({
                 const res = await axios.get(
                     `/api/teachers/${teacherId}/subjects`,
                 );
-                console.log(res.data);
+                const response = await axios.get(`/api/teachers/${teacherId}`);
                 setSubjects(res.data ?? []);
+                setTeacher(response.data ?? null);
             } catch {
                 addToast('Failed to load subjects', 'error');
             } finally {
@@ -667,7 +713,6 @@ export function TeacherSubjects({
         fetch();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading]);
-
     // derived unique session list for filter dropdown
     const sessions = Array.from(
         new Map(
@@ -685,7 +730,13 @@ export function TeacherSubjects({
         setSubjects((prev) =>
             prev.map((s) =>
                 s.curriculum_subject.id === curriculumSubjectId
-                    ? { ...s, marking_components: components }
+                    ? {
+                          ...s,
+                          curriculum_subject: {
+                              ...s.curriculum_subject,
+                              marking_components: components,
+                          },
+                      }
                     : s,
             ),
         );
@@ -729,7 +780,7 @@ export function TeacherSubjects({
             {/* ── Header ──────────────────────────────────────────── */}
             <div className="page-hdr">
                 <div>
-                    <h1>Teacher Subjects</h1>
+                    <h1>{teacher?.full_name}'s Subjects</h1>
                     <p>
                         {subjects.length} subject
                         {subjects.length !== 1 ? 's' : ''} assigned to{' '}

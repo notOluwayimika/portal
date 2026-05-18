@@ -9,6 +9,7 @@ use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\ExamType;
 use App\Models\School;
+use App\Models\Term;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -36,24 +37,24 @@ class CurriculumSeeder extends Seeder
             })
             ->get();
 
+        $term = Term::where('academic_session_id', $session->id)
+            ->where('order', 1)
+            ->firstOrFail();
+
         foreach ($classLevelArms as $classLevelArm) {
             Curriculum::withoutGlobalScopes()->updateOrCreate(
                 [
                     'school_id' => $school->id,
-                    'academic_session_id' => $session->id,
+                    'term_id' => $term->id,
                     'class_level_arm_id' => $classLevelArm->id,
-                    'term' => 1,
                     'exam_type_id' => $examType->id,
                 ],
                 [
                     'school_id' => $school->id,
-                    'academic_session_id' => $session->id,
+                    'term_id' => $term->id,
                     'class_level_arm_id' => $classLevelArm->id,
-                    'term' => 1,
                     'exam_type_id' => $examType->id,
                     'min_subjects' => 8,
-                    'registration_deadline' => now()->addMonths(2),
-                    'result_visible_at' => now()->addMonths(4),
                     'status' => 'active',
                 ]
             );

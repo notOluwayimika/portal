@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type { ExamType, GradeBoundary } from '@/types/models';
+import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { Empty } from './school-setup';
 
 type EditingMap = Record<string, GradeBoundary>;
@@ -33,7 +34,6 @@ export function GradeBoundariesTab({
     useEffect(() => {
         const fetchBoundaries = async () => {
             if (filter) {
-                console.log(loading);
                 const response = await axios.get(
                     `/api/grade-boundaries/${filter}`,
                 );
@@ -74,6 +74,7 @@ export function GradeBoundariesTab({
             max_score: 0,
             grade: '',
             label: '',
+            grade_point: '',
         };
         setMode('add');
         setBoundaries((p) => [...p, nb]);
@@ -89,8 +90,6 @@ export function GradeBoundariesTab({
         setMode(null);
 
         try {
-            console.log(loading);
-
             setEditing((p) => {
                 const n = { ...p };
                 delete n[id];
@@ -197,7 +196,7 @@ export function GradeBoundariesTab({
                 {examTypes.map((et) => (
                     <button
                         key={et.id}
-                        className={`filter-btn${filter === et.id ? 'on' : ''}`}
+                        className={filter === et.id ? 'filter-btn on' : 'filter-btn'}
                         onClick={() => setFilter(et.id)}
                     >
                         {et.name}
@@ -218,6 +217,7 @@ export function GradeBoundariesTab({
                         <span className="grade-col-hdr">Max score</span>
                         <span className="grade-col-hdr">Grade</span>
                         <span className="grade-col-hdr">Label</span>
+                        <span className="grade-col-hdr">Grade Point</span>
                         <span></span>
                     </div>
                 </div>
@@ -305,6 +305,17 @@ export function GradeBoundariesTab({
                                                     )
                                                 }
                                             />
+                                            <input
+                                                placeholder="5.0"
+                                                value={e.grade_point}
+                                                onChange={(ev) =>
+                                                    updateEdit(
+                                                        b.id,
+                                                        'grade_point',
+                                                        ev.target.value,
+                                                    )
+                                                }
+                                            />
                                             <div
                                                 style={{
                                                     display: 'flex',
@@ -317,7 +328,7 @@ export function GradeBoundariesTab({
                                                         saveRow(b.id)
                                                     }
                                                 >
-                                                    ✓
+                                                    <Check className="h-3 w-3" />
                                                 </button>
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
@@ -325,7 +336,7 @@ export function GradeBoundariesTab({
                                                         cancelEdit(b.id)
                                                     }
                                                 >
-                                                    ✕
+                                                    <X className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </>
@@ -362,6 +373,9 @@ export function GradeBoundariesTab({
                                             <span style={{ fontSize: 13.5 }}>
                                                 {b.label}
                                             </span>
+                                            <span style={{ fontSize: 13.5 }}>
+                                                {b.grade_point}
+                                            </span>
                                             <div
                                                 style={{
                                                     display: 'flex',
@@ -372,13 +386,13 @@ export function GradeBoundariesTab({
                                                     className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() => startEdit(b)}
                                                 >
-                                                    ✏️
+                                                    <Pencil className="h-3 w-3" />
                                                 </button>
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
                                                     onClick={() => delRow(b.id)}
                                                 >
-                                                    🗑
+                                                    <Trash2 className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </>

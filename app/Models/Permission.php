@@ -2,11 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission as SpatiePermission;
 
-class Permission extends Model
+class Permission extends SpatiePermission
 {
     protected static function booted(): void
     {

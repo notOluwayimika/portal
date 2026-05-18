@@ -1,20 +1,19 @@
 <?php
-// app/Models/Student.php
 
 namespace App\Models;
 
+use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
-use App\Models\Scopes\SchoolScope;
 use App\Concerns\HasAdmissionNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
 
 class Student extends Model
 {
-    use HasAdmissionNumber, SoftDeletes, BelongsToSchool;
+    use HasAdmissionNumber, SoftDeletes, BelongsToSchool, AddUuid;
 
     protected $fillable = [
         'school_id',
@@ -25,14 +24,8 @@ class Student extends Model
         'admission_number',
         'gender',
         'date_of_birth',
-        'photo'
+        'photo_id',
     ];
-
-    protected static function booted(): void
-    {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-    }
 
     public function getRouteKeyName()
     {
@@ -43,21 +36,52 @@ class Student extends Model
     {
         return $this->belongsTo(School::class);
     }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
+
+    public function photoFile(): BelongsTo
+    {
+        return $this->belongsTo(FileUpload::class, 'photo_id');
+    }
+
     public function studentCurricula(): HasMany
     {
         return $this->hasMany(StudentCurriculum::class);
     }
+
+    public function currentCurriculum(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(StudentCurriculum::class)->where('status', \App\Enums\StudentStatusEnum::ACTIVE);
+    }
+
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
     }
+
     public function results(): HasMany
     {
         return $this->hasMany(StudentResult::class);
+    }
+
+    public function guardians(): BelongsToMany
+    {
+        return $this->belongsToMany(Guardian::class, 'guardian_student')
+            ->withPivot(['relationship', 'is_primary', 'can_login'])
+            ->withTimestamps();
+    }
+
+    public function primaryGuardian(): BelongsToMany
+    {
+        return $this->guardians()->wherePivot('is_primary', true);
+    }
+
+    public function getPhotoAttribute(): ?string
+    {
+        return $this->photoFile?->url;
     }
 
     public function getFullNameAttribute(): string
@@ -68,5 +92,22 @@ class Student extends Model
     public function getNameAttribute()
     {
         return $this->full_name;
+    }
+
+    public function getStudentClassAttribute()
+    {
+        $currentCurriculum = $this->currentCurriculum;
+
+        $classLevelArm = $currentCurriculum?->curriculum?->classLevelArm;
+        if (!$classLevelArm)
+            return null;
+
+        $className = $classLevelArm->classLevel?->name . ' ' . $classLevelArm->arm?->label;
+
+        if ($classLevelArm->stream) {
+            $className .= ' (' . $classLevelArm->stream->name . ')';
+        }
+
+        return $className;
     }
 }

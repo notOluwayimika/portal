@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { XIcon } from 'lucide-react'
 
-type ModalSize = 'sm' | 'md' | 'lg'
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '3xl' | '4xl' | '5xl' | 'full' 
 
 interface ModalProps {
     isOpen: boolean
@@ -16,6 +16,11 @@ const sizeClasses: Record<ModalSize, string> = {
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-2xl',
+    xl: 'max-w-xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    full: 'max-w-[95vw]',
 }
 
 export default function Modal({

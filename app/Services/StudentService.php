@@ -3,52 +3,115 @@
 namespace App\Services;
 
 use App\DTOs\StudentDto;
+use App\Enums\GenderTypeEnum;
+use App\Models\Curriculum;
 use App\Models\Student;
+use App\Models\StudentCurriculum;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class StudentService
 {
+    public function __construct(
+        private CurriculumEnrollmentService $enrollmentService
+    ) {}
+
     public function paginate(Request $request): LengthAwarePaginator
     {
         return Student::query()
-            ->when($request->search, fn ($q) => $q->search($request->search))
+            ->when($request->search, function ($q) use ($request) {
+                $searchTerm = '%' . $request->search . '%';
+                $q->where('first_name', 'LIKE', $searchTerm)
+                    ->orWhere('last_name', 'LIKE', $searchTerm)
+                    ->orWhere('admission_number', 'LIKE', $searchTerm);
+            })
             ->with([
-                'user:id,first_name,last_name',
-                'classrooms',
+                'photoFile',
+                'currentCurriculum.curriculum.classLevelArm.classLevel',
+                'currentCurriculum.curriculum.classLevelArm.arm',
+                'currentCurriculum.curriculum.classLevelArm.stream',
             ])
             ->latest()
-            ->paginate(50);
+            ->paginate($request->integer('per_page', 25));
     }
 
     public function store(array $attributes): Student
     {
-        return Student::create($attributes);
+        return DB::transaction(function () use ($attributes) {
+            $student = Student::create([
+                'school_id'        => $attributes['school_id'],
+                'user_id'          => $attributes['user_id'] ?? null,
+                'first_name'       => $attributes['first_name'],
+                'last_name'        => $attributes['last_name'],
+                'middle_name'      => $attributes['middle_name'] ?? null,
+                'gender'           => $attributes['gender'],
+                'date_of_birth'    => $attributes['date_of_birth'] ?? null,
+                'admission_number' => $attributes['admission_number'] ?? null,
+                'photo_id'         => $attributes['photo_id'] ?? null,
+            ]);
+
+            $curriculum = Curriculum::findOrFail($attributes['curriculum_id']);
+
+            $this->enrollmentService->enroll(
+                $student,
+                $curriculum,
+                auth()->user(),
+                [
+                    'status'         => $attributes['status'] ?? null,
+                    'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
+                ]
+            );
+
+            return $student;
+        });
     }
 
     public function show(Student $student): Student
     {
         return $student->load([
-            'user:id,first_name,last_name',
-            'classrooms:id,name',
-            'guardian:id,first_name,last_name',
-            'nextOfKin:id,first_name,last_name,phone',
-            'scores',
-            'medicalRecord',
+            'photoFile',
+            'currentCurriculum.curriculum.classLevelArm.classLevel',
+            'currentCurriculum.curriculum.classLevelArm.arm',
+            'currentCurriculum.curriculum.classLevelArm.stream',
+            'guardians.user',
+            'guardians.photoFile',
         ]);
     }
 
     public function update(Student $student, array $attributes): Student
     {
-        $student->update($attributes);
+        return DB::transaction(function () use ($student, $attributes) {
+            $student->update(array_filter([
+                'first_name' => $attributes['first_name'],
+                'last_name' => $attributes['last_name'],
+                'middle_name' => $attributes['middle_name'] ?? null,
+                'gender' => $attributes['gender'],
+                'date_of_birth' => $attributes['date_of_birth'] ?? null,
+                'admission_number' => $attributes['admission_number'] ?? $student->admission_number,
+            ], fn($v) => !is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
 
-        // if ($request->photo) {
-        //     $student->update([
-        //         'photo' => $this->uploadFile($request->photo, 'profiles')
-        //     ]);
-        // }
-        return $student;
+            if (isset($attributes['curriculum_id'])) {
+                StudentCurriculum::updateOrCreate(
+                    ['student_id' => $student->id],
+                    [
+                        'curriculum_id' => $attributes['curriculum_id'],
+                        'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
+                    ]
+                );
+            }
+
+            return $student;
+        });
+    }
+
+    public function updateStatus(Student $student, string $status): void
+    {
+        $latestCurriculum = $student->studentCurricula()->latest('id')->first();
+        if ($latestCurriculum instanceof StudentCurriculum) {
+            $latestCurriculum->update(['status' => $status]);
+        }
     }
 
     public function delete(Student $student): bool
@@ -56,73 +119,90 @@ class StudentService
         return $student->delete();
     }
 
-    public function datatable()
+    private function preparedDto(array $row, int $curriculumId, int $schoolId): array
     {
-        $students = Student::with([
-            'user:id,first_name,last_name',
-            'classrooms:id,name',
-        ])
-            ->latest()
-            ->get();
-        $results = [];
-
-        foreach ($students as $student) {
-            $results[] = [
-                'id'                => $student->id,
-                'name'              => $student->name,
-                'email'             => $student->email,
-                'phone'             => $student->phone,
-                'classrooms'        => $student->classrooms->map(fn($classroom) => $classroom->name)->implode(', '),
-                'admission_number'  => $student->admission_number,
-                'photo'             => $student->photo,
-            ];
-        }
-
-        return $results;
+        $row['school_id'] = $schoolId;
+        $row['first_name'] = trim($row['first_name']);
+        $row['last_name'] = trim($row['last_name']);
+        $row['middle_name'] = isset($row['middle_name']) ? trim($row['middle_name']) : null;
+        $row['gender'] = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
+        $row['date_of_birth'] = normalizeDate($row['date_of_birth'] ?? null);
+        $row['admission_number'] = isset($row['admission_number']) ? trim($row['admission_number']) : null;
+        $row['photo_id'] = null;
+        $row['curriculum_id'] = $curriculumId;
+        
+        return StudentDto::fromArray($row)->toArray();
     }
 
-    public function datatable2()
+    /**
+     * Bulk-import students from parsed Excel rows.
+     *
+     * Each row is processed independently: valid rows are persisted, invalid
+     * rows are skipped and their errors are collected.  Returns the count of
+     * saved records and a map of { rowIndex => string[] } for failed rows.
+     */
+    public function import(array $rows, int $curriculumId, int $schoolId): array
     {
-        $students = Student::with([
-            'user:id,first_name,last_name',
-            'classrooms:id,name',
-        ])->latest();
+        $saved  = 0;
+        $errors = [];
 
-        // Search
-        $query = Student::query();
-        $query->when(request('search'), function ($q) {
-            $searchTerm = '%' . request('search') . '%';
+        foreach ($rows as $index => $row) {
+            $rowErrors = $this->validateImportRow($row, $index, $schoolId);
 
-            $q->where(function ($q) use ($searchTerm) {
-                // Search in student fields
-                $q->where('first_name', 'LIKE', $searchTerm)
-                    ->orWhere('last_name', 'LIKE', $searchTerm)
-                    ->orWhere('admission_number', 'LIKE', $searchTerm)
-                    ->orWhere('phone', 'LIKE', $searchTerm)
-                    ->orWhere('email', 'LIKE', $searchTerm);
+            if (!empty($rowErrors)) {
+                $errors[$index] = $rowErrors;
+                continue;
+            }
 
-                // Search in related classroom names
-                $q->orWhereHas('classrooms', function ($q) use ($searchTerm) {
-                    $q->where('name', 'ILIKE', $searchTerm);
-                });
-            });
-        });
-
-        $students = $query->get();
-        $results = [];
-
-        foreach ($students as $student) {
-            $results[] = [
-                'id'                => $student->id,
-                'name'              => $student->name,
-                'email'             => $student->email,
-                'phone'             => $student->phone,
-                'classrooms'        => $student->classrooms->map(fn($classroom) => $classroom->name)->implode(', '),
-                'admission_number'  => $student->admission_number,
-                'photo'             => $student->photo,
-            ];
+            try {
+                $this->store($this->preparedDto($row, $curriculumId, $schoolId));
+                $saved++;
+            } catch (\Throwable $e) {
+                $errors[$index] = [$e->getMessage()];
+            }
         }
 
-        return $results;
+        return ['saved' => $saved, 'errors' => $errors];
+    }
+
+    /**
+     * Validate a single import row and return any error messages.
+     */
+    private function validateImportRow(array $row, int $index, int $schoolId): array
+    {
+        $errors = [];
+
+        if (empty(trim($row['first_name'] ?? ''))) {
+            $errors[] = 'First name is required.';
+        }
+
+        if (empty(trim($row['last_name'] ?? ''))) {
+            $errors[] = 'Last name is required.';
+        }
+
+        $gender = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
+        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+            $errors[] = "Gender '{$row['gender']}' is not valid. Expected: male, female, or other.";
+        }
+
+        $dob = $row['date_of_birth'] ?? null;
+        if ($dob !== null && $dob !== '') {
+            if (!isValidDate($dob)) {
+                $errors[] = "Date of birth '{$dob}' could not be parsed into a valid date.";
+            }
+        }
+
+        $admissionNumber = isset($row['admission_number']) ? trim($row['admission_number']) : null;
+        if ($admissionNumber) {
+            $exists = Student::where('school_id', $schoolId)
+                ->where('admission_number', $admissionNumber)
+                ->exists();
+
+            if ($exists) {
+                $errors[] = "Admission number '{$admissionNumber}' already exists.";
+            }
+        }
+
+        return $errors;
     }
 }

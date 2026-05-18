@@ -6,6 +6,7 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/storage/dashboard-analysis
 /resources/js/actions
 /resources/js/routes
 /resources/js/wayfinder
@@ -26,3 +27,4 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+implementation_plan.md

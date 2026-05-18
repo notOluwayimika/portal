@@ -3,6 +3,7 @@
 
 namespace App\Models;
 
+use App\Enums\CurriculaStatusEnum;
 use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,21 +16,17 @@ class Curriculum extends Model
 
     protected $fillable = [
         'school_id',
-        'academic_session_id',
+        'term_id',
         'class_level_arm_id',
         'exam_type_id',
-        'term',
         'min_subjects',
-        'registration_deadline',
-        'result_visible_at',
         'status',
     ];
 
     protected $casts = [
-        'registration_deadline' => 'datetime',
-        'result_visible_at' => 'datetime',
-        'term' => 'integer',
+        'term_id' => 'integer',
         'min_subjects' => 'integer',
+        'status' => 'string',
     ];
 
     protected static function booted(): void
@@ -47,9 +44,13 @@ class Curriculum extends Model
     {
         return $this->belongsTo(School::class);
     }
-    public function academicSession(): BelongsTo
+    public function term(): BelongsTo
     {
-        return $this->belongsTo(AcademicSession::class, 'academic_session_id');
+        return $this->belongsTo(Term::class);
+    }
+    public function academicSession(): \Illuminate\Database\Eloquent\Relations\HasOneThrough
+    {
+        return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');
     }
     public function classLevelArm(): BelongsTo
     {
@@ -70,11 +71,11 @@ class Curriculum extends Model
 
     public function isRegistrationOpen(): bool
     {
-        return now()->lessThanOrEqualTo($this->registration_deadline);
+        return $this->term->start_date && now()->lessThanOrEqualTo($this->term->start_date);
     }
 
     public function areResultsVisible(): bool
     {
-        return $this->result_visible_at && now()->greaterThanOrEqualTo($this->result_visible_at);
+        return $this->term->end_date && now()->greaterThanOrEqualTo($this->term->end_date);
     }
 }

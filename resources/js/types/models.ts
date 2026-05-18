@@ -1,5 +1,12 @@
 import type { User } from './auth';
 
+export interface Role {
+    id: number;
+    name: string;
+    guard_name: string;
+    created_at: string;
+    updated_at: string;
+}
 export interface AcademicSession {
     id: string;
     school_id: string;
@@ -67,14 +74,15 @@ export interface ExamType {
     school?: School;
     name: string;
     slug: string;
+    grade_boundaries?: GradeBoundary[];
     created_at?: string;
     updated_at?: string;
 }
 
 export interface Subject {
     id: string;
-    school_id: string;
-    school: School;
+    school_id?: string;
+    school?: School;
     name: string;
     code: string;
     created_at?: string;
@@ -90,9 +98,55 @@ export interface GradeBoundary {
     min_score: number;
     max_score: number;
     grade: string;
+    grade_point: string;
     label: string;
     created_at?: string;
     updated_at?: string;
+}
+
+export interface GuardianPivot {
+    relationship: string;
+    is_primary: boolean;
+    can_login: boolean;
+}
+
+export interface Guardian {
+    id: string;
+    full_name: string;
+    first_name?: string;
+    middle_name?: string | null;
+    last_name?: string;
+    gender?: string | null;
+    marital_status?: string | null;
+    phone?: string;
+    whatsapp_number?: string | null;
+    email?: string | null;
+    photo?: string | null;
+    occupation?: string | null;
+    employer_name?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    postal_code?: string | null;
+    emergency_contact?: string | null;
+    id_type?: string | null;
+    id_number?: string | null;
+    id_expiry_date?: string | null;
+    status?: string;
+    students_count?: number;
+    // pivot fields (present when loaded via student.guardians)
+    relationship?: string;
+    is_primary?: boolean;
+    can_login?: boolean;
+    pivot?: GuardianPivot;
+    // login-state fields (present on guardian profile page)
+    has_login?: boolean;
+    user_disabled_at?: string | null;
+    email_verified_at?: string | null;
+    never_activated?: boolean;
+    deleted_at?: string | null;
+    // linked students (on guardian profile)
+    students?: (Student & { pivot: GuardianPivot })[];
 }
 
 export interface Student {
@@ -101,13 +155,25 @@ export interface Student {
     school: School;
     user_id?: string;
     user?: User;
-    name: string;
+    first_name: string;
+    last_name: string;
+    middle_name?: string;
+    full_name: string;
     admission_number: string;
     photo?: string;
-    // email: string;
-    // phone: string;
-    // date_of_birth: string;
     gender: string;
+    date_of_birth?: string;
+    status: string;
+    class_details: {
+        level: string;
+        arm: string;
+        stream: string | null;
+        full_class: string;
+    };
+    curriculum_id?: number;
+    promoted_to_id?: number;
+    guardians?: Guardian[];
+    student_curricula: StudentCurriculum[];
     created_at?: string;
     updated_at?: string;
 }
@@ -115,53 +181,97 @@ export interface Student {
 export interface Teacher {
     id: string;
     school_id: string;
-    school: School;
+    school?: School;
     user_id?: string;
     user?: User;
+    email?: string;
     first_name: string;
     last_name: string;
-    staff_number: string;
-    photo?: string;
-    // email: string;
-    // phone: string;
-    // date_of_birth: string;
-    gender: string;
+    full_name: string;
+    staff_number?: string;
+    photo?: string | null;
+    gender?: string;
+    date_of_birth?: string;
+    phone?: string;
+    address?: string;
+    qualification?: string;
+    hire_date?: string;
+    status: string;
     created_at?: string;
     updated_at?: string;
     deleted_at?: string;
+}
+
+export interface TeacherSubjectAssignment {
+    id: string;
+    curriculum_subject: {
+        id: string;
+        subject: { name: string; code?: string };
+        curriculum: {
+            id: string;
+            class_level_arm: { name: string };
+            term?: { name: string };
+        };
+        is_compulsory: boolean;
+    };
+}
+
+export interface Term {
+    id: string;
+    name: string;
+    full_name: string;
+    slug: string;
+    order: number;
+    status: string;
+    start_date?: string;
+    end_date?: string;
+    academic_session?: AcademicSession;
+    registration_deadline?: string;
+    result_visible_at?: string;
 }
 
 export interface Curriculum {
     id: string;
     school_id?: string;
     school?: School;
-    academic_session_id?: string;
+    term_id?: string;
+    term?: Term;
     academic_session?: AcademicSession;
     class_level_arm_id?: string;
-
+    full_name: string;
     class_level_arm?: ClassLevelArm;
     exam_type_id?: string;
     exam_type?: ExamType;
-    term: number;
     min_subjects: number;
-    registration_deadline: string;
-    result_visible_at: string;
     status: string;
     created_at?: string;
     updated_at?: string;
 }
 
+export interface SetupCurrentTerm {
+    name: string;
+    order: number;
+    status: string;
+    start_date: string | null;
+    end_date: string | null;
+}
+
 export interface SetupData {
     school: School;
     current_session: AcademicSession | null;
+    current_term: SetupCurrentTerm | null;
+    terms_in_session: number;
     sessions: number;
     class_levels: number;
     arms: number;
+    class_level_arms: number;
     exam_types: number;
     subjects: number;
     grade_boundaries: number;
-    students: number;
     curricula: number;
+    students: number;
+    teachers: number;
+    guardians: number;
 }
 
 export interface Stream {
@@ -178,10 +288,18 @@ export interface CurriculumSubject {
     curriculum_id: string;
     curriculum?: Curriculum;
     subject: Subject;
+    subject_id?: number;
     is_compulsory: boolean;
     display_order: number;
-    teachers: TeacherCurriculumSubject[];
-    marking_components: MarkingComponent[];
+    active: boolean;
+    archived_at?: string | null;
+    archived_by_user_id?: number | null;
+    students?: StudentSubject[];
+    scores?: Score[];
+    teachers?: TeacherCurriculumSubject[];
+    marking_components?: MarkingComponent[];
+    student_results: StudentResult[];
+    result_status?: SubjectResultStatus;
 }
 export interface TeacherCurriculumSubject {
     id: string;
@@ -194,4 +312,75 @@ export interface MarkingComponent {
     curriculum_subject_id: string;
     name: string;
     weight: number; // stored as 0.0–1.0, e.g. 0.3
+}
+
+export interface Score {
+    id: string;
+    student: Student;
+    marking_component: MarkingComponent;
+    created_by: User;
+    score: number;
+}
+
+export interface StudentCurriculum {
+    id: string;
+    student: Student;
+    curriculum: Curriculum;
+    status: string;
+    promoted_to?: Curriculum;
+    subjects?: StudentSubject[];
+    ended_at?: string | null;
+    ended_by_user_id?: number | null;
+    end_reason?: string | null;
+    is_ended?: boolean;
+}
+
+export type StudentSubjectStatus = 'active' | 'dropped';
+
+export interface StudentSubject {
+    id: string;
+    status: StudentSubjectStatus;
+    student_curriculum?: StudentCurriculum;
+    curriculum_subject: CurriculumSubject;
+    dropped_at?: string | null;
+    drop_reason?: string | null;
+    dropped_by?: { id: number; full_name: string } | null;
+    restored_at?: string | null;
+    restored_by?: { id: number; full_name: string } | null;
+}
+
+export interface StudentSubjectsGrouped {
+    enrollment: {
+        id: string;
+        ended_at: string | null;
+        is_ended: boolean;
+    };
+    compulsory_active: StudentSubject[];
+    optional_active: StudentSubject[];
+    optional_dropped: StudentSubject[];
+    optional_available: Array<{
+        id: string;
+        subject_name: string;
+        subject_code: string | null;
+        is_compulsory: boolean;
+        active: boolean;
+    }>;
+}
+
+export interface SubjectResultStatus {
+    id: string;
+    status: string;
+    rejection_reason: string;
+    curriculum_subject: CurriculumSubject;
+    updated_at: string;
+    updated_by: User;
+}
+
+export interface StudentResult {
+    id: string;
+    student_id?: number;
+    student?: Student;
+    total_score: string | number;
+    grade: string;
+    status: string;
 }

@@ -33,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
 
         $middleware->web(append: [
+            SetTenantContext::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -43,9 +44,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            'tenant' => SetTenantContext::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+
         ]);
 
     })
@@ -129,7 +132,14 @@ return Application::configure(basePath: dirname(__DIR__))
         |----------------------------------------------------
         */
         $exceptions->renderable(function (QueryException $e) {
-            return handleDatabase($e);
+            $code = $e->errorInfo[1] ?? null;
+
+            return match ($code) {
+                23000   => response()->conflict('Duplicate entry detected'),
+                547     => response()->error('Record has dependencies'),
+                '40001' => response()->error('Transaction conflict, retry'),
+                default => response()->error('Database error'),
+            };
         });
 
         /*
@@ -153,19 +163,3 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })->create();
 
-/*
-|--------------------------------------------------------
-| DB handler helper (kept outside for clarity)
-|--------------------------------------------------------
-*/
-function handleDatabase(QueryException $e)
-{
-    $code = $e->errorInfo[1] ?? null;
-
-    return match ($code) {
-        23000 => response()->conflict('Duplicate entry detected'),
-        547 => response()->error('Record has dependencies'),
-        '40001' => response()->error('Transaction conflict, retry'),
-        default => response()->error('Database error'),
-    };
-}

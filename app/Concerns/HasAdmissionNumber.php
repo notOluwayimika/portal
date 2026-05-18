@@ -6,20 +6,28 @@ use Illuminate\Database\Eloquent\Builder;
 
 trait HasAdmissionNumber
 {
-    /**
-     * Boot the trait and add creating event
-     */
     protected static function bootHasAdmissionNumber()
     {
+        // Reject duplicate manual entries before insert
+        static::creating(function ($model) {
+            if (!empty($model->admission_number)) {
+                $exists = static::where('admission_number', $model->admission_number)->exists();
+                if ($exists) {
+                    throw new \InvalidArgumentException(
+                        "Admission number {$model->admission_number} is already in use."
+                    );
+                }
+            }
+        });
+
+        // Auto-generate when not provided
         static::created(function ($model) {
             if (empty($model->admission_number)) {
-                $postfixNumber = str_pad($model->id, 3, '0', STR_PAD_LEFT);
-                $admissionNumber = "{$model->generateAdmissionNumber()}/{$postfixNumber}";
+                $admissionNumber = $model->nextAdmissionNumber();
 
                 static::where('id', $model->id)
                     ->update(['admission_number' => $admissionNumber]);
 
-                // Sync current instance
                 $model->setAttribute('admission_number', $admissionNumber);
                 $model->syncOriginalAttribute('admission_number');
             }
@@ -27,22 +35,48 @@ trait HasAdmissionNumber
     }
 
     /**
-     * Generate a new staff number
+     * Build the next admission number by finding the highest existing
+     * suffix for the current prefix and incrementing it.
      */
-    public static function generateAdmissionNumber(): string
+    protected function nextAdmissionNumber(): string
     {
-        // GFA/2025
-        $prefix = 'GFA';
-        $year = date('Y');
+        $prefix = static::admissionNumberPrefix();
 
-        return "{$prefix}/{$year}";
+        $latest = static::where('admission_number', 'like', $prefix . '%')
+            ->orderByRaw('LENGTH(admission_number) DESC, admission_number DESC')
+            ->value('admission_number');
+
+        $lastNumber = 0;
+        if ($latest) {
+            $suffix = substr($latest, strlen($prefix));
+            $lastNumber = (int) $suffix;
+        }
+
+        return $this->buildAdmissionNumber($lastNumber + 1);
     }
 
     /**
-     * Scope to find by staff number
+     * Build a full admission number from a numeric suffix.
      */
-    public function scopeByAdmissionNumber(Builder $query, string $admissionNumber): ?self
+    protected function buildAdmissionNumber(int $number): string
     {
-        return $query->where('admission_number', $admissionNumber)->first();
+        return static::admissionNumberPrefix() . str_pad($number, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * The prefix portion only (e.g. GFA/2025/).
+     * Override in the model to customize.
+     */
+    public static function admissionNumberPrefix(): string
+    {
+        return 'GFA/' . date('Y') . '/';
+    }
+
+    /**
+     * Proper scope — returns the builder so it stays chainable.
+     */
+    public function scopeByAdmissionNumber(Builder $query, string $admissionNumber): Builder
+    {
+        return $query->where('admission_number', $admissionNumber);
     }
 }

@@ -2,12 +2,77 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RejectSubjectResultRequest;
+use App\Http\Requests\UpsertScoreRequest;
+use App\Http\Resources\MarkingComponentResource;
+use App\Http\Resources\SubjectResultStatusResource;
 use App\Models\CurriculumSubject;
+use App\Models\GradeBoundary;
+use App\Models\Score;
+use App\Models\Student;
+use App\Models\StudentResult;
+use App\Models\StudentSubject;
+use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
+use App\Models\TeacherCurriculumSubject;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CurriculumSubjectController extends Controller
 {
+    protected function handleStudentResults(CurriculumSubject $curriculumSubject, string $status = 'approved')
+    {
+        $curriculumSubject->load(['studentResults', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student', 'curriculum.examType']);
+        $gradeBoundaries = GradeBoundary::where('exam_type_id', $curriculumSubject->curriculum->exam_type_id)->orWhere('exam_type_id', null)->get();
+        $studentAssignments = $curriculumSubject->studentAssignments;
+        foreach ($studentAssignments as $assignment) {
+            $scores = $curriculumSubject->scores()->where('student_id', $assignment->studentCurriculum->student->id)->get();
+            $total = 0;
+            foreach ($scores as $score) {
+                $total += $score->score;
+            }
+            $grade = $gradeBoundaries->where('min_score', '<=', $total)->where('max_score', '>=', $total)->first();
+            StudentResult::updateOrCreate([
+                'student_id' => $assignment->studentCurriculum->student->id,
+                'curriculum_subject_id' => $curriculumSubject->id,
+            ], [
+                'status' => $status,
+                'total_score' => $total,
+                'grade' => $grade ? $grade->grade : null,
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+            ]);
+        }
+    }
+
+    protected function isTeacher($user): bool
+    {
+        return $user && $user->hasRole('teacher');
+    }
+
+    protected function isReviewer($user): bool
+    {
+        return $user && ($user->hasRole('admin') || $user->hasRole('head_of_school'));
+    }
+
+    protected function present(SubjectResultStatus $s): array
+    {
+        return [
+            'status' => $s->status,
+            'rejection_reason' => $s->rejection_reason,
+            'updated_at' => optional($s->updated_at)->toIso8601String(),
+            'updated_by' => $s->updatedBy
+                ? [
+                    'id' => $s->updatedBy->id,
+                    'name' => trim(($s->updatedBy->name ?? '')) ?: $s->updatedBy->email,
+                    'role' => $s->updatedBy->role ?? null,
+                ]
+                : null,
+        ];
+    }
+
     public function update(Request $request, CurriculumSubject $curriculumSubject)
     {
         try {
@@ -24,6 +89,24 @@ class CurriculumSubjectController extends Controller
         }
 
     }
+
+    public function assignMarkingComponent(Request $request, CurriculumSubject $curriculumSubject)
+    {
+        try {
+            $request->validate([
+                "name" => 'required|string',
+                'weight' => 'required|numeric|min:0'
+            ]);
+            $markingComponent = $curriculumSubject->markingComponents()->create($request->all());
+            return response()->json(['message' => 'Marking component created successfully', 'data' => new MarkingComponentResource($markingComponent)], 200);
+
+        } catch (\Throwable $th) {
+            \Log::error($th->getMessage());
+            return response()->json(['error' => 'Failed to create marking component'], 500);
+
+        }
+    }
+
     public function assignTeacher(Request $request, CurriculumSubject $curriculumSubject)
     {
         try {
@@ -60,5 +143,173 @@ class CurriculumSubjectController extends Controller
             \Log::error($th->getMessage());
             return response()->json(['error' => 'Failed to delete curriculum subject'], 500);
         }
+    }
+
+    public function assignScore(UpsertScoreRequest $upsertScoreRequest)
+    {
+        try {
+            $data = $upsertScoreRequest->validated();
+
+            // Authorize: the TCS must belong to the authenticated teacher, AND
+            // the marking_component must belong to the same curriculum_subject.
+            $cs = CurriculumSubject::with('markingComponents')
+                ->where('uuid', $data['curriculum_subject_id'])
+                ->first();
+
+            $curriculumSubjectId = $cs->id;
+
+            abort_unless(
+                $cs->markingComponents
+                    ->contains(fn($mc) => $mc->uuid === $data['marking_component_id']),
+                422,
+                'Marking component does not belong to this subject.'
+            );
+
+            // Ensure the student is actually enrolled in this curriculum subject.
+            $isEnrolled = Student::where('uuid', $data['student_id'])
+                ->whereHas('studentCurricula.studentSubjects', function ($q) use ($curriculumSubjectId) {
+                    $q->where('curriculum_subject_id', $curriculumSubjectId);
+                })
+                ->exists();
+
+            abort_unless($isEnrolled, 422, 'Student is not enrolled in this subject.');
+            $student = Student::where('uuid', $data['student_id'])->first();
+
+            $markingComponent = $cs->markingComponents->first(fn($mc) => $mc->uuid === $data['marking_component_id']);
+            $score = Score::updateOrCreate(
+                [
+                    'student_id' => $student->id,
+                    'marking_component_id' => $markingComponent->id,
+                ],
+                [
+                    'curriculum_subject_id' => $curriculumSubjectId,
+                    'score' => $data['score'],
+                    'created_by' => Auth::id(),
+                ]
+            );
+
+            return response()->json([
+                'id' => $score->id,
+                'score' => (float) $score->score,
+            ]);
+        } catch (\Throwable $th) {
+            \Log::error($th->getMessage());
+            return response()->json(['error' => 'Failed to assign score'], 500);
+        }
+
+    }
+    public function submit(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($this->isTeacher($user), 403);
+
+
+        // Ensure the teacher actually owns this curriculum_subject via teacher_curriculum_subjects.
+        abort_unless(
+            TeacherCurriculumSubject::where('teacher_id', optional($user->teacher)->id)
+                ->where('curriculum_subject_id', $curriculumSubject->id)
+                ->exists(),
+            403,
+        );
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'submitted',
+                    'rejection_reason' => null,
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+    public function approve(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($this->isReviewer($user), 403);
+
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'approved',
+                    'rejection_reason' => null,
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+
+    public function reject(
+        RejectSubjectResultRequest $request,
+        CurriculumSubject $curriculumSubject
+    ): JsonResponse {
+        $user = $request->user();
+        abort_unless($this->isReviewer($user), 403);
+
+        $status = DB::transaction(function () use ($curriculumSubject, $user, $request) {
+            $this->handleStudentResults($curriculumSubject, 'approved');
+            return SubjectResultStatus::updateOrCreate(
+                ['curriculum_subject_id' => $curriculumSubject->id],
+                [
+                    'status' => 'rejected',
+                    'rejection_reason' => $request->validated('rejection_reason'),
+                    'updated_by' => $user->id,
+                ],
+            )->fresh(['updatedBy']);
+        });
+
+        return response()->json(['status' => $this->present($status)]);
+    }
+
+    public function getResultStatus(CurriculumSubject $curriculumSubject)
+    {
+        $status = $curriculumSubject->resultStatus;
+
+        return response()->json(new SubjectResultStatusResource($status), 200);
+    }
+
+    /**
+     * PATCH /api/curriculum-subjects/{curriculumSubject}/archive
+     * Soft-archive a curriculum subject so it cannot be added to new enrollments.
+     * Existing student_subjects rows are unaffected.
+     */
+    public function archive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        abort_unless($request->user()->can('curriculum_subject.archive'), 403);
+        abort_if($curriculumSubject->isArchived(), 409, 'This subject is already archived.');
+
+        $curriculumSubject->update([
+            'active'               => false,
+            'archived_at'          => now(),
+            'archived_by_user_id'  => $request->user()->id,
+        ]);
+
+        return response()->json(['message' => 'Subject archived successfully.']);
+    }
+
+    /**
+     * PATCH /api/curriculum-subjects/{curriculumSubject}/unarchive
+     * Restore an archived curriculum subject so it can be added to enrollments again.
+     */
+    public function unarchive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
+    {
+        abort_unless($request->user()->can('curriculum_subject.restore'), 403);
+        abort_unless($curriculumSubject->isArchived(), 409, 'This subject is not archived.');
+
+        $curriculumSubject->update([
+            'active'               => true,
+            'archived_at'          => null,
+            'archived_by_user_id'  => null,
+        ]);
+
+        return response()->json(['message' => 'Subject restored successfully.']);
     }
 }

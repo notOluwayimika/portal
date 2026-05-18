@@ -127,6 +127,36 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'dashboard-analysis' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/dashboard-analysis.log'),
+            'level' => 'debug',
+        ],
+
+        /*
+         * Records activities written without a resolvable school_id.
+         * Monitor this for sustained writes after Phase 0 — they indicate a
+         * gap in tenant resolution that needs investigation.
+         */
+        'activity-log-untagged' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/activity-log-untagged.log'),
+            'level' => 'warning',
+            'replace_placeholders' => true,
+        ],
+
+        /*
+         * Records StudentCurriculum rows created without going through
+         * CurriculumEnrollmentService (e.g. raw SQL, seeders, bulk imports).
+         * Sustained writes here indicate a bypass that needs investigation.
+         */
+        'academic-anomalies' => [
+            'driver' => 'single',
+            'path'   => storage_path('logs/academic-anomalies.log'),
+            'level'  => 'warning',
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

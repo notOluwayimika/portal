@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { TeacherSubjects } from '@/components/teacher-subjects';
 import type { Toast, ToastType } from '@/components/toast-item';
 import { ToastItem } from '@/components/toast-item';
+import { handleBack } from '@/helpers';
 
 export default function Show() {
     const { teacher } = usePage().props as unknown as { teacher: any };
@@ -307,6 +308,15 @@ export default function Show() {
     return (
         <div className="space-y-6 p-10">
             <style>{css}</style>
+            <div></div>
+            <button
+                className="btn btn-ghost btn-sm btn-icon"
+                onClick={handleBack}
+                title="Back to curricula"
+                style={{ fontSize: 14 }}
+            >
+                ← Go back
+            </button>
             <TeacherSubjects addToast={addToast} teacherId={teacherId} />
             {/* Toasts */}
             <div

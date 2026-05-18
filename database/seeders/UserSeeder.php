@@ -63,7 +63,7 @@ class UserSeeder extends Seeder
         //         'password' => Hash::make('password'),
         //         'school_id' => $school->id,
         //     ]);
-        //     $parent->assignRole('parent');
+        //     $parent->assignRole('guardian');
         //     $parent->student->create([
         //         "first_name" => $studentData['first_name'],
         //         "last_name" => $studentData['last_name'],

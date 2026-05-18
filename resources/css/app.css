@@ -5,6 +5,7 @@
 
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source inline("max-w-sm max-w-md max-w-lg max-w-xl max-w-2xl max-w-3xl max-w-4xl max-w-5xl max-w-[95vw]");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -66,7 +67,7 @@
     /* ========================
        BASE (Clean Neutral UI)
     ======================== */
-    --background: oklch(0.98 0.01 260);   /* light gray */
+    --background: oklch(100% 0.00011 271.152);   /* light gray */
     --foreground: oklch(0.2 0.02 260);
 
     --card: oklch(1 0 0);
@@ -203,7 +204,7 @@
     }
 
     body {
-        @apply bg-background text-foreground;
+        @apply bg-white text-foreground;
     }
 }
 
@@ -405,3 +406,35 @@
 .border-muted-700  { border-color: var(--muted-700); }
 .border-muted-800  { border-color: var(--muted-800); }
 .border-muted-900  { border-color: var(--muted-900); }
+
+/* Custom Scrollbar — slim, rounded, works on both axes. */
+.custom-scrollbar {
+    scrollbar-width: thin;                 /* Firefox */
+    scrollbar-color: #e2e8f0 transparent;  /* Firefox: thumb / track */
+}
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e1;
+}
+.custom-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+}
+.dark .custom-scrollbar {
+    scrollbar-color: #334155 transparent;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #334155;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}

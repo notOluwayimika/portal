@@ -18,6 +18,7 @@ class ExamTypeResource extends JsonResource
             'id' => $this->uuid,
             'name' => $this->name,
             'slug' => $this->slug,
+            'grade_boundaries' => GradeBoundaryResource::collection($this->whenLoaded('gradeBoundaries'))
         ];
     }
 }

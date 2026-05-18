@@ -9,6 +9,7 @@ use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\ExamTypeResource;
 use App\Http\Resources\SessionResource;
 use App\Http\Resources\StreamResource;
+use App\Http\Resources\TermResource;
 use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
@@ -24,7 +25,11 @@ class ClassLevelArmController extends Controller
     {
         try {
             $school = Auth::user()->school;
-            $sessions = $school->sessions()->where('is_current', true)->get();
+            $sessions = $school->sessions()->with('terms')->get()->map(function ($session) {
+                $session->terms = TermResource::collection($session->terms);
+                return $session;
+            });
+            ;
             $classLevels = $school->classLevels;
             $arms = $school->arms;
             $streams = Stream::all();
@@ -37,6 +42,7 @@ class ClassLevelArmController extends Controller
                 "class_level_arms" => ClassLevelArmResource::collection($classLevelArms),
                 "exam_types" => ExamTypeResource::collection($examTypes),
                 "sessions" => SessionResource::collection($sessions),
+                "terms" => TermResource::collection($school->terms()->with('academicSession')->get() ?? collect()),
             ], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -54,10 +60,10 @@ class ClassLevelArmController extends Controller
                 'stream_id' => 'nullable|exists:streams,uuid'
             ]);
             $school = Auth::user()->school;
-            $classLevel = $school->classLevels()->where('class_levels.id', $request->class_level_id)->orWhere('class_levels.uuid', $request->class_level_id)->first();
-            $arm = $school->arms()->where('arms.id', $request->arm_id)->orWhere('arms.uuid', $request->arm_id)->first();
+            $classLevel = $school->classLevels()->where('uuid', $request->class_level_id)->first();
+            $arm = $school->arms()->where('uuid', $request->arm_id)->first();
             $classLevelArm = $school->classLevelArms()->where('class_level_id', $classLevel->id)->where('arm_id', $arm->id)->first();
-            $stream = $request->stream_id ? Stream::where('streams.id', $request->stream_id)->orWhere('streams.uuid', $request->stream_id)->first() : null;
+            $stream = $request->stream_id ? Stream::where('uuid', $request->stream_id)->first() : null;
             if (!$classLevelArm) {
                 return response()->json(['error' => 'Invalid class level arm'], 400);
             }
@@ -93,7 +99,7 @@ class ClassLevelArmController extends Controller
             $request->validate([
                 'stream_id' => 'nullable|exists:streams,uuid'
             ]);
-            $stream = $request->stream_id ? Stream::where('streams.id', $request->stream_id)->orWhere('streams.uuid', $request->stream_id)->first() : null;
+            $stream = $request->stream_id ? Stream::where('uuid', $request->stream_id)->first() : null;
 
             $classLevelArm->update([
                 'stream_id' => $stream ? $stream->id : null
@@ -125,8 +131,16 @@ class ClassLevelArmController extends Controller
                 'class_level_id' => 'required',
                 'arm_id' => 'required',
             ]);
-            $classLevel = $school->classLevels()->where('class_levels.id', $request->class_level_id)->orWhere('class_levels.uuid', $request->class_level_id)->first();
-            $arm = $school->arms()->where('arms.id', $request->arm_id)->orWhere('arms.uuid', $request->arm_id)->first();
+            $classLevel = $school->classLevels()
+                ->where(function ($q) use ($request) {
+                    $q->where('uuid', $request->class_level_id);
+                })
+                ->first();
+            $arm = $school->arms()
+                ->where(function ($q) use ($request) {
+                    $q->where('uuid', $request->arm_id);
+                })
+                ->first();
 
             // check if class level and arm are linked in class level arm if yes unlink if not link
             // Implementation for toggling the relationship would go here
@@ -134,7 +148,7 @@ class ClassLevelArmController extends Controller
             if ($isLinked) {
                 $classLevel->arms()->detach($arm);
             } else {
-                $classLevel->arms()->attach($arm, ['uuid' => Str::uuid()]);
+                $classLevel->arms()->attach($arm, ['uuid' => Str::uuid(), 'school_id' => $school->id]);
             }
             return response()->json(['message' => 'Relationship updated successfully'], 200);
         } catch (\Throwable $th) {

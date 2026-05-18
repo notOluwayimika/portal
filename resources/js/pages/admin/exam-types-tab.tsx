@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type { ExamType } from '@/types/models';
+import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { Confirm, Empty, Modal } from './school-setup';
 
 interface ExamTypeForm {
@@ -162,20 +163,20 @@ export function ExamTypesTab({
                                                     }}
                                                 />
                                                 <button
-                                                    className="btn btn-primary btn-sm"
+                                                    className="btn btn-primary btn-sm btn-icon"
                                                     onClick={() =>
                                                         commitInline()
                                                     }
                                                 >
-                                                    ✓
+                                                    <Check className="h-3 w-3" />
                                                 </button>
                                                 <button
-                                                    className="btn btn-ghost btn-sm"
+                                                    className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() =>
                                                         setInlineId(null)
                                                     }
                                                 >
-                                                    ✕
+                                                    <X className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         ) : (
@@ -204,13 +205,13 @@ export function ExamTypesTab({
                                                     setInlineVal(e.name);
                                                 }}
                                             >
-                                                ✏️
+                                                <Pencil className="h-3 w-3" />
                                             </button>
                                             <button
                                                 className="btn btn-danger btn-sm btn-icon"
                                                 onClick={() => setConfirm(e)}
                                             >
-                                                🗑
+                                                <Trash2 className="h-3 w-3" />
                                             </button>
                                         </div>
                                     </td>

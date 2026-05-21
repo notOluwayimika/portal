@@ -32,6 +32,7 @@ interface CurriculumOption {
     class_level: string;
     arm: string;
     stream: string;
+    full_name: string;
 }
 
 export function ImportStudentForm({
@@ -147,7 +148,7 @@ export function ImportStudentForm({
 
     const curriculaOptions = curricula.map((c) => ({
         value: c.id.toString(),
-        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
+        label: c.full_name,
     }));
 
     return (
@@ -158,7 +159,9 @@ export function ImportStudentForm({
                 <SearchableSelect
                     placeholder="Search for a class..."
                     options={curriculaOptions}
-                    value={curriculaOptions.find((o) => o.value === curriculumId)}
+                    value={curriculaOptions.find(
+                        (o) => o.value === curriculumId,
+                    )}
                     onChange={(opt: any) => {
                         setCurriculumId(opt?.value || '');
                         setCurriculumError('');

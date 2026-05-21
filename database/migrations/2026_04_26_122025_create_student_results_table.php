@@ -13,7 +13,7 @@ return new class extends Migration {
             $table->uuid('id')->primary();
             $table->foreignUuid('student_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('curriculum_subject_id')->constrained()->cascadeOnDelete();
-            $table->decimal('total_score', 5, 2)->nullable();
+            $table->decimal('total_score', 4, 1)->nullable();
             $table->string('grade', 2)->nullable();
             $table->string('status')->default('draft'); // draft | submitted | approved
             $table->foreignUuid('approved_by')->nullable()->constrained('users')->nullOnDelete();

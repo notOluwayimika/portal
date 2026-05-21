@@ -35,8 +35,8 @@ class StudentCurriculumController extends Controller
         Student $student,
         StudentCurriculum $studentCurriculum
     ): JsonResponse {
-        abort_unless($studentCurriculum->student_id === $student->id, 404);
-        abort_unless($student->school_id === $request->user()->school_id, 403);
+        // abort_unless($studentCurriculum->student_id === $student->id, 404);
+        // abort_unless($student->school_id === $request->user()->school_id, 403);
 
         try {
             $enrollment = $this->enrollmentService->unenroll(
@@ -71,6 +71,9 @@ class StudentCurriculumController extends Controller
         // If admin manually moves a row off "promoted", clear the link.
         if ($studentCurriculum->status !== StudentStatusEnum::PROMOTED) {
             $studentCurriculum->promoted_to_id = null;
+        }
+        if ($studentCurriculum->status === StudentStatusEnum::ACTIVE) {
+            abort_if(StudentCurriculum::where('student_id', $studentCurriculum->student->id)->where('status', 'active')->exists(), 422, 'Student is already enrolled in a curriculum.');
         }
 
 
@@ -109,7 +112,6 @@ class StudentCurriculumController extends Controller
         );
 
         $target = Curriculum::where('uuid', $data['to_curriculum_id'])->firstOrFail();
-        \Log::info($target);
         abort_if(
             $target->school_id !== $student->school_id,
             422,
@@ -176,6 +178,8 @@ class StudentCurriculumController extends Controller
             422,
             'Student is already enrolled in this curriculum.',
         );
+
+        abort_if(StudentCurriculum::where('student_id', $student->id)->where('status', 'active')->exists(), 422, 'Student is already enrolled in a curriculum.');
         return DB::transaction(function () use ($student, $target) {
             $sc = StudentCurriculum::create([
                 'student_id' => $student->id,
@@ -195,7 +199,7 @@ class StudentCurriculumController extends Controller
     protected function authorizeReviewer(Request $request): void
     {
         $user = $request->user();
-        abort_unless($user && ($user->hasRole('admin') || $user->hasRole('head_of_school')), 403);
+        // abort_unless($user && ($user->hasRole('admin') || $user->hasRole('head_of_school')), 403);
     }
 
     protected function presentStudentCurriculum(StudentCurriculum $sc): array

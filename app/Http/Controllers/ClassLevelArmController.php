@@ -115,6 +115,7 @@ class ClassLevelArmController extends Controller
     public function destroy(ClassLevelArm $classLevelArm)
     {
         try {
+            abort_unless(count($classLevelArm->curricula->toArray()) === 0, 422, 'Cannot delete relationship while associated curricula exist.');
             $classLevelArm->delete();
             return response()->json(['message' => 'Relationship deleted successfully'], 200);
         } catch (\Throwable $th) {
@@ -145,7 +146,10 @@ class ClassLevelArmController extends Controller
             // check if class level and arm are linked in class level arm if yes unlink if not link
             // Implementation for toggling the relationship would go here
             $isLinked = $classLevel->arms()->where('arms.id', $arm->id)->exists();
+
             if ($isLinked) {
+                $cla = ClassLevelArm::where('class_level_id', $classLevel->id)->where('arm_id', $arm->id)->first();
+                abort_unless(count($cla->curricula->toArray()) === 0, 422, 'Cannot delete relationship while associated curricula exist.');
                 $classLevel->arms()->detach($arm);
             } else {
                 $classLevel->arms()->attach($arm, ['uuid' => Str::uuid(), 'school_id' => $school->id]);

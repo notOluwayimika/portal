@@ -18,7 +18,7 @@ class ScoreResource extends JsonResource
             'id' => $this->uuid,
             'student' => new StudentResource($this->whenLoaded('student')),
             'marking_component' => new MarkingComponentResource($this->whenLoaded('markingComponent')),
-            'score' => $this->score,
+            'score' => round((float) $this->score, 1),
             'created_by' => new UserResource($this->whenLoaded('created_by')),
         ];
     }

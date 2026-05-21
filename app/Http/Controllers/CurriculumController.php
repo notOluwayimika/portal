@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\MarkingComponentResource;
 use App\Models\Curriculum;
+use App\Models\MarkingComponent;
 use App\Models\Subject;
 use App\Models\Term;
 use Illuminate\Http\Request;
@@ -14,7 +16,7 @@ class CurriculumController extends Controller
 {
     public function show(Curriculum $curriculum)
     {
-        $curriculum->load('curriculumSubjects.teacherAssignments.teacher');
+        $curriculum->load(['curriculumSubjects.teacherAssignments.teacher']);
         return response()->json(new CurriculumResource($curriculum));
     }
     public function store(Request $request)
@@ -26,7 +28,9 @@ class CurriculumController extends Controller
                 'exam_type_id' => 'required|string',
                 'min_subjects' => 'required|integer|min:1',
                 'status' => 'required|string|in:active,draft,closed',
+                'is_ccm' => 'boolean',
             ]);
+            \Log::error($request->all());
 
             $school = auth()->user()->school;
             $term = Term::where('uuid', $request->term_id)->first();
@@ -39,6 +43,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => $examType->id,
                 'min_subjects' => $request->min_subjects,
                 'status' => $request->status,
+                'is_ccm' => $request->is_ccm,
             ]);
             return response()->json(new CurriculumResource($curriculum), 201);
         } catch (\Throwable $th) {
@@ -57,6 +62,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => 'required|string',
                 'min_subjects' => 'required|integer|min:1',
                 'status' => 'required|string|in:active,draft,closed',
+                'is_ccm' => 'boolean',
             ]);
 
             $school = auth()->user()->school;
@@ -70,6 +76,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => $examType->id,
                 'min_subjects' => $request->min_subjects,
                 'status' => $request->status,
+                'is_ccm' => $request->is_ccm,
             ]);
 
             return response()->json(new CurriculumResource($curriculum), 200);
@@ -176,18 +183,9 @@ class CurriculumController extends Controller
                 ]
             );
             // marking components
-            $marking_components = [
-                [
-                    "name" => "Continuous Assessment",
-                    "weight" => 0.3
-                ],
-                [
-                    "name" => "Examination",
-                    "weight" => 0.7
-                ],
-            ];
-            foreach ($marking_components as $component) {
-                $curriculumSubject->markingComponents()->create($component);
+            $markingComponents = MarkingComponentResource::collection(MarkingComponent::global()->get());
+            foreach ($markingComponents as $component) {
+                $curriculumSubject->markingComponents()->create(["name" => $component->name, "weight" => $component->weight, "school_id" => auth()->user()->school_id]);
             }
 
             return response()->json(new CurriculumSubjectResource($curriculumSubject), 201);

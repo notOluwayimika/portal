@@ -29,7 +29,8 @@ export function DropSubjectModal({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const subjectName = subject?.curriculum_subject?.subject?.name ?? 'this subject';
+    const subjectName =
+        subject?.curriculum_subject?.subject?.name ?? 'this subject';
 
     async function handleDrop() {
         if (!subject) return;
@@ -37,15 +38,19 @@ export function DropSubjectModal({
         setError(null);
 
         try {
-            await axios.patch(
+            const response = await axios.patch(
                 `/api/students/${studentId}/enrollments/${enrollmentId}/subjects/${subject.id}/drop`,
-                { reason: reason.trim() || undefined }
+                { reason: reason.trim() || undefined },
             );
+            console.log(response.data);
             setReason('');
             onDropped();
             onClose();
         } catch (err: any) {
-            setError(err?.response?.data?.message ?? 'Failed to drop subject. Please try again.');
+            setError(
+                err?.response?.data?.message ??
+                    'Failed to drop subject. Please try again.',
+            );
         } finally {
             setBusy(false);
         }
@@ -65,10 +70,18 @@ export function DropSubjectModal({
             size="md"
             footer={
                 <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={handleClose} disabled={busy}>
+                    <Button
+                        variant="outline"
+                        onClick={handleClose}
+                        disabled={busy}
+                    >
                         Cancel
                     </Button>
-                    <Button variant="destructive" onClick={handleDrop} disabled={busy}>
+                    <Button
+                        variant="destructive"
+                        onClick={handleDrop}
+                        disabled={busy}
+                    >
                         {busy ? 'Dropping…' : 'Drop Subject'}
                     </Button>
                 </div>
@@ -78,7 +91,8 @@ export function DropSubjectModal({
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                     Are you sure you want to drop{' '}
                     <span className="font-semibold">{subjectName}</span> from{' '}
-                    <span className="font-semibold">{studentName}</span>'s subject list?
+                    <span className="font-semibold">{studentName}</span>'s
+                    subject list?
                 </p>
 
                 <div className="space-y-1">
@@ -99,7 +113,8 @@ export function DropSubjectModal({
                 </div>
 
                 <p className="text-xs text-slate-400">
-                    This action can be reversed later from the dropped subjects section.
+                    This action can be reversed later from the dropped subjects
+                    section.
                 </p>
 
                 {error && (

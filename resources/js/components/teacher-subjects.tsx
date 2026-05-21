@@ -19,7 +19,7 @@ import type {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-const termLabel = (t: { name: string } | number) => {
+export const termLabel = (t: { name: string } | number) => {
     if (typeof t === 'object') {
         return t.name;
     }
@@ -27,13 +27,13 @@ const termLabel = (t: { name: string } | number) => {
     return ['', '1st', '2nd', '3rd'][t] ?? String(t);
 };
 
-const pct = (w: number) => `${Math.round(w * 100)}%`;
+export const pct = (w: number) => `${Math.round(w * 100)}%`;
 
-function totalWeight(components: MarkingComponent[]) {
+export function totalWeight(components: MarkingComponent[]) {
     return components.reduce((s, c) => s + Number(c?.weight ?? '0'), 0);
 }
 
-function WeightBar({ components }: { components: MarkingComponent[] }) {
+export function WeightBar({ components }: { components: MarkingComponent[] }) {
     const total = totalWeight(components);
     const over = total > 1.001;
     const ok = Math.abs(total - 1) < 0.001;
@@ -93,7 +93,11 @@ const COLORS = [
 
 // ─── StatusPill ─────────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: 'draft' | 'active' | 'closed' }) {
+export function StatusPill({
+    status,
+}: {
+    status: 'draft' | 'active' | 'closed';
+}) {
     const map = {
         active: ['pill-green', 'Active'],
         draft: ['pill-amber', 'Draft'],
@@ -114,7 +118,7 @@ interface ComponentRowProps {
     onDelete: (id: string) => Promise<void>;
 }
 
-function ComponentRow({
+export function ComponentRow({
     component,
     colorIndex,
     onSave,
@@ -283,7 +287,7 @@ function ComponentRow({
 
 // ─── AddComponentForm ─────────────────────────────────────────────────────────
 
-function AddComponentForm({
+export function AddComponentForm({
     onAdd,
 }: {
     onAdd: (name: string, weight: number) => Promise<void>;
@@ -423,62 +427,7 @@ interface SubjectCardProps {
 function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
 
-    const components = tcs.curriculum_subject?.marking_components;
-    console.log(tcs);
-
-    const handleAdd = async (name: string, weight: number) => {
-        try {
-            const res = await axios.post(
-                `/api/curriculum-subjects/${tcs.curriculum_subject.id}/marking-components`,
-                { name, weight },
-            );
-            const created: MarkingComponent = res.data.data;
-            onComponentsChange(tcs.curriculum_subject.id, [
-                ...components,
-                created,
-            ]);
-            addToast('Component added', 'success');
-        } catch {
-            addToast('Failed to add component', 'error');
-        }
-    };
-
-    const handleSave = async (id: string, name: string, weight: number) => {
-        try {
-            const res = await axios.put(`/api/marking-components/${id}`, {
-                name,
-                weight,
-            });
-            const updated: MarkingComponent = res.data.data;
-            onComponentsChange(
-                tcs.curriculum_subject.id,
-                components.map((c) => (c.id === id ? updated : c)),
-            );
-            addToast('Component updated', 'success');
-        } catch {
-            addToast('Failed to update component', 'error');
-        }
-    };
-
-    const handleDelete = async (id: string) => {
-        try {
-            const response = await axios.delete(
-                `/api/marking-components/${id}`,
-            );
-
-            if (response.status === 200) {
-                onComponentsChange(
-                    tcs.curriculum_subject.id,
-                    components.filter((c) => c.id !== id),
-                );
-                addToast('Component removed', 'success');
-            } else {
-                addToast('Failed to delete component', 'error');
-            }
-        } catch {
-            addToast('Failed to delete component', 'error');
-        }
-    };
+    const components = tcs.curriculum_subject?.marking_components ?? [];
 
     const c = tcs.curriculum_subject;
     const total = totalWeight(components);
@@ -657,17 +606,49 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                         }}
                     >
                         {components.map((mc, i) => (
-                            <ComponentRow
-                                key={mc.id}
-                                component={mc}
-                                colorIndex={i}
-                                onSave={handleSave}
-                                onDelete={handleDelete}
-                            />
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '7px 10px',
+                                    borderRadius: 8,
+                                    background: 'var(--surface1, #fff)',
+                                    border: '1px solid var(--border, #e5e7eb)',
+                                }}
+                            >
+                                {/* <span
+                                    style={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: '50%',
+                                        background: COLORS[i % COLORS.length],
+                                    }}
+                                > */}
+                                <span
+                                    style={{
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    {mc.name}
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 12,
+                                        color: 'var(--text2)',
+                                        background: 'var(--surface2, #f3f4f6)',
+                                        padding: '1px 7px',
+                                        borderRadius: 4,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {pct(mc.weight)}
+                                </span>
+                                {/* </span> */}
+                            </div>
                         ))}
                     </div>
-
-                    <AddComponentForm onAdd={handleAdd} />
                 </div>
             )}
         </div>

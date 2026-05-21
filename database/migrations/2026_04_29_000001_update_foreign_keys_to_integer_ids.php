@@ -29,7 +29,7 @@ return new class extends Migration {
             'curricula' => [
                 ['column' => 'school_id', 'references' => 'schools'],
                 ['column' => 'academic_session_id', 'references' => 'academic_sessions'],
-                ['column' => 'class_level_id', 'references' => 'class_levels'],
+                ['column' => 'class_level_arm_id', 'references' => 'class_level_arms'],
                 ['column' => 'exam_type_id', 'references' => 'exam_types'],
             ],
             'subjects' => [['column' => 'school_id', 'references' => 'schools']],
@@ -49,7 +49,10 @@ return new class extends Migration {
                 ['column' => 'student_curriculum_id', 'references' => 'student_curricula'],
                 ['column' => 'curriculum_subject_id', 'references' => 'curriculum_subjects'],
             ],
-            'marking_components' => [['column' => 'curriculum_subject_id', 'references' => 'curriculum_subjects']],
+            'marking_components' => [
+                ['column' => 'curriculum_subject_id', 'references' => 'curriculum_subjects'],
+                ['column' => 'school_id', 'references' => 'schools']
+            ],
             'teachers' => [['column' => 'user_id', 'references' => 'users']],
             'teacher_curriculum_subjects' => [
                 ['column' => 'teacher_id', 'references' => 'teachers'],
@@ -170,8 +173,8 @@ return new class extends Migration {
     private function dropForeignKeyConstraint(string $table, string $column): void
     {
         $constraints = DB::select(
-            "SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
-             WHERE TABLE_NAME = ? AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL 
+            "SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+             WHERE TABLE_NAME = ? AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
              AND TABLE_SCHEMA = ?",
             [$table, $column, DB::connection()->getDatabaseName()]
         );
@@ -190,9 +193,9 @@ return new class extends Migration {
         try {
             // Generate a constraint name
             $constraintName = "fk_{$table}_{$column}";
-            
+
             DB::statement(
-                "ALTER TABLE {$table} ADD CONSTRAINT {$constraintName} 
+                "ALTER TABLE {$table} ADD CONSTRAINT {$constraintName}
                  FOREIGN KEY ({$column}) REFERENCES {$referencedTable}(id) ON DELETE CASCADE"
             );
         } catch (\Exception $e) {
@@ -219,7 +222,7 @@ return new class extends Migration {
     {
         try {
             $result = DB::selectOne(
-                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
                 [DB::connection()->getDatabaseName(), $table, $column]
             );

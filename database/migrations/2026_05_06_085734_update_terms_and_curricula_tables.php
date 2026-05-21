@@ -5,8 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -70,11 +69,11 @@ return new class extends Migration
                         }
                     }
                 }
-                
+
                 $table->dropColumn(['term', 'academic_session_id']);
-                
+
                 // Re-add unique constraint with term_id instead of term and academic_session_id
-                $table->unique(['school_id', 'class_level_arm_id', 'term_id', 'exam_type_id'], 'curricula_unique_key');
+                $table->unique(['school_id', 'class_level_arm_id', 'term_id', 'exam_type_id', 'is_ccm'], 'curricula_unique_key');
             });
         }
     }

@@ -10,7 +10,8 @@ return new class extends Migration {
     {
         Schema::create('marking_components', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('curriculum_subject_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('curriculum_subject_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->string('name'); // e.g. "CA Test", "Exam"
             $table->decimal('weight', 4, 3); // e.g. 0.300, 0.700
             $table->timestampsTz();

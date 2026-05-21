@@ -16,7 +16,8 @@ class StudentService
 {
     public function __construct(
         private CurriculumEnrollmentService $enrollmentService
-    ) {}
+    ) {
+    }
 
     public function paginate(Request $request): LengthAwarePaginator
     {
@@ -41,15 +42,15 @@ class StudentService
     {
         return DB::transaction(function () use ($attributes) {
             $student = Student::create([
-                'school_id'        => $attributes['school_id'],
-                'user_id'          => $attributes['user_id'] ?? null,
-                'first_name'       => $attributes['first_name'],
-                'last_name'        => $attributes['last_name'],
-                'middle_name'      => $attributes['middle_name'] ?? null,
-                'gender'           => $attributes['gender'],
-                'date_of_birth'    => $attributes['date_of_birth'] ?? null,
+                'school_id' => $attributes['school_id'],
+                'user_id' => $attributes['user_id'] ?? null,
+                'first_name' => $attributes['first_name'],
+                'last_name' => $attributes['last_name'],
+                'middle_name' => $attributes['middle_name'] ?? null,
+                'gender' => $attributes['gender'],
+                'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? null,
-                'photo_id'         => $attributes['photo_id'] ?? null,
+                'photo_id' => $attributes['photo_id'] ?? null,
             ]);
 
             $curriculum = Curriculum::findOrFail($attributes['curriculum_id']);
@@ -59,7 +60,7 @@ class StudentService
                 $curriculum,
                 auth()->user(),
                 [
-                    'status'         => $attributes['status'] ?? null,
+                    'status' => $attributes['status'] ?? 'active',
                     'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                 ]
             );
@@ -130,7 +131,7 @@ class StudentService
         $row['admission_number'] = isset($row['admission_number']) ? trim($row['admission_number']) : null;
         $row['photo_id'] = null;
         $row['curriculum_id'] = $curriculumId;
-        
+
         return StudentDto::fromArray($row)->toArray();
     }
 
@@ -143,7 +144,7 @@ class StudentService
      */
     public function import(array $rows, int $curriculumId, int $schoolId): array
     {
-        $saved  = 0;
+        $saved = 0;
         $errors = [];
 
         foreach ($rows as $index => $row) {

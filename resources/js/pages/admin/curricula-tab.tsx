@@ -4,7 +4,7 @@
 
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Pencil, Settings, Trash2 } from 'lucide-react';
+import { PackagePlusIcon, Pencil, Settings, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Pagination } from '@/components/pagination';
 import type { SelectOption } from '@/components/single-select';
@@ -38,6 +38,7 @@ interface CurriculumForm {
     exam_type_id: string;
     min_subjects: string;
     status: Curriculum['status'];
+    is_ccm: boolean;
 }
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -143,6 +144,7 @@ export function CurriculaTab({
         exam_type_id: '',
         min_subjects: '8',
         status: '',
+        is_ccm: false,
     };
     const [form, setForm] = useState<CurriculumForm>(blank);
 
@@ -159,6 +161,7 @@ export function CurriculaTab({
                 exam_type_id: c.exam_type?.id ?? '',
                 min_subjects: String(c.min_subjects),
                 status: c.status,
+                is_ccm: c.is_ccm ?? false,
             });
         } else {
             setForm({ ...blank });
@@ -370,7 +373,8 @@ export function CurriculaTab({
                                         </span>
                                     </td>
                                     <td className="muted">
-                                        {c.term?.name ?? `Term ${c.term_id}`}
+                                        {c.term?.name ?? `Term ${c.term_id}`}{' '}
+                                        {c.is_ccm ? '(CCM)' : ''}
                                     </td>
                                     <td
                                         style={{
@@ -520,12 +524,33 @@ export function CurriculaTab({
                                 }
                             />
                         </div>
+                        <div className="field">
+                            <label>Is CCM</label>
+                            {/* <input
+                                type="number"
+                                min="1"
+                                value={form.is_ccm}
+                                onChange={(e) =>
+                                    f('is_ccm', e.target.value)
+                                }
+                            /> */}
+                            <input
+                                type="checkbox"
+                                checked={form.is_ccm}
+                                onChange={(e) => f('is_ccm', e.target.checked)}
+                                style={{
+                                    width: 16,
+                                    height: 16,
+                                }}
+                                className="accent-primary"
+                            />
+                        </div>
                     </div>
                 </Modal>
             )}
             {confirm && (
                 <Confirm
-                    msg="Delete this curriculum? Any linked scores and results will be affected."
+                    msg="Delete this curriculum? Any linked scores and results will be affected. It is better to update the status to closed."
                     onConfirm={() => {
                         handleDelete(confirm.id);
                         setConfirm(null);

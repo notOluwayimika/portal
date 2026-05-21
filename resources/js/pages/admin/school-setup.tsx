@@ -17,12 +17,14 @@ import {
     GitBranch,
     LayoutDashboard,
     Layers,
+    Clipboard,
 } from 'lucide-react';
 import ClassStreamTab from './class-stream-tab';
 import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
 import { GradeBoundariesTab } from './grade-boundaries-tab';
 import { SubjectsTab } from './subjects-tab';
+import MarkingComponentsTab from './marking-components-tab';
 interface TabConfig {
     id: string;
     label: string;
@@ -440,17 +442,64 @@ type TabId =
     | 'exam-types'
     | 'subjects'
     | 'grades'
-    | 'curricula';
+    | 'curricula'
+    | 'marking-components';
 
 const TABS: TabConfig[] = [
-    { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-[14px] w-[14px]" />, count: null },
-    { id: 'sessions', label: 'Sessions', icon: <Calendar className="h-[14px] w-[14px]" />, count: null },
-    { id: 'structure', label: 'Class Structure', icon: <Layers className="h-[14px] w-[14px]" />, count: null },
-    { id: 'stream', label: 'Class Stream', icon: <GitBranch className="h-[14px] w-[14px]" />, count: null },
-    { id: 'exam-types', label: 'Exam Types', icon: <FileText className="h-[14px] w-[14px]" />, count: null },
-    { id: 'subjects', label: 'Subjects', icon: <BookOpen className="h-[14px] w-[14px]" />, count: null },
-    { id: 'grades', label: 'Grade Boundaries', icon: <BarChart2 className="h-[14px] w-[14px]" />, count: null },
-    { id: 'curricula', label: 'Curricula', icon: <GraduationCap className="h-[14px] w-[14px]" />, count: null },
+    {
+        id: 'overview',
+        label: 'Overview',
+        icon: <LayoutDashboard className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'sessions',
+        label: 'Sessions',
+        icon: <Calendar className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'structure',
+        label: 'Class Structure',
+        icon: <Layers className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'stream',
+        label: 'Class Stream',
+        icon: <GitBranch className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'exam-types',
+        label: 'Exam Types',
+        icon: <FileText className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'subjects',
+        label: 'Subjects',
+        icon: <BookOpen className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'marking-components',
+        label: 'Marking Components',
+        icon: <Clipboard className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'grades',
+        label: 'Grade Boundaries',
+        icon: <BarChart2 className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'curricula',
+        label: 'Curricula',
+        icon: <GraduationCap className="h-[14px] w-[14px]" />,
+        count: null,
+    },
 ];
 
 export default function SchoolSetup() {
@@ -503,6 +552,8 @@ export default function SchoolSetup() {
                 return <GradeBoundariesTab addToast={addToast} />;
             case 'curricula':
                 return <CurriculaTab addToast={addToast} />;
+            case 'marking-components':
+                return <MarkingComponentsTab addToast={addToast} />;
             default:
                 return null;
         }

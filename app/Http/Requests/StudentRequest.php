@@ -9,6 +9,8 @@ use App\Rules\ExactlyOnePrimaryGuardian;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class StudentRequest extends FormRequest
 {
@@ -98,6 +100,52 @@ class StudentRequest extends FormRequest
         ];
     }
 
+    public function messages(): array
+    {
+        $fields = [
+            'mode'              => 'mode',
+            'relationship'      => 'relationship',
+            'is_primary'        => 'primary flag',
+            'can_login'         => 'login access',
+            'guardian_id'       => 'guardian',
+            'identifier'        => 'identifier',
+            'first_name'        => 'first name',
+            'last_name'         => 'last name',
+            'middle_name'       => 'middle name',
+            'phone'             => 'phone',
+            'whatsapp_number'   => 'WhatsApp number',
+            'gender'            => 'gender',
+            'email'             => 'email',
+            'city'              => 'city',
+            'state'             => 'state',
+            'country'           => 'country',
+            'postal_code'       => 'postal code',
+            'occupation'        => 'occupation',
+            'employer_name'     => 'employer name',
+            'marital_status'    => 'marital status',
+            'emergency_contact' => 'emergency contact',
+            'id_type'           => 'ID type',
+            'id_number'         => 'ID number',
+            'id_expiry_date'    => 'ID expiry date',
+        ];
+
+        $messages = [];
+        foreach ($fields as $key => $label) {
+            $messages["guardians.*.{$key}.required"]      = "The {$label} field is required.";
+            $messages["guardians.*.{$key}.required_with"] = "The {$label} field is required when guardians is present.";
+            $messages["guardians.*.{$key}.required_if"]   = "The {$label} field is required.";
+            $messages["guardians.*.{$key}.in"]            = "The selected {$label} is invalid.";
+            $messages["guardians.*.{$key}.boolean"]       = "The {$label} field must be true or false.";
+            $messages["guardians.*.{$key}.string"]        = "The {$label} field must be a string.";
+            $messages["guardians.*.{$key}.email"]         = "The {$label} must be a valid email address.";
+            $messages["guardians.*.{$key}.max"]           = "The {$label} field must not exceed :max characters.";
+            $messages["guardians.*.{$key}.uuid"]          = "The {$label} field must be a valid UUID.";
+            $messages["guardians.*.{$key}.date"]          = "The {$label} field must be a valid date.";
+        }
+
+        return $messages;
+    }
+
     public function withValidator($validator): void
     {
         $validator->after(function ($v) {
@@ -133,5 +181,14 @@ class StudentRequest extends FormRequest
                 }
             }
         });
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        throw new HttpResponseException(response()->json([
+            'status' => 'error',
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422));
     }
 }

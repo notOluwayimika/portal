@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
-use Spatie\Activitylog\Support\LogOptions;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class CurriculumSubject extends Model
 {
@@ -112,8 +112,7 @@ class CurriculumSubject extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['is_compulsory', 'active', 'archived_at', 'display_order'])
-            ->logOnlyDirty()
-            ->dontLogEmptyChanges();
+            ->logOnlyDirty();
     }
     public function beforeActivityLogged(Activity $activity, string $eventName): void
     {

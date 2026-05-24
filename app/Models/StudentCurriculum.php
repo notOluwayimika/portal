@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Activitylog\Support\LogOptions;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class StudentCurriculum extends Model
 {
@@ -27,8 +27,8 @@ class StudentCurriculum extends Model
     ];
 
     protected $casts = [
-        'status'    => StudentStatusEnum::class,
-        'ended_at'  => 'datetime',
+        'status' => StudentStatusEnum::class,
+        'ended_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -75,15 +75,15 @@ class StudentCurriculum extends Model
     public function activeSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
-                    ->active()
-                    ->with('curriculumSubject.subject');
+            ->active()
+            ->with('curriculumSubject.subject');
     }
 
     public function droppedSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
-                    ->dropped()
-                    ->with('curriculumSubject.subject');
+            ->dropped()
+            ->with('curriculumSubject.subject');
     }
 
     public function availableOptionalSubjects(): Collection
@@ -119,7 +119,6 @@ class StudentCurriculum extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['status', 'ended_at', 'end_reason'])
-            ->logOnlyDirty()
-            ->dontLogEmptyChanges();
+            ->logOnlyDirty();
     }
 }

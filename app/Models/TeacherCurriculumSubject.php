@@ -6,8 +6,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
-use Spatie\Activitylog\Support\LogOptions;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class TeacherCurriculumSubject extends Model
 {
@@ -39,8 +39,7 @@ class TeacherCurriculumSubject extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['status', 'total_score', 'grade'])
-            ->logOnlyDirty()
-            ->dontLogEmptyChanges();
+            ->logOnlyDirty();
     }
     public function beforeActivityLogged(Activity $activity, string $eventName): void
     {

@@ -22,6 +22,7 @@ class TeacherService
 
     public function paginate(Request $request): LengthAwarePaginator
     {
+        $limit = $request->input('limit', 25);
         return Teacher::query()
             ->when($request->search, function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
@@ -34,7 +35,7 @@ class TeacherService
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->with(['photoFile'])
             ->latest()
-            ->paginate($request->integer('per_page', 25));
+            ->paginate($request->integer('per_page', $limit));
     }
 
     public function store(User $user, array $attributes): Teacher
@@ -46,7 +47,7 @@ class TeacherService
     {
         $data = $request->validated();
         $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
-        $data['photo_id']  = $request->isMethod('post') 
+        $data['photo_id']  = $request->isMethod('post')
             ? $this->uploadPhoto($request)
             : $this->replacePhoto($request, $photoId);
 

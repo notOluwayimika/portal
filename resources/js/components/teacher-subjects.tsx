@@ -27,7 +27,7 @@ export const termLabel = (t: { name: string } | number) => {
     return ['', '1st', '2nd', '3rd'][t] ?? String(t);
 };
 
-export const pct = (w: number) => `${Math.round(w * 100)}%`;
+export const pct = (w: number) => `${Math.round(w * 100) / w}%`;
 
 export function totalWeight(components: MarkingComponent[]) {
     return components.reduce((s, c) => s + Number(c?.weight ?? '0'), 0);

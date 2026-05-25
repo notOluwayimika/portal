@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import { CheckCircle, Circle } from 'lucide-react';
 
 interface OnboardingStepProps {
@@ -46,12 +47,12 @@ export function OnboardingStep({
                             <p className="text-xs text-slate-500 mt-0.5">{description}</p>
                         </div>
                         {!isComplete && (
-                            <a
+                            <Link
                                 href={actionHref}
                                 className="inline-flex items-center gap-1 text-xs font-medium text-[#185FA5] hover:underline shrink-0"
                             >
                                 {actionLabel} →
-                            </a>
+                            </Link>
                         )}
                     </div>
                 </div>

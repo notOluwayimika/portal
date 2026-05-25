@@ -36,7 +36,6 @@ export default function ScoreEntryPage({
     cs: CurriculumSubject;
     status: SubjectResultStatus;
 }) {
-    console.log(cs);
     const [markingComponents] = useState<MarkingComponent[]>(
         cs.marking_components,
     );
@@ -48,7 +47,7 @@ export default function ScoreEntryPage({
 
         for (const s of scores) {
             map[cellKey(s.student.id, s.marking_component.id)] = {
-                value: String(s.score),
+                value: String(s.score / s.marking_component.weight),
                 status: 'idle',
             };
         }
@@ -107,11 +106,12 @@ export default function ScoreEntryPage({
 
             const num = Number(raw);
             const max = maxForComponent(mc);
+            const value = (num / 100) * max;
 
-            if (!Number.isFinite(num) || num < 0 || num > max) {
+            if (!Number.isFinite(value) || value < 0 || value > max) {
                 setCell(key, {
                     status: 'error',
-                    error: `0–${max}`,
+                    error: `0–${100}`,
                 });
 
                 return;
@@ -124,7 +124,7 @@ export default function ScoreEntryPage({
                     curriculum_subject_id: cs.id,
                     student_id: studentId,
                     marking_component_id: mc.id,
-                    score: num,
+                    score: value,
                 };
                 await axios.post(
                     '/api/curriculum-subjects/' + cs.id + '/scores',
@@ -230,7 +230,8 @@ export default function ScoreEntryPage({
                     continue;
                 }
 
-                const n = Number(v);
+                console.log(mc.weight);
+                const n = mc.weight * Number(v);
 
                 if (Number.isFinite(n)) {
                     total += n;
@@ -238,7 +239,7 @@ export default function ScoreEntryPage({
                 }
             }
 
-            return anyValue ? Math.round(total * 100) / 100 : null;
+            return anyValue ? (Math.round(total * 100) / 100).toFixed(1) : null;
         },
         [markingComponents, getCell],
     );
@@ -299,12 +300,13 @@ export default function ScoreEntryPage({
                                     >
                                         <div>{mc.name}</div>
                                         <div className="text-xs font-normal text-gray-500">
-                                            / {maxForComponent(mc)}
+                                            / {maxForComponent(mc) / mc.weight}
                                         </div>
                                     </th>
                                 ))}
                                 <th className="px-3 py-3 text-right font-medium text-gray-700">
-                                    Total
+                                    {cs.curriculum?.is_ccm ? 'CCM' : 'Total'}{' '}
+                                    Score
                                 </th>
                             </tr>
                         </thead>
@@ -417,7 +419,11 @@ function ScoreCell({
     onBlur: () => void;
     status: SubjectResultStatus;
 }) {
-    const [value, setValue] = useState(cell.value);
+    const [value, setValue] = useState(
+        typeof Number(cell.value) === 'number' && cell.value !== ''
+            ? Number(cell.value)
+            : '',
+    );
     const borderClass =
         cell.status === 'error'
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
@@ -435,7 +441,7 @@ function ScoreCell({
                 step="0.1"
                 min={0}
                 max={max}
-                value={value}
+                value={typeof value === 'number' ? value.toFixed(1) : value}
                 disabled={
                     status.status === 'submitted' ||
                     status.status === 'approved'
@@ -445,7 +451,7 @@ function ScoreCell({
                     onChange(e.target.value);
                 }}
                 onBlur={onBlur}
-                className={`w-20 rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none ${borderClass}`}
+                className={`w-20 [appearance:textfield] rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${borderClass}`}
             />
             <StatusDot status={cell.status} />
             {cell.status === 'error' && cell.error && (

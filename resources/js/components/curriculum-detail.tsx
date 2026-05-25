@@ -253,8 +253,8 @@ export function CurriculumDetail({
         try {
             const [currRes, subjRes, teacherRes] = await Promise.all([
                 axios.get(`/api/curricula/${curriculumId}`),
-                axios.get('/api/subjects'),
-                axios.get('/api/teachers'),
+                axios.get('/api/subjects?limit=1000'),
+                axios.get('/api/teachers?limit=1000'),
             ]);
             setCurriculum(currRes.data);
             setCurriculumSubjects(currRes.data.curriculum_subjects ?? []);

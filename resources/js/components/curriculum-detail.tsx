@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
 import type { ToastType } from '@/components/toast-item';
-import { fmtDate } from '@/helpers';
+import { fmtDate, handleBack } from '@/helpers';
 import { Confirm, Modal } from '@/pages/admin/school-setup';
 import type {
     Curriculum,
@@ -472,7 +472,7 @@ export function CurriculumDetail({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button
                         className="btn btn-ghost btn-sm btn-icon"
-                        onClick={onBack}
+                        onClick={handleBack}
                         title="Back to curricula"
                         style={{ fontSize: 18 }}
                     >

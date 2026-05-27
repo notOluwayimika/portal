@@ -7,12 +7,14 @@ use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\GuardianController;
+use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\SubjectResultStatusController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
@@ -28,6 +30,7 @@ Route::get('/sessions/{session:uuid}/terms', [TermController::class, 'index']);
 
 // get class level arm structure
 Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+Route::get('/class-level-arms', [ClassLevelArmController::class, 'list']);
 // get exam types
 Route::get('/exam-types', [ExamTypeController::class, 'index']);
 // get subjects
@@ -97,6 +100,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
+    Route::get('/curriculum-subjects', [CurriculumSubjectController::class, 'index']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'show']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
@@ -146,11 +150,20 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
     Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
 
+    // subject result status
+    Route::get('/subject-result-statuses', [SubjectResultStatusController::class, 'index']);
+
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 
     require __DIR__ . '/endpoints/student.php';
     require __DIR__ . '/endpoints/teacher.php';
     require __DIR__ . '/endpoints/guardian.php';
+});
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
+    // Head of Schools
+    Route::get('/heads-of-schools', [HeadOfSchoolController::class, 'index']);
+    Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store']);
+    Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {

@@ -21,6 +21,13 @@ use Illuminate\Support\Str;
 
 class ClassLevelArmController extends Controller
 {
+
+    public function list()
+    {
+        $school = Auth::user()->school;
+        $classLevelArms = $school->classLevelArms;
+        return response()->json(ClassLevelArmResource::collection($classLevelArms));
+    }
     public function index(Request $request)
     {
         try {

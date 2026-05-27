@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     BookOpen,
     Building2,
+    ClipboardCopyIcon,
     ClipboardList,
     GraduationCap,
     History,
@@ -38,6 +39,24 @@ const dashboardGroup: NavGroup = {
     ],
 };
 
+const headOfSchoolNavGroups: NavGroup[] = [
+    {
+        label: 'Head of School',
+        items: [
+            {
+                title: 'Review Results',
+                href: '/setup/review/results',
+                icon: ClipboardList,
+            },
+            {
+                title: 'Pending Results',
+                href: '/setup/review/pending',
+                icon: ClipboardCopyIcon,
+            },
+        ],
+    },
+];
+
 const adminNavGroups: NavGroup[] = [
     {
         label: 'People',
@@ -72,6 +91,16 @@ const adminNavGroups: NavGroup[] = [
                 href: '/setup/review/results',
                 icon: ClipboardList,
             },
+            {
+                title: 'Pending Results',
+                href: '/setup/review/pending',
+                icon: ClipboardCopyIcon,
+            },
+            {
+                title: 'Head of Schools',
+                href: '/setup/head-of-schools',
+                icon: GraduationCap,
+            },
         ],
     },
     {
@@ -89,11 +118,11 @@ const adminNavGroups: NavGroup[] = [
 const guardianNavGroups: NavGroup[] = [
     {
         items: [
-            {
-                title: 'My Dashboard',
-                href: '/parent/dashboard',
-                icon: LayoutDashboard,
-            },
+            // {
+            //     title: 'My Dashboard',
+            //     href: '/parent/dashboard',
+            //     icon: LayoutDashboard,
+            // },
             {
                 title: 'My Wards',
                 href: '/parent/wards',
@@ -109,18 +138,24 @@ export function AppSidebar() {
     const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
         auth: { roles: string[] };
     }>().props;
-    const role = auth.roles[0];
+    const roles = auth.roles;
 
     const navGroups = useMemo(() => {
-        if (role === 'guardian') {
-            return guardianNavGroups;
+        const groups: NavGroup[] = [dashboardGroup];
+
+        if (roles.includes('guardian')) {
+            groups.push(...guardianNavGroups);
         }
 
-        if (role === 'teacher') {
+        if (roles.includes('head_of_school')) {
+            groups.push(...headOfSchoolNavGroups);
+        }
+
+        if (roles.includes('teacher')) {
             const teacher = auth.user.teacher as Teacher | undefined;
-            const teacherGroups: NavGroup[] = [dashboardGroup];
+
             if (teacher) {
-                teacherGroups.push({
+                groups.push({
                     label: 'Teaching',
                     items: [
                         {
@@ -131,15 +166,14 @@ export function AppSidebar() {
                     ],
                 });
             }
-            return teacherGroups;
         }
 
-        if (role === 'admin' || role === 'head_of_school') {
-            return [dashboardGroup, ...adminNavGroups];
+        if (roles.includes('admin')) {
+            groups.push(...adminNavGroups);
         }
 
-        return [dashboardGroup];
-    }, [role, auth.user.teacher]);
+        return groups;
+    }, [roles, auth.user.teacher]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

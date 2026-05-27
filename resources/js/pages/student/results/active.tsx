@@ -65,6 +65,32 @@ function gradeForScore(
 
     return '—';
 }
+function gradePointForScore(
+    score: number | null,
+    boundaries: GradeBoundary[],
+): string {
+    if (score == null || Number.isNaN(score)) {
+        return '—';
+    }
+
+    for (const b of boundaries) {
+        const min = toNum(b.min_score);
+        const max = toNum(b.max_score);
+
+        if (score >= min && score < max) {
+            return b.grade_point;
+        }
+    }
+
+    // include the very top edge in the highest band
+    const top = boundaries[0];
+
+    if (top && score >= toNum(top.max_score)) {
+        return top.grade_point;
+    }
+
+    return '—';
+}
 
 // ---------------------------------------------------------------------------
 // Print styles — kept inline so this component is fully self-contained.
@@ -108,7 +134,7 @@ function CurriculumCard({
     student,
 }: CurriculumCardProps) {
     const { auth } = usePage().props;
-    const role = auth.roles[0];
+    const roles = auth.roles;
     const boundaries =
         sc.curriculum.exam_type?.grade_boundaries?.length &&
         sc.curriculum.exam_type?.grade_boundaries?.length > 0
@@ -118,13 +144,6 @@ function CurriculumCard({
     const rows = useMemo<ResultRow[]>(() => {
         const subjects = (sc.subjects || [])
             .slice()
-            .filter(
-                (s) =>
-                    s.curriculum_subject?.result_status?.status ===
-                        'approved' ||
-                    role === 'admin' ||
-                    role === 'head_of_school',
-            )
             .sort(
                 (a, b) =>
                     (a.curriculum_subject?.display_order ?? 0) -
@@ -161,6 +180,9 @@ function CurriculumCard({
             };
         });
     }, [sc, studentId, boundaries]);
+    const isGuardian = roles.includes('guardian');
+    const hasIncompleteResults = rows.some((r) => r.score === null);
+    const resultsIncomplete = isGuardian && hasIncompleteResults;
 
     const overall = useMemo<number | null>(() => {
         const vals = rows
@@ -175,14 +197,16 @@ function CurriculumCard({
     }, [rows]);
 
     return (
-        <div className="student-result-card mb-8 overflow-hidden rounded-lg border border-slate-300">
-            <div className="flex items-center justify-between px-4 py-3">
+        <div className="student-result-card overflow-hidden border border-slate-300">
+            <div className="flex items-center justify-between px-1">
                 <div>
                     <p className="text-xs text-black">
-                        Name Of Student: {student.full_name}
+                        <span className="font-bold">Name Of Student:</span>{' '}
+                        {student.full_name}
                     </p>
                     <p className="text-xs text-black">
-                        Form: {student.class_details.full_class}
+                        <span className="font-bold">Form:</span>{' '}
+                        {student.class_details.full_class}
                     </p>
                 </div>
                 {/* <span className="rounded bg-blue-700 px-2 py-1 text-xs font-medium text-white">
@@ -191,91 +215,102 @@ function CurriculumCard({
             </div>
 
             <div className="overflow-x-auto">
-                <table className="my-4 w-full border-collapse text-sm">
+                <table className="w-full border-collapse text-xs">
                     <thead>
-                        <tr className="bg-blue-100 text-left text-black">
-                            <th className="border border-slate-300 px-3 py-2 font-semibold">
+                        <tr className="bg-blue-100 text-center text-black">
+                            <th className="border border-slate-300 px-1 font-semibold">
                                 Subject
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 text-center font-semibold">
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Score %
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 text-center font-semibold">
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Grade
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 text-center font-semibold">
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Class Avg
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 text-center font-semibold">
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Target Score
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 text-center font-semibold">
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Target Grade
                             </th>
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((r, i) => (
-                            <tr
-                                key={r.key}
-                                className={i % 2 ? 'bg-slate-50' : 'bg-white'}
-                            >
-                                <td className="border border-slate-300 px-3 py-2">
-                                    <span className="font-medium text-slate-800">
-                                        {r.name}
-                                    </span>
-                                    {/* {r.code && (
+                        {resultsIncomplete ? (
+                            <tr>
+                                <td
+                                    colSpan={6}
+                                    className="border border-slate-300 px-4 py-6 text-center text-xs text-slate-500"
+                                >
+                                    Result incomplete — please check back later.
+                                </td>
+                            </tr>
+                        ) : (
+                            rows.map((r, i) => (
+                                <tr
+                                    key={r.key}
+                                    className={
+                                        i % 2 ? 'bg-slate-50' : 'bg-white'
+                                    }
+                                >
+                                    <td className="border border-slate-300 px-1">
+                                        <span className="font-medium text-slate-800">
+                                            {r.name}
+                                        </span>
+                                        {/* {r.code && (
                                         <span className="ml-2 text-xs text-slate-400">
                                             {r.code}
                                         </span>
                                     )} */}
-                                    {/* {r.compulsory && (
+                                        {/* {r.compulsory && (
                                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                                             Core
                                         </span>
                                     )} */}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">
-                                    {r.score != null ? r.score.toFixed(1) : '—'}
-                                </td>
-                                <td
-                                    className={`border border-slate-300 px-3 py-2 text-center font-semibold text-black`}
-                                >
-                                    {r.grade}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center text-slate-600 tabular-nums">
-                                    {r.classAvg != null
-                                        ? r.classAvg.toFixed(1)
-                                        : '—'}
-                                    {/* {r.classAvg != null && (
+                                    </td>
+                                    <td className="border border-slate-300 px-1 text-center tabular-nums">
+                                        {r.score != null
+                                            ? r.score.toFixed(1)
+                                            : '—'}
+                                    </td>
+                                    <td
+                                        className={`border border-slate-300 px-1 text-center font-semibold text-black`}
+                                    >
+                                        {r.grade}
+                                    </td>
+                                    <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
+                                        {r.classAvg != null
+                                            ? r.classAvg.toFixed(1)
+                                            : '—'}
+                                        {/* {r.classAvg != null && (
                                         <span className="ml-1 text-xs text-slate-400">
                                             ({r.classAvgGrade})
                                         </span>
                                     )} */}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center text-slate-600 tabular-nums">
-                                    {/* random integer between 70 and 100 */}
-                                    {Math.floor(Math.random() * 31) + 70}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center text-slate-600 tabular-nums">
-                                    A
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+                                    <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
+                                        {/* random integer between 80 and 100 */}
+                                        {Math.floor(Math.random() * 21) + 80}
+                                    </td>
+                                    <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
+                                        A
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
-                    {overall != null && (
+                    {overall != null && !resultsIncomplete && (
                         <tfoot>
                             <tr className="bg-blue-50 font-semibold text-black">
-                                <td className="border border-slate-300 px-3 py-2">
-                                    Overall Average
+                                <td className="border border-slate-300 px-1">
+                                    Grade Point
                                 </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">
-                                    {overall.toFixed(1)}
+                                <td className="border border-slate-300 px-1 text-center">
+                                    {gradePointForScore(overall, boundaries)}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-2 text-center">
-                                    {gradeForScore(overall, boundaries)}
-                                </td>
-                                <td className="border border-slate-300 px-3 py-2" />
                             </tr>
                         </tfoot>
                     )}
@@ -291,24 +326,24 @@ interface GradeKeyTableProps {
 
 function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
     return (
-        <div className="overflow-hidden rounded-lg border border-slate-300 shadow-sm">
-            <div className="bg-slate-700 px-4 py-2">
+        <div className="overflow-hidden border border-slate-300 shadow-sm">
+            <div className="bg-slate-700 px-4">
                 <h3 className="text-sm font-bold text-white">Keys</h3>
             </div>
             <div className="overflow-x-auto">
-                <table className="my-4 w-full border-collapse text-sm">
+                <table className="w-full border-collapse text-xs">
                     <thead>
                         <tr className="bg-slate-100 text-left text-slate-700">
-                            <th className="border border-slate-300 px-3 py-2 font-semibold">
+                            <th className="border border-slate-300 px-1 font-semibold">
                                 Grade
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 font-semibold">
+                            <th className="border border-slate-300 px-1 font-semibold">
                                 Score Range
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 font-semibold">
+                            <th className="border border-slate-300 px-1 font-semibold">
                                 Label
                             </th>
-                            <th className="border border-slate-300 px-3 py-2 font-semibold">
+                            <th className="border border-slate-300 px-1 font-semibold">
                                 Grade Point
                             </th>
                         </tr>
@@ -320,17 +355,17 @@ function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
                                 className={i % 2 ? 'bg-slate-50' : 'bg-white'}
                             >
                                 <td
-                                    className={`border border-slate-300 px-3 py-2 font-bold text-black`}
+                                    className={`border border-slate-300 px-1 font-bold text-black`}
                                 >
                                     {b.grade}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-2 text-slate-600 tabular-nums">
+                                <td className="border border-slate-300 px-1 text-slate-600 tabular-nums">
                                     {toNum(b.min_score)} – {toNum(b.max_score)}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-2 text-slate-700">
+                                <td className="border border-slate-300 px-1 text-slate-700">
                                     {b.label}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-2 text-slate-700">
+                                <td className="border border-slate-300 px-1 text-slate-700">
                                     {b.grade_point}
                                 </td>
                             </tr>
@@ -346,6 +381,7 @@ function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
 // Main component
 // ---------------------------------------------------------------------------
 export default function StudentResultTable() {
+    const { auth } = usePage().props;
     const { student, studentCurricula, defaultGradeBoundaries } =
         usePage<StudentResultPageProps>().props;
     const curricula: StudentCurriculum[] = studentCurricula.data || [];
@@ -414,23 +450,25 @@ export default function StudentResultTable() {
                     <h1 className="text-lg font-bold uppercase">
                         {SCHOOL_NAME}
                     </h1>
-                    <p className="text-slate-600">
+                    <p className="text-sm text-slate-600">
                         SECONDARY AND FOUNDATION(PRE-DEGREE)
                     </p>
-                    <p className="text-slate-600">
+                    <p className="text-sm text-slate-600">
                         International Airport Road Igwuruta
                     </p>
-                    <p className="text-slate-600">
+                    <p className="text-sm text-slate-600">
                         Website: www.brookstoneng.org
                     </p>
                     {curricula.length > 0 && (
                         <>
-                            <p className="text-slate-600">
+                            <p className="text-sm font-bold text-slate-600">
                                 {curricula[0].curriculum.is_ccm
                                     ? 'CROSS CURRICULAR MONITORING'
                                     : ''}
                             </p>
-                            <p>{curricula[0].curriculum.term?.full_name}</p>
+                            <p className="text-sm font-bold text-slate-600">
+                                {curricula[0].curriculum.term?.full_name}
+                            </p>
                         </>
                     )}
                 </div>
@@ -441,7 +479,7 @@ export default function StudentResultTable() {
                         you will be able to view them here.
                     </p>
                 )}
-                <div className="space-y-8">
+                <div className="">
                     {curricula.map((sc) => {
                         return (
                             <CurriculumCard
@@ -454,7 +492,8 @@ export default function StudentResultTable() {
                         );
                     })}
                     <div className="grid grid-cols-2">
-                        {curricula.map((sc) => {
+                        <div></div>
+                        {curricula.map((sc, i) => {
                             const boundaries =
                                 sc.curriculum.exam_type?.grade_boundaries
                                     ?.length &&
@@ -463,11 +502,24 @@ export default function StudentResultTable() {
                                     ? sc.curriculum.exam_type?.grade_boundaries
                                     : defaultGradeBoundaries.data;
 
-                            return <GradeKeyTable boundaries={boundaries} />;
+                            return i === 0 ? (
+                                <GradeKeyTable boundaries={boundaries} />
+                            ) : null;
                         })}
                     </div>
                 </div>
-                <div className="my-4 w-full border border-black p-2 text-sm font-extralight italic">
+                <div className="my-1 flex w-full justify-end p-1 text-xs font-extralight italic">
+                    <div>
+                        <p>Principal's Signature</p>
+                        <img
+                            src="/assets/images/signature_secondary.png"
+                            alt="Brookstone School"
+                            className={`h-16 w-auto sm:h-20`}
+                            draggable={false}
+                        />
+                    </div>
+                </div>
+                <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
                     <p>
                         Parents and students are encouraged to attend CCM
                         meetings at the beginning of every term and half term to

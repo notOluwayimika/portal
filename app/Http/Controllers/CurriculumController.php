@@ -7,6 +7,7 @@ use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
 use App\Models\Curriculum;
 use App\Models\MarkingComponent;
+use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
 use Illuminate\Http\Request;
@@ -174,6 +175,17 @@ class CurriculumController extends Controller
                 'is_compulsory' => $request->is_compulsory,
                 'display_order' => $request->display_order,
             ]);
+            if ($request->is_compulsory) {
+                $students = $curriculum->studentCurricula;
+                foreach ($students as $student) {
+                    StudentSubject::updateOrCreate([
+                        'student_curriculum_id' => $student->id,
+                        'curriculum_subject_id' => $curriculumSubject->id,
+                    ], [
+                        'status' => 'active'
+                    ]);
+                }
+            }
 
             $curriculumSubject->resultStatus()->create(
                 [

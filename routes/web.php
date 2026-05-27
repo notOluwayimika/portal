@@ -34,7 +34,11 @@ Route::get('/', function () {
     ]);
 })->middleware('guest')->name('home');
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
+
+    Route::get('/setup/head-of-schools', function () {
+        return Inertia::render('admin/head-of-schools/index');
+    })->name('admin.dashboard');
 
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/school-setup')->name('setup');
@@ -131,14 +135,19 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     Route::put('students/{student:uuid}', [App\Http\Controllers\StudentController::class, 'update']);
 
 
+});
+
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+
+
 
     // Review results
     Route::get('setup/review/results', function () {
-        $subjectResults = SubjectResultStatus::with(['curriculumSubject.teacherAssignments.teacher', 'curriculumSubject.subject', 'curriculumSubject.curriculum.academicSession', 'curriculumSubject.curriculum.examType', 'curriculumSubject.curriculum.term', 'curriculumSubject.curriculum.classLevelArm', 'updatedBy'])->where('status', 'submitted')->get();
-        return Inertia::render('admin/review/index', [
-            'subjectResults' => SubjectResultStatusResource::collection($subjectResults)
-        ]);
+        return Inertia::render('admin/review/index');
     })->name('setup.review.results');
+    Route::get('setup/review/pending', function () {
+        return Inertia::render('admin/review/pending');
+    })->name('setup.review.pending');
 
 
 
@@ -156,8 +165,18 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
     })->name('setup.teachers.show');
 
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
-        $curriculumSubject->load(['curriculum', 'subject', 'markingComponents', 'scores.student', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student', 'resultStatus']);
-
+        $curriculumSubject->load([
+            'curriculum',
+            'subject',
+            'markingComponents',
+            'scores.student',
+            'scores.markingComponent',
+            'studentAssignments' => function ($query) {
+                $query->where('status', 'active')
+                    ->with('studentCurriculum.student');
+            },
+            'resultStatus',
+        ]);
         return Inertia::render('curriculum-subject/show', [
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
         ]);

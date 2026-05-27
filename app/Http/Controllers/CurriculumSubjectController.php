@@ -87,6 +87,17 @@ class CurriculumSubjectController extends Controller
             ]);
 
             $curriculumSubject->update($request->all());
+            if ($request->is_compulsory) {
+                $students = $curriculumSubject->curriculum->studentCurricula;
+                foreach ($students as $student) {
+                    StudentSubject::updateOrCreate([
+                        'student_curriculum_id' => $student->id,
+                        'curriculum_subject_id' => $curriculumSubject->id,
+                    ], [
+                        'status' => 'active'
+                    ]);
+                }
+            }
             return response()->json($curriculumSubject, 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -179,8 +190,8 @@ class CurriculumSubjectController extends Controller
 
             // abort_unless($isEnrolled, 422, 'Student is not enrolled in this subject.');
             $student = Student::where('uuid', $data['student_id'])->first();
-
             $markingComponent = $cs->markingComponents->first(fn($mc) => $mc->uuid === $data['marking_component_id']);
+            \Log::info($data['score']);
             $score = Score::updateOrCreate(
                 [
                     'student_id' => $student->id,
@@ -192,6 +203,11 @@ class CurriculumSubjectController extends Controller
                     'created_by' => Auth::id(),
                 ]
             );
+            if ($score->score == 0) {
+                $score->delete();
+            } else if (abs($score->score) < 0.5) {
+                $score->update(['score' => 0]);
+            }
 
             return response()->json([
                 'id' => $score->id,
@@ -321,5 +337,19 @@ class CurriculumSubjectController extends Controller
     {
         $curriculumSubject->load('markingComponents');
         return response()->json(new CurriculumSubjectResource($curriculumSubject));
+    }
+
+    public function index(Request $request)
+    {
+        $schoolId = auth()->user()->school_id;
+        $classLevelArms = $request->class_level_arms;
+        $curriculumSubjects = CurriculumSubject::with(['teacherAssignments.teacher', 'subject', 'resultStatus', 'curriculum.classLevelArm'])->whereHas('curriculum', function ($query) use ($schoolId) {
+            $query->where('school_id', $schoolId);
+        })->when(!empty($classLevelArms), function ($query) use ($classLevelArms) {
+            $query->whereHas('curriculum.classLevelArm', function ($q) use ($classLevelArms) {
+                $q->whereIn('uuid', $classLevelArms);
+            });
+        })->get();
+        return response()->json(CurriculumSubjectResource::collection($curriculumSubjects));
     }
 }

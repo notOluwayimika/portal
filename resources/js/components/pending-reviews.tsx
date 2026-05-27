@@ -1,7 +1,8 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { useMemo, useState } from 'react';
-import type { SubjectResultStatus } from '@/types/models';
+import { useEffect, useMemo, useState } from 'react';
+import type { ClassLevelArm, SubjectResultStatus } from '@/types/models';
+import ClassLevelArmFilter from './class-level-arm-filter';
 
 // ---------- Types ----------
 
@@ -31,13 +32,46 @@ const formatDateTime = (iso: string | null) => {
 
 // ---------- Page ----------
 
-export default function PendingReviewsPage({
-    subjectResults,
-}: {
-    subjectResults: SubjectResultStatus[];
-}) {
-    const [items, setItems] = useState<SubjectResultStatus[]>(subjectResults);
+export default function PendingReviewsPage() {
+    const [items, setItems] = useState<SubjectResultStatus[]>([]);
     const [rowState, setRowState] = useState<Record<string, RowState>>({});
+    const [classLevelArms, setClassLevelArms] = useState<ClassLevelArm[]>([]);
+    const [selectedClassLevelArms, setSelectedClassLevelArms] = useState<
+        string[]
+    >([]);
+
+    useEffect(() => {
+        const fetchClassLevelArms = async () => {
+            const response = await axios.get<ClassLevelArm[]>(
+                '/api/class-level-arms',
+            );
+            setClassLevelArms(response.data);
+        };
+
+        fetchClassLevelArms();
+    }, []);
+
+    useEffect(() => {
+        const fetchSubjectResultStatus = async () => {
+            const response = await axios.get<SubjectResultStatus[]>(
+                '/api/subject-result-statuses',
+                {
+                    params: {
+                        class_level_arms: selectedClassLevelArms,
+                    },
+                },
+            );
+            setItems(response.data);
+        };
+
+        if (selectedClassLevelArms.length > 0) {
+            fetchSubjectResultStatus();
+        } else {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setItems([]);
+        }
+    }, [selectedClassLevelArms]);
+
     const [query, setQuery] = useState('');
     const [rejectTarget, setRejectTarget] =
         useState<SubjectResultStatus | null>(null);
@@ -127,7 +161,7 @@ export default function PendingReviewsPage({
         <>
             <Head title="Pending reviews" />
 
-            <div className="mx-auto max-w-7xl space-y-6 p-6">
+            <div className="mx-auto max-w-7xl space-y-6 overflow-scroll p-6">
                 <div>
                     <h1 className="text-xl font-semibold text-gray-900">
                         Pending reviews
@@ -150,9 +184,16 @@ export default function PendingReviewsPage({
                         className="w-80 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                     />
                 </div>
+                <div>
+                    <ClassLevelArmFilter
+                        classLevelArms={classLevelArms}
+                        selected={selectedClassLevelArms}
+                        setFilters={setSelectedClassLevelArms}
+                    />
+                </div>
 
-                <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-                    <table className="min-w-full border-collapse text-sm">
+                <div className="max-w-2xl overflow-x-scroll rounded-lg border bg-white shadow-sm">
+                    <table className="border-collapse text-sm">
                         <thead className="bg-gray-50">
                             <tr>
                                 <Th>Subject</Th>

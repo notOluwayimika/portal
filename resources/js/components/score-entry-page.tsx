@@ -98,11 +98,11 @@ export default function ScoreEntryPage({
             const key = cellKey(studentId, mc.id);
 
             // Empty input: leave the existing server value alone, return to idle.
-            if (raw.trim() === '') {
-                setCell(key, { value: '', status: 'idle', error: undefined });
+            // if (raw.trim() === '') {
+            //     setCell(key, { value: '', status: 'idle', error: undefined });
 
-                return;
-            }
+            //     return;
+            // }
 
             const num = Number(raw);
             const max = maxForComponent(mc);

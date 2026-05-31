@@ -25,30 +25,78 @@ class CurriculumSubjectController extends Controller
 {
     protected function handleStudentResults(CurriculumSubject $curriculumSubject, string $status = 'approved')
     {
-        $curriculumSubject->load(['studentResults', 'scores.markingComponent', 'studentAssignments.studentCurriculum.student', 'curriculum.examType']);
+        $curriculumSubject->load([
+            'studentResults',
+            'scores.markingComponent',
+            'studentAssignments.studentCurriculum.student',
+            'curriculum.examType'
+        ]);
 
-        $gradeBoundaries = GradeBoundary::where('exam_type_id', $curriculumSubject->curriculum->exam_type_id)->get();
-        if (count($gradeBoundaries) < 1) {
-            $gradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
+        $gradeBoundaries = GradeBoundary::where(
+            'exam_type_id',
+            $curriculumSubject->curriculum->exam_type_id
+        )->get();
+
+        if ($gradeBoundaries->count() < 1) {
+            $gradeBoundaries = GradeBoundary::whereNull('exam_type_id')->get();
         }
-        $studentAssignments = $curriculumSubject->studentAssignments;
+
+        $studentAssignments = $curriculumSubject->studentAssignments()
+            ->where('status', 'active')
+            ->get();
+
+        // Get active student IDs
+        $activeStudentIds = $studentAssignments
+            ->pluck('studentCurriculum.student.id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Delete results for students no longer assigned
+        StudentResult::where('curriculum_subject_id', $curriculumSubject->id)
+            ->whereNotIn('student_id', $activeStudentIds)
+            ->delete();
+        $markingComponents = $curriculumSubject->markingComponents;
         foreach ($studentAssignments as $assignment) {
-            $scores = $curriculumSubject->scores()->where('student_id', $assignment->studentCurriculum->student->id)->get();
-            $total = 0;
-            foreach ($scores as $score) {
-                $total += $score->score;
+            $studentId = $assignment->studentCurriculum->student->id;
+
+
+            $scores = $curriculumSubject->scores()
+                ->where('student_id', $studentId)
+                ->get();
+
+
+            $total = $scores->sum('score');
+
+            $grade = $gradeBoundaries
+                ->where('min_score', '<=', $total)
+                ->where('max_score', '>=', $total)
+                ->first();
+            if (count($scores) === count($markingComponents)) {
+                StudentResult::updateOrCreate(
+                    [
+                        'student_id' => $studentId,
+                        'curriculum_subject_id' => $curriculumSubject->id,
+                    ],
+                    [
+                        'status' => $status,
+                        'total_score' => $total,
+                        'grade' => $grade ? $grade->grade : null,
+                        'approved_by' => Auth::id(),
+                        'approved_at' => now(),
+                    ]
+                );
+            } else {
+                // Delete the student result for that component if it exists
+                try {
+                    StudentResult::where('student_id', $studentId)
+                        ->where('curriculum_subject_id', $curriculumSubject->id)
+                        ->delete();
+                } catch (\Throwable $th) {
+                    //throw $th;
+                }
+
             }
-            $grade = $gradeBoundaries->where('min_score', '<=', $total)->where('max_score', '>=', $total)->first();
-            StudentResult::updateOrCreate([
-                'student_id' => $assignment->studentCurriculum->student->id,
-                'curriculum_subject_id' => $curriculumSubject->id,
-            ], [
-                'status' => $status,
-                'total_score' => $total,
-                'grade' => $grade ? $grade->grade : null,
-                'approved_by' => Auth::id(),
-                'approved_at' => now(),
-            ]);
         }
     }
 
@@ -168,9 +216,15 @@ class CurriculumSubjectController extends Controller
 
             // Authorize: the TCS must belong to the authenticated teacher, AND
             // the marking_component must belong to the same curriculum_subject.
-            $cs = CurriculumSubject::with('markingComponents')
+            $cs = CurriculumSubject::with(['markingComponents', 'resultStatus'])
                 ->where('uuid', $data['curriculum_subject_id'])
                 ->first();
+
+            if ($cs->resultStatus) {
+                if ($cs->resultStatus->status === 'submitted' || $cs->resultStatus->status === 'approved') {
+                    return response()->json(['error' => 'Scores submitted, contact administrator'], 422);
+                }
+            }
 
             $curriculumSubjectId = $cs->id;
 
@@ -191,7 +245,7 @@ class CurriculumSubjectController extends Controller
             // abort_unless($isEnrolled, 422, 'Student is not enrolled in this subject.');
             $student = Student::where('uuid', $data['student_id'])->first();
             $markingComponent = $cs->markingComponents->first(fn($mc) => $mc->uuid === $data['marking_component_id']);
-            \Log::info($data['score']);
+
             $score = Score::updateOrCreate(
                 [
                     'student_id' => $student->id,

@@ -104,6 +104,16 @@ const adminNavGroups: NavGroup[] = [
         ],
     },
     {
+        label: 'Reports',
+        items: [
+            {
+                title: 'Results per Class',
+                href: '/reports/results-per-class',
+                icon: ClipboardList,
+            },
+        ],
+    },
+    {
         label: 'System',
         items: [
             {

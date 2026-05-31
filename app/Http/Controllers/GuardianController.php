@@ -12,6 +12,7 @@ use App\Http\Requests\GuardianRequest;
 use App\Http\Requests\GuardianUpdateRequest;
 use App\Http\Requests\PivotUpdateRequest;
 use App\Http\Resources\GuardianResource;
+use App\Http\Resources\StudentCurriculumResource;
 use App\Jobs\BulkEnableGuardianLoginJob;
 use App\Jobs\BulkMessageGuardiansJob;
 use App\Models\Guardian;
@@ -285,7 +286,7 @@ class GuardianController extends Controller
         // abort_unless(request()->user()?->can('guardian.view'), 403);
 
         $students = $this->guardianService->studentsFor($guardian);
-
+        $students->load('school', 'currentCurriculum');
         return response()->json([
             'data' => $students->map(fn($s) => [
                 'id' => $s->uuid,
@@ -304,7 +305,7 @@ class GuardianController extends Controller
                     'id' => $s->school->id,
                     'name' => $s->school->name,
                 ] : null,
-                'current_class' => $s->currentCurriculum ? $s->currentCurriculum->name : null,
+                'current_class' => new StudentCurriculumResource($s->currentCurriculum->load(['curriculum'])),
             ]),
         ]);
     }

@@ -4,14 +4,10 @@ import { useState } from 'react';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import type { Guardian } from '@/types/models';
+import { PasswordModal } from '../password-modal';
 
 interface LoginAccessCardProps {
     guardian: Guardian;
@@ -25,15 +21,20 @@ function isSyntheticEmail(email?: string | null): boolean {
     return !!email && email.endsWith('@no-email.local');
 }
 
-export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCardProps) {
+export function LoginAccessCard({
+    guardian,
+    onUpdate,
+    onError,
+}: LoginAccessCardProps) {
     const [busy, setBusy] = useState<ActionKey | null>(null);
     const { confirmAndExecute } = useApiSweetAlertConfirmation();
+    const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
     const hasRealEmail = !!guardian.email && !isSyntheticEmail(guardian.email);
 
-    const hasLogin    = !!guardian.has_login;
-    const isDisabled  = !guardian.has_login && !!guardian.user_disabled_at;
-    const noAccount   = !guardian.has_login && !guardian.user_disabled_at;
+    const hasLogin = !!guardian.has_login;
+    const isDisabled = !guardian.has_login && !!guardian.user_disabled_at;
+    const noAccount = !guardian.has_login && !guardian.user_disabled_at;
 
     const swalAction = async (
         key: ActionKey,
@@ -43,22 +44,25 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
         confirmText = 'Yes, proceed',
     ) => {
         await confirmAndExecute({
-            sweetAlertTitle:   title,
-            sweetAlertText:    text,
-            sweetAlertIcon:    'warning',
+            sweetAlertTitle: title,
+            sweetAlertText: text,
+            sweetAlertIcon: 'warning',
             confirmButtonText: confirmText,
-            showSuccessAlert:  false,
-            showErrorAlert:    false,
+            showSuccessAlert: false,
+            showErrorAlert: false,
             onConfirm: async () => {
                 setBusy(key);
                 try {
-                    const res = await axios.post(`/api/guardians/${guardian.id}/${endpoint}`);
+                    const res = await axios.post(
+                        `/api/guardians/${guardian.id}/${endpoint}`,
+                    );
                     // enable/disable-login return a flat JsonResource (no data wrapper)
                     const updated: Guardian = res.data?.data ?? res.data;
                     if (updated) onUpdate(updated);
                 } catch (err: unknown) {
                     const msg =
-                        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+                        (err as { response?: { data?: { message?: string } } })
+                            ?.response?.data?.message ??
                         'Action failed. Please try again.';
                     onError(msg);
                 } finally {
@@ -86,7 +90,10 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
             );
         }
         return (
-            <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm">
+            <Badge
+                variant="secondary"
+                className="rounded-full px-2.5 py-0.5 text-[10px] font-bold text-slate-500 shadow-sm"
+            >
                 No Account
             </Badge>
         );
@@ -102,10 +109,12 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                     Login Access
                 </CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-4">
+            <CardContent className="space-y-4 p-4">
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">Status</span>
+                        <span className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                            Status
+                        </span>
                         {loginStatusBadge()}
                     </div>
 
@@ -113,7 +122,9 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
                             <div className="flex items-center gap-2 overflow-hidden">
                                 <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                <span className="truncate text-xs font-semibold text-slate-600">{guardian.email}</span>
+                                <span className="truncate text-xs font-semibold text-slate-600">
+                                    {guardian.email}
+                                </span>
                             </div>
                         </div>
                     )}
@@ -122,7 +133,10 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                 {guardian.email_verified_at && (
                     <div className="rounded-lg border border-emerald-100 bg-emerald-50/30 px-3 py-2 text-center">
                         <p className="text-[10px] font-bold text-emerald-700">
-                            ✓ Account activated on {new Date(guardian.email_verified_at).toLocaleDateString()}
+                            ✓ Account activated on{' '}
+                            {new Date(
+                                guardian.email_verified_at,
+                            ).toLocaleDateString()}
                         </p>
                     </div>
                 )}
@@ -133,15 +147,17 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-600"
                             disabled={!!busy}
-                            onClick={() => swalAction(
-                                'enable',
-                                'enable-login',
-                                'Enable Login Access',
-                                `${guardian.full_name} will receive their credentials and be able to sign in.`,
-                                'Yes, enable',
-                            )}
+                            onClick={() =>
+                                swalAction(
+                                    'enable',
+                                    'enable-login',
+                                    'Enable Login Access',
+                                    `${guardian.full_name} will receive their credentials and be able to sign in.`,
+                                    'Yes, enable',
+                                )
+                            }
                         >
                             {busy === 'enable' ? (
                                 <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
@@ -157,15 +173,17 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:border-amber-100 hover:bg-amber-50 hover:text-amber-600"
                             disabled={!!busy}
-                            onClick={() => swalAction(
-                                'disable',
-                                'disable-login',
-                                'Disable Login Access',
-                                `${guardian.full_name} will no longer be able to sign in.`,
-                                'Yes, disable',
-                            )}
+                            onClick={() =>
+                                swalAction(
+                                    'disable',
+                                    'disable-login',
+                                    'Disable Login Access',
+                                    `${guardian.full_name} will no longer be able to sign in.`,
+                                    'Yes, disable',
+                                )
+                            }
                         >
                             {busy === 'disable' ? (
                                 <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-amber-600" />
@@ -176,20 +194,34 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         </Button>
                     )}
 
+                    {/* Manually reset password */}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-600"
+                        disabled={!!busy}
+                        onClick={() => setPasswordModalOpen(true)}
+                    >
+                        <RotateCcw className="mr-2 h-3.5 w-3.5 text-slate-400" />
+                        Manually Reset Password
+                    </Button>
+
                     {/* Reset password */}
                     {hasRealEmail && (
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-600"
                             disabled={!!busy}
-                            onClick={() => swalAction(
-                                'reset',
-                                'reset-password',
-                                'Reset Password',
-                                `A password reset link will be sent to ${guardian.email}.`,
-                                'Yes, send link',
-                            )}
+                            onClick={() =>
+                                swalAction(
+                                    'reset',
+                                    'reset-password',
+                                    'Reset Password',
+                                    `A password reset link will be sent to ${guardian.email}.`,
+                                    'Yes, send link',
+                                )
+                            }
                         >
                             {busy === 'reset' ? (
                                 <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
@@ -205,15 +237,17 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
                         <Button
                             size="sm"
                             variant="outline"
-                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100"
+                            className="justify-start rounded-lg border-slate-200 text-xs font-semibold text-slate-700 transition-all hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-600"
                             disabled={!!busy}
-                            onClick={() => swalAction(
-                                'resend',
-                                'resend-invitation',
-                                'Resend Invitation',
-                                `A new invitation will be sent to ${guardian.email}.`,
-                                'Yes, resend',
-                            )}
+                            onClick={() =>
+                                swalAction(
+                                    'resend',
+                                    'resend-invitation',
+                                    'Resend Invitation',
+                                    `A new invitation will be sent to ${guardian.email}.`,
+                                    'Yes, resend',
+                                )
+                            }
                         >
                             {busy === 'resend' ? (
                                 <Spinner className="mr-2 h-3.5 w-3.5 animate-spin text-indigo-600" />
@@ -227,14 +261,20 @@ export function LoginAccessCard({ guardian, onUpdate, onError }: LoginAccessCard
 
                 {noAccount && (
                     <div className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
-                        <p className="text-center text-[11px] font-medium leading-relaxed text-slate-500">
+                        <p className="text-center text-[11px] leading-relaxed font-medium text-slate-500">
                             {hasRealEmail
                                 ? "This guardian doesn't have an active login account yet."
-                                : "A valid email address is required to enable login access for this guardian."}
+                                : 'A valid email address is required to enable login access for this guardian.'}
                         </p>
                     </div>
                 )}
             </CardContent>
+            <PasswordModal
+                open={passwordModalOpen}
+                onOpenChange={setPasswordModalOpen}
+                guardian={guardian}
+                onUpdate={onUpdate}
+            />
         </Card>
     );
 }

@@ -103,8 +103,15 @@ export default function ScoreEntryPage({
 
             //     return;
             // }
+            // if (
+            //     cs.result_status?.status === 'submitted' ||
+            //     cs.result_status?.status === 'approved'
+            // ) {
+            //     return;
+            // }
 
             const num = Number(raw);
+
             const max = maxForComponent(mc);
             const value = (num / 100) * max;
 
@@ -154,12 +161,14 @@ export default function ScoreEntryPage({
                         data?: {
                             message?: string;
                             errors?: Record<string, string[]>;
+                            error?: string;
                         };
                     };
                 };
                 const msg =
                     err?.response?.data?.errors?.score?.[0] ??
                     err?.response?.data?.message ??
+                    err?.response?.data?.error ??
                     'Save failed';
                 setCell(key, { status: 'error', error: msg });
             }
@@ -230,7 +239,6 @@ export default function ScoreEntryPage({
                     continue;
                 }
 
-                console.log(mc.weight);
                 const n = mc.weight * Number(v);
 
                 if (Number.isFinite(n)) {
@@ -441,6 +449,27 @@ function ScoreCell({
                 step="0.1"
                 min={0}
                 max={max}
+                onWheel={(e) => {
+                    e.currentTarget.blur();
+                }}
+                onInput={(e) => {
+                    const val = (e.target as HTMLInputElement).value;
+
+                    // allow empty (user deleting)
+                    if (val === '') {
+                        return;
+                    }
+
+                    // blur if not a valid number
+                    if (isNaN(Number(val))) {
+                        (e.target as HTMLInputElement).blur();
+                    }
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                    }
+                }}
                 value={typeof value === 'number' ? value.toFixed(1) : value}
                 disabled={
                     status.status === 'submitted' ||

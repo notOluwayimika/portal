@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/purity */
 import { usePage } from '@inertiajs/react';
 import { useMemo } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
@@ -31,7 +30,7 @@ interface ResultRow {
 // Single source of truth for the school name — used by the header AND the
 // printed watermark. Swap this for `student.data.school?.name` (or a page
 // prop) once that data is available.
-const SCHOOL_NAME = 'Brookstone School';
+export const SCHOOL_NAME = 'Brookstone School';
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -47,11 +46,13 @@ function gradeForScore(
         return '—';
     }
 
+    const flooredScore = Math.floor(score);
+
     for (const b of boundaries) {
         const min = toNum(b.min_score);
         const max = toNum(b.max_score);
 
-        if (score >= min && score < max) {
+        if (flooredScore >= min && flooredScore <= max) {
             return b.grade;
         }
     }
@@ -59,11 +60,55 @@ function gradeForScore(
     // include the very top edge in the highest band
     const top = boundaries[0];
 
-    if (top && score >= toNum(top.max_score)) {
+    if (top && flooredScore >= toNum(top.max_score)) {
         return top.grade;
     }
 
     return '—';
+}
+function nextGradeForScore(
+    score: number | null,
+    boundaries: GradeBoundary[],
+): string {
+    if (score == null || Number.isNaN(score)) {
+        return '—';
+    }
+
+    const flooredScore = Math.floor(score);
+
+    for (let i = 0; i < boundaries.length; i++) {
+        const b = boundaries[i];
+
+        const min = toNum(b.min_score);
+        const max = toNum(b.max_score);
+
+        if (flooredScore >= min && flooredScore <= max) {
+            // return the grade ABOVE the current one
+            return boundaries[i - 1]?.grade ?? b.grade;
+        }
+    }
+
+    // handle top edge
+    const top = boundaries[0];
+
+    if (top && flooredScore >= toNum(top.max_score)) {
+        return top.grade; // already highest
+    }
+
+    return '—';
+}
+function totalGradePoint(row: ResultRow[], boundaries: GradeBoundary[]) {
+    let GP = 0;
+    let count = 0;
+    row.forEach((r) => {
+        if (r.score) {
+            const flooredScore = Math.floor(r.score);
+            GP += toNum(gradePointForScore(flooredScore, boundaries));
+            count++;
+        }
+    });
+
+    return count > 0 ? (GP / count).toFixed(1) : '—';
 }
 function gradePointForScore(
     score: number | null,
@@ -73,11 +118,13 @@ function gradePointForScore(
         return '—';
     }
 
+    const flooredScore = Math.floor(score);
+
     for (const b of boundaries) {
         const min = toNum(b.min_score);
         const max = toNum(b.max_score);
 
-        if (score >= min && score < max) {
+        if (flooredScore >= min && flooredScore <= max) {
             return b.grade_point;
         }
     }
@@ -85,7 +132,7 @@ function gradePointForScore(
     // include the very top edge in the highest band
     const top = boundaries[0];
 
-    if (top && score >= toNum(top.max_score)) {
+    if (top && flooredScore >= toNum(top.max_score)) {
         return top.grade_point;
     }
 
@@ -95,7 +142,7 @@ function gradePointForScore(
 // ---------------------------------------------------------------------------
 // Print styles — kept inline so this component is fully self-contained.
 // ---------------------------------------------------------------------------
-const PRINT_STYLES = `
+export const PRINT_STYLES = `
 @media print {
     @page {
         size: A4;
@@ -127,7 +174,7 @@ interface CurriculumCardProps {
     student: Student;
 }
 
-function CurriculumCard({
+export function CurriculumCard({
     sc,
     defaultBoundaries,
     studentId,
@@ -163,7 +210,7 @@ function CurriculumCard({
 
             const scored = results
                 .map((r) => toNum(r.total_score))
-                .filter((n) => !Number.isNaN(n));
+                .filter((n) => !Number.isNaN(n) && n !== 0);
             const classAvg = scored.length
                 ? scored.reduce((s, n) => s + n, 0) / scored.length
                 : null;
@@ -201,11 +248,17 @@ function CurriculumCard({
             <div className="flex items-center justify-between px-1">
                 <div>
                     <p className="text-xs text-black">
-                        <span className="font-bold">Name Of Student:</span>{' '}
-                        {student.full_name}
+                        <span className="inline-block w-12 font-bold">
+                            Name:
+                        </span>
+                        {student.last_name}, {student.first_name}{' '}
+                        {student.middle_name}
                     </p>
+
                     <p className="text-xs text-black">
-                        <span className="font-bold">Form:</span>{' '}
+                        <span className="inline-block w-12 font-bold">
+                            Form:
+                        </span>
                         {student.class_details.full_class}
                     </p>
                 </div>
@@ -228,13 +281,14 @@ function CurriculumCard({
                                 Grade
                             </th>
                             <th className="border border-slate-300 px-1 text-center font-semibold">
+                                GP
+                            </th>
+                            <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Class Avg
                             </th>
                             <th className="border border-slate-300 px-1 text-center font-semibold">
-                                Target Score
-                            </th>
-                            <th className="border border-slate-300 px-1 text-center font-semibold">
-                                Target Grade
+                                <div>Target Grade</div>
+                                <div>by End of Term</div>
                             </th>
                         </tr>
                     </thead>
@@ -281,6 +335,15 @@ function CurriculumCard({
                                     >
                                         {r.grade}
                                     </td>
+                                    <td
+                                        className={`border border-slate-300 px-1 text-center font-semibold text-black`}
+                                    >
+                                        {gradePointForScore(
+                                            r.score,
+                                            boundaries,
+                                        )}
+                                    </td>
+
                                     <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
                                         {r.classAvg != null
                                             ? r.classAvg.toFixed(1)
@@ -292,11 +355,7 @@ function CurriculumCard({
                                     )} */}
                                     </td>
                                     <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
-                                        {/* random integer between 80 and 100 */}
-                                        {Math.floor(Math.random() * 21) + 80}
-                                    </td>
-                                    <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
-                                        A
+                                        {nextGradeForScore(r.score, boundaries)}
                                     </td>
                                 </tr>
                             ))
@@ -304,13 +363,17 @@ function CurriculumCard({
                     </tbody>
                     {overall != null && !resultsIncomplete && (
                         <tfoot>
-                            <tr className="bg-blue-50 font-semibold text-black">
+                            <tr className="bg-blue-300 font-semibold text-black">
                                 <td className="border border-slate-300 px-1">
-                                    Grade Point
+                                    Actual GPA
                                 </td>
+                                <td></td>
+                                <td></td>
                                 <td className="border border-slate-300 px-1 text-center">
-                                    {gradePointForScore(overall, boundaries)}
+                                    {totalGradePoint(rows, boundaries)}
                                 </td>
+                                <td></td>
+                                <td></td>
                             </tr>
                         </tfoot>
                     )}
@@ -324,7 +387,7 @@ interface GradeKeyTableProps {
     boundaries: GradeBoundary[];
 }
 
-function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
+export function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
     return (
         <div className="overflow-hidden border border-slate-300 shadow-sm">
             <div className="bg-slate-700 px-4">
@@ -381,7 +444,6 @@ function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
 // Main component
 // ---------------------------------------------------------------------------
 export default function StudentResultTable() {
-    const { auth } = usePage().props;
     const { student, studentCurricula, defaultGradeBoundaries } =
         usePage<StudentResultPageProps>().props;
     const curricula: StudentCurriculum[] = studentCurricula.data || [];
@@ -446,7 +508,7 @@ export default function StudentResultTable() {
                 <div className="flex items-center justify-center">
                     <AppLogoIcon />
                 </div>
-                <div className="mb-4 text-center">
+                <div className="mb-1 text-center">
                     <h1 className="text-lg font-bold uppercase">
                         {SCHOOL_NAME}
                     </h1>
@@ -460,7 +522,7 @@ export default function StudentResultTable() {
                         Website: www.brookstoneng.org
                     </p>
                     {curricula.length > 0 && (
-                        <>
+                        <div className="mt-2">
                             <p className="text-sm font-bold text-slate-600">
                                 {curricula[0].curriculum.is_ccm
                                     ? 'CROSS CURRICULAR MONITORING'
@@ -469,7 +531,7 @@ export default function StudentResultTable() {
                             <p className="text-sm font-bold text-slate-600">
                                 {curricula[0].curriculum.term?.full_name}
                             </p>
-                        </>
+                        </div>
                     )}
                 </div>
 
@@ -508,15 +570,15 @@ export default function StudentResultTable() {
                         })}
                     </div>
                 </div>
-                <div className="my-1 flex w-full justify-end p-1 text-xs font-extralight italic">
+                <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
                     <div>
-                        <p>Principal's Signature</p>
                         <img
                             src="/assets/images/signature_secondary.png"
                             alt="Brookstone School"
                             className={`h-16 w-auto sm:h-20`}
                             draggable={false}
                         />
+                        <p>Principal's Signature</p>
                     </div>
                 </div>
                 <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">

@@ -6,6 +6,8 @@ use App\Http\Controllers\AuthenticationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StudentController;
+use App\Http\Resources\ClassLevelArmResource;
+use App\Http\Resources\ClassLevelResource;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\GradeBoundaryResource;
@@ -14,12 +16,15 @@ use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\SubjectResultStatusResource;
 use App\Http\Resources\TeacherResource;
+use App\Models\ClassLevel;
+use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\GradeBoundary;
 use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\StudentResult;
 use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
 use Illuminate\Support\Facades\Route;
@@ -33,6 +38,42 @@ Route::get('/', function () {
         'status' => session('status'),
     ]);
 })->middleware('guest')->name('home');
+
+// Route::get('/cleanup', function () {
+//     try {
+//         $groups = DB::table('scores')
+//             ->select('student_id', 'curriculum_subject_id', DB::raw('COUNT(*) as score_count'))
+//             ->groupBy('student_id', 'curriculum_subject_id')
+//             ->get();
+//         DB::transaction(function () use ($groups) {
+//             foreach ($groups as $group) {
+
+//                 // 2. Load curriculum subject with marking components
+//                 $curriculumSubject = CurriculumSubject::with('markingComponents')
+//                     ->find($group->curriculum_subject_id);
+
+//                 if (!$curriculumSubject) {
+//                     continue;
+//                 }
+
+//                 $markingCount = $curriculumSubject->markingComponents->count();
+
+//                 // 3. If mismatch, delete StudentResult
+//                 if ((int) $group->score_count !== $markingCount) {
+
+//                     StudentResult::where('student_id', $group->student_id)
+//                         ->where('curriculum_subject_id', $group->curriculum_subject_id)
+//                         ->delete();
+//                 }
+//             }
+//         });
+//         return response()->json(['message' => 'Cleanup completed successfully']);
+//     } catch (\Throwable $th) {
+//         return response()->json(['message' => 'Error occurred while cleaning up', 'error' => $th->getMessage()], 500);
+//     }
+
+
+// });
 
 Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
 
@@ -149,6 +190,16 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
         return Inertia::render('admin/review/pending');
     })->name('setup.review.pending');
 
+    Route::prefix('reports')->group(function () {
+        Route::get('results-per-class', function () {
+            $schoolId = auth()->user()->school_id;
+            $classLevels = ClassLevel::where('school_id', $schoolId)->get();
+            return Inertia::render('reports/results-per-class', [
+                'classLevels' => ClassLevelResource::collection($classLevels)
+            ]);
+        })->name('reports.result-per-class');
+    });
+
 
 
 });
@@ -204,9 +255,46 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
 });
 
 Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->group(function () {
-    Route::get('students/{student:uuid}/results/active', function (Student $student) {
-        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject', 'curriculum.term'])->where('student_id', $student->id)->where('status', 'active')->get();
 
+
+    Route::get('class-level/{classLevel:uuid}/results', function (ClassLevel $classLevel) {
+        ini_set('memory_limit', '512M');
+        $classLevelArms = ClassLevelArm::where('class_level_id', $classLevel->id)->get();
+        $classLevelArms->load([
+            'curricula.curriculumSubjects',
+            'curricula.studentCurricula.studentSubjects' => function ($query) {
+                $query->where('status', 'active');
+            },
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student',
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.subject',
+            'curricula.studentCurricula.student',
+            'curricula.studentCurricula.curriculum.examType.gradeBoundaries',
+            'curricula.studentCurricula.curriculum.term',
+
+        ]);
+
+        $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
+        return Inertia::render('student/results/list', [
+            'classLevelArms' => ClassLevelArmResource::collection($classLevelArms),
+            'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
+        ]);
+    })->name('setup.classLevels.show');
+    Route::get('students/{student:uuid}/results/active', function (Student $student) {
+        $studentCurricula = StudentCurriculum::with([
+            'curriculum.examType.gradeBoundaries',
+            'curriculum.term',
+            'studentSubjects' => function ($query) {
+                $query->where('status', 'active');
+            },
+
+            'studentSubjects.curriculumSubject.studentResults.student',
+            'studentSubjects.curriculumSubject.resultStatus',
+            'studentSubjects.curriculumSubject.subject',
+        ])
+            ->where('student_id', $student->id)
+            ->where('status', 'active')
+            ->get();
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
 
         if (auth()->user()->hasRole('guardian')) {
@@ -228,8 +316,18 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
         ]);
     })->name('admin.dashboard');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
-        $studentCurricula = StudentCurriculum::with(['curriculum.examType.gradeBoundaries', 'studentSubjects.curriculumSubject.studentResults.student', 'studentSubjects.curriculumSubject.resultStatus', 'studentSubjects.curriculumSubject.subject'])->where('student_id', $student->id)->where('id', $studentCurriculum->id)->get();
-
+        $studentCurricula = StudentCurriculum::with([
+            'curriculum.examType.gradeBoundaries',
+            'studentSubjects' => function ($query) {
+                $query->where('status', 'active');
+            },
+            'studentSubjects.curriculumSubject.studentResults.student',
+            'studentSubjects.curriculumSubject.resultStatus',
+            'studentSubjects.curriculumSubject.subject',
+        ])
+            ->where('student_id', $student->id)
+            ->where('id', $studentCurriculum->id)
+            ->get();
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
         if (auth()->user()->hasRole('guardian')) {
 

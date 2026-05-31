@@ -32,6 +32,7 @@ class CurriculumResource extends JsonResource
                 $this->includeSubjects,
                 CurriculumSubjectResource::collection($this->curriculumSubjects)
             ),
+            'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula'))
         ];
     }
 }

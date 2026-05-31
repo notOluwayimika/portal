@@ -1,3 +1,4 @@
+import { StudentCurriculum } from '@/types/models';
 import { Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
@@ -10,6 +11,7 @@ import {
     Star,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { NoticesCard, QuickContactCard, Toast } from './dashboard';
 
 // ---------- Types ----------
 // Mirrors the columns on the `students` table + the pivot fields
@@ -31,7 +33,7 @@ export interface Ward {
     is_primary: boolean;
 
     // Optional convenience fields you may eagerly load on the backend
-    current_class?: string | null;
+    current_class?: StudentCurriculum | null;
     school?: { id: number | string; name: string } | null;
 }
 
@@ -80,6 +82,45 @@ const formatDob = (dob?: string | null) => {
 export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
     const { auth } = usePage().props;
+    const [toasts, setToasts] = useState([]);
+    const CONTACTS = [
+        {
+            office: 'Admin',
+            phone: '08078855452',
+            email: 'admin@brookstoneng.org',
+        },
+        {
+            office: 'Accounts',
+            phone: '08078856210',
+            email: 'accounts@brookstoneng.org',
+        },
+        {
+            office: 'Principal',
+            phone: '08102791331',
+            email: 'principal@brookstoneng.org',
+        },
+        {
+            office: 'IFY PHC',
+            phone: '07057555058',
+            email: 'headfoundation@brookstoneng.org',
+        },
+        {
+            office: 'IFY Abuja',
+            phone: '08070653533',
+            email: 'centremanagerabuja@brookstoneify.org',
+        },
+    ];
+    const addToast = (message) => {
+        const id = Date.now();
+        setToasts((prev) => [...prev, { id, message }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 4000);
+    };
+
+    const removeToast = (id) => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+    };
     const guardianId = auth.user?.guardian?.uuid;
     useEffect(() => {
         // Simulate an API call to fetch wards
@@ -108,6 +149,35 @@ export default function Wards() {
 
     const [activeId, setActiveId] = useState<string | null>(initialId);
     const active = wards.find((w) => w.id === activeId) ?? null;
+    const notices = [
+        {
+            type: 'general',
+            title: 'Summer Half-Term Check-In',
+            description:
+                'Kindly be reminded that the Summer Half-Term check-in for students in Year 7, 8, 9 & 10 is on Sunday, May 31, 2026 (9:00am - 3:30pm). We look forward to welcoming you and wish you journey mercies.',
+            time: '1 week ago',
+            sender: 'Admin',
+            badge_colour: 'gray',
+        },
+        {
+            type: 'general',
+            title: 'Cross Curricular Monitoring (CCM)',
+            description:
+                'There will be Cross Curricular Monitoring (CCM) at the school assembly hall between 9am and 3:30pm. ',
+            time: '1 week ago',
+            sender: 'Admin',
+            badge_colour: 'gray',
+        },
+        {
+            type: 'general',
+            title: 'Express Check-In Reminder',
+            description:
+                'For express check-in, parents are advised to pay all outstanding fees in advance and send the evidence of payment to accounts@brookstoneng.org. ',
+            time: '1 week ago',
+            sender: 'Admin',
+            badge_colour: 'gray',
+        },
+    ];
 
     if (!wards.length) {
         return (
@@ -131,7 +201,7 @@ export default function Wards() {
                 <div className="mb-3 flex items-end justify-between">
                     <div>
                         <h2 className="text-xl font-semibold text-gray-900">
-                            My Wards Results
+                            My Wards
                         </h2>
                         <p className="text-sm text-gray-500">
                             Switch between your wards to see their results.
@@ -211,7 +281,7 @@ export default function Wards() {
                                 <p className="text-sm text-gray-500 capitalize">
                                     {active.relationship}
                                     {active.current_class
-                                        ? ` · ${active.current_class}`
+                                        ? ` · ${active.current_class.curriculum.class_level_arm?.name}`
                                         : ''}
                                 </p>
                             </div>
@@ -265,7 +335,10 @@ export default function Wards() {
                         <InfoCell
                             icon={<GraduationCap className="h-4 w-4" />}
                             label="Class"
-                            value={active.current_class ?? '—'}
+                            value={
+                                active.current_class?.curriculum.class_level_arm
+                                    ?.name || '—'
+                            }
                         />
                         <InfoCell
                             icon={<User className="h-4 w-4" />}
@@ -283,6 +356,17 @@ export default function Wards() {
                     </div>
                 </section>
             )}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <NoticesCard
+                    notices={notices}
+                    onAction={() => addToast('Feature coming soon!')}
+                />
+                <QuickContactCard
+                    contacts={CONTACTS}
+                    onAction={() => addToast('Feature coming soon!')}
+                />
+            </div>
+            <Toast toasts={toasts} onDismiss={removeToast} />
         </div>
     );
 }

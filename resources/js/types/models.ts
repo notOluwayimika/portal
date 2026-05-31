@@ -63,6 +63,7 @@ export interface ClassLevelArm {
     arm: Arm;
     stream_id?: string | null;
     stream: Stream | null;
+    curricula?: Curriculum[];
     name?: string;
     created_at?: string;
     updated_at?: string;
@@ -245,6 +246,8 @@ export interface Curriculum {
     min_subjects: number;
     status: string;
     is_ccm: boolean;
+    curriculum_subjects?: CurriculumSubject;
+    student_curricula?: StudentCurriculum[];
     created_at?: string;
     updated_at?: string;
 }

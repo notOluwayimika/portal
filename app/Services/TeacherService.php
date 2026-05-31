@@ -18,7 +18,8 @@ class TeacherService
     public function __construct(
         private FileUploadService $fileUploadService,
         private PasswordGeneratorService $passwordGenerator,
-    ) {}
+    ) {
+    }
 
     public function paginate(Request $request): LengthAwarePaginator
     {
@@ -28,8 +29,8 @@ class TeacherService
                 $term = '%' . $request->search . '%';
                 $q->where(function ($inner) use ($term) {
                     $inner->where('first_name', 'LIKE', $term)
-                          ->orWhere('last_name', 'LIKE', $term)
-                          ->orWhere('staff_number', 'LIKE', $term);
+                        ->orWhere('last_name', 'LIKE', $term)
+                        ->orWhere('staff_number', 'LIKE', $term);
                 });
             })
             ->when($request->status, fn($q) => $q->where('status', $request->status))
@@ -47,7 +48,7 @@ class TeacherService
     {
         $data = $request->validated();
         $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
-        $data['photo_id']  = $request->isMethod('post')
+        $data['photo_id'] = $request->isMethod('post')
             ? $this->uploadPhoto($request)
             : $this->replacePhoto($request, $photoId);
 
@@ -58,8 +59,8 @@ class TeacherService
 
     public function processTeacherAccount(Request $request): void
     {
-        $dto           = $this->preparedDto($request);
-        $plainPassword = $this->passwordGenerator->generate();
+        $dto = $this->preparedDto($request);
+        $plainPassword = $this->passwordGenerator->generate(12, 'teacher');
 
         $user = DB::transaction(function () use ($dto, $plainPassword) {
             $user = User::create($dto->only(['first_name', 'last_name', 'email', 'school_id']) + [
@@ -129,7 +130,7 @@ class TeacherService
 
     public function import(array $rows, int $schoolId): array
     {
-        $saved  = 0;
+        $saved = 0;
         $errors = [];
 
         foreach ($rows as $index => $row) {
@@ -141,16 +142,16 @@ class TeacherService
             }
 
             try {
-                $attrs         = $this->prepareImportRow($row, $schoolId);
-                $plainPassword = $this->passwordGenerator->generate();
+                $attrs = $this->prepareImportRow($row, $schoolId);
+                $plainPassword = $this->passwordGenerator->generate(12, 'teacher');
 
                 $user = DB::transaction(function () use ($attrs, $schoolId, $plainPassword) {
                     $user = User::create([
                         'first_name' => $attrs['first_name'],
-                        'last_name'  => $attrs['last_name'],
-                        'email'      => $attrs['email'],
-                        'school_id'  => $schoolId,
-                        'password'   => $plainPassword,
+                        'last_name' => $attrs['last_name'],
+                        'email' => $attrs['email'],
+                        'school_id' => $schoolId,
+                        'password' => $plainPassword,
                     ]);
 
                     $user->assignRole('teacher');
@@ -175,13 +176,13 @@ class TeacherService
             $schoolName = $user->school?->name ?? config('app.name');
             $user->notify(new TeacherAccountCreatedNotification(
                 plainPassword: $plainPassword,
-                schoolName:    $schoolName,
-                loginUrl:      url('/login'),
+                schoolName: $schoolName,
+                loginUrl: url('/login'),
             ));
         } catch (\Throwable $e) {
             Log::error('Failed to send teacher account notification', [
                 'user_id' => $user->id,
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -189,18 +190,18 @@ class TeacherService
     private function prepareImportRow(array $row, int $schoolId): array
     {
         return [
-            'school_id'     => $schoolId,
-            'first_name'    => trim($row['first_name']),
-            'last_name'     => trim($row['last_name']),
-            'email'         => isset($row['email']) ? trim($row['email']) : null,
-            'staff_number'  => isset($row['staff_number']) ? trim($row['staff_number']) : null,
-            'gender'        => GenderTypeEnum::normalizeGender($row['gender'] ?? null),
+            'school_id' => $schoolId,
+            'first_name' => trim($row['first_name']),
+            'last_name' => trim($row['last_name']),
+            'email' => isset($row['email']) ? trim($row['email']) : null,
+            'staff_number' => isset($row['staff_number']) ? trim($row['staff_number']) : null,
+            'gender' => GenderTypeEnum::normalizeGender($row['gender'] ?? null),
             'date_of_birth' => normalizeDate($row['date_of_birth'] ?? null),
-            'address'       => isset($row['address']) ? trim($row['address']) : null,
+            'address' => isset($row['address']) ? trim($row['address']) : null,
             'qualification' => isset($row['qualification']) ? trim($row['qualification']) : null,
-            'hire_date'     => normalizeDate($row['hire_date'] ?? null),
-            'status'        => 'active',
-            'photo_id'      => null,
+            'hire_date' => normalizeDate($row['hire_date'] ?? null),
+            'status' => 'active',
+            'photo_id' => null,
         ];
     }
 

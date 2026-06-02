@@ -11,6 +11,7 @@ use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
+use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
@@ -164,6 +165,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     Route::get('/heads-of-schools', [HeadOfSchoolController::class, 'index']);
     Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store']);
     Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
+
+    Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
@@ -187,4 +190,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
     // protected guardian routes
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
+    Route::get('/guardians/{guardian:uuid}/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
+
+
 });

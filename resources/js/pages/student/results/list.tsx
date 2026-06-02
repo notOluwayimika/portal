@@ -6,12 +6,47 @@ import type {
     GradeBoundary,
     StudentCurriculum,
 } from '@/types/models';
-import { CurriculumCard, PRINT_STYLES, SCHOOL_NAME } from './active';
+import { CurriculumCard, GradeKeyTable, SCHOOL_NAME } from './active';
 interface ClassLevelArmPageProps {
     classLevelArms: { data: ClassLevelArm[] };
     defaultGradeBoundaries: { data: GradeBoundary[] };
     [key: string]: unknown;
 }
+const PRINT_STYLES = `
+@media print {
+    @page {
+        size: A4;
+        margin: 1cm;
+    }
+    html, body {
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .student-result-watermark {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .student-result-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    .print-wrapper,
+    .print-wrapper > div,
+    .print-wrapper .space-y-4 {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+    .sc-page {
+        break-before: page;
+        page-break-before: always;
+    }
+    .sc-page:first-child {
+        break-before: auto;
+        page-break-before: auto;
+    }
+}
+`;
 
 export default function List() {
     const { classLevelArms, defaultGradeBoundaries } =
@@ -23,7 +58,7 @@ export default function List() {
     };
 
     return (
-        <div>
+        <div className="block">
             <style>{PRINT_STYLES}</style>
             <div
                 aria-hidden="true"
@@ -39,7 +74,7 @@ export default function List() {
                 </div>
             </div>
             {/* height a4 */}
-            <div className="mx-automax-w-3xl relative z-10 p-4 font-sans text-slate-800">
+            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800">
                 <div className="flex items-center justify-between print:hidden">
                     <button
                         className="btn btn-ghost btn-sm btn-icon cursor-pointer p-4"
@@ -59,49 +94,103 @@ export default function List() {
                         </button>
                     )}
                 </div>
-                <div className="flex items-center justify-center">
-                    <AppLogoIcon />
-                </div>
-                <div className="mb-1 text-center">
-                    <h1 className="text-lg font-bold uppercase">
-                        {SCHOOL_NAME}
-                    </h1>
-                    <p className="text-sm text-slate-600">
-                        SECONDARY AND FOUNDATION(PRE-DEGREE)
-                    </p>
-                    <p className="text-sm text-slate-600">
-                        International Airport Road Igwuruta
-                    </p>
-                    <p className="text-sm text-slate-600">
-                        Website: www.brookstoneng.org
-                    </p>
-                </div>
             </div>
-            <div className="p-4">
+            {/* height a4 */}
+            <div className="print-wrapper mx-auto max-w-3xl">
                 {armData.map((classLevelArm) => (
                     <div key={classLevelArm.id}>
-                        <p className="pt-4 text-center text-lg font-bold">
+                        {/* <p className="pt-4 text-center text-lg font-bold">
                             {classLevelArm.name}
-                        </p>
+                        </p> */}
                         {classLevelArm.curricula?.map((curriculum) => (
-                            <div className="space-y-4" key={curriculum.id}>
-                                <p className="text-md pb-4 text-center font-bold text-slate-600">
-                                    {curriculum.is_ccm
-                                        ? 'CROSS CURRICULAR MONITORING'
-                                        : ''}
-                                </p>
+                            <div className="" key={curriculum.id}>
                                 {curriculum.student_curricula?.map(
                                     (sc: StudentCurriculum) => {
+                                        const boundaries =
+                                            sc.curriculum.exam_type
+                                                ?.grade_boundaries?.length &&
+                                            sc.curriculum.exam_type
+                                                ?.grade_boundaries?.length > 0
+                                                ? sc.curriculum.exam_type
+                                                      ?.grade_boundaries
+                                                : defaultGradeBoundaries.data;
+
                                         return (
-                                            <CurriculumCard
+                                            <div
                                                 key={sc.id}
-                                                sc={sc}
-                                                defaultBoundaries={
-                                                    defaultGradeBoundaries.data
-                                                }
-                                                studentId={sc.student.id}
-                                                student={sc.student}
-                                            />
+                                                className="sc-page block h-[277mm] p-4"
+                                            >
+                                                <div className="flex items-center justify-center">
+                                                    <AppLogoIcon />
+                                                </div>
+                                                <div className="mb-1 text-center">
+                                                    <h1 className="text-lg font-bold uppercase">
+                                                        {SCHOOL_NAME}
+                                                    </h1>
+                                                    <p className="text-sm text-slate-600">
+                                                        SECONDARY AND
+                                                        FOUNDATION(PRE-DEGREE)
+                                                    </p>
+                                                    <p className="text-sm text-slate-600">
+                                                        International Airport
+                                                        Road Igwuruta
+                                                    </p>
+                                                    <p className="text-sm text-slate-600">
+                                                        Website:
+                                                        www.brookstoneng.org
+                                                    </p>
+                                                    <p className="text-md pb-4 text-center font-bold text-slate-600">
+                                                        {curriculum.is_ccm
+                                                            ? 'CROSS CURRICULAR MONITORING'
+                                                            : ''}
+                                                    </p>
+                                                </div>
+                                                <CurriculumCard
+                                                    key={sc.id}
+                                                    sc={sc}
+                                                    defaultBoundaries={
+                                                        defaultGradeBoundaries.data
+                                                    }
+                                                    studentId={sc.student.id}
+                                                    student={sc.student}
+                                                />
+                                                <div className="grid grid-cols-2">
+                                                    <div></div>
+
+                                                    <GradeKeyTable
+                                                        boundaries={boundaries}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
+                                                        <div>
+                                                            <img
+                                                                src="/assets/images/signature_secondary.png"
+                                                                alt="Brookstone School"
+                                                                className={`h-16 w-auto sm:h-20`}
+                                                                draggable={
+                                                                    false
+                                                                }
+                                                            />
+                                                            <p>
+                                                                Principal's
+                                                                Signature
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
+                                                        <p>
+                                                            Parents and students
+                                                            are encouraged to
+                                                            attend CCM meetings
+                                                            at the beginning of
+                                                            every term and half
+                                                            term to review
+                                                            results.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         );
                                     },
                                 )}

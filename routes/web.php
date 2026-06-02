@@ -259,19 +259,60 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
 
     Route::get('class-level/{classLevel:uuid}/results', function (ClassLevel $classLevel) {
         ini_set('memory_limit', '512M');
+        $start = microtime(true);
         $classLevelArms = ClassLevelArm::where('class_level_id', $classLevel->id)->get();
-        $classLevelArms->load([
+        // $classLevelArms->load([
+        //     'curricula.curriculumSubjects',
+        //     'curricula.studentCurricula.studentSubjects' => function ($query) {
+        //         $query->where('status', 'active');
+        //     },
+        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student',
+        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
+        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.subject',
+        //     'curricula.studentCurricula.student',
+        //     'curricula.studentCurricula.curriculum.examType.gradeBoundaries',
+        //     'curricula.studentCurricula.curriculum.term',
+
+        // ]);
+        $classLevelArms = ClassLevelArm::with([
             'curricula.curriculumSubjects',
             'curricula.studentCurricula.studentSubjects' => function ($query) {
                 $query->where('status', 'active');
             },
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student',
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
             'curricula.studentCurricula.studentSubjects.curriculumSubject.subject',
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults' => function ($query) {
+                $query->select([
+                    'id',
+                    'curriculum_subject_id',
+                    'student_id',
+                    'total_score',
+                    'grade',
+                ]);
+            },
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student:id,uuid,first_name,middle_name,last_name',
+            'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
             'curricula.studentCurricula.student',
             'curricula.studentCurricula.curriculum.examType.gradeBoundaries',
             'curricula.studentCurricula.curriculum.term',
+        ])
+            ->where('class_level_id', $classLevel->id)
+            ->get();
+        logger()->info([
+            'arms' => $classLevelArms->count(),
+            'curricula' => $classLevelArms->pluck('curricula')->flatten()->count(),
+            'student_curricula' => $classLevelArms
+                ->pluck('curricula')
+                ->flatten()
+                ->pluck('studentCurricula')
+                ->flatten()
+                ->count(),
+        ]);
 
+
+        $data = ClassLevelArmResource::collection($classLevelArms);
+
+        logger()->info([
+            'resource_time' => microtime(true) - $start,
         ]);
 
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();

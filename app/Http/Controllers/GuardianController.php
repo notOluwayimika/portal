@@ -19,6 +19,7 @@ use App\Models\Guardian;
 use App\Models\Student;
 use App\Services\GuardianService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
@@ -541,5 +542,19 @@ class GuardianController extends Controller
         $this->guardianService->bulkUpdateStatus($data['guardian_ids'], $data['status'], $request->user()->school_id);
 
         return Response::success('Bulk status update processed successfully.');
+    }
+
+    public function setPassword(Request $request, Guardian $guardian)
+    {
+        // abort_unless($request->user()?->can('guardian.update'), 403);
+
+        $data = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = $guardian->user;
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        return Response::success('Password updated successfully.');
     }
 }

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { NoticesCard, QuickContactCard, Toast } from './dashboard';
+import { Button } from '@/components/ui/button';
 
 // ---------- Types ----------
 // Mirrors the columns on the `students` table + the pivot fields
@@ -83,6 +84,7 @@ export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
     const { auth } = usePage().props;
     const [toasts, setToasts] = useState([]);
+    const [activeResultAvailable, setActiveResultAvailable] = useState(true);
     const CONTACTS = [
         {
             office: 'Admin',
@@ -148,6 +150,18 @@ export default function Wards() {
     }, [wards]);
 
     const [activeId, setActiveId] = useState<string | null>(initialId);
+    useEffect(() => {
+        const checkResultReadiness = async () => {
+            const response = await axios.get(
+                `/api/guardians/${guardianId}/students/${activeId}/result-status`,
+            );
+            setActiveResultAvailable(response.data.available);
+        };
+
+        if (activeId) {
+            checkResultReadiness();
+        }
+    }, [activeId]);
     const active = wards.find((w) => w.id === activeId) ?? null;
     const notices = [
         {
@@ -289,13 +303,28 @@ export default function Wards() {
 
                         {/* CTAs */}
                         <div className="flex flex-col gap-2 sm:flex-row">
-                            <Link
-                                href={`/students/${active.id}/results/active`}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
-                            >
-                                <FileText className="h-4 w-4" />
-                                View Current Result
-                            </Link>
+                            {activeResultAvailable ? (
+                                <Link
+                                    href={`/students/${active.id}/results/active`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Link>
+                            ) : (
+                                <Button
+                                    onClick={() =>
+                                        addToast(
+                                            'No active results available or result incomplete',
+                                        )
+                                    }
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Button>
+                            )}
+
                             <Link
                                 href={`/setup/student-curricula/${active.id}`}
                                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"

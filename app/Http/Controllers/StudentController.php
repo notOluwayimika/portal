@@ -17,7 +17,9 @@ use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Models\Curriculum;
 use App\Models\FileUpload;
+use App\Models\Guardian;
 use App\Models\Student;
+use App\Models\StudentResult;
 use App\Repositories\ClassLevelArmRepository;
 use App\Repositories\CurriculumRepository;
 use App\Services\FileUploadService;
@@ -86,9 +88,9 @@ class StudentController extends Controller
         // Notifications run after the transaction commits so a rollback can't strand emails.
         foreach ($deferredNotifications as $job) {
             $this->guardianService->notifyGuardian(
-                user:          $job['user'],
+                user: $job['user'],
                 plainPassword: $job['plain_password'],
-                studentNames:  [$student->full_name],
+                studentNames: [$student->full_name],
             );
         }
 
@@ -197,18 +199,18 @@ class StudentController extends Controller
     private function processGuardianEntry(Student $student, array $entry, int $schoolId, array &$deferredNotifications): void
     {
         if (($entry['mode'] ?? null) === 'existing') {
-            $guardian      = $this->guardianService->resolveExistingGuardian($entry, $schoolId);
+            $guardian = $this->guardianService->resolveExistingGuardian($entry, $schoolId);
             $existingPivot = DB::table('guardian_student')
                 ->where('guardian_id', $guardian->id)
                 ->where('student_id', $student->id)
                 ->first();
 
             $this->guardianService->attachToStudent(
-                guardian:     $guardian,
-                student:      $student,
+                guardian: $guardian,
+                student: $student,
                 relationship: $entry['relationship'],
-                isPrimary:    (bool) $entry['is_primary'],
-                canLogin:     (bool) $entry['can_login'],
+                isPrimary: (bool) $entry['is_primary'],
+                canLogin: (bool) $entry['can_login'],
             );
 
             // If can_login is being raised from false→true and guardian has a real email, queue a re-notify.
@@ -227,40 +229,40 @@ class StudentController extends Controller
         // mode === 'new'
         $result = $this->guardianService->createGuardianWithUser(
             attributes: [
-                'first_name'        => $entry['first_name'],
-                'middle_name'       => $entry['middle_name']       ?? null,
-                'last_name'         => $entry['last_name'],
-                'gender'            => $entry['gender']            ?? null,
-                'phone'             => $entry['phone'],
-                'whatsapp_number'   => $entry['whatsapp_number']   ?? null,
-                'city'              => $entry['city']              ?? null,
-                'state'             => $entry['state']             ?? null,
-                'country'           => $entry['country']           ?? null,
-                'postal_code'       => $entry['postal_code']       ?? null,
-                'occupation'        => $entry['occupation']        ?? null,
-                'employer_name'     => $entry['employer_name']     ?? null,
-                'marital_status'    => $entry['marital_status']    ?? null,
+                'first_name' => $entry['first_name'],
+                'middle_name' => $entry['middle_name'] ?? null,
+                'last_name' => $entry['last_name'],
+                'gender' => $entry['gender'] ?? null,
+                'phone' => $entry['phone'],
+                'whatsapp_number' => $entry['whatsapp_number'] ?? null,
+                'city' => $entry['city'] ?? null,
+                'state' => $entry['state'] ?? null,
+                'country' => $entry['country'] ?? null,
+                'postal_code' => $entry['postal_code'] ?? null,
+                'occupation' => $entry['occupation'] ?? null,
+                'employer_name' => $entry['employer_name'] ?? null,
+                'marital_status' => $entry['marital_status'] ?? null,
                 'emergency_contact' => $entry['emergency_contact'] ?? null,
-                'id_type'           => $entry['id_type']           ?? null,
-                'id_number'         => $entry['id_number']         ?? null,
-                'id_expiry_date'    => $entry['id_expiry_date']    ?? null,
+                'id_type' => $entry['id_type'] ?? null,
+                'id_number' => $entry['id_number'] ?? null,
+                'id_expiry_date' => $entry['id_expiry_date'] ?? null,
             ],
-            schoolId:   $schoolId,
-            canLogin:   (bool) $entry['can_login'],
-            email:      $entry['email'] ?? null,
+            schoolId: $schoolId,
+            canLogin: (bool) $entry['can_login'],
+            email: $entry['email'] ?? null,
         );
 
         $this->guardianService->attachToStudent(
-            guardian:     $result['guardian'],
-            student:      $student,
+            guardian: $result['guardian'],
+            student: $student,
             relationship: $entry['relationship'],
-            isPrimary:    (bool) $entry['is_primary'],
-            canLogin:     (bool) $entry['can_login'],
+            isPrimary: (bool) $entry['is_primary'],
+            canLogin: (bool) $entry['can_login'],
         );
 
         if ($result['plain_password']) {
             $deferredNotifications[] = [
-                'user'           => $result['user'],
+                'user' => $result['user'],
                 'plain_password' => $result['plain_password'],
             ];
         }
@@ -297,5 +299,25 @@ class StudentController extends Controller
         }
 
         return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos');
+    }
+
+    public function activeResultStatus(Guardian $guardian, Student $student)
+    {
+        $activeCurriculum = $student->currentCurriculum;
+        $isAvailable = true;
+        $subjectsOffered = $activeCurriculum->activeSubjects;
+        foreach ($subjectsOffered as $subject) {
+            $result = StudentResult::where('student_id', $student->id)->where('curriculum_subject_id', $subject->curriculum_subject_id)->first();
+            if (!$result) {
+                $isAvailable = false;
+                break;
+            }
+        }
+        if ($subjectsOffered->isEmpty()) {
+            $isAvailable = false;
+        }
+        return response()->json(['available' => $isAvailable]);
+
+
     }
 }

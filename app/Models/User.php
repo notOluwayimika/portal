@@ -17,16 +17,18 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToSchool;
+    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToSchool, LogsActivity;
 
     protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id', 'disabled_at'];
-    protected $appends = ['full_name','name'];
+    protected $appends = ['full_name', 'name'];
 
     /**
      * Get the attributes that should be cast.
@@ -45,7 +47,7 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function isSuperAdmin(): bool
@@ -100,5 +102,12 @@ class User extends Authenticatable
     public function getAuthPassword(): string
     {
         return $this->isDisabled() ? '$2y$12$disabled.account.cannot.login.' . bin2hex(random_bytes(8)) : $this->password;
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['password'])
+            ->logOnlyDirty();
     }
 }

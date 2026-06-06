@@ -114,7 +114,6 @@ function CurriculumCard({
         sc.curriculum.exam_type?.grade_boundaries?.length > 0
             ? sc.curriculum.exam_type?.grade_boundaries
             : defaultBoundaries;
-    const examName = sc?.curriculum?.full_name || 'Results';
 
     const rows = useMemo<ResultRow[]>(() => {
         const subjects = (sc.subjects || [])
@@ -179,14 +178,11 @@ function CurriculumCard({
         <div className="student-result-card mb-8 overflow-hidden rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900">
             <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                    <h2 className="text-base font-bold text-black dark:text-white">
-                        {examName}
-                    </h2>
-                    <p className="text-xs text-black dark:text-slate-300">
+                    <p className="text-xs text-black">
                         Name Of Student: {student.full_name}
                     </p>
-                    <p className="text-xs text-black dark:text-slate-300">
-                        form: {student.class_details.full_class}
+                    <p className="text-xs text-black">
+                        Form: {student.class_details.full_class}
                     </p>
                 </div>
                 {/* <span className="rounded bg-blue-700 px-2 py-1 text-xs font-medium text-white">
@@ -240,7 +236,7 @@ function CurriculumCard({
                                     )} */}
                                 </td>
                                 <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">
-                                    {r.score != null ? r.score.toFixed(2) : '—'}
+                                    {r.score != null ? r.score.toFixed(1) : '—'}
                                 </td>
                                 <td
                                     className={`border border-slate-300 px-3 py-2 text-center font-semibold text-black`}
@@ -249,7 +245,7 @@ function CurriculumCard({
                                 </td>
                                 <td className="border border-slate-300 px-3 py-2 text-center text-slate-600 tabular-nums">
                                     {r.classAvg != null
-                                        ? r.classAvg.toFixed(2)
+                                        ? r.classAvg.toFixed(1)
                                         : '—'}
                                     {/* {r.classAvg != null && (
                                         <span className="ml-1 text-xs text-slate-400">
@@ -274,7 +270,7 @@ function CurriculumCard({
                                     Overall Average
                                 </td>
                                 <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">
-                                    {overall.toFixed(2)}
+                                    {overall.toFixed(1)}
                                 </td>
                                 <td className="border border-slate-300 px-3 py-2 text-center">
                                     {gradeForScore(overall, boundaries)}
@@ -383,7 +379,7 @@ export default function StudentResultTable() {
                 <div
                     className="select-none"
                     style={{
-                        opacity: 0.12,
+                        opacity: 0.05,
                     }}
                 >
                     <AppLogoIcon className="h-125! w-125!" />
@@ -414,10 +410,29 @@ export default function StudentResultTable() {
                 <div className="flex items-center justify-center">
                     <AppLogoIcon />
                 </div>
-                <div className="text-center">
-                    <h1 className="mb-4 text-lg font-bold uppercase">
+                <div className="mb-4 text-center">
+                    <h1 className="text-lg font-bold uppercase">
                         {SCHOOL_NAME}
                     </h1>
+                    <p className="text-slate-600">
+                        SECONDARY AND FOUNDATION(PRE-DEGREE)
+                    </p>
+                    <p className="text-slate-600">
+                        International Airport Road Igwuruta
+                    </p>
+                    <p className="text-slate-600">
+                        Website: www.brookstoneng.org
+                    </p>
+                    {curricula.length > 0 && (
+                        <>
+                            <p className="text-slate-600">
+                                {curricula[0].curriculum.is_ccm
+                                    ? 'CROSS CURRICULAR MONITORING'
+                                    : ''}
+                            </p>
+                            <p>{curricula[0].curriculum.term?.full_name}</p>
+                        </>
+                    )}
                 </div>
 
                 {curricula.length === 0 && (
@@ -451,6 +466,13 @@ export default function StudentResultTable() {
                             return <GradeKeyTable boundaries={boundaries} />;
                         })}
                     </div>
+                </div>
+                <div className="my-4 w-full border border-black p-2 text-sm font-extralight italic">
+                    <p>
+                        Parents and students are encouraged to attend CCM
+                        meetings at the beginning of every term and half term to
+                        review results.
+                    </p>
                 </div>
             </div>
         </>

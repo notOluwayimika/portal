@@ -130,6 +130,7 @@ class TeacherController extends Controller
             'class_level' => $curriculum->classLevelArm?->classLevel?->name,
             'arm' => $curriculum->classLevelArm?->arm?->label,
             'stream' => $curriculum->classLevelArm?->stream?->name,
+            'full_name' => $curriculum->full_name,
         ]);
 
         return Response::success([

@@ -97,7 +97,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
-
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'show']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
@@ -130,7 +130,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
         ->group(function () {
             Route::get('subjects', [StudentSubjectController::class, 'index']);
             Route::post('subjects', [StudentSubjectController::class, 'store']);
-            Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop']);
+            Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop'])->withoutScopedBindings();
             Route::patch('subjects/{studentSubject:uuid}/restore', [StudentSubjectController::class, 'restore']);
             Route::get('subjects/history', [StudentSubjectController::class, 'history']);
             Route::patch('end', [StudentCurriculumController::class, 'unenroll']);
@@ -139,6 +139,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     // curriculum subject archival
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive', [CurriculumSubjectController::class, 'archive']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
+
+    // protected marking components
+    Route::get('/marking-components', [MarkingComponentController::class, 'index']);
+    Route::post('/marking-components', [MarkingComponentController::class, 'sync']);
+    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
+    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
 
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 
@@ -157,9 +163,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
     // assign score and marking component for teachers;
     Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'subjects']);
     Route::get('/teachers/{teacher:uuid}', [TeacherController::class, 'show']);
-    // protected marking components
-    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
-    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
+
     // protected curriculum subject
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/result-status', [CurriculumSubjectController::class, 'getResultStatus']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);

@@ -21,6 +21,7 @@ class CurriculumOptionResource extends JsonResource
             'class_level' => $this->classLevelArm?->classLevel?->name,
             'arm' => $this->classLevelArm?->arm?->label,
             'stream' => $this->classLevelArm?->stream?->name,
+            'full_name' => $this->full_name,
         ];
     }
 }

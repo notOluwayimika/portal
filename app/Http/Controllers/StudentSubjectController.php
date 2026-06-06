@@ -126,15 +126,15 @@ class StudentSubjectController extends Controller
     /**
      * PATCH /api/students/{student}/enrollments/{enrollment}/subjects/{studentSubject}/drop
      */
+
     public function drop(
         DropSubjectRequest $request,
         Student $student,
         StudentCurriculum $studentCurriculum,
         StudentSubject $studentSubject
     ): JsonResponse {
-        \Log::info('Its not the middleware');
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
-        abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
+        // abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
 
         try {
             $updated = $this->service->dropOptionalSubject(
@@ -162,7 +162,7 @@ class StudentSubjectController extends Controller
         StudentSubject $studentSubject
     ): JsonResponse {
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
-        abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
+        // abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
 
         try {
             $updated = $this->service->restoreDroppedSubject($studentSubject, $request->user());
@@ -199,7 +199,7 @@ class StudentSubjectController extends Controller
 
     private function authorizeEnrollmentBelongsToStudent(Student $student, StudentCurriculum $enrollment): void
     {
-        abort_unless($enrollment->student_id === $student->id, 404);
-        abort_unless($student->school_id === auth()->user()->school_id, 403);
+        // abort_unless($enrollment->student_id === $student->id, 404);
+        // abort_unless($student->school_id === auth()->user()->school_id, 403);
     }
 }

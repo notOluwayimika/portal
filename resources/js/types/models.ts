@@ -245,6 +245,7 @@ export interface Curriculum {
     exam_type?: ExamType;
     min_subjects: number;
     status: string;
+    is_ccm: boolean;
     created_at?: string;
     updated_at?: string;
 }

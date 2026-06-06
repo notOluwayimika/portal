@@ -36,6 +36,7 @@ export default function ScoreEntryPage({
     cs: CurriculumSubject;
     status: SubjectResultStatus;
 }) {
+    console.log(cs);
     const [markingComponents] = useState<MarkingComponent[]>(
         cs.marking_components,
     );
@@ -431,7 +432,7 @@ function ScoreCell({
             <input
                 type="number"
                 inputMode="decimal"
-                step="0.01"
+                step="0.1"
                 min={0}
                 max={max}
                 value={value}

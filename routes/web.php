@@ -233,8 +233,13 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
 });
 
 Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
-    Route::inertia('parent/dashboard', 'parent/dashboard')->name('parent.dashboard');
-    Route::inertia('parent/wards', 'parent/wards')->name('parent.wards');
+    Route::get('parent/dashboard', function () {
+        return redirect()->route('parent.wards');
+        return Inertia::render('parent/dashboard');
+    })->name('parent.dashboard');
+    Route::get('parent/wards', function () {
+        return Inertia::render('parent/wards');
+    })->name('parent.wards');
 });
 
 

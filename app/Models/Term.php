@@ -7,9 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class Term extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'academic_session_id',
         'name',
@@ -40,5 +43,15 @@ class Term extends Model
     public function curricula(): HasMany
     {
         return $this->hasMany(Curriculum::class);
+    }
+
+    protected static $logName = 'academics';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['status', 'name', 'slug', 'order', 'start_date', 'end_date', 'registration_deadline', 'result_visible_at'])
+            ->logOnlyDirty()
+            ->dontLogEmptyChanges();
     }
 }

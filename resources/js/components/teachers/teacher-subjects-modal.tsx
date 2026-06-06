@@ -13,6 +13,7 @@ interface CurriculumOption {
     class_level: string;
     arm: string;
     stream?: string;
+    full_name: string;
 }
 
 interface CurriculumSubjectOption {
@@ -29,21 +30,29 @@ interface Props {
 }
 
 export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
-    const [assignments, setAssignments]               = useState<TeacherSubjectAssignment[]>([]);
-    const [loading, setLoading]                       = useState(true);
-    const [selectedCurriculum, setSelectedCurriculum] = useState<CurriculumOption | null>(null);
-    const [subjectOptions, setSubjectOptions]         = useState<CurriculumSubjectOption[]>([]);
-    const [selectedSubject, setSelectedSubject]       = useState<CurriculumSubjectOption | null>(null);
-    const [assigning, setAssigning]                   = useState(false);
-    const [removing, setRemoving]                     = useState<string | null>(null);
-    const [subjectsLoading, setSubjectsLoading]       = useState(false);
-    const [filterClass, setFilterClass]               = useState<string>('all');
+    const [assignments, setAssignments] = useState<TeacherSubjectAssignment[]>(
+        [],
+    );
+    const [loading, setLoading] = useState(true);
+    const [selectedCurriculum, setSelectedCurriculum] =
+        useState<CurriculumOption | null>(null);
+    const [subjectOptions, setSubjectOptions] = useState<
+        CurriculumSubjectOption[]
+    >([]);
+    const [selectedSubject, setSelectedSubject] =
+        useState<CurriculumSubjectOption | null>(null);
+    const [assigning, setAssigning] = useState(false);
+    const [removing, setRemoving] = useState<string | null>(null);
+    const [subjectsLoading, setSubjectsLoading] = useState(false);
+    const [filterClass, setFilterClass] = useState<string>('all');
 
     useEffect(() => {
         axios
             .get(`/api/teachers/${teacher.id}/subjects`)
             .then((res) => setAssignments(res.data))
-            .catch(() => addToast('Failed to load subject assignments', 'error'))
+            .catch(() =>
+                addToast('Failed to load subject assignments', 'error'),
+            )
             .finally(() => setLoading(false));
     }, [teacher.id]);
 
@@ -61,22 +70,27 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             .finally(() => setSubjectsLoading(false));
     }, [selectedCurriculum]);
 
-    const assignedIds = new Set(assignments.map((a) => a.curriculum_subject.id));
+    const assignedIds = new Set(
+        assignments.map((a) => a.curriculum_subject.id),
+    );
 
     const classOptions = Array.from(
         new Map(
             assignments
                 .map((a) => a.curriculum_subject.curriculum?.class_level_arm)
                 .filter(Boolean)
-                .map((arm) => [arm!.name, arm!.name])
-        ).entries()
+                .map((arm) => [arm!.name, arm!.name]),
+        ).entries(),
     ).sort(([a], [b]) => a.localeCompare(b));
 
-    const visibleAssignments = filterClass === 'all'
-        ? assignments
-        : assignments.filter(
-            (a) => a.curriculum_subject.curriculum?.class_level_arm?.name === filterClass
-        );
+    const visibleAssignments =
+        filterClass === 'all'
+            ? assignments
+            : assignments.filter(
+                  (a) =>
+                      a.curriculum_subject.curriculum?.class_level_arm?.name ===
+                      filterClass,
+              );
 
     const handleAssign = async () => {
         if (!selectedSubject) return;
@@ -90,7 +104,9 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             setSelectedSubject(null);
             addToast('Subject assigned successfully');
         } catch (err: any) {
-            const msg = err?.response?.data?.message || err?.response?.data?.errors?.curriculum_subject_id?.[0];
+            const msg =
+                err?.response?.data?.message ||
+                err?.response?.data?.errors?.curriculum_subject_id?.[0];
             addToast(msg || 'Failed to assign subject', 'error');
         } finally {
             setAssigning(false);
@@ -100,7 +116,9 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
     const handleRemove = async (assignmentId: string) => {
         setRemoving(assignmentId);
         try {
-            await axios.delete(`/api/teachers/${teacher.id}/subjects/${assignmentId}`);
+            await axios.delete(
+                `/api/teachers/${teacher.id}/subjects/${assignmentId}`,
+            );
             setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
             addToast('Subject removed successfully');
         } catch {
@@ -112,7 +130,7 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
 
     const curriculaSelectOptions = curricula.map((c) => ({
         value: c.uuid,
-        label: `${c.class_level} - ${c.arm}${c.stream ? ` (${c.stream})` : ''}`,
+        label: c.full_name,
         data: c,
     }));
 
@@ -126,7 +144,7 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
 
     return (
         <div className="space-y-6">
-            <div className="rounded-lg border p-4 space-y-3">
+            <div className="space-y-3 rounded-lg border p-4">
                 <h3 className="text-sm font-medium">Assign a Subject</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <SearchableSelect
@@ -134,7 +152,10 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
                         options={curriculaSelectOptions}
                         value={
                             selectedCurriculum
-                                ? curriculaSelectOptions.find((o) => o.value === selectedCurriculum.uuid)
+                                ? curriculaSelectOptions.find(
+                                      (o) =>
+                                          o.value === selectedCurriculum.uuid,
+                                  )
                                 : null
                         }
                         onChange={(opt: any) => {
@@ -143,14 +164,22 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
                         }}
                     />
                     <SearchableSelect
-                        placeholder={subjectsLoading ? 'Loading subjects…' : 'Select subject…'}
+                        placeholder={
+                            subjectsLoading
+                                ? 'Loading subjects…'
+                                : 'Select subject…'
+                        }
                         options={filteredSubjectOptions}
                         value={
                             selectedSubject
-                                ? filteredSubjectOptions.find((o) => o.value === selectedSubject.id) ?? null
+                                ? (filteredSubjectOptions.find(
+                                      (o) => o.value === selectedSubject.id,
+                                  ) ?? null)
                                 : null
                         }
-                        onChange={(opt: any) => setSelectedSubject(opt ? opt.data : null)}
+                        onChange={(opt: any) =>
+                            setSelectedSubject(opt ? opt.data : null)
+                        }
                         isDisabled={!selectedCurriculum || subjectsLoading}
                     />
                 </div>
@@ -160,7 +189,9 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
                     onClick={handleAssign}
                     disabled={!selectedSubject || assigning}
                 >
-                    {assigning && <Spinner className="mr-2 h-4 w-4 animate-spin" />}
+                    {assigning && (
+                        <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     Assign Subject
                 </Button>
             </div>
@@ -168,22 +199,32 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             <div>
                 <div className="mb-3 flex items-center justify-between gap-3">
                     <h3 className="text-sm font-medium">
-                        Assigned Subjects ({visibleAssignments.length}{filterClass !== 'all' && ` of ${assignments.length}`})
+                        Assigned Subjects ({visibleAssignments.length}
+                        {filterClass !== 'all' && ` of ${assignments.length}`})
                     </h3>
                     {assignments.length > 0 && (
                         <div className="flex items-center gap-2">
-                            <label className="text-sm text-muted-foreground">Filter:</label>
+                            <label className="text-sm text-muted-foreground">
+                                Filter:
+                            </label>
                             <div className="w-48">
                                 <SearchableSelect
                                     placeholder="All classes"
                                     isClearable
-                                    options={classOptions.map(([value, label]) => ({ value, label }))}
+                                    options={classOptions.map(
+                                        ([value, label]) => ({ value, label }),
+                                    )}
                                     value={
                                         filterClass === 'all'
                                             ? null
-                                            : { value: filterClass, label: filterClass }
+                                            : {
+                                                  value: filterClass,
+                                                  label: filterClass,
+                                              }
                                     }
-                                    onChange={(opt: any) => setFilterClass(opt ? opt.value : 'all')}
+                                    onChange={(opt: any) =>
+                                        setFilterClass(opt ? opt.value : 'all')
+                                    }
                                 />
                             </div>
                         </div>
@@ -205,19 +246,29 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
                 ) : (
                     <div className="divide-y rounded-lg border">
                         {visibleAssignments.map((a) => (
-                            <div key={a.id} className="flex items-center justify-between px-4 py-3">
+                            <div
+                                key={a.id}
+                                className="flex items-center justify-between px-4 py-3"
+                            >
                                 <div>
                                     <p className="text-sm font-medium">
                                         {a.curriculum_subject.subject.name}
                                         {a.curriculum_subject.subject.code && (
                                             <span className="ml-2 text-xs text-muted-foreground">
-                                                ({a.curriculum_subject.subject.code})
+                                                (
+                                                {
+                                                    a.curriculum_subject.subject
+                                                        .code
+                                                }
+                                                )
                                             </span>
                                         )}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                        {a.curriculum_subject.curriculum?.class_level_arm?.name ?? '—'}
-                                        {a.curriculum_subject.curriculum?.term?.name
+                                        {a.curriculum_subject.curriculum
+                                            ?.class_level_arm?.name ?? '—'}
+                                        {a.curriculum_subject.curriculum?.term
+                                            ?.name
                                             ? ` · ${a.curriculum_subject.curriculum.term.name}`
                                             : ''}
                                     </p>

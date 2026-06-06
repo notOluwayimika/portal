@@ -125,7 +125,7 @@ export function AppSidebar() {
                     items: [
                         {
                             title: 'My Subjects',
-                            href: `/setup/teacher/${teacher.id}`,
+                            href: `/setup/teacher/${teacher.uuid}`,
                             icon: BookOpen,
                         },
                     ],

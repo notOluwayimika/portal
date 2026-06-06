@@ -3,10 +3,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import axios from 'axios';
+import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ToastType } from '@/components/toast-item';
 import type { ExamType, GradeBoundary } from '@/types/models';
-import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { Empty } from './school-setup';
 
 type EditingMap = Record<string, GradeBoundary>;
@@ -196,7 +196,9 @@ export function GradeBoundariesTab({
                 {examTypes.map((et) => (
                     <button
                         key={et.id}
-                        className={filter === et.id ? 'filter-btn on' : 'filter-btn'}
+                        className={
+                            filter === et.id ? 'filter-btn on' : 'filter-btn'
+                        }
                         onClick={() => setFilter(et.id)}
                     >
                         {et.name}
@@ -222,6 +224,7 @@ export function GradeBoundariesTab({
                     </div>
                 </div>
                 <div
+                    className="overflow-x-scroll"
                     style={{
                         padding: '10px 12px',
                         display: 'flex',

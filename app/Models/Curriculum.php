@@ -9,10 +9,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class Curriculum extends Model
 {
+    use LogsActivity;
     protected $table = 'curricula';
+
+    protected $append = ['full_name'];
 
     protected $fillable = [
         'school_id',
@@ -21,12 +26,14 @@ class Curriculum extends Model
         'exam_type_id',
         'min_subjects',
         'status',
+        'is_ccm'
     ];
 
     protected $casts = [
         'term_id' => 'integer',
         'min_subjects' => 'integer',
         'status' => 'string',
+        'is_ccm' => 'boolean'
     ];
 
     protected static function booted(): void
@@ -77,5 +84,20 @@ class Curriculum extends Model
     public function areResultsVisible(): bool
     {
         return $this->term->end_date && now()->greaterThanOrEqualTo($this->term->end_date);
+    }
+
+    public function getFullNameAttribute()
+    {
+        return $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . ($this->is_ccm ? '(CCM)' : '');
+    }
+
+    protected static $logName = 'academics';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['min_subjects', 'status', 'is_ccm'])
+            ->logOnlyDirty()
+            ->dontLogEmptyChanges();
     }
 }

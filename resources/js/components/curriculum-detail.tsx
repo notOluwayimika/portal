@@ -19,6 +19,7 @@ import type {
 } from '@/types/models';
 import { SubjectsTable } from './subjects-table';
 import EmptyState from './ui/EmptyState';
+import { Link } from '@inertiajs/react';
 
 // ─── Local types ───────────────────────────────────────────────────────────
 
@@ -579,12 +580,14 @@ export function CurriculumDetail({
                         </p>
                     </div>
                     {availableSubjectOptions.length > 0 && (
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => setShowAssignSubject(true)}
-                        >
-                            + Assign subject
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => setShowAssignSubject(true)}
+                            >
+                                + Assign subject
+                            </button>
+                        </div>
                     )}
                 </div>
 

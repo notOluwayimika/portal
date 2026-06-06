@@ -21,6 +21,7 @@ return new class extends Migration {
             $table->timestampTz('registration_deadline');
             $table->timestampTz('result_visible_at')->nullable();
             $table->enum('status', ['draft', 'active', 'closed'])->default('draft');
+            $table->boolean('is_ccm')->default(false);
             $table->timestampsTz();
 
             $table->index(['school_id', 'academic_session_id', 'status']);

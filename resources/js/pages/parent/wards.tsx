@@ -166,19 +166,20 @@ export default function Wards() {
     const notices = [
         {
             type: 'general',
-            title: 'Summer Half-Term Check-In',
-            description:
-                'Kindly be reminded that the Summer Half-Term check-in for students in Year 7, 8, 9 & 10 is on Sunday, May 31, 2026 (9:00am - 3:30pm). We look forward to welcoming you and wish you journey mercies.',
-            time: '1 week ago',
+            title: 'Prize Giving Day/Graduation Ceremony',
+            description: `We wish to inform parents that our Prize Giving/Graduation ceremonies are as follows:
+- Year 7, 8, & 9 (Prize Giving)  -  Thursday, June 25, 2026 (11:00a.m.)
+- Year 10, 11, 12 and IFY (Prize Giving/Graduation)  -  Saturday, June 27, 2026 (11:00a.m.)
+Parents are invited to these events and are expected to pick-up their child at the end of the events respectively. `,
+            time: 'Today',
             sender: 'Admin',
             badge_colour: 'gray',
         },
         {
             type: 'general',
-            title: 'Cross Curricular Monitoring (CCM)',
-            description:
-                'There will be Cross Curricular Monitoring (CCM) at the school assembly hall between 9am and 3:30pm. ',
-            time: '1 week ago',
+            title: 'Graduation Check-In',
+            description: `Students in Year 11, 12 and IFY are expected to check in on Friday, June 26, 2026, (1:00pm to 3:30pm) for Dinner/Prom and Graduation Ceremony. We kindly appeal to parents/guardians to ensure their child complies with the school rules and regulations regarding the graduation and thoroughly check their luggage to ensure they are not with unauthorized items.`,
+            time: 'Today',
             sender: 'Admin',
             badge_colour: 'gray',
         },
@@ -186,7 +187,7 @@ export default function Wards() {
             type: 'general',
             title: 'Express Check-In Reminder',
             description:
-                'For express check-in, parents are advised to pay all outstanding fees in advance and send the evidence of payment to accounts@brookstoneng.org. ',
+                'For express check-in, parents are advised to pay all outstanding fees and send the evidence of payment to accounts@brookstoneng.org. ',
             time: '1 week ago',
             sender: 'Admin',
             badge_colour: 'gray',

@@ -492,9 +492,15 @@ export const NoticesCard = ({ notices, onAction }) => {
                                         {notice.type}
                                     </span>
                                 </div>
-                                <p className="mb-2 text-[11px] leading-relaxed text-gray-500">
-                                    {notice.description}
-                                </p>
+                                <p
+                                    dangerouslySetInnerHTML={{
+                                        __html: notice.description.replace(
+                                            /\n/g,
+                                            '<br />',
+                                        ),
+                                    }}
+                                    className="mb-2 text-[11px] leading-relaxed text-gray-500"
+                                ></p>
                                 <div className="flex items-center gap-3 text-[10px] font-medium text-gray-400">
                                     <span className="flex items-center gap-1">
                                         <Clock className="h-3 w-3" />{' '}

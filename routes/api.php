@@ -20,6 +20,7 @@ use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+Route::get('/curricula/queued', [CurriculumController::class, 'queuedCurriculums']);
 
 // Authentication
 Route::post('/login', [AuthenticationController::class, 'login']);
@@ -167,6 +168,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
 
     Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
+
+    // CCM -> non-CCM curriculum migration
+    Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {

@@ -13,9 +13,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class MarkingComponent extends Model
 {
     use LogsActivity;
-    protected $fillable = ['curriculum_subject_id', 'name', 'weight', 'school_id'];
+    protected $fillable = ['curriculum_subject_id', 'name', 'weight', 'school_id', 'is_ccm'];
 
-    protected $casts = ['weight' => 'decimal:3'];
+    protected $casts = ['weight' => 'decimal:3', 'is_ccm' => 'boolean'];
 
     protected static function booted(): void
     {

@@ -93,10 +93,11 @@ export function StudentForm({ student, onSuccess, onCancel, formId = 'student-fo
             const payload = guardians.map(({ looked_up: _l, ...rest }) => rest);
             formData.append('guardians', JSON.stringify(payload));
         }
+        formData.append('_method', 'PATCH');
 
         try {
             if (isEdit) {
-                await axios.patch(`/api/students/${student.id}`, formData);
+                await axios.post(`/api/students/${student.id}`, formData);
             } else {
                 await axios.post('/api/students', formData);
             }

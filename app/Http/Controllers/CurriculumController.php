@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
+use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
 use App\Models\MarkingComponent;
 use App\Models\StudentSubject;
@@ -119,6 +120,9 @@ class CurriculumController extends Controller
         if ($request->has('status')) {
             $curricula = $curricula->where('status', $request->status);
         }
+        if ($request->has('is_ccm')) {
+            $curricula = $curricula->where('is_ccm', $request->boolean('is_ccm'));
+        }
 
         $curricula = $curricula->paginate($request->integer('per_page', $limit));
         return response()->json([
@@ -167,7 +171,7 @@ class CurriculumController extends Controller
                 'is_compulsory' => 'boolean',
                 'display_order' => 'integer|min:1',
             ]);
-
+            $ccm = $curriculum->is_ccm;
             $subject = Subject::where('uuid', $request->subject_id)->first();
 
             $curriculumSubject = $curriculum->curriculumSubjects()->create([
@@ -195,7 +199,7 @@ class CurriculumController extends Controller
                 ]
             );
             // marking components
-            $markingComponents = MarkingComponentResource::collection(MarkingComponent::global()->get());
+            $markingComponents = MarkingComponentResource::collection(MarkingComponent::global()->where('is_ccm', $ccm)->get());
             foreach ($markingComponents as $component) {
                 $curriculumSubject->markingComponents()->create(["name" => $component->name, "weight" => $component->weight, "school_id" => auth()->user()->school_id]);
             }
@@ -205,6 +209,57 @@ class CurriculumController extends Controller
             \Log::error($th->getMessage());
             return response()->json(['error' => 'Failed to assign subject'], 500);
         }
+    }
+
+    public function moveFromCcm(Curriculum $curriculum)
+    {
+        if (!$curriculum->is_ccm) {
+            return response()->json(['error' => 'Curriculum is not a CCM curriculum'], 422);
+        }
+
+        MoveFromCcmJob::dispatch($curriculum, auth()->id());
+
+        return response()->json(['message' => 'Migration to non-CCM has been queued'], 202);
+    }
+
+    public function queuedCurriculums()
+    {
+        $curriculumIds = [];
+
+        $jobs = DB::table('jobs')
+            ->select('payload')
+            ->get();
+
+        foreach ($jobs as $job) {
+            $payload = json_decode($job->payload, true);
+
+            if (
+                ($payload['displayName'] ?? null) !== MoveFromCcmJob::class
+            ) {
+                continue;
+            }
+
+            $command = $payload['data']['command'] ?? '';
+
+            preg_match(
+                '/s:21:"App\\\\Models\\\\Curriculum";s:2:"id";i:(\d+)/',
+                $command,
+                $matches
+            );
+
+            if (!empty($matches[1])) {
+                $curriculumIds[] = (int) $matches[1];
+            }
+        }
+
+        $uuids = Curriculum::query()
+            ->whereIn('id', array_unique($curriculumIds))
+            ->pluck('uuid')
+            ->values();
+
+        return response()->json([
+            'curriculum_uuids' => $uuids,
+        ]);
     }
 
 }

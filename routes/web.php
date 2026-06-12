@@ -85,6 +85,10 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
     Route::inertia('setup', 'admin/school-setup')->name('setup');
 
     // Route::get('setup/')
+    Route::get('setup/curricula-ccm', function () {
+        return Inertia::render('admin/curricula/ccm');
+    })->name('setup.curricula.ccm');
+
     Route::get('setup/curricula/{curriculum:uuid}', function (Curriculum $curriculum) {
         return Inertia::render('admin/curriculum/show', [
             'curriculum' => new CurriculumResource($curriculum),

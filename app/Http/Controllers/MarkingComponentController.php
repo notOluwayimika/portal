@@ -25,9 +25,11 @@ class MarkingComponentController extends Controller
             return response()->json("Failed to delete the marking component", 500);
         }
     }
-    public function index()
+    public function index(Request $request)
     {
-        $markingComponents = MarkingComponent::global()->where('school_id', auth()->user()->school_id)->get();
+        $ccm = $request->boolean('ccm');
+        \Log::info($ccm);
+        $markingComponents = MarkingComponent::global()->where('school_id', auth()->user()->school_id)->where('is_ccm', $ccm)->get();
         return response()->json(MarkingComponentResource::collection($markingComponents));
     }
 
@@ -52,67 +54,81 @@ class MarkingComponentController extends Controller
             'components' => ['required', 'array', 'min:1'],
             'components.*.id' => ['nullable', 'uuid'],
             'components.*.name' => ['required', 'string', 'max:255'],
-            // weight is stored as a fraction: 0.000 - 1.000
             'components.*.percent' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
 
+        $ccm = $request->boolean('ccm');
         $components = $validated['components'];
 
-        // Server-side guarantee that the weights add up to exactly 100%.
-        $sum = array_sum(array_map(
-            static fn($c) => (float) $c['percent'] / 100,
-            $components
-        ));
+        // Ensure total weight = 100%
+        $sum = array_sum(
+            array_map(
+                static fn($component) => (float) $component['percent'] / 100,
+                $components
+            )
+        );
 
         if (abs($sum - 1.0) > self::SUM_TOLERANCE) {
             throw ValidationException::withMessages([
-                'components' => 'Weights must add up to exactly 100% (got '
-                    . round($sum * 100, 1) . '%).',
+                'components' => sprintf(
+                    'Weights must add up to exactly 100%% (got %.1f%%).',
+                    $sum * 100
+                ),
             ]);
         }
 
-        // Guard against ids that belong to a curriculum subject being
-        // smuggled in -- we only ever touch global components here.
         $submittedIds = collect($components)
             ->pluck('id')
             ->filter()
             ->values();
 
-        $validIds = MarkingComponent::query()
+        $existingIds = MarkingComponent::query()
             ->global()
+            ->where('is_ccm', $ccm)
             ->whereIn('uuid', $submittedIds)
             ->pluck('uuid');
 
-        DB::transaction(function () use ($components, $validIds) {
-            // Delete global components the user removed on the frontend.
-            MarkingComponent::query()
+        DB::transaction(function () use ($components, $submittedIds, $existingIds, $ccm) {
+            // Delete removed components
+            $deleteQuery = MarkingComponent::query()
                 ->global()
-                ->whereNotIn('uuid', $validIds)
-                ->delete();
+                ->where('is_ccm', $ccm);
+
+            if ($submittedIds->isNotEmpty()) {
+                $deleteQuery->whereNotIn('uuid', $submittedIds);
+            }
+
+            $deleteQuery->delete();
 
             foreach ($components as $component) {
-                $id = $component['id'] ?? null;
+                $attributes = [
+                    'name' => $component['name'],
+                    'weight' => $component['percent'] / 100,
+                    'is_ccm' => $ccm,
+                ];
 
-                // Only update in place if the id is a known global row.
-                if ($id !== null && $validIds->contains($id)) {
+                if (
+                    !empty($component['id']) &&
+                    $existingIds->contains($component['id'])
+                ) {
                     MarkingComponent::query()
                         ->global()
-                        ->where('uuid', $id)
-                        ->update([
-                            'name' => $component['name'],
-                            'weight' => $component['percent'] / 100,
-                        ]);
+                        ->where('uuid', $component['id'])
+                        ->where('is_ccm', $ccm)
+                        ->update($attributes);
                 } else {
                     MarkingComponent::create([
+                        ...$attributes,
                         'curriculum_subject_id' => null,
-                        'name' => $component['name'],
-                        'weight' => $component['percent'] / 100,
-                        'school_id' => auth()->user()->school_id
+                        'school_id' => auth()->user()->school_id,
                     ]);
                 }
             }
         });
 
-        return response()->json(['success', 'Marking components saved.'], 200);
+        return response()->json([
+            'success' => true,
+            'message' => 'Marking components saved.',
+        ]);
     }
 }

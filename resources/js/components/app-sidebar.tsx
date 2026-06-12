@@ -7,6 +7,7 @@ import {
     GraduationCap,
     History,
     LayoutDashboard,
+    RefreshCw,
     UserCog,
     Users,
 } from 'lucide-react';
@@ -100,6 +101,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'Head of Schools',
                 href: '/setup/head-of-schools',
                 icon: GraduationCap,
+            },
+            {
+                title: 'CCM Curricula',
+                href: '/setup/curricula-ccm',
+                icon: RefreshCw,
             },
         ],
     },

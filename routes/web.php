@@ -81,6 +81,10 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
         return Inertia::render('admin/head-of-schools/index');
     })->name('admin.dashboard');
 
+    Route::get('/setup/teacher-assignments', function () {
+        return Inertia::render('admin/teacher-assignments/index');
+    })->name('admin.teacher-assignments');
+
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/school-setup')->name('setup');
 
@@ -202,6 +206,14 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
                 'classLevels' => ClassLevelResource::collection($classLevels)
             ]);
         })->name('reports.result-per-class');
+
+        Route::get('broadsheets', function () {
+            $schoolId = auth()->user()->school_id;
+            $classLevels = ClassLevel::where('school_id', $schoolId)->get();
+            return Inertia::render('reports/broadsheets', [
+                'classLevels' => ClassLevelResource::collection($classLevels)
+            ]);
+        })->name('reports.broadsheets');
     });
 
 
@@ -402,6 +414,24 @@ Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
     Route::get('parent/wards', function () {
         return Inertia::render('parent/wards');
     })->name('parent.wards');
+});
+
+Route::middleware(['auth', 'tenant', 'role:boarding_parent'])->group(function () {
+    Route::get('boarding-parent/behavioral-assessments', function () {
+        return Inertia::render('boarding-parent/behavioral-assessments/index');
+    })->name('boarding-parent.behavioral-assessments');
+});
+
+Route::middleware(['auth', 'tenant', 'role:form_teacher'])->group(function () {
+    Route::get('form-teacher/comments', function () {
+        return Inertia::render('form-teacher/comments/index');
+    })->name('form-teacher.comments');
+});
+
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+    Route::get('head-of-school/comments', function () {
+        return Inertia::render('head-of-school/comments/index');
+    })->name('head-of-school.comments');
 });
 
 

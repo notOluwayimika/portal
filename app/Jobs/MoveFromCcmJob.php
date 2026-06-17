@@ -6,6 +6,7 @@ use App\Enums\StudentSubjectStatus;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\MarkingComponent;
+use App\Models\Score;
 use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
@@ -15,8 +16,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class MoveFromCcmJob implements ShouldQueue
 {
@@ -47,10 +50,10 @@ class MoveFromCcmJob implements ShouldQueue
 
         DB::transaction(function () {
             $curriculum = $this->curriculum;
-            $curriculum->update(['status' => 'closed']);
+
 
             $targetCurriculum = $this->resolveTargetCurriculum($curriculum);
-
+            $curriculum->update(['status' => 'closed']);
             $subjectMap = $this->cloneCurriculumSubjects($curriculum, $targetCurriculum);
 
             $this->migrateStudents($curriculum, $targetCurriculum, $subjectMap);
@@ -111,6 +114,9 @@ class MoveFromCcmJob implements ShouldQueue
 
             $this->migrateTeacherAssignments($oldSubject, $newSubject);
 
+            $componentMap = $this->mapOverlappingMarkingComponents($oldSubject, $newSubject);
+            $this->migrateScores($oldSubject, $newSubject, $componentMap);
+
             $subjectMap[$oldSubject->id] = $newSubject;
         }
 
@@ -153,6 +159,74 @@ class MoveFromCcmJob implements ShouldQueue
             $newSubject->teacherAssignments()->firstOrCreate([
                 'teacher_id' => $assignment->teacher_id,
             ]);
+        }
+    }
+
+    /**
+     * Match each old (CCM) marking component to its non-CCM counterpart on
+     * the new subject by normalized name, e.g. "Continuous Assessment 1" ->
+     * "Continuous Assessment 1".
+     *
+     * @return Collection<int, array{old: MarkingComponent, new: MarkingComponent}> keyed by old marking_component_id
+     */
+    private function mapOverlappingMarkingComponents(CurriculumSubject $oldSubject, CurriculumSubject $newSubject): Collection
+    {
+        $newByName = $newSubject->markingComponents
+            ->keyBy(fn(MarkingComponent $component) => Str::lower(trim($component->name)));
+
+        return $oldSubject->markingComponents
+            ->mapWithKeys(function (MarkingComponent $oldComponent) use ($newByName) {
+                $newComponent = $newByName->get(Str::lower(trim($oldComponent->name)));
+
+                return $newComponent
+                    ? [$oldComponent->id => ['old' => $oldComponent, 'new' => $newComponent]]
+                    : [];
+            });
+    }
+
+    /**
+     * Copy scores for marking components that exist on both the old (CCM)
+     * and new (non-CCM) subject, so marks already entered (e.g. CA1, Half
+     * Term Exam) carry over instead of being lost. The score is rescaled by
+     * the components' weight ratio, e.g. a 25/50 score on a 0.5-weighted
+     * component becomes 5/10 on a 0.1-weighted component.
+     *
+     * @param Collection<int, array{old: MarkingComponent, new: MarkingComponent}> $componentMap old marking_component_id => component pair
+     */
+    private function migrateScores(CurriculumSubject $oldSubject, CurriculumSubject $newSubject, Collection $componentMap): void
+    {
+        if ($componentMap->isEmpty()) {
+            return;
+        }
+
+        $oldScores = Score::where('curriculum_subject_id', $oldSubject->id)
+            ->whereIn('marking_component_id', $componentMap->keys()->all())
+            ->get();
+
+        foreach ($oldScores as $oldScore) {
+            ['old' => $oldComponent, 'new' => $newComponent] = $componentMap[$oldScore->marking_component_id];
+
+            $oldWeight = (float) $oldComponent->weight;
+
+            if ($oldWeight <= 0) {
+                continue;
+            }
+
+            // The scores table stores one decimal place (decimal(4,1)), so
+            // round to match what will actually be persisted.
+            $convertedScore = round((float) $oldScore->score * ((float) $newComponent->weight / $oldWeight), 1);
+
+            Score::firstOrCreate(
+                [
+                    'student_id' => $oldScore->student_id,
+                    'marking_component_id' => $newComponent->id,
+                ],
+                [
+                    'curriculum_subject_id' => $newSubject->id,
+                    'score' => $convertedScore,
+                    'created_by' => $this->causedByUserId,
+                ]
+            );
         }
     }
 

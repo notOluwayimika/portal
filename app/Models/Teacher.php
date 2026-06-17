@@ -76,4 +76,9 @@ class Teacher extends Model
     {
         return $this->hasMany(TeacherCurriculumSubject::class, 'teacher_id');
     }
+
+    public function classLevelArmAssignments(): HasMany
+    {
+        return $this->hasMany(ClassLevelArmTeacher::class);
+    }
 }

@@ -197,6 +197,19 @@ class StudentSubjectController extends Controller
         ]);
     }
 
+    public function storeComment(Request $request, StudentSubject $studentSubject): JsonResponse
+    {
+        $request->validate([
+            'comment' => 'required|string|max:50',
+        ]);
+        // abort_unless(request()->user()->can('student_subject.view'), 403);
+        $this->service->storeComment($studentSubject, $request->user(), $request->comment);
+
+        return response()->json([
+            'message' => 'Comment stored successfully.'
+        ], 201);
+    }
+
     private function authorizeEnrollmentBelongsToStudent(Student $student, StudentCurriculum $enrollment): void
     {
         // abort_unless($enrollment->student_id === $student->id, 404);

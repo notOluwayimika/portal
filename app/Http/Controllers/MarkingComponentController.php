@@ -131,4 +131,16 @@ class MarkingComponentController extends Controller
             'message' => 'Marking components saved.',
         ]);
     }
+
+    public function getOverlapping()
+    {
+        $ccmMc = MarkingComponent::where('is_ccm', true)->where('curriculum_subject_id', null)->pluck('name');
+        $eotMc = MarkingComponent::where('is_ccm', false)->where('curriculum_subject_id', null)->pluck('name');
+
+        $overlapping = $ccmMc->intersect($eotMc)->values();
+
+        return response()->json([
+            'overlapping' => $overlapping,
+        ]);
+    }
 }

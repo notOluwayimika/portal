@@ -3,11 +3,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import axios from 'axios';
-import { useEffect, useState } from 'react';
-import { Pagination } from '@/components/pagination';
-import type { ToastType } from '@/components/toast-item';
-import type { Subject } from '@/types/models';
 import { Pencil, Search, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
+import { Pagination } from '@/components/pagination';
+import type { Subject } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 
 interface SubjectForm {
@@ -15,11 +15,7 @@ interface SubjectForm {
     code: string;
 }
 
-export function SubjectsTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function SubjectsTab() {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [search, setSearch] = useState<string>('');
     const [modal, setModal] = useState<string | null>(null);
@@ -66,10 +62,10 @@ export function SubjectsTab({
                 const response = await axios.post('/api/subjects', form);
 
                 if (response.status === 201) {
-                    addToast('Subject created successfully', 'success');
+                    toast.success('Subject created successfully');
                     setModal(null);
                 } else {
-                    addToast('Failed to create subject', 'error');
+                    toast.error('Failed to create subject');
                 }
             } else {
                 const response = await axios.put(
@@ -78,15 +74,15 @@ export function SubjectsTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Subject updated successfully', 'success');
+                    toast.success('Subject updated successfully');
                     setModal(null);
                 } else {
-                    addToast('Failed to update subject', 'error');
+                    toast.error('Failed to update subject');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('An error occurred while creating the subject', 'error');
+            toast.error('An error occurred while creating the subject');
         } finally {
             setLoading(false);
         }
@@ -99,14 +95,14 @@ export function SubjectsTab({
             const response = await axios.delete(`/api/subjects/${id}`);
 
             if (response.status === 204) {
-                addToast('Subject deleted successfully', 'success');
+                toast.success('Subject deleted successfully');
                 setConfirm(null);
             } else {
-                addToast('Failed to delete subject', 'error');
+                toast.error('Failed to delete subject');
             }
         } catch (error) {
             console.log(error);
-            addToast('An error occurred while deleting the subject', 'error');
+            toast.error('An error occurred while deleting the subject');
         } finally {
             setLoading(false);
         }

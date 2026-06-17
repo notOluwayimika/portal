@@ -1,17 +1,13 @@
 import axios from 'axios';
 import { Trash2 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
-import type { ToastType } from '@/components/toast-item';
-import type { Arm, ClassLevel, ClassLevelArm, Stream } from '@/types/models';
+import { toast } from 'react-toastify';
 import { Empty } from '@/pages/admin/school-setup';
+import type { Arm, ClassLevel, ClassLevelArm, Stream } from '@/types/models';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ClassStreamTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export default function ClassStreamTab() {
     const [loading, setLoading] = useState(false);
 
     const [classLevels, setClassLevels] = useState<ClassLevel[]>([]);
@@ -64,7 +60,8 @@ export default function ClassStreamTab({
             setLoading(true);
 
             if (!selLevel || !selArm) {
-                addToast('Select a class level and arm first.', 'error');
+                toast.error('Select a class level and arm first.');
+
                 return;
             }
 
@@ -76,13 +73,13 @@ export default function ClassStreamTab({
             const response = await axios.post('/api/class-structure', payload);
 
             if (response.status != 201) {
-                addToast(response.data.error, 'error');
+                toast.error(response.data.error);
             } else {
-                addToast('Class arm saved.', 'success');
+                toast.success('Class arm saved.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save class arm.', 'error');
+            toast.error('Failed to save class arm.');
         } finally {
             setLoading(false);
             setSelLevel('');
@@ -100,13 +97,13 @@ export default function ClassStreamTab({
             );
 
             if (response.status != 200) {
-                addToast(response.data.error, 'error');
+                toast.error(response.data.error);
             } else {
-                addToast('Stream updated.', 'success');
+                toast.success('Stream updated.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save class arm.', 'error');
+            toast.error('Failed to save class arm.');
         } finally {
             setLoading(false);
         }
@@ -118,16 +115,15 @@ export default function ClassStreamTab({
             const response = await axios.delete(`/api/class-structure/${id}`);
 
             if (response.status === 200) {
-                addToast('Class arm removed.', 'success');
+                toast.success('Class arm removed.');
             } else {
-                addToast(
-                    response.data.error ?? 'Failed to remove class arm.',
-                    'error',
+                toast.error(
+                    response.data.error ?? 'Failed to remove class arm.'
                 );
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to remove class arm.', 'error');
+            toast.error('Failed to remove class arm.');
         } finally {
             setLoading(false);
         }

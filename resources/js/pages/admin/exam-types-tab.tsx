@@ -1,19 +1,15 @@
 import axios from 'axios';
-import { useEffect, useState } from 'react';
-import type { ToastType } from '@/components/toast-item';
-import type { ExamType } from '@/types/models';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
+import type { ExamType } from '@/types/models';
 import { Confirm, Empty, Modal } from './school-setup';
 
 interface ExamTypeForm {
     name: string;
 }
 
-export function ExamTypesTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function ExamTypesTab() {
     const [examTypes, setExamTypes] = useState<ExamType[]>([]);
     const [modal, setModal] = useState<string | null>(null);
     const [form, setForm] = useState<ExamTypeForm>({ name: '' });
@@ -41,16 +37,15 @@ export function ExamTypesTab({
             const response = await axios.delete(`/api/exam-types/${id}`);
 
             if (response.status === 200) {
-                addToast('Exam type deleted successfully.', 'success');
+                toast.success('Exam type deleted successfully.');
                 setExamTypes((p) => p.filter((e) => e.id !== id));
             } else {
-                addToast('Failed to delete exam type.', 'error');
+                toast.error('Failed to delete exam type.');
             }
         } catch (error) {
             console.log(error);
-            addToast(
-                'An error occurred while deleting the exam type.',
-                'error',
+            toast.error(
+                'An error occurred while deleting the exam type.'
             );
         } finally {
             setLoading(false);
@@ -69,10 +64,10 @@ export function ExamTypesTab({
                 const response = await axios.post('/api/exam-types', form);
 
                 if (response.status === 201) {
-                    addToast('Exam type created successfully.', 'success');
+                    toast.success('Exam type created successfully.');
                     setModal(null);
                 } else {
-                    addToast('Failed to create exam type.', 'error');
+                    toast.error('Failed to create exam type.');
                 }
             } else {
                 const response = await axios.put(
@@ -81,15 +76,15 @@ export function ExamTypesTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Exam type updated successfully.', 'info');
+                    toast.info('Exam type updated successfully.');
                     setInlineId(null);
                 } else {
-                    addToast('Failed to update exam type.', 'error');
+                    toast.error('Failed to update exam type.');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('An error occurred while saving the exam type.', 'error');
+            toast.error('An error occurred while saving the exam type.');
         } finally {
             setLoading(false);
         }

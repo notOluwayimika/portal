@@ -3,8 +3,6 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import ScoreEntryPage from '@/components/score-entry-page';
 import SubjectResultStatusPanel from '@/components/subject-result-status-panel';
-import { ToastItem } from '@/components/toast-item';
-import type { Toast } from '@/components/toast-item';
 import { handleBack } from '@/helpers';
 import type { Auth } from '@/types';
 
@@ -14,18 +12,8 @@ export default function Show() {
         auth: Auth;
     }>().props;
     const resultStatus = curriculumSubject.data.result_status;
-    const role = auth.roles[0];
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    // const toastCounter = useState(0)[0];
-    // let toastId = toastCounter;
-    // function addToast(message: string, type: ToastType = 'success') {
-    //     const id = ++toastId;
-    //     setToasts((t) => [...t, { id, message, type }]);
-    // }
+    const roles = auth.roles;
 
-    function dismissToast(id: number) {
-        setToasts((t) => t.filter((x) => x.id !== id));
-    }
     const [status, setStatus] = useState(resultStatus);
     const [loading, setLoading] = useState(false);
     useEffect(() => {
@@ -55,7 +43,7 @@ export default function Show() {
             <SubjectResultStatusPanel
                 curriculumSubjectId={curriculumSubject.data.id}
                 status={status}
-                userRole={role}
+                userRoles={roles}
                 onChanged={() => {
                     setLoading(true);
                     setTimeout(() => {
@@ -64,28 +52,7 @@ export default function Show() {
                 }}
             />
             <ScoreEntryPage cs={curriculumSubject.data} status={status} />
-            {/* Toasts */}
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    zIndex: 100,
-                    minWidth: 280,
-                    maxWidth: 360,
-                }}
-            >
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() => dismissToast(toast.id)}
-                    />
-                ))}
-            </div>
+
         </div>
     );
 }

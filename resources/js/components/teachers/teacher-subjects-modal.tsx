@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { ToastType } from '@/components/toast-item';
+import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Spinner } from '@/components/ui/spinner';
@@ -26,10 +26,9 @@ interface CurriculumSubjectOption {
 interface Props {
     teacher: Teacher;
     curricula: CurriculumOption[];
-    addToast: (message: string, type?: ToastType) => void;
 }
 
-export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
+export function TeacherSubjectsModal({ teacher, curricula }: Props) {
     const [assignments, setAssignments] = useState<TeacherSubjectAssignment[]>(
         [],
     );
@@ -51,22 +50,25 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             .get(`/api/teachers/${teacher.id}/subjects`)
             .then((res) => setAssignments(res.data))
             .catch(() =>
-                addToast('Failed to load subject assignments', 'error'),
+                toast.error('Failed to load subject assignments'),
             )
             .finally(() => setLoading(false));
     }, [teacher.id]);
 
     useEffect(() => {
         if (!selectedCurriculum) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setSubjectOptions([]);
             setSelectedSubject(null);
+
             return;
         }
+
         setSubjectsLoading(true);
         axios
             .get(`/api/curricula/${selectedCurriculum.uuid}/subjects`)
             .then((res) => setSubjectOptions(res.data.data || []))
-            .catch(() => addToast('Failed to load subjects', 'error'))
+            .catch(() => toast.error('Failed to load subjects'))
             .finally(() => setSubjectsLoading(false));
     }, [selectedCurriculum]);
 
@@ -93,8 +95,12 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
               );
 
     const handleAssign = async () => {
-        if (!selectedSubject) return;
+        if (!selectedSubject) {
+return;
+}
+
         setAssigning(true);
+
         try {
             await axios.post(`/api/teachers/${teacher.id}/subjects`, {
                 curriculum_subject_id: selectedSubject.id,
@@ -102,12 +108,12 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
             const res = await axios.get(`/api/teachers/${teacher.id}/subjects`);
             setAssignments(res.data);
             setSelectedSubject(null);
-            addToast('Subject assigned successfully');
+            toast.success('Subject assigned successfully');
         } catch (err: any) {
             const msg =
                 err?.response?.data?.message ||
                 err?.response?.data?.errors?.curriculum_subject_id?.[0];
-            addToast(msg || 'Failed to assign subject', 'error');
+            toast.error(msg || 'Failed to assign subject');
         } finally {
             setAssigning(false);
         }
@@ -115,14 +121,15 @@ export function TeacherSubjectsModal({ teacher, curricula, addToast }: Props) {
 
     const handleRemove = async (assignmentId: string) => {
         setRemoving(assignmentId);
+
         try {
             await axios.delete(
                 `/api/teachers/${teacher.id}/subjects/${assignmentId}`,
             );
             setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
-            addToast('Subject removed successfully');
+            toast.success('Subject removed successfully');
         } catch {
-            addToast('Failed to remove subject', 'error');
+            toast.error('Failed to remove subject');
         } finally {
             setRemoving(null);
         }

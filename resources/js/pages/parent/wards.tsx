@@ -1,4 +1,3 @@
-import { StudentCurriculum } from '@/types/models';
 import { Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
@@ -11,8 +10,10 @@ import {
     Star,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { NoticesCard, QuickContactCard, Toast } from './dashboard';
+import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
+import type { StudentCurriculum } from '@/types/models';
+import { NoticesCard, QuickContactCard } from './dashboard';
 
 // ---------- Types ----------
 // Mirrors the columns on the `students` table + the pivot fields
@@ -83,7 +84,6 @@ const formatDob = (dob?: string | null) => {
 export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
     const { auth } = usePage().props;
-    const [toasts, setToasts] = useState([]);
     const [activeResultAvailable, setActiveResultAvailable] = useState(true);
     const CONTACTS = [
         {
@@ -112,17 +112,7 @@ export default function Wards() {
             email: 'centremanagerabuja@brookstoneify.org',
         },
     ];
-    const addToast = (message) => {
-        const id = Date.now();
-        setToasts((prev) => [...prev, { id, message }]);
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 4000);
-    };
 
-    const removeToast = (id) => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
     const guardianId = auth.user?.guardian?.uuid;
     useEffect(() => {
         // Simulate an API call to fetch wards
@@ -153,7 +143,7 @@ export default function Wards() {
     useEffect(() => {
         const checkResultReadiness = async () => {
             const response = await axios.get(
-                `/api/guardians/${guardianId}/students/${activeId}/result-status`,
+                `/api/students/${activeId}/result-status`,
             );
             setActiveResultAvailable(response.data.available);
         };
@@ -315,7 +305,7 @@ Parents are invited to these events and are expected to pick-up their child at t
                             ) : (
                                 <Button
                                     onClick={() =>
-                                        addToast(
+                                        toast.info(
                                             'No active results available or result incomplete',
                                         )
                                     }
@@ -389,14 +379,13 @@ Parents are invited to these events and are expected to pick-up their child at t
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <NoticesCard
                     notices={notices}
-                    onAction={() => addToast('Feature coming soon!')}
+                    onAction={() => toast.info('Feature coming soon!')}
                 />
                 <QuickContactCard
                     contacts={CONTACTS}
-                    onAction={() => addToast('Feature coming soon!')}
+                    onAction={() => toast.info('Feature coming soon!')}
                 />
             </div>
-            <Toast toasts={toasts} onDismiss={removeToast} />
         </div>
     );
 }

@@ -7,7 +7,7 @@
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
-import type { ToastType } from '@/components/toast-item';
+import { toast } from 'react-toastify';
 import type {
     MarkingComponent,
     Teacher,
@@ -417,14 +417,9 @@ export function AddComponentForm({
 
 interface SubjectCardProps {
     tcs: TeacherCurriculumSubject;
-    addToast: (msg: string, type?: ToastType) => void;
-    onComponentsChange: (
-        curriculumSubjectId: string,
-        components: MarkingComponent[],
-    ) => void;
 }
 
-function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
+function SubjectCard({ tcs }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
 
     const components = tcs.curriculum_subject?.marking_components ?? [];
@@ -605,8 +600,9 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                             marginTop: 12,
                         }}
                     >
-                        {components.map((mc, i) => (
+                        {components.map((mc) => (
                             <div
+                            key={mc.id}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -658,10 +654,8 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
 // ─── MySubjectsPage ───────────────────────────────────────────────────────────
 
 export function TeacherSubjects({
-    addToast,
     teacherId,
 }: {
-    addToast: (msg: string, type?: ToastType) => void;
     teacherId: string;
 }) {
     const [subjects, setSubjects] = useState<TeacherCurriculumSubject[]>([]);
@@ -671,7 +665,7 @@ export function TeacherSubjects({
 
     // filters
     const [filterSession, setFilterSession] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
+    const [filterStatus, setFilterStatus] = useState('active');
     const [filterSearch, setFilterSearch] = useState('');
 
     useEffect(() => {
@@ -686,7 +680,7 @@ export function TeacherSubjects({
                 setSubjects(res.data ?? []);
                 setTeacher(response.data ?? null);
             } catch {
-                addToast('Failed to load subjects', 'error');
+                toast.error('Failed to load subjects');
             } finally {
                 setFetching(false);
             }
@@ -703,25 +697,6 @@ export function TeacherSubjects({
                 .map((s) => [s!.id, s!]),
         ).values(),
     );
-
-    const handleComponentsChange = (
-        curriculumSubjectId: string,
-        components: MarkingComponent[],
-    ) => {
-        setSubjects((prev) =>
-            prev.map((s) =>
-                s.curriculum_subject.id === curriculumSubjectId
-                    ? {
-                          ...s,
-                          curriculum_subject: {
-                              ...s.curriculum_subject,
-                              marking_components: components,
-                          },
-                      }
-                    : s,
-            ),
-        );
-    };
 
     const filtered = subjects.filter((s) => {
         if (
@@ -893,8 +868,6 @@ export function TeacherSubjects({
                         <SubjectCard
                             key={tcs.id}
                             tcs={tcs}
-                            addToast={addToast}
-                            onComponentsChange={handleComponentsChange}
                         />
                     ))}
                 </div>

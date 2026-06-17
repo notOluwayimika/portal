@@ -11,13 +11,14 @@ class ArmsDatabaseSeeder extends Seeder
     {
         // Order matters — respect foreign key dependencies
         $this->call([
-            SchoolSeeder::class,
+                // SchoolSeeder::class,
             RoleSeeder::class,
-            StudentSubjectPermissionSeeder::class,
-            ActivityLogPermissionSeeder::class,
-            GuardianPermissionSeeder::class,
-            UserSeeder::class,
-            GradeBoundarySeeder::class,
+                // StudentSubjectPermissionSeeder::class,
+                // ActivityLogPermissionSeeder::class,
+                // GuardianPermissionSeeder::class,
+            TeacherAssignmentPermissionSeeder::class,
+            // UserSeeder::class,
+            // GradeBoundarySeeder::class,
 
             // TeacherSeeder::class,
             // AcademicSessionSeeder::class,

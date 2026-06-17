@@ -21,6 +21,7 @@ import {
     Users,
     X,
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 // =======================================================
 // MOCK DATA
@@ -269,33 +270,7 @@ const NOTIFICATIONS = [
     },
 ];
 
-// =======================================================
-// SUB-COMPONENTS
-// =======================================================
 
-export const Toast = ({ toasts, onDismiss }) => {
-    return (
-        <div className="fixed right-6 bottom-6 z-[100] flex flex-col gap-3">
-            {toasts.map((toast) => (
-                <div
-                    key={toast.id}
-                    className="flex min-w-[300px] animate-in items-center gap-3 rounded-2xl bg-gray-900 px-4 py-3 text-white shadow-2xl duration-300 slide-in-from-right-full"
-                >
-                    <div className="rounded-full bg-white/10 p-1.5">
-                        <CheckCircle2 className="h-4 w-4 text-green-400" />
-                    </div>
-                    <span className="text-sm font-medium">{toast.message}</span>
-                    <button
-                        onClick={() => onDismiss(toast.id)}
-                        className="ml-auto rounded-lg p-1 transition-colors hover:bg-white/10"
-                    >
-                        <X className="h-4 w-4 text-white/50" />
-                    </button>
-                </div>
-            ))}
-        </div>
-    );
-};
 
 const DebtBanner = ({ child, onDismiss, onPay }) => {
     if (!child.has_fee_debt) return null;
@@ -1120,47 +1095,36 @@ export default function ParentDashboard() {
     );
     const [isBannerDismissed, setIsBannerDismissed] = useState(false);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
-    const [toasts, setToasts] = useState([]);
 
     const activeChild = PARENT_DATA.children.find(
         (c) => c.id === activeChildId,
     );
 
-    const addToast = (message) => {
-        const id = Date.now();
-        setToasts((prev) => [...prev, { id, message }]);
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 4000);
-    };
 
-    const removeToast = (id) => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
 
     const handleAction = (type, data) => {
         switch (type) {
             case 'payment':
             case 'unlock':
-                addToast('Redirecting to payment gateway...');
+                toast.info('Redirecting to payment gateway...');
                 break;
             case 'statement':
-                addToast('Feature coming soon');
+                toast.info('Feature coming soon');
                 break;
             case 'download':
-                addToast('Preparing PDF download...');
+                toast.info('Preparing PDF download...');
                 break;
             case 'send_message':
-                addToast(`Message sent to ${data.to}`);
+                toast.info(`Message sent to ${data.to}`);
                 break;
             case 'analysis':
             case 'attendance':
             case 'notices':
             case 'timetable':
-                addToast('Feature coming soon');
+                toast.info('Feature coming soon');
                 break;
             default:
-                addToast('Action triggered');
+                toast.info('Action triggered');
         }
     };
 
@@ -1285,8 +1249,6 @@ export default function ParentDashboard() {
                     </div>
                 </footer>
             </div>
-
-            <Toast toasts={toasts} onDismiss={removeToast} />
         </>
     );
 }

@@ -1,10 +1,10 @@
 import axios from 'axios';
+import { BookOpen, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
 import type { Session, Term } from '@/types/models';
-import { BookOpen, Pencil, Trash2 } from 'lucide-react';
 import { Pagination } from '../pagination';
-import type { ToastType } from '../toast-item';
 
 interface SessionForm {
     name: string;
@@ -34,10 +34,8 @@ const emptyTermForm: TermForm = {
 };
 
 export function SessionsTab({
-    addToast,
     setSessionName,
 }: {
-    addToast: (message: string, type?: ToastType) => void;
     setSessionName: (name: string) => void;
 }) {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -84,7 +82,7 @@ export function SessionsTab({
                 setTotalInactive(response.data.stats.inactive ?? 0);
                 setPaginationMeta(response.data.pagination ?? paginationMeta);
             } else {
-                addToast('Failed to fetch academic sessions.', 'error');
+                toast.error('Failed to fetch academic sessions.');
             }
         };
 
@@ -113,11 +111,11 @@ export function SessionsTab({
 
             if (response.status === 201) {
                 setModal(null);
-                addToast(`"${data.name}" created successfully.`);
+                toast.success(`"${data.name}" created successfully.`);
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to create academic session.', 'error');
+            toast.error('Failed to create academic session.');
         } finally {
             setLoading(false);
         }
@@ -133,13 +131,13 @@ export function SessionsTab({
 
             if (response.status === 200) {
                 setModal(null);
-                addToast(`"${data.name}" updated.`, 'info');
+                toast.info(`"${data.name}" updated.`);
             } else {
-                addToast('Failed to update academic session.', 'error');
+                toast.error('Failed to update academic session.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to update academic session.', 'error');
+            toast.error('Failed to update academic session.');
         } finally {
             setLoading(false);
         }
@@ -156,14 +154,14 @@ export function SessionsTab({
             );
 
             if (response.status === 200) {
-                addToast(`session deleted.`, 'error');
+                toast.error(`Session deleted.`);
                 setConfirm(null);
             } else {
-                addToast('Failed to delete academic session.', 'error');
+                toast.error('Failed to delete academic session.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to delete academic session.', 'error');
+            toast.error('Failed to delete academic session.');
         } finally {
             setLoading(false);
         }
@@ -186,10 +184,10 @@ export function SessionsTab({
         const response = await axios.post(`/api/sessions/${id}/current`);
 
         if (response.status === 200) {
-            addToast(`Session set as current.`, 'info');
+            toast.info(`Session set as current.`);
             setSessionName(response.data.name);
         } else {
-            addToast('Failed to set session as current.', 'error');
+            toast.error('Failed to set session as current.');
         }
 
         setLoading(false);
@@ -206,11 +204,11 @@ export function SessionsTab({
             if (response.status === 200) {
                 setTerms(response.data.terms ?? response.data.data ?? []);
             } else {
-                addToast('Failed to fetch terms.', 'error');
+                toast.error('Failed to fetch terms.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to fetch terms.', 'error');
+            toast.error('Failed to fetch terms.');
         } finally {
             setTermsLoading(false);
         }
@@ -260,19 +258,19 @@ export function SessionsTab({
         }
 
         if (!termForm.name.trim()) {
-            addToast('Term name is required.', 'error');
+            toast.error('Term name is required.');
 
             return;
         }
 
         if (!termForm.start_date || !termForm.end_date) {
-            addToast('Start and end dates are required.', 'error');
+            toast.error('Start and end dates are required.');
 
             return;
         }
 
         if (termForm.end_date < termForm.start_date) {
-            addToast('End date must be after start date.', 'error');
+            toast.error('End date must be after start date.');
 
             return;
         }
@@ -287,7 +285,7 @@ export function SessionsTab({
                 );
 
                 if (response.status === 201 || response.status === 200) {
-                    addToast(`"${termForm.name}" term created.`);
+                    toast.success(`"${termForm.name}" term created.`);
                     setTermModal(null);
                     fetchTerms(termsSession.id);
                 }
@@ -298,14 +296,14 @@ export function SessionsTab({
                 );
 
                 if (response.status === 200) {
-                    addToast(`"${termForm.name}" term updated.`, 'info');
+                    toast.info(`"${termForm.name}" term updated.`);
                     setTermModal(null);
                     fetchTerms(termsSession.id);
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save term.', 'error');
+            toast.error('Failed to save term.');
         } finally {
             setTermSaving(false);
         }
@@ -323,13 +321,13 @@ export function SessionsTab({
             );
 
             if (response.status === 200 || response.status === 204) {
-                addToast(`Term deleted.`, 'error');
+                toast.error(`Term deleted.`);
                 setTermConfirm(null);
                 fetchTerms(termsSession.id);
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to delete term.', 'error');
+            toast.error('Failed to delete term.');
         } finally {
             setTermSaving(false);
         }

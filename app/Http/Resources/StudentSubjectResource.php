@@ -15,21 +15,24 @@ class StudentSubjectResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'                 => $this->uuid,
-            'status'             => $this->status?->value,
-            'student_curriculum' => $this->whenLoaded('studentCurriculum', fn () => new StudentCurriculumResource($this->studentCurriculum)),
-            'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn () => new CurriculumSubjectResource($this->curriculumSubject)),
-            'dropped_at'         => $this->dropped_at?->toIso8601String(),
-            'drop_reason'        => $this->drop_reason,
-            'dropped_by'         => $this->whenLoaded('droppedBy', fn () => [
-                'id'        => $this->droppedBy?->id,
+            'id' => $this->uuid,
+            'status' => $this->status?->value,
+            'student_curriculum' => $this->whenLoaded('studentCurriculum', fn() => new StudentCurriculumResource($this->studentCurriculum)),
+            'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn() => new CurriculumSubjectResource($this->curriculumSubject)),
+            'dropped_at' => $this->dropped_at?->toIso8601String(),
+            'drop_reason' => $this->drop_reason,
+            'dropped_by' => $this->whenLoaded('droppedBy', fn() => [
+                'id' => $this->droppedBy?->id,
                 'full_name' => $this->droppedBy?->full_name,
             ]),
-            'restored_at'        => $this->restored_at?->toIso8601String(),
-            'restored_by'        => $this->whenLoaded('restoredBy', fn () => [
-                'id'        => $this->restoredBy?->id,
+            'restored_at' => $this->restored_at?->toIso8601String(),
+            'restored_by' => $this->whenLoaded('restoredBy', fn() => [
+                'id' => $this->restoredBy?->id,
                 'full_name' => $this->restoredBy?->full_name,
             ]),
+            'comment' => $this->comment,
+            // always load or null
+            'commented_by' => $this->commentedBy?->full_name,
         ];
     }
 }

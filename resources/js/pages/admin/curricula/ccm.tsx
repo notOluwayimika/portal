@@ -1,8 +1,7 @@
 import axios from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
-import { ToastItem } from '@/components/toast-item';
-import type { Toast, ToastType } from '@/components/toast-item';
 import type { Curriculum } from '@/types/models';
 
 // ---------------------------------------------------------------------------
@@ -132,15 +131,7 @@ export default function CcmCurricula() {
     const [migrating, setMigrating] = useState(false);
     const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
 
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    const toastIdRef = useRef(0);
-    const addToast = useCallback(
-        (message: string, type: ToastType = 'success') => {
-            toastIdRef.current += 1;
-            setToasts((t) => [...t, { id: toastIdRef.current, message, type }]);
-        },
-        [],
-    );
+
     useEffect(() => {
         const fetchQueuedIds = async () => {
             try {
@@ -148,7 +139,7 @@ export default function CcmCurricula() {
                 setQueuedIds(new Set(response.data.curriculum_uuids));
             } catch (error) {
                 console.error(error);
-                addToast('Failed to load queued curriculum IDs', 'error');
+                toast.error('Failed to load queued curriculum IDs');
             }
         };
 
@@ -167,14 +158,14 @@ export default function CcmCurricula() {
                 setPaginationMeta(response.data.pagination);
             } catch (error) {
                 console.error(error);
-                addToast('Failed to load CCM curricula', 'error');
+                toast.error('Failed to load CCM curricula');
             } finally {
                 setLoading(false);
             }
         };
 
         fetchCurricula();
-    }, [limit, page, addToast]);
+    }, [limit, page]);
 
     async function handleMigrate() {
         if (!confirmCurriculum) {
@@ -188,14 +179,13 @@ export default function CcmCurricula() {
                 `/api/curricula/${confirmCurriculum.id}/move-from-ccm`,
             );
             setQueuedIds((prev) => new Set(prev).add(confirmCurriculum.id));
-            addToast(
-                `Migration for "${confirmCurriculum.full_name}" has been queued`,
-                'success',
+            toast.success(
+                `Migration for "${confirmCurriculum.full_name}" has been queued`
             );
             setConfirmCurriculum(null);
         } catch (error) {
             console.error(error);
-            addToast('Failed to queue migration', 'error');
+            toast.error('Failed to queue migration');
         } finally {
             setMigrating(false);
         }
@@ -326,19 +316,6 @@ export default function CcmCurricula() {
                 loading={migrating}
             />
 
-            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() =>
-                            setToasts((prev) =>
-                                prev.filter((t) => t.id !== toast.id),
-                            )
-                        }
-                    />
-                ))}
-            </div>
         </div>
     );
 }

@@ -4,6 +4,7 @@ import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { PackagePlus, PencilIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Modal } from '@/pages/admin/school-setup';
 import type {
     CurriculumSubject,
@@ -19,15 +20,13 @@ import {
     totalWeight,
     WeightBar,
 } from './teacher-subjects';
-import type { ToastType } from './toast-item';
 
 // ─────────────────────────────────────────────────────────────────────────
 interface SubjectCardProps {
     cs: CurriculumSubject | null;
-    addToast: (msg: string, type?: ToastType) => void;
 }
 
-function SubjectCard({ cs, addToast }: SubjectCardProps) {
+function SubjectCard({ cs }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
     const [components, setComponents] = useState<MarkingComponent[]>(
         cs?.marking_components ?? [],
@@ -48,9 +47,9 @@ function SubjectCard({ cs, addToast }: SubjectCardProps) {
             );
             const created: MarkingComponent = res.data.data;
             handleComponentChange([...components, created]);
-            addToast('Component added', 'success');
+            toast.success('Component added');
         } catch {
-            addToast('Failed to add component', 'error');
+            toast.error('Failed to add component');
         }
     };
 
@@ -64,9 +63,9 @@ function SubjectCard({ cs, addToast }: SubjectCardProps) {
             handleComponentChange(
                 components.map((c) => (c.id === id ? updated : c)),
             );
-            addToast('Component updated', 'success');
+            toast.success('Component updated');
         } catch {
-            addToast('Failed to update component', 'error');
+            toast.error('Failed to update component');
         }
     };
 
@@ -78,12 +77,12 @@ function SubjectCard({ cs, addToast }: SubjectCardProps) {
 
             if (response.status === 200) {
                 handleComponentChange(components.filter((c) => c.id !== id));
-                addToast('Component removed', 'success');
+                toast.success('Component removed');
             } else {
-                addToast('Failed to delete component', 'error');
+                toast.error('Failed to delete component');
             }
         } catch {
-            addToast('Failed to delete component', 'error');
+            toast.error('Failed to delete component');
         }
     };
 
@@ -312,7 +311,7 @@ function ManageSubjectModal({
                 </>
             }
         >
-            <SubjectCard cs={curriculumSubject} addToast={() => {}} />
+            <SubjectCard cs={curriculumSubject}/>
         </Modal>
     );
 }

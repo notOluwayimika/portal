@@ -59,3 +59,16 @@ export function handleBack() {
     // Implementation for handling back navigation
     window.history.back();
 }
+
+export function toShortName(fullName: string): string {
+    const parts = fullName.trim().split(' ');
+
+    if (parts.length === 0) {
+        return '';
+    }
+
+    const firstName = parts[0];
+    const lastNameInitial = parts[parts.length - 1]?.[0];
+
+    return lastNameInitial ? `${firstName} ${lastNameInitial}` : firstName;
+}

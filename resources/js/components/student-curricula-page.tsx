@@ -1,9 +1,12 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import type { SetStateAction } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { handleBack } from '@/helpers';
-import StudentProfile from '@/pages/admin/students/show';
 import type { Curriculum, Student, StudentCurriculum } from '@/types/models';
+import { toast } from 'react-toastify';
+import { Button } from './ui/button';
+import { FileText } from 'lucide-react';
 
 // ---------- Types ----------
 
@@ -36,7 +39,7 @@ const formatCurriculum = (c: Curriculum | null) => {
         c.academic_session?.name,
         c.class_level_arm?.name,
         `Term ${c.term?.name}`,
-        c.exam_type?.name,
+        c.is_ccm ? 'CCM' : 'End Of Term',
     ]
         .filter(Boolean)
         .join(' · ');
@@ -45,6 +48,155 @@ const formatCurriculum = (c: Curriculum | null) => {
 const fullName = (s: Student) =>
     [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ');
 
+function CurriculumRow({
+    sc,
+    handleStatusChange,
+    busy,
+    student,
+    roles,
+    setPromoteTarget,
+    eligible,
+    err,
+}: {
+    sc: StudentCurriculum;
+    handleStatusChange: (
+        sc: StudentCurriculum,
+        status: StudentCurriculumStatus,
+    ) => Promise<void>;
+    busy: boolean;
+    student: Student;
+    roles: string[];
+    setPromoteTarget: (value: SetStateAction<StudentCurriculum | null>) => void;
+    eligible: Curriculum[];
+    err: string | null;
+}) {
+    const [activeResultAvailable, setActiveResultAvailable] = useState(true);
+    useEffect(() => {
+        const checkResultReadiness = async () => {
+            const response = await axios.get(
+                `/api/students/${student.id}/curriculum/${sc.curriculum.id}/result-status`,
+            );
+            setActiveResultAvailable(response.data.available);
+        };
+
+        if (student.id) {
+            checkResultReadiness();
+        }
+    }, [student, sc]);
+
+    return (
+        <tr key={sc.id} className="hover:bg-gray-50">
+            <Td>
+                <div className="font-medium text-gray-900">
+                    {formatCurriculum(sc.curriculum)}
+                </div>
+            </Td>
+            <Td>
+                <div className="flex flex-col gap-1.5">
+                    <span
+                        className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[sc.status as StudentCurriculumStatus]}`}
+                    >
+                        {sc.status}
+                    </span>
+                    {!roles.includes('guardian') && (
+                        <select
+                            value={sc.status}
+                            onChange={(e) =>
+                                handleStatusChange(
+                                    sc,
+                                    e.target.value as StudentCurriculumStatus,
+                                )
+                            }
+                            disabled={busy}
+                            className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                        >
+                            {STATUS_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+            </Td>
+            {/* <Td>
+                                            {sc.promoted_to ? (
+                                                <span className="text-gray-700">
+                                                    {formatCurriculum(
+                                                        sc.promoted_to,
+                                                    )}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">
+                                                    —
+                                                </span>
+                                            )}
+                                        </Td> */}
+            <Td className="text-right">
+                <div className="flex gap-4">
+                    {roles.includes('guardian') && !activeResultAvailable ? (
+                        <button
+                            onClick={() =>
+                                toast.info(
+                                    'No active results available or result incomplete',
+                                )
+                            }
+                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                        >
+                            View Result
+                        </button>
+                    ) : (
+                        <Link
+                            href={`/students/${student.id}/results/${sc.id}`}
+                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                        >
+                            View Result
+                        </Link>
+                    )}
+                    {(roles.includes('admin') ||
+                        roles.includes('head_of_school')) && (
+                        <button
+                            type="button"
+                            onClick={() => setPromoteTarget(sc)}
+                            disabled={
+                                busy ||
+                                sc.status !== 'active' ||
+                                eligible.length === 0
+                            }
+                            title={
+                                sc.status !== 'active'
+                                    ? 'Only active enrollments can be promoted'
+                                    : eligible.length === 0
+                                      ? 'No eligible curricula available'
+                                      : undefined
+                            }
+                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                        >
+                            Promote
+                        </button>
+                    )}
+                    {sc.status === 'active' &&
+                        (roles.includes('admin') ||
+                            roles.includes('head_of_school')) && (
+                            <Link
+                                disabled={
+                                    busy ||
+                                    sc.status !== 'active' ||
+                                    eligible.length === 0
+                                }
+                                href={`/setup/student-curricula/${sc.id}/subjects`}
+                                className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                            >
+                                Manage Subjects
+                            </Link>
+                        )}
+                </div>
+
+                {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+            </Td>
+        </tr>
+    );
+}
 // ---------- Page ----------
 
 export default function StudentCurriculaPage({
@@ -56,7 +208,7 @@ export default function StudentCurriculaPage({
         student.student_curricula,
     );
     const { auth } = usePage().props;
-    const role = auth.roles[0];
+    const roles = auth.roles;
     const [eligible, setEligible] = useState<Curriculum[]>([]);
     const [filter, setFilter] = useState<FilterValue>('all');
     const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
@@ -261,7 +413,8 @@ export default function StudentCurriculaPage({
                         ))}
                     </div>
 
-                    {(role === 'admin' || role === 'head_of_school') && (
+                    {(roles.includes('admin') ||
+                        roles.includes('head_of_school')) && (
                         <button
                             type="button"
                             onClick={() => {
@@ -288,7 +441,7 @@ export default function StudentCurriculaPage({
                             <tr>
                                 <Th>Curriculum</Th>
                                 <Th>Status</Th>
-                                <Th>Promoted to</Th>
+                                {/* <Th>Promoted to</Th> */}
                                 <Th className="text-right">Actions</Th>
                             </tr>
                         </thead>
@@ -309,124 +462,17 @@ export default function StudentCurriculaPage({
                                 const err = rowError[sc.id];
 
                                 return (
-                                    <tr
+                                    <CurriculumRow
+                                        busy={busy}
+                                        err={err}
+                                        eligible={eligible}
+                                        handleStatusChange={handleStatusChange}
+                                        roles={roles}
+                                        sc={sc}
+                                        setPromoteTarget={setPromoteTarget}
+                                        student={student}
                                         key={sc.id}
-                                        className="hover:bg-gray-50"
-                                    >
-                                        <Td>
-                                            <div className="font-medium text-gray-900">
-                                                {formatCurriculum(
-                                                    sc.curriculum,
-                                                )}
-                                            </div>
-                                        </Td>
-                                        <Td>
-                                            <div className="flex flex-col gap-1.5">
-                                                <span
-                                                    className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[sc.status as StudentCurriculumStatus]}`}
-                                                >
-                                                    {sc.status}
-                                                </span>
-                                                <select
-                                                    value={sc.status}
-                                                    onChange={(e) =>
-                                                        handleStatusChange(
-                                                            sc,
-                                                            e.target
-                                                                .value as StudentCurriculumStatus,
-                                                        )
-                                                    }
-                                                    disabled={busy}
-                                                    className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
-                                                >
-                                                    {STATUS_OPTIONS.map((o) => (
-                                                        <option
-                                                            key={o.value}
-                                                            value={o.value}
-                                                        >
-                                                            {o.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </Td>
-                                        <Td>
-                                            {sc.promoted_to ? (
-                                                <span className="text-gray-700">
-                                                    {formatCurriculum(
-                                                        sc.promoted_to,
-                                                    )}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">
-                                                    —
-                                                </span>
-                                            )}
-                                        </Td>
-                                        <Td className="text-right">
-                                            <div className="flex gap-4">
-                                                <Link
-                                                    href={`/students/${student.id}/results/${sc.id}`}
-                                                    className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                                                >
-                                                    View Result
-                                                </Link>
-                                                {(role === 'admin' ||
-                                                    role ===
-                                                        'head_of_school') && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            setPromoteTarget(sc)
-                                                        }
-                                                        disabled={
-                                                            busy ||
-                                                            sc.status !==
-                                                                'active' ||
-                                                            eligible.length ===
-                                                                0
-                                                        }
-                                                        title={
-                                                            sc.status !==
-                                                            'active'
-                                                                ? 'Only active enrollments can be promoted'
-                                                                : eligible.length ===
-                                                                    0
-                                                                  ? 'No eligible curricula available'
-                                                                  : undefined
-                                                        }
-                                                        className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                                                    >
-                                                        Promote
-                                                    </button>
-                                                )}
-                                                {sc.status === 'active' &&
-                                                    (role === 'admin' ||
-                                                        role ===
-                                                            'head_of_school') && (
-                                                        <Link
-                                                            disabled={
-                                                                busy ||
-                                                                sc.status !==
-                                                                    'active' ||
-                                                                eligible.length ===
-                                                                    0
-                                                            }
-                                                            href={`/setup/student-curricula/${sc.id}/subjects`}
-                                                            className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                                                        >
-                                                            Manage Subjects
-                                                        </Link>
-                                                    )}
-                                            </div>
-
-                                            {err && (
-                                                <p className="mt-1 text-xs text-red-600">
-                                                    {err}
-                                                </p>
-                                            )}
-                                        </Td>
-                                    </tr>
+                                    />
                                 );
                             })}
                         </tbody>

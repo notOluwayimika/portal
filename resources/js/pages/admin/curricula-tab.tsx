@@ -4,12 +4,12 @@
 
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
-import { PackagePlusIcon, Pencil, Settings, Trash2 } from 'lucide-react';
+import { Pencil, Settings, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
-import type { ToastType } from '@/components/toast-item';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
 import type { Curriculum } from '@/types/models';
@@ -48,13 +48,10 @@ interface Filters {
     class_level_id: string;
     term: string;
     status: string;
+    is_ccm: string;
 }
 
-export function CurriculaTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function CurriculaTab() {
     const [curricula, setCurricula] = useState<Curriculum[]>([]);
     const [classLevels, setClassLevels] = useState<SelectOption[]>([]);
     const [examTypes, setExamTypes] = useState<SelectOption[]>([]);
@@ -77,6 +74,7 @@ export function CurriculaTab({
         class_level_id: '',
         term: '',
         status: '',
+        is_ccm: '',
     };
     const [filters, setFilters] = useState<Filters>(blankFilters);
 
@@ -97,6 +95,11 @@ export function CurriculaTab({
         { label: 'Active', value: 'active' },
         { label: 'Draft', value: 'draft' },
         { label: 'Closed', value: 'closed' },
+    ];
+
+    const isCcmOptions: SelectOption[] = [
+        { label: 'Yes', value: 'true' },
+        { label: 'No', value: 'false' },
     ];
 
     useEffect(() => {
@@ -129,6 +132,8 @@ export function CurriculaTab({
                         }),
                     ...(filters.status &&
                         filters.status !== 'all' && { status: filters.status }),
+                    ...(filters.is_ccm &&
+                        filters.is_ccm !== 'all' && { is_ccm: filters.is_ccm }),
                 },
             });
             setCurricula(response.data.curricula);
@@ -177,11 +182,11 @@ export function CurriculaTab({
             const response = await axios.delete(`/api/curricula/${id}`);
 
             if (response.status === 204) {
-                addToast('Successfully deleted curriculum');
+                toast.success('Successfully deleted curriculum');
             }
         } catch (error) {
             console.log(error);
-            addToast('Unable to delete curriculum', 'error');
+            toast.error('Unable to delete curriculum');
         } finally {
             setLoading(false);
         }
@@ -195,7 +200,7 @@ export function CurriculaTab({
             !form.min_subjects ||
             !form.status
         ) {
-            addToast('Please fill in all required fields.', 'error');
+            toast.error('Please fill in all required fields.');
 
             return;
         }
@@ -212,10 +217,10 @@ export function CurriculaTab({
                 const response = await axios.post('/api/curricula', payload);
 
                 if (response.status === 201) {
-                    addToast('Curriculum saved successfully!', 'success');
+                    toast.success('Curriculum saved successfully!');
                     setModal(null);
                 } else {
-                    addToast('Failed to save curriculum.', 'error');
+                    toast.error('Failed to save curriculum.');
                 }
             } else {
                 const response = await axios.put(
@@ -224,15 +229,15 @@ export function CurriculaTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Curriculum updated successfully!', 'success');
+                    toast.success('Curriculum updated successfully!');
                     setModal(null);
                 } else {
-                    addToast('Failed to update curriculum.', 'error');
+                    toast.error('Failed to update curriculum.');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save curriculum.', 'error');
+            toast.error('Failed to save curriculum.');
         } finally {
             setLoading(false);
         }
@@ -307,6 +312,21 @@ export function CurriculaTab({
                             value={filters.status}
                             onChange={(v) => flt('status', String(v))}
                             label="All statuses"
+                        />
+                    </div>
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 130px', marginBottom: 0 }}
+                    >
+                        <label>Is CCM</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All statuses', value: 'all' },
+                                ...isCcmOptions,
+                            ]}
+                            value={filters.is_ccm}
+                            onChange={(v) => flt('is_ccm', String(v))}
+                            label="All"
                         />
                     </div>
                     {hasActiveFilters && (

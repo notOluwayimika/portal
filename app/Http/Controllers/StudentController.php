@@ -14,6 +14,8 @@ use App\Http\Requests\StudentRequest;
 use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\CurriculumOptionResource;
 use App\Http\Resources\CurriculumResource;
+use App\Http\Resources\ScholarshipResource;
+use App\Http\Resources\SportHouseResource;
 use App\Http\Resources\StudentResource;
 use App\Models\Curriculum;
 use App\Models\FileUpload;
@@ -185,11 +187,14 @@ class StudentController extends Controller
             ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
         $genders = GenderTypeEnum::options();
+        $school = request()->user()->school;
 
         return Response::success([
             'curricula' => CurriculumOptionResource::collection($curricula),
             'genders' => $genders,
             'guardian_relationships' => GuardianRelationshipEnum::options(),
+            'sport_houses' => SportHouseResource::collection($school->sportHouses),
+            'scholarships' => ScholarshipResource::collection($school->scholarships),
         ]);
     }
 
@@ -301,7 +306,7 @@ class StudentController extends Controller
         return $this->fileUploadService->storeAndUploadFile($request, 'photo', 'students/photos');
     }
 
-    public function activeResultStatus(Guardian $guardian, Student $student)
+    public function activeResultStatus(Student $student)
     {
         $activeCurriculum = $student->currentCurriculum;
         $isAvailable = true;

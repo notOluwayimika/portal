@@ -4,10 +4,14 @@ import {
     Building2,
     ClipboardCopyIcon,
     ClipboardList,
+    FileSpreadsheet,
     GraduationCap,
+    Heart,
     History,
     LayoutDashboard,
+    MessageSquare,
     RefreshCw,
+    Shield,
     UserCog,
     Users,
 } from 'lucide-react';
@@ -53,6 +57,47 @@ const headOfSchoolNavGroups: NavGroup[] = [
                 title: 'Pending Results',
                 href: '/setup/review/pending',
                 icon: ClipboardCopyIcon,
+            },
+            {
+                title: 'Student Comments',
+                href: '/head-of-school/comments',
+                icon: MessageSquare,
+            },
+        ],
+    },
+    {
+        label: 'Reports',
+        items: [
+            {
+                title: 'Broadsheets',
+                href: '/reports/broadsheets',
+                icon: FileSpreadsheet,
+            },
+        ],
+    },
+];
+
+const boardingParentNavGroups: NavGroup[] = [
+    {
+        label: 'Boarding Parent',
+        items: [
+            {
+                title: 'Behavioral Assessments',
+                href: '/boarding-parent/behavioral-assessments',
+                icon: Heart,
+            },
+        ],
+    },
+];
+
+const formTeacherNavGroups: NavGroup[] = [
+    {
+        label: 'Form Teacher',
+        items: [
+            {
+                title: 'Student Comments',
+                href: '/form-teacher/comments',
+                icon: MessageSquare,
             },
         ],
     },
@@ -103,6 +148,11 @@ const adminNavGroups: NavGroup[] = [
                 icon: GraduationCap,
             },
             {
+                title: 'Teacher Assignments',
+                href: '/setup/teacher-assignments',
+                icon: Shield,
+            },
+            {
                 title: 'CCM Curricula',
                 href: '/setup/curricula-ccm',
                 icon: RefreshCw,
@@ -116,6 +166,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'Results per Class',
                 href: '/reports/results-per-class',
                 icon: ClipboardList,
+            },
+            {
+                title: 'Broadsheets',
+                href: '/reports/broadsheets',
+                icon: FileSpreadsheet,
             },
         ],
     },
@@ -165,6 +220,14 @@ export function AppSidebar() {
 
         if (roles.includes('head_of_school')) {
             groups.push(...headOfSchoolNavGroups);
+        }
+
+        if (roles.includes('boarding_parent')) {
+            groups.push(...boardingParentNavGroups);
+        }
+
+        if (roles.includes('form_teacher')) {
+            groups.push(...formTeacherNavGroups);
         }
 
         if (roles.includes('teacher')) {

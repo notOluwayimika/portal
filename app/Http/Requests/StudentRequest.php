@@ -65,6 +65,16 @@ class StudentRequest extends FormRequest
             'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],
             'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
 
+            'admission_date' => ['nullable', 'date'],
+            'address' => ['nullable', 'string'],
+            'nationality' => ['nullable', 'string', 'max:255'],
+            'other_nationality' => ['nullable', 'string', 'max:255'],
+            'state_of_origin' => ['nullable', 'string', 'max:255'],
+            'religion' => ['nullable', 'string', 'max:255'],
+            'previous_school' => ['nullable', 'string', 'max:255'],
+            'sport_house_id' => ['nullable', 'integer', 'exists:sport_houses,id'],
+            'scholarship_id' => ['nullable', 'integer', 'exists:scholarships,id'],
+
             // Guardians array — only required on creation. On update, guardians are managed
             // via the dedicated attach/detach endpoints; the array is optional here.
             'guardians' => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1', new ExactlyOnePrimaryGuardian()],

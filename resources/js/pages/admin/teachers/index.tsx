@@ -13,12 +13,11 @@ import {
     X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import { ImportTeacherForm } from '@/components/teachers/import-teacher-form';
 import { TeacherForm } from '@/components/teachers/teacher-form';
 import { TeacherSubjectsModal } from '@/components/teachers/teacher-subjects-modal';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Select from '@/components/ui/base-dropdown';
 import { Button } from '@/components/ui/button';
@@ -52,7 +51,6 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [toasts, setToasts] = useState<Toast[]>([]);
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(25);
     const [pagination, setPagination] = useState({
@@ -70,12 +68,8 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [exporting, setExporting] = useState(false);
-    let toastCounter = 0;
 
-    const addToast = (message: string, type: ToastType = 'success') => {
-        const id = ++toastCounter;
-        setToasts((prev) => [...prev, { id, message, type }]);
-    };
+
 
     const fetchTeachers = async () => {
         try {
@@ -89,7 +83,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 setPagination(res.data.pagination);
             }
         } catch {
-            addToast('Failed to fetch teachers', 'error');
+            toast.error('Failed to fetch teachers');
         } finally {
             setLoading(false);
         }
@@ -123,7 +117,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         });
 
         if (result !== false) {
-            addToast('Teacher deleted successfully');
+            toast.success('Teacher deleted successfully');
             fetchTeachers();
         }
     };
@@ -148,16 +142,16 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
             await axios.patch(`/api/teachers/${teacher.id}/status`, {
                 status: newStatus,
             });
-            addToast(`Teacher status updated to ${newStatus}`);
+            toast.success(`Teacher status updated to ${newStatus}`);
             fetchTeachers();
         } catch {
-            addToast('Failed to update teacher status', 'error');
+            toast.error('Failed to update teacher status');
         }
     };
 
     const handleFormSuccess = () => {
         setIsFormModalOpen(false);
-        addToast(
+        toast.success(
             currentTeacher
                 ? 'Teacher updated successfully'
                 : 'Teacher created successfully',
@@ -185,7 +179,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
         } catch {
-            addToast('Failed to export teachers', 'error');
+            toast.error('Failed to export teachers');
         } finally {
             setExporting(false);
         }
@@ -487,24 +481,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                     <TeacherSubjectsModal
                         teacher={currentTeacher}
                         curricula={curricula}
-                        addToast={addToast}
                     />
                 )}
             </Modal>
 
-            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() =>
-                            setToasts((prev) =>
-                                prev.filter((t) => t.id !== toast.id),
-                            )
-                        }
-                    />
-                ))}
-            </div>
+
         </>
     );
 }

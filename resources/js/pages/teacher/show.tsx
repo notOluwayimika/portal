@@ -1,24 +1,11 @@
 import { usePage } from '@inertiajs/react';
-import { useState } from 'react';
 import { TeacherSubjects } from '@/components/teacher-subjects';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { handleBack } from '@/helpers';
 
 export default function Show() {
     const { teacher } = usePage().props as unknown as { teacher: any };
     const teacherId = teacher.data.id;
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    const toastCounter = useState(0)[0];
-    let toastId = toastCounter;
-    function addToast(message: string, type: ToastType = 'success') {
-        const id = ++toastId;
-        setToasts((t) => [...t, { id, message, type }]);
-    }
 
-    function dismissToast(id: number) {
-        setToasts((t) => t.filter((x) => x.id !== id));
-    }
     // function handleBack() {
     //     // Implementation for handling back navigation
     //     window.history.back();
@@ -317,29 +304,7 @@ export default function Show() {
             >
                 ← Go back
             </button>
-            <TeacherSubjects addToast={addToast} teacherId={teacherId} />
-            {/* Toasts */}
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    zIndex: 100,
-                    minWidth: 280,
-                    maxWidth: 360,
-                }}
-            >
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() => dismissToast(toast.id)}
-                    />
-                ))}
-            </div>
+            <TeacherSubjects teacherId={teacherId} />
         </div>
     );
 }

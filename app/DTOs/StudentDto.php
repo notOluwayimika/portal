@@ -18,6 +18,15 @@ readonly class StudentDto
         public readonly ?int $photo_id,
         public readonly ?int $curriculum_id = null,
         public readonly ?int $promoted_to_id = null,
+        public readonly \Carbon\Carbon|string|null $admission_date = null,
+        public readonly ?string $address = null,
+        public readonly ?string $nationality = null,
+        public readonly ?string $other_nationality = null,
+        public readonly ?string $state_of_origin = null,
+        public readonly ?string $religion = null,
+        public readonly ?string $previous_school = null,
+        public readonly ?int $sport_house_id = null,
+        public readonly ?int $scholarship_id = null,
     ) {}
 
     public static function fromArray(array $data): self
@@ -34,6 +43,15 @@ readonly class StudentDto
             photo_id: $data['photo_id'] ?? null,
             curriculum_id: $data['curriculum_id'] ?? null,
             promoted_to_id: $data['promoted_to_id'] ?? null,
+            admission_date: $data['admission_date'] ?? null,
+            address: $data['address'] ?? null,
+            nationality: $data['nationality'] ?? null,
+            other_nationality: $data['other_nationality'] ?? null,
+            state_of_origin: $data['state_of_origin'] ?? null,
+            religion: $data['religion'] ?? null,
+            previous_school: $data['previous_school'] ?? null,
+            sport_house_id: $data['sport_house_id'] ?? null,
+            scholarship_id: $data['scholarship_id'] ?? null,
         );
     }
 

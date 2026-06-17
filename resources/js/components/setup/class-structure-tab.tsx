@@ -1,9 +1,9 @@
 import axios from 'axios';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
 import type { Arm, ClassLevel, Stream } from '@/types/models';
-import { Pencil, Trash2 } from 'lucide-react';
-import type { ToastType } from '../toast-item';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
 // ═══════════════════════════════════════════════════════════════════════════
@@ -30,11 +30,7 @@ interface ConfirmTarget<T> {
     type: string;
     item: T;
 }
-export function ClassStructureTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function ClassStructureTab() {
     const [levels, setLevels] = useState<ClassLevel[]>([]);
     const [arms, setArms] = useState<Arm[]>([]);
     const [streams, setStreams] = useState<Stream[]>([]);
@@ -84,10 +80,10 @@ export function ClassStructureTab({
                 );
 
                 if (response.status === 201) {
-                    addToast('Level saved successfully');
+                    toast.success('Level saved successfully');
                     setLvlModal(null);
                 } else {
-                    addToast('Failed to save level', 'error');
+                    toast.error('Failed to save level');
                 }
             } else {
                 const response = await axios.put(
@@ -99,15 +95,15 @@ export function ClassStructureTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Level updated successfully', 'info');
+                    toast.success('Level updated successfully');
                     setLvlModal(null);
                 } else {
-                    addToast('Failed to update level', 'error');
+                    toast.error('Failed to update level');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save level', 'error');
+            toast.error('Failed to save level');
         } finally {
             setLoading(false);
         }
@@ -132,10 +128,10 @@ export function ClassStructureTab({
                 );
 
                 if (response.status === 201) {
-                    addToast('Stream saved successfully');
+                    toast.success('Stream saved successfully');
                     setStreamModal(null);
                 } else {
-                    addToast('Failed to save stream', 'error');
+                    toast.error('Failed to save stream');
                 }
             } else {
                 const response = await axios.put(
@@ -148,15 +144,15 @@ export function ClassStructureTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Stream updated successfully', 'info');
+                    toast.success('Stream updated successfully');
                     setStreamModal(null);
                 } else {
-                    addToast('Failed to update stream', 'error');
+                    toast.error('Failed to update stream');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save stream', 'error');
+            toast.error('Failed to save stream');
         } finally {
             setLoading(false);
         }
@@ -176,9 +172,9 @@ export function ClassStructureTab({
                 });
 
                 if (response.status === 201) {
-                    addToast('Arm saved successfully');
+                    toast.success('Arm saved successfully');
                 } else {
-                    addToast('Failed to save arm', 'error');
+                    toast.error('Failed to save arm');
                 }
             } else {
                 const response = await axios.put(
@@ -189,14 +185,14 @@ export function ClassStructureTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Arm updated successfully', 'info');
+                    toast.success('Arm updated successfully');
                 } else {
-                    addToast('Failed to update arm', 'error');
+                    toast.error('Failed to update arm');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save arm', 'error');
+            toast.error('Failed to save arm');
         } finally {
             setLoading(false);
             setArmModal(null);
@@ -217,15 +213,13 @@ export function ClassStructureTab({
             );
 
             if (response.status === 200) {
-                addToast(
-                    `${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`,
-                );
+                toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`);
             } else {
-                addToast(`Failed to delete ${type}`, 'error');
+                toast.error(`Failed to delete ${type}`);
             }
         } catch (error) {
             console.log(error);
-            addToast(`Failed to delete ${type}`, 'error');
+            toast.error(`Failed to delete ${type}`);
         } finally {
             setLoading(false);
         }
@@ -241,13 +235,13 @@ export function ClassStructureTab({
             });
 
             if (response.status == 200) {
-                addToast('Relationship updated successfully');
+                toast.success('Relationship updated successfully');
             } else {
-                addToast('Failed to update relationship', 'error');
+                toast.error('Failed to update relationship');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to update relationship', 'error');
+            toast.error('Failed to update relationship');
         } finally {
             setLoading(false);
         }

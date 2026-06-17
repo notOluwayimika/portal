@@ -12,12 +12,11 @@ import {
     Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'react-toastify';
 import { ActivityLogCard } from '@/components/guardians/activity-log-card';
 import { EditGuardianModal } from '@/components/guardians/edit-guardian-modal';
 import { LoginAccessCard } from '@/components/guardians/login-access-card';
 import { StudentCard } from '@/components/guardians/student-card';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,7 +53,10 @@ function statusColor(status: string | undefined) {
 }
 
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
-    if (!value) return null;
+    if (!value) {
+return null;
+}
+
     return (
         <div className="space-y-1">
             <dt className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">{label}</dt>
@@ -81,45 +83,29 @@ export default function GuardianProfile() {
     // Modals
     const [showEdit, setShowEdit] = useState(false);
 
-    // Toasts
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    let toastCounter = 0;
 
     const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
-    const addToast = (message: string, type: ToastType = 'success') => {
-        const id = ++toastCounter;
-        setToasts((prev) => [...prev, { id, message, type }]);
-    };
+
 
     const refreshGuardian = () => router.reload({ only: ['guardian'] });
 
     const handleSaved = () => {
         setShowEdit(false);
-        addToast('Guardian updated successfully.');
+        toast.success('Guardian updated successfully.');
         refreshGuardian();
     };
 
     const handleLoginUpdate = (updated: Guardian) => {
         setGuardian((prev) => ({ ...prev, ...updated }));
         setActivityRefreshKey((k) => k + 1);
-        addToast('Login access updated.');
+        toast.success('Login access updated.');
     };
 
     return (
         <>
             <Head title={`${guardian.full_name} — Guardian Profile`} />
 
-            {/* Toast stack */}
-            <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-                {toasts.map((t) => (
-                    <ToastItem
-                        key={t.id}
-                        toast={t}
-                        onDismiss={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-                    />
-                ))}
-            </div>
 
             <div className="min-h-screen bg-[#f5f7fb] py-5 px-4 sm:px-6 lg:px-8 dark:bg-background">
                 <div className="mx-auto max-w-7xl space-y-5">
@@ -218,8 +204,8 @@ export default function GuardianProfile() {
                                                 onClick={() => {
                                                     if (window.confirm(`Send a password reset link to ${guardian.email}?`)) {
                                                         axios.post(`/api/guardians/${guardian.id}/reset-password`)
-                                                            .then(() => addToast('Password reset link sent.'))
-                                                            .catch((err) => addToast(err.response?.data?.message ?? 'Failed to send reset link.', 'error'));
+                                                            .then(() => toast.success('Password reset link sent.'))
+                                                            .catch((err) => toast.error(err.response?.data?.message ?? 'Failed to send reset link.'));
                                                     }
                                                 }}
                                                 className="rounded-lg py-2 cursor-pointer"
@@ -357,7 +343,7 @@ export default function GuardianProfile() {
                             <LoginAccessCard
                                 guardian={guardian}
                                 onUpdate={handleLoginUpdate}
-                                onError={(msg) => addToast(msg, 'error')}
+                                onError={(msg) => toast.error(msg)}
                             />
 
                             <ActivityLogCard guardianId={guardian.id} refreshKey={activityRefreshKey} />

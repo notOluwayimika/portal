@@ -2,14 +2,13 @@ import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
 import { Download, Upload, UserPlus, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import { AddStandaloneGuardianModal } from '@/components/guardians/add-standalone-guardian-modal';
 import { BulkActionBar } from '@/components/guardians/bulk-action-bar';
 import { GuardianFilterBar } from '@/components/guardians/guardian-filter-bar';
 import { GuardianTable } from '@/components/guardians/guardian-table';
 import { MessageComposerModal } from '@/components/guardians/message-composer-modal';
 import { Pagination } from '@/components/pagination';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { Button } from '@/components/ui/button';
 import type { Guardian } from '@/types/models';
 
@@ -25,8 +24,6 @@ const DEFAULT_PAGINATION = {
     current_page: 1, last_page: 1, per_page: 25,
     total: 0, prev_page_url: null, next_page_url: null,
 };
-
-let toastCounter = 0;
 
 export default function GuardianIndex({ guardian_statuses }: Props) {
     const [guardians, setGuardians]     = useState<Guardian[]>([]);
@@ -53,15 +50,10 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
     const [showAdd, setShowAdd]         = useState(false);
     const [showMessage, setShowMessage] = useState(false);
 
-    const [toasts, setToasts] = useState<Toast[]>([]);
-
-    const addToast = (message: string, type: ToastType = 'success') => {
-        const id = ++toastCounter;
-        setToasts(prev => [...prev, { id, message, type }]);
-    };
 
     const fetchGuardians = async () => {
         setLoading(true);
+
         try {
             const res = await axios.get('/api/guardians', {
                 params: {
@@ -78,7 +70,7 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
             setGuardians(res.data.data ?? []);
             setPagination(res.data.pagination ?? DEFAULT_PAGINATION);
         } catch {
-            addToast('Failed to fetch guardians', 'error');
+            toast.error('Failed to fetch guardians');
         } finally {
             setLoading(false);
         }
@@ -93,12 +85,13 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
             prev.dateFrom !== dateFrom || prev.dateTo !== dateTo ||
             prev.sortBy !== sortBy || prev.sortDir !== sortDir;
         filtersRef.current = { search, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir };
+
         if (filterChanged) {
             setPage(1);
             setSelectedIds(new Set());
             setSelectAllMatching(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [search, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir]);
 
     useEffect(() => {
@@ -107,8 +100,11 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
     }, [search, page, limit, statusFilter, loginFilter, childrenFilter, dateFrom, dateTo, sortBy, sortDir]);
 
     const handleSort = (col: SortCol) => {
-        if (col === sortBy) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        else { setSortBy(col); setSortDir('desc'); }
+        if (col === sortBy) {
+setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+} else {
+ setSortBy(col); setSortDir('desc');
+}
     };
 
     const toggleSelect = (id: string) => {
@@ -116,6 +112,7 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
         setSelectedIds(prev => {
             const next = new Set(prev);
             next.has(id) ? next.delete(id) : next.add(id);
+
             return next;
         });
     };
@@ -135,6 +132,7 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
         // GuardianTable uses uuid as id; backend bulk routes accept numeric ids.
         // We need the numeric id from the guardian objects.
         const uuids = selectAllMatching ? guardians.map(g => g.id) : Array.from(selectedIds);
+
         return guardians.filter(g => uuids.includes(g.id)).map(g => g.id);
     };
 
@@ -142,12 +140,12 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
         try {
             const ids = selectedNumericIds();
             await axios.post(url, { guardian_ids: ids, ...extra });
-            addToast('Action completed successfully');
+            toast.success('Action completed successfully');
             setSelectedIds(new Set());
             setSelectAllMatching(false);
             fetchGuardians();
         } catch {
-            addToast('Action failed', 'error');
+            toast.error('Action failed');
         }
     };
 
@@ -161,26 +159,39 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
 
     const handleSingleAction = async (action: string, guardian: Guardian) => {
         if (action === 'enable-login') {
-            if (!window.confirm(`Enable login for ${guardian.full_name}?`)) return;
+            if (!window.confirm(`Enable login for ${guardian.full_name}?`)) {
+return;
+}
+
             try {
                 await axios.post(`/api/guardians/${guardian.id}/enable-login`);
-                addToast('Login enabled');
+                toast.success('Login enabled');
                 fetchGuardians();
-            } catch { addToast('Failed', 'error'); }
+            } catch {
+ toast.error('Failed');
+}
         } else if (action === 'disable-login') {
-            if (!window.confirm(`Disable login for ${guardian.full_name}?`)) return;
+            if (!window.confirm(`Disable login for ${guardian.full_name}?`)) {
+return;
+}
+
             try {
                 await axios.post(`/api/guardians/${guardian.id}/disable-login`);
-                addToast('Login disabled');
+                toast.success('Login disabled');
                 fetchGuardians();
-            } catch { addToast('Failed', 'error'); }
+            } catch {
+ toast.error('Failed');
+}
         } else if (action.startsWith('status-')) {
             const status = action.replace('status-', '');
+
             try {
                 await axios.patch(`/api/guardians/${guardian.id}`, { status });
-                addToast(`Status updated to ${status}`);
+                toast.success(`Status updated to ${status}`);
                 fetchGuardians();
-            } catch { addToast('Failed', 'error'); }
+            } catch {
+ toast.error('Failed');
+}
         }
     };
 
@@ -288,7 +299,9 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
                 totalMatching={pagination.total}
                 selectAllMatching={selectAllMatching}
                 onSelectAllMatching={() => setSelectAllMatching(true)}
-                onClearSelection={() => { setSelectedIds(new Set()); setSelectAllMatching(false); }}
+                onClearSelection={() => {
+ setSelectedIds(new Set()); setSelectAllMatching(false);
+}}
                 onMessage={() => setShowMessage(true)}
                 onExport={handleExport}
                 onEnableLogin={() => bulkPost('/api/guardians/bulk-enable-login')}
@@ -305,14 +318,9 @@ export default function GuardianIndex({ guardian_statuses }: Props) {
                 isOpen={showMessage}
                 onClose={() => setShowMessage(false)}
                 guardianIds={Array.from(selectedIds) as unknown as number[]}
-                onSent={() => addToast('Message queued successfully')}
+                onSent={() => toast.success('Message queued successfully')}
             />
 
-            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
-                {toasts.map(t => (
-                    <ToastItem key={t.id} toast={t} onDismiss={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
-                ))}
-            </div>
         </>
     );
 }

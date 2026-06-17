@@ -69,8 +69,8 @@ class CurriculumSubjectController extends Controller
             $total = $scores->sum('score');
 
             $grade = $gradeBoundaries
-                ->where('min_score', '<=', $total)
-                ->where('max_score', '>=', $total)
+                ->where('min_score', '<=', floor($total))
+                ->where('max_score', '>=', floor($total))
                 ->first();
             if (count($scores) === count($markingComponents)) {
                 StudentResult::updateOrCreate(
@@ -405,5 +405,32 @@ class CurriculumSubjectController extends Controller
             });
         })->get();
         return response()->json(CurriculumSubjectResource::collection($curriculumSubjects));
+    }
+
+    public function getYearAverage(CurriculumSubject $curriculumSubject)
+    {
+        $curriculum = $curriculumSubject->curriculum;
+        $classLevelId = $curriculum->classLevelArm->class_level_id;
+
+        $curriculumSubjects = CurriculumSubject::where('subject_id', $curriculumSubject->subject_id)
+            ->whereHas('curriculum', function ($query) use ($curriculum, $classLevelId) {
+                $query->where('term_id', $curriculum->term_id)
+                    ->where('exam_type_id', $curriculum->exam_type_id)
+                    ->where('is_ccm', $curriculum->is_ccm)
+                    ->whereHas('classLevelArm', function ($q) use ($classLevelId) {
+                        $q->where('class_level_id', $classLevelId);
+                    });
+            })
+            ->with('studentResults')
+            ->get();
+        $classAverages = $curriculumSubjects
+            ->map(fn($cs) => $cs->studentResults->avg('total_score'))
+            ->filter(fn($avg) => $avg !== null);
+
+        // to 1 dp
+        $yearAverage = $classAverages->avg();
+        $yearAverage = $yearAverage !== null ? number_format($yearAverage, 1) : null;
+
+        return response()->json(['year_average' => $yearAverage]);
     }
 }

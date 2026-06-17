@@ -24,6 +24,8 @@ class StudentSubject extends Model
         'drop_reason',
         'restored_by_user_id',
         'restored_at',
+        'comment',
+        'commented_by'
     ];
 
     protected $casts = [
@@ -96,6 +98,11 @@ class StudentSubject extends Model
     public function canBeRestored(): bool
     {
         return $this->status === StudentSubjectStatus::Dropped;
+    }
+
+    public function commentedBy(): BelongsTo
+    {
+        return $this->belongsTo(Teacher::class, 'commented_by');
     }
 
     /* ── Activity Log ────────────────────────────────────────────────────── */

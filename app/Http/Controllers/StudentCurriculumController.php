@@ -9,8 +9,11 @@ use App\Http\Requests\RegisterStudentCurriculumRequest;
 use App\Http\Requests\StudentSubject\UnenrollStudentRequest;
 use App\Http\Requests\UpdateStudentCurriculumStatusRequest;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\ScoreResource;
 use App\Http\Resources\StudentCurriculumResource;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
+use App\Models\Score;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
@@ -24,6 +27,22 @@ class StudentCurriculumController extends Controller
 {
     public function __construct(private CurriculumEnrollmentService $enrollmentService)
     {
+    }
+
+    public function getTeacherDetails(StudentCurriculum $studentCurriculum)
+    {
+        $formTeacher = $studentCurriculum->formTeacher();
+        $boardingParent = $studentCurriculum->boardingParent();
+        $headOfSchool = $studentCurriculum->headOfSchool();
+        $behavioralAssessments = $studentCurriculum->behavioralAssessments;
+        return response()->json([
+            "studentCurriculum" => new StudentCurriculumResource($studentCurriculum),
+            "formTeacher" => $formTeacher,
+            "boardingParent" => $boardingParent,
+            "headOfSchool" => $headOfSchool,
+            "behavioralAssessments" => $behavioralAssessments,
+
+        ]);
     }
 
     /**
@@ -192,6 +211,11 @@ class StudentCurriculumController extends Controller
                 'student_curriculum' => new StudentCurriculumResource($sc),
             ]);
         });
+    }
+
+    public function getScoresWithMarkingComponents(StudentCurriculum $studentCurriculum, CurriculumSubject $curriculumSubject)
+    {
+        return ScoreResource::collection(Score::with('markingComponent')->where('student_id', $studentCurriculum->student_id)->where('curriculum_subject_id', $curriculumSubject->id)->get());
     }
 
     // ---------- Helpers ----------

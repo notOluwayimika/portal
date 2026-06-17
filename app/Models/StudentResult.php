@@ -53,6 +53,7 @@ class StudentResult extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+
     protected static $logName = 'results';
 
     public function getActivitylogOptions(): LogOptions

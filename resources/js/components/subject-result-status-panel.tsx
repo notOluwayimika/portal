@@ -18,7 +18,7 @@ export type ReviewerRole = 'teacher' | 'admin' | 'head_of_school' | string;
 interface Props {
     curriculumSubjectId: string;
     status: SubjectResultStatusData;
-    userRole: ReviewerRole;
+    userRoles: ReviewerRole[];
     onChanged?: (next: SubjectResultStatusData) => void;
 }
 
@@ -55,15 +55,15 @@ const formatDateTime = (iso: string | null) => {
     }
 };
 
-const isReviewer = (role: ReviewerRole) =>
-    role === 'admin' || role === 'head_of_school';
+const isReviewer = (roles: ReviewerRole[]) =>
+    roles.includes('admin') || roles.includes('head_of_school');
 
 // ---------- Component ----------
 
 export default function SubjectResultStatusPanel({
     curriculumSubjectId,
     status,
-    userRole,
+    userRoles,
     onChanged,
 }: Props) {
     const [current, setCurrent] = useState<SubjectResultStatusData>(status);
@@ -196,7 +196,7 @@ export default function SubjectResultStatusPanel({
 
                 {/* Actions */}
                 <div className="flex shrink-0 items-center gap-2">
-                    {userRole === 'teacher' && (
+                    {userRoles.includes('teacher') && (
                         <button
                             type="button"
                             onClick={handleSubmit}
@@ -213,7 +213,7 @@ export default function SubjectResultStatusPanel({
                         </button>
                     )}
 
-                    {isReviewer(userRole) && (
+                    {isReviewer(userRoles) && (
                         <>
                             <button
                                 type="button"

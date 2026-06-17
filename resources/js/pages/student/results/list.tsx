@@ -1,12 +1,13 @@
 import { usePage } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { CurriculumCardFinal } from '@/components/curriculum-card-final';
 import { handleBack } from '@/helpers';
 import type {
     ClassLevelArm,
     GradeBoundary,
     StudentCurriculum,
 } from '@/types/models';
-import { CurriculumCard, GradeKeyTable, SCHOOL_NAME } from './active';
+import { CurriculumCard, GradeKeyTable, ResultDetails } from './active';
 interface ClassLevelArmPageProps {
     classLevelArms: { data: ClassLevelArm[] };
     defaultGradeBoundaries: { data: GradeBoundary[] };
@@ -120,40 +121,33 @@ export default function List() {
                                                 key={sc.id}
                                                 className="sc-page block h-[277mm] p-4"
                                             >
-                                                <div className="flex items-center justify-center">
-                                                    <AppLogoIcon />
-                                                </div>
-                                                <div className="mb-1 text-center">
-                                                    <h1 className="text-lg font-bold uppercase">
-                                                        {SCHOOL_NAME}
-                                                    </h1>
-                                                    <p className="text-sm text-slate-600">
-                                                        SECONDARY AND
-                                                        FOUNDATION(PRE-DEGREE)
-                                                    </p>
-                                                    <p className="text-sm text-slate-600">
-                                                        International Airport
-                                                        Road Igwuruta
-                                                    </p>
-                                                    <p className="text-sm text-slate-600">
-                                                        Website:
-                                                        www.brookstoneng.org
-                                                    </p>
-                                                    <p className="text-md pb-4 text-center font-bold text-slate-600">
-                                                        {curriculum.is_ccm
-                                                            ? 'CROSS CURRICULAR MONITORING'
-                                                            : ''}
-                                                    </p>
-                                                </div>
-                                                <CurriculumCard
-                                                    key={sc.id}
-                                                    sc={sc}
-                                                    defaultBoundaries={
-                                                        defaultGradeBoundaries.data
-                                                    }
-                                                    studentId={sc.student.id}
-                                                    student={sc.student}
-                                                />
+                                                <ResultDetails curricula={sc} />
+                                                {curriculum.is_ccm ? (
+                                                    <CurriculumCard
+                                                        key={sc.id}
+                                                        sc={sc}
+                                                        defaultBoundaries={
+                                                            defaultGradeBoundaries.data
+                                                        }
+                                                        studentId={
+                                                            sc.student.id
+                                                        }
+                                                        student={sc.student}
+                                                    />
+                                                ) : (
+                                                    <CurriculumCardFinal
+                                                        key={sc.id}
+                                                        sc={sc}
+                                                        defaultBoundaries={
+                                                            defaultGradeBoundaries.data
+                                                        }
+                                                        studentId={
+                                                            sc.student.id
+                                                        }
+                                                        student={sc.student}
+                                                    />
+                                                )}
+
                                                 <div className="grid grid-cols-2">
                                                     <div></div>
 

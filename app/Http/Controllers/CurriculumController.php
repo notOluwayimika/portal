@@ -8,6 +8,9 @@ use App\Http\Resources\MarkingComponentResource;
 use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
 use App\Models\MarkingComponent;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
+use App\Models\StudentResult;
 use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
@@ -123,7 +126,7 @@ class CurriculumController extends Controller
         if ($request->has('is_ccm')) {
             $curricula = $curricula->where('is_ccm', $request->boolean('is_ccm'));
         }
-
+        $curricula->where('status', 'active');
         $curricula = $curricula->paginate($request->integer('per_page', $limit));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
@@ -262,4 +265,23 @@ class CurriculumController extends Controller
         ]);
     }
 
+    public function activeResultStatus(Student $student, Curriculum $curriculum)
+    {
+        $isAvailable = true;
+        $studentCurriculum = StudentCurriculum::where('curriculum_id', $curriculum->id)->where('student_id', $student->id)->first();
+        $subjectsOffered = $studentCurriculum->activeSubjects;
+        foreach ($subjectsOffered as $subject) {
+            $result = StudentResult::where('student_id', $student->id)->where('curriculum_subject_id', $subject->curriculum_subject_id)->first();
+            if (!$result) {
+                $isAvailable = false;
+                break;
+            }
+        }
+        if ($subjectsOffered->isEmpty()) {
+            $isAvailable = false;
+        }
+        return response()->json(['available' => $isAvailable]);
+
+
+    }
 }

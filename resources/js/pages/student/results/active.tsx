@@ -1,6 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import { useMemo } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { CurriculumCardFinal } from '@/components/curriculum-card-final';
 import { handleBack } from '@/helpers';
 import type {
     CurriculumSubject,
@@ -16,8 +17,8 @@ interface StudentResultPageProps {
     [key: string]: unknown;
 }
 
-interface ResultRow {
-    key: string | number;
+export interface ResultRow {
+    key: string;
     name: string;
     code: string;
     compulsory: boolean;
@@ -25,6 +26,8 @@ interface ResultRow {
     grade: string;
     classAvg: number | null;
     classAvgGrade: string;
+    comment?: string | null;
+    commented_by?: string | null;
 }
 
 // Single source of truth for the school name — used by the header AND the
@@ -35,10 +38,10 @@ export const SCHOOL_NAME = 'Brookstone School';
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-const toNum = (v: string | number): number =>
+export const toNum = (v: string | number): number =>
     typeof v === 'number' ? v : parseFloat(v);
 
-function gradeForScore(
+export function gradeForScore(
     score: number | null,
     boundaries: GradeBoundary[],
 ): string {
@@ -66,7 +69,7 @@ function gradeForScore(
 
     return '—';
 }
-function nextGradeForScore(
+export function nextGradeForScore(
     score: number | null,
     boundaries: GradeBoundary[],
 ): string {
@@ -97,7 +100,7 @@ function nextGradeForScore(
 
     return '—';
 }
-function totalGradePoint(row: ResultRow[], boundaries: GradeBoundary[]) {
+export function totalGradePoint(row: ResultRow[], boundaries: GradeBoundary[]) {
     let GP = 0;
     let count = 0;
     row.forEach((r) => {
@@ -110,7 +113,7 @@ function totalGradePoint(row: ResultRow[], boundaries: GradeBoundary[]) {
 
     return count > 0 ? (GP / count).toFixed(1) : '—';
 }
-function gradePointForScore(
+export function gradePointForScore(
     score: number | null,
     boundaries: GradeBoundary[],
 ): string {
@@ -167,11 +170,12 @@ export const PRINT_STYLES = `
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-interface CurriculumCardProps {
+export interface CurriculumCardProps {
     sc: StudentCurriculum;
     defaultBoundaries: GradeBoundary[];
     studentId: number | string;
     student: Student;
+    boundaries?: GradeBoundary[];
 }
 
 export function CurriculumCard({
@@ -391,7 +395,7 @@ export function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
     return (
         <div className="overflow-hidden border border-slate-300 shadow-sm">
             <div className="bg-slate-700 px-4">
-                <h3 className="text-sm font-bold text-white">Keys</h3>
+                <h3 className="text-xs font-bold text-white">Keys</h3>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
@@ -435,6 +439,61 @@ export function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
                         ))}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    );
+}
+export function ResultDetails({
+    curricula,
+    picture,
+}: {
+    curricula: StudentCurriculum;
+    picture?: string;
+}) {
+    return (
+        <div className="relative">
+            <div className="flex items-center justify-center">
+                <AppLogoIcon />
+            </div>
+            <div className="mb-1 text-center">
+                <h1 className="text-lg font-bold uppercase">{SCHOOL_NAME}</h1>
+                <p className="text-sm text-slate-600">
+                    SECONDARY AND FOUNDATION(PRE-DEGREE)
+                </p>
+                <p className="text-sm text-slate-600">
+                    International Airport Road Igwuruta
+                </p>
+                <p className="text-sm text-slate-600">
+                    Website: www.brookstoneng.org
+                </p>
+                <div className="mt-2">
+                    <p className="text-sm font-bold text-slate-600">
+                        {curricula.curriculum.is_ccm
+                            ? 'CROSS CURRICULAR MONITORING'
+                            : 'END OF TERM RESULT'}
+                    </p>
+                    <p className="text-sm font-bold text-slate-600">
+                        {curricula.curriculum.term?.full_name}
+                    </p>
+                </div>
+            </div>
+            <div className="absolute right-0 bottom-0">
+                {/* if picture exists display image other wise display avatar placeholder image */}
+                {picture ? (
+                    <img
+                        src={picture}
+                        alt="Student"
+                        className="h-20 w-20 border-2 border-black object-cover"
+                    />
+                ) : (
+                    <img
+                        src={
+                            'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'
+                        }
+                        alt="Student"
+                        className="h-20 w-20 border-2 border-black object-cover"
+                    />
+                )}
             </div>
         </div>
     );
@@ -505,36 +564,6 @@ export default function StudentResultTable() {
                     )}
                 </div>
 
-                <div className="flex items-center justify-center">
-                    <AppLogoIcon />
-                </div>
-                <div className="mb-1 text-center">
-                    <h1 className="text-lg font-bold uppercase">
-                        {SCHOOL_NAME}
-                    </h1>
-                    <p className="text-sm text-slate-600">
-                        SECONDARY AND FOUNDATION(PRE-DEGREE)
-                    </p>
-                    <p className="text-sm text-slate-600">
-                        International Airport Road Igwuruta
-                    </p>
-                    <p className="text-sm text-slate-600">
-                        Website: www.brookstoneng.org
-                    </p>
-                    {curricula.length > 0 && (
-                        <div className="mt-2">
-                            <p className="text-sm font-bold text-slate-600">
-                                {curricula[0].curriculum.is_ccm
-                                    ? 'CROSS CURRICULAR MONITORING'
-                                    : ''}
-                            </p>
-                            <p className="text-sm font-bold text-slate-600">
-                                {curricula[0].curriculum.term?.full_name}
-                            </p>
-                        </div>
-                    )}
-                </div>
-
                 {curricula.length === 0 && (
                     <p className="rounded border border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
                         No results to display, once the results are available
@@ -543,50 +572,77 @@ export default function StudentResultTable() {
                 )}
                 <div className="">
                     {curricula.map((sc) => {
-                        return (
-                            <CurriculumCard
-                                key={sc.id}
-                                sc={sc}
-                                defaultBoundaries={defaultGradeBoundaries.data}
-                                studentId={student.data.id}
-                                student={student.data}
-                            />
-                        );
-                    })}
-                    <div className="grid grid-cols-2">
-                        <div></div>
-                        {curricula.map((sc, i) => {
-                            const boundaries =
-                                sc.curriculum.exam_type?.grade_boundaries
-                                    ?.length &&
-                                sc.curriculum.exam_type?.grade_boundaries
-                                    ?.length > 0
-                                    ? sc.curriculum.exam_type?.grade_boundaries
-                                    : defaultGradeBoundaries.data;
+                        const boundaries =
+                            sc.curriculum.exam_type?.grade_boundaries?.length &&
+                            sc.curriculum.exam_type?.grade_boundaries?.length >
+                                0
+                                ? sc.curriculum.exam_type?.grade_boundaries
+                                : defaultGradeBoundaries.data;
 
-                            return i === 0 ? (
-                                <GradeKeyTable boundaries={boundaries} />
-                            ) : null;
-                        })}
-                    </div>
-                </div>
-                <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
-                    <div>
-                        <img
-                            src="/assets/images/signature_secondary.png"
-                            alt="Brookstone School"
-                            className={`h-16 w-auto sm:h-20`}
-                            draggable={false}
-                        />
-                        <p>Principal's Signature</p>
-                    </div>
-                </div>
-                <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
-                    <p>
-                        Parents and students are encouraged to attend CCM
-                        meetings at the beginning of every term and half term to
-                        review results.
-                    </p>
+                        if (sc.curriculum.is_ccm) {
+                            return (
+                                <>
+                                    <ResultDetails
+                                        curricula={sc}
+                                        picture={student.data.photo}
+                                    />
+                                    <CurriculumCard
+                                        key={sc.id}
+                                        sc={sc}
+                                        defaultBoundaries={
+                                            defaultGradeBoundaries.data
+                                        }
+                                        studentId={student.data.id}
+                                        student={student.data}
+                                    />
+                                    <div className="grid grid-cols-2">
+                                        <div></div>
+                                        <GradeKeyTable
+                                            boundaries={boundaries}
+                                        />
+                                    </div>
+                                    <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
+                                        <div>
+                                            <img
+                                                src="/assets/images/signature_secondary.png"
+                                                alt="Brookstone School"
+                                                className={`h-16 w-auto sm:h-20`}
+                                                draggable={false}
+                                            />
+                                            <p>Principal's Signature</p>
+                                        </div>
+                                    </div>
+                                    <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
+                                        <p>
+                                            Parents and students are encouraged
+                                            to attend CCM meetings at the
+                                            beginning of every term and half
+                                            term to review results.
+                                        </p>
+                                    </div>
+                                </>
+                            );
+                        } else {
+                            return (
+                                <>
+                                    <ResultDetails
+                                        curricula={sc}
+                                        picture={student.data.photo}
+                                    />
+                                    <CurriculumCardFinal
+                                        key={sc.id}
+                                        sc={sc}
+                                        defaultBoundaries={
+                                            defaultGradeBoundaries.data
+                                        }
+                                        studentId={student.data.id}
+                                        student={student.data}
+                                        boundaries={boundaries}
+                                    />
+                                </>
+                            );
+                        }
+                    })}
                 </div>
             </div>
         </>

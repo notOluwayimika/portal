@@ -51,6 +51,15 @@ class StudentService
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? null,
                 'photo_id' => $attributes['photo_id'] ?? null,
+                'admission_date' => $attributes['admission_date'] ?? null,
+                'address' => $attributes['address'] ?? null,
+                'nationality' => $attributes['nationality'] ?? null,
+                'other_nationality' => $attributes['other_nationality'] ?? null,
+                'state_of_origin' => $attributes['state_of_origin'] ?? null,
+                'religion' => $attributes['religion'] ?? null,
+                'previous_school' => $attributes['previous_school'] ?? null,
+                'sport_house_id' => $attributes['sport_house_id'] ?? null,
+                'scholarship_id' => $attributes['scholarship_id'] ?? null,
             ]);
 
             $curriculum = Curriculum::findOrFail($attributes['curriculum_id']);
@@ -78,6 +87,8 @@ class StudentService
             'currentCurriculum.curriculum.classLevelArm.stream',
             'guardians.user',
             'guardians.photoFile',
+            'sportHouse',
+            'scholarship',
         ]);
     }
 
@@ -91,13 +102,27 @@ class StudentService
                 'gender' => $attributes['gender'],
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? $student->admission_number,
+                'admission_date' => $attributes['admission_date'] ?? null,
+                'address' => $attributes['address'] ?? null,
+                'nationality' => $attributes['nationality'] ?? null,
+                'other_nationality' => $attributes['other_nationality'] ?? null,
+                'state_of_origin' => $attributes['state_of_origin'] ?? null,
+                'religion' => $attributes['religion'] ?? null,
+                'previous_school' => $attributes['previous_school'] ?? null,
+                'sport_house_id' => $attributes['sport_house_id'] ?? null,
+                'scholarship_id' => $attributes['scholarship_id'] ?? null,
             ], fn($v) => !is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
 
-            if (isset($attributes['curriculum_id'])) {
+            if (
+                isset($attributes['curriculum_id']) &&
+                $student->studentCurriculum?->curriculum_id != $attributes['curriculum_id']
+            ) {
                 StudentCurriculum::updateOrCreate(
-                    ['student_id' => $student->id],
                     [
+                        'student_id' => $student->id,
                         'curriculum_id' => $attributes['curriculum_id'],
+                    ],
+                    [
                         'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                     ]
                 );

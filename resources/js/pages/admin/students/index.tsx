@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
+import { Download, Edit, FileX, GraduationCap, RefreshCw, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
@@ -196,6 +196,16 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     <FileX className="mr-1.5 h-4 w-4" />
                                     Import
                                 </Button>
+                                <Link href="/students/bulk-update">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <RefreshCw className="mr-1.5 h-4 w-4" />
+                                        Bulk Update
+                                    </Button>
+                                </Link>
                                 <Button
                                     size="sm"
                                     variant="outline"

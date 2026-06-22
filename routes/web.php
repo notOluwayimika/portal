@@ -106,6 +106,10 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
         ]);
     })->name('students.index');
 
+    Route::get('students/bulk-update', function () {
+        return Inertia::render('admin/students/bulk-update');
+    })->name('students.bulk-update');
+
     Route::get('students/{student:uuid}', function (Student $student) {
         $student->load([
             'photoFile',

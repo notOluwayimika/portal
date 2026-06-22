@@ -39,7 +39,7 @@ const formatCurriculum = (c: Curriculum | null) => {
         c.academic_session?.name,
         c.class_level_arm?.name,
         `Term ${c.term?.name}`,
-        c.is_ccm ? 'CCM' : 'End Of Term',
+        c.is_ccm ? 'Half Term/CCM' : 'End Of Term',
     ]
         .filter(Boolean)
         .join(' · ');
@@ -218,7 +218,23 @@ export default function StudentCurriculaPage({
     const [registerOpen, setRegisterOpen] = useState(false);
     const [registerBusy, setRegisterBusy] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
+    const [activeResultAvailable, setActiveResultAvailable] = useState(true);
+    const [latestAvailableResult, setLatestAvailableResult] =
+        useState<StudentCurriculum | null>(null);
 
+    useEffect(() => {
+        const checkResultReadiness = async () => {
+            const response = await axios.get(
+                `/api/students/${student.id}/result-status`,
+            );
+            setActiveResultAvailable(response.data.available);
+            setLatestAvailableResult(response.data.latest_available_result);
+        };
+
+        if (student.id) {
+            checkResultReadiness();
+        }
+    }, [student.id]);
     const filtered = useMemo(() => {
         if (filter === 'all') {
             return items;
@@ -385,12 +401,35 @@ export default function StudentCurriculaPage({
                             )}
                         </div>
                         <div>
-                            <Link
-                                href={`/students/${student.id}/results/active`}
-                                className="inline-flex items-center rounded-md bg-indigo-600 px-2.5 py-1.5 text-center text-xs font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                            >
-                                View active result
-                            </Link>
+                            {activeResultAvailable ? (
+                                <Link
+                                    href={`/students/${student.id}/results/active`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Link>
+                            ) : latestAvailableResult ? (
+                                <Link
+                                    href={`/students/${student.id}/results/${latestAvailableResult.id}`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Latest Available Result
+                                </Link>
+                            ) : (
+                                <Button
+                                    onClick={() =>
+                                        toast.info(
+                                            'No active results available or result incomplete',
+                                        )
+                                    }
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </div>

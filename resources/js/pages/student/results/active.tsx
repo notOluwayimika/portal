@@ -394,8 +394,10 @@ interface GradeKeyTableProps {
 export function GradeKeyTable({ boundaries }: GradeKeyTableProps) {
     return (
         <div className="overflow-hidden border border-slate-300 shadow-sm">
-            <div className="bg-slate-700 px-4">
-                <h3 className="text-xs font-bold text-white">Keys</h3>
+            <div className="bg-slate-400 px-4">
+                <h3 className="text-xs font-bold text-white">
+                    Grade Key Table
+                </h3>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
@@ -483,7 +485,7 @@ export function ResultDetails({
                     <img
                         src={picture}
                         alt="Student"
-                        className="h-20 w-20 border-2 border-black object-cover"
+                        className="h-32 w-28 border-2 border-black object-cover"
                     />
                 ) : (
                     <img

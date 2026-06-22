@@ -85,6 +85,8 @@ export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
     const { auth } = usePage().props;
     const [activeResultAvailable, setActiveResultAvailable] = useState(true);
+    const [latestAvailableResult, setLatestAvailableResult] =
+        useState<StudentCurriculum | null>(null);
     const CONTACTS = [
         {
             office: 'Admin',
@@ -146,6 +148,7 @@ export default function Wards() {
                 `/api/students/${activeId}/result-status`,
             );
             setActiveResultAvailable(response.data.available);
+            setLatestAvailableResult(response.data.latest_available_result);
         };
 
         if (activeId) {
@@ -301,6 +304,14 @@ Parents are invited to these events and are expected to pick-up their child at t
                                 >
                                     <FileText className="h-4 w-4" />
                                     View Current Result
+                                </Link>
+                            ) : latestAvailableResult ? (
+                                <Link
+                                    href={`/students/${active.id}/results/${latestAvailableResult.id}`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Latest Available Result
                                 </Link>
                             ) : (
                                 <Button

@@ -66,7 +66,7 @@ export default function HeadOfSchoolCommentsIndex() {
         }
 
         fetchData();
-    }, []);
+    }, [savingId]);
 
     const grouped = useMemo(() => {
         const map = new Map<string, CommentRow[]>();
@@ -129,6 +129,7 @@ export default function HeadOfSchoolCommentsIndex() {
             toast.error('Failed to save comment.');
         } finally {
             setSavingId(null);
+            setSelectedRow(null);
         }
     }
 

@@ -22,8 +22,9 @@ export default function AppLayout({
                 pauseOnFocusLoss
                 draggable
                 pauseOnHover
-                theme="colored"
+                theme="light"
                 transition={Slide}
+                icon={false}
             />
         </AppLayoutTemplate>
     );

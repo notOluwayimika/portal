@@ -11,7 +11,7 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::table('student_subjects', function (Blueprint $table) {
-            $table->string('comment', 40)->nullable();
+            $table->string('comment', 50)->nullable();
             $table->foreignId('commented_by')->nullable()->constrained('teachers')->onDelete('SET NULL');
         });
     }

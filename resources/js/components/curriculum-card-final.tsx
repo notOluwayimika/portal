@@ -1,7 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
-import { toShortName } from '@/helpers';
+import { convertNameToResultFmt, fmtDate, toShortName } from '@/helpers';
 import type {
     CurriculumCardProps,
     ResultRow,
@@ -124,7 +124,7 @@ function SubjectRow({
             </td>
             <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
                 {/* teacher */}
-                {toShortName(r.commented_by ?? '')}
+                {convertNameToResultFmt(r.commented_by ?? '')}
             </td>
             <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
                 {/* comment */}
@@ -147,7 +147,6 @@ export function CurriculumCardFinal({
     useEffect(() => {
         const getScDetails = async (scId: string) => {
             const response = await axios.get(`/api/student-curricula/${scId}`);
-            console.log(response.data);
             setScDetails(response.data);
         };
         getScDetails(sc.id);
@@ -161,7 +160,6 @@ export function CurriculumCardFinal({
                     (a.curriculum_subject?.display_order ?? 0) -
                     (b.curriculum_subject?.display_order ?? 0),
             );
-        // console.log(subjects);
 
         return subjects.map((ss): ResultRow => {
             const cs = ss.curriculum_subject || ({} as CurriculumSubject);
@@ -182,7 +180,6 @@ export function CurriculumCardFinal({
             const classAvg = scored.length
                 ? scored.reduce((s, n) => s + n, 0) / scored.length
                 : null;
-            console.log(scored.length);
 
             return {
                 key: cs.id + ',' + sc.id,
@@ -223,32 +220,34 @@ export function CurriculumCardFinal({
         <div className="student-result-card overflow-hidden border border-slate-300 print:scale-95">
             <div className="p-0">
                 <div className="grid grid-cols-3 bg-blue-100">
-                    <p className="flex justify-between border border-slate-300 p-px text-xs text-black">
-                        <span className="inline-block font-bold">Name: </span>
+                    <p className="flex border border-slate-300 p-px text-xs text-black">
+                        <span className="inline-block pr-2 font-bold">
+                            Name:{' '}
+                        </span>
                         {student.last_name}, {student.first_name}{' '}
                         {student.middle_name}
                     </p>
 
-                    <p className="flex justify-between border border-slate-300 p-px text-xs text-black">
-                        <span className="inline-block font-bold">
+                    <p className="flex border border-slate-300 p-px text-xs text-black">
+                        <span className="inline-block pr-2 font-bold">
                             Admission No:{' '}
                         </span>
                         {student.admission_number}
                     </p>
-                    <p className="flex justify-between border border-slate-300 p-px text-xs text-black">
-                        <span className="inline-block font-bold">
+                    <p className="flex border border-slate-300 p-px text-xs text-black">
+                        <span className="inline-block pr-2 font-bold">
                             Date Of Birth:{' '}
                         </span>
-                        {student.date_of_birth}
+                        {fmtDate(student.date_of_birth)}
                     </p>
-                    <p className="flex justify-between border border-slate-300 p-px text-xs text-black">
-                        <span className="inline-block font-bold">
+                    <p className="flex border border-slate-300 p-px text-xs text-black">
+                        <span className="inline-block pr-2 font-bold">
                             Year Group:{' '}
                         </span>
                         {student.class_details.full_class}
                     </p>
-                    <p className="flex justify-between border border-slate-300 p-px text-xs text-black">
-                        <span className="inline-block font-bold">
+                    <p className="flex border border-slate-300 p-px text-xs text-black">
+                        <span className="inline-block pr-2 font-bold">
                             Sport House:{' '}
                         </span>
                         {student.sport_house?.name}
@@ -325,30 +324,32 @@ export function CurriculumCardFinal({
                             ))
                         )}
                     </tbody>
-                    {overall != null && !resultsIncomplete && (
-                        <tfoot>
-                            <tr className="bg-blue-300 font-semibold text-black">
-                                <td className="border border-slate-300 px-1">
-                                    Term GPA
-                                </td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td className="border border-slate-300 px-1 text-center">
-                                    {totalGradePoint(
-                                        rows,
-                                        boundaries ?? defaultBoundaries,
-                                    )}
-                                </td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    )}
+                    {/* {overall != null && !resultsIncomplete && ( */}
+                    <tfoot>
+                        <tr className="bg-blue-300 font-semibold text-black">
+                            <td></td>
+                            <td className="border border-slate-300 px-1">
+                                Term GPA
+                            </td>
+
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td className="border border-slate-300 px-1 text-center">
+                                {totalGradePoint(
+                                    rows,
+                                    boundaries ?? defaultBoundaries,
+                                )}
+                            </td>
+
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {/* )} */}
                 </table>
             </div>
             <div className="grid grid-cols-2">
@@ -358,7 +359,7 @@ export function CurriculumCardFinal({
                     />
                 </div>
 
-                <div className="text-xs">
+                <div className="px-8 text-xs">
                     <GradeKeyTable
                         boundaries={boundaries ?? defaultBoundaries}
                     />
@@ -388,7 +389,7 @@ export function CurriculumCardFinal({
                     {scDetails?.behavioralAssessments[0]?.comment}
                 </div>
                 <div className="col-span-1 border font-bold">
-                    Head Of School Name:
+                    Head of School Name:
                 </div>
                 <div className="col-span-3 border">
                     {scDetails?.headOfSchool?.full_name}
@@ -398,7 +399,7 @@ export function CurriculumCardFinal({
                     {scDetails?.behavioralAssessments[0]?.comment}
                 </div>
                 <div className="col-span-1 border font-bold">
-                    Approved By Principal:
+                    Approved by the Principal:
                 </div>
                 <div className="col-span-3 border">
                     <img

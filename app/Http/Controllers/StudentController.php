@@ -16,11 +16,13 @@ use App\Http\Resources\CurriculumOptionResource;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\ScholarshipResource;
 use App\Http\Resources\SportHouseResource;
+use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Models\Curriculum;
 use App\Models\FileUpload;
 use App\Models\Guardian;
 use App\Models\Student;
+use App\Models\StudentCurriculum;
 use App\Models\StudentResult;
 use App\Repositories\ClassLevelArmRepository;
 use App\Repositories\CurriculumRepository;
@@ -320,8 +322,16 @@ class StudentController extends Controller
         }
         if ($subjectsOffered->isEmpty()) {
             $isAvailable = false;
+
         }
-        return response()->json(['available' => $isAvailable]);
+        if (!$isAvailable) {
+            $activeCurriculum = StudentCurriculum::where('student_id', $student->id)->where('status', 'promoted')->latest()->first();
+        }
+
+        return response()->json([
+            'available' => $isAvailable,
+            'latest_available_result' => $activeCurriculum ? new StudentCurriculumResource($activeCurriculum) : null
+        ]);
 
 
     }

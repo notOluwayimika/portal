@@ -11,7 +11,11 @@ import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDate, snakeToTitleCase } from '@/hooks/use-helper';
 import { useInitials } from '@/hooks/use-initials';
-import type { BehavioralAssessment, BehavioralGrade, Student } from '@/types/models';
+import type {
+    BehavioralAssessment,
+    BehavioralGrade,
+    Student,
+} from '@/types/models';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,17 +38,17 @@ type Pillar = (typeof PILLARS)[number];
 const GRADES: BehavioralGrade[] = ['A', 'B', 'C', 'D', 'E'];
 
 const GRADE_MAPPING = {
-    'A': 'Excellent',
-    'B': 'Very Good',
-    'C': 'Good',
-    'D': 'Below Average',
-    'E': 'Poor'
+    A: 'Excellent',
+    B: 'Very Good',
+    C: 'Good',
+    D: 'Below Average',
+    E: 'Poor',
 };
 
-type PillarGrades = Record<Pillar, BehavioralGrade>;
+type PillarGrades = Record<Pillar, BehavioralGrade | ''>;
 
 const defaultGrades: PillarGrades = PILLARS.reduce((acc, pillar) => {
-    acc[pillar] = 'B';
+    acc[pillar] = '';
 
     return acc;
 }, {} as PillarGrades);
@@ -89,7 +93,15 @@ interface AssessmentCardProps {
     onSave: () => void;
 }
 
-function AssessmentCard({ row, form, expanded, saving, onToggle, onChange, onSave }: AssessmentCardProps) {
+function AssessmentCard({
+    row,
+    form,
+    expanded,
+    saving,
+    onToggle,
+    onChange,
+    onSave,
+}: AssessmentCardProps) {
     const getInitials = useInitials();
     const { student, assessment } = row;
 
@@ -103,17 +115,24 @@ function AssessmentCard({ row, form, expanded, saving, onToggle, onChange, onSav
                 <Avatar>
                     <AvatarImage src={student.photo ?? undefined} />
                     <AvatarFallback className="bg-indigo-100 text-sm font-semibold text-indigo-700">
-                        {getInitials(`${student.first_name} ${student.last_name}`)}
+                        {getInitials(
+                            `${student.first_name} ${student.last_name}`,
+                        )}
                     </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">
                         {student.first_name} {student.last_name}
                     </p>
-                    <p className="text-xs text-gray-400">{student.admission_number}</p>
+                    <p className="text-xs text-gray-400">
+                        {student.admission_number}
+                    </p>
                 </div>
                 {assessment ? (
-                    <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">
+                    <Badge
+                        variant="secondary"
+                        className="bg-emerald-50 text-emerald-700"
+                    >
                         Assessed {formatDate(assessment.updated_at, 'd MMM')}
                     </Badge>
                 ) : (
@@ -121,7 +140,11 @@ function AssessmentCard({ row, form, expanded, saving, onToggle, onChange, onSav
                         Not assessed
                     </Badge>
                 )}
-                {expanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                {expanded ? (
+                    <ChevronUp className="h-4 w-4 text-gray-400" />
+                ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-400" />
+                )}
             </button>
 
             {expanded && (
@@ -137,11 +160,16 @@ function AssessmentCard({ row, form, expanded, saving, onToggle, onChange, onSav
                                     onChange={(e) =>
                                         onChange({
                                             ...form,
-                                            grades: { ...form.grades, [pillar]: e.target.value as BehavioralGrade },
+                                            grades: {
+                                                ...form.grades,
+                                                [pillar]: e.target
+                                                    .value as BehavioralGrade,
+                                            },
                                         })
                                     }
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
                                 >
+                                    <option value="">Select an option</option>
                                     {GRADES.map((grade) => (
                                         <option key={grade} value={grade}>
                                             {grade} - {GRADE_MAPPING[grade]}
@@ -153,10 +181,14 @@ function AssessmentCard({ row, form, expanded, saving, onToggle, onChange, onSav
                     </div>
 
                     <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-gray-600">Comment</span>
+                        <span className="mb-1 block text-xs font-medium text-gray-600">
+                            Comment
+                        </span>
                         <textarea
                             value={form.comment}
-                            onChange={(e) => onChange({ ...form, comment: e.target.value })}
+                            onChange={(e) =>
+                                onChange({ ...form, comment: e.target.value })
+                            }
                             rows={3}
                             placeholder="Optional remarks about this student's behavior this term…"
                             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
@@ -195,7 +227,14 @@ export default function BehavioralAssessmentsIndex() {
                 const data: AssessmentRow[] = res.data.data ?? [];
 
                 setRows(data);
-                setForms(Object.fromEntries(data.map((row) => [row.student_curriculum_id, rowToFormState(row)])));
+                setForms(
+                    Object.fromEntries(
+                        data.map((row) => [
+                            row.student_curriculum_id,
+                            rowToFormState(row),
+                        ]),
+                    ),
+                );
             } catch {
                 toast.error('Failed to load students.');
             } finally {
@@ -241,9 +280,15 @@ export default function BehavioralAssessmentsIndex() {
             const updated: BehavioralAssessment = res.data.data;
 
             setRows((prev) =>
-                prev.map((r) => (r.student_curriculum_id === row.student_curriculum_id ? { ...r, assessment: updated } : r)),
+                prev.map((r) =>
+                    r.student_curriculum_id === row.student_curriculum_id
+                        ? { ...r, assessment: updated }
+                        : r,
+                ),
             );
-            toast.success(`Saved assessment for ${row.student.first_name} ${row.student.last_name}.`);
+            toast.success(
+                `Saved assessment for ${row.student.first_name} ${row.student.last_name}.`,
+            );
         } catch {
             toast.error('Failed to save assessment.');
         } finally {
@@ -256,9 +301,12 @@ export default function BehavioralAssessmentsIndex() {
             <Head title="Behavioral Assessments" />
             <div className="space-y-6 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Behavioral Assessments</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">
+                        Behavioral Assessments
+                    </h1>
                     <p className="mt-1 text-sm text-gray-500">
-                        Record this term's behavioral pillar grades for the students in your care.
+                        Record this term's behavioral pillar grades for the
+                        students in your care.
                     </p>
                 </div>
 
@@ -276,9 +324,12 @@ export default function BehavioralAssessmentsIndex() {
                     grouped.map(([className, classRows]) => (
                         <Card key={className}>
                             <CardHeader>
-                                <CardTitle className="text-base">{className}</CardTitle>
+                                <CardTitle className="text-base">
+                                    {className}
+                                </CardTitle>
                                 <p className="text-sm text-muted-foreground">
-                                    {classRows.length} student{classRows.length !== 1 ? 's' : ''}
+                                    {classRows.length} student
+                                    {classRows.length !== 1 ? 's' : ''}
                                 </p>
                             </CardHeader>
                             <CardContent className="space-y-2">
@@ -286,17 +337,35 @@ export default function BehavioralAssessmentsIndex() {
                                     <AssessmentCard
                                         key={row.student_curriculum_id}
                                         row={row}
-                                        form={forms[row.student_curriculum_id] ?? rowToFormState(row)}
-                                        expanded={!!expanded[row.student_curriculum_id]}
-                                        saving={savingId === row.student_curriculum_id}
+                                        form={
+                                            forms[row.student_curriculum_id] ??
+                                            rowToFormState(row)
+                                        }
+                                        expanded={
+                                            !!expanded[
+                                                row.student_curriculum_id
+                                            ]
+                                        }
+                                        saving={
+                                            savingId ===
+                                            row.student_curriculum_id
+                                        }
                                         onToggle={() =>
                                             setExpanded((prev) => ({
                                                 ...prev,
-                                                [row.student_curriculum_id]: !prev[row.student_curriculum_id],
+                                                [row.student_curriculum_id]:
+                                                    !prev[
+                                                        row
+                                                            .student_curriculum_id
+                                                    ],
                                             }))
                                         }
                                         onChange={(form) =>
-                                            setForms((prev) => ({ ...prev, [row.student_curriculum_id]: form }))
+                                            setForms((prev) => ({
+                                                ...prev,
+                                                [row.student_curriculum_id]:
+                                                    form,
+                                            }))
                                         }
                                         onSave={() => handleSave(row)}
                                     />

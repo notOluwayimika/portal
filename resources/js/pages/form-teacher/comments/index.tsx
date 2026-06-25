@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { MessageSquare } from 'lucide-react';
+import { CheckCircle, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -96,7 +96,7 @@ export default function FormTeacherCommentsIndex() {
                                         </Avatar>
                                         <div className="min-w-0">
                                             <p className="truncate text-sm font-medium text-gray-900">
-                                                {row.student.first_name} {row.student.last_name}
+                                                {row.student.first_name} {row.student.last_name} {comments[row.student_curriculum_id] && <CheckCircle className='text-green-500 inline-block size-4' />}
                                             </p>
                                             <p className="text-xs text-gray-400">{row.student.admission_number}</p>
                                             {row.class_name && (

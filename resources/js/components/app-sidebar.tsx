@@ -1,5 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    AlertTriangle,
     BookOpen,
     Building2,
     ClipboardCopyIcon,
@@ -156,6 +157,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'CCM Curricula',
                 href: '/setup/curricula-ccm',
                 icon: RefreshCw,
+            },
+            {
+                title: 'Outstanding Comments',
+                href: '/outstanding-comments',
+                icon: AlertTriangle,
             },
         ],
     },

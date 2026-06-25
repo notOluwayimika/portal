@@ -141,6 +141,9 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
             $dataRange = 'A' . ($headerRow2 + 1) . ":{$lastCol}{$lastRow}";
             $sheet->getStyle($dataRange)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $sheet->getStyle($dataRange)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+            $nameRange = 'B' . ($headerRow2 + 1) . ":B{$lastRow}";
+            $sheet->getStyle($nameRange)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
         }
 
         for ($i = 1; $i <= $totalCols; $i++) {

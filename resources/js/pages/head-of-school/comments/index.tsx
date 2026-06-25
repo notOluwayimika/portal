@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { Eye, MessageSquare } from 'lucide-react';
+import { CheckCircle, Eye, MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CurriculumCardFinal } from '@/components/curriculum-card-final';
@@ -197,7 +197,10 @@ export default function HeadOfSchoolCommentsIndex() {
                                         <div className="min-w-0 flex-1">
                                             <p className="truncate text-sm font-medium text-gray-900">
                                                 {row.student.first_name}{' '}
-                                                {row.student.last_name}
+                                                {row.student.last_name}{' '}
+                                                {row.comment && (
+                                                    <CheckCircle className='text-green-500 inline-block size-4' />
+                                                )}
                                             </p>
                                             <p className="text-xs text-gray-400">
                                                 {row.student.admission_number}

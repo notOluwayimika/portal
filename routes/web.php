@@ -150,6 +150,10 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
         return Inertia::render('admin/guardians/import');
     })->name('guardians.import');
 
+    Route::get('outstanding-comments', function () {
+        return Inertia::render('admin/outstanding-comments/index');
+    })->name('outstanding-comments.index');
+
     // Activity log (read-only audit feed). Per-action access is gated by
     // activity_log.* permissions in the API layer.
     Route::get('activity-logs', function () {

@@ -40,7 +40,7 @@ class HeadOfSchoolCommentController extends Controller
 
         $studentCurricula = StudentCurriculum::query()
             ->where('status', StudentStatusEnum::ACTIVE->value)
-            ->where('head_of_school_comment', null)
+            // ->where('head_of_school_comment', null)
             ->whereHas('curriculum', fn($query) => $query
                 ->where('term_id', $currentTerm->id)
                 ->whereIn('class_level_arm_id', $classLevelArmIds))

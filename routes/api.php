@@ -193,6 +193,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
 
     Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
 
+    require __DIR__ . '/endpoints/outstanding-comments.php';
+
     // CCM -> non-CCM curriculum migration
     Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
 

@@ -18,7 +18,6 @@ import {
     MessageSquare,
     Phone,
     User,
-    Users,
     X,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -403,9 +402,28 @@ const ChildHeroCard = ({ child }) => {
     );
 };
 
-export const NoticesCard = ({ notices, onAction }) => {
-    const getBadgeStyles = (color) => {
-        const styles = {
+export const NoticesCard = ({
+    notices,
+    loading = false,
+}: {
+    notices: {
+        id?: string;
+        type: string;
+        title: string;
+        description?: string;
+        body?: string;
+        time: string;
+        sender?: string;
+        category?: string;
+        badge_colour: string;
+    }[];
+    loading?: boolean;
+    onAction?: () => void;
+}) => {
+    const [collapsed, setCollapsed] = React.useState(false);
+
+    const getBadgeStyles = (color: string) => {
+        const styles: Record<string, string> = {
             red: 'bg-red-50 text-red-700 border-red-100',
             amber: 'bg-amber-50 text-amber-700 border-amber-100',
             green: 'bg-green-50 text-green-700 border-green-100',
@@ -415,7 +433,7 @@ export const NoticesCard = ({ notices, onAction }) => {
         return styles[color] || styles.gray;
     };
 
-    const getIcon = (type) => {
+    const getIcon = (type: string) => {
         switch (type) {
             case 'finance':
                 return <FinanceIcon className="h-5 w-5" />;
@@ -428,69 +446,103 @@ export const NoticesCard = ({ notices, onAction }) => {
         }
     };
 
+    const getContent = (notice: (typeof notices)[0]) => {
+        if (notice.body) {
+            return notice.body;
+        }
+
+        if (notice.description) {
+            return notice.description.replace(/\n/g, '<br />');
+        }
+
+        return '';
+    };
+
     return (
-        <div className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm lg:col-span-2">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
                     <Bell className="h-5 w-5 text-blue-600" />
                     Latest Notices
+                    {notices.length > 0 && (
+                        <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                            {notices.length}
+                        </span>
+                    )}
                 </h2>
                 <button
-                    onClick={onAction}
-                    className="group flex items-center gap-1 text-sm font-semibold text-blue-600 transition-colors hover:text-blue-800"
+                    onClick={() => setCollapsed(!collapsed)}
+                    className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                 >
-                    View all notices{' '}
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    {collapsed ? (
+                        <ChevronRight className="h-5 w-5" />
+                    ) : (
+                        <X className="h-4 w-4" />
+                    )}
                 </button>
             </div>
 
-            <div className="flex-1 space-y-4">
-                {notices.map((notice, idx) => (
-                    <div
-                        key={idx}
-                        className="group cursor-pointer rounded-2xl border border-transparent p-4 transition-all hover:border-gray-100 hover:bg-gray-50"
-                    >
-                        <div className="flex gap-4">
-                            <div
-                                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${getBadgeStyles(notice.badge_colour)}`}
-                            >
-                                {getIcon(notice.type)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <div className="mb-1 flex items-start justify-between gap-2">
-                                    <h3 className="text-[13px] font-bold text-gray-900">
-                                        {notice.title}
-                                    </h3>
-                                    <span
-                                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${getBadgeStyles(notice.badge_colour)}`}
-                                    >
-                                        {notice.type}
-                                    </span>
-                                </div>
-                                <p
-                                    dangerouslySetInnerHTML={{
-                                        __html: notice.description.replace(
-                                            /\n/g,
-                                            '<br />',
-                                        ),
-                                    }}
-                                    className="mb-2 text-[11px] leading-relaxed text-gray-500"
-                                ></p>
-                                <div className="flex items-center gap-3 text-[10px] font-medium text-gray-400">
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />{' '}
-                                        {notice.time}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <Users className="h-3 w-3" />{' '}
-                                        {notice.sender}
-                                    </span>
-                                </div>
-                            </div>
+            {!collapsed && (
+                <div className="flex-1 space-y-4">
+                    {loading ? (
+                        <div className="space-y-3">
+                            {[1, 2, 3].map((i) => (
+                                <div
+                                    key={i}
+                                    className="h-20 animate-pulse rounded-2xl bg-gray-100"
+                                />
+                            ))}
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ) : notices.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-center">
+                            <Bell className="mb-2 h-8 w-8 text-gray-300" />
+                            <p className="text-sm font-medium text-gray-500">
+                                No notices at this time
+                            </p>
+                        </div>
+                    ) : (
+                        notices.map((notice, idx) => (
+                            <div
+                                key={notice.id ?? idx}
+                                className="group rounded-2xl border border-transparent p-4 transition-all hover:border-gray-100 hover:bg-gray-50"
+                            >
+                                <div className="flex gap-4">
+                                    <div
+                                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${getBadgeStyles(notice.badge_colour)}`}
+                                    >
+                                        {getIcon(notice.type)}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="mb-1 flex items-start justify-between gap-2">
+                                            <h3 className="text-[13px] font-bold text-gray-900">
+                                                {notice.title}
+                                            </h3>
+                                            <span
+                                                className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${getBadgeStyles(notice.badge_colour)}`}
+                                            >
+                                                {notice.category ??
+                                                    notice.type}
+                                            </span>
+                                        </div>
+                                        <div
+                                            dangerouslySetInnerHTML={{
+                                                __html: getContent(notice),
+                                            }}
+                                            className="prose prose-xs mb-2 max-w-none text-[11px] leading-relaxed text-gray-500"
+                                        />
+                                        <div className="flex items-center gap-3 text-[10px] font-medium text-gray-400">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />{' '}
+                                                {notice.time}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -1198,7 +1250,6 @@ export default function ParentDashboard() {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                     <NoticesCard
                         notices={activeChild.notices}
-                        onAction={() => handleAction('notices')}
                     />
                     <FeeSummaryCard
                         child={activeChild}

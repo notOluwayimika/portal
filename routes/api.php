@@ -20,6 +20,7 @@ use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubjectResultStatusController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
+use App\Http\Controllers\NoticeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 Route::get('/curricula/queued', [CurriculumController::class, 'queuedCurriculums']);
@@ -184,6 +185,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     require __DIR__ . '/endpoints/guardian.php';
     require __DIR__ . '/endpoints/head-of-school.php';
     require __DIR__ . '/endpoints/broadsheet.php';
+
+    require __DIR__ . '/endpoints/outstanding-comments.php';
 });
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     // Head of Schools
@@ -193,13 +196,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
 
     Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
 
-    require __DIR__ . '/endpoints/outstanding-comments.php';
-
     // CCM -> non-CCM curriculum migration
     Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
 
     // Teacher role assignments (boarding parent / form teacher / head of school)
     require __DIR__ . '/endpoints/teacher-assignment.php';
+
+    // Notices (admin CRUD)
+    require __DIR__ . '/endpoints/notice.php';
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
@@ -229,8 +233,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
     Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
     Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
+});
 
-
+Route::middleware(['auth:sanctum', 'tenant', 'role:guardian'])->group(function () {
+    Route::get('/guardian/notices', [NoticeController::class, 'forGuardian']);
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:boarding_parent'])->group(function () {

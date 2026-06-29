@@ -31,17 +31,18 @@ class OutstandingCommentController extends Controller
             ]);
         }
 
-        $curriculaByArm = Curriculum::where('term_id', $currentTerm->id)
-            ->pluck('id', 'class_level_arm_id');
+        $curricula = Curriculum::where('term_id', $currentTerm->id)
+            ->get(['id', 'class_level_arm_id']);
+
+        $armIds = $curricula->pluck('class_level_arm_id')->unique();
+        $curriculumIds = $curricula->pluck('id')->toArray();
 
         $assignments = ClassLevelArmTeacher::with([
             'teacher',
             'classLevelArm.classLevel',
             'classLevelArm.arm',
             'classLevelArm.stream',
-        ])->whereIn('class_level_arm_id', $curriculaByArm->keys())->get();
-
-        $curriculumIds = $curriculaByArm->values()->toArray();
+        ])->whereIn('class_level_arm_id', $armIds)->get();
 
         $studentCurricula = StudentCurriculum::query()
             ->where('status', StudentStatusEnum::ACTIVE->value)

@@ -16,25 +16,21 @@ import type { StudentCurriculum } from '@/types/models';
 import { NoticesCard, QuickContactCard } from './dashboard';
 
 // ---------- Types ----------
-// Mirrors the columns on the `students` table + the pivot fields
-// from `guardian_student` that are useful in the guardian's view.
 export type Gender = 'male' | 'female' | 'other';
 
 export interface Ward {
-    id: string; // students.id (uuid)
+    id: string;
     admission_number: string | null;
     first_name: string;
     last_name: string;
     middle_name?: string | null;
     gender?: Gender | null;
-    date_of_birth?: string | null; // ISO date
+    date_of_birth?: string | null;
     photo?: string | null;
 
-    // Pivot data (from guardian_student)
     relationship: string;
     is_primary: boolean;
 
-    // Optional convenience fields you may eagerly load on the backend
     current_class?: StudentCurriculum | null;
     school?: { id: number | string; name: string } | null;
 }
@@ -115,11 +111,13 @@ export default function Wards() {
         },
     ];
 
+    const [notices, setNotices] = useState<any[]>([]);
+    const [noticesLoading, setNoticesLoading] = useState(true);
+
     const guardianId = auth.user?.guardian?.uuid;
+
     useEffect(() => {
-        // Simulate an API call to fetch wards
         const fetchWards = async () => {
-            // Replace this with your actual API call
             const response = await axios.get(
                 `/api/guardians/${guardianId}/students`,
             );
@@ -127,7 +125,32 @@ export default function Wards() {
             setWards(data.data);
         };
 
+        const fetchNotices = async () => {
+            setNoticesLoading(true);
+
+            try {
+                const response = await axios.get('/api/guardian/notices');
+
+                setNotices(
+                    (response.data.data ?? []).map((n: any) => ({
+                        id: n.id,
+                        type: n.type,
+                        title: n.title,
+                        body: n.body,
+                        time: n.time,
+                        category: n.category,
+                        badge_colour: n.badge_colour,
+                    })),
+                );
+            } catch {
+                // silent
+            } finally {
+                setNoticesLoading(false);
+            }
+        };
+
         fetchWards();
+        fetchNotices();
     }, []);
 
     // Pick the primary ward first, otherwise the first in the list.
@@ -142,6 +165,7 @@ export default function Wards() {
     }, [wards]);
 
     const [activeId, setActiveId] = useState<string | null>(initialId);
+
     useEffect(() => {
         const checkResultReadiness = async () => {
             const response = await axios.get(
@@ -155,37 +179,8 @@ export default function Wards() {
             checkResultReadiness();
         }
     }, [activeId]);
+
     const active = wards.find((w) => w.id === activeId) ?? null;
-    const notices = [
-        {
-            type: 'general',
-            title: 'Prize Giving Day/Graduation Ceremony',
-            description: `We wish to inform parents that our Prize Giving/Graduation ceremonies are as follows:
-- Year 7, 8, & 9 (Prize Giving)  -  Thursday, June 25, 2026 (11:00a.m.)
-- Year 10, 11, 12 and IFY (Prize Giving/Graduation)  -  Saturday, June 27, 2026 (11:00a.m.)
-Parents are invited to these events and are expected to pick-up their child at the end of the events respectively. `,
-            time: 'Today',
-            sender: 'Admin',
-            badge_colour: 'gray',
-        },
-        {
-            type: 'general',
-            title: 'Graduation Check-In',
-            description: `Students in Year 11, 12 and IFY are expected to check in on Friday, June 26, 2026, (1:00pm to 3:30pm) for Dinner/Prom and Graduation Ceremony. We kindly appeal to parents/guardians to ensure their child complies with the school rules and regulations regarding the graduation and thoroughly check their luggage to ensure they are not with unauthorized items.`,
-            time: 'Today',
-            sender: 'Admin',
-            badge_colour: 'gray',
-        },
-        {
-            type: 'general',
-            title: 'Express Check-In Reminder',
-            description:
-                'For express check-in, parents are advised to pay all outstanding fees and send the evidence of payment to accounts@brookstoneng.org. ',
-            time: '1 week ago',
-            sender: 'Admin',
-            badge_colour: 'gray',
-        },
-    ];
 
     if (!wards.length) {
         return (
@@ -388,10 +383,7 @@ Parents are invited to these events and are expected to pick-up their child at t
                 </section>
             )}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <NoticesCard
-                    notices={notices}
-                    onAction={() => toast.info('Feature coming soon!')}
-                />
+                <NoticesCard notices={notices} loading={noticesLoading} />
                 <QuickContactCard
                     contacts={CONTACTS}
                     onAction={() => toast.info('Feature coming soon!')}

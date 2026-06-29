@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     AlertTriangle,
+    Bell,
     BookOpen,
     Building2,
     ClipboardCopyIcon,
@@ -63,6 +64,11 @@ const headOfSchoolNavGroups: NavGroup[] = [
                 title: 'Student Comments',
                 href: '/head-of-school/comments',
                 icon: MessageSquare,
+            },
+            {
+                title: 'Outstanding Comments',
+                href: '/outstanding-comments',
+                icon: AlertTriangle,
             },
         ],
     },
@@ -162,6 +168,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'Outstanding Comments',
                 href: '/outstanding-comments',
                 icon: AlertTriangle,
+            },
+            {
+                title: 'Notices',
+                href: '/notices',
+                icon: Bell,
             },
         ],
     },

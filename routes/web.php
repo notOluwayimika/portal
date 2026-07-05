@@ -374,6 +374,9 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
                 if (is_null($deadline)) {
                     return true;
                 }
+                if ($studentCurriculum->status !== StudentStatusEnum::ACTIVE) {
+                    return true;
+                }
 
                 return now()->greaterThan($deadline);
             })->values();
@@ -404,6 +407,9 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
 
                 $deadline = $studentCurriculum?->curriculum?->term?->result_visible_at;
                 if (is_null($deadline)) {
+                    return true;
+                }
+                if ($studentCurriculum->status !== StudentStatusEnum::ACTIVE) {
                     return true;
                 }
 

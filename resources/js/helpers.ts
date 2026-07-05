@@ -74,14 +74,15 @@ export function toShortName(fullName: string): string {
 }
 
 export function convertNameToResultFmt(fullName: string): string {
+    // console.log(fullName);
     const parts = fullName.trim().split(' ');
 
     if (parts.length < 2) {
         return fullName;
     }
 
-    const lastName = parts[parts.length - 1];
-    const firstName = parts[0];
+    const firstName = parts[parts.length - 1];
+    const lastName = parts[0];
 
     return `${lastName.toUpperCase()} ${firstName}`;
 }

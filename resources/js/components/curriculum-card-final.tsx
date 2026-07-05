@@ -18,6 +18,7 @@ import type {
     GradeBoundary,
     Score,
     StudentCurriculum,
+    TeacherCurriculumSubject,
 } from '@/types/models';
 import { BehavioralAssessmentTable } from './behavioral-assessment';
 
@@ -38,7 +39,9 @@ function SubjectRow({
     const [examScore, setExamScore] = useState<string>('-');
     const [caScore, setCaScore] = useState<string>('-');
     const [yearAvg, setYearAvg] = useState<string>('-');
-
+    const [teachers, setTeachers] = useState<TeacherCurriculumSubject[] | null>(
+        null,
+    );
     useEffect(() => {
         const getScores = async () => {
             if (csId && scId) {
@@ -56,8 +59,17 @@ function SubjectRow({
                 setYearAvg(response.data.year_average ?? '-');
             }
         };
+        const getTeachers = async () => {
+            if (csId) {
+                const response = await axios.get(
+                    `/api/curriculum-subjects/${csId}/teachers`,
+                );
+                setTeachers(response.data);
+            }
+        };
         getScores();
         getYearAverage();
+        getTeachers();
     }, [csId, scId]);
 
     useEffect(() => {
@@ -71,7 +83,7 @@ function SubjectRow({
               )[0]
             : null;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setExamScore(examination ? String(examination?.score) : '-');
+        setExamScore(examination?.score ? String(Number(examination?.score).toFixed(1)) : '-');
         const CA = scores
             ? scores.filter(
                   (s: Score) => s.marking_component.name !== 'Examination',
@@ -122,11 +134,11 @@ function SubjectRow({
                 {/* average year */}
                 {yearAvg != null ? yearAvg : '—'}
             </td>
-            <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
+            <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
                 {/* teacher */}
-                {convertNameToResultFmt(r.commented_by ?? '')}
+                {convertNameToResultFmt(teachers?.[0]?.teacher?.full_name ?? '')}
             </td>
-            <td className="border border-slate-300 px-1 text-center text-slate-600 tabular-nums">
+            <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
                 {/* comment */}
                 {r.comment}
             </td>
@@ -217,7 +229,7 @@ export function CurriculumCardFinal({
     const promotedClass = Number(currentClass[1]) + 1;
 
     return (
-        <div className="student-result-card overflow-hidden border border-slate-300 print:scale-95">
+        <div className="student-result-card overflow-hidden border border-slate-300">
             <div className="p-0">
                 <div className="grid grid-cols-3 bg-blue-100">
                     <p className="flex border border-slate-300 p-px text-xs text-black">
@@ -396,7 +408,7 @@ export function CurriculumCardFinal({
                 </div>
                 <div className="col-span-1 border font-bold">Comment:</div>
                 <div className="col-span-3 border">
-                    {scDetails?.behavioralAssessments[0]?.comment}
+                    {scDetails?.studentCurriculum?.head_of_school_comment}
                 </div>
                 <div className="col-span-1 border font-bold">
                     Approved by the Principal:

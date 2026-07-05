@@ -14,7 +14,7 @@ class TeacherResource extends JsonResource
             'id'            => $this->uuid,
             'first_name'    => $this->first_name,
             'last_name'     => $this->last_name,
-            'full_name'     => $this->full_name,
+            'full_name'     => $this->last_name . ' ' . $this->first_name,
             'staff_number'  => $this->staff_number,
             'gender'        => $this->gender,
             'date_of_birth' => $this->date_of_birth,

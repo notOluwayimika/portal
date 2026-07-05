@@ -324,6 +324,14 @@ class StudentController extends Controller
             $isAvailable = false;
 
         }
+
+        if ($isAvailable && auth()->user()->hasRole('guardian') && $activeCurriculum->status === StudentStatusEnum::ACTIVE) {
+            $deadline = $activeCurriculum->curriculum?->term?->result_visible_at;
+            if ($deadline && !now()->greaterThan($deadline)) {
+                $isAvailable = false;
+            }
+        }
+
         if (!$isAvailable) {
             $activeCurriculum = StudentCurriculum::where('student_id', $student->id)->where('status', 'promoted')->latest()->first();
         }

@@ -21,6 +21,8 @@ class Term extends Model
         'status',
         'start_date',
         'end_date',
+        'registration_deadline',
+        'result_visible_at'
     ];
 
     protected $casts = [
@@ -28,6 +30,8 @@ class Term extends Model
         'status' => TermStatusEnum::class,
         'start_date' => 'date',
         'end_date' => 'date',
+        'result_visible_at' => 'date',
+        'registration_deadline' => 'date'
     ];
 
     protected static function booted(): void

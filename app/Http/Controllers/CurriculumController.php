@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentStatusEnum;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
@@ -280,6 +281,14 @@ class CurriculumController extends Controller
         if ($subjectsOffered->isEmpty()) {
             $isAvailable = false;
         }
+
+        if ($isAvailable && auth()->user()->hasRole('guardian') && $studentCurriculum->status === StudentStatusEnum::ACTIVE) {
+            $deadline = $studentCurriculum->curriculum?->term?->result_visible_at;
+            if ($deadline && !now()->greaterThan($deadline)) {
+                $isAvailable = false;
+            }
+        }
+
         return response()->json(['available' => $isAvailable]);
 
 

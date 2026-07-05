@@ -243,6 +243,7 @@ class NoticeController extends Controller
             'slug' => $slug,
             'color' => $data['color'] ?? 'gray',
             'is_default' => false,
+            'school_id' => session('school_id') ?? $request->user()->school_id,
         ]);
 
         return Response::created(new NoticeCategoryResource($category));

@@ -7,6 +7,7 @@ use App\Http\Requests\UpsertScoreRequest;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
 use App\Http\Resources\SubjectResultStatusResource;
+use App\Http\Resources\TeacherCurriculumSubjectResource;
 use App\Models\CurriculumSubject;
 use App\Models\GradeBoundary;
 use App\Models\Score;
@@ -185,6 +186,13 @@ class CurriculumSubjectController extends Controller
             \Log::error($th->getMessage());
             return response()->json(['error' => 'Failed to assign teacher'], 500);
         }
+    }
+
+    public function getTeachers(CurriculumSubject $curriculumSubject)
+    {
+        $curriculumSubject->load('teacherAssignments.teacher');
+
+        return response()->json(TeacherCurriculumSubjectResource::collection($curriculumSubject->teacherAssignments));
     }
 
     public function unassignTeacher(CurriculumSubject $curriculumSubject, Teacher $teacher)

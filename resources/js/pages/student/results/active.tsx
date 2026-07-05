@@ -110,6 +110,7 @@ export function totalGradePoint(row: ResultRow[], boundaries: GradeBoundary[]) {
             count++;
         }
     });
+    GP = Math.round(GP);
 
     return count > 0 ? (GP / count).toFixed(1) : '—';
 }

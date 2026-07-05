@@ -106,7 +106,7 @@ class BroadsheetService
             ->orderBy('class_level_arm_id')
             ->get();
 
-        $columnSubjects = $this->buildColumnModel($siblings->first(), $curriculum->is_ccm);
+        $columnSubjects = $this->buildColumnModel($siblings, $curriculum->is_ccm);
         $boundaries = $this->resolveGradeBoundaries($curriculum);
 
         $sn = 0;
@@ -168,15 +168,17 @@ class BroadsheetService
     }
 
     /**
-     * Build the column model from a representative curriculum's subjects.
+     * Build the column model from the union of subjects across all sibling
+     * curricula, deduplicated by subject, using each subject's first
+     * occurrence for ordering, labels and marking components.
      */
-    private function buildColumnModel(?Curriculum $curriculum, bool $isCcm): array
+    private function buildColumnModel(Collection $siblings, bool $isCcm): array
     {
-        if (!$curriculum) {
-            return [];
-        }
+        $uniqueSubjects = $siblings
+            ->flatMap(fn(Curriculum $c) => $c->curriculumSubjects)
+            ->unique('subject_id');
 
-        return $curriculum->curriculumSubjects
+        return $uniqueSubjects
             ->sortBy('display_order')
             ->map(function (CurriculumSubject $cs) use ($isCcm) {
                 $components = $this->orderedComponents($cs->markingComponents);

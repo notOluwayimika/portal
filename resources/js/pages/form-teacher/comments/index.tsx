@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { useInitials } from '@/hooks/use-initials';
 import type { Student } from '@/types/models';
 
@@ -25,13 +26,16 @@ export default function FormTeacherCommentsIndex() {
     const [comments, setComments] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
+    const [termId, setTermId] = useState('');
 
     useEffect(() => {
         async function fetchData() {
             setLoading(true);
 
             try {
-                const res = await axios.get('/api/form-teacher/students');
+                const res = await axios.get('/api/form-teacher/students', {
+                    params: termId ? { term_id: termId } : {},
+                });
                 const data: CommentRow[] = res.data.data ?? [];
 
                 setRows(data);
@@ -44,7 +48,7 @@ export default function FormTeacherCommentsIndex() {
         }
 
         fetchData();
-    }, []);
+    }, [termId]);
 
     async function handleSave(row: CommentRow) {
         setSavingId(row.student_curriculum_id);
@@ -65,11 +69,14 @@ export default function FormTeacherCommentsIndex() {
         <>
             <Head title="Student Comments" />
             <div className="space-y-6 p-4">
-                <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Student Comments</h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Write this term's form teacher comment for each student in your class.
-                    </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-xl font-semibold text-gray-900">Student Comments</h1>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Write the form teacher comment for each student in your class for the selected term.
+                        </p>
+                    </div>
+                    <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
 
                 {loading ? (

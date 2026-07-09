@@ -3,22 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FormatsClassLevelArmName;
-use App\Enums\StudentStatusEnum;
+use App\Concerns\ResolvesTermFilter;
 use App\Enums\TeacherAssignmentRoleEnum;
-use App\Enums\TermStatusEnum;
 use App\Http\Resources\StudentResource;
 use App\Models\ClassLevelArmTeacher;
 use App\Models\StudentCurriculum;
 use App\Models\Teacher;
-use App\Models\Term;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 
 class FormTeacherCommentController extends Controller
 {
-    use FormatsClassLevelArmName;
+    use FormatsClassLevelArmName, ResolvesTermFilter;
 
-    public function index()
+    public function index(Request $request)
     {
         abort_unless(auth()->user()->can('manage_form_teacher_comments'), 403);
 
@@ -28,16 +26,16 @@ class FormTeacherCommentController extends Controller
             return Response::success([]);
         }
 
-        $currentTerm = Term::where('status', TermStatusEnum::ACTIVE->value)->first();
+        $term = $this->resolveTermFilter($request);
 
-        if (!$currentTerm) {
+        if (!$term) {
             return Response::success([]);
         }
 
         $studentCurricula = StudentCurriculum::query()
-            ->where('status', StudentStatusEnum::ACTIVE->value)
+            ->whereIn('status', $this->enrollmentStatusesFor($term))
             ->whereHas('curriculum', fn($query) => $query
-                ->where('term_id', $currentTerm->id)
+                ->where('term_id', $term->id)
                 ->where('class_level_arm_id', $assignment->class_level_arm_id))
             ->with([
                 'student',

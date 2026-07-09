@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { useInitials } from '@/hooks/use-initials';
 import type { GradeBoundary, Student, StudentCurriculum } from '@/types/models';
 
@@ -40,13 +41,18 @@ export default function HeadOfSchoolCommentsIndex() {
     const [selectedRow, setSelectedRow] = useState<CommentRow | null>(null);
     const [modalData, setModalData] = useState<ModalData | null>(null);
     const [modalLoading, setModalLoading] = useState(false);
+    const [termId, setTermId] = useState('');
+    const [ftComment, setFtComment] = useState('');
+    const [bpComment, setBpComment] = useState('');
 
     useEffect(() => {
         async function fetchData() {
             setLoading(true);
 
             try {
-                const res = await axios.get('/api/head-of-school/students');
+                const res = await axios.get('/api/head-of-school/students', {
+                    params: termId ? { term_id: termId } : {},
+                });
                 const data: CommentRow[] = res.data.data ?? [];
 
                 setRows(data);
@@ -66,7 +72,7 @@ export default function HeadOfSchoolCommentsIndex() {
         }
 
         fetchData();
-    }, [savingId]);
+    }, [savingId, termId]);
 
     const grouped = useMemo(() => {
         const map = new Map<string, CommentRow[]>();
@@ -93,12 +99,18 @@ export default function HeadOfSchoolCommentsIndex() {
             const res = await axios.get(
                 `/api/head-of-school/students/${row.student_curriculum_id}/result`,
             );
+            const studentCurriculum: StudentCurriculum =
+                res.data.studentCurriculum;
             setModalData({
-                studentCurriculum: res.data.studentCurriculum,
+                studentCurriculum,
                 defaultBoundaries:
                     res.data.defaultBoundaries.data ??
                     res.data.defaultBoundaries,
             });
+            setFtComment(studentCurriculum.form_teacher_comment ?? '');
+            setBpComment(
+                studentCurriculum.behavioral_assessments?.[0]?.comment ?? '',
+            );
         } catch {
             toast.error('Failed to load result.');
             setSelectedRow(null);
@@ -110,23 +122,37 @@ export default function HeadOfSchoolCommentsIndex() {
     function closeModal() {
         setSelectedRow(null);
         setModalData(null);
+        setFtComment('');
+        setBpComment('');
     }
 
     async function handleSave(row: CommentRow) {
         setSavingId(row.student_curriculum_id);
 
+        // The boarding parent comment lives on the behavioral assessment
+        // row, which only exists once the boarding parent has recorded one —
+        // omit it from the payload when there is nothing to attach it to.
+        const hasAssessment =
+            !!modalData?.studentCurriculum.behavioral_assessments?.length;
+        const payload: Record<string, string | null> = {
+            comment: comments[row.student_curriculum_id] || null,
+            form_teacher_comment: ftComment || null,
+        };
+
+        if (hasAssessment) {
+            payload.boarding_parent_comment = bpComment || null;
+        }
+
         try {
             await axios.patch(
                 `/api/head-of-school/students/${row.student_curriculum_id}/comment`,
-                {
-                    comment: comments[row.student_curriculum_id] || null,
-                },
+                payload,
             );
             toast.success(
-                `Saved comment for ${row.student.first_name} ${row.student.last_name}.`,
+                `Saved comments for ${row.student.first_name} ${row.student.last_name}.`,
             );
         } catch {
-            toast.error('Failed to save comment.');
+            toast.error('Failed to save comments.');
         } finally {
             setSavingId(null);
             setSelectedRow(null);
@@ -143,14 +169,18 @@ export default function HeadOfSchoolCommentsIndex() {
         <>
             <Head title="Student Comments" />
             <div className="space-y-6 p-4">
-                <div>
-                    <h1 className="text-xl font-semibold text-gray-900">
-                        Student Comments
-                    </h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Write this term's head of school comment for students
-                        across your supervised classes.
-                    </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-xl font-semibold text-gray-900">
+                            Student Comments
+                        </h1>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Write the head of school comment for students
+                            across your supervised classes for the selected
+                            term.
+                        </p>
+                    </div>
+                    <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
 
                 {loading ? (
@@ -251,27 +281,68 @@ export default function HeadOfSchoolCommentsIndex() {
                                 boundaries={boundaries}
                             />
 
-                            <div className="space-y-2 border-t pt-4">
-                                <label className="text-sm font-medium text-gray-700">
-                                    Head of School Comment
-                                </label>
-                                <textarea
-                                    value={
-                                        comments[
-                                            selectedRow.student_curriculum_id
-                                        ] ?? ''
-                                    }
-                                    onChange={(e) =>
-                                        setComments((prev) => ({
-                                            ...prev,
-                                            [selectedRow.student_curriculum_id]:
-                                                e.target.value,
-                                        }))
-                                    }
-                                    rows={3}
-                                    placeholder="Write a comment for this student…"
-                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
-                                />
+                            <div className="space-y-4 border-t pt-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-gray-700">
+                                        Form Teacher Comment
+                                    </label>
+                                    <textarea
+                                        value={ftComment}
+                                        onChange={(e) =>
+                                            setFtComment(e.target.value)
+                                        }
+                                        rows={3}
+                                        placeholder="Write the form teacher's comment for this student…"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-gray-700">
+                                        Boarding Parent Comment
+                                    </label>
+                                    <textarea
+                                        value={bpComment}
+                                        onChange={(e) =>
+                                            setBpComment(e.target.value)
+                                        }
+                                        rows={3}
+                                        disabled={
+                                            !sc.behavioral_assessments?.length
+                                        }
+                                        placeholder={
+                                            sc.behavioral_assessments?.length
+                                                ? "Write the boarding parent's comment for this student…"
+                                                : 'No behavioral assessment recorded yet — the boarding parent must record one first.'
+                                        }
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-gray-700">
+                                        Head of School Comment
+                                    </label>
+                                    <textarea
+                                        value={
+                                            comments[
+                                                selectedRow
+                                                    .student_curriculum_id
+                                            ] ?? ''
+                                        }
+                                        onChange={(e) =>
+                                            setComments((prev) => ({
+                                                ...prev,
+                                                [selectedRow.student_curriculum_id]:
+                                                    e.target.value,
+                                            }))
+                                        }
+                                        rows={3}
+                                        placeholder="Write a comment for this student…"
+                                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                                    />
+                                </div>
+
                                 <div className="flex justify-end">
                                     <Button
                                         size="sm"
@@ -285,7 +356,7 @@ export default function HeadOfSchoolCommentsIndex() {
                                             selectedRow.student_curriculum_id && (
                                             <Spinner className="size-4" />
                                         )}
-                                        Save Comment
+                                        Save Comments
                                     </Button>
                                 </div>
                             </div>

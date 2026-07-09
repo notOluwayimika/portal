@@ -76,6 +76,11 @@ const headOfSchoolNavGroups: NavGroup[] = [
         label: 'Reports',
         items: [
             {
+                title: 'Results per Class',
+                href: '/reports/results-per-class',
+                icon: ClipboardList,
+            },
+            {
                 title: 'Broadsheets',
                 href: '/reports/broadsheets',
                 icon: FileSpreadsheet,
@@ -163,6 +168,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'CCM Curricula',
                 href: '/setup/curricula-ccm',
                 icon: RefreshCw,
+            },
+            {
+                title: 'Backfill Past Terms',
+                href: '/setup/curricula-backfill',
+                icon: History,
             },
             {
                 title: 'Outstanding Comments',

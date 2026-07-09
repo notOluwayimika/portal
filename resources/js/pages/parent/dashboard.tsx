@@ -416,6 +416,7 @@ export const NoticesCard = ({
         sender?: string;
         category?: string;
         badge_colour: string;
+        for_students?: string[];
     }[];
     loading?: boolean;
     onAction?: () => void;
@@ -530,11 +531,20 @@ export const NoticesCard = ({
                                             }}
                                             className="prose prose-xs mb-2 max-w-none text-[11px] leading-relaxed text-gray-500"
                                         />
-                                        <div className="flex items-center gap-3 text-[10px] font-medium text-gray-400">
+                                        <div className="flex flex-wrap items-center gap-3 text-[10px] font-medium text-gray-400">
                                             <span className="flex items-center gap-1">
                                                 <Clock className="h-3 w-3" />{' '}
                                                 {notice.time}
                                             </span>
+                                            {!!notice.for_students?.length && (
+                                                <span className="flex items-center gap-1 text-blue-600">
+                                                    <User className="h-3 w-3" />
+                                                    For:{' '}
+                                                    {notice.for_students.join(
+                                                        ', ',
+                                                    )}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

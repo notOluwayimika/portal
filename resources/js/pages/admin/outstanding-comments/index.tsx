@@ -9,6 +9,7 @@ import {
     Users,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface TeacherSummary {
@@ -250,13 +251,17 @@ function LoadingSkeleton() {
 export default function OutstandingComments() {
     const [data, setData] = useState<OutstandingData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [termId, setTermId] = useState('');
 
     useEffect(() => {
+        setLoading(true);
         axios
-            .get<{ data: OutstandingData }>('/api/outstanding-comments')
+            .get<{ data: OutstandingData }>('/api/outstanding-comments', {
+                params: termId ? { term_id: termId } : {},
+            })
             .then((res) => setData(res.data.data))
             .finally(() => setLoading(false));
-    }, []);
+    }, [termId]);
 
     if (loading) {
         return <LoadingSkeleton />;
@@ -272,6 +277,9 @@ export default function OutstandingComments() {
                 <p className="mt-1 text-xs text-gray-400">
                     Outstanding comments are tracked against the active term
                 </p>
+                <div className="mt-4">
+                    <TermFilterSelect value={termId} onChange={setTermId} />
+                </div>
             </div>
         );
     }
@@ -293,13 +301,16 @@ export default function OutstandingComments() {
 
     return (
         <div className="space-y-6 p-4">
-            <div>
-                <h1 className="text-lg font-semibold text-gray-900">
-                    Outstanding Comments & Assessments
-                </h1>
-                <p className="mt-0.5 text-sm text-gray-500">
-                    Track completion status for {data.term}
-                </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <h1 className="text-lg font-semibold text-gray-900">
+                        Outstanding Comments & Assessments
+                    </h1>
+                    <p className="mt-0.5 text-sm text-gray-500">
+                        Track completion status for {data.term}
+                    </p>
+                </div>
+                <TermFilterSelect value={termId} onChange={setTermId} />
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

@@ -40,6 +40,7 @@ export interface ClassLevel {
     school_id?: string;
     school?: School;
     arms?: Arm[];
+    class_level_arms?: ClassLevelArm[];
     name: string;
     order: number;
     created_at?: string;
@@ -357,7 +358,7 @@ export interface CurriculumSubject {
     scores?: Score[];
     teachers?: TeacherCurriculumSubject[];
     marking_components?: MarkingComponent[];
-    student_results: StudentResult[];
+    class_average?: number | null;
     result_status?: SubjectResultStatus;
 }
 export interface TeacherCurriculumSubject {
@@ -394,6 +395,7 @@ export interface StudentCurriculum {
     is_ended?: boolean;
     form_teacher_comment?: string | null;
     head_of_school_comment?: string | null;
+    behavioral_assessments?: BehavioralAssessment[];
 }
 
 export type StudentSubjectStatus = 'active' | 'dropped';
@@ -403,6 +405,7 @@ export interface StudentSubject {
     status: StudentSubjectStatus;
     student_curriculum?: StudentCurriculum;
     curriculum_subject: CurriculumSubject;
+    own_result?: { total_score: string | number; grade: string | null } | null;
     dropped_at?: string | null;
     drop_reason?: string | null;
     dropped_by?: { id: number; full_name: string } | null;

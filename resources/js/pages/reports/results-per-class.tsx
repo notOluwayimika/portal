@@ -27,13 +27,17 @@ export default function ResultsPerClass() {
                             {level.name}
                         </span>
                         <div className="flex flex-wrap gap-1.5">
-                            {level?.arms?.map((arm) => (
-                                <span
-                                    key={arm.id}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-xs font-medium text-gray-500"
+                            {level?.class_level_arms?.map((cla) => (
+                                <a
+                                    key={cla.id}
+                                    target="_blank"
+                                    href={`/class-level-arm/${cla.id}/results`}
+                                    title={`${level.name} ${cla.arm.label}${cla.stream ? ` ${cla.stream.name}` : ''} results`}
+                                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-1 text-xs font-medium text-gray-500 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
                                 >
-                                    {arm.label}
-                                </span>
+                                    {cla.arm.label}
+                                    {cla.stream ? ` ${cla.stream.name}` : ''}
+                                </a>
                             ))}
                         </div>
                     </div>

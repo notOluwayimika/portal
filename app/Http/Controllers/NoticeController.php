@@ -365,15 +365,23 @@ class NoticeController extends Controller
             return false;
         })->take(20)->values();
 
-        return Response::success($notices->map(fn (Notice $notice) => [
-            'id' => $notice->uuid,
-            'title' => $notice->title,
-            'body' => $notice->body,
-            'type' => $notice->category?->slug ?? 'general',
-            'category' => $notice->category?->name ?? 'General',
-            'badge_colour' => $notice->category?->color ?? 'gray',
-            'starts_at' => $notice->starts_at?->toIso8601String(),
-            'time' => $notice->starts_at?->diffForHumans(),
-        ]));
+        return Response::success($notices->map(function (Notice $notice) use ($studentIds) {
+            $forStudents = $notice->students
+                ->filter(fn (Student $student) => in_array($student->id, $studentIds, true))
+                ->map(fn (Student $student) => trim("{$student->first_name} {$student->last_name}"))
+                ->values();
+
+            return [
+                'id' => $notice->uuid,
+                'title' => $notice->title,
+                'body' => $notice->body,
+                'type' => $notice->category?->slug ?? 'general',
+                'category' => $notice->category?->name ?? 'General',
+                'badge_colour' => $notice->category?->color ?? 'gray',
+                'starts_at' => $notice->starts_at?->toIso8601String(),
+                'time' => $notice->starts_at?->diffForHumans(),
+                'for_students' => $forStudents,
+            ];
+        }));
     }
 }

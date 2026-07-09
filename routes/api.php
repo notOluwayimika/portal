@@ -200,6 +200,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     // CCM -> non-CCM curriculum migration
     Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
 
+    // Mirror an active curriculum into a past (completed) term for retroactive entry
+    Route::post('/curricula/{curriculum:uuid}/backfill-term', [CurriculumController::class, 'backfillTerm']);
+
     // Teacher role assignments (boarding parent / form teacher / head of school)
     require __DIR__ . '/endpoints/teacher-assignment.php';
 
@@ -214,7 +217,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
-    Route::get('/marking-components/overlapping', [MarkingComponentController::class, 'getOverlapping']);
+    Route::get('/marking-components/overlapping/{curriculum:uuid}', [MarkingComponentController::class, 'getOverlapping']);
     // comment on student subject
     Route::post('/student-subjects/{studentSubject:uuid}/comment', [StudentSubjectController::class, 'storeComment']);
 

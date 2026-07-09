@@ -18,6 +18,7 @@ class ClassLevelResource extends JsonResource
             'id' => $this->uuid,
             'name' => $this->name,
             'arms' => ArmResource::collection($this->arms),
+            'class_level_arms' => ClassLevelArmResource::collection($this->whenLoaded('classLevelArms')),
             'order' => $this->order
         ];
     }

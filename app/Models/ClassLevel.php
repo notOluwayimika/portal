@@ -38,6 +38,11 @@ class ClassLevel extends Model
         return $this->belongsToMany(Arm::class, 'class_level_arms');
     }
 
+    public function classLevelArms(): HasMany
+    {
+        return $this->hasMany(ClassLevelArm::class);
+    }
+
     public function streams(): HasMany
     {
         return $this->hasMany(Stream::class);

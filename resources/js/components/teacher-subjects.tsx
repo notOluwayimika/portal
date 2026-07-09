@@ -665,6 +665,7 @@ export function TeacherSubjects({
 
     // filters
     const [filterSession, setFilterSession] = useState('');
+    const [filterTerm, setFilterTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('active');
     const [filterSearch, setFilterSearch] = useState('');
 
@@ -698,11 +699,28 @@ export function TeacherSubjects({
         ).values(),
     );
 
+    // derived unique term list for filter dropdown
+    const terms = Array.from(
+        new Map(
+            subjects
+                .map((s) => s.curriculum_subject?.curriculum?.term)
+                .filter(Boolean)
+                .map((t) => [t!.id, t!]),
+        ).values(),
+    );
+
     const filtered = subjects.filter((s) => {
         if (
             filterSession &&
             s.curriculum_subject?.curriculum?.academic_session?.id !==
                 filterSession
+        ) {
+            return false;
+        }
+
+        if (
+            filterTerm &&
+            s.curriculum_subject?.curriculum?.term?.id !== filterTerm
         ) {
             return false;
         }
@@ -729,7 +747,12 @@ export function TeacherSubjects({
         return true;
     });
 
-    const hasFilters = !!(filterSession || filterStatus || filterSearch);
+    const hasFilters = !!(
+        filterSession ||
+        filterTerm ||
+        filterStatus ||
+        filterSearch
+    );
 
     return (
         <>
@@ -791,6 +814,25 @@ export function TeacherSubjects({
                     </select>
                 </div>
 
+                {/* term */}
+                <div
+                    className="field"
+                    style={{ flex: '1 1 160px', marginBottom: 0 }}
+                >
+                    <label>Term</label>
+                    <select
+                        value={filterTerm}
+                        onChange={(e) => setFilterTerm(e.target.value)}
+                    >
+                        <option value="">All terms</option>
+                        {terms.map((t) => (
+                            <option key={t.id} value={t.id}>
+                                {t.full_name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
                 {/* status */}
                 <div
                     className="field"
@@ -814,6 +856,7 @@ export function TeacherSubjects({
                         onClick={() => {
                             setFilterSearch('');
                             setFilterSession('');
+                            setFilterTerm('');
                             setFilterStatus('');
                         }}
                         style={{ marginBottom: 0, whiteSpace: 'nowrap' }}

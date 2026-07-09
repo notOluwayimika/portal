@@ -19,6 +19,25 @@ class StudentSubjectResource extends JsonResource
             'status' => $this->status?->value,
             'student_curriculum' => $this->whenLoaded('studentCurriculum', fn() => new StudentCurriculumResource($this->studentCurriculum)),
             'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn() => new CurriculumSubjectResource($this->curriculumSubject)),
+            // The class's full set of results for a subject lives once on
+            // curriculumSubject.studentResults; this student's own result is
+            // looked up from that same shared collection (tagged onto this
+            // model by StudentCurriculumResource) instead of the frontend
+            // needing the whole class's raw scores repeated on every row.
+            'own_result' => $this->when(
+                $this->relationLoaded('curriculumSubject') && $this->curriculumSubject?->relationLoaded('studentResults'),
+                function () {
+                    $studentId = $this->getAttribute('_result_student_id');
+                    $result = $studentId
+                        ? $this->curriculumSubject->studentResults->firstWhere('student_id', $studentId)
+                        : null;
+
+                    return $result ? [
+                        'total_score' => $result->total_score,
+                        'grade' => $result->grade,
+                    ] : null;
+                },
+            ),
             'dropped_at' => $this->dropped_at?->toIso8601String(),
             'drop_reason' => $this->drop_reason,
             'dropped_by' => $this->whenLoaded('droppedBy', fn() => [

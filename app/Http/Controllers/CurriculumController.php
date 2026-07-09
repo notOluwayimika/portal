@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Enums\StudentStatusEnum;
+use App\Enums\TermStatusEnum;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
+use App\Jobs\BackfillPastTermJob;
 use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
 use App\Models\MarkingComponent;
@@ -127,7 +129,9 @@ class CurriculumController extends Controller
         if ($request->has('is_ccm')) {
             $curricula = $curricula->where('is_ccm', $request->boolean('is_ccm'));
         }
-        $curricula->where('status', 'active');
+        if (!$request->has('status')) {
+            $curricula->where('status', 'active');
+        }
         $curricula = $curricula->paginate($request->integer('per_page', $limit));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
@@ -226,6 +230,36 @@ class CurriculumController extends Controller
         return response()->json(['message' => 'Migration to non-CCM has been queued'], 202);
     }
 
+    public function backfillTerm(Request $request, Curriculum $curriculum)
+    {
+        $request->validate([
+            'term_id' => 'required|string|exists:terms,uuid',
+        ]);
+
+        if ($curriculum->is_ccm) {
+            return response()->json(['error' => 'CCM curricula cannot be backfilled'], 422);
+        }
+        if ($curriculum->status !== 'active') {
+            return response()->json(['error' => 'Only active curricula can be used as a backfill source'], 422);
+        }
+
+        $term = Term::where('uuid', $request->term_id)->first();
+
+        if ($term->academicSession?->school_id !== auth()->user()->school_id) {
+            return response()->json(['error' => 'Term not found'], 404);
+        }
+        if ($term->id === $curriculum->term_id) {
+            return response()->json(['error' => 'Cannot backfill into the curriculum\'s own term'], 422);
+        }
+        if ($term->status !== TermStatusEnum::COMPLETED) {
+            return response()->json(['error' => 'Only completed terms can be backfilled'], 422);
+        }
+
+        BackfillPastTermJob::dispatch($curriculum, $term, auth()->id());
+
+        return response()->json(['message' => 'Past-term backfill has been queued'], 202);
+    }
+
     public function queuedCurriculums()
     {
         $curriculumIds = [];
@@ -238,7 +272,7 @@ class CurriculumController extends Controller
             $payload = json_decode($job->payload, true);
 
             if (
-                ($payload['displayName'] ?? null) !== MoveFromCcmJob::class
+                !in_array($payload['displayName'] ?? null, [MoveFromCcmJob::class, BackfillPastTermJob::class], true)
             ) {
                 continue;
             }

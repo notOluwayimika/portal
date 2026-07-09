@@ -12,6 +12,11 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        // MySQL-only data conversion (companion to convert_uuid_to_hybrid_structure).
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         Schema::disableForeignKeyConstraints();
 
         // Map of tables and their foreign key columns that need updating

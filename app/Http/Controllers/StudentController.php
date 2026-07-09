@@ -333,7 +333,15 @@ class StudentController extends Controller
         }
 
         if (!$isAvailable) {
-            $activeCurriculum = StudentCurriculum::where('student_id', $student->id)->where('status', 'promoted')->latest()->first();
+            // Fall back to the chronologically latest past enrollment (by its
+            // term's end date, not created_at — backdated enrollments created
+            // by BackfillPastTermJob are newer rows for older terms).
+            $activeCurriculum = StudentCurriculum::where('student_id', $student->id)
+                ->where('status', 'promoted')
+                ->with('curriculum.term')
+                ->get()
+                ->sortByDesc(fn($sc) => $sc->curriculum?->term?->end_date)
+                ->first();
         }
 
         return response()->json([

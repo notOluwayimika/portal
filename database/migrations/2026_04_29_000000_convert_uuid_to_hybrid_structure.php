@@ -12,6 +12,13 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        // MySQL-only data conversion (INFORMATION_SCHEMA queries, raw ALTER
+        // TABLE statements). Fresh databases on other drivers (e.g. sqlite in
+        // tests) are created hybrid by the base migrations already.
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         Schema::disableForeignKeyConstraints();
 
         // Tables to convert - in REVERSE dependency order for dropping FKs

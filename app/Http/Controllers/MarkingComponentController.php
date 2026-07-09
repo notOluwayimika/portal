@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\MarkingComponentResource;
+use App\Models\Curriculum;
 use App\Models\MarkingComponent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,12 +133,24 @@ class MarkingComponentController extends Controller
         ]);
     }
 
-    public function getOverlapping()
+    public function getOverlapping(Curriculum $curriculum)
     {
-        $ccmMc = MarkingComponent::where('is_ccm', true)->where('curriculum_subject_id', null)->pluck('name');
-        $eotMc = MarkingComponent::where('is_ccm', false)->where('curriculum_subject_id', null)->pluck('name');
+        $hasCcmVersion = Curriculum::query()
+            ->where('school_id', $curriculum->school_id)
+            ->where('term_id', $curriculum->term_id)
+            ->where('class_level_arm_id', $curriculum->class_level_arm_id)
+            ->where('exam_type_id', $curriculum->exam_type_id)
+            ->where('is_ccm', true)
+            ->exists();
 
-        $overlapping = $ccmMc->intersect($eotMc)->values();
+        $overlapping = [];
+
+        if ($hasCcmVersion) {
+            $ccmMc = MarkingComponent::where('is_ccm', true)->where('curriculum_subject_id', null)->pluck('name');
+            $eotMc = MarkingComponent::where('is_ccm', false)->where('curriculum_subject_id', null)->pluck('name');
+
+            $overlapping = $ccmMc->intersect($eotMc)->values();
+        }
 
         return response()->json([
             'overlapping' => $overlapping,

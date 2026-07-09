@@ -117,13 +117,21 @@ export default function ScoreEntryPage({
 
     useEffect(() => {
         const getOverlappingMC = async () => {
+            const curriculumId = cs.curriculum?.id;
+
+            if (!curriculumId) {
+                setOverlappingMC([]);
+
+                return;
+            }
+
             const response = await axios.get(
-                '/api/marking-components/overlapping',
+                `/api/marking-components/overlapping/${curriculumId}`,
             );
             setOverlappingMC(response.data.overlapping);
         };
         getOverlappingMC();
-    }, [markingComponents]);
+    }, [cs.curriculum?.id, markingComponents]);
 
     // Clean up timers on unmount.
     useEffect(() => {

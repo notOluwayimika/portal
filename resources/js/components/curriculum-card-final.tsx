@@ -175,23 +175,18 @@ export function CurriculumCardFinal({
 
         return subjects.map((ss): ResultRow => {
             const cs = ss.curriculum_subject || ({} as CurriculumSubject);
-            const results = cs.student_results || [];
             const name =
                 cs.subject?.name || `Subject ${cs.subject_id ?? ''}`.trim();
             const code = cs.subject?.code || '';
 
-            const own = results.find((r) => r.student?.id === studentId);
+            const own = ss.own_result;
             const score = own ? toNum(own.total_score) : null;
             const grade =
                 own?.grade ||
                 gradeForScore(score, boundaries ?? defaultBoundaries);
 
-            const scored = results
-                .map((r) => toNum(r.total_score))
-                .filter((n) => !Number.isNaN(n) && n !== 0);
-            const classAvg = scored.length
-                ? scored.reduce((s, n) => s + n, 0) / scored.length
-                : null;
+            const classAvg =
+                cs.class_average != null ? toNum(cs.class_average) : null;
 
             return {
                 key: cs.id + ',' + sc.id,

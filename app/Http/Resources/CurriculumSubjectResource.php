@@ -27,7 +27,13 @@ class CurriculumSubjectResource extends JsonResource
             'students'         => StudentSubjectResource::collection($this->whenLoaded('studentAssignments')),
             'scores'           => ScoreResource::collection($this->whenLoaded('scores')),
             'result_status'    => new SubjectResultStatusResource($this->whenLoaded('resultStatus')),
-            'student_results'  => StudentResultResource::collection($this->whenLoaded('studentResults')),
+            'class_average'    => $this->when($this->relationLoaded('studentResults'), function () {
+                $scores = $this->studentResults
+                    ->map(fn ($result) => (float) $result->total_score)
+                    ->filter(fn ($score) => $score !== 0.0 && !is_nan($score));
+
+                return $scores->isNotEmpty() ? round($scores->avg(), 2) : null;
+            }),
         ];
     }
 }

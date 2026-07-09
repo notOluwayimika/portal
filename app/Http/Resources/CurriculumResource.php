@@ -26,7 +26,7 @@ class CurriculumResource extends JsonResource
             "min_subjects" => $this->min_subjects,
             "status" => $this->status,
             "is_ccm" => $this->is_ccm,
-            "full_name" => $this->academicSession->name . ' ' . $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . ($this->is_ccm ? '(CCM)' : ''),
+            "full_name" => $this->academicSession->name . ' ' . $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . $this->term->name . ' '  . ($this->is_ccm ? '(CCM)' : ''),
 
             "curriculum_subjects" => $this->when(
                 $this->includeSubjects,

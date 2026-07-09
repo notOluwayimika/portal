@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FormatsClassLevelArmName;
-use App\Enums\StudentStatusEnum;
+use App\Concerns\ResolvesTermFilter;
 use App\Enums\TeacherAssignmentRoleEnum;
 use App\Enums\TermStatusEnum;
 use App\Http\Requests\BehavioralAssessmentRequest;
@@ -15,17 +15,20 @@ use App\Models\StudentCurriculum;
 use App\Models\Teacher;
 use App\Models\Term;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 
 class BehavioralAssessmentController extends Controller
 {
-    use FormatsClassLevelArmName;
+    use FormatsClassLevelArmName, ResolvesTermFilter;
 
-    public function index()
+    public function index(Request $request)
     {
         abort_unless(auth()->user()->can('view_behavioral_assessments'), 403);
 
-        $rows = $this->visibleStudentCurricula()->map(function (StudentCurriculum $studentCurriculum) {
+        $term = $this->resolveTermFilter($request);
+
+        $rows = $this->visibleStudentCurricula($term)->map(function (StudentCurriculum $studentCurriculum) {
             $classLevelArm = $studentCurriculum->curriculum ? $studentCurriculum->curriculum->classLevelArm : null;
             $assessment = $studentCurriculum->behavioralAssessments->first();
 
@@ -44,20 +47,24 @@ class BehavioralAssessmentController extends Controller
     {
         $data = $request->validated();
 
-        $currentTerm = Term::where('status', TermStatusEnum::ACTIVE->value)->first();
-
-        abort_unless($currentTerm, 422, 'There is no active term to record an assessment for.');
-
         $studentCurriculum = StudentCurriculum::where('uuid', $data['student_curriculum_id'])->firstOrFail();
 
-        $visibleIds = $this->visibleStudentCurricula()->pluck('id');
+        // The assessment is recorded against the term the enrollment belongs
+        // to (not the active term), so backdated enrollments produce
+        // correctly-dated past-term assessments with the same code path.
+        $term = $studentCurriculum->curriculum?->term;
+
+        abort_unless($term, 422, 'There is no term to record an assessment for.');
+        abort_if($term->status === TermStatusEnum::UPCOMING, 422, 'Cannot record assessments for an upcoming term.');
+
+        $visibleIds = $this->visibleStudentCurricula($term)->pluck('id');
 
         abort_unless($visibleIds->contains($studentCurriculum->id), 403);
 
         $assessment = BehavioralAssessment::updateOrCreate(
             [
                 'student_curriculum_id' => $studentCurriculum->id,
-                'assessment_term_id' => $currentTerm->id,
+                'assessment_term_id' => $term->id,
             ],
             [
                 'punctuality' => $data['punctuality'],
@@ -77,7 +84,7 @@ class BehavioralAssessmentController extends Controller
         return Response::success(new BehavioralAssessmentResource($assessment));
     }
 
-    private function visibleStudentCurricula(): Collection
+    private function visibleStudentCurricula(?Term $term): Collection
     {
         $teacher = Teacher::where('user_id', auth()->id())->first();
 
@@ -93,15 +100,13 @@ class BehavioralAssessmentController extends Controller
             return new Collection();
         }
 
-        $currentTerm = Term::where('status', TermStatusEnum::ACTIVE->value)->first();
-
-        if (!$currentTerm) {
+        if (!$term) {
             return new Collection();
         }
 
         return StudentCurriculum::query()
-            ->where('status', StudentStatusEnum::ACTIVE->value)
-            ->whereHas('curriculum', fn($query) => $query->where('term_id', $currentTerm->id))
+            ->whereIn('status', $this->enrollmentStatusesFor($term))
+            ->whereHas('curriculum', fn($query) => $query->where('term_id', $term->id))
             ->where(function ($query) use ($assignments) {
                 foreach ($assignments as $assignment) {
                     $query->orWhere(function ($groupQuery) use ($assignment) {
@@ -116,7 +121,7 @@ class BehavioralAssessmentController extends Controller
                 'curriculum.classLevelArm.classLevel',
                 'curriculum.classLevelArm.arm',
                 'curriculum.classLevelArm.stream',
-                'behavioralAssessments' => fn($query) => $query->where('assessment_term_id', $currentTerm->id),
+                'behavioralAssessments' => fn($query) => $query->where('assessment_term_id', $term->id),
             ])
             ->get();
     }

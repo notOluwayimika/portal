@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { formatDate, snakeToTitleCase } from '@/hooks/use-helper';
 import { useInitials } from '@/hooks/use-initials';
 import type {
@@ -217,13 +218,16 @@ export default function BehavioralAssessmentsIndex() {
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [savingId, setSavingId] = useState<string | null>(null);
+    const [termId, setTermId] = useState('');
 
     useEffect(() => {
         async function fetchData() {
             setLoading(true);
 
             try {
-                const res = await axios.get('/api/behavioral-assessments');
+                const res = await axios.get('/api/behavioral-assessments', {
+                    params: termId ? { term_id: termId } : {},
+                });
                 const data: AssessmentRow[] = res.data.data ?? [];
 
                 setRows(data);
@@ -243,7 +247,7 @@ export default function BehavioralAssessmentsIndex() {
         }
 
         fetchData();
-    }, []);
+    }, [termId]);
 
     const grouped = useMemo(() => {
         const map = new Map<string, AssessmentRow[]>();
@@ -300,14 +304,17 @@ export default function BehavioralAssessmentsIndex() {
         <>
             <Head title="Behavioral Assessments" />
             <div className="space-y-6 p-4">
-                <div>
-                    <h1 className="text-xl font-semibold text-gray-900">
-                        Behavioral Assessments
-                    </h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Record this term's behavioral pillar grades for the
-                        students in your care.
-                    </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-xl font-semibold text-gray-900">
+                            Behavioral Assessments
+                        </h1>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Record the behavioral pillar grades for the
+                            students in your care for the selected term.
+                        </p>
+                    </div>
+                    <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
 
                 {loading ? (

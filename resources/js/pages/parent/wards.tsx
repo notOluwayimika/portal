@@ -140,6 +140,7 @@ export default function Wards() {
                         time: n.time,
                         category: n.category,
                         badge_colour: n.badge_colour,
+                        for_students: n.for_students,
                     })),
                 );
             } catch {

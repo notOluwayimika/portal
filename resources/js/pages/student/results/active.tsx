@@ -161,9 +161,41 @@ export const PRINT_STYLES = `
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    .student-result-card {
+    /*
+     * The table itself is allowed to break across pages (a curriculum with
+     * many subjects/long comments can be taller than one sheet) — only
+     * individual rows are protected so a subject's row never splits across
+     * a page boundary and gets visually cut in half.
+     */
+    .student-result-card tr {
         break-inside: avoid;
         page-break-inside: avoid;
+    }
+    /*
+     * The table wrappers use overflow-x-auto/overflow-hidden on screen
+     * (so a wide table scrolls instead of blowing out the layout), but a
+     * scrollable/clipped region only shows its current viewport when
+     * printed — the rest of the content gets cut off. Let it flow freely
+     * on the page instead.
+     */
+    .print-page .overflow-hidden,
+    .print-page .overflow-x-auto {
+        overflow: visible;
+    }
+    /*
+     * Each curriculum's full report (header + card + grade key + comments)
+     * is grouped under .print-page so it starts on its own sheet and never
+     * shares a page with the next curriculum. Height is intentionally left
+     * auto so a report taller than one sheet flows onto following pages
+     * instead of being clipped.
+     */
+    .print-page {
+        page-break-after: always;
+        break-after: page;
+    }
+    .print-page:last-child {
+        page-break-after: auto;
+        break-after: auto;
     }
 }
 `;
@@ -204,21 +236,16 @@ export function CurriculumCard({
 
         return subjects.map((ss): ResultRow => {
             const cs = ss.curriculum_subject || ({} as CurriculumSubject);
-            const results = cs.student_results || [];
             const name =
                 cs.subject?.name || `Subject ${cs.subject_id ?? ''}`.trim();
             const code = cs.subject?.code || '';
 
-            const own = results.find((r) => r.student?.id === studentId);
+            const own = ss.own_result;
             const score = own ? toNum(own.total_score) : null;
             const grade = own?.grade || gradeForScore(score, boundaries);
 
-            const scored = results
-                .map((r) => toNum(r.total_score))
-                .filter((n) => !Number.isNaN(n) && n !== 0);
-            const classAvg = scored.length
-                ? scored.reduce((s, n) => s + n, 0) / scored.length
-                : null;
+            const classAvg =
+                cs.class_average != null ? toNum(cs.class_average) : null;
 
             return {
                 key: cs.id ?? name,
@@ -458,10 +485,10 @@ export function ResultDetails({
             <div className="flex items-center justify-center">
                 <AppLogoIcon />
             </div>
-            <div className="mb-1 text-center">
+            <div className="mb-1 text-center leading-tight">
                 <h1 className="text-lg font-bold uppercase">{SCHOOL_NAME}</h1>
                 <p className="text-sm text-slate-600">
-                    SECONDARY AND FOUNDATION(PRE-DEGREE)
+                    SECONDARY AND INTERNATIONAL FOUNDATION YEAR (IFY)
                 </p>
                 <p className="text-sm text-slate-600">
                     International Airport Road Igwuruta
@@ -469,7 +496,7 @@ export function ResultDetails({
                 <p className="text-sm text-slate-600">
                     Website: www.brookstoneng.org
                 </p>
-                <div className="mt-2">
+                <div className="mt-1">
                     <p className="text-sm font-bold text-slate-600">
                         {curricula.curriculum.is_ccm
                             ? 'CROSS CURRICULAR MONITORING'
@@ -511,7 +538,25 @@ export default function StudentResultTable() {
     const curricula: StudentCurriculum[] = studentCurricula.data || [];
 
     const handlePrint = () => {
+        // Browsers use document.title as the default "Save as PDF" filename,
+        // so swap it to SurnameFirstname_session_term_date for the dialog
+        // and restore it afterwards.
+        const curriculum = curricula[0]?.curriculum;
+        const sanitize = (v: string) => v.replace(/[^\w-]+/g, '');
+        const fileName = [
+            `${sanitize(student.data.last_name)}${sanitize(student.data.first_name)}`,
+            sanitize((curriculum?.academic_session?.name ?? '').replace(/\//g, '-')),
+            sanitize(curriculum?.term?.name ?? ''),
+            curriculum?.is_ccm ? 'CCM' : '',
+            new Date().toISOString().slice(0, 10),
+        ]
+            .filter(Boolean)
+            .join('_');
+
+        const originalTitle = document.title;
+        document.title = fileName;
         window.print();
+        document.title = originalTitle;
     };
 
     return (
@@ -546,7 +591,7 @@ export default function StudentResultTable() {
                 </div>
             </div>
 
-            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800">
+            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800 print:max-w-none print:p-0">
                 <div className="flex items-center justify-between print:hidden">
                     <button
                         className="btn btn-ghost btn-sm btn-icon cursor-pointer p-4"
@@ -584,13 +629,12 @@ export default function StudentResultTable() {
 
                         if (sc.curriculum.is_ccm) {
                             return (
-                                <>
+                                <div key={sc.id} className="print-page">
                                     <ResultDetails
                                         curricula={sc}
                                         picture={student.data.photo}
                                     />
                                     <CurriculumCard
-                                        key={sc.id}
                                         sc={sc}
                                         defaultBoundaries={
                                             defaultGradeBoundaries.data
@@ -623,17 +667,16 @@ export default function StudentResultTable() {
                                             term to review results.
                                         </p>
                                     </div>
-                                </>
+                                </div>
                             );
                         } else {
                             return (
-                                <>
+                                <div key={sc.id} className="print-page">
                                     <ResultDetails
                                         curricula={sc}
                                         picture={student.data.photo}
                                     />
                                     <CurriculumCardFinal
-                                        key={sc.id}
                                         sc={sc}
                                         defaultBoundaries={
                                             defaultGradeBoundaries.data
@@ -642,7 +685,7 @@ export default function StudentResultTable() {
                                         student={student.data}
                                         boundaries={boundaries}
                                     />
-                                </>
+                                </div>
                             );
                         }
                     })}

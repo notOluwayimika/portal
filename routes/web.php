@@ -93,6 +93,10 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
         return Inertia::render('admin/curricula/ccm');
     })->name('setup.curricula.ccm');
 
+    Route::get('setup/curricula-backfill', function () {
+        return Inertia::render('admin/curricula/backfill');
+    })->name('setup.curricula.backfill');
+
     Route::get('setup/curricula/{curriculum:uuid}', function (Curriculum $curriculum) {
         return Inertia::render('admin/curriculum/show', [
             'curriculum' => new CurriculumResource($curriculum),
@@ -213,7 +217,9 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     Route::prefix('reports')->group(function () {
         Route::get('results-per-class', function () {
             $schoolId = auth()->user()->school_id;
-            $classLevels = ClassLevel::where('school_id', $schoolId)->get();
+            $classLevels = ClassLevel::where('school_id', $schoolId)
+                ->with(['classLevelArms.classLevel.arms', 'classLevelArms.arm', 'classLevelArms.stream'])
+                ->get();
             return Inertia::render('reports/results-per-class', [
                 'classLevels' => ClassLevelResource::collection($classLevels)
             ]);
@@ -285,72 +291,14 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
 Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->group(function () {
 
 
-    Route::get('class-level/{classLevel:uuid}/results', function (ClassLevel $classLevel) {
-        ini_set('memory_limit', '512M');
-        $start = microtime(true);
-        $classLevelArms = ClassLevelArm::where('class_level_id', $classLevel->id)->get();
-        // $classLevelArms->load([
-        //     'curricula.curriculumSubjects',
-        //     'curricula.studentCurricula.studentSubjects' => function ($query) {
-        //         $query->where('status', 'active');
-        //     },
-        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student',
-        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
-        //     'curricula.studentCurricula.studentSubjects.curriculumSubject.subject',
-        //     'curricula.studentCurricula.student',
-        //     'curricula.studentCurricula.curriculum.examType.gradeBoundaries',
-        //     'curricula.studentCurricula.curriculum.term',
+    Route::get('class-level/{classLevel:uuid}/results', [App\Http\Controllers\ClassResultsController::class, 'classLevel'])
+        ->name('setup.classLevels.show');
 
-        // ]);
-        $classLevelArms = ClassLevelArm::with([
-            'curricula.curriculumSubjects',
-            'curricula.studentCurricula.studentSubjects' => function ($query) {
-                $query->where('status', 'active');
-            },
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.subject',
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults' => function ($query) {
-                $query->select([
-                    'id',
-                    'curriculum_subject_id',
-                    'student_id',
-                    'total_score',
-                    'grade',
-                ]);
-            },
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.studentResults.student:id,uuid,first_name,middle_name,last_name',
-            'curricula.studentCurricula.studentSubjects.curriculumSubject.resultStatus',
-            'curricula.studentCurricula.student',
-            'curricula.studentCurricula.curriculum.examType.gradeBoundaries',
-            'curricula.studentCurricula.curriculum.term',
-        ])
-            ->where('class_level_id', $classLevel->id)
-            ->get();
-        logger()->info([
-            'arms' => $classLevelArms->count(),
-            'curricula' => $classLevelArms->pluck('curricula')->flatten()->count(),
-            'student_curricula' => $classLevelArms
-                ->pluck('curricula')
-                ->flatten()
-                ->pluck('studentCurricula')
-                ->flatten()
-                ->count(),
-        ]);
-
-
-        $data = ClassLevelArmResource::collection($classLevelArms);
-
-        logger()->info([
-            'resource_time' => microtime(true) - $start,
-        ]);
-
-        $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
-        return Inertia::render('student/results/list', [
-            'classLevelArms' => ClassLevelArmResource::collection($classLevelArms),
-            'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries)
-        ]);
-    })->name('setup.classLevels.show');
+    Route::get('class-level-arm/{classLevelArm:uuid}/results', [App\Http\Controllers\ClassResultsController::class, 'classLevelArm'])
+        ->name('setup.classLevelArms.results');
     Route::get('students/{student:uuid}/results/active', function (Student $student) {
         $studentCurricula = StudentCurriculum::with([
+            'student',
             'curriculum.examType.gradeBoundaries',
             'curriculum.term',
             'studentSubjects' => function ($query) {
@@ -389,6 +337,7 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school'])->gro
     })->name('admin.dashboard');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
         $studentCurricula = StudentCurriculum::with([
+            'student',
             'curriculum.examType.gradeBoundaries',
             'studentSubjects' => function ($query) {
                 $query->where('status', 'active');

@@ -7,7 +7,7 @@
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
-import type { ToastType } from '@/components/toast-item';
+import { toast } from 'react-toastify';
 import type {
     MarkingComponent,
     Teacher,
@@ -19,7 +19,7 @@ import type {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-const termLabel = (t: { name: string } | number) => {
+export const termLabel = (t: { name: string } | number) => {
     if (typeof t === 'object') {
         return t.name;
     }
@@ -27,13 +27,13 @@ const termLabel = (t: { name: string } | number) => {
     return ['', '1st', '2nd', '3rd'][t] ?? String(t);
 };
 
-const pct = (w: number) => `${Math.round(w * 100)}%`;
+export const pct = (w: number) => `${Math.round(w * 100) / w}%`;
 
-function totalWeight(components: MarkingComponent[]) {
+export function totalWeight(components: MarkingComponent[]) {
     return components.reduce((s, c) => s + Number(c?.weight ?? '0'), 0);
 }
 
-function WeightBar({ components }: { components: MarkingComponent[] }) {
+export function WeightBar({ components }: { components: MarkingComponent[] }) {
     const total = totalWeight(components);
     const over = total > 1.001;
     const ok = Math.abs(total - 1) < 0.001;
@@ -93,7 +93,11 @@ const COLORS = [
 
 // ─── StatusPill ─────────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: 'draft' | 'active' | 'closed' }) {
+export function StatusPill({
+    status,
+}: {
+    status: 'draft' | 'active' | 'closed';
+}) {
     const map = {
         active: ['pill-green', 'Active'],
         draft: ['pill-amber', 'Draft'],
@@ -114,7 +118,7 @@ interface ComponentRowProps {
     onDelete: (id: string) => Promise<void>;
 }
 
-function ComponentRow({
+export function ComponentRow({
     component,
     colorIndex,
     onSave,
@@ -283,7 +287,7 @@ function ComponentRow({
 
 // ─── AddComponentForm ─────────────────────────────────────────────────────────
 
-function AddComponentForm({
+export function AddComponentForm({
     onAdd,
 }: {
     onAdd: (name: string, weight: number) => Promise<void>;
@@ -413,72 +417,12 @@ function AddComponentForm({
 
 interface SubjectCardProps {
     tcs: TeacherCurriculumSubject;
-    addToast: (msg: string, type?: ToastType) => void;
-    onComponentsChange: (
-        curriculumSubjectId: string,
-        components: MarkingComponent[],
-    ) => void;
 }
 
-function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
+function SubjectCard({ tcs }: SubjectCardProps) {
     const [expanded, setExpanded] = useState(false);
 
-    const components = tcs.curriculum_subject?.marking_components;
-    console.log(tcs);
-
-    const handleAdd = async (name: string, weight: number) => {
-        try {
-            const res = await axios.post(
-                `/api/curriculum-subjects/${tcs.curriculum_subject.id}/marking-components`,
-                { name, weight },
-            );
-            const created: MarkingComponent = res.data.data;
-            onComponentsChange(tcs.curriculum_subject.id, [
-                ...components,
-                created,
-            ]);
-            addToast('Component added', 'success');
-        } catch {
-            addToast('Failed to add component', 'error');
-        }
-    };
-
-    const handleSave = async (id: string, name: string, weight: number) => {
-        try {
-            const res = await axios.put(`/api/marking-components/${id}`, {
-                name,
-                weight,
-            });
-            const updated: MarkingComponent = res.data.data;
-            onComponentsChange(
-                tcs.curriculum_subject.id,
-                components.map((c) => (c.id === id ? updated : c)),
-            );
-            addToast('Component updated', 'success');
-        } catch {
-            addToast('Failed to update component', 'error');
-        }
-    };
-
-    const handleDelete = async (id: string) => {
-        try {
-            const response = await axios.delete(
-                `/api/marking-components/${id}`,
-            );
-
-            if (response.status === 200) {
-                onComponentsChange(
-                    tcs.curriculum_subject.id,
-                    components.filter((c) => c.id !== id),
-                );
-                addToast('Component removed', 'success');
-            } else {
-                addToast('Failed to delete component', 'error');
-            }
-        } catch {
-            addToast('Failed to delete component', 'error');
-        }
-    };
+    const components = tcs.curriculum_subject?.marking_components ?? [];
 
     const c = tcs.curriculum_subject;
     const total = totalWeight(components);
@@ -656,18 +600,51 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
                             marginTop: 12,
                         }}
                     >
-                        {components.map((mc, i) => (
-                            <ComponentRow
-                                key={mc.id}
-                                component={mc}
-                                colorIndex={i}
-                                onSave={handleSave}
-                                onDelete={handleDelete}
-                            />
+                        {components.map((mc) => (
+                            <div
+                            key={mc.id}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '7px 10px',
+                                    borderRadius: 8,
+                                    background: 'var(--surface1, #fff)',
+                                    border: '1px solid var(--border, #e5e7eb)',
+                                }}
+                            >
+                                {/* <span
+                                    style={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: '50%',
+                                        background: COLORS[i % COLORS.length],
+                                    }}
+                                > */}
+                                <span
+                                    style={{
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    {mc.name}
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 12,
+                                        color: 'var(--text2)',
+                                        background: 'var(--surface2, #f3f4f6)',
+                                        padding: '1px 7px',
+                                        borderRadius: 4,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {pct(mc.weight)}
+                                </span>
+                                {/* </span> */}
+                            </div>
                         ))}
                     </div>
-
-                    <AddComponentForm onAdd={handleAdd} />
                 </div>
             )}
         </div>
@@ -677,10 +654,8 @@ function SubjectCard({ tcs, addToast, onComponentsChange }: SubjectCardProps) {
 // ─── MySubjectsPage ───────────────────────────────────────────────────────────
 
 export function TeacherSubjects({
-    addToast,
     teacherId,
 }: {
-    addToast: (msg: string, type?: ToastType) => void;
     teacherId: string;
 }) {
     const [subjects, setSubjects] = useState<TeacherCurriculumSubject[]>([]);
@@ -690,7 +665,8 @@ export function TeacherSubjects({
 
     // filters
     const [filterSession, setFilterSession] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
+    const [filterTerm, setFilterTerm] = useState('');
+    const [filterStatus, setFilterStatus] = useState('active');
     const [filterSearch, setFilterSearch] = useState('');
 
     useEffect(() => {
@@ -705,7 +681,7 @@ export function TeacherSubjects({
                 setSubjects(res.data ?? []);
                 setTeacher(response.data ?? null);
             } catch {
-                addToast('Failed to load subjects', 'error');
+                toast.error('Failed to load subjects');
             } finally {
                 setFetching(false);
             }
@@ -723,30 +699,28 @@ export function TeacherSubjects({
         ).values(),
     );
 
-    const handleComponentsChange = (
-        curriculumSubjectId: string,
-        components: MarkingComponent[],
-    ) => {
-        setSubjects((prev) =>
-            prev.map((s) =>
-                s.curriculum_subject.id === curriculumSubjectId
-                    ? {
-                          ...s,
-                          curriculum_subject: {
-                              ...s.curriculum_subject,
-                              marking_components: components,
-                          },
-                      }
-                    : s,
-            ),
-        );
-    };
+    // derived unique term list for filter dropdown
+    const terms = Array.from(
+        new Map(
+            subjects
+                .map((s) => s.curriculum_subject?.curriculum?.term)
+                .filter(Boolean)
+                .map((t) => [t!.id, t!]),
+        ).values(),
+    );
 
     const filtered = subjects.filter((s) => {
         if (
             filterSession &&
             s.curriculum_subject?.curriculum?.academic_session?.id !==
                 filterSession
+        ) {
+            return false;
+        }
+
+        if (
+            filterTerm &&
+            s.curriculum_subject?.curriculum?.term?.id !== filterTerm
         ) {
             return false;
         }
@@ -773,7 +747,12 @@ export function TeacherSubjects({
         return true;
     });
 
-    const hasFilters = !!(filterSession || filterStatus || filterSearch);
+    const hasFilters = !!(
+        filterSession ||
+        filterTerm ||
+        filterStatus ||
+        filterSearch
+    );
 
     return (
         <>
@@ -835,6 +814,25 @@ export function TeacherSubjects({
                     </select>
                 </div>
 
+                {/* term */}
+                <div
+                    className="field"
+                    style={{ flex: '1 1 160px', marginBottom: 0 }}
+                >
+                    <label>Term</label>
+                    <select
+                        value={filterTerm}
+                        onChange={(e) => setFilterTerm(e.target.value)}
+                    >
+                        <option value="">All terms</option>
+                        {terms.map((t) => (
+                            <option key={t.id} value={t.id}>
+                                {t.full_name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
                 {/* status */}
                 <div
                     className="field"
@@ -858,6 +856,7 @@ export function TeacherSubjects({
                         onClick={() => {
                             setFilterSearch('');
                             setFilterSession('');
+                            setFilterTerm('');
                             setFilterStatus('');
                         }}
                         style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
@@ -912,8 +911,6 @@ export function TeacherSubjects({
                         <SubjectCard
                             key={tcs.id}
                             tcs={tcs}
-                            addToast={addToast}
-                            onComponentsChange={handleComponentsChange}
                         />
                     ))}
                 </div>

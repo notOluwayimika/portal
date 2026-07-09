@@ -8,9 +8,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class ExamType extends Model
 {
+    use LogsActivity;
     protected $fillable = ['school_id', 'name', 'slug'];
 
     protected static function booted(): void
@@ -35,5 +38,13 @@ class ExamType extends Model
     public function gradeBoundaries(): HasMany
     {
         return $this->hasMany(GradeBoundary::class);
+    }
+    protected static $logName = 'academics';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['name', 'slug'])
+            ->logOnlyDirty();
     }
 }

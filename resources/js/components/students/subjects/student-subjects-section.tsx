@@ -38,10 +38,10 @@ export function StudentSubjectsSection({
     );
     const [historyOpen, setHistoryOpen] = useState(false);
 
-    // Use the first active enrollment (ended_at IS NULL).
+    // Use the enrollment with status "active" (mirrors Student::currentCurriculum()).
     const enrollments = student.student_curricula ?? [];
     const activeEnrollment =
-        enrollments.find((e) => !e.ended_at) ?? enrollments[0];
+        enrollments.find((e) => e.status === 'active') ?? enrollments[0];
     const enrollmentId = studentCurriculum
         ? studentCurriculum.id
         : activeEnrollment?.id;

@@ -74,4 +74,14 @@ class School extends Model
     {
         return $this->hasMany(ClassLevelArm::class);
     }
+
+    public function sportHouses(): HasMany
+    {
+        return $this->hasMany(SportHouse::class);
+    }
+
+    public function scholarships(): HasMany
+    {
+        return $this->hasMany(Scholarship::class);
+    }
 }

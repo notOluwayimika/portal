@@ -52,7 +52,7 @@ class StudentSubjectService
                 $attached->push(StudentSubject::create([
                     'student_curriculum_id' => $enrollment->id,
                     'curriculum_subject_id' => $cs->id,
-                    'status'                => StudentSubjectStatus::Active,
+                    'status' => StudentSubjectStatus::Active,
                 ]));
             }
 
@@ -94,10 +94,10 @@ class StudentSubjectService
             return $this->restoreDroppedSubject($existing, $performedBy);
         }
 
-        return DB::transaction(fn () => StudentSubject::create([
+        return DB::transaction(fn() => StudentSubject::create([
             'student_curriculum_id' => $enrollment->id,
             'curriculum_subject_id' => $curriculumSubject->id,
-            'status'                => StudentSubjectStatus::Active,
+            'status' => StudentSubjectStatus::Active,
         ]));
     }
 
@@ -119,10 +119,10 @@ class StudentSubjectService
 
         return DB::transaction(function () use ($studentSubject, $performedBy, $reason) {
             $studentSubject->update([
-                'status'              => StudentSubjectStatus::Dropped,
-                'dropped_by_user_id'  => $performedBy->id,
-                'dropped_at'          => now(),
-                'drop_reason'         => $reason,
+                'status' => StudentSubjectStatus::Dropped,
+                'dropped_by_user_id' => $performedBy->id,
+                'dropped_at' => now(),
+                'drop_reason' => $reason,
             ]);
 
             return $studentSubject->fresh();
@@ -149,9 +149,9 @@ class StudentSubjectService
 
         return DB::transaction(function () use ($studentSubject, $performedBy) {
             $studentSubject->update([
-                'status'               => StudentSubjectStatus::Active,
-                'restored_by_user_id'  => $performedBy->id,
-                'restored_at'          => now(),
+                'status' => StudentSubjectStatus::Active,
+                'restored_by_user_id' => $performedBy->id,
+                'restored_at' => now(),
                 // Drop metadata preserved intentionally — see implementation_plan.md Decision 2.
             ]);
 
@@ -176,6 +176,20 @@ class StudentSubjectService
             }
 
             return $results;
+        });
+    }
+
+    /**
+     * Store a comment for a student subject.
+     */
+    public function storeComment(StudentSubject $studentSubject, User $performedBy, string $comment): StudentSubject
+    {
+        return DB::transaction(function () use ($studentSubject, $performedBy, $comment) {
+            $studentSubject->update([
+                'comment' => $comment,
+                'commented_by' => $performedBy->id
+            ]);
+            return $studentSubject;
         });
     }
 }

@@ -6,9 +6,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Score extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'student_id',
         'curriculum_subject_id',
@@ -25,7 +28,7 @@ class Score extends Model
      */
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
         static::saving(function (Score $score) {
             $status = SubjectResultStatus::where('curriculum_subject_id', $score->curriculum_subject_id)
                 ->value('status');
@@ -56,5 +59,14 @@ class Score extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    protected static $logName = 'results';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['score'])
+            ->logOnlyDirty();
     }
 }

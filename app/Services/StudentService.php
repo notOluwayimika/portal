@@ -16,7 +16,8 @@ class StudentService
 {
     public function __construct(
         private CurriculumEnrollmentService $enrollmentService
-    ) {}
+    ) {
+    }
 
     public function paginate(Request $request): LengthAwarePaginator
     {
@@ -41,15 +42,24 @@ class StudentService
     {
         return DB::transaction(function () use ($attributes) {
             $student = Student::create([
-                'school_id'        => $attributes['school_id'],
-                'user_id'          => $attributes['user_id'] ?? null,
-                'first_name'       => $attributes['first_name'],
-                'last_name'        => $attributes['last_name'],
-                'middle_name'      => $attributes['middle_name'] ?? null,
-                'gender'           => $attributes['gender'],
-                'date_of_birth'    => $attributes['date_of_birth'] ?? null,
+                'school_id' => $attributes['school_id'],
+                'user_id' => $attributes['user_id'] ?? null,
+                'first_name' => $attributes['first_name'],
+                'last_name' => $attributes['last_name'],
+                'middle_name' => $attributes['middle_name'] ?? null,
+                'gender' => $attributes['gender'],
+                'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? null,
-                'photo_id'         => $attributes['photo_id'] ?? null,
+                'photo_id' => $attributes['photo_id'] ?? null,
+                'admission_date' => $attributes['admission_date'] ?? null,
+                'address' => $attributes['address'] ?? null,
+                'nationality' => $attributes['nationality'] ?? null,
+                'other_nationality' => $attributes['other_nationality'] ?? null,
+                'state_of_origin' => $attributes['state_of_origin'] ?? null,
+                'religion' => $attributes['religion'] ?? null,
+                'previous_school' => $attributes['previous_school'] ?? null,
+                'sport_house_id' => $attributes['sport_house_id'] ?? null,
+                'scholarship_id' => $attributes['scholarship_id'] ?? null,
             ]);
 
             $curriculum = Curriculum::findOrFail($attributes['curriculum_id']);
@@ -59,7 +69,7 @@ class StudentService
                 $curriculum,
                 auth()->user(),
                 [
-                    'status'         => $attributes['status'] ?? null,
+                    'status' => $attributes['status'] ?? 'active',
                     'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                 ]
             );
@@ -77,6 +87,8 @@ class StudentService
             'currentCurriculum.curriculum.classLevelArm.stream',
             'guardians.user',
             'guardians.photoFile',
+            'sportHouse',
+            'scholarship',
         ]);
     }
 
@@ -90,13 +102,27 @@ class StudentService
                 'gender' => $attributes['gender'],
                 'date_of_birth' => $attributes['date_of_birth'] ?? null,
                 'admission_number' => $attributes['admission_number'] ?? $student->admission_number,
+                'admission_date' => $attributes['admission_date'] ?? null,
+                'address' => $attributes['address'] ?? null,
+                'nationality' => $attributes['nationality'] ?? null,
+                'other_nationality' => $attributes['other_nationality'] ?? null,
+                'state_of_origin' => $attributes['state_of_origin'] ?? null,
+                'religion' => $attributes['religion'] ?? null,
+                'previous_school' => $attributes['previous_school'] ?? null,
+                'sport_house_id' => $attributes['sport_house_id'] ?? null,
+                'scholarship_id' => $attributes['scholarship_id'] ?? null,
             ], fn($v) => !is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
 
-            if (isset($attributes['curriculum_id'])) {
+            if (
+                isset($attributes['curriculum_id']) &&
+                $student->studentCurriculum?->curriculum_id != $attributes['curriculum_id']
+            ) {
                 StudentCurriculum::updateOrCreate(
-                    ['student_id' => $student->id],
                     [
+                        'student_id' => $student->id,
                         'curriculum_id' => $attributes['curriculum_id'],
+                    ],
+                    [
                         'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
                     ]
                 );
@@ -130,7 +156,7 @@ class StudentService
         $row['admission_number'] = isset($row['admission_number']) ? trim($row['admission_number']) : null;
         $row['photo_id'] = null;
         $row['curriculum_id'] = $curriculumId;
-        
+
         return StudentDto::fromArray($row)->toArray();
     }
 
@@ -143,7 +169,7 @@ class StudentService
      */
     public function import(array $rows, int $curriculumId, int $schoolId): array
     {
-        $saved  = 0;
+        $saved = 0;
         $errors = [];
 
         foreach ($rows as $index => $row) {

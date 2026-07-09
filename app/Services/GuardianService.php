@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\PermissionRegistrar;
 
 class GuardianService
 {
@@ -22,13 +23,14 @@ class GuardianService
         private FileUploadService $fileUploadService,
         private PasswordGeneratorService $passwordGenerator,
         private GuardianRepository $guardianRepository,
-    ) {}
+    ) {
+    }
 
     public function paginate(Request $request): LengthAwarePaginator
     {
-        $sortBy  = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
+        $sortBy = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
         $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
-        $column  = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
+        $column = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
 
         return Guardian::query()
             ->leftJoin('users', 'users.id', '=', 'guardians.user_id')
@@ -38,20 +40,20 @@ class GuardianService
                 $term = '%' . $request->search . '%';
                 $q->where(function ($inner) use ($term) {
                     $inner->where('guardians.first_name', 'LIKE', $term)
-                          ->orWhere('guardians.last_name', 'LIKE', $term)
-                          ->orWhere('guardians.phone', 'LIKE', $term)
-                          ->orWhere('guardians.whatsapp_number', 'LIKE', $term)
-                          ->orWhere('users.email', 'LIKE', $term);
+                        ->orWhere('guardians.last_name', 'LIKE', $term)
+                        ->orWhere('guardians.phone', 'LIKE', $term)
+                        ->orWhere('guardians.whatsapp_number', 'LIKE', $term)
+                        ->orWhere('users.email', 'LIKE', $term);
                 });
             })
             ->when($request->status, fn($q) => $q->where('guardians.status', $request->status))
             ->when($request->login_access === 'has_login', fn($q) => $q->whereNotNull('users.id')->whereNull('users.disabled_at'))
             ->when($request->login_access === 'no_login', fn($q) => $q->where(fn($inner) => $inner->whereNull('users.id')->orWhereNotNull('users.disabled_at')))
-            ->when($request->children_count === '1',   fn($q) => $q->havingRaw('students_count = 1'))
+            ->when($request->children_count === '1', fn($q) => $q->havingRaw('students_count = 1'))
             ->when($request->children_count === '2-3', fn($q) => $q->havingRaw('students_count BETWEEN 2 AND 3'))
-            ->when($request->children_count === '4+',  fn($q) => $q->havingRaw('students_count >= 4'))
+            ->when($request->children_count === '4+', fn($q) => $q->havingRaw('students_count >= 4'))
             ->when($request->date_from, fn($q) => $q->whereDate('guardians.created_at', '>=', $request->date_from))
-            ->when($request->date_to,   fn($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
+            ->when($request->date_to, fn($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
             ->with(['photoFile', 'user'])
             ->orderBy($column, $sortDir)
             ->paginate($request->integer('per_page', 25));
@@ -158,23 +160,27 @@ class GuardianService
 
             $user = User::create([
                 'first_name' => $attributes['first_name'],
-                'last_name'  => $attributes['last_name'],
-                'email'      => $userEmail,
-                'school_id'  => $schoolId,
-                'password'   => $plainPassword,
+                'last_name' => $attributes['last_name'],
+                'email' => $userEmail,
+                'school_id' => $schoolId,
+                'password' => $plainPassword,
             ]);
+
+            $registrar = app(PermissionRegistrar::class);
+
+            $registrar->setPermissionsTeamId($schoolId);
 
             $user->assignRole('guardian');
 
             $guardian = $user->guardian()->create(array_merge($attributes, [
                 'school_id' => $schoolId,
-                'user_id'   => $user->id,
-                'status'    => $attributes['status'] ?? 'active',
+                'user_id' => $user->id,
+                'status' => $attributes['status'] ?? 'active',
             ]));
 
             return [
-                'guardian'       => $guardian->fresh(['user', 'photoFile']),
-                'user'           => $user,
+                'guardian' => $guardian->fresh(['user', 'photoFile']),
+                'user' => $user,
                 'plain_password' => $canLogin && $email ? $plainPassword : null,
             ];
         });
@@ -200,8 +206,8 @@ class GuardianService
         $student->guardians()->syncWithoutDetaching([
             $guardian->id => [
                 'relationship' => $relationship,
-                'is_primary'   => $isPrimary,
-                'can_login'    => $canLogin,
+                'is_primary' => $isPrimary,
+                'can_login' => $canLogin,
             ],
         ]);
 
@@ -209,8 +215,8 @@ class GuardianService
         if ($existingPivot) {
             $student->guardians()->updateExistingPivot($guardian->id, [
                 'relationship' => $relationship,
-                'is_primary'   => $isPrimary,
-                'can_login'    => $canLogin,
+                'is_primary' => $isPrimary,
+                'can_login' => $canLogin,
             ]);
 
             // can_login was upgraded from false → true for an existing link — re-issue creds.
@@ -233,6 +239,7 @@ class GuardianService
      */
     public function notifyGuardian(User $user, string $plainPassword, array $studentNames = []): void
     {
+        return;
         if (!$user->email || $this->isSyntheticEmail($user->email)) {
             return;
         }
@@ -241,14 +248,14 @@ class GuardianService
             $schoolName = $user->school?->name ?? config('app.name');
             $user->notify(new GuardianAccountCreatedNotification(
                 plainPassword: $plainPassword,
-                schoolName:    $schoolName,
-                loginUrl:      url('/login'),
-                studentNames:  $studentNames,
+                schoolName: $schoolName,
+                loginUrl: url('/login'),
+                studentNames: $studentNames,
             ));
         } catch (\Throwable $e) {
             Log::error('Failed to send guardian account notification', [
                 'user_id' => $user->id,
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -316,8 +323,8 @@ class GuardianService
 
             $merged = [
                 'relationship' => $changes['relationship'] ?? $existing->relationship,
-                'is_primary'   => array_key_exists('is_primary', $changes) ? (bool) $changes['is_primary'] : (bool) $existing->is_primary,
-                'can_login'    => array_key_exists('can_login', $changes) ? (bool) $changes['can_login'] : (bool) $existing->can_login,
+                'is_primary' => array_key_exists('is_primary', $changes) ? (bool) $changes['is_primary'] : (bool) $existing->is_primary,
+                'can_login' => array_key_exists('can_login', $changes) ? (bool) $changes['can_login'] : (bool) $existing->can_login,
             ];
 
             $student->guardians()->updateExistingPivot($guardian->id, $merged);
@@ -440,10 +447,10 @@ class GuardianService
             $plainPassword = $this->passwordGenerator->generate();
             $newUser = User::create([
                 'first_name' => $guardian->first_name,
-                'last_name'  => $guardian->last_name,
-                'email'      => $email,
-                'school_id'  => $guardian->school_id,
-                'password'   => $plainPassword,
+                'last_name' => $guardian->last_name,
+                'email' => $email,
+                'school_id' => $guardian->school_id,
+                'password' => $plainPassword,
             ]);
             $newUser->assignRole('guardian');
             $guardian->update(['user_id' => $newUser->id]);
@@ -462,7 +469,7 @@ class GuardianService
             $plainPassword = $this->passwordGenerator->generate();
             $user->update([
                 'disabled_at' => null,
-                'password'    => $plainPassword,
+                'password' => $plainPassword,
             ]);
 
             if (!$user->hasRole('guardian')) {
@@ -571,7 +578,7 @@ class GuardianService
             ->performedOn($guardian)
             ->causedBy(auth()->user())
             ->withProperties(array_merge([
-                'student_id'   => $student->id,
+                'student_id' => $student->id,
                 'student_uuid' => $student->uuid,
             ], $properties))
             ->event($event)

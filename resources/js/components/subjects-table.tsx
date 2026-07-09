@@ -1,13 +1,320 @@
 /* eslint-disable react-hooks/refs */
 
 import { Link } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import axios from 'axios';
+import { PackagePlus, PencilIcon, Trash2Icon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
+import { Modal } from '@/pages/admin/school-setup';
 import type {
     CurriculumSubject,
+    MarkingComponent,
     TeacherCurriculumSubject,
 } from '@/types/models';
+import {
+    AddComponentForm,
+    ComponentRow,
+    pct,
+    StatusPill,
+    termLabel,
+    totalWeight,
+    WeightBar,
+} from './teacher-subjects';
 
 // ─────────────────────────────────────────────────────────────────────────
+interface SubjectCardProps {
+    cs: CurriculumSubject | null;
+}
+
+function SubjectCard({ cs }: SubjectCardProps) {
+    const [expanded, setExpanded] = useState(false);
+    const [components, setComponents] = useState<MarkingComponent[]>(
+        cs?.marking_components ?? [],
+    );
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setComponents(cs?.marking_components ?? []);
+    }, [cs?.marking_components]);
+    const handleComponentChange = (newComponents: MarkingComponent[]) => {
+        setComponents(newComponents);
+    };
+
+    const handleAdd = async (name: string, weight: number) => {
+        try {
+            const res = await axios.post(
+                `/api/curriculum-subjects/${cs?.id}/marking-components`,
+                { name, weight },
+            );
+            const created: MarkingComponent = res.data.data;
+            handleComponentChange([...components, created]);
+            toast.success('Component added');
+        } catch {
+            toast.error('Failed to add component');
+        }
+    };
+
+    const handleSave = async (id: string, name: string, weight: number) => {
+        try {
+            const res = await axios.put(`/api/marking-components/${id}`, {
+                name,
+                weight,
+            });
+            const updated: MarkingComponent = res.data.data;
+            handleComponentChange(
+                components.map((c) => (c.id === id ? updated : c)),
+            );
+            toast.success('Component updated');
+        } catch {
+            toast.error('Failed to update component');
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            const response = await axios.delete(
+                `/api/marking-components/${id}`,
+            );
+
+            if (response.status === 200) {
+                handleComponentChange(components.filter((c) => c.id !== id));
+                toast.success('Component removed');
+            } else {
+                toast.error('Failed to delete component');
+            }
+        } catch {
+            toast.error('Failed to delete component');
+        }
+    };
+
+    const total = totalWeight(components);
+    const weightOk = Math.abs(total - 1) < 0.001;
+
+    if (!cs) {
+        return null;
+    }
+
+    return (
+        <div
+            className="card"
+            style={{
+                padding: 0,
+                overflow: 'hidden',
+                border: expanded
+                    ? '1.5px solid var(--brand, #3b82f6)'
+                    : '1px solid var(--border, #e5e7eb)',
+                transition: 'border-color 0.15s',
+            }}
+        >
+            {/* ── card header ─────────────────────────────────────── */}
+            <button
+                onClick={() => setExpanded((v) => !v)}
+                style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '14px 16px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                }}
+            >
+                {/* chevron */}
+                <span
+                    style={{
+                        fontSize: 12,
+                        color: 'var(--text3)',
+                        transition: 'transform 0.2s',
+                        transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                        flexShrink: 0,
+                    }}
+                >
+                    ▶
+                </span>
+
+                {/* subject name + code */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                        style={{
+                            fontWeight: 600,
+                            fontSize: 14,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            flexWrap: 'wrap',
+                        }}
+                    >
+                        {cs.subject.name}
+                        {cs.subject.code && (
+                            <span className="code-tag">{cs.subject.code}</span>
+                        )}
+                        {cs.students && cs.students.length > 0 && (
+                            <span className="code-tag">
+                                {cs.students.length} students
+                            </span>
+                        )}
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 12,
+                            color: 'var(--text3)',
+                            marginTop: 2,
+                        }}
+                    >
+                        {cs.curriculum?.academic_session?.name ?? '—'} ·{' '}
+                        <span className="code-tag" style={{ fontSize: 11 }}>
+                            {cs.curriculum?.class_level_arm?.name ?? '—'}
+                        </span>{' '}
+                        · {termLabel(cs.curriculum?.term ?? 1)} Term ·{' '}
+                        {cs.curriculum?.exam_type?.name ?? '—'}
+                    </div>
+                </div>
+
+                {/* right-side badges */}
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexShrink: 0,
+                    }}
+                >
+                    {components.length > 0 && (
+                        <span
+                            style={{
+                                fontSize: 11,
+                                fontFamily: 'var(--mono)',
+                                padding: '2px 7px',
+                                borderRadius: 4,
+                                background: weightOk
+                                    ? 'var(--green-subtle, #f0fdf4)'
+                                    : 'var(--amber-subtle, #fffbeb)',
+                                color: weightOk
+                                    ? 'var(--green, #16a34a)'
+                                    : 'var(--amber, #d97706)',
+                                fontWeight: 600,
+                            }}
+                        >
+                            {pct(total)}
+                        </span>
+                    )}
+                    {components.length === 0 && (
+                        <span
+                            style={{
+                                fontSize: 11,
+                                color: 'var(--text3)',
+                                fontStyle: 'italic',
+                            }}
+                        >
+                            No components
+                        </span>
+                    )}
+                    <StatusPill
+                        status={
+                            (cs.curriculum?.status ?? 'draft') as
+                                | 'draft'
+                                | 'active'
+                                | 'closed'
+                        }
+                    />
+                </div>
+            </button>
+
+            {/* ── expanded body ──────────────────────────────────── */}
+            {expanded && (
+                <div
+                    style={{
+                        padding: '0 16px 16px',
+                        borderTop: '1px solid var(--border, #e5e7eb)',
+                    }}
+                >
+                    {components.length > 0 && (
+                        <WeightBar components={components} />
+                    )}
+                    {/* view details for a single tcs */}
+                    {(cs?.students?.length ?? 0) > 0 &&
+                        (cs?.marking_components?.length ?? 0) > 0 &&
+                        Math.ceil(
+                            (components ?? []).reduce(
+                                (sum, component) =>
+                                    sum + Number(component?.weight ?? 0),
+                                0,
+                            ) * 100,
+                        ) === 100 && (
+                            <div className="my-2 flex justify-end">
+                                <Link
+                                    className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"
+                                    href={`/setup/curriculum-subject/${cs?.id}`}
+                                >
+                                    Assign Scores
+                                </Link>
+                            </div>
+                        )}
+
+                    <div
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
+                            marginTop: 12,
+                        }}
+                    >
+                        {components.map((mc, i) => (
+                            <ComponentRow
+                                key={mc.id}
+                                component={mc}
+                                colorIndex={i}
+                                onSave={handleSave}
+                                onDelete={handleDelete}
+                            />
+                        ))}
+                    </div>
+
+                    <AddComponentForm onAdd={handleAdd} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ManageSubjectModal({
+    cs,
+    onClose,
+}: {
+    cs: CurriculumSubject | null;
+    onClose: () => void;
+}) {
+    const [curriculumSubject, setCurriculumSubject] =
+        useState<CurriculumSubject | null>(null);
+    useEffect(() => {
+        async function fetchCs() {
+            if (cs) {
+                const response = await axios.get(
+                    `/api/curriculum-subjects/${cs.id}`,
+                );
+                setCurriculumSubject(response.data);
+            }
+        }
+        fetchCs();
+    }, [cs]);
+
+    return (
+        <Modal
+            title="Manage Subject"
+            onClose={onClose}
+            footer={
+                <>
+                    <button className="btn btn-outline" onClick={onClose}>
+                        Cancel
+                    </button>
+                </>
+            }
+        >
+            <SubjectCard cs={curriculumSubject}/>
+        </Modal>
+    );
+}
 
 // Drop this into the parent component and wire props in
 export function SubjectsTable({
@@ -35,6 +342,8 @@ export function SubjectsTable({
     const dragIndex = useRef<number | null>(null);
     const [dragOver, setDragOver] = useState<number | null>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [showManageSubject, setShowManageSubject] = useState(false);
+    const [cs, setCs] = useState<CurriculumSubject | null>(null);
 
     const handleDragStart = (idx: number) => {
         dragIndex.current = idx;
@@ -188,7 +497,7 @@ export function SubjectsTable({
                                         alignItems: 'center',
                                     }}
                                 >
-                                    {cs.teachers.map((t) => (
+                                    {cs.teachers?.map((t) => (
                                         <span
                                             key={t.id}
                                             style={{
@@ -250,11 +559,27 @@ export function SubjectsTable({
                                     style={{ justifyContent: 'flex-end' }}
                                 >
                                     <button
+                                        className="btn btn-primary btn-sm btn-icon"
+                                        onClick={() => {
+                                            setCs(cs);
+                                            setShowManageSubject(true);
+                                        }}
+                                        title="Manage subject"
+                                    >
+                                        <PackagePlus />
+                                    </button>
+                                    <Link
+                                        href={`/setup/curriculum-subject/${cs.id}`}
+                                        className="btn btn-secondary btn-sm btn-icon"
+                                    >
+                                        <PencilIcon />
+                                    </Link>
+                                    <button
                                         className="btn btn-danger btn-sm btn-icon"
                                         onClick={() => onRemoveSubject(cs)}
                                         title="Remove subject"
                                     >
-                                        🗑
+                                        <Trash2Icon />
                                     </button>
                                 </div>
                             </td>
@@ -262,6 +587,15 @@ export function SubjectsTable({
                     );
                 })}
             </tbody>
+            {showManageSubject && (
+                <ManageSubjectModal
+                    cs={cs}
+                    onClose={() => {
+                        setShowManageSubject(false);
+                        setCs(null);
+                    }}
+                />
+            )}
         </table>
     );
 }

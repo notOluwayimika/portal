@@ -2,9 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentStatusEnum;
+use App\Enums\TermStatusEnum;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
+use App\Http\Resources\MarkingComponentResource;
+use App\Jobs\BackfillPastTermJob;
+use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
+use App\Models\MarkingComponent;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
+use App\Models\StudentResult;
+use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
 use Illuminate\Http\Request;
@@ -14,7 +24,7 @@ class CurriculumController extends Controller
 {
     public function show(Curriculum $curriculum)
     {
-        $curriculum->load('curriculumSubjects.teacherAssignments.teacher');
+        $curriculum->load(['curriculumSubjects.teacherAssignments.teacher']);
         return response()->json(new CurriculumResource($curriculum));
     }
     public function store(Request $request)
@@ -26,7 +36,9 @@ class CurriculumController extends Controller
                 'exam_type_id' => 'required|string',
                 'min_subjects' => 'required|integer|min:1',
                 'status' => 'required|string|in:active,draft,closed',
+                'is_ccm' => 'boolean',
             ]);
+            \Log::error($request->all());
 
             $school = auth()->user()->school;
             $term = Term::where('uuid', $request->term_id)->first();
@@ -39,6 +51,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => $examType->id,
                 'min_subjects' => $request->min_subjects,
                 'status' => $request->status,
+                'is_ccm' => $request->is_ccm,
             ]);
             return response()->json(new CurriculumResource($curriculum), 201);
         } catch (\Throwable $th) {
@@ -57,6 +70,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => 'required|string',
                 'min_subjects' => 'required|integer|min:1',
                 'status' => 'required|string|in:active,draft,closed',
+                'is_ccm' => 'boolean',
             ]);
 
             $school = auth()->user()->school;
@@ -70,6 +84,7 @@ class CurriculumController extends Controller
                 'exam_type_id' => $examType->id,
                 'min_subjects' => $request->min_subjects,
                 'status' => $request->status,
+                'is_ccm' => $request->is_ccm,
             ]);
 
             return response()->json(new CurriculumResource($curriculum), 200);
@@ -111,7 +126,12 @@ class CurriculumController extends Controller
         if ($request->has('status')) {
             $curricula = $curricula->where('status', $request->status);
         }
-
+        if ($request->has('is_ccm')) {
+            $curricula = $curricula->where('is_ccm', $request->boolean('is_ccm'));
+        }
+        if (!$request->has('status')) {
+            $curricula->where('status', 'active');
+        }
         $curricula = $curricula->paginate($request->integer('per_page', $limit));
         return response()->json([
             "curricula" => CurriculumResource::collection($curricula),
@@ -159,7 +179,7 @@ class CurriculumController extends Controller
                 'is_compulsory' => 'boolean',
                 'display_order' => 'integer|min:1',
             ]);
-
+            $ccm = $curriculum->is_ccm;
             $subject = Subject::where('uuid', $request->subject_id)->first();
 
             $curriculumSubject = $curriculum->curriculumSubjects()->create([
@@ -167,6 +187,17 @@ class CurriculumController extends Controller
                 'is_compulsory' => $request->is_compulsory,
                 'display_order' => $request->display_order,
             ]);
+            if ($request->is_compulsory) {
+                $students = $curriculum->studentCurricula;
+                foreach ($students as $student) {
+                    StudentSubject::updateOrCreate([
+                        'student_curriculum_id' => $student->id,
+                        'curriculum_subject_id' => $curriculumSubject->id,
+                    ], [
+                        'status' => 'active'
+                    ]);
+                }
+            }
 
             $curriculumSubject->resultStatus()->create(
                 [
@@ -176,18 +207,9 @@ class CurriculumController extends Controller
                 ]
             );
             // marking components
-            $marking_components = [
-                [
-                    "name" => "Continuous Assessment",
-                    "weight" => 0.3
-                ],
-                [
-                    "name" => "Examination",
-                    "weight" => 0.7
-                ],
-            ];
-            foreach ($marking_components as $component) {
-                $curriculumSubject->markingComponents()->create($component);
+            $markingComponents = MarkingComponentResource::collection(MarkingComponent::global()->where('is_ccm', $ccm)->get());
+            foreach ($markingComponents as $component) {
+                $curriculumSubject->markingComponents()->create(["name" => $component->name, "weight" => $component->weight, "school_id" => auth()->user()->school_id]);
             }
 
             return response()->json(new CurriculumSubjectResource($curriculumSubject), 201);
@@ -197,4 +219,112 @@ class CurriculumController extends Controller
         }
     }
 
+    public function moveFromCcm(Curriculum $curriculum)
+    {
+        if (!$curriculum->is_ccm) {
+            return response()->json(['error' => 'Curriculum is not a CCM curriculum'], 422);
+        }
+
+        MoveFromCcmJob::dispatch($curriculum, auth()->id());
+
+        return response()->json(['message' => 'Migration to non-CCM has been queued'], 202);
+    }
+
+    public function backfillTerm(Request $request, Curriculum $curriculum)
+    {
+        $request->validate([
+            'term_id' => 'required|string|exists:terms,uuid',
+        ]);
+
+        if ($curriculum->is_ccm) {
+            return response()->json(['error' => 'CCM curricula cannot be backfilled'], 422);
+        }
+        if ($curriculum->status !== 'active') {
+            return response()->json(['error' => 'Only active curricula can be used as a backfill source'], 422);
+        }
+
+        $term = Term::where('uuid', $request->term_id)->first();
+
+        if ($term->academicSession?->school_id !== auth()->user()->school_id) {
+            return response()->json(['error' => 'Term not found'], 404);
+        }
+        if ($term->id === $curriculum->term_id) {
+            return response()->json(['error' => 'Cannot backfill into the curriculum\'s own term'], 422);
+        }
+        if ($term->status !== TermStatusEnum::COMPLETED) {
+            return response()->json(['error' => 'Only completed terms can be backfilled'], 422);
+        }
+
+        BackfillPastTermJob::dispatch($curriculum, $term, auth()->id());
+
+        return response()->json(['message' => 'Past-term backfill has been queued'], 202);
+    }
+
+    public function queuedCurriculums()
+    {
+        $curriculumIds = [];
+
+        $jobs = DB::table('jobs')
+            ->select('payload')
+            ->get();
+
+        foreach ($jobs as $job) {
+            $payload = json_decode($job->payload, true);
+
+            if (
+                !in_array($payload['displayName'] ?? null, [MoveFromCcmJob::class, BackfillPastTermJob::class], true)
+            ) {
+                continue;
+            }
+
+            $command = $payload['data']['command'] ?? '';
+
+            preg_match(
+                '/s:21:"App\\\\Models\\\\Curriculum";s:2:"id";i:(\d+)/',
+                $command,
+                $matches
+            );
+
+            if (!empty($matches[1])) {
+                $curriculumIds[] = (int) $matches[1];
+            }
+        }
+
+        $uuids = Curriculum::query()
+            ->whereIn('id', array_unique($curriculumIds))
+            ->pluck('uuid')
+            ->values();
+
+        return response()->json([
+            'curriculum_uuids' => $uuids,
+        ]);
+    }
+
+    public function activeResultStatus(Student $student, Curriculum $curriculum)
+    {
+        $isAvailable = true;
+        $studentCurriculum = StudentCurriculum::where('curriculum_id', $curriculum->id)->where('student_id', $student->id)->first();
+        $subjectsOffered = $studentCurriculum->activeSubjects;
+        foreach ($subjectsOffered as $subject) {
+            $result = StudentResult::where('student_id', $student->id)->where('curriculum_subject_id', $subject->curriculum_subject_id)->first();
+            if (!$result) {
+                $isAvailable = false;
+                break;
+            }
+        }
+        if ($subjectsOffered->isEmpty()) {
+            $isAvailable = false;
+        }
+
+        if ($isAvailable && auth()->user()->hasRole('guardian') && $studentCurriculum->status === StudentStatusEnum::ACTIVE) {
+            $deadline = $studentCurriculum->curriculum?->term?->result_visible_at;
+            if ($deadline && !now()->greaterThan($deadline)) {
+                $isAvailable = false;
+            }
+        }
+
+        return response()->json(['available' => $isAvailable]);
+
+
+    }
 }

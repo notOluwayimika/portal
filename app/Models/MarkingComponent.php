@@ -7,16 +7,19 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class MarkingComponent extends Model
 {
-    protected $fillable = ['curriculum_subject_id', 'name', 'weight'];
+    use LogsActivity;
+    protected $fillable = ['curriculum_subject_id', 'name', 'weight', 'school_id', 'is_ccm'];
 
-    protected $casts = ['weight' => 'decimal:3'];
+    protected $casts = ['weight' => 'decimal:3', 'is_ccm' => 'boolean'];
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -31,5 +34,19 @@ class MarkingComponent extends Model
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
+    }
+
+    public function scopeGlobal($query)
+    {
+        return $query->whereNull('curriculum_subject_id');
+    }
+
+    protected static $logName = 'setup';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['name', 'weight'])
+            ->logOnlyDirty();
     }
 }

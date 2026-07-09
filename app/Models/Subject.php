@@ -8,15 +8,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Subject extends Model
 {
+    use LogsActivity;
     protected $fillable = ['school_id', 'name', 'code'];
 
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope());
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -31,5 +34,13 @@ class Subject extends Model
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);
+    }
+    protected static $logName = 'academics';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['name', 'code'])
+            ->logOnlyDirty();
     }
 }

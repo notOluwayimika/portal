@@ -7,9 +7,12 @@ use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class GradeBoundary extends Model
 {
+    use LogsActivity;
     protected $fillable = ['school_id', 'exam_type_id', 'min_score', 'max_score', 'grade', 'label', 'grade_point'];
 
     protected $casts = [
@@ -49,5 +52,14 @@ class GradeBoundary extends Model
             ->where('max_score', '>', $totalScore)
             ->orderByRaw('exam_type_id IS NULL ASC') // exam-type-specific first
             ->value('grade');
+    }
+
+    protected static $logName = 'academics';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['min_score', 'max_score', 'grade', 'grade_point', 'label'])
+            ->logOnlyDirty();
     }
 }

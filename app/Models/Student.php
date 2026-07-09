@@ -25,7 +25,21 @@ class Student extends Model
         'gender',
         'date_of_birth',
         'photo_id',
+        'sport_house_id',
+        'scholarship_id',
+        'admission_date',
+        'address',
+        'nationality',
+        'other_nationality',
+        'state_of_origin',
+        'religion',
+        'previous_school',
     ];
+
+    protected $casts = [
+        'admission_date' => 'date',
+    ];
+
 
     public function getRouteKeyName()
     {
@@ -77,6 +91,17 @@ class Student extends Model
     public function primaryGuardian(): BelongsToMany
     {
         return $this->guardians()->wherePivot('is_primary', true);
+    }
+
+    public function sportHouse(): BelongsTo
+    {
+        return $this->belongsTo(SportHouse::class);
+    }
+
+
+    public function scholarship(): BelongsTo
+    {
+        return $this->belongsTo(Scholarship::class);
     }
 
     public function getPhotoAttribute(): ?string

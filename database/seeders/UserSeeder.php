@@ -40,10 +40,10 @@ class UserSeeder extends Seeder
 
         // Create head of school user
         $headOfSchool = User::firstOrCreate([
-            'email' => 'head@example.com',
+            'email' => 'adandukwe@brookstoneng.org',
         ], [
-            'first_name' => 'Head',
-            'last_name' => 'of School',
+            'first_name' => 'Ada',
+            'last_name' => 'Ndukwe',
             'password' => Hash::make('password'),
             'school_id' => $school->id,
         ]);

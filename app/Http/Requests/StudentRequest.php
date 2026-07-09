@@ -65,82 +65,92 @@ class StudentRequest extends FormRequest
             'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],
             'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
 
+            'admission_date' => ['nullable', 'date'],
+            'address' => ['nullable', 'string'],
+            'nationality' => ['nullable', 'string', 'max:255'],
+            'other_nationality' => ['nullable', 'string', 'max:255'],
+            'state_of_origin' => ['nullable', 'string', 'max:255'],
+            'religion' => ['nullable', 'string', 'max:255'],
+            'previous_school' => ['nullable', 'string', 'max:255'],
+            'sport_house_id' => ['nullable', 'integer', 'exists:sport_houses,id'],
+            'scholarship_id' => ['nullable', 'integer', 'exists:scholarships,id'],
+
             // Guardians array — only required on creation. On update, guardians are managed
             // via the dedicated attach/detach endpoints; the array is optional here.
-            'guardians'                     => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1', new ExactlyOnePrimaryGuardian()],
-            'guardians.*.mode'              => ['required_with:guardians', 'in:new,existing'],
-            'guardians.*.relationship'      => ['required_with:guardians', 'string', Rule::in(GuardianRelationshipEnum::values())],
-            'guardians.*.is_primary'        => ['required_with:guardians', 'boolean'],
-            'guardians.*.can_login'         => ['required_with:guardians', 'boolean'],
+            'guardians' => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1', new ExactlyOnePrimaryGuardian()],
+            'guardians.*.mode' => ['required_with:guardians', 'in:new,existing'],
+            'guardians.*.relationship' => ['required_with:guardians', 'string', Rule::in(GuardianRelationshipEnum::values())],
+            'guardians.*.is_primary' => ['required_with:guardians', 'boolean'],
+            'guardians.*.can_login' => ['required_with:guardians', 'boolean'],
 
             // Case B (existing) — at least one of guardian_id (uuid) or identifier (email/phone).
             // The "at least one" rule is enforced in withValidator() below.
-            'guardians.*.guardian_id'       => ['nullable', 'uuid'],
-            'guardians.*.identifier'        => ['nullable', 'string', 'max:255'],
+            'guardians.*.guardian_id' => ['nullable', 'uuid'],
+            'guardians.*.identifier' => ['nullable', 'string', 'max:255'],
 
             // Case A (new) — full nested guardian payload.
-            'guardians.*.first_name'        => ['required_if:guardians.*.mode,new', 'string', 'max:255'],
-            'guardians.*.last_name'         => ['required_if:guardians.*.mode,new', 'string', 'max:255'],
-            'guardians.*.middle_name'      => ['nullable', 'string', 'max:255'],
-            'guardians.*.phone'             => ['required_if:guardians.*.mode,new', 'string', 'max:50'],
-            'guardians.*.whatsapp_number'   => ['nullable', 'string', 'max:50'],
-            'guardians.*.gender'            => ['nullable', 'string', 'in:male,female,other'],
-            'guardians.*.email'             => ['nullable', 'email', 'max:255'],
-            'guardians.*.city'              => ['nullable', 'string', 'max:255'],
-            'guardians.*.state'             => ['nullable', 'string', 'max:255'],
-            'guardians.*.country'           => ['nullable', 'string', 'max:255'],
-            'guardians.*.postal_code'       => ['nullable', 'string', 'max:50'],
-            'guardians.*.occupation'        => ['nullable', 'string', 'max:255'],
-            'guardians.*.employer_name'     => ['nullable', 'string', 'max:255'],
-            'guardians.*.marital_status'    => ['nullable', 'string', Rule::in(MaritalStatusEnum::values())],
+            'guardians.*.first_name' => ['required_if:guardians.*.mode,new', 'string', 'max:255'],
+            'guardians.*.last_name' => ['required_if:guardians.*.mode,new', 'string', 'max:255'],
+            'guardians.*.middle_name' => ['nullable', 'string', 'max:255'],
+            'guardians.*.phone' => ['required_if:guardians.*.mode,new', 'string', 'max:50'],
+            'guardians.*.whatsapp_number' => ['nullable', 'string', 'max:50'],
+            'guardians.*.gender' => ['nullable', 'string', 'in:male,female,other'],
+            'guardians.*.email' => ['nullable', 'email', 'max:255'],
+            'guardians.*.city' => ['nullable', 'string', 'max:255'],
+            'guardians.*.state' => ['nullable', 'string', 'max:255'],
+            'guardians.*.country' => ['nullable', 'string', 'max:255'],
+            'guardians.*.postal_code' => ['nullable', 'string', 'max:50'],
+            'guardians.*.occupation' => ['nullable', 'string', 'max:255'],
+            'guardians.*.employer_name' => ['nullable', 'string', 'max:255'],
+            'guardians.*.marital_status' => ['nullable', 'string', Rule::in(MaritalStatusEnum::values())],
             'guardians.*.emergency_contact' => ['nullable', 'string', 'max:255'],
-            'guardians.*.id_type'           => ['nullable', 'string', Rule::in(GuardianIdTypeEnum::values())],
-            'guardians.*.id_number'         => ['nullable', 'string', 'max:255'],
-            'guardians.*.id_expiry_date'    => ['nullable', 'date'],
+            'guardians.*.id_type' => ['nullable', 'string', Rule::in(GuardianIdTypeEnum::values())],
+            'guardians.*.id_number' => ['nullable', 'string', 'max:255'],
+            'guardians.*.id_expiry_date' => ['nullable', 'date'],
         ];
     }
 
     public function messages(): array
     {
         $fields = [
-            'mode'              => 'mode',
-            'relationship'      => 'relationship',
-            'is_primary'        => 'primary flag',
-            'can_login'         => 'login access',
-            'guardian_id'       => 'guardian',
-            'identifier'        => 'identifier',
-            'first_name'        => 'first name',
-            'last_name'         => 'last name',
-            'middle_name'       => 'middle name',
-            'phone'             => 'phone',
-            'whatsapp_number'   => 'WhatsApp number',
-            'gender'            => 'gender',
-            'email'             => 'email',
-            'city'              => 'city',
-            'state'             => 'state',
-            'country'           => 'country',
-            'postal_code'       => 'postal code',
-            'occupation'        => 'occupation',
-            'employer_name'     => 'employer name',
-            'marital_status'    => 'marital status',
+            'mode' => 'mode',
+            'relationship' => 'relationship',
+            'is_primary' => 'primary flag',
+            'can_login' => 'login access',
+            'guardian_id' => 'guardian',
+            'identifier' => 'identifier',
+            'first_name' => 'first name',
+            'last_name' => 'last name',
+            'middle_name' => 'middle name',
+            'phone' => 'phone',
+            'whatsapp_number' => 'WhatsApp number',
+            'gender' => 'gender',
+            'email' => 'email',
+            'city' => 'city',
+            'state' => 'state',
+            'country' => 'country',
+            'postal_code' => 'postal code',
+            'occupation' => 'occupation',
+            'employer_name' => 'employer name',
+            'marital_status' => 'marital status',
             'emergency_contact' => 'emergency contact',
-            'id_type'           => 'ID type',
-            'id_number'         => 'ID number',
-            'id_expiry_date'    => 'ID expiry date',
+            'id_type' => 'ID type',
+            'id_number' => 'ID number',
+            'id_expiry_date' => 'ID expiry date',
         ];
 
         $messages = [];
         foreach ($fields as $key => $label) {
-            $messages["guardians.*.{$key}.required"]      = "The {$label} field is required.";
+            $messages["guardians.*.{$key}.required"] = "The {$label} field is required.";
             $messages["guardians.*.{$key}.required_with"] = "The {$label} field is required when guardians is present.";
-            $messages["guardians.*.{$key}.required_if"]   = "The {$label} field is required.";
-            $messages["guardians.*.{$key}.in"]            = "The selected {$label} is invalid.";
-            $messages["guardians.*.{$key}.boolean"]       = "The {$label} field must be true or false.";
-            $messages["guardians.*.{$key}.string"]        = "The {$label} field must be a string.";
-            $messages["guardians.*.{$key}.email"]         = "The {$label} must be a valid email address.";
-            $messages["guardians.*.{$key}.max"]           = "The {$label} field must not exceed :max characters.";
-            $messages["guardians.*.{$key}.uuid"]          = "The {$label} field must be a valid UUID.";
-            $messages["guardians.*.{$key}.date"]          = "The {$label} field must be a valid date.";
+            $messages["guardians.*.{$key}.required_if"] = "The {$label} field is required.";
+            $messages["guardians.*.{$key}.in"] = "The selected {$label} is invalid.";
+            $messages["guardians.*.{$key}.boolean"] = "The {$label} field must be true or false.";
+            $messages["guardians.*.{$key}.string"] = "The {$label} field must be a string.";
+            $messages["guardians.*.{$key}.email"] = "The {$label} must be a valid email address.";
+            $messages["guardians.*.{$key}.max"] = "The {$label} field must not exceed :max characters.";
+            $messages["guardians.*.{$key}.uuid"] = "The {$label} field must be a valid UUID.";
+            $messages["guardians.*.{$key}.date"] = "The {$label} field must be a valid date.";
         }
 
         return $messages;
@@ -152,9 +162,9 @@ class StudentRequest extends FormRequest
             $guardians = (array) $this->input('guardians', []);
 
             foreach ($guardians as $i => $entry) {
-                $mode      = $entry['mode']      ?? null;
-                $canLogin  = filter_var($entry['can_login'] ?? false, FILTER_VALIDATE_BOOLEAN);
-                $email     = $entry['email']     ?? null;
+                $mode = $entry['mode'] ?? null;
+                $canLogin = filter_var($entry['can_login'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $email = $entry['email'] ?? null;
 
                 if ($mode === 'new' && $canLogin && empty($email)) {
                     $v->errors()->add(

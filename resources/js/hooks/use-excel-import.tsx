@@ -35,7 +35,7 @@ export const useExcelImport = () => {
         const arrayOfObjectsWithLowercaseKeys = jsonData.map((obj) =>
           Object.fromEntries(
             Object.entries(obj).map(([key, value]) => [
-              key.toLowerCase().replace(' ', '_'),
+              key.toLowerCase().replaceAll(' ', '_'),
               value,
             ])
           )

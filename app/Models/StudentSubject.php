@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
-use Spatie\Activitylog\Support\LogOptions;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class StudentSubject extends Model
 {
@@ -24,17 +24,19 @@ class StudentSubject extends Model
         'drop_reason',
         'restored_by_user_id',
         'restored_at',
+        'comment',
+        'commented_by'
     ];
 
     protected $casts = [
-        'status'       => StudentSubjectStatus::class,
-        'dropped_at'   => 'datetime',
-        'restored_at'  => 'datetime',
+        'status' => StudentSubjectStatus::class,
+        'dropped_at' => 'datetime',
+        'restored_at' => 'datetime',
     ];
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -98,6 +100,11 @@ class StudentSubject extends Model
         return $this->status === StudentSubjectStatus::Dropped;
     }
 
+    public function commentedBy(): BelongsTo
+    {
+        return $this->belongsTo(Teacher::class, 'commented_by');
+    }
+
     /* ── Activity Log ────────────────────────────────────────────────────── */
 
     protected static $logName = 'academics';
@@ -106,29 +113,28 @@ class StudentSubject extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['status', 'drop_reason', 'dropped_at', 'restored_at'])
-            ->logOnlyDirty()
-            ->dontLogEmptyChanges();
+            ->logOnlyDirty();
     }
 
     public function beforeActivityLogged(\Spatie\Activitylog\Models\Activity $activity, string $eventName): void
     {
-        $subjectName  = optional($this->curriculumSubject?->subject)->name ?? 'Unknown subject';
-        $studentName  = optional($this->studentCurriculum?->student)->full_name ?? 'Unknown student';
-        $curriculum   = optional($this->studentCurriculum?->curriculum)->full_name ?? '';
+        $subjectName = optional($this->curriculumSubject?->subject)->name ?? 'Unknown subject';
+        $studentName = optional($this->studentCurriculum?->student)->full_name ?? 'Unknown student';
+        $curriculum = optional($this->studentCurriculum?->curriculum)->full_name ?? '';
 
         $activity->description = match ($eventName) {
             'created' => "Added {$subjectName} to {$studentName}'s curriculum",
             'updated' => $this->status === StudentSubjectStatus::Dropped
-                ? "Dropped {$subjectName} from {$studentName}'s curriculum"
-                : "Restored {$subjectName} for {$studentName}",
-            default   => "{$eventName} {$subjectName} for {$studentName}",
+            ? "Dropped {$subjectName} from {$studentName}'s curriculum"
+            : "Restored {$subjectName} for {$studentName}",
+            default => "{$eventName} {$subjectName} for {$studentName}",
         };
 
         $activity->properties = $activity->properties->merge([
-            'subject_name'    => $subjectName,
-            'student_name'    => $studentName,
+            'subject_name' => $subjectName,
+            'student_name' => $studentName,
             'curriculum_name' => $curriculum,
-            'actor_role'      => optional(auth()->user())->roles?->first()?->name,
+            'actor_role' => optional(auth()->user())->roles?->first()?->name,
         ]);
     }
 }

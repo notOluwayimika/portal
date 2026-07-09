@@ -1,11 +1,19 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    AlertTriangle,
+    Bell,
     BookOpen,
     Building2,
+    ClipboardCopyIcon,
     ClipboardList,
+    FileSpreadsheet,
     GraduationCap,
+    Heart,
     History,
     LayoutDashboard,
+    MessageSquare,
+    RefreshCw,
+    Shield,
     UserCog,
     Users,
 } from 'lucide-react';
@@ -37,6 +45,75 @@ const dashboardGroup: NavGroup = {
         },
     ],
 };
+
+const headOfSchoolNavGroups: NavGroup[] = [
+    {
+        label: 'Head of School',
+        items: [
+            {
+                title: 'Review Results',
+                href: '/setup/review/results',
+                icon: ClipboardList,
+            },
+            {
+                title: 'Pending Results',
+                href: '/setup/review/pending',
+                icon: ClipboardCopyIcon,
+            },
+            {
+                title: 'Student Comments',
+                href: '/head-of-school/comments',
+                icon: MessageSquare,
+            },
+            {
+                title: 'Outstanding Comments',
+                href: '/outstanding-comments',
+                icon: AlertTriangle,
+            },
+        ],
+    },
+    {
+        label: 'Reports',
+        items: [
+            {
+                title: 'Results per Class',
+                href: '/reports/results-per-class',
+                icon: ClipboardList,
+            },
+            {
+                title: 'Broadsheets',
+                href: '/reports/broadsheets',
+                icon: FileSpreadsheet,
+            },
+        ],
+    },
+];
+
+const boardingParentNavGroups: NavGroup[] = [
+    {
+        label: 'Boarding Parent',
+        items: [
+            {
+                title: 'Behavioral Assessments',
+                href: '/boarding-parent/behavioral-assessments',
+                icon: Heart,
+            },
+        ],
+    },
+];
+
+const formTeacherNavGroups: NavGroup[] = [
+    {
+        label: 'Form Teacher',
+        items: [
+            {
+                title: 'Student Comments',
+                href: '/form-teacher/comments',
+                icon: MessageSquare,
+            },
+        ],
+    },
+];
 
 const adminNavGroups: NavGroup[] = [
     {
@@ -72,6 +149,56 @@ const adminNavGroups: NavGroup[] = [
                 href: '/setup/review/results',
                 icon: ClipboardList,
             },
+            {
+                title: 'Pending Results',
+                href: '/setup/review/pending',
+                icon: ClipboardCopyIcon,
+            },
+            {
+                title: 'Head of Schools',
+                href: '/setup/head-of-schools',
+                icon: GraduationCap,
+            },
+            {
+                title: 'Teacher Assignments',
+                href: '/setup/teacher-assignments',
+                icon: Shield,
+            },
+            {
+                title: 'CCM Curricula',
+                href: '/setup/curricula-ccm',
+                icon: RefreshCw,
+            },
+            {
+                title: 'Backfill Past Terms',
+                href: '/setup/curricula-backfill',
+                icon: History,
+            },
+            {
+                title: 'Outstanding Comments',
+                href: '/outstanding-comments',
+                icon: AlertTriangle,
+            },
+            {
+                title: 'Notices',
+                href: '/notices',
+                icon: Bell,
+            },
+        ],
+    },
+    {
+        label: 'Reports',
+        items: [
+            {
+                title: 'Results per Class',
+                href: '/reports/results-per-class',
+                icon: ClipboardList,
+            },
+            {
+                title: 'Broadsheets',
+                href: '/reports/broadsheets',
+                icon: FileSpreadsheet,
+            },
         ],
     },
     {
@@ -89,11 +216,11 @@ const adminNavGroups: NavGroup[] = [
 const guardianNavGroups: NavGroup[] = [
     {
         items: [
-            {
-                title: 'My Dashboard',
-                href: '/parent/dashboard',
-                icon: LayoutDashboard,
-            },
+            // {
+            //     title: 'My Dashboard',
+            //     href: '/parent/dashboard',
+            //     icon: LayoutDashboard,
+            // },
             {
                 title: 'My Wards',
                 href: '/parent/wards',
@@ -109,37 +236,50 @@ export function AppSidebar() {
     const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
         auth: { roles: string[] };
     }>().props;
-    const role = auth.roles[0];
+    const roles = auth.roles;
 
     const navGroups = useMemo(() => {
-        if (role === 'guardian') {
-            return guardianNavGroups;
+        const groups: NavGroup[] = [dashboardGroup];
+
+        if (roles.includes('guardian')) {
+            groups.push(...guardianNavGroups);
         }
 
-        if (role === 'teacher') {
+        if (roles.includes('head_of_school')) {
+            groups.push(...headOfSchoolNavGroups);
+        }
+
+        if (roles.includes('boarding_parent')) {
+            groups.push(...boardingParentNavGroups);
+        }
+
+        if (roles.includes('form_teacher')) {
+            groups.push(...formTeacherNavGroups);
+        }
+
+        if (roles.includes('teacher')) {
             const teacher = auth.user.teacher as Teacher | undefined;
-            const teacherGroups: NavGroup[] = [dashboardGroup];
+
             if (teacher) {
-                teacherGroups.push({
+                groups.push({
                     label: 'Teaching',
                     items: [
                         {
                             title: 'My Subjects',
-                            href: `/setup/teacher/${teacher.id}`,
+                            href: `/setup/teacher/${teacher.uuid}`,
                             icon: BookOpen,
                         },
                     ],
                 });
             }
-            return teacherGroups;
         }
 
-        if (role === 'admin' || role === 'head_of_school') {
-            return [dashboardGroup, ...adminNavGroups];
+        if (roles.includes('admin')) {
+            groups.push(...adminNavGroups);
         }
 
-        return [dashboardGroup];
-    }, [role, auth.user.teacher]);
+        return groups;
+    }, [roles, auth.user.teacher]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

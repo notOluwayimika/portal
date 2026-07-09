@@ -9,19 +9,27 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class CurriculumSubject extends Model
 {
+    use LogsActivity;
     protected $fillable = [
-        'curriculum_id', 'subject_id', 'is_compulsory', 'display_order',
-        'active', 'archived_at', 'archived_by_user_id',
+        'curriculum_id',
+        'subject_id',
+        'is_compulsory',
+        'display_order',
+        'active',
+        'archived_at',
+        'archived_by_user_id',
     ];
 
     protected $casts = [
-        'is_compulsory'  => 'boolean',
-        'display_order'  => 'integer',
-        'active'         => 'boolean',
-        'archived_at'    => 'datetime',
+        'is_compulsory' => 'boolean',
+        'display_order' => 'integer',
+        'active' => 'boolean',
+        'archived_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -96,5 +104,32 @@ class CurriculumSubject extends Model
     public function isApproved(): bool
     {
         return $this->resultStatus && $this->resultStatus->status === 'approved';
+    }
+
+    protected static $logName = 'results';
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['is_compulsory', 'active', 'archived_at', 'display_order'])
+            ->logOnlyDirty();
+    }
+    public function beforeActivityLogged(Activity $activity, string $eventName): void
+    {
+        $subjectName = optional($this->subject)->name ?? 'Unknown subject';
+        $curriculum = optional($this->curriculum)->full_name ?? '';
+
+        $activity->description = match ($eventName) {
+            'created' => "created {$subjectName} for {$curriculum}",
+            'updated' => "updated {$subjectName} for {$curriculum}",
+            default => "{$eventName} {$subjectName} for {$curriculum}",
+        };
+
+        $activity->properties = $activity->properties->merge([
+            'subject_name' => $subjectName,
+            'curriculum_name' => $curriculum,
+            'actor_role' => optional(auth()->user())->roles?->first()?->name,
+        ]);
+
     }
 }

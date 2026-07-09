@@ -10,28 +10,28 @@ import {
     Star,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
+import { Button } from '@/components/ui/button';
+import type { StudentCurriculum } from '@/types/models';
+import { NoticesCard, QuickContactCard } from './dashboard';
 
 // ---------- Types ----------
-// Mirrors the columns on the `students` table + the pivot fields
-// from `guardian_student` that are useful in the guardian's view.
 export type Gender = 'male' | 'female' | 'other';
 
 export interface Ward {
-    id: string; // students.id (uuid)
+    id: string;
     admission_number: string | null;
     first_name: string;
     last_name: string;
     middle_name?: string | null;
     gender?: Gender | null;
-    date_of_birth?: string | null; // ISO date
+    date_of_birth?: string | null;
     photo?: string | null;
 
-    // Pivot data (from guardian_student)
     relationship: string;
     is_primary: boolean;
 
-    // Optional convenience fields you may eagerly load on the backend
-    current_class?: string | null;
+    current_class?: StudentCurriculum | null;
     school?: { id: number | string; name: string } | null;
 }
 
@@ -80,11 +80,44 @@ const formatDob = (dob?: string | null) => {
 export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
     const { auth } = usePage().props;
+    const [activeResultAvailable, setActiveResultAvailable] = useState(true);
+    const [latestAvailableResult, setLatestAvailableResult] =
+        useState<StudentCurriculum | null>(null);
+    const CONTACTS = [
+        {
+            office: 'Admin',
+            phone: '08078855452',
+            email: 'admin@brookstoneng.org',
+        },
+        {
+            office: 'Accounts',
+            phone: '08078856210',
+            email: 'accounts@brookstoneng.org',
+        },
+        {
+            office: 'Principal',
+            phone: '08102791331',
+            email: 'principal@brookstoneng.org',
+        },
+        {
+            office: 'IFY PHC',
+            phone: '07057555058',
+            email: 'headfoundation@brookstoneng.org',
+        },
+        {
+            office: 'IFY Abuja',
+            phone: '08070653533',
+            email: 'centremanagerabuja@brookstoneify.org',
+        },
+    ];
+
+    const [notices, setNotices] = useState<any[]>([]);
+    const [noticesLoading, setNoticesLoading] = useState(true);
+
     const guardianId = auth.user?.guardian?.uuid;
+
     useEffect(() => {
-        // Simulate an API call to fetch wards
         const fetchWards = async () => {
-            // Replace this with your actual API call
             const response = await axios.get(
                 `/api/guardians/${guardianId}/students`,
             );
@@ -92,7 +125,33 @@ export default function Wards() {
             setWards(data.data);
         };
 
+        const fetchNotices = async () => {
+            setNoticesLoading(true);
+
+            try {
+                const response = await axios.get('/api/guardian/notices');
+
+                setNotices(
+                    (response.data.data ?? []).map((n: any) => ({
+                        id: n.id,
+                        type: n.type,
+                        title: n.title,
+                        body: n.body,
+                        time: n.time,
+                        category: n.category,
+                        badge_colour: n.badge_colour,
+                        for_students: n.for_students,
+                    })),
+                );
+            } catch {
+                // silent
+            } finally {
+                setNoticesLoading(false);
+            }
+        };
+
         fetchWards();
+        fetchNotices();
     }, []);
 
     // Pick the primary ward first, otherwise the first in the list.
@@ -107,6 +166,21 @@ export default function Wards() {
     }, [wards]);
 
     const [activeId, setActiveId] = useState<string | null>(initialId);
+
+    useEffect(() => {
+        const checkResultReadiness = async () => {
+            const response = await axios.get(
+                `/api/students/${activeId}/result-status`,
+            );
+            setActiveResultAvailable(response.data.available);
+            setLatestAvailableResult(response.data.latest_available_result);
+        };
+
+        if (activeId) {
+            checkResultReadiness();
+        }
+    }, [activeId]);
+
     const active = wards.find((w) => w.id === activeId) ?? null;
 
     if (!wards.length) {
@@ -131,7 +205,7 @@ export default function Wards() {
                 <div className="mb-3 flex items-end justify-between">
                     <div>
                         <h2 className="text-xl font-semibold text-gray-900">
-                            My Wards Results
+                            My Wards
                         </h2>
                         <p className="text-sm text-gray-500">
                             Switch between your wards to see their results.
@@ -211,7 +285,7 @@ export default function Wards() {
                                 <p className="text-sm text-gray-500 capitalize">
                                     {active.relationship}
                                     {active.current_class
-                                        ? ` · ${active.current_class}`
+                                        ? ` · ${active.current_class.curriculum.class_level_arm?.name}`
                                         : ''}
                                 </p>
                             </div>
@@ -219,13 +293,36 @@ export default function Wards() {
 
                         {/* CTAs */}
                         <div className="flex flex-col gap-2 sm:flex-row">
-                            <Link
-                                href={`/students/${active.id}/results/active`}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
-                            >
-                                <FileText className="h-4 w-4" />
-                                View Current Result
-                            </Link>
+                            {activeResultAvailable ? (
+                                <Link
+                                    href={`/students/${active.id}/results/active`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Link>
+                            ) : latestAvailableResult ? (
+                                <Link
+                                    href={`/students/${active.id}/results/${latestAvailableResult.id}`}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Latest Available Result
+                                </Link>
+                            ) : (
+                                <Button
+                                    onClick={() =>
+                                        toast.info(
+                                            'No active results available or result incomplete',
+                                        )
+                                    }
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    View Current Result
+                                </Button>
+                            )}
+
                             <Link
                                 href={`/setup/student-curricula/${active.id}`}
                                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
@@ -265,7 +362,10 @@ export default function Wards() {
                         <InfoCell
                             icon={<GraduationCap className="h-4 w-4" />}
                             label="Class"
-                            value={active.current_class ?? '—'}
+                            value={
+                                active.current_class?.curriculum.class_level_arm
+                                    ?.name || '—'
+                            }
                         />
                         <InfoCell
                             icon={<User className="h-4 w-4" />}
@@ -283,6 +383,13 @@ export default function Wards() {
                     </div>
                 </section>
             )}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <NoticesCard notices={notices} loading={noticesLoading} />
+                <QuickContactCard
+                    contacts={CONTACTS}
+                    onAction={() => toast.info('Feature coming soon!')}
+                />
+            </div>
         </div>
     );
 }

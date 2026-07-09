@@ -3,19 +3,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import axios from 'axios';
-import { useEffect, useState } from 'react';
-import type { ToastType } from '@/components/toast-item';
-import type { ExamType, GradeBoundary } from '@/types/models';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
+import type { ExamType, GradeBoundary } from '@/types/models';
 import { Empty } from './school-setup';
 
 type EditingMap = Record<string, GradeBoundary>;
 
-export function GradeBoundariesTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function GradeBoundariesTab() {
     const [examTypes, setExamTypes] = useState<ExamType[]>([]);
     const [boundaries, setBoundaries] = useState<GradeBoundary[]>([]);
     const [filter, setFilter] = useState<string | null>(null);
@@ -62,7 +58,7 @@ export function GradeBoundariesTab({
 
     const addRow = (): void => {
         if (!filter) {
-            addToast('Please select an exam type', 'error');
+            toast.error('Please select an exam type');
 
             return;
         }
@@ -98,7 +94,7 @@ export function GradeBoundariesTab({
             });
         } catch (error) {
             console.log(error);
-            addToast('Failed to cancel edit', 'error');
+            toast.error('Failed to cancel edit');
         } finally {
             setTimeout(() => {
                 setLoading(false);
@@ -129,10 +125,10 @@ export function GradeBoundariesTab({
 
                 if (response.status === 200) {
                     cancelEdit(id);
-                    addToast('Boundary saved successfully', 'success');
+                    toast.success('Boundary saved successfully');
                     setMode(null);
                 } else {
-                    addToast('Failed to save boundary', 'error');
+                    toast.error('Failed to save boundary');
                 }
             } else if (mode === 'add') {
                 const response = await axios.post(
@@ -142,15 +138,15 @@ export function GradeBoundariesTab({
 
                 if (response.status === 201) {
                     cancelEdit(id);
-                    addToast('Boundary added successfully', 'success');
+                    toast.success('Boundary added successfully');
                     setMode(null);
                 } else {
-                    addToast('Failed to add boundary', 'error');
+                    toast.error('Failed to add boundary');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save boundary', 'error');
+            toast.error('Failed to save boundary');
         } finally {
             setLoading(false);
         }
@@ -161,11 +157,11 @@ export function GradeBoundariesTab({
             const response = await axios.delete(`/api/grade-boundaries/${id}`);
 
             if (response.status === 204) {
-                addToast('Boundary deleted successfully', 'success');
+                toast.success('Boundary deleted successfully');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to delete boundary', 'error');
+            toast.error('Failed to delete boundary');
         } finally {
             setLoading(false);
             cancelEdit(id);
@@ -196,7 +192,9 @@ export function GradeBoundariesTab({
                 {examTypes.map((et) => (
                     <button
                         key={et.id}
-                        className={filter === et.id ? 'filter-btn on' : 'filter-btn'}
+                        className={
+                            filter === et.id ? 'filter-btn on' : 'filter-btn'
+                        }
                         onClick={() => setFilter(et.id)}
                     >
                         {et.name}
@@ -222,6 +220,7 @@ export function GradeBoundariesTab({
                     </div>
                 </div>
                 <div
+                    className="overflow-x-scroll"
                     style={{
                         padding: '10px 12px',
                         display: 'flex',

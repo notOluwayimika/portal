@@ -1,8 +1,5 @@
 import { usePage } from '@inertiajs/react';
-import { useState } from 'react';
 import { CurriculumDetail } from '@/components/curriculum-detail';
-import { ToastItem } from '@/components/toast-item';
-import type { Toast, ToastType } from '@/components/toast-item';
 import { handleBack } from '@/helpers';
 
 export default function Show() {
@@ -10,17 +7,6 @@ export default function Show() {
     const { curriculum } = usePage().props as unknown as { curriculum: any };
 
     const curriculumId = curriculum.data.id;
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    const toastCounter = useState(0)[0];
-    let toastId = toastCounter;
-    function addToast(message: string, type: ToastType = 'success') {
-        const id = ++toastId;
-        setToasts((t) => [...t, { id, message, type }]);
-    }
-
-    function dismissToast(id: number) {
-        setToasts((t) => t.filter((x) => x.id !== id));
-    }
 
     const css = `
   :root {
@@ -309,31 +295,9 @@ export default function Show() {
             <style>{css}</style>
             <CurriculumDetail
                 curriculumId={curriculumId}
-                addToast={addToast}
                 onBack={handleBack}
             />
-            {/* Toasts */}
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    zIndex: 100,
-                    minWidth: 280,
-                    maxWidth: 360,
-                }}
-            >
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() => dismissToast(toast.id)}
-                    />
-                ))}
-            </div>
+
         </div>
     );
 }

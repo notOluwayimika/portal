@@ -17,7 +17,7 @@ class TermResource extends JsonResource
         return [
             'id' => $this->uuid,
             'name' => $this->name,
-            'full_name' => $this->academicSession->name . ' - ' . $this->name,
+            'full_name' => $this->name . ' - ' . $this->academicSession->name,
             'slug' => $this->slug,
             'order' => $this->order,
             'status' => $this->status,

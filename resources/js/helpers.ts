@@ -48,9 +48,9 @@ export function convertToSelectOptions(
 
 export const fmtDate = (d: string): string =>
     d
-        ? new Date(d).toLocaleDateString('en-GB', {
+        ? new Date(d).toLocaleDateString('en-US', {
+              month: 'long',
               day: '2-digit',
-              month: 'short',
               year: 'numeric',
           })
         : '—';
@@ -58,4 +58,31 @@ export const fmtDate = (d: string): string =>
 export function handleBack() {
     // Implementation for handling back navigation
     window.history.back();
+}
+
+export function toShortName(fullName: string): string {
+    const parts = fullName.trim().split(' ');
+
+    if (parts.length === 0) {
+        return '';
+    }
+
+    const firstName = parts[0];
+    const lastNameInitial = parts[parts.length - 1]?.[0];
+
+    return lastNameInitial ? `${firstName} ${lastNameInitial}` : firstName;
+}
+
+export function convertNameToResultFmt(fullName: string): string {
+    // console.log(fullName);
+    const parts = fullName.trim().split(' ');
+
+    if (parts.length < 2) {
+        return fullName;
+    }
+
+    const firstName = parts[parts.length - 1];
+    const lastName = parts[0];
+
+    return `${lastName.toUpperCase()} ${firstName}`;
 }

@@ -19,6 +19,7 @@ class ClassLevelArmResource extends JsonResource
             'class_level' => new ClassLevelResource($this->classLevel),
             'arm' => new ArmResource($this->arm),
             'stream' => new StreamResource($this->stream),
+            'curricula' => CurriculumResource::collection($this->whenLoaded('curricula')),
             'name' => $this->classLevel->name . ' ' . $this->arm->label . ($this->stream ? ' ' . $this->stream->name : ''),
         ];
     }

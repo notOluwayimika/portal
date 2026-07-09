@@ -5,10 +5,10 @@
 import axios from 'axios';
 import { FileWarningIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
-import type { ToastType } from '@/components/toast-item';
-import { fmtDate } from '@/helpers';
+import { fmtDate, handleBack } from '@/helpers';
 import { Confirm, Modal } from '@/pages/admin/school-setup';
 import type {
     Curriculum,
@@ -217,13 +217,11 @@ function AssignTeacherModal({
 interface CurriculumDetailProps {
     curriculumId: string;
     onBack: () => void;
-    addToast: (message: string, type?: ToastType) => void;
 }
 
 export function CurriculumDetail({
     curriculumId,
     onBack,
-    addToast,
 }: CurriculumDetailProps) {
     const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
     const [curriculumSubjects, setCurriculumSubjects] = useState<
@@ -252,15 +250,15 @@ export function CurriculumDetail({
         try {
             const [currRes, subjRes, teacherRes] = await Promise.all([
                 axios.get(`/api/curricula/${curriculumId}`),
-                axios.get('/api/subjects'),
-                axios.get('/api/teachers'),
+                axios.get('/api/subjects?limit=1000'),
+                axios.get('/api/teachers?limit=1000'),
             ]);
             setCurriculum(currRes.data);
             setCurriculumSubjects(currRes.data.curriculum_subjects ?? []);
             setAllSubjects(subjRes.data.subjects ?? []);
             setAllTeachers(teacherRes.data.data ?? []);
         } catch {
-            addToast('Failed to load curriculum', 'error');
+            toast.error('Failed to load curriculum');
         } finally {
             setFetching(false);
         }
@@ -314,10 +312,10 @@ export function CurriculumDetail({
                 is_compulsory: isCompulsory,
                 display_order: displayOrder,
             });
-            addToast('Subject assigned successfully', 'success');
+            toast.success('Subject assigned successfully');
             setShowAssignSubject(false);
         } catch {
-            addToast('Failed to assign subject', 'error');
+            toast.error('Failed to assign subject');
         } finally {
             setLoading(false);
         }
@@ -332,12 +330,12 @@ export function CurriculumDetail({
             );
 
             if (response.status === 200) {
-                addToast('Subject removed', 'success');
+                toast.success('Subject removed');
             } else {
-                addToast('Failed to remove subject', 'error');
+                toast.error('Failed to remove subject');
             }
         } catch {
-            addToast('Failed to remove subject', 'error');
+            toast.error('Failed to remove subject');
         } finally {
             setLoading(false);
         }
@@ -354,12 +352,12 @@ export function CurriculumDetail({
             );
 
             if (response.status === 200) {
-                addToast('Subject updated successfully', 'success');
+                toast.success('Subject updated successfully');
             } else {
-                addToast('Failed to update subject', 'error');
+                toast.error('Failed to update subject');
             }
         } catch {
-            addToast('Failed to update subject', 'error');
+            toast.error('Failed to update subject');
         } finally {
             setLoading(false);
         }
@@ -389,7 +387,7 @@ export function CurriculumDetail({
                 },
             );
         } catch {
-            addToast('Failed to save order', 'error');
+            toast.error('Failed to save order');
         } finally {
             setLoading(false);
         }
@@ -409,10 +407,10 @@ export function CurriculumDetail({
                     teacher_id: teacherId,
                 },
             );
-            addToast('Teacher assigned successfully', 'success');
+            toast.success('Teacher assigned successfully');
             setAssignTeacherFor(null);
         } catch {
-            addToast('Failed to assign teacher', 'error');
+            toast.error('Failed to assign teacher');
         } finally {
             setLoading(false);
         }
@@ -428,9 +426,9 @@ export function CurriculumDetail({
             await axios.delete(
                 `/api/curriculum-subjects/${cs.id}/teachers/${teacher.id}`,
             );
-            addToast('Teacher removed', 'success');
+            toast.success('Teacher removed');
         } catch {
-            addToast('Failed to remove teacher', 'error');
+            toast.error('Failed to remove teacher');
         } finally {
             setLoading(false);
         }
@@ -471,7 +469,7 @@ export function CurriculumDetail({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button
                         className="btn btn-ghost btn-sm btn-icon"
-                        onClick={onBack}
+                        onClick={handleBack}
                         title="Back to curricula"
                         style={{ fontSize: 18 }}
                     >
@@ -579,12 +577,14 @@ export function CurriculumDetail({
                         </p>
                     </div>
                     {availableSubjectOptions.length > 0 && (
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => setShowAssignSubject(true)}
-                        >
-                            + Assign subject
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => setShowAssignSubject(true)}
+                            >
+                                + Assign subject
+                            </button>
+                        </div>
                     )}
                 </div>
 

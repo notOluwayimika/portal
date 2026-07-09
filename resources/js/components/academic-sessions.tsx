@@ -1,11 +1,10 @@
 // import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
 import { generateSlug } from '@/helpers';
 import type { AcademicSession } from '@/types/models';
 import { Pagination } from './pagination';
-import { ToastItem } from './toast-item';
-import type { Toast, ToastType } from './toast-item';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -605,7 +604,6 @@ export default function AcademicSessions() {
         useState<Partial<AcademicSession> | null>(null);
     const [deleteTarget, setDeleteTarget] =
         useState<Partial<AcademicSession> | null>(null);
-    const [toasts, setToasts] = useState<Toast[]>([]);
     const [search, setSearch] = useState('');
     const [total, setTotal] = useState(0);
     const [filter, setFilter] = useState('total');
@@ -633,7 +631,7 @@ export default function AcademicSessions() {
                 setTotal(response.data.total ?? 0);
                 setPaginationMeta(response.data ?? paginationMeta);
             } else {
-                addToast('Failed to fetch academic sessions.', 'error');
+                toast.error('Failed to fetch academic sessions.');
             }
         };
 
@@ -641,17 +639,8 @@ export default function AcademicSessions() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [limit, page, filter, search, loading]);
 
-    const toastCounter = useState(0)[0];
-    let toastId = toastCounter;
 
-    function addToast(message: string, type: ToastType = 'success') {
-        const id = ++toastId;
-        setToasts((t) => [...t, { id, message, type }]);
-    }
 
-    function dismissToast(id: number) {
-        setToasts((t) => t.filter((x) => x.id !== id));
-    }
 
     function slugExists(slug: string, excludeId?: string) {
         return sessions.some((s) => s.slug === slug && s.id !== excludeId);
@@ -670,11 +659,11 @@ export default function AcademicSessions() {
 
             if (response.status === 200) {
                 setModalMode(null);
-                addToast(`"${data.name}" created successfully.`);
+                toast.success(`"${data.name}" created successfully.`);
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to create academic session.', 'error');
+            toast.error('Failed to create academic session.');
         } finally {
             setLoading(false);
         }
@@ -695,13 +684,13 @@ export default function AcademicSessions() {
             if (response.status === 200) {
                 setModalMode(null);
                 setEditTarget(null);
-                addToast(`"${data.name}" updated.`, 'info');
+                toast.info(`"${data.name}" updated.`);
             } else {
-                addToast('Failed to update academic session.', 'error');
+                toast.error('Failed to update academic session.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to update academic session.', 'error');
+            toast.error('Failed to update academic session.');
         } finally {
             setLoading(false);
         }
@@ -719,14 +708,14 @@ export default function AcademicSessions() {
             );
 
             if (response.status === 200) {
-                addToast(`"${deleteTarget.name}" deleted.`, 'error');
+                toast.error(`"${deleteTarget.name}" deleted.`);
                 setDeleteTarget(null);
             } else {
-                addToast('Failed to delete academic session.', 'error');
+                toast.error('Failed to delete academic session.');
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to delete academic session.', 'error');
+            toast.error('Failed to delete academic session.');
         } finally {
             setLoading(false);
         }
@@ -1108,28 +1097,6 @@ export default function AcademicSessions() {
                 />
             )}
 
-            {/* Toasts */}
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    zIndex: 100,
-                    minWidth: 280,
-                    maxWidth: 360,
-                }}
-            >
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() => dismissToast(toast.id)}
-                    />
-                ))}
-            </div>
         </div>
     );
 }

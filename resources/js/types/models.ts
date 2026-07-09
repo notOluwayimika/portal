@@ -40,6 +40,7 @@ export interface ClassLevel {
     school_id?: string;
     school?: School;
     arms?: Arm[];
+    class_level_arms?: ClassLevelArm[];
     name: string;
     order: number;
     created_at?: string;
@@ -63,6 +64,7 @@ export interface ClassLevelArm {
     arm: Arm;
     stream_id?: string | null;
     stream: Stream | null;
+    curricula?: Curriculum[];
     name?: string;
     created_at?: string;
     updated_at?: string;
@@ -149,6 +151,18 @@ export interface Guardian {
     students?: (Student & { pivot: GuardianPivot })[];
 }
 
+export interface SportHouse {
+    id: number;
+    uuid: string;
+    name: string;
+}
+
+export interface Scholarship {
+    id: number;
+    uuid: string;
+    name: string;
+}
+
 export interface Student {
     id: string;
     school_id: string;
@@ -174,6 +188,17 @@ export interface Student {
     promoted_to_id?: number;
     guardians?: Guardian[];
     student_curricula: StudentCurriculum[];
+    admission_date?: string | null;
+    address?: string | null;
+    nationality?: string | null;
+    other_nationality?: string | null;
+    state_of_origin?: string | null;
+    religion?: string | null;
+    previous_school?: string | null;
+    sport_house_id?: number | null;
+    sport_house?: SportHouse | null;
+    scholarship_id?: number | null;
+    scholarship?: Scholarship | null;
     created_at?: string;
     updated_at?: string;
 }
@@ -200,6 +225,38 @@ export interface Teacher {
     created_at?: string;
     updated_at?: string;
     deleted_at?: string;
+}
+
+export type TeacherAssignmentRole =
+    | 'boarding_parent'
+    | 'form_teacher'
+    | 'head_of_school';
+
+export interface ClassLevelArmTeacher {
+    id: string;
+    role: TeacherAssignmentRole;
+    gender?: 'male' | 'female' | null;
+    teacher?: Teacher;
+    class_level_arm?: ClassLevelArm;
+    assigned_by?: User | null;
+    created_at?: string;
+}
+
+export type BehavioralGrade = 'A' | 'B' | 'C' | 'D' | 'E';
+
+export interface BehavioralAssessment {
+    id: string;
+    punctuality: BehavioralGrade;
+    mental_alertness: BehavioralGrade;
+    respect: BehavioralGrade;
+    neatness: BehavioralGrade;
+    politeness: BehavioralGrade;
+    honesty: BehavioralGrade;
+    relationship_with_peers: BehavioralGrade;
+    teamwork: BehavioralGrade;
+    perseverance: BehavioralGrade;
+    comment?: string | null;
+    updated_at?: string;
 }
 
 export interface TeacherSubjectAssignment {
@@ -244,6 +301,9 @@ export interface Curriculum {
     exam_type?: ExamType;
     min_subjects: number;
     status: string;
+    is_ccm: boolean;
+    curriculum_subjects?: CurriculumSubject;
+    student_curricula?: StudentCurriculum[];
     created_at?: string;
     updated_at?: string;
 }
@@ -298,7 +358,7 @@ export interface CurriculumSubject {
     scores?: Score[];
     teachers?: TeacherCurriculumSubject[];
     marking_components?: MarkingComponent[];
-    student_results: StudentResult[];
+    class_average?: number | null;
     result_status?: SubjectResultStatus;
 }
 export interface TeacherCurriculumSubject {
@@ -333,6 +393,9 @@ export interface StudentCurriculum {
     ended_by_user_id?: number | null;
     end_reason?: string | null;
     is_ended?: boolean;
+    form_teacher_comment?: string | null;
+    head_of_school_comment?: string | null;
+    behavioral_assessments?: BehavioralAssessment[];
 }
 
 export type StudentSubjectStatus = 'active' | 'dropped';
@@ -342,11 +405,14 @@ export interface StudentSubject {
     status: StudentSubjectStatus;
     student_curriculum?: StudentCurriculum;
     curriculum_subject: CurriculumSubject;
+    own_result?: { total_score: string | number; grade: string | null } | null;
     dropped_at?: string | null;
     drop_reason?: string | null;
     dropped_by?: { id: number; full_name: string } | null;
     restored_at?: string | null;
     restored_by?: { id: number; full_name: string } | null;
+    comment?: string;
+    commented_by?: string;
 }
 
 export interface StudentSubjectsGrouped {
@@ -383,4 +449,54 @@ export interface StudentResult {
     total_score: string | number;
     grade: string;
     status: string;
+}
+
+export interface BroadsheetGroup {
+    curriculum_id: string;
+    term: { name: string; full_name: string };
+    exam_type: string;
+    is_ccm: boolean;
+    status: string;
+    arms: string[];
+    arm_count: number;
+}
+
+export interface BroadsheetColumn {
+    key: string;
+    label: string;
+    name: string;
+}
+
+export interface BroadsheetSubject {
+    subject_id: number;
+    name: string;
+    columns: BroadsheetColumn[];
+}
+
+export interface BroadsheetCell {
+    [columnKey: string]: string | number | null;
+}
+
+export interface BroadsheetStudentRow {
+    sn: number;
+    name: string;
+    gender: string;
+    subjects: Record<string, BroadsheetCell>;
+    gpa: string | null;
+}
+
+export interface BroadsheetClass {
+    label: string;
+    students: BroadsheetStudentRow[];
+}
+
+export interface Broadsheet {
+    school_name: string;
+    class_level: string;
+    term: { name: string; full_name: string };
+    exam_type: string;
+    is_ccm: boolean;
+    status: string;
+    subjects: BroadsheetSubject[];
+    classes: BroadsheetClass[];
 }

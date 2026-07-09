@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->foreignUuid('student_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('curriculum_subject_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('marking_component_id')->constrained()->cascadeOnDelete();
-            $table->decimal('score', 5, 2);
+            $table->decimal('score', 4, 1);
             $table->foreignUuid('created_by')->constrained('users');
             $table->timestampsTz();
 
@@ -23,8 +23,10 @@ return new class extends Migration {
             $table->index(['student_id', 'curriculum_subject_id']);
         });
 
-        // Score range CHECK
-        DB::statement('ALTER TABLE scores ADD CONSTRAINT scores_range CHECK (score >= 0 AND score <= 100)');
+        // Score range CHECK (SQLite doesn't support ALTER TABLE ADD CONSTRAINT)
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE scores ADD CONSTRAINT scores_range CHECK (score >= 0 AND score <= 100)');
+        }
 
 
     }

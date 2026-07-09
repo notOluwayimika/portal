@@ -4,13 +4,14 @@
 namespace App\Models;
 
 use App\Concerns\AddUuid;
+use App\Enums\GenderTypeEnum;
 use App\Enums\StudentStatusEnum;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Activitylog\Support\LogOptions;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class StudentCurriculum extends Model
 {
@@ -24,11 +25,13 @@ class StudentCurriculum extends Model
         'ended_at',
         'ended_by_user_id',
         'end_reason',
+        'form_teacher_comment',
+        'head_of_school_comment',
     ];
 
     protected $casts = [
-        'status'    => StudentStatusEnum::class,
-        'ended_at'  => 'datetime',
+        'status' => StudentStatusEnum::class,
+        'ended_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -70,20 +73,26 @@ class StudentCurriculum extends Model
         return $this->hasMany(StudentSubject::class);
     }
 
+    public function behavioralAssessments(): HasMany
+    {
+        return $this->hasMany(BehavioralAssessment::class);
+    }
+
     /* ── Query helpers ───────────────────────────────────────────────────── */
 
     public function activeSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
-                    ->active()
-                    ->with('curriculumSubject.subject');
+            ->active()
+            ->with('curriculumSubject.subject');
     }
+
 
     public function droppedSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
-                    ->dropped()
-                    ->with('curriculumSubject.subject');
+            ->dropped()
+            ->with('curriculumSubject.subject');
     }
 
     public function availableOptionalSubjects(): Collection
@@ -111,6 +120,43 @@ class StudentCurriculum extends Model
         return !is_null($this->ended_at);
     }
 
+    public function formTeacher(): ?Teacher
+    {
+        $classLevelArm = $this->curriculum ? $this->curriculum->classLevelArm : null;
+
+        return $classLevelArm ? $classLevelArm->formTeacher() : null;
+    }
+
+    public function maleBoardingParent(): ?Teacher
+    {
+        $classLevelArm = $this->curriculum ? $this->curriculum->classLevelArm : null;
+
+        return $classLevelArm ? $classLevelArm->maleBoardingParent() : null;
+    }
+
+    public function femaleBoardingParent(): ?Teacher
+    {
+        $classLevelArm = $this->curriculum ? $this->curriculum->classLevelArm : null;
+
+        return $classLevelArm ? $classLevelArm->femaleBoardingParent() : null;
+    }
+
+    public function boardingParent(): ?Teacher
+    {
+        return match ($this->student ? $this->student->gender : null) {
+            GenderTypeEnum::MALE->value => $this->maleBoardingParent(),
+            GenderTypeEnum::FEMALE->value => $this->femaleBoardingParent(),
+            default => null,
+        };
+    }
+
+    public function headOfSchool(): ?Teacher
+    {
+        $classLevelArm = $this->curriculum ? $this->curriculum->classLevelArm : null;
+
+        return $classLevelArm ? $classLevelArm->headOfSchool() : null;
+    }
+
     /* ── Activity Log ────────────────────────────────────────────────────── */
 
     protected static $logName = 'academics';
@@ -119,7 +165,6 @@ class StudentCurriculum extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['status', 'ended_at', 'end_reason'])
-            ->logOnlyDirty()
-            ->dontLogEmptyChanges();
+            ->logOnlyDirty();
     }
 }

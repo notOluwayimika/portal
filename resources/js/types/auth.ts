@@ -13,6 +13,7 @@ export type User = {
     updated_at: string;
     school_id: string;
     school?: School;
+    roles?: string[];
     [key: string]: unknown;
 };
 

@@ -7,16 +7,23 @@ use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\GuardianController;
+use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
+use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
+use App\Http\Controllers\SportHouseController;
+use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\SubjectResultStatusController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
+use App\Http\Controllers\NoticeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+Route::get('/curricula/queued', [CurriculumController::class, 'queuedCurriculums']);
 
 // Authentication
 Route::post('/login', [AuthenticationController::class, 'login']);
@@ -28,8 +35,13 @@ Route::get('/sessions/{session:uuid}/terms', [TermController::class, 'index']);
 
 // get class level arm structure
 Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+Route::get('/class-level-arms', [ClassLevelArmController::class, 'list']);
 // get exam types
 Route::get('/exam-types', [ExamTypeController::class, 'index']);
+// get sport houses
+Route::get('/sport-houses', [SportHouseController::class, 'index']);
+// get scholarships
+Route::get('/scholarships', [ScholarshipController::class, 'index']);
 // get subjects
 Route::get('/subjects', [SubjectController::class, 'index']);
 // get grade boundaries
@@ -79,6 +91,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::put('/exam-types/{examType:uuid}', [ExamTypeController::class, 'update']);
     Route::delete('/exam-types/{examType:uuid}', [ExamTypeController::class, 'destroy']);
 
+    // protected sport house routes
+    Route::get('/sport-houses', [SportHouseController::class, 'index']);
+    Route::post('/sport-houses', [SportHouseController::class, 'store']);
+    Route::put('/sport-houses/{sportHouse:uuid}', [SportHouseController::class, 'update']);
+    Route::delete('/sport-houses/{sportHouse:uuid}', [SportHouseController::class, 'destroy']);
+
+    // protected scholarship routes
+    Route::get('/scholarships', [ScholarshipController::class, 'index']);
+    Route::post('/scholarships', [ScholarshipController::class, 'store']);
+    Route::put('/scholarships/{scholarship:uuid}', [ScholarshipController::class, 'update']);
+    Route::delete('/scholarships/{scholarship:uuid}', [ScholarshipController::class, 'destroy']);
+
     // protected subject routes
     Route::post('/subjects', [SubjectController::class, 'store']);
     Route::put('/subjects/{subject:uuid}', [SubjectController::class, 'update']);
@@ -97,11 +121,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
-
+    Route::get('/curriculum-subjects', [CurriculumSubjectController::class, 'index']);
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'show']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
 
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
@@ -120,9 +147,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     // student curricula
     Route::post('/students/{student:uuid}/curricula/promote', [StudentCurriculumController::class, 'promote']);
     Route::post('/students/{student:uuid}/curricula', [StudentCurriculumController::class, 'register']);
+    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
+    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
     Route::patch('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'updateStatus']);
 
     // student subject management
+
     // withoutScopedBindings: prevents Laravel auto-scoping {studentCurriculum} to {student}
     // (it would look for $student->studentCurriculums() but the relation is studentCurricula()).
     Route::prefix('students/{student:uuid}/enrollments/{studentCurriculum:uuid}')
@@ -130,7 +160,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
         ->group(function () {
             Route::get('subjects', [StudentSubjectController::class, 'index']);
             Route::post('subjects', [StudentSubjectController::class, 'store']);
-            Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop']);
+            Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop'])->withoutScopedBindings();
             Route::patch('subjects/{studentSubject:uuid}/restore', [StudentSubjectController::class, 'restore']);
             Route::get('subjects/history', [StudentSubjectController::class, 'history']);
             Route::patch('end', [StudentCurriculumController::class, 'unenroll']);
@@ -140,11 +170,44 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive', [CurriculumSubjectController::class, 'archive']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
 
+    // protected marking components
+    Route::get('/marking-components', [MarkingComponentController::class, 'index']);
+    Route::post('/marking-components', [MarkingComponentController::class, 'sync']);
+    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
+    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
+
+    // subject result status
+    Route::get('/subject-result-statuses', [SubjectResultStatusController::class, 'index']);
+
     Route::post('/logout', [AuthenticationController::class, 'logout']);
 
     require __DIR__ . '/endpoints/student.php';
     require __DIR__ . '/endpoints/teacher.php';
     require __DIR__ . '/endpoints/guardian.php';
+    require __DIR__ . '/endpoints/head-of-school.php';
+    require __DIR__ . '/endpoints/broadsheet.php';
+
+    require __DIR__ . '/endpoints/outstanding-comments.php';
+});
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
+    // Head of Schools
+    Route::get('/heads-of-schools', [HeadOfSchoolController::class, 'index']);
+    Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store']);
+    Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
+
+    Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
+
+    // CCM -> non-CCM curriculum migration
+    Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
+
+    // Mirror an active curriculum into a past (completed) term for retroactive entry
+    Route::post('/curricula/{curriculum:uuid}/backfill-term', [CurriculumController::class, 'backfillTerm']);
+
+    // Teacher role assignments (boarding parent / form teacher / head of school)
+    require __DIR__ . '/endpoints/teacher-assignment.php';
+
+    // Notices (admin CRUD)
+    require __DIR__ . '/endpoints/notice.php';
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
@@ -154,12 +217,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
+    Route::get('/marking-components/overlapping/{curriculum:uuid}', [MarkingComponentController::class, 'getOverlapping']);
+    // comment on student subject
+    Route::post('/student-subjects/{studentSubject:uuid}/comment', [StudentSubjectController::class, 'storeComment']);
+
     // assign score and marking component for teachers;
     Route::get('/teachers/{teacher:uuid}/subjects', [TeacherController::class, 'subjects']);
     Route::get('/teachers/{teacher:uuid}', [TeacherController::class, 'show']);
-    // protected marking components
-    Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
-    Route::delete('/marking-components/{markingComponent}', [MarkingComponentController::class, 'destroy']);
+
     // protected curriculum subject
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/result-status', [CurriculumSubjectController::class, 'getResultStatus']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
@@ -170,4 +235,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
     // protected guardian routes
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
+    Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
+    Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:guardian'])->group(function () {
+    Route::get('/guardian/notices', [NoticeController::class, 'forGuardian']);
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:boarding_parent'])->group(function () {
+    require __DIR__ . '/endpoints/behavioral-assessment.php';
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:form_teacher'])->group(function () {
+    require __DIR__ . '/endpoints/form-teacher.php';
 });

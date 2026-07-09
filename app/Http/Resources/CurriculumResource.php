@@ -25,12 +25,14 @@ class CurriculumResource extends JsonResource
             "exam_type" => new ExamTypeResource($this->examType),
             "min_subjects" => $this->min_subjects,
             "status" => $this->status,
-            "full_name" => $this->academicSession->name . ' ' . $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name,
+            "is_ccm" => $this->is_ccm,
+            "full_name" => $this->academicSession->name . ' ' . $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . $this->term->name . ' '  . ($this->is_ccm ? '(CCM)' : ''),
 
             "curriculum_subjects" => $this->when(
                 $this->includeSubjects,
                 CurriculumSubjectResource::collection($this->curriculumSubjects)
             ),
+            'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula'))
         ];
     }
 }

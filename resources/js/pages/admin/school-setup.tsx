@@ -1,14 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { useState, useEffect } from 'react';
-import { ClassStructureTab } from '@/components/setup/class-structure-tab';
-import { OverviewTab } from '@/components/setup/overview-tab';
-import { SessionsTab } from '@/components/setup/sessions-tab';
-import { ToastItem } from '@/components/toast-item';
-import type { ToastType } from '@/components/toast-item';
-import type { Toast } from '@/components/toast-item';
-import type { SetupData } from '@/types/models';
 import {
+    Award,
     BarChart2,
     BookOpen,
     Calendar,
@@ -17,11 +10,21 @@ import {
     GitBranch,
     LayoutDashboard,
     Layers,
+    Clipboard,
+    Shield,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ClassStructureTab } from '@/components/setup/class-structure-tab';
+import { OverviewTab } from '@/components/setup/overview-tab';
+import { SessionsTab } from '@/components/setup/sessions-tab';
+import type { SetupData } from '@/types/models';
 import ClassStreamTab from './class-stream-tab';
 import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
 import { GradeBoundariesTab } from './grade-boundaries-tab';
+import MarkingComponentsTab from './marking-components-tab';
+import { ScholarshipsTab } from './scholarships-tab';
+import { SportHousesTab } from './sport-houses-tab';
 import { SubjectsTab } from './subjects-tab';
 interface TabConfig {
     id: string;
@@ -440,34 +443,85 @@ type TabId =
     | 'exam-types'
     | 'subjects'
     | 'grades'
-    | 'curricula';
+    | 'curricula'
+    | 'marking-components'
+    | 'sport-houses'
+    | 'scholarships';
 
 const TABS: TabConfig[] = [
-    { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-[14px] w-[14px]" />, count: null },
-    { id: 'sessions', label: 'Sessions', icon: <Calendar className="h-[14px] w-[14px]" />, count: null },
-    { id: 'structure', label: 'Class Structure', icon: <Layers className="h-[14px] w-[14px]" />, count: null },
-    { id: 'stream', label: 'Class Stream', icon: <GitBranch className="h-[14px] w-[14px]" />, count: null },
-    { id: 'exam-types', label: 'Exam Types', icon: <FileText className="h-[14px] w-[14px]" />, count: null },
-    { id: 'subjects', label: 'Subjects', icon: <BookOpen className="h-[14px] w-[14px]" />, count: null },
-    { id: 'grades', label: 'Grade Boundaries', icon: <BarChart2 className="h-[14px] w-[14px]" />, count: null },
-    { id: 'curricula', label: 'Curricula', icon: <GraduationCap className="h-[14px] w-[14px]" />, count: null },
+    {
+        id: 'overview',
+        label: 'Overview',
+        icon: <LayoutDashboard className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'sessions',
+        label: 'Sessions',
+        icon: <Calendar className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'structure',
+        label: 'Class Structure',
+        icon: <Layers className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'stream',
+        label: 'Class Stream',
+        icon: <GitBranch className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'exam-types',
+        label: 'Exam Types',
+        icon: <FileText className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'subjects',
+        label: 'Subjects',
+        icon: <BookOpen className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'marking-components',
+        label: 'Marking Components',
+        icon: <Clipboard className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'grades',
+        label: 'Grade Boundaries',
+        icon: <BarChart2 className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'curricula',
+        label: 'Curricula',
+        icon: <GraduationCap className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'sport-houses',
+        label: 'Sport Houses',
+        icon: <Shield className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'scholarships',
+        label: 'Scholarships',
+        icon: <Award className="h-[14px] w-[14px]" />,
+        count: null,
+    },
 ];
 
 export default function SchoolSetup() {
     const [active, setActive] = useState<TabId>('overview');
-    const [toasts, setToasts] = useState<Toast[]>([]);
     const [data, setData] = useState<SetupData | null>(null);
     const { auth } = usePage().props;
-    const toastCounter = useState(0)[0];
-    let toastId = toastCounter;
-    function addToast(message: string, type: ToastType = 'success') {
-        const id = ++toastId;
-        setToasts((t) => [...t, { id, message, type }]);
-    }
 
-    function dismissToast(id: number) {
-        setToasts((t) => t.filter((x) => x.id !== id));
-    }
 
     useEffect(() => {
         async function getSetupData() {
@@ -487,22 +541,27 @@ export default function SchoolSetup() {
             case 'sessions':
                 return (
                     <SessionsTab
-                        addToast={addToast}
                         setSessionName={setSessionName}
                     />
                 );
             case 'structure':
-                return <ClassStructureTab addToast={addToast} />;
+                return <ClassStructureTab  />;
             case 'stream':
-                return <ClassStreamTab addToast={addToast} />;
+                return <ClassStreamTab  />;
             case 'exam-types':
-                return <ExamTypesTab addToast={addToast} />;
+                return <ExamTypesTab  />;
             case 'subjects':
-                return <SubjectsTab addToast={addToast} />;
+                return <SubjectsTab  />;
             case 'grades':
-                return <GradeBoundariesTab addToast={addToast} />;
+                return <GradeBoundariesTab  />;
             case 'curricula':
-                return <CurriculaTab addToast={addToast} />;
+                return <CurriculaTab  />;
+            case 'marking-components':
+                return <MarkingComponentsTab  />;
+            case 'sport-houses':
+                return <SportHousesTab  />;
+            case 'scholarships':
+                return <ScholarshipsTab  />;
             default:
                 return null;
         }
@@ -570,28 +629,7 @@ export default function SchoolSetup() {
                     <main className="content-area">{render()}</main>
                 </div>
 
-                {/* Toasts */}
-                <div
-                    style={{
-                        position: 'fixed',
-                        bottom: 24,
-                        right: 24,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                        zIndex: 100,
-                        minWidth: 280,
-                        maxWidth: 360,
-                    }}
-                >
-                    {toasts.map((toast) => (
-                        <ToastItem
-                            key={toast.id}
-                            toast={toast}
-                            onDismiss={() => dismissToast(toast.id)}
-                        />
-                    ))}
-                </div>
+
             </div>
         </>
     );

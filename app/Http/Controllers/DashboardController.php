@@ -28,7 +28,9 @@ class DashboardController extends Controller
         $onboarding = $this->buildOnboardingState($analysis);
 
         if (auth()->user()->hasRole('guardian')) {
-            return redirect('/parent/dashboard');
+            return redirect('/parent/wards');
+        } else if (auth()->user()->hasRole('teacher')) {
+            return redirect('/setup/teacher/' . auth()->user()->teacher->uuid);
         }
 
         return Inertia::render('dashboard', [

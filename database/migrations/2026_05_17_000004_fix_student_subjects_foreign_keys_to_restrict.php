@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
+        // MySQL-only: INFORMATION_SCHEMA lookups and DROP FOREIGN KEY syntax.
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         $db = DB::connection()->getDatabaseName();
 
         foreach (['student_curriculum_id', 'curriculum_subject_id'] as $column) {
@@ -34,6 +39,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         $db = DB::connection()->getDatabaseName();
 
         foreach (['student_curriculum_id' => 'student_curricula', 'curriculum_subject_id' => 'curriculum_subjects'] as $column => $referencedTable) {

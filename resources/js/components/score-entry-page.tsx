@@ -17,6 +17,57 @@ interface CellState {
     status: CellStatus;
     error?: string;
 }
+const OUTSTANDING_COMMENTS = [
+    'Outstanding performance. Keep it up',
+    'Outstanding performance. Keep soaring',
+];
+
+const EXCELLENT_COMMENTS = [
+    'Excellent result. Keep it up',
+    'Excellent result. Do not relent',
+    'Excellent performance. Keep soaring',
+];
+
+const VERY_GOOD_COMMENTS = [
+    'Very good result. Do not relent',
+    'Very good result. Keep working hard',
+    'Very good result. Aim higher',
+];
+
+const GOOD_COMMENTS = [
+    'Good result; you can do better',
+    'Good result. Do not relent in your effort',
+    'Good result. Aim higher',
+    'Good result. You can make it better',
+    'Good result. Work harder',
+];
+
+const FAIR_COMMENTS = [
+    'You are encouraged to work harder',
+    'You have the potential to improve on this grade',
+    'There is room for improvement if you work hard',
+    'You are capable of better academic performance',
+    'There is potential for growth if you do not relent',
+];
+
+const NEEDS_IMPROVEMENT_COMMENTS = [
+    'You are encouraged to work harder next term',
+    'You are encouraged to improve on this performance',
+    'There is room for improvement if you work hard',
+    'You need to put more effort in your academics',
+    'With determination, you can improve on this result',
+    'You can improve on this result; please work harder',
+];
+
+const POOR_COMMENTS = [
+    'This result is below expectation. Put in more effort',
+    'You need to put more effort in your academics',
+    'With determination, you can improve on this result',
+    'You are encouraged to put in more effort',
+    'You are encouraged to study more',
+    'Work harder for a better result next term',
+    'You are encouraged to focus more',
+];
 
 // ---------- Helpers ----------
 
@@ -39,6 +90,7 @@ export default function ScoreEntryPage({
     const [markingComponents] = useState<MarkingComponent[]>(
         cs.marking_components,
     );
+    const [overlappingMC, setOverlappingMC] = useState<string[]>([]);
     const [students] = useState<StudentSubject[]>(cs.students);
     const [scores] = useState<Score[]>(cs.scores ?? []);
     const [query, setQuery] = useState('');
@@ -47,7 +99,7 @@ export default function ScoreEntryPage({
 
         for (const s of scores) {
             map[cellKey(s.student.id, s.marking_component.id)] = {
-                value: String(s.score),
+                value: String(s.score / s.marking_component.weight),
                 status: 'idle',
             };
         }
@@ -62,6 +114,24 @@ export default function ScoreEntryPage({
     const savedFlashRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
         {},
     );
+
+    useEffect(() => {
+        const getOverlappingMC = async () => {
+            const curriculumId = cs.curriculum?.id;
+
+            if (!curriculumId) {
+                setOverlappingMC([]);
+
+                return;
+            }
+
+            const response = await axios.get(
+                `/api/marking-components/overlapping/${curriculumId}`,
+            );
+            setOverlappingMC(response.data.overlapping);
+        };
+        getOverlappingMC();
+    }, [cs.curriculum?.id, markingComponents]);
 
     // Clean up timers on unmount.
     useEffect(() => {
@@ -96,21 +166,28 @@ export default function ScoreEntryPage({
     const persist = useCallback(
         async (studentId: string, mc: MarkingComponent, raw: string) => {
             const key = cellKey(studentId, mc.id);
-
             // Empty input: leave the existing server value alone, return to idle.
-            if (raw.trim() === '') {
-                setCell(key, { value: '', status: 'idle', error: undefined });
+            // if (raw.trim() === '') {
+            //     setCell(key, { value: '', status: 'idle', error: undefined });
 
-                return;
-            }
+            //     return;
+            // }
+            // if (
+            //     cs.result_status?.status === 'submitted' ||
+            //     cs.result_status?.status === 'approved'
+            // ) {
+            //     return;
+            // }
 
             const num = Number(raw);
-            const max = maxForComponent(mc);
 
-            if (!Number.isFinite(num) || num < 0 || num > max) {
+            const max = maxForComponent(mc);
+            const value = (num / 100) * max;
+
+            if (!Number.isFinite(value) || value < 0 || value > max) {
                 setCell(key, {
                     status: 'error',
-                    error: `0–${max}`,
+                    error: `0–${100}`,
                 });
 
                 return;
@@ -123,7 +200,7 @@ export default function ScoreEntryPage({
                     curriculum_subject_id: cs.id,
                     student_id: studentId,
                     marking_component_id: mc.id,
-                    score: num,
+                    score: value,
                 };
                 await axios.post(
                     '/api/curriculum-subjects/' + cs.id + '/scores',
@@ -153,12 +230,14 @@ export default function ScoreEntryPage({
                         data?: {
                             message?: string;
                             errors?: Record<string, string[]>;
+                            error?: string;
                         };
                     };
                 };
                 const msg =
                     err?.response?.data?.errors?.score?.[0] ??
                     err?.response?.data?.message ??
+                    err?.response?.data?.error ??
                     'Save failed';
                 setCell(key, { status: 'error', error: msg });
             }
@@ -229,7 +308,7 @@ export default function ScoreEntryPage({
                     continue;
                 }
 
-                const n = Number(v);
+                const n = mc.weight * Number(v);
 
                 if (Number.isFinite(n)) {
                     total += n;
@@ -237,7 +316,7 @@ export default function ScoreEntryPage({
                 }
             }
 
-            return anyValue ? Math.round(total * 100) / 100 : null;
+            return anyValue ? (Math.round(total * 100) / 100).toFixed(1) : null;
         },
         [markingComponents, getCell],
     );
@@ -298,13 +377,15 @@ export default function ScoreEntryPage({
                                     >
                                         <div>{mc.name}</div>
                                         <div className="text-xs font-normal text-gray-500">
-                                            / {maxForComponent(mc)}
+                                            / {maxForComponent(mc) / mc.weight}
                                         </div>
                                     </th>
                                 ))}
                                 <th className="px-3 py-3 text-right font-medium text-gray-700">
-                                    Total
+                                    {cs.curriculum?.is_ccm ? 'CCM' : 'Total'}{' '}
+                                    Score
                                 </th>
+                                {!cs.curriculum?.is_ccm && <th>Comment</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -377,6 +458,12 @@ export default function ScoreEntryPage({
                                                                 mc,
                                                             )
                                                         }
+                                                        disabled={
+                                                            overlappingMC.includes(
+                                                                mc.name,
+                                                            ) &&
+                                                            cell.value !== ''
+                                                        }
                                                     />
                                                 </td>
                                             );
@@ -390,6 +477,14 @@ export default function ScoreEntryPage({
                                                 total
                                             )}
                                         </td>
+                                        {!cs.curriculum?.is_ccm && (
+                                            <td>
+                                                <CommentCell
+                                                    studentSubject={s}
+                                                    total={total}
+                                                />
+                                            </td>
+                                        )}
                                     </tr>
                                 );
                             })}
@@ -403,20 +498,197 @@ export default function ScoreEntryPage({
 
 // ---------- Sub-components ----------
 
+function CommentCell({
+    studentSubject,
+    total
+}: {
+    studentSubject: StudentSubject;
+    total?: number
+}) {
+    const [value, setValue] = useState(studentSubject.comment ?? '');
+    const [status, setStatus] = useState<CellStatus>('idle');
+    const [error, setError] = useState('');
+
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    function getCommentsForScore(score: number) {
+    if (score >= 91) {
+        return OUTSTANDING_COMMENTS;
+    }
+
+    if (score >= 80) {
+        return EXCELLENT_COMMENTS;
+    }
+
+    if (score >= 70) {
+        return VERY_GOOD_COMMENTS;
+    }
+
+    if (score >= 60) {
+        return GOOD_COMMENTS;
+    }
+
+    if (score >= 50) {
+        return FAIR_COMMENTS;
+    }
+
+    if (score >= 40) {
+        return NEEDS_IMPROVEMENT_COMMENTS;
+    }
+
+    return POOR_COMMENTS;
+}
+
+    // Adjust this to match your model
+    const score = Number(total ?? 0);
+
+    const commentOptions = useMemo(
+        () => getCommentsForScore(score),
+        [score],
+    );
+
+    const isValid = (val: string) => {
+        if (val.length > 100) {
+            setError('Maximum 100 characters allowed');
+            setStatus('error');
+
+            return false;
+        }
+
+        setError('');
+
+        return true;
+    };
+
+    const persist = async (
+        studentSubjectId: string,
+        comment: string,
+    ) => {
+        try {
+            setStatus('saving');
+
+            await axios.post(
+                `/api/student-subjects/${studentSubjectId}/comment`,
+                {
+                    comment,
+                },
+            );
+
+            setStatus('saved');
+        } catch (e: any) {
+            setStatus('error');
+            setError(e?.message || 'Failed to save');
+        }
+    };
+
+    const triggerSave = (val: string) => {
+        const trimmed = val.trim();
+
+        if (!trimmed) {
+            setStatus('idle');
+
+            return;
+        }
+
+        if (!isValid(trimmed)) {
+            return;
+        }
+
+        persist(studentSubject.id, trimmed);
+    };
+
+    const onChange = (val: string) => {
+        setValue(val);
+
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+        }
+
+        timerRef.current = setTimeout(() => {
+            triggerSave(val);
+        }, 3000);
+    };
+
+    const onBlur = () => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+        }
+
+        triggerSave(value);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+            }
+        };
+    }, []);
+
+    const borderClass =
+        status === 'error'
+            ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+            : status === 'saving'
+              ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500'
+              : status === 'saved'
+                ? 'border-green-400 focus:border-green-500 focus:ring-green-500'
+                : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500';
+
+    const datalistId = `comment-options-${studentSubject.id}`;
+
+    return (
+        <div className="relative min-w-[350px]">
+            <input
+                type="text"
+                list={datalistId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                onBlur={onBlur}
+                placeholder="Select or type comment..."
+                className={`w-full rounded-md border px-2 py-1 text-sm shadow-sm focus:ring-1 focus:outline-none ${borderClass}`}
+            />
+
+            <datalist id={datalistId}>
+                {commentOptions.map((comment) => (
+                    <option
+                        key={comment}
+                        value={comment}
+                    />
+                ))}
+            </datalist>
+
+            <StatusDot status={status} />
+
+            {status === 'error' && error && (
+                <div className="absolute top-full left-0 z-20 mt-1 rounded bg-red-600 px-2 py-0.5 text-xs whitespace-nowrap text-white shadow">
+                    {error}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function ScoreCell({
     cell,
     max,
     onChange,
     onBlur,
     status,
+    disabled = false,
 }: {
     cell: CellState;
     max: number;
     onChange: (v: string) => void;
     onBlur: () => void;
     status: SubjectResultStatus;
+    disabled?: boolean;
 }) {
-    const [value, setValue] = useState(cell.value);
+    const [value, setValue] = useState(
+        typeof Number(cell.value) === 'number' && cell.value !== ''
+            ? Number(cell.value)
+            : '',
+    );
+
     const borderClass =
         cell.status === 'error'
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
@@ -431,20 +703,42 @@ function ScoreCell({
             <input
                 type="number"
                 inputMode="decimal"
-                step="0.01"
+                step="0.1"
                 min={0}
                 max={max}
-                value={value}
+                onWheel={(e) => {
+                    e.currentTarget.blur();
+                }}
+                onInput={(e) => {
+                    const val = (e.target as HTMLInputElement).value;
+
+                    // allow empty (user deleting)
+                    if (val === '') {
+                        return;
+                    }
+
+                    // blur if not a valid number
+                    if (isNaN(Number(val))) {
+                        (e.target as HTMLInputElement).blur();
+                    }
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                    }
+                }}
+                value={typeof value === 'number' ? value.toFixed(1) : value}
                 disabled={
                     status.status === 'submitted' ||
-                    status.status === 'approved'
+                    status.status === 'approved' ||
+                    disabled
                 }
                 onChange={(e) => {
                     setValue(e.target.value);
                     onChange(e.target.value);
                 }}
                 onBlur={onBlur}
-                className={`w-20 rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none ${borderClass}`}
+                className={`w-20 [appearance:textfield] rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${borderClass}`}
             />
             <StatusDot status={cell.status} />
             {cell.status === 'error' && cell.error && (

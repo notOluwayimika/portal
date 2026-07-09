@@ -30,10 +30,12 @@ class UpsertScoreRequest extends FormRequest
                 return;
             }
 
-            $mc = MarkingComponent::find($this->input('marking_component_id'));
+            $mc = MarkingComponent::where('uuid', $this->input('marking_component_id'))->first();
             if (!$mc) {
                 return;
             }
+
+            \Log::info($mc);
 
             // weight is a fraction (e.g. 0.300). Max raw score for the component
             // is interpreted as weight * 100 (a 30%-weighted CA is scored /30).

@@ -17,7 +17,8 @@ class DashboardAnalysisService
 
     public function __construct(
         private readonly PiiSanitizationService $pii,
-    ) {}
+    ) {
+    }
 
     /**
      * Load analysis for a school from cache or disk. Regenerates if stale.
@@ -216,18 +217,42 @@ class DashboardAnalysisService
         try {
             $scoreEntry = DB::table('class_levels')
                 ->where('class_levels.school_id', $schoolId)
+
                 ->join('class_level_arms', 'class_level_arms.class_level_id', '=', 'class_levels.id')
                 ->join('curricula', 'curricula.class_level_arm_id', '=', 'class_level_arms.id')
+                ->where('curricula.status', 'active')
                 ->join('curriculum_subjects', 'curriculum_subjects.curriculum_id', '=', 'curricula.id')
+
+                ->leftJoin('marking_components', 'marking_components.curriculum_subject_id', '=', 'curriculum_subjects.id')
+
+                // subject enrollment
+                ->leftJoin('student_subjects', 'student_subjects.curriculum_subject_id', '=', 'curriculum_subjects.id')
+
+                // get actual student
+                ->leftJoin('student_curricula', 'student_curricula.id', '=', 'student_subjects.student_curriculum_id')
+
+                ->leftJoin('scores', function ($join) {
+                    $join->on('scores.student_id', '=', 'student_curricula.student_id')
+                        ->on('scores.curriculum_subject_id', '=', 'curriculum_subjects.id')
+                        ->on('scores.marking_component_id', '=', 'marking_components.id');
+                })
+
                 ->where('curricula.school_id', $schoolId)
                 ->where('curriculum_subjects.active', true)
                 ->whereNull('curriculum_subjects.archived_at')
+
                 ->selectRaw('
                     class_levels.name as label,
-                    COUNT(DISTINCT curriculum_subjects.id) as total_slots,
+
+                    COUNT(DISTINCT CONCAT(
+                        student_curricula.student_id,
+                        "-", curriculum_subjects.id,
+                        "-", marking_components.id
+                    )) as total_slots,
+
                     COUNT(DISTINCT scores.id) as filled_slots
                 ')
-                ->leftJoin('scores', 'scores.curriculum_subject_id', '=', 'curriculum_subjects.id')
+
                 ->groupBy('class_levels.id', 'class_levels.name')
                 ->get();
 

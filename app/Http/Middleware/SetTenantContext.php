@@ -25,7 +25,7 @@ class SetTenantContext
         setPermissionsTeamId(null);
 
         $isSuperAdmin = $user->isSuperAdmin();
-        
+
         if ($isSuperAdmin) {
             $activeSchoolId = session('school_id');
         } else {

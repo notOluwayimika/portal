@@ -1,13 +1,12 @@
 import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
+import { Download, Edit, FileX, GraduationCap, RefreshCw, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
+import { ImportStudentForm } from '@/components/students/import-student-form';
 import { StudentForm } from '@/components/students/student-form';
 import { StudentGuardiansPanel } from '@/components/students/student-guardians-panel';
-import { ImportStudentForm } from '@/components/students/import-student-form';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Select from '@/components/ui/base-dropdown';
 import { Button } from '@/components/ui/button';
@@ -32,7 +31,6 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [toasts, setToasts] = useState<Toast[]>([]);
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(25);
     const [pagination, setPagination] = useState({
@@ -48,12 +46,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [guardiansPanelStudent, setGuardiansPanelStudent] = useState<Student | null>(null);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
-    let toastCounter = 0;
 
-    const addToast = (message: string, type: ToastType = 'success') => {
-        const id = ++toastCounter;
-        setToasts((prev) => [...prev, { id, message, type }]);
-    };
+
+
 
     const fetchStudents = async () => {
         try {
@@ -72,7 +67,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to fetch students', 'error');
+            toast.error('Failed to fetch students');
         } finally {
             setLoading(false);
         }
@@ -98,8 +93,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             successMessage: 'Student deleted successfully.',
             showSuccessAlert: false,
         });
+
         if (result !== false) {
-            addToast('Student deleted successfully');
+            toast.success('Student deleted successfully');
             fetchStudents();
         }
     };
@@ -131,7 +127,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
         } catch {
-            addToast('Failed to export students', 'error');
+            toast.error('Failed to export students');
         } finally {
             setExporting(false);
         }
@@ -142,11 +138,11 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             await axios.patch(`/api/students/${student.id}/status`, {
                 status: newStatus,
             });
-            addToast(`Student status updated to ${newStatus}`);
+            toast.success(`Student status updated to ${newStatus}`);
             fetchStudents();
         } catch (error) {
             console.log(error);
-            addToast('Failed to update student status', 'error');
+            toast.error('Failed to update student status');
         }
     };
 
@@ -158,7 +154,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const handleFormSuccess = () => {
         setIsStudentModalOpen(false);
         setIsImportModalOpen(false);
-        addToast(
+        toast.success(
             currentStudent
                 ? 'Student updated successfully'
                 : 'Student created successfully',
@@ -177,7 +173,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
                                     <GraduationCap className="h-6 w-6 text-indigo-600" />
                                 </div>
                                 <div>
@@ -200,6 +196,16 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     <FileX className="mr-1.5 h-4 w-4" />
                                     Import
                                 </Button>
+                                <Link href="/students/bulk-update">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <RefreshCw className="mr-1.5 h-4 w-4" />
+                                        Bulk Update
+                                    </Button>
+                                </Link>
                                 <Button
                                     size="sm"
                                     variant="outline"
@@ -435,25 +441,12 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                 size="4xl"
             >
                 <ImportStudentForm
-                    student={currentStudent}
                     onSuccess={handleFormSuccess}
                     onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
 
-            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() =>
-                            setToasts((prev) =>
-                                prev.filter((t) => t.id !== toast.id),
-                            )
-                        }
-                    />
-                ))}
-            </div>
+
         </>
     );
 }

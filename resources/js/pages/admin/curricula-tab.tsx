@@ -6,10 +6,10 @@ import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import { Pencil, Settings, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
-import type { ToastType } from '@/components/toast-item';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
 import type { Curriculum } from '@/types/models';
@@ -38,6 +38,7 @@ interface CurriculumForm {
     exam_type_id: string;
     min_subjects: string;
     status: Curriculum['status'];
+    is_ccm: boolean;
 }
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -47,13 +48,10 @@ interface Filters {
     class_level_id: string;
     term: string;
     status: string;
+    is_ccm: string;
 }
 
-export function CurriculaTab({
-    addToast,
-}: {
-    addToast: (message: string, type?: ToastType) => void;
-}) {
+export function CurriculaTab() {
     const [curricula, setCurricula] = useState<Curriculum[]>([]);
     const [classLevels, setClassLevels] = useState<SelectOption[]>([]);
     const [examTypes, setExamTypes] = useState<SelectOption[]>([]);
@@ -76,6 +74,7 @@ export function CurriculaTab({
         class_level_id: '',
         term: '',
         status: '',
+        is_ccm: '',
     };
     const [filters, setFilters] = useState<Filters>(blankFilters);
 
@@ -96,6 +95,11 @@ export function CurriculaTab({
         { label: 'Active', value: 'active' },
         { label: 'Draft', value: 'draft' },
         { label: 'Closed', value: 'closed' },
+    ];
+
+    const isCcmOptions: SelectOption[] = [
+        { label: 'Yes', value: 'true' },
+        { label: 'No', value: 'false' },
     ];
 
     useEffect(() => {
@@ -128,6 +132,8 @@ export function CurriculaTab({
                         }),
                     ...(filters.status &&
                         filters.status !== 'all' && { status: filters.status }),
+                    ...(filters.is_ccm &&
+                        filters.is_ccm !== 'all' && { is_ccm: filters.is_ccm }),
                 },
             });
             setCurricula(response.data.curricula);
@@ -143,6 +149,7 @@ export function CurriculaTab({
         exam_type_id: '',
         min_subjects: '8',
         status: '',
+        is_ccm: false,
     };
     const [form, setForm] = useState<CurriculumForm>(blank);
 
@@ -159,6 +166,7 @@ export function CurriculaTab({
                 exam_type_id: c.exam_type?.id ?? '',
                 min_subjects: String(c.min_subjects),
                 status: c.status,
+                is_ccm: c.is_ccm ?? false,
             });
         } else {
             setForm({ ...blank });
@@ -174,11 +182,11 @@ export function CurriculaTab({
             const response = await axios.delete(`/api/curricula/${id}`);
 
             if (response.status === 204) {
-                addToast('Successfully deleted curriculum');
+                toast.success('Successfully deleted curriculum');
             }
         } catch (error) {
             console.log(error);
-            addToast('Unable to delete curriculum', 'error');
+            toast.error('Unable to delete curriculum');
         } finally {
             setLoading(false);
         }
@@ -192,7 +200,7 @@ export function CurriculaTab({
             !form.min_subjects ||
             !form.status
         ) {
-            addToast('Please fill in all required fields.', 'error');
+            toast.error('Please fill in all required fields.');
 
             return;
         }
@@ -209,10 +217,10 @@ export function CurriculaTab({
                 const response = await axios.post('/api/curricula', payload);
 
                 if (response.status === 201) {
-                    addToast('Curriculum saved successfully!', 'success');
+                    toast.success('Curriculum saved successfully!');
                     setModal(null);
                 } else {
-                    addToast('Failed to save curriculum.', 'error');
+                    toast.error('Failed to save curriculum.');
                 }
             } else {
                 const response = await axios.put(
@@ -221,15 +229,15 @@ export function CurriculaTab({
                 );
 
                 if (response.status === 200) {
-                    addToast('Curriculum updated successfully!', 'success');
+                    toast.success('Curriculum updated successfully!');
                     setModal(null);
                 } else {
-                    addToast('Failed to update curriculum.', 'error');
+                    toast.error('Failed to update curriculum.');
                 }
             }
         } catch (error) {
             console.log(error);
-            addToast('Failed to save curriculum.', 'error');
+            toast.error('Failed to save curriculum.');
         } finally {
             setLoading(false);
         }
@@ -306,6 +314,21 @@ export function CurriculaTab({
                             label="All statuses"
                         />
                     </div>
+                    <div
+                        className="field"
+                        style={{ flex: '1 1 130px', marginBottom: 0 }}
+                    >
+                        <label>Is CCM</label>
+                        <SingleSelect
+                            options={[
+                                { label: 'All statuses', value: 'all' },
+                                ...isCcmOptions,
+                            ]}
+                            value={filters.is_ccm}
+                            onChange={(v) => flt('is_ccm', String(v))}
+                            label="All"
+                        />
+                    </div>
                     {hasActiveFilters && (
                         <button
                             className="btn btn-ghost btn-sm"
@@ -370,7 +393,8 @@ export function CurriculaTab({
                                         </span>
                                     </td>
                                     <td className="muted">
-                                        {c.term?.name ?? `Term ${c.term_id}`}
+                                        {c.term?.name ?? `Term ${c.term_id}`}{' '}
+                                        {c.is_ccm ? '(CCM)' : ''}
                                     </td>
                                     <td
                                         style={{
@@ -520,12 +544,33 @@ export function CurriculaTab({
                                 }
                             />
                         </div>
+                        <div className="field">
+                            <label>Is CCM</label>
+                            {/* <input
+                                type="number"
+                                min="1"
+                                value={form.is_ccm}
+                                onChange={(e) =>
+                                    f('is_ccm', e.target.value)
+                                }
+                            /> */}
+                            <input
+                                type="checkbox"
+                                checked={form.is_ccm}
+                                onChange={(e) => f('is_ccm', e.target.checked)}
+                                style={{
+                                    width: 16,
+                                    height: 16,
+                                }}
+                                className="accent-primary"
+                            />
+                        </div>
                     </div>
                 </Modal>
             )}
             {confirm && (
                 <Confirm
-                    msg="Delete this curriculum? Any linked scores and results will be affected."
+                    msg="Delete this curriculum? Any linked scores and results will be affected. It is better to update the status to closed."
                     onConfirm={() => {
                         handleDelete(confirm.id);
                         setConfirm(null);

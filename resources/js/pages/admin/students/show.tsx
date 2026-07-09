@@ -1,19 +1,14 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
-    ArrowLeft,
     BookOpen,
     Calendar,
     ChevronDown,
     ClipboardList,
     CreditCard,
     Edit,
-    FileText,
     GraduationCap,
     Info,
-    Mail,
-    MapPin,
-    Phone,
     Plus,
     Printer,
     Save,
@@ -21,17 +16,17 @@ import {
     Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'react-toastify';
 import { AddGuardianModal } from '@/components/students/add-guardian-modal';
-import { GuardianCard } from '@/components/students/guardian-card';
 import { EditPivotModal } from '@/components/students/edit-pivot-modal';
+import { GuardianCard } from '@/components/students/guardian-card';
 import { StudentForm } from '@/components/students/student-form';
 import {
-    DetachGuardianModal,
-    type StudentGuardian,
+    DetachGuardianModal
+
 } from '@/components/students/student-guardians-panel';
+import type {StudentGuardian} from '@/components/students/student-guardians-panel';
 import { StudentSubjectsSection } from '@/components/students/subjects/student-subjects-section';
-import type { Toast, ToastType } from '@/components/toast-item';
-import { ToastItem } from '@/components/toast-item';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,7 +70,10 @@ function statusColor(status: string | undefined) {
 }
 
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
-    if (!value) return null;
+    if (!value) {
+return null;
+}
+
     return (
         <div className="space-y-1">
             <dt className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">
@@ -105,15 +103,7 @@ export default function StudentProfile() {
     const [pivotGuardian, setPivotGuardian] = useState<Guardian | null>(null);
     const [detachTarget, setDetachTarget] = useState<Guardian | null>(null);
 
-    // Toasts
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    let toastCounter = 0;
 
-    const addToast = (message: string, type: ToastType = 'success') => {
-        const id = ++toastCounter;
-
-        setToasts((prev) => [...prev, { id, message, type }]);
-    };
 
     // Refresh student data from the server (Inertia partial reload)
     const refreshStudent = () => {
@@ -124,10 +114,10 @@ export default function StudentProfile() {
     const handleEnableLogin = async (guardian: Guardian) => {
         try {
             await axios.post(`/api/guardians/${guardian.id}/enable-login`);
-            addToast(`Login enabled for ${guardian.full_name}`);
+            toast.success(`Login enabled for ${guardian.full_name}`);
             refreshStudent();
         } catch {
-            addToast('Failed to enable login', 'error');
+            toast.error('Failed to enable login');
         }
     };
 
@@ -346,6 +336,47 @@ export default function StudentProfile() {
                                             label="Status"
                                             value={student.status}
                                         />
+                                        <DetailRow
+                                            label="Admission Date"
+                                            value={student.admission_date}
+                                        />
+                                        <DetailRow
+                                            label="Sport House"
+                                            value={student.sport_house?.name}
+                                        />
+                                        <DetailRow
+                                            label="Scholarship"
+                                            value={
+                                                student.scholarship?.name ??
+                                                'None'
+                                            }
+                                        />
+                                        <DetailRow
+                                            label="Nationality"
+                                            value={student.nationality}
+                                        />
+                                        <DetailRow
+                                            label="Other Nationality"
+                                            value={
+                                                student.other_nationality
+                                            }
+                                        />
+                                        <DetailRow
+                                            label="State of Origin"
+                                            value={student.state_of_origin}
+                                        />
+                                        <DetailRow
+                                            label="Religion"
+                                            value={student.religion}
+                                        />
+                                        <DetailRow
+                                            label="Previous School"
+                                            value={student.previous_school}
+                                        />
+                                        <DetailRow
+                                            label="Address"
+                                            value={student.address}
+                                        />
                                     </dl>
                                 </CardContent>
                             </Card>
@@ -472,7 +503,7 @@ export default function StudentProfile() {
                     onProcessingChange={setEditProcessing}
                     onSuccess={() => {
                         setShowEditModal(false);
-                        addToast('Student updated successfully');
+                        toast.success('Student updated successfully');
                         refreshStudent();
                     }}
                     onCancel={() => setShowEditModal(false)}
@@ -488,7 +519,7 @@ export default function StudentProfile() {
                 forcePrimary={hasNoGuardians}
                 onAdded={() => {
                     setShowAddGuardian(false);
-                    addToast('Guardian added successfully');
+                    toast.success('Guardian added successfully');
                     refreshStudent();
                 }}
             />
@@ -501,7 +532,7 @@ export default function StudentProfile() {
                 guardian={pivotGuardian}
                 onSaved={() => {
                     setPivotGuardian(null);
-                    addToast('Guardian relationship updated');
+                    toast.success('Guardian relationship updated');
                     refreshStudent();
                 }}
             />
@@ -518,26 +549,12 @@ export default function StudentProfile() {
                         .map(mapToStudentGuardian)}
                     onDetached={() => {
                         setDetachTarget(null);
-                        addToast('Guardian removed from student');
+                        toast.success('Guardian removed from student');
                         refreshStudent();
                     }}
                 />
             )}
 
-            {/* ── Toasts ─────────────────────────────────────────────── */}
-            <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
-                {toasts.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={() =>
-                            setToasts((prev) =>
-                                prev.filter((t) => t.id !== toast.id),
-                            )
-                        }
-                    />
-                ))}
-            </div>
         </>
     );
 }

@@ -416,7 +416,7 @@ export function CurriculumCardFinal({
                         draggable={false}
                     />
                 </div>
-                {promotedClass < 12 && (
+                {promotedClass <= 12 && (
                     <div className="col-span-4 border text-center text-sm font-bold">
                         Promoted To Year {promotedClass}
                     </div>

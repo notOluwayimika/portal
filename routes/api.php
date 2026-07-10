@@ -122,13 +122,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
 
     // protected curriculum subjects routes
     Route::get('/curriculum-subjects', [CurriculumSubjectController::class, 'index']);
-    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'show']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
 
-    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
@@ -147,8 +145,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     // student curricula
     Route::post('/students/{student:uuid}/curricula/promote', [StudentCurriculumController::class, 'promote']);
     Route::post('/students/{student:uuid}/curricula', [StudentCurriculumController::class, 'register']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
     Route::patch('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'updateStatus']);
 
     // student subject management
@@ -237,6 +233,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
     Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
     Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian'])->group(function () {
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
+    Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
+    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
+    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:guardian'])->group(function () {

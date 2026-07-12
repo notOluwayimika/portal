@@ -403,7 +403,7 @@ class CurriculumSubjectController extends Controller
 
     public function index(Request $request)
     {
-        $schoolId = auth()->user()->school_id;
+        $schoolId = \App\Support\ActiveSchool::id();
         $classLevelArms = $request->class_level_arms;
         $curriculumSubjects = CurriculumSubject::with(['teacherAssignments.teacher', 'subject', 'resultStatus', 'curriculum.classLevelArm'])->whereHas('curriculum', function ($query) use ($schoolId) {
             $query->where('school_id', $schoolId);

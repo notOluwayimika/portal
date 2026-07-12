@@ -531,7 +531,7 @@ export default function SchoolSetup() {
         getSetupData();
     }, []);
     const [sessionName, setSessionName] = useState(
-        auth.school.current_session?.name ?? '',
+        auth.school?.current_session?.name ?? '',
     );
 
     const render = () => {
@@ -567,7 +567,7 @@ export default function SchoolSetup() {
         }
     };
 
-    const initials = auth.school.name
+    const initials = (auth.school?.name ?? 'School')
         .split(' ')
         .map((w) => w[0])
         .slice(0, 2)
@@ -584,7 +584,7 @@ export default function SchoolSetup() {
                                 <div className="school-avatar">{initials}</div>
                                 <div>
                                     <div className="school-name">
-                                        {auth.school.name}
+                                        {auth.school?.name}
                                     </div>
                                     <div className="school-sub">
                                         School Setup &amp; Configuration

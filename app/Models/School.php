@@ -9,7 +9,9 @@ use Illuminate\Support\Str;
 
 class School extends Model
 {
-    protected $fillable = ['name', 'slug'];
+    protected $fillable = ['name', 'slug', 'address', 'phone', 'email', 'website', 'name_on_result', 'active'];
+
+    protected $casts = ['active' => 'boolean'];
 
     protected static function booted(): void
     {

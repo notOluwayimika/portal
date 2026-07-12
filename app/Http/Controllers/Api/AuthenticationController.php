@@ -4,15 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
-use App\Http\Requests\RegisterRequest;
 use App\Http\Resources\UserResource;
-use App\Models\Role;
 use App\Models\School;
-use App\Models\User;
-use Illuminate\Database\Eloquent\Attributes\UseResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 
 class AuthenticationController extends Controller
 {
@@ -22,39 +17,93 @@ class AuthenticationController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
+        /** @var \App\Models\User $user */
         $user = Auth::user();
-        // generate token
-        $token = $user->createToken('auth_token')->plainTextToken;
+
+        setPermissionsTeamId(null);
+
+        $isSuperAdmin = $user->isSuperAdmin();
+        $schools = $user->accessibleSchools();
+        $school = null;
+
+        if (!$isSuperAdmin && $schools->isEmpty()) {
+            Auth::logout();
+            return response()->json(['message' => 'You are not authorized to log in to any school.'], 403);
+        }
+
+        if ($schoolUuid = $request->input('school_uuid')) {
+            $school = $schools->firstWhere('uuid', $schoolUuid);
+
+            if (!$school) {
+                Auth::logout();
+                return response()->json(['message' => 'You are not authorized to login to this school.'], 403);
+            }
+        } elseif (!$isSuperAdmin) {
+            if ($schools->count() === 1) {
+                $school = $schools->first();
+            } else {
+                // Multiple schools: the client must retry with school_uuid.
+                Auth::logout();
+                return response()->json([
+                    'message' => 'Select a school to continue.',
+                    'requires_school_selection' => true,
+                    'schools' => $schools->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values(),
+                ], 409);
+            }
+        }
+
+        $token = $user->createToken('auth_token');
+
+        if ($school) {
+            $token->accessToken->forceFill(['school_id' => $school->id])->save();
+
+            if ($request->hasSession()) {
+                $request->session()->put('school_id', $school->id);
+            }
+
+            setPermissionsTeamId($school->id);
+            $user->unsetRelation('roles');
+        }
+
         return response()->json([
             'user' => new UserResource($user),
-            'token' => $token
+            'token' => $token->plainTextToken,
+            'school' => $school ? ['uuid' => $school->uuid, 'name' => $school->name] : null,
+            'schools' => $schools->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values(),
         ]);
     }
 
-    public function register(RegisterRequest $request)
+    /**
+     * Switch the active school for the current session/token.
+     */
+    public function switchSchool(Request $request)
     {
-        $school = School::firstOrCreate(['slug' => 'secondary-school'], ["name" => "Secondary School", "slug" => Str::slug("Secondary School")]);
-        $user = $school->users()->create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => bcrypt($request->password)
-        ]);
-        // create School named secondary if it doesnt exist
-        // create admin role for web and api guards if they dont exist
-        if (!Role::where('name', 'admin')->where('guard_name', 'web')->exists()) {
-            Role::create(['name' => 'admin', 'guard_name' => 'web']);
-        }
-        if (!Role::where('name', 'admin')->where('guard_name', 'api')->exists()) {
-            Role::create(['name' => 'admin', 'guard_name' => 'api']);
+        $request->validate(['school_uuid' => 'required|uuid']);
+
+        /** @var \App\Models\User $user */
+        $user = $request->user();
+
+        $school = School::where('uuid', $request->school_uuid)->first();
+
+        if (!$school || !$user->canAccessSchool($school->id)) {
+            return response()->json(['message' => 'You are not authorized to login to this school.'], 403);
         }
 
-        $user->assignRole('admin');
+        if ($request->hasSession()) {
+            $request->session()->put('school_id', $school->id);
+        }
 
-        Auth::login($user);
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = $user->currentAccessToken();
+        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+            $token->forceFill(['school_id' => $school->id])->save();
+        }
+
+        setPermissionsTeamId($school->id);
+        $user->unsetRelation('roles');
+
         return response()->json([
-            'user' => new UserResource($user),
-            'token' => $token
+            'message' => 'School switched.',
+            'school' => ['uuid' => $school->uuid, 'name' => $school->name],
         ]);
     }
 

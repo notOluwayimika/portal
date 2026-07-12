@@ -19,8 +19,15 @@ export interface AcademicSession {
 
 export interface School {
     id: string;
+    uuid?: string;
     name: string;
     slug: string;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    website?: string | null;
+    name_on_result?: string | null;
+    active?: boolean;
     current_session?: AcademicSession;
     created_at?: string;
     updated_at?: string;

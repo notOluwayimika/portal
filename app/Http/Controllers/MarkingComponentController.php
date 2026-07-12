@@ -30,7 +30,7 @@ class MarkingComponentController extends Controller
     {
         $ccm = $request->boolean('ccm');
         \Log::info($ccm);
-        $markingComponents = MarkingComponent::global()->where('school_id', auth()->user()->school_id)->where('is_ccm', $ccm)->get();
+        $markingComponents = MarkingComponent::global()->where('school_id', \App\Support\ActiveSchool::id())->where('is_ccm', $ccm)->get();
         return response()->json(MarkingComponentResource::collection($markingComponents));
     }
 
@@ -121,7 +121,7 @@ class MarkingComponentController extends Controller
                     MarkingComponent::create([
                         ...$attributes,
                         'curriculum_subject_id' => null,
-                        'school_id' => auth()->user()->school_id,
+                        'school_id' => \App\Support\ActiveSchool::id(),
                     ]);
                 }
             }

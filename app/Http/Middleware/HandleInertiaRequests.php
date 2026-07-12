@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\School;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,14 +37,22 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        /** @var \App\Models\User|null $user */
+        $user = $request->user();
+        $activeSchoolId = $user ? ActiveSchool::id() : null;
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user() ? $request->user()->load(['teacher', 'guardian']) : null,
-                'school' => $request->user() ? $request->user()->school->load('currentSession') : null,
-                'roles' => $request->user() ? $request->user()->getRoleNames() : [],
-                'rolesFull' => $request->user() ? $request->user()->roles : [],
+                'user' => $user ? $user->load(['teacher', 'guardian']) : null,
+                'school' => $activeSchoolId ? School::with('currentSession')->find($activeSchoolId) : null,
+                'schools' => $user
+                    ? $user->accessibleSchools()->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values()
+                    : [],
+                'isSuperAdmin' => $user ? $user->isSuperAdmin() : false,
+                'roles' => $user ? $user->getRoleNames() : [],
+                'rolesFull' => $user ? $user->roles : [],
             ],
             'sidebarOpen' => !$request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

@@ -27,7 +27,9 @@ Route::get('/curricula/queued', [CurriculumController::class, 'queuedCurriculums
 
 // Authentication
 Route::post('/login', [AuthenticationController::class, 'login']);
-Route::post('/register', [AuthenticationController::class, 'register']);
+
+// Switch active school (session + token); accessible to any authenticated user
+Route::middleware('auth:sanctum')->post('/switch-school', [AuthenticationController::class, 'switchSchool']);
 
 // get sessions
 Route::get('/sessions', [SessionController::class, 'index']);
@@ -210,6 +212,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
     // Activity log module (read-only audit feed). Fine-grained access is
     // gated per-endpoint by activity_log.* permissions.
     require __DIR__ . '/endpoints/activity-log.php';
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
+    // Enrollments failing the result-readiness check (incomplete results)
+    Route::get('/results/incomplete', [CurriculumController::class, 'incompleteResults']);
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {

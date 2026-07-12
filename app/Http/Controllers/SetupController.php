@@ -10,8 +10,9 @@ class SetupController extends Controller
 {
     public function index()
     {
-        $user   = auth()->user();
-        $school = $user->school;
+        $school = \App\Models\School::find(\App\Support\ActiveSchool::id());
+
+        abort_unless($school, 403, 'No active school selected.');
 
         $currentSession = $school->currentSession;
 
@@ -51,7 +52,7 @@ class SetupController extends Controller
             'curricula'         => $school->curricula()->count(),
             'students'          => $school->students()->count(),
             'teachers'          => $school->teachers()->count(),
-            'guardians'         => Guardian::where('school_id', $school->id)->count(),
+            'guardians'         => Guardian::count(), // tenant-scoped by SchoolScope
         ]);
     }
 }

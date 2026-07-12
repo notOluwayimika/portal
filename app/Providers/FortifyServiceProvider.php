@@ -5,6 +5,7 @@ use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Actions\Fortify\UpdateUserProfileInformation;
+use App\Http\Responses\SchoolAwareLoginResponse;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ use Laravel\Fortify\Actions\AttemptToAuthenticate;
 use Laravel\Fortify\Actions\EnsureLoginIsNotThrottled;
 use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
 use Laravel\Fortify\Contracts\LoginResponse;
+use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
 
@@ -24,16 +26,8 @@ class FortifyServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->instance(LoginResponse::class, new class implements LoginResponse {
-            public function toResponse($request)
-            {
-                if (auth()->check()) {
-                    session(['school_id' => auth()->user()->school_id]);
-                }
-                $request->session()->save();
-                return redirect()->intended(config('fortify.home', '/dashboard'));
-            }
-        });
+        $this->app->singleton(LoginResponse::class, SchoolAwareLoginResponse::class);
+        $this->app->singleton(TwoFactorLoginResponse::class, SchoolAwareLoginResponse::class);
     }
 
     public function boot(): void
@@ -88,7 +82,6 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn() => Inertia::render('auth/register'));
         Fortify::twoFactorChallengeView(fn() => Inertia::render('auth/two-factor-challenge'));
         Fortify::confirmPasswordView(fn() => Inertia::render('auth/confirm-password'));
     }

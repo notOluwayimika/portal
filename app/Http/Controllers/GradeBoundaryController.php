@@ -27,7 +27,7 @@ class GradeBoundaryController extends Controller
                 'label' => 'required|string|max:255',
                 'grade_point' => 'required|string|max:10'
             ]);
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $examType = ExamType::where('uuid', $validated['exam_type_id'])->first();
 
             $boundary = GradeBoundary::create([...$request->except(['exam_type_id']), 'exam_type_id' => $examType->id, 'school_id' => $school->id]);

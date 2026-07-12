@@ -30,6 +30,9 @@ use App\Models\Teacher;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use App\Http\Controllers\SchoolSwitchController;
+use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController;
+use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
 
 Route::get('/', function () {
     return Inertia::render('auth/login', [
@@ -38,6 +41,25 @@ Route::get('/', function () {
         'status' => session('status'),
     ]);
 })->middleware('guest')->name('home');
+
+// School selection / switching (any authenticated user)
+Route::middleware('auth')->group(function () {
+    Route::get('/select-school', [SchoolSwitchController::class, 'show'])->name('school.select');
+    Route::post('/select-school', [SchoolSwitchController::class, 'switch'])->name('school.switch');
+});
+
+// Super admin area (manage schools + admins)
+Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(function () {
+    Route::redirect('/', '/super-admin/schools')->name('super-admin.home');
+
+    Route::get('/schools', [SuperAdminSchoolController::class, 'index'])->name('super-admin.schools');
+    Route::post('/schools', [SuperAdminSchoolController::class, 'store'])->name('super-admin.schools.store');
+    Route::put('/schools/{school:uuid}', [SuperAdminSchoolController::class, 'update'])->name('super-admin.schools.update');
+
+    Route::get('/admins', [SuperAdminAdminController::class, 'index'])->name('super-admin.admins');
+    Route::post('/admins', [SuperAdminAdminController::class, 'store'])->name('super-admin.admins.store');
+    Route::put('/admins/{uuid}/schools', [SuperAdminAdminController::class, 'syncSchools'])->name('super-admin.admins.schools');
+});
 
 // Route::get('/cleanup', function () {
 //     try {
@@ -213,6 +235,11 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     Route::get('setup/review/pending', function () {
         return Inertia::render('admin/review/pending');
     })->name('setup.review.pending');
+
+    // Enrollments failing the result-readiness check
+    Route::get('results/incomplete', function () {
+        return Inertia::render('admin/results/incomplete');
+    })->name('results.incomplete');
 
     Route::prefix('reports')->group(function () {
         Route::get('results-per-class', function () {

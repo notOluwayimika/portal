@@ -47,7 +47,7 @@ class TeacherService
     public function preparedDto(Request $request, ?int $photoId = null): TeacherDto
     {
         $data = $request->validated();
-        $data['school_id'] = session('school_id') ?? auth()->user()->school_id;
+        $data['school_id'] = \App\Support\ActiveSchool::id();
         $data['photo_id'] = $request->isMethod('post')
             ? $this->uploadPhoto($request)
             : $this->replacePhoto($request, $photoId);

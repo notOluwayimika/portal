@@ -21,7 +21,7 @@ trait ResolvesTermFilter
 
         if ($uuid) {
             $term = Term::where('uuid', $uuid)
-                ->whereHas('academicSession', fn($query) => $query->where('school_id', auth()->user()->school_id))
+                ->whereHas('academicSession', fn($query) => $query->where('school_id', \App\Support\ActiveSchool::id()))
                 ->first();
 
             abort_unless($term, 404, 'Term not found.');

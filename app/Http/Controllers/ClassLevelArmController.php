@@ -24,14 +24,14 @@ class ClassLevelArmController extends Controller
 
     public function list()
     {
-        $school = Auth::user()->school;
+        $school = \App\Support\ActiveSchool::getOrFail();
         $classLevelArms = $school->classLevelArms;
         return response()->json(ClassLevelArmResource::collection($classLevelArms));
     }
     public function index(Request $request)
     {
         try {
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $sessions = $school->sessions()->with('terms')->get()->map(function ($session) {
                 $session->terms = TermResource::collection($session->terms);
                 return $session;
@@ -66,7 +66,7 @@ class ClassLevelArmController extends Controller
                 'arm_id' => 'required|exists:arms,uuid',
                 'stream_id' => 'nullable|exists:streams,uuid'
             ]);
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $classLevel = $school->classLevels()->where('uuid', $request->class_level_id)->first();
             $arm = $school->arms()->where('uuid', $request->arm_id)->first();
             $classLevelArm = $school->classLevelArms()->where('class_level_id', $classLevel->id)->where('arm_id', $arm->id)->first();
@@ -134,7 +134,7 @@ class ClassLevelArmController extends Controller
     public function toggle(Request $request)
     {
         try {
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $request->validate([
                 'class_level_id' => 'required',
                 'arm_id' => 'required',
@@ -177,7 +177,7 @@ class ClassLevelArmController extends Controller
                 'name' => 'required|string|max:255',
                 'order' => 'nullable|integer'
             ]);
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $classLevel = $school->classLevels()->create([
                 'name' => $request->name,
                 'order' => $request->order,
@@ -227,7 +227,7 @@ class ClassLevelArmController extends Controller
             $request->validate([
                 'label' => 'required|string|max:255'
             ]);
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $arm = $school->arms()->create([
                 'label' => $request->label,
                 'uuid' => Str::uuid()

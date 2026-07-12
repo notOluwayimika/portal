@@ -59,7 +59,9 @@ return [
         'password-reset' => null,
     ],
     'features' => [
-        Features::registration(),
+        // Public self-registration is disabled: super admins provision
+        // schools and admins; admins provision everyone else.
+        // Features::registration(),
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::updateProfileInformation(),

@@ -17,9 +17,17 @@ export type User = {
     [key: string]: unknown;
 };
 
+export type SchoolOption = {
+    uuid: string;
+    name: string;
+    current?: boolean;
+};
+
 export type Auth = {
     user: User;
-    school: School;
+    school: School | null;
+    schools: SchoolOption[];
+    isSuperAdmin: boolean;
     roles: string[];
     rolesFull: Role[];
 };

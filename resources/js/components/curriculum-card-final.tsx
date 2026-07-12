@@ -83,7 +83,11 @@ function SubjectRow({
               )[0]
             : null;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setExamScore(examination?.score ? String(Number(examination?.score).toFixed(1)) : '-');
+        setExamScore(
+            examination?.score
+                ? String(Number(examination?.score).toFixed(1))
+                : '-',
+        );
         const CA = scores
             ? scores.filter(
                   (s: Score) => s.marking_component.name !== 'Examination',
@@ -136,7 +140,9 @@ function SubjectRow({
             </td>
             <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
                 {/* teacher */}
-                {convertNameToResultFmt(teachers?.[0]?.teacher?.full_name ?? '')}
+                {convertNameToResultFmt(
+                    teachers?.[0]?.teacher?.full_name ?? '',
+                )}
             </td>
             <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
                 {/* comment */}
@@ -146,7 +152,15 @@ function SubjectRow({
     );
 }
 
-export function CurriculumCardFinal({
+export function CurriculumCardFinal({ ...props }: CurriculumCardProps) {
+    if (props.sc.curriculum.grading_mode === 'categorical') {
+        return <CategoricalCurriculumCard {...props} />;
+    }
+
+    return <NumericCurriculumCardFinal {...props} />;
+}
+
+function NumericCurriculumCardFinal({
     sc,
     defaultBoundaries,
     studentId,
@@ -421,6 +435,71 @@ export function CurriculumCardFinal({
                         Promoted To Year {promotedClass}
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
+    const rows = (sc.subjects ?? [])
+        .slice()
+        .sort(
+            (left, right) =>
+                (left.curriculum_subject?.display_order ?? 0) -
+                (right.curriculum_subject?.display_order ?? 0),
+        );
+    const items = sc.curriculum.grading_scheme?.items ?? [];
+
+    return (
+        <div className="student-result-card overflow-hidden border border-slate-300">
+            <div className="grid grid-cols-2 bg-blue-100 text-xs text-black">
+                <p className="border border-slate-300 p-1">
+                    <strong>Name: </strong>
+                    {student.last_name}, {student.first_name}{' '}
+                    {student.middle_name}
+                </p>
+                <p className="border border-slate-300 p-1">
+                    <strong>Class: </strong>
+                    {student.class_details.full_class}
+                </p>
+            </div>
+            <table className="w-full border-collapse text-xs">
+                <thead>
+                    <tr className="bg-blue-100 text-black">
+                        <th className="border border-slate-300 px-2 py-1 text-left">
+                            Learning Area
+                        </th>
+                        <th className="border border-slate-300 px-2 py-1 text-center">
+                            Progress
+                        </th>
+                        <th className="border border-slate-300 px-2 py-1 text-left">
+                            Description
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((subject) => (
+                        <tr key={subject.id}>
+                            <td className="border border-slate-300 px-2 py-1">
+                                {subject.curriculum_subject?.subject?.name}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                                {subject.own_result?.grading_item?.code ?? '—'}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1">
+                                {subject.own_result?.grading_item?.label ??
+                                    'Not assessed'}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <div className="flex flex-wrap gap-3 border-t border-slate-300 p-2 text-xs">
+                {items.map((item) => (
+                    <span key={item.id}>
+                        <strong>{item.code}</strong> — {item.label}
+                    </span>
+                ))}
             </div>
         </div>
     );

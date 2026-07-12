@@ -7,17 +7,24 @@ import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import type { ExamType, GradeBoundary } from '@/types/models';
-import { Empty } from './school-setup';
+import { Empty } from '@/components/setup/setup-ui';
 
 type EditingMap = Record<string, GradeBoundary>;
+
+let temporaryRowSequence = 0;
+
+function makeTemporaryRowId(): string {
+    temporaryRowSequence += 1;
+
+    return `new-${Date.now()}-${temporaryRowSequence}`;
+}
 
 export function GradeBoundariesTab() {
     const [examTypes, setExamTypes] = useState<ExamType[]>([]);
     const [boundaries, setBoundaries] = useState<GradeBoundary[]>([]);
     const [filter, setFilter] = useState<string | null>(null);
     const [editing, setEditing] = useState<EditingMap>({});
-    const [loading, setLoading] = useState<boolean>(false);
-    const [mode, setMode] = useState<'add' | 'edit' | null>(null);
+    const [saving, setSaving] = useState<Set<string>>(new Set());
     useEffect(() => {
         const fetchExamTypes = async () => {
             const response = await axios.get('/api/exam-types');
@@ -38,7 +45,7 @@ export function GradeBoundariesTab() {
         };
 
         fetchBoundaries();
-    }, [filter, loading]);
+    }, [filter]);
 
     const gradeColor = (g: string): string => {
         if (['A', 'A*', 'A1'].includes(g)) {
@@ -64,7 +71,7 @@ export function GradeBoundariesTab() {
         }
 
         const nb: GradeBoundary = {
-            id: new Date().toLocaleTimeString(),
+            id: makeTemporaryRowId(),
             exam_type_id: filter ?? undefined,
             min_score: 0,
             max_score: 0,
@@ -72,33 +79,25 @@ export function GradeBoundariesTab() {
             label: '',
             grade_point: '',
         };
-        setMode('add');
         setBoundaries((p) => [...p, nb]);
         setEditing((p) => ({ ...p, [nb.id]: { ...nb } }));
     };
 
     const startEdit = (b: GradeBoundary): void => {
-        setMode('edit');
         setEditing((p) => ({ ...p, [b.id]: { ...b } }));
     };
     const cancelEdit = (id: string): void => {
-        setLoading(true);
-        setMode(null);
+        setEditing((p) => {
+            const next = { ...p };
+            delete next[id];
 
-        try {
-            setEditing((p) => {
-                const n = { ...p };
-                delete n[id];
+            return next;
+        });
 
-                return n;
-            });
-        } catch (error) {
-            console.log(error);
-            toast.error('Failed to cancel edit');
-        } finally {
-            setTimeout(() => {
-                setLoading(false);
-            }, 500);
+        if (id.startsWith('new-')) {
+            setBoundaries((current) =>
+                current.filter((boundary) => boundary.id !== id),
+            );
         }
     };
     const updateEdit = (
@@ -107,64 +106,67 @@ export function GradeBoundariesTab() {
         v: string | number | null,
     ): void => setEditing((p) => ({ ...p, [id]: { ...p[id], [k]: v } }));
     const saveRow = async (id: string): Promise<void> => {
-        setLoading(true);
         const boundary = editing[id];
 
         if (!boundary) {
-            setLoading(false);
-
             return;
         }
 
+        setSaving((current) => new Set(current).add(id));
+
         try {
-            if (mode === 'edit') {
-                const response = await axios.put(
-                    `/api/grade-boundaries/${id}`,
-                    boundary,
-                );
+            const isNew = id.startsWith('new-');
+            const response = isNew
+                ? await axios.post(`/api/grade-boundaries`, boundary)
+                : await axios.put(`/api/grade-boundaries/${id}`, boundary);
+            const savedBoundary = response.data.data ?? response.data;
 
-                if (response.status === 200) {
-                    cancelEdit(id);
-                    toast.success('Boundary saved successfully');
-                    setMode(null);
-                } else {
-                    toast.error('Failed to save boundary');
-                }
-            } else if (mode === 'add') {
-                const response = await axios.post(
-                    `/api/grade-boundaries`,
-                    boundary,
-                );
+            setBoundaries((current) =>
+                current.map((item) => (item.id === id ? savedBoundary : item)),
+            );
+            setEditing((current) => {
+                const next = { ...current };
+                delete next[id];
 
-                if (response.status === 201) {
-                    cancelEdit(id);
-                    toast.success('Boundary added successfully');
-                    setMode(null);
-                } else {
-                    toast.error('Failed to add boundary');
-                }
-            }
+                return next;
+            });
+            toast.success(
+                isNew
+                    ? 'Boundary added successfully'
+                    : 'Boundary saved successfully',
+            );
         } catch (error) {
             console.log(error);
             toast.error('Failed to save boundary');
         } finally {
-            setLoading(false);
+            setSaving((current) => {
+                const next = new Set(current);
+                next.delete(id);
+
+                return next;
+            });
         }
     };
     const delRow = async (id: string): Promise<void> => {
         try {
-            setLoading(true);
             const response = await axios.delete(`/api/grade-boundaries/${id}`);
 
             if (response.status === 204) {
+                setBoundaries((current) =>
+                    current.filter((boundary) => boundary.id !== id),
+                );
                 toast.success('Boundary deleted successfully');
             }
         } catch (error) {
             console.log(error);
             toast.error('Failed to delete boundary');
         } finally {
-            setLoading(false);
-            cancelEdit(id);
+            setEditing((current) => {
+                const next = { ...current };
+                delete next[id];
+
+                return next;
+            });
         }
     };
 
@@ -323,6 +325,7 @@ export function GradeBoundariesTab() {
                                             >
                                                 <button
                                                     className="btn btn-primary btn-sm btn-icon"
+                                                    disabled={saving.has(b.id)}
                                                     onClick={() =>
                                                         saveRow(b.id)
                                                     }
@@ -331,6 +334,7 @@ export function GradeBoundariesTab() {
                                                 </button>
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
+                                                    disabled={saving.has(b.id)}
                                                     onClick={() =>
                                                         cancelEdit(b.id)
                                                     }

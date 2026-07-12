@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/MarkingComponent.php
 
 namespace App\Models;
@@ -13,13 +14,14 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class MarkingComponent extends Model
 {
     use LogsActivity;
-    protected $fillable = ['curriculum_subject_id', 'name', 'weight', 'school_id', 'is_ccm'];
+
+    protected $fillable = ['curriculum_subject_id', 'marking_scheme_id', 'name', 'weight', 'school_id', 'is_ccm'];
 
     protected $casts = ['weight' => 'decimal:3', 'is_ccm' => 'boolean'];
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -31,6 +33,12 @@ class MarkingComponent extends Model
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
+
+    public function markingScheme(): BelongsTo
+    {
+        return $this->belongsTo(MarkingScheme::class);
+    }
+
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
@@ -38,7 +46,7 @@ class MarkingComponent extends Model
 
     public function scopeGlobal($query)
     {
-        return $query->whereNull('curriculum_subject_id');
+        return $query->whereNull('curriculum_subject_id')->whereNull('marking_scheme_id');
     }
 
     protected static $logName = 'setup';

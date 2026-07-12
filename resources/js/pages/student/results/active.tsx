@@ -370,7 +370,9 @@ export default function StudentResultTable() {
         const sanitize = (v: string) => v.replace(/[^\w-]+/g, '');
         const fileName = [
             `${sanitize(student.data.last_name)}${sanitize(student.data.first_name)}`,
-            sanitize((curriculum?.academic_session?.name ?? '').replace(/\//g, '-')),
+            sanitize(
+                (curriculum?.academic_session?.name ?? '').replace(/\//g, '-'),
+            ),
             sanitize(curriculum?.term?.name ?? ''),
             curriculum?.is_ccm ? 'CCM' : '',
             new Date().toISOString().slice(0, 10),
@@ -452,7 +454,10 @@ export default function StudentResultTable() {
                                 ? sc.curriculum.exam_type?.grade_boundaries
                                 : defaultGradeBoundaries.data;
 
-                        if (sc.curriculum.is_ccm) {
+                        if (
+                            sc.curriculum.is_ccm &&
+                            sc.curriculum.grading_mode !== 'categorical'
+                        ) {
                             return (
                                 <div
                                     key={sc.id}

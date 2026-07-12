@@ -108,7 +108,7 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
     })->name('admin.teacher-assignments');
 
     Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
-    Route::inertia('setup', 'admin/school-setup')->name('setup');
+    Route::inertia('setup', 'admin/setup')->name('setup');
 
     // Route::get('setup/')
     Route::get('setup/curricula-ccm', function () {
@@ -279,6 +279,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
         $curriculumSubject->load([
             'curriculum',
+            'curriculum.gradingScheme.items',
             'subject',
             'markingComponents',
             'scores.student',
@@ -288,6 +289,8 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
                     ->with('studentCurriculum.student');
             },
             'resultStatus',
+            'studentResults.student',
+            'studentResults.gradingSchemeItem',
         ]);
         return Inertia::render('curriculum-subject/show', [
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),

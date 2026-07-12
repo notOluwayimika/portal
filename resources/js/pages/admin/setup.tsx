@@ -13,7 +13,7 @@ import {
     Clipboard,
     Shield,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ClassStructureTab } from '@/components/setup/class-structure-tab';
 import { OverviewTab } from '@/components/setup/overview-tab';
 import { SessionsTab } from '@/components/setup/sessions-tab';
@@ -22,10 +22,12 @@ import ClassStreamTab from './class-stream-tab';
 import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
 import { GradeBoundariesTab } from './grade-boundaries-tab';
+import { GradingSchemesTab } from './grading-schemes-tab';
 import MarkingComponentsTab from './marking-components-tab';
 import { ScholarshipsTab } from './scholarships-tab';
 import { SportHousesTab } from './sport-houses-tab';
 import { SubjectsTab } from './subjects-tab';
+
 interface TabConfig {
     id: string;
     label: string;
@@ -317,120 +319,6 @@ const css = `
   @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 `;
 
-// ─── Modal ─────────────────────────────────────────────────────────────────
-
-interface ModalProps {
-    title: string;
-    onClose: () => void;
-    footer?: React.ReactNode;
-    children: React.ReactNode;
-    large?: boolean;
-    small?: boolean;
-}
-
-export function Modal({
-    title,
-    onClose,
-    footer,
-    children,
-    large,
-    small,
-}: ModalProps) {
-    useEffect(() => {
-        const h = (e: KeyboardEvent): void => {
-            if (e.key === 'Escape') {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', h);
-
-        return () => window.removeEventListener('keydown', h);
-    }, [onClose]);
-
-    return (
-        <div
-            className="modal-backdrop"
-            onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                    onClose();
-                }
-            }}
-        >
-            <div
-                className={`modal ${large ? 'modal-lg' : ''}${small ? 'modal-sm' : ''}`}
-            >
-                <div className="modal-hdr">
-                    <span className="modal-title">{title}</span>
-                    <button
-                        className="btn btn-ghost btn-sm btn-icon"
-                        onClick={onClose}
-                    >
-                        ✕
-                    </button>
-                </div>
-                <div className="modal-body">{children}</div>
-                {footer && <div className="modal-footer">{footer}</div>}
-            </div>
-        </div>
-    );
-}
-
-// ─── Confirm ───────────────────────────────────────────────────────────────
-
-interface ConfirmProps {
-    msg: string;
-    onConfirm: () => void;
-    onClose: () => void;
-}
-
-export function Confirm({ msg, onConfirm, onClose }: ConfirmProps) {
-    return (
-        <Modal
-            small
-            title="Confirm delete"
-            onClose={onClose}
-            footer={
-                <>
-                    <button className="btn btn-outline" onClick={onClose}>
-                        Cancel
-                    </button>
-                    <button className="btn btn-danger" onClick={onConfirm}>
-                        Delete
-                    </button>
-                </>
-            }
-        >
-            <p
-                style={{
-                    fontSize: 13.5,
-                    color: 'var(--text2)',
-                    lineHeight: 1.65,
-                }}
-            >
-                {msg}
-            </p>
-        </Modal>
-    );
-}
-
-// ─── Empty ─────────────────────────────────────────────────────────────────
-
-interface EmptyProps {
-    icon: string;
-    title: string;
-    sub?: string;
-}
-
-export function Empty({ icon, title, sub }: EmptyProps) {
-    return (
-        <div className="empty-state">
-            <div className="empty-icon">{icon}</div>
-            <div className="empty-title">{title}</div>
-            {sub && <div className="empty-sub">{sub}</div>}
-        </div>
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════
@@ -445,6 +333,7 @@ type TabId =
     | 'grades'
     | 'curricula'
     | 'marking-components'
+    | 'categorical-grading'
     | 'sport-houses'
     | 'scholarships';
 
@@ -498,6 +387,12 @@ const TABS: TabConfig[] = [
         count: null,
     },
     {
+        id: 'categorical-grading',
+        label: 'Categorical Grading',
+        icon: <BarChart2 className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
         id: 'curricula',
         label: 'Curricula',
         icon: <GraduationCap className="h-[14px] w-[14px]" />,
@@ -522,7 +417,6 @@ export default function SchoolSetup() {
     const [data, setData] = useState<SetupData | null>(null);
     const { auth } = usePage().props;
 
-
     useEffect(() => {
         async function getSetupData() {
             const response = await axios.get('/api/setup-data');
@@ -539,29 +433,27 @@ export default function SchoolSetup() {
             case 'overview':
                 return <OverviewTab data={data} />;
             case 'sessions':
-                return (
-                    <SessionsTab
-                        setSessionName={setSessionName}
-                    />
-                );
+                return <SessionsTab setSessionName={setSessionName} />;
             case 'structure':
-                return <ClassStructureTab  />;
+                return <ClassStructureTab />;
             case 'stream':
-                return <ClassStreamTab  />;
+                return <ClassStreamTab />;
             case 'exam-types':
-                return <ExamTypesTab  />;
+                return <ExamTypesTab />;
             case 'subjects':
-                return <SubjectsTab  />;
+                return <SubjectsTab />;
             case 'grades':
-                return <GradeBoundariesTab  />;
+                return <GradeBoundariesTab />;
+            case 'categorical-grading':
+                return <GradingSchemesTab />;
             case 'curricula':
-                return <CurriculaTab  />;
+                return <CurriculaTab />;
             case 'marking-components':
-                return <MarkingComponentsTab  />;
+                return <MarkingComponentsTab />;
             case 'sport-houses':
-                return <SportHousesTab  />;
+                return <SportHousesTab />;
             case 'scholarships':
-                return <ScholarshipsTab  />;
+                return <ScholarshipsTab />;
             default:
                 return null;
         }
@@ -628,8 +520,6 @@ export default function SchoolSetup() {
 
                     <main className="content-area">{render()}</main>
                 </div>
-
-
             </div>
         </>
     );

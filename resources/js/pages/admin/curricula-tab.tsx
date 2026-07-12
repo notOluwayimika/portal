@@ -13,7 +13,7 @@ import SingleSelect from '@/components/single-select';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
 import type { Curriculum } from '@/types/models';
-import { Confirm, Empty, Modal } from './school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 // ─── StatusPill ────────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/ClassLevel.php
 
 namespace App\Models;
@@ -15,12 +16,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class ClassLevel extends Model
 {
     use LogsActivity;
-    protected $fillable = ['school_id', 'name', 'order', 'level_type'];
+
+    protected $fillable = ['school_id', 'name', 'order', 'level_type', 'grading_scheme_id'];
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::addGlobalScope(new SchoolScope);
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -31,6 +33,11 @@ class ClassLevel extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    public function gradingScheme(): BelongsTo
+    {
+        return $this->belongsTo(GradingScheme::class);
     }
 
     public function arms(): BelongsToMany

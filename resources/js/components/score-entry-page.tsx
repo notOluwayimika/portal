@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     CurriculumSubject,
+    GradingSchemeItem,
     MarkingComponent,
     Score,
     Student,
@@ -81,6 +82,20 @@ const fullName = (s: Student) =>
 // ---------- Page ----------
 
 export default function ScoreEntryPage({
+    cs,
+    status,
+}: {
+    cs: CurriculumSubject;
+    status: SubjectResultStatus;
+}) {
+    if (cs.curriculum?.grading_mode === 'categorical') {
+        return <CategoricalEntryPage cs={cs} status={status} />;
+    }
+
+    return <NumericScoreEntryPage cs={cs} status={status} />;
+}
+
+function NumericScoreEntryPage({
     cs,
     status,
 }: {
@@ -377,7 +392,7 @@ export default function ScoreEntryPage({
                                     >
                                         <div>{mc.name}</div>
                                         <div className="text-xs font-normal text-gray-500">
-                                            / {maxForComponent(mc) / mc.weight}
+                                            / 100
                                         </div>
                                     </th>
                                 ))}
@@ -496,14 +511,164 @@ export default function ScoreEntryPage({
     );
 }
 
+function CategoricalEntryPage({
+    cs,
+    status,
+}: {
+    cs: CurriculumSubject;
+    status: SubjectResultStatus;
+}) {
+    const items = cs.curriculum?.grading_scheme?.items ?? [];
+    const students = cs.students ?? [];
+    const initial = Object.fromEntries(
+        (cs.student_results ?? []).map((result) => [
+            result.student.id,
+            result.grading_item?.id ?? '',
+        ]),
+    );
+    const [ratings, setRatings] = useState<Record<string, string>>(initial);
+    const [saving, setSaving] = useState<Set<string>>(new Set());
+    const [query, setQuery] = useState('');
+    const locked = ['submitted', 'approved'].includes(status.status);
+    const filtered = students.filter((assignment) => {
+        const student = assignment.student_curriculum?.student;
+        const haystack =
+            `${student?.first_name ?? ''} ${student?.last_name ?? ''} ${student?.admission_number ?? ''}`.toLowerCase();
+
+        return haystack.includes(query.toLowerCase());
+    });
+
+    const saveRating = async (studentId: string, itemId: string) => {
+        const previous = ratings[studentId] ?? '';
+        setRatings((current) => ({ ...current, [studentId]: itemId }));
+        setSaving((current) => new Set(current).add(studentId));
+        try {
+            await axios.put(
+                `/api/curriculum-subjects/${cs.id}/categorical-results/${studentId}`,
+                { grading_scheme_item_id: itemId },
+            );
+        } catch {
+            setRatings((current) => ({ ...current, [studentId]: previous }));
+        } finally {
+            setSaving((current) => {
+                const next = new Set(current);
+                next.delete(studentId);
+
+                return next;
+            });
+        }
+    };
+
+    return (
+        <>
+            <Head title={`Enter ratings — ${cs.subject.name}`} />
+            <div className="space-y-5 p-4">
+                <div>
+                    <h1 className="text-xl font-semibold text-gray-900">
+                        {cs.subject.name} — Progress Ratings
+                    </h1>
+                    <p className="text-sm text-gray-500">
+                        {cs.curriculum?.full_name} ·{' '}
+                        {cs.curriculum?.grading_scheme?.name}
+                    </p>
+                </div>
+                <input
+                    type="search"
+                    placeholder="Search by name or admission number…"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    className="w-72 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+                <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+                    <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-3 text-left font-medium text-gray-700">
+                                    Student
+                                </th>
+                                <th className="px-4 py-3 text-left font-medium text-gray-700">
+                                    Progress rating
+                                </th>
+                                <th className="px-4 py-3 text-left font-medium text-gray-700">
+                                    Description
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {filtered.map((assignment) => {
+                                const student =
+                                    assignment.student_curriculum!.student;
+                                const selected = items.find(
+                                    (item) => item.id === ratings[student.id],
+                                );
+
+                                return (
+                                    <tr key={assignment.id}>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">
+                                                {fullName(student)}
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                                {student.admission_number}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <select
+                                                value={
+                                                    ratings[student.id] ?? ''
+                                                }
+                                                disabled={
+                                                    locked ||
+                                                    saving.has(student.id)
+                                                }
+                                                onChange={(event) =>
+                                                    saveRating(
+                                                        student.id,
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                className="min-w-52 rounded-md border border-gray-300 px-3 py-2"
+                                            >
+                                                <option value="" disabled>
+                                                    Select rating
+                                                </option>
+                                                {items.map(
+                                                    (
+                                                        item: GradingSchemeItem,
+                                                    ) => (
+                                                        <option
+                                                            key={item.id}
+                                                            value={item.id}
+                                                        >
+                                                            {item.code} —{' '}
+                                                            {item.label}
+                                                        </option>
+                                                    ),
+                                                )}
+                                            </select>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                            {selected?.label ?? '—'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </>
+    );
+}
+
 // ---------- Sub-components ----------
 
 function CommentCell({
     studentSubject,
-    total
+    total,
 }: {
     studentSubject: StudentSubject;
-    total?: number
+    total?: number;
 }) {
     const [value, setValue] = useState(studentSubject.comment ?? '');
     const [status, setStatus] = useState<CellStatus>('idle');
@@ -512,40 +677,37 @@ function CommentCell({
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     function getCommentsForScore(score: number) {
-    if (score >= 91) {
-        return OUTSTANDING_COMMENTS;
-    }
+        if (score >= 91) {
+            return OUTSTANDING_COMMENTS;
+        }
 
-    if (score >= 80) {
-        return EXCELLENT_COMMENTS;
-    }
+        if (score >= 80) {
+            return EXCELLENT_COMMENTS;
+        }
 
-    if (score >= 70) {
-        return VERY_GOOD_COMMENTS;
-    }
+        if (score >= 70) {
+            return VERY_GOOD_COMMENTS;
+        }
 
-    if (score >= 60) {
-        return GOOD_COMMENTS;
-    }
+        if (score >= 60) {
+            return GOOD_COMMENTS;
+        }
 
-    if (score >= 50) {
-        return FAIR_COMMENTS;
-    }
+        if (score >= 50) {
+            return FAIR_COMMENTS;
+        }
 
-    if (score >= 40) {
-        return NEEDS_IMPROVEMENT_COMMENTS;
-    }
+        if (score >= 40) {
+            return NEEDS_IMPROVEMENT_COMMENTS;
+        }
 
-    return POOR_COMMENTS;
-}
+        return POOR_COMMENTS;
+    }
 
     // Adjust this to match your model
     const score = Number(total ?? 0);
 
-    const commentOptions = useMemo(
-        () => getCommentsForScore(score),
-        [score],
-    );
+    const commentOptions = useMemo(() => getCommentsForScore(score), [score]);
 
     const isValid = (val: string) => {
         if (val.length > 100) {
@@ -560,10 +722,7 @@ function CommentCell({
         return true;
     };
 
-    const persist = async (
-        studentSubjectId: string,
-        comment: string,
-    ) => {
+    const persist = async (studentSubjectId: string, comment: string) => {
         try {
             setStatus('saving');
 
@@ -650,10 +809,7 @@ function CommentCell({
 
             <datalist id={datalistId}>
                 {commentOptions.map((comment) => (
-                    <option
-                        key={comment}
-                        value={comment}
-                    />
+                    <option key={comment} value={comment} />
                 ))}
             </datalist>
 

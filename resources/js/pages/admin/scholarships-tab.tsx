@@ -3,7 +3,7 @@ import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import type { Scholarship } from '@/types/models';
-import { Confirm, Empty, Modal } from './school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 interface ScholarshipForm {
     name: string;
@@ -44,8 +44,7 @@ export function ScholarshipsTab() {
             }
         } catch (error) {
             console.log(error);
-            toast.error(
-                'An error occurred while deleting the scholarship.');
+            toast.error('An error occurred while deleting the scholarship.');
         } finally {
             setLoading(false);
         }
@@ -83,9 +82,7 @@ export function ScholarshipsTab() {
             }
         } catch (error) {
             console.log(error);
-            toast.error(
-                'An error occurred while saving the scholarship.'
-            );
+            toast.error('An error occurred while saving the scholarship.');
         } finally {
             setLoading(false);
         }

@@ -2,8 +2,8 @@ import axios from 'axios';
 import { Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
-import type { Arm, ClassLevel, Stream } from '@/types/models';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
+import type { Arm, ClassLevel, GradingScheme, Stream } from '@/types/models';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
 // ═══════════════════════════════════════════════════════════════════════════
@@ -15,6 +15,7 @@ import type { Arm, ClassLevel, Stream } from '@/types/models';
 interface ClassLevelForm {
     name: string;
     order: string | number;
+    grading_scheme_id: string;
 }
 interface ArmForm {
     label: string;
@@ -34,6 +35,7 @@ export function ClassStructureTab() {
     const [levels, setLevels] = useState<ClassLevel[]>([]);
     const [arms, setArms] = useState<Arm[]>([]);
     const [streams, setStreams] = useState<Stream[]>([]);
+    const [gradingSchemes, setGradingSchemes] = useState<GradingScheme[]>([]);
     const [loading, setLoading] = useState(false);
     const [lvlModal, setLvlModal] = useState<string | null>(null);
     const [armModal, setArmModal] = useState<string | null>(null);
@@ -41,6 +43,7 @@ export function ClassStructureTab() {
     const [lvlForm, setLvlForm] = useState<ClassLevelForm>({
         name: '',
         order: '',
+        grading_scheme_id: '',
     });
     const [armForm, setArmForm] = useState<ArmForm>({ label: '' });
     const [streamForm, setStreamForm] = useState<StreamForm>({
@@ -58,6 +61,8 @@ export function ClassStructureTab() {
             setLevels(response.data.class_levels);
             setArms(response.data.arms);
             setStreams(response.data.streams);
+            const schemesResponse = await axios.get('/api/grading-schemes');
+            setGradingSchemes(schemesResponse.data.data ?? []);
         };
         fetchClassStructure();
     }, [loading]);
@@ -76,6 +81,7 @@ export function ClassStructureTab() {
                     {
                         name: lvlForm.name.trim(),
                         order: +lvlForm.order || 0,
+                        grading_scheme_id: lvlForm.grading_scheme_id || null,
                     },
                 );
 
@@ -91,6 +97,7 @@ export function ClassStructureTab() {
                     {
                         name: lvlForm.name.trim(),
                         order: +lvlForm.order || 0,
+                        grading_scheme_id: lvlForm.grading_scheme_id || null,
                     },
                 );
 
@@ -213,7 +220,9 @@ export function ClassStructureTab() {
             );
 
             if (response.status === 200) {
-                toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`);
+                toast.success(
+                    `${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`,
+                );
             } else {
                 toast.error(`Failed to delete ${type}`);
             }
@@ -282,7 +291,11 @@ export function ClassStructureTab() {
                     <button
                         className="btn btn-primary"
                         onClick={() => {
-                            setLvlForm({ name: '', order: '' });
+                            setLvlForm({
+                                name: '',
+                                order: '',
+                                grading_scheme_id: '',
+                            });
                             setLvlModal('new');
                         }}
                     >
@@ -392,6 +405,9 @@ export function ClassStructureTab() {
                                                         setLvlForm({
                                                             name: l.name,
                                                             order: l.order,
+                                                            grading_scheme_id:
+                                                                l.grading_scheme
+                                                                    ?.id ?? '',
                                                         });
                                                         setLvlModal(l.id);
                                                     }}
@@ -588,6 +604,31 @@ export function ClassStructureTab() {
                                     }))
                                 }
                             />
+                        </div>
+                        <div className="field span-2">
+                            <label>Grading method</label>
+                            <select
+                                value={lvlForm.grading_scheme_id}
+                                onChange={(event) =>
+                                    setLvlForm((current) => ({
+                                        ...current,
+                                        grading_scheme_id: event.target.value,
+                                    }))
+                                }
+                            >
+                                <option value="">
+                                    Numerical grading (default)
+                                </option>
+                                {gradingSchemes.map((scheme) => (
+                                    <option key={scheme.id} value={scheme.id}>
+                                        Categorical — {scheme.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <span className="text-xs text-slate-500">
+                                New curricula for this level will use this
+                                grading method.
+                            </span>
                         </div>
                     </div>
                 </Modal>

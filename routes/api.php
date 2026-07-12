@@ -6,6 +6,7 @@ use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
 use App\Http\Controllers\GradeBoundaryController;
+use App\Http\Controllers\GradingSchemeController;
 use App\Http\Controllers\GuardianController;
 use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
@@ -114,6 +115,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::post('/grade-boundaries', [GradeBoundaryController::class, 'store']);
     Route::put('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'update']);
     Route::delete('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'destroy']);
+    Route::get('/grading-schemes', [GradingSchemeController::class, 'index']);
+    Route::post('/grading-schemes', [GradingSchemeController::class, 'store']);
+    Route::put('/grading-schemes/{gradingScheme:uuid}', [GradingSchemeController::class, 'update']);
 
     // protected curricula routes
     Route::post('/curricula', [CurriculumController::class, 'store']);
@@ -128,6 +132,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
+    Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
+        ->withoutScopedBindings();
 
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();

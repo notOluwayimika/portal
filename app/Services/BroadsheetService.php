@@ -39,13 +39,13 @@ class BroadsheetService
     public function groups(ClassLevel $classLevel, ?string $status, ?bool $isCcm): array
     {
         $curricula = Curriculum::query()
-            ->whereHas('classLevelArm', fn($q) => $q->where('class_level_id', $classLevel->id))
-            ->when($status, fn($q) => $q->where('status', $status))
-            ->when(!is_null($isCcm), fn($q) => $q->where('is_ccm', $isCcm))
+            ->whereHas('classLevelArm', fn ($q) => $q->where('class_level_id', $classLevel->id))
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->when(! is_null($isCcm), fn ($q) => $q->where('is_ccm', $isCcm))
             ->with(['term.academicSession', 'examType', 'classLevelArm.arm', 'classLevelArm.classLevel', 'classLevelArm.stream'])
             ->get();
 
-        $groups = $curricula->groupBy(fn(Curriculum $c) => implode('|', [
+        $groups = $curricula->groupBy(fn (Curriculum $c) => implode('|', [
             $c->term_id,
             $c->exam_type_id,
             $c->is_ccm ? '1' : '0',
@@ -61,13 +61,13 @@ class BroadsheetService
                 'curriculum_id' => $first->uuid,
                 'term' => [
                     'name' => $term->name,
-                    'full_name' => $term->name . ' - ' . $term->academicSession->name,
+                    'full_name' => $term->name.' - '.$term->academicSession->name,
                 ],
                 'exam_type' => $first->examType->name,
                 'is_ccm' => $first->is_ccm,
                 'status' => $first->status,
                 'arms' => $members
-                    ->map(fn(Curriculum $c) => $this->classLabel($c->classLevelArm))
+                    ->map(fn (Curriculum $c) => $this->classLabel($c->classLevelArm))
                     ->values()
                     ->all(),
                 'arm_count' => $members->count(),
@@ -87,7 +87,7 @@ class BroadsheetService
         $classLevel = $curriculum->classLevelArm->classLevel;
 
         $siblings = Curriculum::query()
-            ->whereHas('classLevelArm', fn($q) => $q->where('class_level_id', $classLevel->id))
+            ->whereHas('classLevelArm', fn ($q) => $q->where('class_level_id', $classLevel->id))
             ->where('term_id', $curriculum->term_id)
             ->where('exam_type_id', $curriculum->exam_type_id)
             ->where('is_ccm', $curriculum->is_ccm)
@@ -100,7 +100,7 @@ class BroadsheetService
                 'curriculumSubjects.subject',
                 'curriculumSubjects.markingComponents',
                 'curriculumSubjects.scores',
-                'curriculumSubjects.studentResults',
+                'curriculumSubjects.studentResults.gradingSchemeItem',
                 'studentCurricula.student',
             ])
             ->orderBy('class_level_arm_id')
@@ -114,7 +114,7 @@ class BroadsheetService
             $students = $sibling->studentCurricula->map(function (StudentCurriculum $studentCurriculum) use ($sibling, $columnSubjects, $boundaries, &$sn) {
                 $student = $studentCurriculum->student;
 
-                if (!$student) {
+                if (! $student) {
                     return null;
                 }
 
@@ -136,7 +136,7 @@ class BroadsheetService
 
                 return [
                     'sn' => ++$sn,
-                    'name' => trim($student->last_name . ', ' . $student->first_name . ($student->middle_name ? ' ' . $student->middle_name : '')),
+                    'name' => trim($student->last_name.', '.$student->first_name.($student->middle_name ? ' '.$student->middle_name : '')),
                     'gender' => $student->gender,
                     'subjects' => $subjectsData,
                     'gpa' => $gpCount > 0 ? number_format($gpSum / $gpCount, 1) : null,
@@ -157,7 +157,7 @@ class BroadsheetService
             'class_level' => $classLevel->name,
             'term' => [
                 'name' => $term->name,
-                'full_name' => $term->name . ' - ' . $term->academicSession->name,
+                'full_name' => $term->name.' - '.$term->academicSession->name,
             ],
             'exam_type' => $curriculum->examType->name,
             'is_ccm' => $curriculum->is_ccm,
@@ -175,15 +175,26 @@ class BroadsheetService
     private function buildColumnModel(Collection $siblings, bool $isCcm): array
     {
         $uniqueSubjects = $siblings
-            ->flatMap(fn(Curriculum $c) => $c->curriculumSubjects)
+            ->flatMap(fn (Curriculum $c) => $c->curriculumSubjects)
             ->unique('subject_id');
 
         return $uniqueSubjects
             ->sortBy('display_order')
             ->map(function (CurriculumSubject $cs) use ($isCcm) {
-                $components = $this->orderedComponents($cs->markingComponents);
+                if ($cs->curriculum->usesCategoricalGrading()) {
+                    return [
+                        'subject_id' => $cs->subject_id,
+                        'name' => $cs->subject->name,
+                        'columns' => [
+                            ['key' => 'progress', 'label' => 'Progress', 'name' => 'Progress'],
+                            ['key' => 'description', 'label' => 'Description', 'name' => 'Description'],
+                        ],
+                    ];
+                }
 
-                $columns = $components->map(fn($mc) => [
+                $components = $this->orderedComponents($cs->effectiveMarkingComponents());
+
+                $columns = $components->map(fn ($mc) => [
                     'key' => Str::slug($mc->name, '_'),
                     'label' => $this->componentLabel($mc->name),
                     'name' => $mc->name,
@@ -193,14 +204,14 @@ class BroadsheetService
                     $columns[] = ['key' => 'total', 'label' => 'CCM', 'name' => 'CCM'];
                 } else {
                     $caWeight = (float) $components
-                        ->filter(fn($mc) => Str::lower(trim($mc->name)) !== 'examination')
-                        ->sum(fn($mc) => (float) $mc->weight);
+                        ->filter(fn ($mc) => Str::lower(trim($mc->name)) !== 'examination')
+                        ->sum(fn ($mc) => (float) $mc->weight);
                     $examWeight = (float) $components
-                        ->filter(fn($mc) => Str::lower(trim($mc->name)) === 'examination')
-                        ->sum(fn($mc) => (float) $mc->weight);
+                        ->filter(fn ($mc) => Str::lower(trim($mc->name)) === 'examination')
+                        ->sum(fn ($mc) => (float) $mc->weight);
 
-                    $columns[] = ['key' => 'ca_total', 'label' => 'CA (' . round($caWeight * 100) . '%)', 'name' => 'CA Total'];
-                    $columns[] = ['key' => 'exam_total', 'label' => 'Exam (' . round($examWeight * 100) . '%)', 'name' => 'Exam Total'];
+                    $columns[] = ['key' => 'ca_total', 'label' => 'CA ('.round($caWeight * 100).'%)', 'name' => 'CA Total'];
+                    $columns[] = ['key' => 'exam_total', 'label' => 'Exam ('.round($examWeight * 100).'%)', 'name' => 'Exam Total'];
                     $columns[] = ['key' => 'total', 'label' => 'Total Score', 'name' => 'Total Score'];
                 }
 
@@ -227,13 +238,21 @@ class BroadsheetService
             $cell[$colDef['key']] = null;
         }
 
-        if (!$curriculumSubject) {
+        if (! $curriculumSubject) {
+            return $cell;
+        }
+
+        if ($curriculumSubject->curriculum->usesCategoricalGrading()) {
+            $result = $curriculumSubject->studentResults->firstWhere('student_id', $studentId);
+            $cell['progress'] = $result?->gradingSchemeItem?->code;
+            $cell['description'] = $result?->gradingSchemeItem?->label;
+
             return $cell;
         }
 
         $componentScores = [];
         foreach ($curriculumSubject->scores->where('student_id', $studentId) as $score) {
-            $mc = $curriculumSubject->markingComponents->firstWhere('id', $score->marking_component_id);
+            $mc = $curriculumSubject->effectiveMarkingComponents()->firstWhere('id', $score->marking_component_id);
 
             if ($mc) {
                 $componentScores[Str::lower(trim($mc->name))] = (float) $score->score;
@@ -294,7 +313,7 @@ class BroadsheetService
 
     private function gradePointForGrade(?string $grade, Collection $boundaries): ?string
     {
-        if (!$grade) {
+        if (! $grade) {
             return null;
         }
 
@@ -336,10 +355,10 @@ class BroadsheetService
 
     private function classLabel(ClassLevelArm $classLevelArm): string
     {
-        $label = str_replace('Year ', '', $classLevelArm->classLevel->name) . $classLevelArm->arm->label;
+        $label = str_replace('Year ', '', $classLevelArm->classLevel->name).$classLevelArm->arm->label;
 
         if ($classLevelArm->stream) {
-            $label .= ' ' . $classLevelArm->stream->name;
+            $label .= ' '.$classLevelArm->stream->name;
         }
 
         return $label;

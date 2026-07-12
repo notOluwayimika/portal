@@ -1,13 +1,14 @@
 <?php
+
 // app/Models/Curriculum.php
 
 namespace App\Models;
 
-use App\Enums\CurriculaStatusEnum;
 use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -15,31 +16,34 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Curriculum extends Model
 {
     use LogsActivity;
+
     protected $table = 'curricula';
 
     protected $append = ['full_name'];
 
     protected $fillable = [
         'school_id',
+        'marking_scheme_id',
+        'grading_scheme_id',
         'term_id',
         'class_level_arm_id',
         'exam_type_id',
         'min_subjects',
         'status',
-        'is_ccm'
+        'is_ccm',
     ];
 
     protected $casts = [
         'term_id' => 'integer',
         'min_subjects' => 'integer',
         'status' => 'string',
-        'is_ccm' => 'boolean'
+        'is_ccm' => 'boolean',
     ];
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::addGlobalScope(new SchoolScope);
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -51,26 +55,47 @@ class Curriculum extends Model
     {
         return $this->belongsTo(School::class);
     }
+
+    public function markingScheme(): BelongsTo
+    {
+        return $this->belongsTo(MarkingScheme::class);
+    }
+
+    public function gradingScheme(): BelongsTo
+    {
+        return $this->belongsTo(GradingScheme::class);
+    }
+
+    public function usesCategoricalGrading(): bool
+    {
+        return $this->grading_scheme_id !== null;
+    }
+
     public function term(): BelongsTo
     {
         return $this->belongsTo(Term::class);
     }
-    public function academicSession(): \Illuminate\Database\Eloquent\Relations\HasOneThrough
+
+    public function academicSession(): HasOneThrough
     {
         return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');
     }
+
     public function classLevelArm(): BelongsTo
     {
         return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
+
     public function examType(): BelongsTo
     {
         return $this->belongsTo(ExamType::class);
     }
+
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);
     }
+
     public function studentCurricula(): HasMany
     {
         return $this->hasMany(StudentCurriculum::class);
@@ -88,7 +113,7 @@ class Curriculum extends Model
 
     public function getFullNameAttribute()
     {
-        return $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . ($this->is_ccm ? '(CCM)' : '');
+        return $this->classLevelArm->classLevel->name.' '.$this->classLevelArm->arm->label.($this->classLevelArm->stream ? ' '.$this->classLevelArm->stream->name : '').' '.$this->examType->name.' '.($this->is_ccm ? '(CCM)' : '');
     }
 
     protected static $logName = 'academics';

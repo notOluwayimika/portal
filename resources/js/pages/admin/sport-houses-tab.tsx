@@ -3,7 +3,7 @@ import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import type { SportHouse } from '@/types/models';
-import { Confirm, Empty, Modal } from './school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 interface SportHouseForm {
     name: string;
@@ -82,9 +82,7 @@ export function SportHousesTab() {
             }
         } catch (error) {
             console.log(error);
-            toast.error(
-                'An error occurred while saving the sport house.'
-            );
+            toast.error('An error occurred while saving the sport house.');
         } finally {
             setLoading(false);
         }

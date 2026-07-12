@@ -12,27 +12,30 @@ class CurriculumResource extends JsonResource
     public function withoutSubjects()
     {
         $this->includeSubjects = false;
+
         return $this;
     }
 
     public function toArray(Request $request): array
     {
         return [
-            "id" => $this->uuid,
-            "term" => new TermResource($this->term),
-            "academic_session" => new SessionResource($this->academicSession),
-            "class_level_arm" => new ClassLevelArmResource($this->classLevelArm),
-            "exam_type" => new ExamTypeResource($this->examType),
-            "min_subjects" => $this->min_subjects,
-            "status" => $this->status,
-            "is_ccm" => $this->is_ccm,
-            "full_name" => $this->academicSession->name . ' ' . $this->classLevelArm->classLevel->name . ' ' . $this->classLevelArm->arm->label . ($this->classLevelArm->stream ? ' ' . $this->classLevelArm->stream->name : '') . ' ' . $this->examType->name . ' ' . $this->term->name . ' '  . ($this->is_ccm ? '(CCM)' : ''),
+            'id' => $this->uuid,
+            'term' => new TermResource($this->term),
+            'academic_session' => new SessionResource($this->academicSession),
+            'class_level_arm' => new ClassLevelArmResource($this->classLevelArm),
+            'exam_type' => new ExamTypeResource($this->examType),
+            'min_subjects' => $this->min_subjects,
+            'status' => $this->status,
+            'is_ccm' => $this->is_ccm,
+            'grading_mode' => $this->grading_scheme_id ? 'categorical' : 'numeric',
+            'grading_scheme' => $this->gradingScheme ? new GradingSchemeResource($this->gradingScheme) : null,
+            'full_name' => $this->academicSession->name.' '.$this->classLevelArm->classLevel->name.' '.$this->classLevelArm->arm->label.($this->classLevelArm->stream ? ' '.$this->classLevelArm->stream->name : '').' '.$this->examType->name.' '.$this->term->name.' '.($this->is_ccm ? '(CCM)' : ''),
 
-            "curriculum_subjects" => $this->when(
+            'curriculum_subjects' => $this->when(
                 $this->includeSubjects,
                 CurriculumSubjectResource::collection($this->curriculumSubjects)
             ),
-            'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula'))
+            'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
         ];
     }
 }

@@ -178,10 +178,11 @@ export default function MarkingComponents({
                     <div>
                         <h1>Marking Components {suffix && `(${suffix})`}</h1>
                         <p>
-                            These default components apply to curriculum
-                            subjects but can be modified per subject later.
-                            Weights must add up to exactly 100% before you can
-                            save.
+                            These components apply to every subject in newly
+                            created {suffix ? 'CCM' : 'end-of-term'} curricula.
+                            Saving creates a new version for future curricula;
+                            existing curricula and historical results remain
+                            unchanged. Weights must total exactly 100%.
                         </p>
                     </div>
                 </div>

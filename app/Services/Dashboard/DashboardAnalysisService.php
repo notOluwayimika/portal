@@ -2,23 +2,21 @@
 
 namespace App\Services\Dashboard;
 
-use App\Exceptions\Dashboard\PiiDetectedException;
 use App\Models\School;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class DashboardAnalysisService
 {
     private const CACHE_TTL_MINUTES = 10;
+
     private const STORAGE_DIR = 'dashboard-analysis';
 
     public function __construct(
         private readonly PiiSanitizationService $pii,
-    ) {
-    }
+    ) {}
 
     /**
      * Load analysis for a school from cache or disk. Regenerates if stale.
@@ -27,7 +25,7 @@ class DashboardAnalysisService
     {
         $cacheKey = "dashboard_analysis_{$school->id}";
 
-        if (!$force && Cache::has($cacheKey)) {
+        if (! $force && Cache::has($cacheKey)) {
             $path = Cache::get($cacheKey);
             if ($path && file_exists($path)) {
                 $json = file_get_contents($path);
@@ -59,7 +57,7 @@ class DashboardAnalysisService
         $recentActivities = $this->collectRecentActivities($schoolId);
 
         $activeModulesCount = collect($modules)
-            ->filter(fn($m) => $m['status'] === 'active')
+            ->filter(fn ($m) => $m['status'] === 'active')
             ->count();
 
         // Onboarding ends when the school has completed basic setup:
@@ -70,7 +68,7 @@ class DashboardAnalysisService
         $hasClasses = ($entities['curricula']['total'] ?? 0) >= 1;
         $hasStudents = ($entities['students']['active'] ?? 0) >= $dormantStudentThreshold;
         $hasCurriculum = ($entities['curriculum_subjects']['total'] ?? 0) >= 1;
-        $isOnboardingState = !($hasClasses && $hasStudents && $hasCurriculum);
+        $isOnboardingState = ! ($hasClasses && $hasStudents && $hasCurriculum);
 
         $analysis = [
             'school_id' => $school->uuid ?? (string) $school->id,
@@ -207,7 +205,7 @@ class DashboardAnalysisService
                 ->get();
 
             $distributions['students_by_class_level'] = $byClassLevel
-                ->map(fn($r) => ['name' => $r->label, 'count' => (int) $r->count])
+                ->map(fn ($r) => ['name' => $r->label, 'count' => (int) $r->count])
                 ->toArray();
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Distribution 'students_by_class_level' failed: {$e->getMessage()}");
@@ -223,7 +221,14 @@ class DashboardAnalysisService
                 ->where('curricula.status', 'active')
                 ->join('curriculum_subjects', 'curriculum_subjects.curriculum_id', '=', 'curricula.id')
 
-                ->leftJoin('marking_components', 'marking_components.curriculum_subject_id', '=', 'curriculum_subjects.id')
+                ->leftJoin('marking_components as local_components', function ($join) {
+                    $join->on('local_components.curriculum_subject_id', '=', 'curriculum_subjects.id')
+                        ->whereNull('curricula.marking_scheme_id');
+                })
+                ->leftJoin('marking_components as scheme_components', function ($join) {
+                    $join->on('scheme_components.marking_scheme_id', '=', 'curricula.marking_scheme_id')
+                        ->whereNull('scheme_components.curriculum_subject_id');
+                })
 
                 // subject enrollment
                 ->leftJoin('student_subjects', 'student_subjects.curriculum_subject_id', '=', 'curriculum_subjects.id')
@@ -234,7 +239,7 @@ class DashboardAnalysisService
                 ->leftJoin('scores', function ($join) {
                     $join->on('scores.student_id', '=', 'student_curricula.student_id')
                         ->on('scores.curriculum_subject_id', '=', 'curriculum_subjects.id')
-                        ->on('scores.marking_component_id', '=', 'marking_components.id');
+                        ->whereRaw('scores.marking_component_id = COALESCE(scheme_components.id, local_components.id)');
                 })
 
                 ->where('curricula.school_id', $schoolId)
@@ -247,7 +252,7 @@ class DashboardAnalysisService
                     COUNT(DISTINCT CONCAT(
                         student_curricula.student_id,
                         "-", curriculum_subjects.id,
-                        "-", marking_components.id
+                        "-", COALESCE(scheme_components.id, local_components.id)
                     )) as total_slots,
 
                     COUNT(DISTINCT scores.id) as filled_slots
@@ -260,6 +265,7 @@ class DashboardAnalysisService
                 $pct = $r->total_slots > 0
                     ? (int) round(($r->filled_slots / $r->total_slots) * 100)
                     : 0;
+
                 return ['label' => $r->label, 'pct' => $pct, 'filled' => (int) $r->filled_slots, 'total' => (int) $r->total_slots];
             })->toArray();
         } catch (\Throwable $e) {
@@ -281,7 +287,7 @@ class DashboardAnalysisService
                 ->orderByDesc('created_at')
                 ->limit(10)
                 ->get(['description', 'created_at', 'log_name'])
-                ->map(fn($r) => [
+                ->map(fn ($r) => [
                     'description' => $r->description,
                     'log_name' => $r->log_name,
                     'created_at' => $r->created_at,
@@ -289,6 +295,7 @@ class DashboardAnalysisService
                 ->toArray();
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Recent activities query failed: {$e->getMessage()}");
+
             return [];
         }
     }
@@ -298,10 +305,10 @@ class DashboardAnalysisService
      */
     private function persist(School $school, array $analysis): void
     {
-        $filename = self::STORAGE_DIR . "/{$school->id}-" . Carbon::now()->format('Ymd-His') . '.json';
+        $filename = self::STORAGE_DIR."/{$school->id}-".Carbon::now()->format('Ymd-His').'.json';
         $fullPath = storage_path("app/{$filename}");
 
-        if (!is_dir(dirname($fullPath))) {
+        if (! is_dir(dirname($fullPath))) {
             mkdir(dirname($fullPath), 0755, true);
         }
 

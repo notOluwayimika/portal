@@ -1,13 +1,14 @@
 import { usePage } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { CurriculumCardFinal } from '@/components/curriculum-card-final';
+import { GradeKeyTable } from '@/components/student-results/shared';
 import { handleBack } from '@/helpers';
 import type {
     ClassLevelArm,
     GradeBoundary,
     StudentCurriculum,
 } from '@/types/models';
-import { CurriculumCard, GradeKeyTable, ResultDetails } from './active';
+import { CurriculumCard, ResultDetails } from './active';
 interface ClassLevelArmPageProps {
     classLevelArms: { data: ClassLevelArm[] };
     defaultGradeBoundaries: { data: GradeBoundary[] };

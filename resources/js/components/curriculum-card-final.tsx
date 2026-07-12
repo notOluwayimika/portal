@@ -1,18 +1,18 @@
 import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
-import { convertNameToResultFmt, fmtDate, toShortName } from '@/helpers';
 import type {
     CurriculumCardProps,
     ResultRow,
-} from '@/pages/student/results/active';
+} from '@/components/student-results/shared';
 import {
     gradeForScore,
     GradeKeyTable,
     gradePointForScore,
     toNum,
     totalGradePoint,
-} from '@/pages/student/results/active';
+} from '@/components/student-results/shared';
+import { convertNameToResultFmt, fmtDate, toShortName } from '@/helpers';
 import type {
     CurriculumSubject,
     GradeBoundary,

@@ -14,7 +14,7 @@ class SubjectController extends Controller
     public function index(Request $request)
     {
         try {
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $limit = $request->input('limit', 10);
             $search = $request->input('search', '');
             $subjects = $school->subjects();
@@ -45,10 +45,15 @@ class SubjectController extends Controller
             // Implementation for storing a new subject
             $request->validate([
                 'name' => 'required|string|max:255',
-                'code' => 'required|string|max:255|unique:subjects,code',
+                'code' => [
+                    'required', 'string', 'max:255',
+                    // subject codes are unique per school, not globally
+                    \Illuminate\Validation\Rule::unique('subjects', 'code')
+                        ->where('school_id', \App\Support\ActiveSchool::id()),
+                ],
             ]);
 
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $subject = $school->subjects()->create([...$request->only(['name', 'code']), 'uuid' => Str::uuid()]);
 
             return response()->json(new SubjectResource($subject), 201);
@@ -67,7 +72,7 @@ class SubjectController extends Controller
                 'code' => 'required|string|max:255',
             ]);
 
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $subject = $school->subjects()->findOrFail($subject->id);
             $subject->update($request->only(['name', 'code']));
 
@@ -82,7 +87,7 @@ class SubjectController extends Controller
     public function destroy(Subject $subject)
     {
         try {
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $subject = $school->subjects()->findOrFail($subject->id);
             $subject->delete();
 

@@ -27,7 +27,9 @@ class ActivityLogQueryService
 
     public function currentSchoolId(User $user): int|string|null
     {
-        return session('school_id') ?? $user->school_id;
+        // ActiveSchool covers request contexts (session/token); the user's
+        // own school remains the fallback for queued jobs (no auth context).
+        return \App\Support\ActiveSchool::id() ?? $user->school_id;
     }
 
     public function baseQuery(User $user, bool $includeSystem = false): Builder

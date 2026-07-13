@@ -65,7 +65,7 @@ class StudentController extends Controller
     public function store(StudentRequest $request)
     {
         $data = $request->validated();
-        $data['school_id'] = $request->user()->school_id;
+        $data['school_id'] = \App\Support\ActiveSchool::id();
         $data['photo_id'] = $this->uploadPhoto($request);
         unset($data['photo']);
 
@@ -80,7 +80,7 @@ class StudentController extends Controller
 
         $student = DB::transaction(function () use ($studentDto, $guardianEntries, &$deferredNotifications, $request) {
             $student = $this->studentService->store($studentDto->toArray());
-            $schoolId = (int) $request->user()->school_id;
+            $schoolId = (int) \App\Support\ActiveSchool::id();
 
             foreach ($guardianEntries as $entry) {
                 $this->processGuardianEntry($student, $entry, $schoolId, $deferredNotifications);
@@ -113,7 +113,7 @@ class StudentController extends Controller
     public function update(StudentRequest $request, Student $student)
     {
         $data = $request->validated();
-        $data['school_id'] = $request->user()->school_id;
+        $data['school_id'] = \App\Support\ActiveSchool::id();
         $data['photo_id'] = $this->replacePhoto($request, $student->photo_id);
         unset($data['photo'], $data['guardians']);
 
@@ -152,7 +152,7 @@ class StudentController extends Controller
     public function import(ImportStudentRequest $request)
     {
         $data = $request->validated();
-        $schoolId = $request->user()->school_id;
+        $schoolId = \App\Support\ActiveSchool::id();
 
         $result = $this->studentService->import(
             $data['students'],
@@ -189,7 +189,7 @@ class StudentController extends Controller
             ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
         $genders = GenderTypeEnum::options();
-        $school = request()->user()->school;
+        $school = \App\Support\ActiveSchool::getOrFail();
 
         return Response::success([
             'curricula' => CurriculumOptionResource::collection($curricula),

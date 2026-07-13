@@ -17,10 +17,10 @@ class TeacherAssignmentController extends Controller
 {
     public function index()
     {
-        $schoolId = auth()->user()->school_id;
-
+        // whereHas applies Teacher's SchoolScope, restricting assignments
+        // to teachers of the active school.
         $assignments = ClassLevelArmTeacher::query()
-            ->whereHas('teacher', fn($query) => $query->where('school_id', $schoolId))
+            ->whereHas('teacher')
             ->with([
                 'teacher.user',
                 'classLevelArm.classLevel',
@@ -35,11 +35,10 @@ class TeacherAssignmentController extends Controller
 
     public function teachers(Request $request)
     {
-        $schoolId = auth()->user()->school_id;
         $search = $request->query('search');
 
+        // Teacher is tenant-scoped (SchoolScope) — no explicit filter needed.
         $teachers = Teacher::with('user')
-            ->where('school_id', $schoolId)
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('first_name', 'like', "%{$search}%")

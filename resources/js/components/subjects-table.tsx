@@ -5,7 +5,7 @@ import axios from 'axios';
 import { PackagePlus, PencilIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Modal } from '@/pages/admin/school-setup';
+import { Modal } from '@/components/setup/setup-ui';
 import type {
     CurriculumSubject,
     MarkingComponent,
@@ -311,7 +311,7 @@ function ManageSubjectModal({
                 </>
             }
         >
-            <SubjectCard cs={curriculumSubject}/>
+            <SubjectCard cs={curriculumSubject} />
         </Modal>
     );
 }

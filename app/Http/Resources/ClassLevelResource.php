@@ -19,7 +19,9 @@ class ClassLevelResource extends JsonResource
             'name' => $this->name,
             'arms' => ArmResource::collection($this->arms),
             'class_level_arms' => ClassLevelArmResource::collection($this->whenLoaded('classLevelArms')),
-            'order' => $this->order
+            'order' => $this->order,
+            'grading_mode' => $this->grading_scheme_id ? 'categorical' : 'numeric',
+            'grading_scheme' => $this->gradingScheme ? new GradingSchemeResource($this->gradingScheme) : null,
         ];
     }
 }

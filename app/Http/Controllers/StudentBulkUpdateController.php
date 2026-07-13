@@ -24,7 +24,7 @@ class StudentBulkUpdateController extends Controller
             'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
         ]);
 
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
+        $schoolId = (int) \App\Support\ActiveSchool::id();
 
         $file = $request->file('file');
         $filePath = $file->store("imports/inbox/{$schoolId}");
@@ -75,10 +75,8 @@ class StudentBulkUpdateController extends Controller
 
     public function index(Request $request)
     {
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
-
+        // Import is tenant-scoped (SchoolScope) — no explicit filter needed.
         $imports = Import::query()
-            ->where('school_id', $schoolId)
             ->where('type', 'student_bulk_update')
             ->latest()
             ->limit($request->integer('limit', 10))
@@ -119,7 +117,7 @@ class StudentBulkUpdateController extends Controller
 
     private function authorizeSchool(Request $request, Import $import): void
     {
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
+        $schoolId = (int) \App\Support\ActiveSchool::id();
         abort_unless($import->school_id === $schoolId, 404);
     }
 

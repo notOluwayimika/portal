@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import type { Subject } from '@/types/models';
-import { Confirm, Empty, Modal } from './school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 interface SubjectForm {
     name: string;

@@ -66,7 +66,7 @@ class TeacherController extends Controller
     public function import(ImportTeacherRequest $request)
     {
         $data = $request->validated();
-        $schoolId = session('school_id') ?? $request->user()->school_id;
+        $schoolId = \App\Support\ActiveSchool::id();
         $result = $this->teacherService->import($data['teachers'], $schoolId);
 
         if (!empty($result['errors'])) {

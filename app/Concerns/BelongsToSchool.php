@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Models\Scopes\SchoolScope;
+use App\Support\ActiveSchool;
 use Illuminate\Support\Facades\Schema;
 
 trait BelongsToSchool
@@ -16,7 +17,7 @@ trait BelongsToSchool
                 Schema::hasColumn($model->getTable(), 'school_id') &&
                 !$model->school_id
             ) {
-                $model->school_id = session('school_id') ?? auth()->user()->school_id;
+                $model->school_id = ActiveSchool::id();
             }
         });
     }

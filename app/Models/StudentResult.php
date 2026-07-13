@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/StudentResult.php
 
 namespace App\Models;
@@ -13,6 +14,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class StudentResult extends Model
 {
     use LogsActivity;
+
     protected $fillable = [
         'student_id',
         'curriculum_subject_id',
@@ -22,6 +24,7 @@ class StudentResult extends Model
         'approved_by',
         'approved_at',
         'computed_at',
+        'grading_scheme_item_id',
     ];
 
     protected $casts = [
@@ -32,7 +35,7 @@ class StudentResult extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -44,15 +47,21 @@ class StudentResult extends Model
     {
         return $this->belongsTo(Student::class);
     }
+
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
+
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function gradingSchemeItem(): BelongsTo
+    {
+        return $this->belongsTo(GradingSchemeItem::class);
+    }
 
     protected static $logName = 'results';
 
@@ -62,6 +71,7 @@ class StudentResult extends Model
             ->logOnly(['status', 'total_score', 'grade'])
             ->logOnlyDirty();
     }
+
     public function beforeActivityLogged(Activity $activity, string $eventName): void
     {
         $studentName = $this->student->full_name ?? 'Unknown student';

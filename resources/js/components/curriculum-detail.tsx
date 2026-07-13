@@ -9,7 +9,7 @@ import { toast } from 'react-toastify';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
 import { fmtDate, handleBack } from '@/helpers';
-import { Confirm, Modal } from '@/pages/admin/school-setup';
+import { Confirm, Modal } from '@/components/setup/setup-ui';
 import type {
     Curriculum,
     CurriculumSubject,

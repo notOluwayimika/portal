@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Trash2 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Empty } from '@/pages/admin/school-setup';
+import { Empty } from '@/components/setup/setup-ui';
 import type { Arm, ClassLevel, ClassLevelArm, Stream } from '@/types/models';
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export default function ClassStreamTab() {
                 toast.success('Class arm removed.');
             } else {
                 toast.error(
-                    response.data.error ?? 'Failed to remove class arm.'
+                    response.data.error ?? 'Failed to remove class arm.',
                 );
             }
         } catch (error) {
@@ -308,7 +308,8 @@ export default function ClassStreamTab() {
                                             <td>
                                                 <span
                                                     style={{
-                                                        fontFamily: 'var(--mono)',
+                                                        fontFamily:
+                                                            'var(--mono)',
                                                         fontWeight: 700,
                                                     }}
                                                 >

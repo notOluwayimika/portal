@@ -6,8 +6,9 @@ use App\Enums\StudentSubjectStatus;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\MarkingComponent;
-use App\Models\Score;
+use App\Models\MarkingScheme;
 use App\Models\Scopes\SchoolScope;
+use App\Models\Score;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\User;
@@ -26,13 +27,13 @@ class MoveFromCcmJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public int $timeout = 600;
 
     public function __construct(
         public readonly Curriculum $curriculum,
         public readonly int $causedByUserId,
-    ) {
-    }
+    ) {}
 
     public function handle(): void
     {
@@ -40,6 +41,7 @@ class MoveFromCcmJob implements ShouldQueue
             Log::warning('MoveFromCcmJob: curriculum is not CCM, aborting', [
                 'curriculum_id' => $this->curriculum->id,
             ]);
+
             return;
         }
 
@@ -50,7 +52,6 @@ class MoveFromCcmJob implements ShouldQueue
 
         DB::transaction(function () {
             $curriculum = $this->curriculum;
-
 
             $targetCurriculum = $this->resolveTargetCurriculum($curriculum);
             $curriculum->update(['status' => 'closed']);
@@ -129,6 +130,19 @@ class MoveFromCcmJob implements ShouldQueue
      */
     private function attachMarkingComponents(CurriculumSubject $newSubject, Curriculum $targetCurriculum): void
     {
+        $scheme = MarkingScheme::query()
+            ->active()
+            ->where('school_id', $targetCurriculum->school_id)
+            ->where('is_ccm', $targetCurriculum->is_ccm)
+            ->latest('version')
+            ->first();
+
+        if ($scheme) {
+            $targetCurriculum->update(['marking_scheme_id' => $scheme->id]);
+
+            return;
+        }
+
         $markingComponents = MarkingComponent::global()
             ->where('school_id', $targetCurriculum->school_id)
             ->where('is_ccm', $targetCurriculum->is_ccm)
@@ -171,10 +185,10 @@ class MoveFromCcmJob implements ShouldQueue
      */
     private function mapOverlappingMarkingComponents(CurriculumSubject $oldSubject, CurriculumSubject $newSubject): Collection
     {
-        $newByName = $newSubject->markingComponents
-            ->keyBy(fn(MarkingComponent $component) => Str::lower(trim($component->name)));
+        $newByName = $newSubject->effectiveMarkingComponents()
+            ->keyBy(fn (MarkingComponent $component) => Str::lower(trim($component->name)));
 
-        return $oldSubject->markingComponents
+        return $oldSubject->effectiveMarkingComponents()
             ->mapWithKeys(function (MarkingComponent $oldComponent) use ($newByName) {
                 $newComponent = $newByName->get(Str::lower(trim($oldComponent->name)));
 
@@ -191,7 +205,7 @@ class MoveFromCcmJob implements ShouldQueue
      * the components' weight ratio, e.g. a 25/50 score on a 0.5-weighted
      * component becomes 5/10 on a 0.1-weighted component.
      *
-     * @param Collection<int, array{old: MarkingComponent, new: MarkingComponent}> $componentMap old marking_component_id => component pair
+     * @param  Collection<int, array{old: MarkingComponent, new: MarkingComponent}>  $componentMap  old marking_component_id => component pair
      */
     private function migrateScores(CurriculumSubject $oldSubject, CurriculumSubject $newSubject, Collection $componentMap): void
     {
@@ -219,6 +233,7 @@ class MoveFromCcmJob implements ShouldQueue
             Score::firstOrCreate(
                 [
                     'student_id' => $oldScore->student_id,
+                    'curriculum_subject_id' => $newSubject->id,
                     'marking_component_id' => $newComponent->id,
                 ],
                 [
@@ -231,7 +246,7 @@ class MoveFromCcmJob implements ShouldQueue
     }
 
     /**
-     * @param array<int, CurriculumSubject> $subjectMap old curriculum_subject_id => new CurriculumSubject
+     * @param  array<int, CurriculumSubject>  $subjectMap  old curriculum_subject_id => new CurriculumSubject
      */
     private function migrateStudents(Curriculum $curriculum, Curriculum $targetCurriculum, array $subjectMap): void
     {
@@ -250,7 +265,7 @@ class MoveFromCcmJob implements ShouldQueue
             foreach ($oldStudentCurriculum->activeSubjects as $oldStudentSubject) {
                 $newCurriculumSubject = $subjectMap[$oldStudentSubject->curriculum_subject_id] ?? null;
 
-                if (!$newCurriculumSubject) {
+                if (! $newCurriculumSubject) {
                     continue;
                 }
 

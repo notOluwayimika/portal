@@ -86,7 +86,9 @@ export default function List() {
                 : (armData[0]?.class_level?.name ?? '');
         const fileName = [
             sanitize(className),
-            sanitize((curriculum?.academic_session?.name ?? '').replace(/\//g, '-')),
+            sanitize(
+                (curriculum?.academic_session?.name ?? '').replace(/\//g, '-'),
+            ),
             sanitize(curriculum?.term?.name ?? ''),
             curriculum?.is_ccm ? 'CCM' : '',
             new Date().toISOString().slice(0, 10),
@@ -163,74 +165,87 @@ export default function List() {
                                                 key={sc.id}
                                                 className="print-page block p-4"
                                             >
-                                                <ResultDetails curricula={sc} picture={sc.student.photo} />
-                                                {curriculum.is_ccm ? (
-                                                    <><CurriculumCard
-                                                        key={sc.id}
-                                                        sc={sc}
-                                                        defaultBoundaries={
-                                                            defaultGradeBoundaries.data
-                                                        }
-                                                        studentId={
-                                                            sc.student.id
-                                                        }
-                                                        student={sc.student}
-                                                    />
-                                                    <div className="grid grid-cols-2">
-                                                    <div></div>
+                                                <ResultDetails
+                                                    curricula={sc}
+                                                    picture={sc.student.photo}
+                                                />
+                                                {curriculum.is_ccm &&
+                                                curriculum.grading_mode !==
+                                                    'categorical' ? (
+                                                    <>
+                                                        <CurriculumCard
+                                                            key={sc.id}
+                                                            sc={sc}
+                                                            defaultBoundaries={
+                                                                defaultGradeBoundaries.data
+                                                            }
+                                                            studentId={
+                                                                sc.student.id
+                                                            }
+                                                            student={sc.student}
+                                                        />
+                                                        <div className="grid grid-cols-2">
+                                                            <div></div>
 
-                                                    <GradeKeyTable
-                                                        boundaries={boundaries}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
-                                                        <div>
-                                                            <img
-                                                                src="/assets/images/signature_secondary.png"
-                                                                alt="Brookstone School"
-                                                                className={`h-16 w-auto sm:h-20`}
-                                                                draggable={
-                                                                    false
+                                                            <GradeKeyTable
+                                                                boundaries={
+                                                                    boundaries
                                                                 }
                                                             />
-                                                            <p>
-                                                                Principal's
-                                                                Signature
-                                                            </p>
                                                         </div>
-                                                    </div>
-                                                    <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
-                                                        <p>
-                                                            Parents and students
-                                                            are encouraged to
-                                                            attend CCM meetings
-                                                            at the beginning of
-                                                            every term and half
-                                                            term to review
-                                                            results.
-                                                        </p>
-                                                    </div>
-                                                </div></>
-
+                                                        <div>
+                                                            <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
+                                                                <div>
+                                                                    <img
+                                                                        src="/assets/images/signature_secondary.png"
+                                                                        alt="Brookstone School"
+                                                                        className={`h-16 w-auto sm:h-20`}
+                                                                        draggable={
+                                                                            false
+                                                                        }
+                                                                    />
+                                                                    <p>
+                                                                        Principal's
+                                                                        Signature
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
+                                                                <p>
+                                                                    Parents and
+                                                                    students are
+                                                                    encouraged
+                                                                    to attend
+                                                                    CCM meetings
+                                                                    at the
+                                                                    beginning of
+                                                                    every term
+                                                                    and half
+                                                                    term to
+                                                                    review
+                                                                    results.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </>
                                                 ) : (
-                                                    <><CurriculumCardFinal
-                                                        key={sc.id}
-                                                        sc={sc}
-                                                        defaultBoundaries={
-                                                            defaultGradeBoundaries.data
-                                                        }
-                                                        studentId={
-                                                            sc.student.id
-                                                        }
-                                                        student={sc.student}
-                                                        boundaries={boundaries}
-                                                    /></>
-
+                                                    <>
+                                                        <CurriculumCardFinal
+                                                            key={sc.id}
+                                                            sc={sc}
+                                                            defaultBoundaries={
+                                                                defaultGradeBoundaries.data
+                                                            }
+                                                            studentId={
+                                                                sc.student.id
+                                                            }
+                                                            student={sc.student}
+                                                            boundaries={
+                                                                boundaries
+                                                            }
+                                                        />
+                                                    </>
                                                 )}
-
-
-
                                             </div>
                                         );
                                     },

@@ -452,7 +452,7 @@ export default function StudentCurriculaPage({
                         ))}
                     </div>
 
-                    {(roles.includes('admin') ||
+                    {/* {(roles.includes('admin') ||
                         roles.includes('head_of_school')) && (
                         <button
                             type="button"
@@ -470,7 +470,7 @@ export default function StudentCurriculaPage({
                         >
                             Register in a curriculum
                         </button>
-                    )}
+                    )} */}
                 </div>
 
                 {/* Table */}

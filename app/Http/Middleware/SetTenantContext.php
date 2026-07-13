@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\ActiveSchool;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,17 +20,26 @@ class SetTenantContext
             return $next($request);
         }
 
+        /** @var \App\Models\User $user */
         $user = auth()->user();
 
         // Always check role in GLOBAL context first
         setPermissionsTeamId(null);
 
         $isSuperAdmin = $user->isSuperAdmin();
+        $activeSchoolId = ActiveSchool::id();
 
-        if ($isSuperAdmin) {
-            $activeSchoolId = session('school_id');
-        } else {
-            $activeSchoolId = session('school_id') ?? $user->school_id;
+        // Access may have been revoked mid-session: clear the stale context.
+        if ($activeSchoolId && !$user->canAccessSchool($activeSchoolId)) {
+            if ($request->hasSession()) {
+                $request->session()->forget('school_id');
+            }
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'You are not authorized to login to this school.'], 403);
+            }
+
+            return redirect()->route('school.select');
         }
 
         if ($activeSchoolId) {
@@ -37,11 +47,31 @@ class SetTenantContext
             $user->unsetRelation('roles');
         }
 
-        // Optional restriction logic
         if (!$isSuperAdmin && !$activeSchoolId) {
-            abort(403, 'No active school context');
+            if ($this->allowsMissingSchoolContext($request)) {
+                return $next($request);
+            }
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'No active school selected.'], 403);
+            }
+
+            return redirect()->route('school.select');
         }
 
         return $next($request);
+    }
+
+    /**
+     * Routes that must stay reachable while no school is selected
+     * (otherwise selecting/switching school would be impossible).
+     */
+    private function allowsMissingSchoolContext(Request $request): bool
+    {
+        if ($request->routeIs('school.select', 'school.switch', 'logout')) {
+            return true;
+        }
+
+        return $request->is('api/switch-school', 'api/logout', 'select-school', 'logout');
     }
 }

@@ -29,7 +29,7 @@ class GuardianImportController extends Controller
     {
         // abort_unless($request->user()?->can('guardian.import'), 403);
 
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
+        $schoolId = (int) \App\Support\ActiveSchool::id();
 
         $file = $request->file('file');
         $filePath = $file->store("imports/inbox/{$schoolId}");
@@ -100,10 +100,8 @@ class GuardianImportController extends Controller
     {
         // abort_unless($request->user()?->can('guardian.import'), 403);
 
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
-
+        // Import is tenant-scoped (SchoolScope) — no explicit filter needed.
         $imports = Import::query()
-            ->where('school_id', $schoolId)
             ->where('type', 'guardian')
             ->latest()
             ->limit((int) $request->integer('limit', 10))
@@ -154,7 +152,7 @@ class GuardianImportController extends Controller
 
     private function authorizeSchool(Request $request, Import $import): void
     {
-        $schoolId = (int) (session('school_id') ?? $request->user()->school_id);
+        $schoolId = (int) \App\Support\ActiveSchool::id();
         // abort_unless($import->school_id === $schoolId, 404);
     }
 

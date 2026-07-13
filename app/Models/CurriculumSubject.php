@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/CurriculumSubject.php
 
 namespace App\Models;
@@ -8,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -15,6 +17,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class CurriculumSubject extends Model
 {
     use LogsActivity;
+
     protected $fillable = [
         'curriculum_id',
         'subject_id',
@@ -34,7 +37,7 @@ class CurriculumSubject extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()
@@ -46,26 +49,57 @@ class CurriculumSubject extends Model
     {
         return $this->belongsTo(Curriculum::class);
     }
+
     public function subject(): BelongsTo
     {
         return $this->belongsTo(Subject::class);
     }
+
     public function markingComponents(): HasMany
     {
         return $this->hasMany(MarkingComponent::class);
     }
+
+    /**
+     * Resolve the immutable curriculum scheme when assigned, otherwise fall
+     * back to the legacy subject-local components.
+     */
+    public function effectiveMarkingComponents(): Collection
+    {
+        if (! $this->relationLoaded('curriculum')) {
+            $this->load('curriculum');
+        }
+        if ($this->curriculum && ! $this->curriculum->relationLoaded('markingScheme')) {
+            $this->curriculum->load('markingScheme');
+        }
+        if ($this->curriculum?->markingScheme && ! $this->curriculum->markingScheme->relationLoaded('components')) {
+            $this->curriculum->markingScheme->load('components');
+        }
+
+        if ($this->curriculum?->markingScheme) {
+            return $this->curriculum->markingScheme->components;
+        }
+
+        return $this->relationLoaded('markingComponents')
+            ? $this->markingComponents
+            : $this->markingComponents()->get();
+    }
+
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
     }
+
     public function studentResults(): HasMany
     {
         return $this->hasMany(StudentResult::class);
     }
+
     public function resultStatus(): HasOne
     {
         return $this->hasOne(SubjectResultStatus::class);
     }
+
     public function teacherAssignments(): HasMany
     {
         return $this->hasMany(TeacherCurriculumSubject::class);
@@ -93,12 +127,12 @@ class CurriculumSubject extends Model
 
     public function isArchived(): bool
     {
-        return !$this->active;
+        return ! $this->active;
     }
 
     public function canBeAddedToStudent(): bool
     {
-        return !$this->is_compulsory && $this->active;
+        return ! $this->is_compulsory && $this->active;
     }
 
     public function isApproved(): bool
@@ -114,6 +148,7 @@ class CurriculumSubject extends Model
             ->logOnly(['is_compulsory', 'active', 'archived_at', 'display_order'])
             ->logOnlyDirty();
     }
+
     public function beforeActivityLogged(Activity $activity, string $eventName): void
     {
         $subjectName = optional($this->subject)->name ?? 'Unknown subject';

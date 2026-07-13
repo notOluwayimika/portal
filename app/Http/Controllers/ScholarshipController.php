@@ -11,7 +11,7 @@ class ScholarshipController extends Controller
     public function index()
     {
         try {
-            $scholarships = auth()->user()->school->scholarships;
+            $scholarships = \App\Support\ActiveSchool::getOrFail()->scholarships;
             return ScholarshipResource::collection($scholarships);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -24,7 +24,7 @@ class ScholarshipController extends Controller
         try {
             $request->validate(['name' => 'required|string|max:255']);
 
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $existing = $school->scholarships()->where('name', $request->name)->first();
             if ($existing) {
                 return response()->json(['error' => 'Scholarship with this name already exists'], 409);

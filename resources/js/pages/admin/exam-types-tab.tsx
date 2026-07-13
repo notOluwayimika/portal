@@ -3,7 +3,7 @@ import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import type { ExamType } from '@/types/models';
-import { Confirm, Empty, Modal } from './school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 interface ExamTypeForm {
     name: string;
@@ -44,9 +44,7 @@ export function ExamTypesTab() {
             }
         } catch (error) {
             console.log(error);
-            toast.error(
-                'An error occurred while deleting the exam type.'
-            );
+            toast.error('An error occurred while deleting the exam type.');
         } finally {
             setLoading(false);
         }

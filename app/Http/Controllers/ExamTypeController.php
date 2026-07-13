@@ -12,7 +12,7 @@ class ExamTypeController extends Controller
     public function index()
     {
         try {
-            $examTypes = auth()->user()->school->examTypes;
+            $examTypes = \App\Support\ActiveSchool::getOrFail()->examTypes;
             return ExamTypeResource::collection($examTypes);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -24,7 +24,7 @@ class ExamTypeController extends Controller
     public function store(Request $request)
     {
         try {
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $existing = $school->examTypes()->where('slug', Str::slug(str_replace('/', '-', $request->name), '-'))->first();
             if ($existing) {
                 return response()->json(['error' => 'Exam type with this name already exists'], 409);

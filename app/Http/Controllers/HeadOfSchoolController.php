@@ -10,8 +10,8 @@ class HeadOfSchoolController extends Controller
 {
     public function index()
     {
-        $schoolId = auth()->user()->school_id;
-        $teachers = Teacher::with('user')->where('school_id', $schoolId)->get();
+        // Teacher is tenant-scoped (SchoolScope) — no explicit filter needed.
+        $teachers = Teacher::with('user')->get();
         return response()->json(TeacherResource::collection($teachers));
     }
 

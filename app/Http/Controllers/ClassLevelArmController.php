@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ArmResource;
 use App\Http\Resources\ClassLevelArmResource;
 use App\Http\Resources\ClassLevelResource;
-use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\ExamTypeResource;
 use App\Http\Resources\SessionResource;
 use App\Http\Resources\StreamResource;
@@ -14,45 +13,48 @@ use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\Stream;
-use App\Services\ClassLevelService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class ClassLevelArmController extends Controller
 {
-
     public function list()
     {
-        $school = Auth::user()->school;
+        $school = ActiveSchool::getOrFail();
         $classLevelArms = $school->classLevelArms;
+
         return response()->json(ClassLevelArmResource::collection($classLevelArms));
     }
+
     public function index(Request $request)
     {
         try {
-            $school = Auth::user()->school;
+            $school = ActiveSchool::getOrFail();
             $sessions = $school->sessions()->with('terms')->get()->map(function ($session) {
                 $session->terms = TermResource::collection($session->terms);
+
                 return $session;
             });
-            ;
-            $classLevels = $school->classLevels;
+
+            $classLevels = $school->classLevels()->with('gradingScheme.items')->get();
             $arms = $school->arms;
             $streams = Stream::all();
             $classLevelArms = $school->classLevelArms;
             $examTypes = $school->examTypes;
+
             return response()->json([
-                "class_levels" => ClassLevelResource::collection($classLevels),
-                "arms" => ArmResource::collection($arms),
-                "streams" => StreamResource::collection($streams),
-                "class_level_arms" => ClassLevelArmResource::collection($classLevelArms),
-                "exam_types" => ExamTypeResource::collection($examTypes),
-                "sessions" => SessionResource::collection($sessions),
-                "terms" => TermResource::collection($school->terms()->with('academicSession')->get() ?? collect()),
+                'class_levels' => ClassLevelResource::collection($classLevels),
+                'arms' => ArmResource::collection($arms),
+                'streams' => StreamResource::collection($streams),
+                'class_level_arms' => ClassLevelArmResource::collection($classLevelArms),
+                'exam_types' => ExamTypeResource::collection($examTypes),
+                'sessions' => SessionResource::collection($sessions),
+                'terms' => TermResource::collection($school->terms()->with('academicSession')->get() ?? collect()),
             ], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to retrieve class levels'], 500);
         }
 
@@ -64,14 +66,14 @@ class ClassLevelArmController extends Controller
             $request->validate([
                 'class_level_id' => 'required|exists:class_levels,uuid',
                 'arm_id' => 'required|exists:arms,uuid',
-                'stream_id' => 'nullable|exists:streams,uuid'
+                'stream_id' => 'nullable|exists:streams,uuid',
             ]);
-            $school = Auth::user()->school;
+            $school = ActiveSchool::getOrFail();
             $classLevel = $school->classLevels()->where('uuid', $request->class_level_id)->first();
             $arm = $school->arms()->where('uuid', $request->arm_id)->first();
             $classLevelArm = $school->classLevelArms()->where('class_level_id', $classLevel->id)->where('arm_id', $arm->id)->first();
             $stream = $request->stream_id ? Stream::where('uuid', $request->stream_id)->first() : null;
-            if (!$classLevelArm) {
+            if (! $classLevelArm) {
                 return response()->json(['error' => 'Invalid class level arm'], 400);
             }
             // Check if the combination already exists
@@ -89,13 +91,14 @@ class ClassLevelArmController extends Controller
                 $school->classLevelArms()->create([
                     'class_level_id' => $classLevelArm->class_level_id,
                     'arm_id' => $classLevelArm->arm_id,
-                    'stream_id' => $stream ? $stream->id : null
+                    'stream_id' => $stream ? $stream->id : null,
                 ]);
             }
 
             return response()->json(['message' => 'Relationship created successfully'], 201);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to create relationship'], 500);
         }
     }
@@ -104,17 +107,18 @@ class ClassLevelArmController extends Controller
     {
         try {
             $request->validate([
-                'stream_id' => 'nullable|exists:streams,uuid'
+                'stream_id' => 'nullable|exists:streams,uuid',
             ]);
             $stream = $request->stream_id ? Stream::where('uuid', $request->stream_id)->first() : null;
 
             $classLevelArm->update([
-                'stream_id' => $stream ? $stream->id : null
+                'stream_id' => $stream ? $stream->id : null,
             ]);
 
             return response()->json(['message' => 'Relationship updated successfully', 'class_level_arm' => new ClassLevelArmResource($classLevelArm)], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to update relationship'], 500);
         }
     }
@@ -124,9 +128,11 @@ class ClassLevelArmController extends Controller
         try {
             abort_unless(count($classLevelArm->curricula->toArray()) === 0, 422, 'Cannot delete relationship while associated curricula exist.');
             $classLevelArm->delete();
+
             return response()->json(['message' => 'Relationship deleted successfully'], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to delete relationship'], 500);
         }
     }
@@ -134,7 +140,7 @@ class ClassLevelArmController extends Controller
     public function toggle(Request $request)
     {
         try {
-            $school = Auth::user()->school;
+            $school = ActiveSchool::getOrFail();
             $request->validate([
                 'class_level_id' => 'required',
                 'arm_id' => 'required',
@@ -161,9 +167,11 @@ class ClassLevelArmController extends Controller
             } else {
                 $classLevel->arms()->attach($arm, ['uuid' => Str::uuid(), 'school_id' => $school->id]);
             }
+
             return response()->json(['message' => 'Relationship updated successfully'], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to update relationship'], 500);
 
         }
@@ -175,14 +183,20 @@ class ClassLevelArmController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'order' => 'nullable|integer'
+                'order' => 'nullable|integer',
+                'grading_scheme_id' => 'nullable|uuid|exists:grading_schemes,uuid',
             ]);
-            $school = Auth::user()->school;
+            $school = ActiveSchool::getOrFail();
+            $gradingSchemeId = $request->grading_scheme_id
+                ? $school->gradingSchemes()->where('uuid', $request->grading_scheme_id)->value('id')
+                : null;
             $classLevel = $school->classLevels()->create([
                 'name' => $request->name,
                 'order' => $request->order,
-                'uuid' => Str::uuid()
+                'uuid' => Str::uuid(),
+                'grading_scheme_id' => $gradingSchemeId,
             ]);
+
             return response()->json(['message' => 'Level created successfully', 'class_level' => new ClassLevelResource($classLevel)], 201);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to create level'], 500);
@@ -195,12 +209,19 @@ class ClassLevelArmController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'order' => 'nullable|integer'
+                'order' => 'nullable|integer',
+                'grading_scheme_id' => 'nullable|uuid|exists:grading_schemes,uuid',
             ]);
+
+            $school = ActiveSchool::getOrFail();
+            $gradingSchemeId = $request->grading_scheme_id
+                ? $school->gradingSchemes()->where('uuid', $request->grading_scheme_id)->value('id')
+                : null;
 
             $classLevel->update([
                 'name' => $request->name,
-                'order' => $request->order
+                'order' => $request->order,
+                'grading_scheme_id' => $gradingSchemeId,
             ]);
 
             return response()->json(['message' => 'Level updated successfully', 'class_level' => new ClassLevelResource($classLevel)], 200);
@@ -214,6 +235,7 @@ class ClassLevelArmController extends Controller
     {
         try {
             $classLevel->delete();
+
             return response()->json(['message' => 'Level deleted successfully'], 200);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to delete level'], 500);
@@ -225,13 +247,14 @@ class ClassLevelArmController extends Controller
     {
         try {
             $request->validate([
-                'label' => 'required|string|max:255'
+                'label' => 'required|string|max:255',
             ]);
-            $school = Auth::user()->school;
+            $school = ActiveSchool::getOrFail();
             $arm = $school->arms()->create([
                 'label' => $request->label,
-                'uuid' => Str::uuid()
+                'uuid' => Str::uuid(),
             ]);
+
             return response()->json(['message' => 'Arm created successfully', 'arm' => new ArmResource($arm)], 201);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to create arm'], 500);
@@ -242,11 +265,11 @@ class ClassLevelArmController extends Controller
     {
         try {
             $request->validate([
-                'label' => 'required|string|max:255'
+                'label' => 'required|string|max:255',
             ]);
 
             $arm->update([
-                'label' => $request->label
+                'label' => $request->label,
             ]);
 
             return response()->json(['message' => 'Arm updated successfully', 'arm' => new ArmResource($arm)], 200);
@@ -259,6 +282,7 @@ class ClassLevelArmController extends Controller
     {
         try {
             $arm->delete();
+
             return response()->json(['message' => 'Arm deleted successfully'], 200);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to delete arm'], 500);
@@ -271,14 +295,15 @@ class ClassLevelArmController extends Controller
             $request->validate([
                 'name' => 'required|string|max:255',
                 'code' => 'required|string|max:255',
-                'sort_order' => 'nullable|integer'
+                'sort_order' => 'nullable|integer',
             ]);
             $stream = Stream::create([
                 'name' => $request->name,
                 'code' => $request->code,
                 'sort_order' => $request->sort_order,
-                'uuid' => Str::uuid()
+                'uuid' => Str::uuid(),
             ]);
+
             return response()->json(['message' => 'Stream created successfully', 'stream' => new StreamResource($stream)], 201);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to create stream'], 500);
@@ -292,18 +317,19 @@ class ClassLevelArmController extends Controller
                 'name' => 'required|string|max:255',
                 // dont include current stream code in unique
                 'code' => 'required|string|max:255',
-                'sort_order' => 'nullable|integer'
+                'sort_order' => 'nullable|integer',
             ]);
 
             $stream->update([
                 'name' => $request->name,
                 'code' => $request->code,
-                'sort_order' => $request->sort_order
+                'sort_order' => $request->sort_order,
             ]);
 
             return response()->json(['message' => 'Stream updated successfully', 'stream' => new StreamResource($stream)], 200);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
+
             return response()->json(['error' => 'Failed to update stream'], 500);
         }
     }
@@ -312,6 +338,7 @@ class ClassLevelArmController extends Controller
     {
         try {
             $stream->delete();
+
             return response()->json(['message' => 'Stream deleted successfully'], 200);
         } catch (\Throwable $th) {
             return response()->json(['error' => 'Failed to delete stream'], 500);

@@ -61,6 +61,11 @@ const headOfSchoolNavGroups: NavGroup[] = [
                 icon: ClipboardCopyIcon,
             },
             {
+                title: 'Incomplete Results',
+                href: '/results/incomplete',
+                icon: AlertTriangle,
+            },
+            {
                 title: 'Student Comments',
                 href: '/head-of-school/comments',
                 icon: MessageSquare,
@@ -155,6 +160,11 @@ const adminNavGroups: NavGroup[] = [
                 icon: ClipboardCopyIcon,
             },
             {
+                title: 'Incomplete Results',
+                href: '/results/incomplete',
+                icon: AlertTriangle,
+            },
+            {
                 title: 'Head of Schools',
                 href: '/setup/head-of-schools',
                 icon: GraduationCap,
@@ -230,16 +240,47 @@ const guardianNavGroups: NavGroup[] = [
     },
 ];
 
+const superAdminNavGroups: NavGroup[] = [
+    {
+        label: 'Super Admin',
+        items: [
+            {
+                title: 'Schools',
+                href: '/super-admin/schools',
+                icon: Building2,
+            },
+            {
+                title: 'Admins',
+                href: '/super-admin/admins',
+                icon: Shield,
+            },
+        ],
+    },
+];
+
 const footerNavItems: NavItem[] = [];
 
 export function AppSidebar() {
-    const { auth }: { auth: { roles: string[]; user: User } } = usePage<{
+    const { auth }: { auth: { roles: string[]; user: User; isSuperAdmin?: boolean; school?: unknown } } = usePage<{
         auth: { roles: string[] };
     }>().props;
     const roles = auth.roles;
+    const isSuperAdmin = !!auth.isSuperAdmin;
+    const hasSchoolContext = !!auth.school;
 
     const navGroups = useMemo(() => {
+        // Super admin without a school context only sees the management area.
+        if (isSuperAdmin && !hasSchoolContext) {
+            return superAdminNavGroups;
+        }
+
         const groups: NavGroup[] = [dashboardGroup];
+
+        if (isSuperAdmin) {
+            groups.push(...superAdminNavGroups);
+            // Inside a school, a super admin has full admin visibility.
+            groups.push(...adminNavGroups);
+        }
 
         if (roles.includes('guardian')) {
             groups.push(...guardianNavGroups);
@@ -274,12 +315,12 @@ export function AppSidebar() {
             }
         }
 
-        if (roles.includes('admin')) {
+        if (roles.includes('admin') && !isSuperAdmin) {
             groups.push(...adminNavGroups);
         }
 
         return groups;
-    }, [roles, auth.user.teacher]);
+    }, [roles, auth.user.teacher, isSuperAdmin, hasSchoolContext]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

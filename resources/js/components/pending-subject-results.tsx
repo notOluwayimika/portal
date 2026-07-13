@@ -37,8 +37,6 @@ function StatusBadge({
 }: {
     status: 'draft' | 'no-entry' | 'rejected';
 }) {
-    console.log(status);
-
     if (status === 'no-entry') {
         return (
             <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
@@ -173,6 +171,8 @@ export default function PendingSubjectResults() {
                         <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold tracking-wide text-gray-500 uppercase">
                             <th className="px-5 py-3">Subject</th>
                             <th className="px-5 py-3">Class Level Arm</th>
+                            <th className="px-5 py-3">Session</th>
+                            <th className="px-5 py-3">Term</th>
                             <th className="px-5 py-3">Status</th>
                             <th className="px-5 py-3">Assigned Teachers</th>
                         </tr>
@@ -214,6 +214,13 @@ export default function PendingSubjectResults() {
                                     <td className="px-5 py-3">
                                         {cs.curriculum?.class_level_arm?.name ??
                                             'Unknown Class Level Arm'}
+                                    </td>
+                                    <td className="px-5 py-3 whitespace-nowrap text-gray-600">
+                                        {cs.curriculum?.academic_session
+                                            ?.name ?? '—'}
+                                    </td>
+                                    <td className="px-5 py-3 whitespace-nowrap text-gray-600">
+                                        {cs.curriculum?.term?.name ?? '—'}
                                     </td>
 
                                     {/* Status */}

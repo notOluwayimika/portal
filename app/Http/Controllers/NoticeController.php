@@ -107,7 +107,7 @@ class NoticeController extends Controller
 
         $notice = DB::transaction(function () use ($data, $category, $request) {
             $notice = Notice::create([
-                'school_id' => session('school_id') ?? $request->user()->school_id,
+                'school_id' => \App\Support\ActiveSchool::id(),
                 'title' => $data['title'],
                 'body' => $data['body'],
                 'notice_category_id' => $category->id,
@@ -243,7 +243,7 @@ class NoticeController extends Controller
             'slug' => $slug,
             'color' => $data['color'] ?? 'gray',
             'is_default' => false,
-            'school_id' => session('school_id') ?? $request->user()->school_id,
+            'school_id' => \App\Support\ActiveSchool::id(),
         ]);
 
         return Response::created(new NoticeCategoryResource($category));

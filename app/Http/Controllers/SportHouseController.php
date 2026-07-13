@@ -11,7 +11,7 @@ class SportHouseController extends Controller
     public function index()
     {
         try {
-            $sportHouses = auth()->user()->school->sportHouses;
+            $sportHouses = \App\Support\ActiveSchool::getOrFail()->sportHouses;
             return SportHouseResource::collection($sportHouses);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -24,7 +24,7 @@ class SportHouseController extends Controller
         try {
             $request->validate(['name' => 'required|string|max:255']);
 
-            $school = auth()->user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $existing = $school->sportHouses()->where('name', $request->name)->first();
             if ($existing) {
                 return response()->json(['error' => 'Sport house with this name already exists'], 409);

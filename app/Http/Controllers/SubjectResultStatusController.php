@@ -10,7 +10,7 @@ class SubjectResultStatusController extends Controller
 {
     public function index(Request $request)
     {
-        $schoolId = auth()->user()->school_id;
+        $schoolId = \App\Support\ActiveSchool::id();
         $classLevelArms = $request->class_level_arms;
 
         $subjectResults = SubjectResultStatus::with([

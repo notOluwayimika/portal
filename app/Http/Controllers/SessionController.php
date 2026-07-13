@@ -16,7 +16,7 @@ class SessionController extends Controller
     public function index(Request $request)
     // get limit from request
     {
-        $school = Auth::user()->school;
+        $school = \App\Support\ActiveSchool::getOrFail();
         $limit = $request->input('limit', 10);
         // get filter from request param, total, active or inactive
         $filter = $request->input('filter', 'total');
@@ -52,7 +52,7 @@ class SessionController extends Controller
     public function store(SessionRequest $request)
     {
         try {
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $is_current = $request->input('is_current', false);
             if ($is_current) {
                 $school->sessions()->update(['is_current' => false]);
@@ -78,7 +78,7 @@ class SessionController extends Controller
     public function update(SessionRequest $request, AcademicSession $session)
     {
         try {
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             $existingSession = $school->sessions()->where('slug', Str::slug(str_replace('/', '-', $request->name), '-'))->first();
             if ($existingSession && $existingSession->id !== $session->id) {
                 return response()->json(['error' => 'A session with this name already exists.'], 500);
@@ -105,7 +105,7 @@ class SessionController extends Controller
     public function setCurrent(AcademicSession $session)
     {
         try {
-            $school = Auth::user()->school;
+            $school = \App\Support\ActiveSchool::getOrFail();
             if (!$session) {
                 return response()->json(['error' => 'Session not found'], 404);
             } else if ($session->school_id !== $school->id) {

@@ -160,7 +160,7 @@ class DashboardController extends Controller
             return null;
         }
 
-        $schoolId = session('school_id') ?? $user->school_id;
+        $schoolId = \App\Support\ActiveSchool::id();
         if (!$schoolId) {
             return null;
         }

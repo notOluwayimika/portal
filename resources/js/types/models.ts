@@ -19,8 +19,15 @@ export interface AcademicSession {
 
 export interface School {
     id: string;
+    uuid?: string;
     name: string;
     slug: string;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    website?: string | null;
+    name_on_result?: string | null;
+    active?: boolean;
     current_session?: AcademicSession;
     created_at?: string;
     updated_at?: string;
@@ -43,8 +50,25 @@ export interface ClassLevel {
     class_level_arms?: ClassLevelArm[];
     name: string;
     order: number;
+    grading_mode?: 'numeric' | 'categorical';
+    grading_scheme?: GradingScheme | null;
     created_at?: string;
     updated_at?: string;
+}
+
+export interface GradingSchemeItem {
+    id: string;
+    code: string;
+    label: string;
+    display_order: number;
+}
+
+export interface GradingScheme {
+    id: string;
+    name: string;
+    mode: 'categorical';
+    version: number;
+    items: GradingSchemeItem[];
 }
 
 export interface Arm {
@@ -302,6 +326,8 @@ export interface Curriculum {
     min_subjects: number;
     status: string;
     is_ccm: boolean;
+    grading_mode?: 'numeric' | 'categorical';
+    grading_scheme?: GradingScheme | null;
     curriculum_subjects?: CurriculumSubject;
     student_curricula?: StudentCurriculum[];
     created_at?: string;
@@ -360,6 +386,14 @@ export interface CurriculumSubject {
     marking_components?: MarkingComponent[];
     class_average?: number | null;
     result_status?: SubjectResultStatus;
+    student_results?: StudentResult[];
+}
+export interface StudentResult {
+    id: string;
+    student: Student;
+    total_score: string | number | null;
+    grade: string | null;
+    grading_item?: GradingSchemeItem | null;
 }
 export interface TeacherCurriculumSubject {
     id: string;
@@ -405,7 +439,11 @@ export interface StudentSubject {
     status: StudentSubjectStatus;
     student_curriculum?: StudentCurriculum;
     curriculum_subject: CurriculumSubject;
-    own_result?: { total_score: string | number; grade: string | null } | null;
+    own_result?: {
+        total_score: string | number | null;
+        grade: string | null;
+        grading_item?: GradingSchemeItem | null;
+    } | null;
     dropped_at?: string | null;
     drop_reason?: string | null;
     dropped_by?: { id: number; full_name: string } | null;

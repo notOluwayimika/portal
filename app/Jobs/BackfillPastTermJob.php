@@ -40,18 +40,18 @@ class BackfillPastTermJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public int $timeout = 600;
 
     public function __construct(
         public readonly Curriculum $sourceCurriculum,
         public readonly Term $targetTerm,
         public readonly int $causedByUserId,
-    ) {
-    }
+    ) {}
 
     public function handle(): void
     {
-        if (!$this->passesGuards()) {
+        if (! $this->passesGuards()) {
             return;
         }
 
@@ -77,6 +77,7 @@ class BackfillPastTermJob implements ShouldQueue
                 'curriculum_id' => $this->sourceCurriculum->id,
                 'target_term_id' => $this->targetTerm->id,
             ]);
+
             return false;
         };
 
@@ -102,11 +103,13 @@ class BackfillPastTermJob implements ShouldQueue
     /**
      * Find (or create) the backdated curriculum in the target term.
      * Matching on the curricula table's unique key guarantees a re-run
-     * reuses the previously created target.
+     * reuses the previously created target. Immutable marking and grading
+     * scheme snapshots are shared with the source; legacy sources continue
+     * to use subject-local components.
      */
     private function resolveTargetCurriculum(): Curriculum
     {
-        return Curriculum::withoutGlobalScope(SchoolScope::class)->firstOrCreate(
+        $target = Curriculum::withoutGlobalScope(SchoolScope::class)->firstOrCreate(
             [
                 'school_id' => $this->sourceCurriculum->school_id,
                 'term_id' => $this->targetTerm->id,
@@ -117,15 +120,46 @@ class BackfillPastTermJob implements ShouldQueue
             [
                 'min_subjects' => $this->sourceCurriculum->min_subjects,
                 'status' => 'closed',
+                'marking_scheme_id' => $this->sourceCurriculum->marking_scheme_id,
+                'grading_scheme_id' => $this->sourceCurriculum->grading_scheme_id,
             ]
         );
+
+        // Repair targets created by the pre-scheme version of this job only
+        // while they remain unused. Once any result/component exists, their
+        // configuration is historical data and must not be changed here.
+        if (! $target->wasRecentlyCreated && $this->canAdoptSourceSchemes($target)) {
+            $target->update([
+                'marking_scheme_id' => $target->marking_scheme_id ?? $this->sourceCurriculum->marking_scheme_id,
+                'grading_scheme_id' => $target->grading_scheme_id ?? $this->sourceCurriculum->grading_scheme_id,
+            ]);
+        }
+
+        return $target;
+    }
+
+    private function canAdoptSourceSchemes(Curriculum $target): bool
+    {
+        if (
+            (! $this->sourceCurriculum->marking_scheme_id || $target->marking_scheme_id)
+            && (! $this->sourceCurriculum->grading_scheme_id || $target->grading_scheme_id)
+        ) {
+            return false;
+        }
+
+        return ! $target->curriculumSubjects()
+            ->where(function ($query) {
+                $query->whereHas('markingComponents')
+                    ->orWhereHas('scores')
+                    ->orWhereHas('studentResults');
+            })
+            ->exists();
     }
 
     /**
-     * Clone every curriculum subject onto the backdated curriculum, copying
-     * the source subject's own marking components verbatim (same non-CCM
-     * mode, so score sheets look identical to the current term), a draft
-     * result status and the teacher assignments.
+     * Clone every curriculum subject onto the backdated curriculum. Scheme-
+     * backed curricula resolve shared components through the target
+     * curriculum; only legacy curricula copy subject-local components.
      *
      * @return array<int, CurriculumSubject> old curriculum_subject_id => new CurriculumSubject
      */
@@ -146,7 +180,11 @@ class BackfillPastTermJob implements ShouldQueue
                 ]
             );
 
-            if ($newSubject->wasRecentlyCreated) {
+            if (
+                $newSubject->wasRecentlyCreated
+                && ! $targetCurriculum->marking_scheme_id
+                && ! $targetCurriculum->usesCategoricalGrading()
+            ) {
                 foreach ($oldSubject->markingComponents as $component) {
                     $newSubject->markingComponents()->create([
                         'name' => $component->name,
@@ -155,13 +193,13 @@ class BackfillPastTermJob implements ShouldQueue
                         'is_ccm' => false,
                     ]);
                 }
-
-                $newSubject->resultStatus()->firstOrCreate([], [
-                    'status' => 'draft',
-                    'rejection_reason' => null,
-                    'updated_by' => $this->causedByUserId,
-                ]);
             }
+
+            $newSubject->resultStatus()->firstOrCreate([], [
+                'status' => 'draft',
+                'rejection_reason' => null,
+                'updated_by' => $this->causedByUserId,
+            ]);
 
             foreach ($oldSubject->teacherAssignments as $assignment) {
                 $newSubject->teacherAssignments()->firstOrCreate([
@@ -180,7 +218,7 @@ class BackfillPastTermJob implements ShouldQueue
      * rows pointing at their source enrollment, cloning subject selections.
      * Source rows are never modified.
      *
-     * @param array<int, CurriculumSubject> $subjectMap old curriculum_subject_id => new CurriculumSubject
+     * @param  array<int, CurriculumSubject>  $subjectMap  old curriculum_subject_id => new CurriculumSubject
      */
     private function enrollStudents(Curriculum $targetCurriculum, array $subjectMap): void
     {
@@ -203,7 +241,7 @@ class BackfillPastTermJob implements ShouldQueue
             foreach ($sourceEnrollment->activeSubjects as $sourceSubject) {
                 $newCurriculumSubject = $subjectMap[$sourceSubject->curriculum_subject_id] ?? null;
 
-                if (!$newCurriculumSubject) {
+                if (! $newCurriculumSubject) {
                     continue;
                 }
 

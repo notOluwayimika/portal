@@ -2,7 +2,7 @@ import axios from 'axios';
 import { BookOpen, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Confirm, Empty, Modal } from '@/pages/admin/school-setup';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 import type { Session, Term } from '@/types/models';
 import { Pagination } from '../pagination';
 

@@ -17,8 +17,8 @@ class StudentSubjectResource extends JsonResource
         return [
             'id' => $this->uuid,
             'status' => $this->status?->value,
-            'student_curriculum' => $this->whenLoaded('studentCurriculum', fn() => new StudentCurriculumResource($this->studentCurriculum)),
-            'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn() => new CurriculumSubjectResource($this->curriculumSubject)),
+            'student_curriculum' => $this->whenLoaded('studentCurriculum', fn () => new StudentCurriculumResource($this->studentCurriculum)),
+            'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn () => new CurriculumSubjectResource($this->curriculumSubject)),
             // The class's full set of results for a subject lives once on
             // curriculumSubject.studentResults; this student's own result is
             // looked up from that same shared collection (tagged onto this
@@ -35,17 +35,22 @@ class StudentSubjectResource extends JsonResource
                     return $result ? [
                         'total_score' => $result->total_score,
                         'grade' => $result->grade,
+                        'grading_item' => $result->gradingSchemeItem ? [
+                            'id' => $result->gradingSchemeItem->uuid,
+                            'code' => $result->gradingSchemeItem->code,
+                            'label' => $result->gradingSchemeItem->label,
+                        ] : null,
                     ] : null;
                 },
             ),
             'dropped_at' => $this->dropped_at?->toIso8601String(),
             'drop_reason' => $this->drop_reason,
-            'dropped_by' => $this->whenLoaded('droppedBy', fn() => [
+            'dropped_by' => $this->whenLoaded('droppedBy', fn () => [
                 'id' => $this->droppedBy?->id,
                 'full_name' => $this->droppedBy?->full_name,
             ]),
             'restored_at' => $this->restored_at?->toIso8601String(),
-            'restored_by' => $this->whenLoaded('restoredBy', fn() => [
+            'restored_by' => $this->whenLoaded('restoredBy', fn () => [
                 'id' => $this->restoredBy?->id,
                 'full_name' => $this->restoredBy?->full_name,
             ]),

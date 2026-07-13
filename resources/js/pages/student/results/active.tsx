@@ -29,11 +29,6 @@ interface StudentResultPageProps {
     [key: string]: unknown;
 }
 
-// Single source of truth for the school name — used by the header AND the
-// printed watermark. Swap this for `student.data.school?.name` (or a page
-// prop) once that data is available.
-export const SCHOOL_NAME = 'Brookstone School';
-
 // ---------------------------------------------------------------------------
 // Print styles — kept inline so this component is fully self-contained.
 // ---------------------------------------------------------------------------
@@ -305,22 +300,31 @@ export function ResultDetails({
     curricula: StudentCurriculum;
     picture?: string;
 }) {
+    const { auth } = usePage().props;
+    const school = auth.school;
+
     return (
         <div className="relative">
             <div className="flex items-center justify-center">
                 <AppLogoIcon />
             </div>
             <div className="mb-1 text-center leading-tight">
-                <h1 className="text-lg font-bold uppercase">{SCHOOL_NAME}</h1>
-                <p className="text-sm text-slate-600">
-                    SECONDARY AND INTERNATIONAL FOUNDATION YEAR (IFY)
-                </p>
-                <p className="text-sm text-slate-600">
-                    International Airport Road Igwuruta
-                </p>
-                <p className="text-sm text-slate-600">
-                    Website: www.brookstoneng.org
-                </p>
+                <h1 className="text-lg font-bold uppercase">
+                    {school?.name ?? 'School'}
+                </h1>
+                {school?.name_on_result && (
+                    <p className="text-sm text-slate-600">
+                        {school.name_on_result}
+                    </p>
+                )}
+                {school?.address && (
+                    <p className="text-sm text-slate-600">{school.address}</p>
+                )}
+                {school?.website && (
+                    <p className="text-sm text-slate-600">
+                        Website: {school.website}
+                    </p>
+                )}
                 <div className="mt-1">
                     <p className="text-sm font-bold text-slate-600">
                         {curricula.curriculum.is_ccm
@@ -370,7 +374,9 @@ export default function StudentResultTable() {
         const sanitize = (v: string) => v.replace(/[^\w-]+/g, '');
         const fileName = [
             `${sanitize(student.data.last_name)}${sanitize(student.data.first_name)}`,
-            sanitize((curriculum?.academic_session?.name ?? '').replace(/\//g, '-')),
+            sanitize(
+                (curriculum?.academic_session?.name ?? '').replace(/\//g, '-'),
+            ),
             sanitize(curriculum?.term?.name ?? ''),
             curriculum?.is_ccm ? 'CCM' : '',
             new Date().toISOString().slice(0, 10),
@@ -452,7 +458,10 @@ export default function StudentResultTable() {
                                 ? sc.curriculum.exam_type?.grade_boundaries
                                 : defaultGradeBoundaries.data;
 
-                        if (sc.curriculum.is_ccm) {
+                        if (
+                            sc.curriculum.is_ccm &&
+                            sc.curriculum.grading_mode !== 'categorical'
+                        ) {
                             return (
                                 <div
                                     key={sc.id}

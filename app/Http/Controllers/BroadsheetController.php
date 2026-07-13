@@ -23,7 +23,7 @@ class BroadsheetController extends Controller
             'is_ccm' => 'nullable|in:true,false',
         ]);
 
-        $classLevel = auth()->user()->school->classLevels()
+        $classLevel = \App\Support\ActiveSchool::getOrFail()->classLevels()
             ->where('uuid', $request->class_level)
             ->firstOrFail();
 

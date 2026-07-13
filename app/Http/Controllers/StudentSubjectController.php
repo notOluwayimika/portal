@@ -18,9 +18,7 @@ use Spatie\Activitylog\Models\Activity;
 
 class StudentSubjectController extends Controller
 {
-    public function __construct(private StudentSubjectService $service)
-    {
-    }
+    public function __construct(private StudentSubjectService $service) {}
 
     /**
      * GET /api/students/{student}/enrollments/{enrollment}/subjects
@@ -39,9 +37,9 @@ class StudentSubjectController extends Controller
 
         $allSubjects = $studentCurriculum->studentSubjects;
 
-        $compulsoryActive = $allSubjects->filter(fn($s) => $s->curriculumSubject->is_compulsory && $s->status->value === 'active');
-        $optionalActive = $allSubjects->filter(fn($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'active');
-        $optionalDropped = $allSubjects->filter(fn($s) => !$s->curriculumSubject->is_compulsory && $s->status->value === 'dropped');
+        $compulsoryActive = $allSubjects->filter(fn ($s) => $s->curriculumSubject->is_compulsory && $s->status->value === 'active');
+        $optionalActive = $allSubjects->filter(fn ($s) => ! $s->curriculumSubject->is_compulsory && $s->status->value === 'active');
+        $optionalDropped = $allSubjects->filter(fn ($s) => ! $s->curriculumSubject->is_compulsory && $s->status->value === 'dropped');
 
         $available = $studentCurriculum->availableOptionalSubjects();
 
@@ -55,7 +53,7 @@ class StudentSubjectController extends Controller
                 'compulsory_active' => StudentSubjectResource::collection($compulsoryActive->values()),
                 'optional_active' => StudentSubjectResource::collection($optionalActive->values()),
                 'optional_dropped' => StudentSubjectResource::collection($optionalDropped->values()),
-                'optional_available' => $available->map(fn($cs) => [
+                'optional_available' => $available->map(fn ($cs) => [
                     'id' => $cs->uuid,
                     'subject_name' => $cs->subject->name,
                     'subject_code' => $cs->subject->code,
@@ -126,7 +124,6 @@ class StudentSubjectController extends Controller
     /**
      * PATCH /api/students/{student}/enrollments/{enrollment}/subjects/{studentSubject}/drop
      */
-
     public function drop(
         DropSubjectRequest $request,
         Student $student,
@@ -199,6 +196,13 @@ class StudentSubjectController extends Controller
 
     public function storeComment(Request $request, StudentSubject $studentSubject): JsonResponse
     {
+        $studentSubject->loadMissing('curriculumSubject.resultStatus');
+        if ($studentSubject->curriculumSubject?->resultStatus?->status === 'approved') {
+            return response()->json([
+                'message' => 'Comments cannot be changed after the subject result is approved.',
+            ], 422);
+        }
+
         $request->validate([
             'comment' => 'required|string|max:50',
         ]);
@@ -206,7 +210,7 @@ class StudentSubjectController extends Controller
         $this->service->storeComment($studentSubject, $request->user(), $request->comment);
 
         return response()->json([
-            'message' => 'Comment stored successfully.'
+            'message' => 'Comment stored successfully.',
         ], 201);
     }
 

@@ -10,7 +10,9 @@ use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\ExamType;
+use App\Models\GradingScheme;
 use App\Models\MarkingComponent;
+use App\Models\MarkingScheme;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Score;
@@ -19,6 +21,7 @@ use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -53,7 +56,7 @@ function bpt_session(School $school): AcademicSession
     return AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 }
@@ -63,7 +66,7 @@ function bpt_term(AcademicSession $session, int $order, string $status): Term
     return Term::create([
         'academic_session_id' => $session->id,
         'name' => "Term {$order}",
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => $order,
         'start_date' => now()->subMonths(10 - $order * 3),
         'end_date' => now()->subMonths(8 - $order * 3),
@@ -76,7 +79,7 @@ function bpt_examType(School $school): ExamType
     return ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 }
 
@@ -85,7 +88,7 @@ function bpt_examType(School $school): ExamType
  * subject (2 marking components), one teacher assignment stub skipped for
  * brevity, and one actively enrolled student with a score.
  *
- * @return array{school: School, admin: \App\Models\User, arm: ClassLevelArm,
+ * @return array{school: School, admin: User, arm: ClassLevelArm,
  *               session: AcademicSession, pastTerm: Term, activeTerm: Term,
  *               examType: ExamType, source: Curriculum, subject: Subject,
  *               sourceSubject: CurriculumSubject, student: Student,
@@ -142,7 +145,7 @@ function bpt_world(): array
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     // Auto-attaches the compulsory subject via StudentCurriculumObserver.
@@ -254,6 +257,68 @@ it('is idempotent on re-run', function () {
     expect(StudentSubject::where('student_curriculum_id', $backdated->first()->id)->count())->toBe(1);
 });
 
+it('reuses the source marking scheme instead of cloning subject components', function () {
+    $w = bpt_world();
+
+    $scheme = MarkingScheme::create([
+        'school_id' => $w['school']->id,
+        'is_ccm' => false,
+        'version' => 1,
+        'status' => 'active',
+    ]);
+    $scheme->components()->createMany([
+        [
+            'school_id' => $w['school']->id,
+            'name' => 'Coursework',
+            'weight' => 0.4,
+            'is_ccm' => false,
+        ],
+        [
+            'school_id' => $w['school']->id,
+            'name' => 'Examination',
+            'weight' => 0.6,
+            'is_ccm' => false,
+        ],
+    ]);
+    $w['source']->update(['marking_scheme_id' => $scheme->id]);
+
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+
+    $target = bpt_findTarget($w);
+    $newSubject = CurriculumSubject::where('curriculum_id', $target->id)->firstOrFail();
+
+    expect($target->marking_scheme_id)->toBe($scheme->id);
+    expect($newSubject->markingComponents()->count())->toBe(0);
+    expect($newSubject->effectiveMarkingComponents()->pluck('name')->all())
+        ->toBe(['Coursework', 'Examination']);
+});
+
+it('reuses categorical grading and does not create numerical marking components', function () {
+    $w = bpt_world();
+
+    $scheme = GradingScheme::create([
+        'school_id' => $w['school']->id,
+        'name' => 'Nursery Progress',
+        'mode' => 'categorical',
+        'version' => 1,
+        'status' => 'active',
+    ]);
+    $scheme->items()->createMany([
+        ['code' => 'GP', 'label' => 'Good progress', 'display_order' => 1],
+        ['code' => 'WS', 'label' => 'Working on skills', 'display_order' => 2],
+    ]);
+    $w['source']->update(['grading_scheme_id' => $scheme->id]);
+
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+
+    $target = bpt_findTarget($w);
+    $newSubject = CurriculumSubject::where('curriculum_id', $target->id)->firstOrFail();
+
+    expect($target->grading_scheme_id)->toBe($scheme->id);
+    expect($target->usesCategoricalGrading())->toBeTrue();
+    expect($newSubject->markingComponents()->count())->toBe(0);
+});
+
 it('refuses ccm sources, non-completed target terms, the source term itself, and other schools\' terms', function () {
     $w = bpt_world();
 
@@ -306,7 +371,7 @@ it('skips withdrawn students and picks up new enrollments on a delta re-run', fu
         'first_name' => 'Gone',
         'last_name' => Str::random(6),
         'gender' => 'female',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
     StudentCurriculum::create([
         'student_id' => $withdrawn->id,
@@ -325,7 +390,7 @@ it('skips withdrawn students and picks up new enrollments on a delta re-run', fu
         'first_name' => 'Late',
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
     StudentCurriculum::create([
         'student_id' => $late->id,

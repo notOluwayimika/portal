@@ -5,10 +5,12 @@ import ScoreEntryPage from '@/components/score-entry-page';
 import SubjectResultStatusPanel from '@/components/subject-result-status-panel';
 import { handleBack } from '@/helpers';
 import type { Auth } from '@/types';
+import type { GradeBoundary } from '@/types/models';
 
 export default function Show() {
-    const { curriculumSubject, auth } = usePage<{
+    const { curriculumSubject, defaultGradeBoundaries, auth } = usePage<{
         curriculumSubject: any;
+        defaultGradeBoundaries: { data: GradeBoundary[] };
         auth: Auth;
     }>().props;
     const resultStatus = curriculumSubject.data.result_status;
@@ -51,8 +53,11 @@ export default function Show() {
                     }, 1000);
                 }}
             />
-            <ScoreEntryPage cs={curriculumSubject.data} status={status} />
-
+            <ScoreEntryPage
+                cs={curriculumSubject.data}
+                status={status}
+                defaultGradeBoundaries={defaultGradeBoundaries.data}
+            />
         </div>
     );
 }

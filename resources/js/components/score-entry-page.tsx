@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     CurriculumSubject,
+    GradeBoundary,
     GradingSchemeItem,
     MarkingComponent,
     Score,
@@ -84,24 +85,37 @@ const fullName = (s: Student) =>
 export default function ScoreEntryPage({
     cs,
     status,
+    defaultGradeBoundaries = [],
 }: {
     cs: CurriculumSubject;
     status: SubjectResultStatus;
+    defaultGradeBoundaries?: GradeBoundary[];
 }) {
     if (cs.curriculum?.grading_mode === 'categorical') {
         return <CategoricalEntryPage cs={cs} status={status} />;
     }
 
-    return <NumericScoreEntryPage cs={cs} status={status} />;
+    return (
+        <NumericScoreEntryPage
+            cs={cs}
+            status={status}
+            defaultGradeBoundaries={defaultGradeBoundaries}
+        />
+    );
 }
 
 function NumericScoreEntryPage({
     cs,
     status,
+    defaultGradeBoundaries,
 }: {
     cs: CurriculumSubject;
     status: SubjectResultStatus;
+    defaultGradeBoundaries: GradeBoundary[];
 }) {
+    const gradeBoundaries = cs.curriculum?.exam_type?.grade_boundaries?.length
+        ? cs.curriculum.exam_type.grade_boundaries
+        : defaultGradeBoundaries;
     const [markingComponents] = useState<MarkingComponent[]>(
         cs.marking_components,
     );
@@ -361,6 +375,8 @@ function NumericScoreEntryPage({
                     </p>
                 </div>
 
+                <NumericGradingReference boundaries={gradeBoundaries} />
+
                 {/* Toolbar */}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <input
@@ -497,6 +513,10 @@ function NumericScoreEntryPage({
                                                 <CommentCell
                                                     studentSubject={s}
                                                     total={total}
+                                                    locked={
+                                                        status.status ===
+                                                        'approved'
+                                                    }
                                                 />
                                             </td>
                                         )}
@@ -572,6 +592,10 @@ function CategoricalEntryPage({
                         {cs.curriculum?.grading_scheme?.name}
                     </p>
                 </div>
+                <CategoricalGradingReference
+                    name={cs.curriculum?.grading_scheme?.name}
+                    items={items}
+                />
                 <input
                     type="search"
                     placeholder="Search by name or admission number…"
@@ -661,14 +685,111 @@ function CategoricalEntryPage({
     );
 }
 
+function NumericGradingReference({
+    boundaries,
+}: {
+    boundaries: GradeBoundary[];
+}) {
+    return (
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-900">
+                    Grade boundaries
+                </h2>
+                <p className="text-xs text-gray-500">
+                    The score ranges used for this curriculum.
+                </p>
+            </div>
+            {boundaries.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">
+                    No grade boundaries are configured.
+                </p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th className="px-4 py-2">Grade</th>
+                                <th className="px-4 py-2">Range</th>
+                                <th className="px-4 py-2">Label</th>
+                                <th className="px-4 py-2">Grade point</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {boundaries.map((boundary) => (
+                                <tr key={boundary.id}>
+                                    <td className="px-4 py-2 font-semibold">
+                                        {boundary.grade}
+                                    </td>
+                                    <td className="px-4 py-2 tabular-nums">
+                                        {boundary.min_score}–
+                                        {boundary.max_score}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        {boundary.label}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        {boundary.grade_point}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function CategoricalGradingReference({
+    name,
+    items,
+}: {
+    name?: string;
+    items: GradingSchemeItem[];
+}) {
+    return (
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-900">
+                    {name ?? 'Categorical grading scheme'}
+                </h2>
+                <p className="text-xs text-gray-500">
+                    Select one of these progress ratings for each student.
+                </p>
+            </div>
+            <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                    <tr>
+                        <th className="px-4 py-2">Code</th>
+                        <th className="px-4 py-2">Description</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {items.map((item) => (
+                        <tr key={item.id}>
+                            <td className="px-4 py-2 font-semibold">
+                                {item.code}
+                            </td>
+                            <td className="px-4 py-2">{item.label}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 // ---------- Sub-components ----------
 
 function CommentCell({
     studentSubject,
     total,
+    locked,
 }: {
     studentSubject: StudentSubject;
     total?: number;
+    locked: boolean;
 }) {
     const [value, setValue] = useState(studentSubject.comment ?? '');
     const [status, setStatus] = useState<CellStatus>('idle');
@@ -741,6 +862,10 @@ function CommentCell({
     };
 
     const triggerSave = (val: string) => {
+        if (locked) {
+            return;
+        }
+
         const trimmed = val.trim();
 
         if (!trimmed) {
@@ -757,6 +882,10 @@ function CommentCell({
     };
 
     const onChange = (val: string) => {
+        if (locked) {
+            return;
+        }
+
         setValue(val);
 
         if (timerRef.current) {
@@ -784,6 +913,13 @@ function CommentCell({
         };
     }, []);
 
+    useEffect(() => {
+        if (locked && timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+    }, [locked]);
+
     const borderClass =
         status === 'error'
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
@@ -801,10 +937,15 @@ function CommentCell({
                 type="text"
                 list={datalistId}
                 value={value}
+                disabled={locked}
                 onChange={(e) => onChange(e.target.value)}
                 onBlur={onBlur}
-                placeholder="Select or type comment..."
-                className={`w-full rounded-md border px-2 py-1 text-sm shadow-sm focus:ring-1 focus:outline-none ${borderClass}`}
+                placeholder={
+                    locked
+                        ? 'Comment locked after approval'
+                        : 'Select or type comment...'
+                }
+                className={`w-full rounded-md border px-2 py-1 text-sm shadow-sm focus:ring-1 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${borderClass}`}
             />
 
             <datalist id={datalistId}>

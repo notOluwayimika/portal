@@ -279,6 +279,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
         $curriculumSubject->load([
             'curriculum',
+            'curriculum.examType.gradeBoundaries',
             'curriculum.gradingScheme.items',
             'subject',
             'markingComponents',
@@ -294,6 +295,9 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
         ]);
         return Inertia::render('curriculum-subject/show', [
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
+            'defaultGradeBoundaries' => GradeBoundaryResource::collection(
+                GradeBoundary::whereNull('exam_type_id')->get()
+            ),
         ]);
     })->name('setup.curriculumSubjects.show');
 

@@ -20,6 +20,7 @@ use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubjectResultStatusController;
 use App\Http\Controllers\TeacherController;
+use App\Http\Controllers\TeacherSchoolAccessController;
 use App\Http\Controllers\TermController;
 use App\Http\Controllers\NoticeController;
 use Illuminate\Http\Request;
@@ -200,6 +201,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
 
     Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
+
+    // Teacher multi-school access (school_user pivot); admin can only grant
+    // schools they themselves can access.
+    Route::put('/teachers/{teacher:uuid}/schools', [TeacherSchoolAccessController::class, 'sync']);
 
     // CCM -> non-CCM curriculum migration
     Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);

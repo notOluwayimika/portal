@@ -2,9 +2,9 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { Building2, Plus, Shield } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import InputError from '@/components/input-error';
+import { SchoolChecklist } from '@/components/school-access/school-checklist';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -27,38 +27,6 @@ type Props = {
     admins: AdminRow[];
     schools: SchoolOption[];
 };
-
-function SchoolChecklist({
-    schools,
-    selected,
-    toggle,
-}: {
-    schools: SchoolOption[];
-    selected: string[];
-    toggle: (uuid: string) => void;
-}) {
-    return (
-        <div className="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-md border p-3">
-            {schools.map((school) => (
-                <label
-                    key={school.uuid}
-                    className="flex items-center gap-2 text-sm"
-                >
-                    <Checkbox
-                        checked={selected.includes(school.uuid)}
-                        onCheckedChange={() => toggle(school.uuid)}
-                    />
-                    {school.name}
-                </label>
-            ))}
-            {schools.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                    No schools available. Create a school first.
-                </p>
-            )}
-        </div>
-    );
-}
 
 function CreateAdminDialog({
     schools,

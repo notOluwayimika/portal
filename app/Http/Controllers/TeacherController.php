@@ -106,6 +106,8 @@ class TeacherController extends Controller
 
     public function destroy(Teacher $teacher)
     {
+        abort_unless($teacher->isHomeSchool(), 403, 'This teacher belongs to another school. Remove their school access instead.');
+
         $this->teacherService->delete($teacher);
         return response()->noContent();
     }

@@ -227,10 +227,18 @@ export interface Student {
     updated_at?: string;
 }
 
+export interface TeacherSchoolAccess {
+    uuid: string;
+    name: string;
+    is_home: boolean;
+}
+
 export interface Teacher {
     id: string;
     school_id: string;
     school?: School;
+    schools?: TeacherSchoolAccess[];
+    has_user?: boolean;
     user_id?: string;
     user?: User;
     email?: string;

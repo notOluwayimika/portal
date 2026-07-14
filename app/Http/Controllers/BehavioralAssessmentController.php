@@ -94,6 +94,7 @@ class BehavioralAssessmentController extends Controller
 
         $assignments = ClassLevelArmTeacher::where('teacher_id', $teacher->id)
             ->where('role', TeacherAssignmentRoleEnum::BOARDING_PARENT->value)
+            ->inActiveSchool()
             ->get(['class_level_arm_id', 'gender']);
 
         if ($assignments->isEmpty()) {

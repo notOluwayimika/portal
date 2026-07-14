@@ -61,7 +61,7 @@ export default function IncompleteResults() {
     const [rows, setRows] = useState<IncompleteRow[]>([]);
     const [pagination, setPagination] = useState<Pagination | null>(null);
     const [page, setPage] = useState(1);
-    const [reason, setReason] = useState<ReasonFilter>('all');
+    const [reason, setReason] = useState<ReasonFilter>('missing_results');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 

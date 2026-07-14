@@ -87,6 +87,7 @@ class FormTeacherCommentController extends Controller
 
         return ClassLevelArmTeacher::where('teacher_id', $teacher->id)
             ->where('role', TeacherAssignmentRoleEnum::FORM_TEACHER->value)
+            ->inActiveSchool()
             ->first();
     }
 }

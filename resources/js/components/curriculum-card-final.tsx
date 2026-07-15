@@ -51,7 +51,7 @@ function ResultSignatureBlock({
                 className="h-10 w-auto object-contain sm:h-16"
                 draggable={false}
             />
-            {signature.signer_name && <p>{signature.signer_name}</p>}
+            <p>{signature.label}</p>
             {signature.approval_date && (
                 <p>Approval date: {fmtDate(signature.approval_date)}</p>
             )}

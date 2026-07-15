@@ -44,8 +44,8 @@ class ResultSignatureService
         if ($principal?->signatureFile) {
             return [
                 'url' => $principal->signatureFile->url,
-                'label' => "Principal's Signature",
-                'signer_name' => $principal->full_name,
+                'label' => $this->approvalLabel($principal->full_name),
+                'signer_name' => null,
                 'source' => 'principal',
             ];
         }
@@ -60,8 +60,8 @@ class ResultSignatureService
         if ($headOfSchool?->user?->signatureFile) {
             return [
                 'url' => $headOfSchool->user->signatureFile->url,
-                'label' => "Head of School's Signature",
-                'signer_name' => $headOfSchool->full_name,
+                'label' => $this->approvalLabel($headOfSchool->full_name),
+                'signer_name' => null,
                 'source' => 'head_of_school',
             ];
         }
@@ -76,9 +76,7 @@ class ResultSignatureService
         if ($school->fallbackSignatureFile) {
             return [
                 'url' => $school->fallbackSignatureFile->url,
-                'label' => $school->result_approver_name
-                    ? 'Reviewed and approved by '.$school->result_approver_name
-                    : 'Authorized Signature',
+                'label' => $this->approvalLabel($school->result_approver_name),
                 'signer_name' => null,
                 'source' => 'fallback',
             ];
@@ -97,5 +95,12 @@ class ResultSignatureService
             ...$signature,
             'approval_date' => $studentCurriculum->updated_at?->toDateString(),
         ];
+    }
+
+    private function approvalLabel(?string $approverName): string
+    {
+        return $approverName
+            ? 'Reviewed and approved by '.$approverName
+            : 'Authorized Signature';
     }
 }

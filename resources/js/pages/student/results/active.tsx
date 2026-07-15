@@ -644,16 +644,6 @@ export default function StudentResultTable() {
                                                     }
                                                 </p>
                                                 {resultSignatures[sc.id]
-                                                    .signer_name && (
-                                                    <p>
-                                                        {
-                                                            resultSignatures[
-                                                                sc.id
-                                                            ].signer_name
-                                                        }
-                                                    </p>
-                                                )}
-                                                {resultSignatures[sc.id]
                                                     .approval_date && (
                                                     <p>
                                                         Approval date:{' '}

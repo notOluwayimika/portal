@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
@@ -102,6 +103,13 @@ class User extends Authenticatable
             return School::query()->pluck('id')->map(fn ($id) => (int) $id);
         }
 
+        // Single source of truth (§7.1): access derives solely from role
+        // assignments. Behind an expand/contract flag (default off) until the
+        // parity test is green and the legacy sources are backfilled + dropped.
+        if (config('rbac.single_source_access')) {
+            return $this->schoolIdsFromRoles();
+        }
+
         $ids = $this->schools()->pluck('schools.id');
 
         $ids = $ids->merge(
@@ -116,6 +124,25 @@ class User extends Authenticatable
         }
 
         return $ids->map(fn ($id) => (int) $id)->unique()->values();
+    }
+
+    /**
+     * Schools where this user holds any role assignment (model_has_roles).
+     * The team-less super_admin row (school_id null) is excluded — super
+     * admins are handled above. This is the target single source of access.
+     */
+    private function schoolIdsFromRoles(): Collection
+    {
+        $teamKey = config('permission.column_names.team_foreign_key');
+
+        return DB::table(config('permission.table_names.model_has_roles'))
+            ->where('model_type', $this->getMorphClass())
+            ->where(config('permission.column_names.model_morph_key'), $this->getKey())
+            ->whereNotNull($teamKey)
+            ->pluck($teamKey)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
     }
 
     public function accessibleSchools(): \Illuminate\Database\Eloquent\Collection

@@ -118,4 +118,18 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Super Admin Gate Bypass
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, a Gate::before hook grants users holding the team-less
+    | `super_admin` role every ability. It is kept behind this flag (a temporary
+    | rollout guard) so the bypass can be disabled instantly if it misbehaves
+    | under spatie/laravel-permission teams mode.
+    |
+    */
+
+    'gate_before_superadmin' => env('AUTH_GATE_BEFORE_SUPERADMIN', true),
+
 ];

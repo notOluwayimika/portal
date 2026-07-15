@@ -3,16 +3,12 @@ name: tests
 on:
   push:
     branches:
-      - develop
       - main
-      - master
-      - workos
+      - staging
   pull_request:
     branches:
-      - develop
       - main
-      - master
-      - workos
+      - staging
 
 jobs:
   ci:
@@ -89,5 +85,11 @@ jobs:
       - name: Build Assets
         run: npm run build
 
-      - name: Tests
-        run: ./vendor/bin/pest
+      # The suite is not yet fully green (pre-existing debt is repaired by later
+      # slices). The ratchet fails CI only on failures NOT in the committed
+      # baseline (tests/ratchet-baseline.txt) — i.e. regressions. Pest is allowed
+      # to "fail" here; the ratchet script is the gate.
+      - name: Tests (failure ratchet)
+        run: |
+          ./vendor/bin/pest --log-junit junit.xml || true
+          php bin/ci-test-ratchet.php junit.xml

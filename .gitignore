@@ -29,5 +29,5 @@ yarn-error.log
 /.zed
 implementation_plan.md
 plan_docs
-docs
 .codegraph
+junit.xml

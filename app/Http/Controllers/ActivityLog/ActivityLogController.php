@@ -276,10 +276,11 @@ class ActivityLogController extends Controller
      */
     public function downloadExport(Request $request, Export $export)
     {
-        $user = $request->user();
+        // Record-level authorization lives in ExportPolicy (permission + owner);
+        // super_admin is granted by Gate::before. Expiry/existence are state
+        // checks, not authorization.
+        $this->authorize('download', $export);
 
-        abort_unless($user?->can('activity_log.export'), 403);
-        abort_unless($export->user_id === $user->id || $user->isSuperAdmin(), 403);
         abort_if($export->isExpired(), 410, 'Export expired');
         abort_unless(Storage::disk($export->disk)->exists($export->file_path), 404);
 

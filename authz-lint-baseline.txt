@@ -1,0 +1,34 @@
+app/Http/Controllers/ActivityLog/ActivityLogController.php	// abort_unless($request->user()?->can('activity_log.export'), 403);
+app/Http/Controllers/ActivityLog/ActivityLogController.php	// abort_unless($request->user()?->can('activity_log.view'), 403);
+app/Http/Controllers/ActivityLog/SavedActivityFilterController.php	//     $request->user()?->can('activity_log.view')
+app/Http/Controllers/ActivityLog/SavedActivityFilterController.php	// abort_unless(
+app/Http/Controllers/ActivityLog/SavedActivityFilterController.php	// abort_unless($request->user()?->can('activity_log.view'), 403);
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless(
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($curriculumSubject->isArchived(), 409, 'This subject is not archived.');
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($request->user()->can('curriculum_subject.archive'), 403);
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($request->user()->can('curriculum_subject.restore'), 403);
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($this->isReviewer($user), 403);
+app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($this->isTeacher($user), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless(
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.create'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.detach'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.enable_login'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.export'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.message'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.update'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.update_credentials'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.view'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.view_audit'), 403);
+app/Http/Controllers/GuardianController.php	// abort_unless(request()->user()?->can('guardian.view'), 403);
+app/Http/Controllers/GuardianImportController.php	// abort_unless($import->school_id === $schoolId, 404);
+app/Http/Controllers/GuardianImportController.php	// abort_unless($request->user()?->can('guardian.import'), 403);
+app/Http/Controllers/StudentCurriculumController.php	// abort_unless($student->school_id === $request->user()->school_id, 403);
+app/Http/Controllers/StudentCurriculumController.php	// abort_unless($studentCurriculum->student_id === $student->id, 404);
+app/Http/Controllers/StudentCurriculumController.php	// abort_unless($user && ($user->hasRole('admin') || $user->hasRole('head_of_school')), 403);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($enrollment->student_id === $student->id, 404);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($request->user()->can('student_subject.add_optional'), 403);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($request->user()->can('student_subject.view'), 403);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($request->user()->can('student_subject.view_history'), 403);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($student->school_id === auth()->user()->school_id, 403);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
+app/Http/Controllers/StudentSubjectController.php	// abort_unless(request()->user()->can('student_subject.view'), 403);

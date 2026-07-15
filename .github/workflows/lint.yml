@@ -61,3 +61,9 @@ jobs:
         run: |
           pnpm run types:check > tsc-output.txt 2>&1 || true
           php bin/ci-tsc-ratchet.php tsc-output.txt
+
+      # Constitution rule 15: authorization is never commented out. The existing
+      # disabled checks are frozen in authz-lint-baseline.txt; this fails only on
+      # a NEW one. (No DB needed.)
+      - name: Authorization guard (no new commented-out checks)
+        run: php bin/ci-authz-lint.php

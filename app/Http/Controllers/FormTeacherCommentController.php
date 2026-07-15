@@ -3,18 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FormatsClassLevelArmName;
+use App\Concerns\ResolvesAssessmentAccess;
 use App\Concerns\ResolvesTermFilter;
-use App\Enums\TeacherAssignmentRoleEnum;
+use App\Http\Resources\BehavioralAssessmentResource;
+use App\Http\Resources\PsychomotorSkillResource;
 use App\Http\Resources\StudentResource;
-use App\Models\ClassLevelArmTeacher;
 use App\Models\StudentCurriculum;
-use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 
 class FormTeacherCommentController extends Controller
 {
-    use FormatsClassLevelArmName, ResolvesTermFilter;
+    use FormatsClassLevelArmName, ResolvesAssessmentAccess, ResolvesTermFilter;
 
     public function index(Request $request)
     {
@@ -23,14 +23,18 @@ class FormTeacherCommentController extends Controller
         $assignment = $this->formTeacherAssignment();
 
         if (!$assignment) {
-            return Response::success([]);
+            return Response::success(['can_assess' => false, 'rows' => []]);
         }
 
         $term = $this->resolveTermFilter($request);
 
         if (!$term) {
-            return Response::success([]);
+            return Response::success(['can_assess' => false, 'rows' => []]);
         }
+
+        // Form teachers take over assessments only when the school has no
+        // boarding parents at all.
+        $canAssess = !$this->schoolHasBoardingParents();
 
         $studentCurricula = StudentCurriculum::query()
             ->whereIn('status', $this->enrollmentStatusesFor($term))
@@ -42,21 +46,31 @@ class FormTeacherCommentController extends Controller
                 'curriculum.classLevelArm.classLevel',
                 'curriculum.classLevelArm.arm',
                 'curriculum.classLevelArm.stream',
+                'behavioralAssessments' => fn($query) => $query->where('assessment_term_id', $term->id),
+                'psychomotorSkills' => fn($query) => $query->where('assessment_term_id', $term->id),
             ])
             ->get();
 
         $rows = $studentCurricula->map(function (StudentCurriculum $studentCurriculum) {
             $classLevelArm = $studentCurriculum->curriculum ? $studentCurriculum->curriculum->classLevelArm : null;
+            $assessment = $studentCurriculum->behavioralAssessments->first();
+            $psychomotor = $studentCurriculum->psychomotorSkills->first();
 
             return [
                 'student_curriculum_id' => $studentCurriculum->uuid,
                 'student' => new StudentResource($studentCurriculum->student),
                 'class_name' => $classLevelArm ? $this->classLevelArmName($classLevelArm) : null,
                 'comment' => $studentCurriculum->form_teacher_comment,
+                'uses_categorical_grading' => (bool) $studentCurriculum->curriculum?->usesCategoricalGrading(),
+                'assessment' => $assessment ? new BehavioralAssessmentResource($assessment) : null,
+                'psychomotor' => $psychomotor ? new PsychomotorSkillResource($psychomotor) : null,
             ];
         });
 
-        return Response::success($rows->values());
+        return Response::success([
+            'can_assess' => $canAssess,
+            'rows' => $rows->values(),
+        ]);
     }
 
     public function update(Request $request, StudentCurriculum $studentCurriculum)
@@ -75,19 +89,5 @@ class FormTeacherCommentController extends Controller
         $studentCurriculum->update(['form_teacher_comment' => $data['comment'] ?? null]);
 
         return Response::success(['comment' => $studentCurriculum->form_teacher_comment]);
-    }
-
-    private function formTeacherAssignment(): ?ClassLevelArmTeacher
-    {
-        $teacher = Teacher::where('user_id', auth()->id())->first();
-
-        if (!$teacher) {
-            return null;
-        }
-
-        return ClassLevelArmTeacher::where('teacher_id', $teacher->id)
-            ->where('role', TeacherAssignmentRoleEnum::FORM_TEACHER->value)
-            ->inActiveSchool()
-            ->first();
     }
 }

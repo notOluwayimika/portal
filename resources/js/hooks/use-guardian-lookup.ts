@@ -14,9 +14,20 @@ export interface GuardianLookupResult {
     occupation?: string | null;
     employer_name?: string | null;
     photo?: string | null;
+    has_wards_in_other_schools: boolean;
+    ward_schools: Array<{
+        name: string;
+        wards_count: number;
+        is_current_school: boolean;
+    }>;
 }
 
-export type GuardianLookupStatus = 'idle' | 'loading' | 'found' | 'not_found' | 'error';
+export type GuardianLookupStatus =
+    | 'idle'
+    | 'loading'
+    | 'found'
+    | 'not_found'
+    | 'error';
 
 interface UseGuardianLookupReturn {
     status: GuardianLookupStatus;
@@ -42,47 +53,59 @@ export function useGuardianLookup(): UseGuardianLookupReturn {
         setError(null);
     }, []);
 
-    const lookup = useCallback(async (identifier: string): Promise<GuardianLookupResult | null> => {
-        const trimmed = identifier.trim();
-        if (!trimmed) {
-            reset();
-            return null;
-        }
+    const lookup = useCallback(
+        async (identifier: string): Promise<GuardianLookupResult | null> => {
+            const trimmed = identifier.trim();
 
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
+            if (!trimmed) {
+                reset();
 
-        setStatus('loading');
-        setError(null);
-
-        try {
-            const res = await axios.get('/api/guardians/lookup', {
-                params: { identifier: trimmed },
-                signal: controller.signal,
-            });
-            const data = res.data?.data as GuardianLookupResult;
-            setResult(data);
-            setStatus('found');
-            return data;
-        } catch (err: unknown) {
-            if (axios.isCancel(err)) {
                 return null;
             }
-            const status = (err as { response?: { status?: number } })?.response?.status;
-            if (status === 404) {
-                setResult(null);
-                setStatus('not_found');
-                setError('No guardian found with that identifier in this school.');
-            } else {
-                setResult(null);
-                setStatus('error');
-                const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-                setError(message || 'Lookup failed. Please try again.');
+
+            abortRef.current?.abort();
+            const controller = new AbortController();
+            abortRef.current = controller;
+
+            setStatus('loading');
+            setError(null);
+
+            try {
+                const res = await axios.get('/api/guardians/lookup', {
+                    params: { identifier: trimmed },
+                    signal: controller.signal,
+                });
+                const data = res.data?.data as GuardianLookupResult;
+                setResult(data);
+                setStatus('found');
+
+                return data;
+            } catch (err: unknown) {
+                if (axios.isCancel(err)) {
+                    return null;
+                }
+
+                const status = (err as { response?: { status?: number } })
+                    ?.response?.status;
+
+                if (status === 404) {
+                    setResult(null);
+                    setStatus('not_found');
+                    setError('No guardian found with that identifier.');
+                } else {
+                    setResult(null);
+                    setStatus('error');
+                    const message = (
+                        err as { response?: { data?: { message?: string } } }
+                    )?.response?.data?.message;
+                    setError(message || 'Lookup failed. Please try again.');
+                }
+
+                return null;
             }
-            return null;
-        }
-    }, [reset]);
+        },
+        [reset],
+    );
 
     return { status, result, error, lookup, reset };
 }

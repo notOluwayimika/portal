@@ -1,7 +1,9 @@
 import { usePage } from '@inertiajs/react';
-import { useMemo } from 'react';
+import axios from 'axios';
+import { useEffect, useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { CurriculumCardFinal } from '@/components/curriculum-card-final';
+import type { ResultSignature } from '@/components/curriculum-card-final';
 import type {
     CurriculumCardProps,
     ResultRow,
@@ -14,7 +16,7 @@ import {
     toNum,
     totalGradePoint,
 } from '@/components/student-results/shared';
-import { handleBack } from '@/helpers';
+import { fmtDate, handleBack } from '@/helpers';
 import type {
     CurriculumSubject,
     GradeBoundary,
@@ -26,6 +28,7 @@ interface StudentResultPageProps {
     student: { data: Student };
     studentCurricula: { data: StudentCurriculum[] };
     defaultGradeBoundaries: { data: GradeBoundary[] };
+    resultSignatures: Record<string, ResultSignature | null>;
     [key: string]: unknown;
 }
 
@@ -92,11 +95,11 @@ export const PRINT_STYLES = `
 export function CurriculumCard({
     sc,
     defaultBoundaries,
-    studentId,
     student,
 }: CurriculumCardProps) {
     const { auth } = usePage().props;
     const roles = auth.roles;
+    const [scDetails, setScDetails] = useState<any | null>(null);
     const boundaries =
         sc.curriculum.exam_type?.grade_boundaries?.length &&
         sc.curriculum.exam_type?.grade_boundaries?.length > 0
@@ -136,7 +139,7 @@ export function CurriculumCard({
                 classAvgGrade: gradeForScore(classAvg, boundaries),
             };
         });
-    }, [sc, studentId, boundaries]);
+    }, [sc, boundaries]);
     const isGuardian = roles.includes('guardian');
     const hasIncompleteResults = rows.some((r) => r.score === null);
     const resultsIncomplete = isGuardian && hasIncompleteResults;
@@ -152,6 +155,111 @@ export function CurriculumCard({
 
         return vals.reduce((s, n) => s + n, 0) / vals.length;
     }, [rows]);
+
+    useEffect(() => {
+        axios
+            .get(`/api/student-curricula/${sc.id}`)
+            .then((response) => setScDetails(response.data));
+    }, [sc.id]);
+
+    if (sc.curriculum.grading_mode === 'categorical') {
+        const categoricalSubjects = (sc.subjects ?? [])
+            .slice()
+            .sort(
+                (left, right) =>
+                    (left.curriculum_subject?.display_order ?? 0) -
+                    (right.curriculum_subject?.display_order ?? 0),
+            );
+
+        return (
+            <div className="student-result-card overflow-hidden border border-slate-300">
+                <div className="flex items-center justify-between px-1">
+                    <div>
+                        <p className="text-xs text-black">
+                            <span className="inline-block w-12 font-bold">
+                                Name:
+                            </span>
+                            {student.last_name}, {student.first_name}{' '}
+                            {student.middle_name}
+                        </p>
+                        <p className="text-xs text-black">
+                            <span className="inline-block w-12 font-bold">
+                                Form:
+                            </span>
+                            {student.class_details.full_class}
+                        </p>
+                    </div>
+                </div>
+                <table className="w-full border-collapse text-xs">
+                    <thead>
+                        <tr className="bg-blue-100 text-black">
+                            <th className="border border-slate-300 px-2 py-1 text-left">
+                                Subjects
+                            </th>
+                            <th className="border border-slate-300 px-2 py-1 text-center">
+                                Evaluation
+                            </th>
+                            <th className="border border-slate-300 px-2 py-1 text-left">
+                                Subject Teacher
+                            </th>
+                            <th className="border border-slate-300 px-2 py-1 text-left">
+                                Comments
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {categoricalSubjects.map((subject) => (
+                            <tr key={subject.id}>
+                                <td className="border border-slate-300 px-2 py-1">
+                                    {subject.curriculum_subject?.subject?.name}
+                                </td>
+                                <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                                    {subject.own_result?.grading_item
+                                        ? `${subject.own_result.grading_item.code} — ${subject.own_result.grading_item.label}`
+                                        : 'Not assessed'}
+                                </td>
+                                <td className="border border-slate-300 px-2 py-1">
+                                    {subject.curriculum_subject?.teachers?.[0]
+                                        ?.teacher?.full_name || '—'}
+                                </td>
+                                <td className="border border-slate-300 px-2 py-1">
+                                    {subject.comment || '—'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {(scDetails?.formTeacher?.full_name ||
+                    scDetails?.studentCurriculum?.form_teacher_comment) && (
+                    <div className="grid grid-cols-4 text-xs">
+                        {scDetails?.formTeacher?.full_name && (
+                            <>
+                                <div className="border font-bold">
+                                    Form Tutor's Name:
+                                </div>
+                                <div className="col-span-3 border">
+                                    {scDetails.formTeacher.full_name}
+                                </div>
+                            </>
+                        )}
+                        {scDetails?.studentCurriculum?.form_teacher_comment && (
+                            <>
+                                <div className="border font-bold">
+                                    Form Tutor Comment:
+                                </div>
+                                <div className="col-span-3 border">
+                                    {
+                                        scDetails.studentCurriculum
+                                            .form_teacher_comment
+                                    }
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="student-result-card overflow-hidden border border-slate-300">
@@ -289,6 +397,34 @@ export function CurriculumCard({
                     )}
                 </table>
             </div>
+            {(scDetails?.formTeacher?.full_name ||
+                scDetails?.studentCurriculum?.form_teacher_comment) && (
+                <div className="grid grid-cols-4 text-xs">
+                    {scDetails?.formTeacher?.full_name && (
+                        <>
+                            <div className="border font-bold">
+                                Form Tutor's Name:
+                            </div>
+                            <div className="col-span-3 border">
+                                {scDetails.formTeacher.full_name}
+                            </div>
+                        </>
+                    )}
+                    {scDetails?.studentCurriculum?.form_teacher_comment && (
+                        <>
+                            <div className="border font-bold">
+                                Form Tutor Comment:
+                            </div>
+                            <div className="col-span-3 border">
+                                {
+                                    scDetails.studentCurriculum
+                                        .form_teacher_comment
+                                }
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -362,8 +498,12 @@ export function ResultDetails({
 // Main component
 // ---------------------------------------------------------------------------
 export default function StudentResultTable() {
-    const { student, studentCurricula, defaultGradeBoundaries } =
-        usePage<StudentResultPageProps>().props;
+    const {
+        student,
+        studentCurricula,
+        defaultGradeBoundaries,
+        resultSignatures,
+    } = usePage<StudentResultPageProps>().props;
     const curricula: StudentCurriculum[] = studentCurricula.data || [];
 
     const handlePrint = () => {
@@ -458,10 +598,7 @@ export default function StudentResultTable() {
                                 ? sc.curriculum.exam_type?.grade_boundaries
                                 : defaultGradeBoundaries.data;
 
-                        if (
-                            sc.curriculum.is_ccm &&
-                            sc.curriculum.grading_mode !== 'categorical'
-                        ) {
+                        if (sc.curriculum.is_ccm) {
                             return (
                                 <div
                                     key={sc.id}
@@ -486,15 +623,49 @@ export default function StudentResultTable() {
                                         />
                                     </div>
                                     <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
-                                        <div>
-                                            <img
-                                                src="/assets/images/signature_secondary.png"
-                                                alt="Brookstone School"
-                                                className={`h-16 w-auto sm:h-20`}
-                                                draggable={false}
-                                            />
-                                            <p>Principal's Signature</p>
-                                        </div>
+                                        {resultSignatures[sc.id] && (
+                                            <div>
+                                                <img
+                                                    src={
+                                                        resultSignatures[sc.id]
+                                                            .url
+                                                    }
+                                                    alt={
+                                                        resultSignatures[sc.id]
+                                                            .label
+                                                    }
+                                                    className={`h-16 w-auto sm:h-20`}
+                                                    draggable={false}
+                                                />
+                                                <p>
+                                                    {
+                                                        resultSignatures[sc.id]
+                                                            .label
+                                                    }
+                                                </p>
+                                                {resultSignatures[sc.id]
+                                                    .signer_name && (
+                                                    <p>
+                                                        {
+                                                            resultSignatures[
+                                                                sc.id
+                                                            ].signer_name
+                                                        }
+                                                    </p>
+                                                )}
+                                                {resultSignatures[sc.id]
+                                                    .approval_date && (
+                                                    <p>
+                                                        Approval date:{' '}
+                                                        {fmtDate(
+                                                            resultSignatures[
+                                                                sc.id
+                                                            ].approval_date,
+                                                        )}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
                                         <p>
@@ -524,6 +695,9 @@ export default function StudentResultTable() {
                                         studentId={student.data.id}
                                         student={student.data}
                                         boundaries={boundaries}
+                                        resultSignature={
+                                            resultSignatures[sc.id]
+                                        }
                                     />
                                 </div>
                             );

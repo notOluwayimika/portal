@@ -181,7 +181,7 @@ it('registers a student with mixed guardians (one new, one existing)', function 
     expect(User::where('email', 'dad@example.test')->exists())->toBeTrue();
 });
 
-it('returns 404 from lookup for a guardian in another school', function () {
+it('finds a guardian across schools and reports their other-school wards', function () {
     [$schoolA, $adminA] = makeAdmin();
     $schoolB            = School::factory()->create();
     $userB              = User::factory()->create(['school_id' => $schoolB->id, 'email' => 'other.school@example.test']);
@@ -190,11 +190,54 @@ it('returns 404 from lookup for a guardian in another school', function () {
         'user_id'   => $userB->id,
         'phone'     => '08099999999',
     ]);
+    $wardB = Student::factory()->create(['school_id' => $schoolB->id]);
+    $wardB->guardians()->attach($guardianB->id, [
+        'relationship' => 'father',
+        'is_primary' => true,
+        'can_login' => true,
+    ]);
 
     $response = $this->actingAs($adminA)
         ->getJson('/api/guardians/lookup?identifier=other.school@example.test');
 
-    $response->assertStatus(404);
+    $response->assertOk()
+        ->assertJsonPath('data.id', $guardianB->uuid)
+        ->assertJsonPath('data.has_wards_in_other_schools', true)
+        ->assertJsonPath('data.ward_schools.0.name', $schoolB->name)
+        ->assertJsonPath('data.ward_schools.0.wards_count', 1);
+});
+
+it('attaches an existing cross-school guardian and grants school access', function () {
+    [$schoolA, $adminA] = makeAdmin();
+    $schoolB = School::factory()->create();
+    $studentA = Student::factory()->create(['school_id' => $schoolA->id]);
+    $userB = User::factory()->create(['school_id' => $schoolB->id, 'email' => 'attach.other@example.test']);
+    $guardianB = Guardian::factory()->create([
+        'school_id' => $schoolB->id,
+        'user_id' => $userB->id,
+        'phone' => '08098888888',
+    ]);
+
+    $this->actingAs($adminA)
+        ->withSession(['school_id' => $schoolA->id])
+        ->postJson("/api/students/{$studentA->uuid}/guardians", [
+            'mode' => 'existing',
+            'guardian_id' => $guardianB->uuid,
+            'identifier' => $userB->email,
+            'relationship' => 'guardian',
+            'is_primary' => true,
+            'can_login' => true,
+        ])
+        ->assertCreated();
+
+    expect(DB::table('guardian_student')
+        ->where('guardian_id', $guardianB->id)
+        ->where('student_id', $studentA->id)
+        ->exists())->toBeTrue()
+        ->and(DB::table('school_user')
+            ->where('user_id', $userB->id)
+            ->where('school_id', $schoolA->id)
+            ->exists())->toBeTrue();
 });
 
 it('rejects registration when no guardian is marked primary', function () {

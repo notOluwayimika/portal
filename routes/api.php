@@ -9,6 +9,7 @@ use App\Http\Controllers\GradeBoundaryController;
 use App\Http\Controllers\GradingSchemeController;
 use App\Http\Controllers\GuardianController;
 use App\Http\Controllers\HeadOfSchoolController;
+use App\Http\Controllers\PrincipalApprovalController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
@@ -54,20 +55,12 @@ Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class,
 Route::get('/curricula', [CurriculumController::class, 'index']);
 Route::get('/curricula/active', [CurriculumController::class, 'active']);
 Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_teacher'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 
     // Dashboard analytics API
     require __DIR__ . '/endpoints/dashboard.php';
 
-    // Public/Shared data (now protected)
-    Route::get('/sessions', [SessionController::class, 'index']);
-    Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
-    Route::get('/exam-types', [ExamTypeController::class, 'index']);
-    Route::get('/subjects', [SubjectController::class, 'index']);
-    Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
-    Route::get('/curricula', [CurriculumController::class, 'index']);
-    Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
 
     // protected session routes
     Route::post('/sessions', [SessionController::class, 'store']);
@@ -128,7 +121,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     Route::delete('/curricula/{curriculum:uuid}', [CurriculumController::class, 'destroy']);
 
     // protected curriculum subjects routes
-    Route::get('/curriculum-subjects', [CurriculumSubjectController::class, 'index']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'show']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
@@ -190,9 +182,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->grou
     require __DIR__ . '/endpoints/teacher.php';
     require __DIR__ . '/endpoints/guardian.php';
     require __DIR__ . '/endpoints/head-of-school.php';
-    require __DIR__ . '/endpoints/broadsheet.php';
-
-    require __DIR__ . '/endpoints/outstanding-comments.php';
 });
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     // Head of Schools
@@ -219,15 +208,37 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     require __DIR__ . '/endpoints/notice.php';
 });
 
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|principal'])->group(function () {
+    Route::patch('/class-levels/{classLevel:uuid}/principal-approval', [PrincipalApprovalController::class, 'classLevel']);
+    Route::patch('/class-level-arms/{classLevelArm:uuid}/principal-approval', [PrincipalApprovalController::class, 'classLevelArm']);
+});
+
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
+    // Public/Shared data (now protected)
+    Route::get('/sessions', [SessionController::class, 'index']);
+    Route::get('/class-structure', [ClassLevelArmController::class, 'index']);
+    Route::get('/exam-types', [ExamTypeController::class, 'index']);
+    Route::get('/subjects', [SubjectController::class, 'index']);
+    Route::get('/grade-boundaries/{examType:uuid}', [GradeBoundaryController::class, 'index']);
+    Route::get('/curricula', [CurriculumController::class, 'index']);
+    Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+
     // Activity log module (read-only audit feed). Fine-grained access is
     // gated per-endpoint by activity_log.* permissions.
     require __DIR__ . '/endpoints/activity-log.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|principal'])->group(function () {
     // Enrollments failing the result-readiness check (incomplete results)
     Route::get('/results/incomplete', [CurriculumController::class, 'incompleteResults']);
+
+    // Read-only subject listing; feeds the pending-results page, which
+    // principals can also see.
+    Route::get('/curriculum-subjects', [CurriculumSubjectController::class, 'index']);
+
+    // Broadsheets + outstanding comments (read-only reports)
+    require __DIR__ . '/endpoints/broadsheet.php';
+    require __DIR__ . '/endpoints/outstanding-comments.php';
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
@@ -264,8 +275,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:guardian'])->group(function (
     Route::get('/guardian/notices', [NoticeController::class, 'forGuardian']);
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:boarding_parent'])->group(function () {
+// Form teachers may record assessments when the school has no boarding
+// parents (enforced server-side in ResolvesAssessmentAccess).
+Route::middleware(['auth:sanctum', 'tenant', 'role:boarding_parent|form_teacher'])->group(function () {
     require __DIR__ . '/endpoints/behavioral-assessment.php';
+    require __DIR__ . '/endpoints/psychomotor-skill.php';
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'role:form_teacher'])->group(function () {

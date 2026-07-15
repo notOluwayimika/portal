@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DTOs\GuardianDto;
 use App\Models\Guardian;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\GuardianAccountCreatedNotification;
@@ -15,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Spatie\Permission\PermissionRegistrar;
 
 class GuardianService
 {
@@ -28,14 +28,21 @@ class GuardianService
 
     public function paginate(Request $request): LengthAwarePaginator
     {
+        $schoolId = (int) \App\Support\ActiveSchool::id();
         $sortBy = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
         $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
         $column = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
 
-        return Guardian::query()
-            ->leftJoin('users', 'users.id', '=', 'guardians.user_id')
+        return Guardian::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
+            ->join('users', 'users.id', '=', 'guardians.user_id')
+            ->join('school_user as guardian_school_access', function ($join) use ($schoolId) {
+                $join->on('guardian_school_access.user_id', '=', 'users.id')
+                    ->where('guardian_school_access.school_id', $schoolId);
+            })
             ->select('guardians.*')
-            ->withCount('students')
+            ->withCount([
+                'students as students_count' => fn ($query) => $query->where('students.school_id', $schoolId),
+            ])
             ->when($request->search, function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
                 $q->where(function ($inner) use ($term) {
@@ -61,7 +68,7 @@ class GuardianService
 
     public function bulkUpdateStatus(array $ids, string $status, int $schoolId): int
     {
-        $guardians = Guardian::whereIn('id', $ids)->where('school_id', $schoolId)->get();
+        $guardians = Guardian::whereIn('id', $ids)->get();
 
         foreach ($guardians as $guardian) {
             $guardian->update(['status' => $status]);
@@ -77,7 +84,7 @@ class GuardianService
 
     public function bulkDisableLogin(array $ids, int $schoolId): int
     {
-        $guardians = Guardian::whereIn('id', $ids)->where('school_id', $schoolId)->with('user')->get();
+        $guardians = Guardian::whereIn('id', $ids)->with('user')->get();
         $count = 0;
 
         foreach ($guardians as $guardian) {
@@ -109,6 +116,11 @@ class GuardianService
         return $this->guardianRepository->findByIdentifierInSchool($identifier, $schoolId);
     }
 
+    public function findGloballyByIdentifier(string $identifier): ?Guardian
+    {
+        return $this->guardianRepository->findByIdentifierGlobally($identifier);
+    }
+
     /**
      * Resolve a guardian to attach for Case B (existing). Accepts either uuid or identifier.
      * Throws ValidationException if not found in the given school.
@@ -128,6 +140,29 @@ class GuardianService
                 'guardians' => 'An existing guardian could not be found for the provided identifier in this school.',
             ]);
         }
+
+        return $guardian;
+    }
+
+    public function resolveExistingGuardianForAttachment(array $entry, int $schoolId): Guardian
+    {
+        $guardian = ! empty($entry['guardian_id'])
+            ? $this->guardianRepository->findByUuidGlobally($entry['guardian_id'])
+            : $this->guardianRepository->findByIdentifierGlobally($entry['identifier'] ?? '');
+
+        if (! $guardian) {
+            throw ValidationException::withMessages([
+                'guardian_id' => 'The selected guardian could not be found.',
+            ]);
+        }
+
+        if (! $guardian->user) {
+            throw ValidationException::withMessages([
+                'guardian_id' => 'The selected guardian has no user account.',
+            ]);
+        }
+
+        $guardian->user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
 
         return $guardian;
     }
@@ -166,11 +201,7 @@ class GuardianService
                 'password' => $plainPassword,
             ]);
 
-            $registrar = app(PermissionRegistrar::class);
-
-            $registrar->setPermissionsTeamId($schoolId);
-
-            $user->assignRole('guardian');
+            $user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
 
             $guardian = $user->guardian()->create(array_merge($attributes, [
                 'school_id' => $schoolId,

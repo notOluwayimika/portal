@@ -26,7 +26,10 @@ class GuardianRepository
         return $this->model
             ->withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
             ->with($with)
-            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($schoolId) {
+                $query->where('guardians.school_id', $schoolId)
+                    ->orWhereHas('user.schools', fn ($schoolQuery) => $schoolQuery->where('schools.id', $schoolId));
+            })
             ->where(function ($q) use ($identifier, $normalizedPhone, $emailLower) {
                 $q->where('phone', $identifier)
                   ->orWhere('whatsapp_number', $identifier);
@@ -46,7 +49,43 @@ class GuardianRepository
         return $this->model
             ->withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
             ->with($with)
-            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($schoolId) {
+                $query->where('guardians.school_id', $schoolId)
+                    ->orWhereHas('user.schools', fn ($schoolQuery) => $schoolQuery->where('schools.id', $schoolId));
+            })
+            ->where('uuid', $uuid)
+            ->first();
+    }
+
+    public function findByIdentifierGlobally(string $identifier, array $with = ['user', 'photoFile']): ?Guardian
+    {
+        $identifier = trim($identifier);
+        $normalizedPhone = PhoneNormalizer::normalize($identifier);
+        $emailLower = Str::lower($identifier);
+
+        return $this->model
+            ->withoutGlobalScopes()
+            ->whereNull('guardians.deleted_at')
+            ->with($with)
+            ->where(function ($query) use ($identifier, $normalizedPhone, $emailLower) {
+                $query->where('phone', $identifier)
+                    ->orWhere('whatsapp_number', $identifier)
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->whereRaw('LOWER(email) = ?', [$emailLower]));
+
+                if ($normalizedPhone) {
+                    $query->orWhere('phone', $normalizedPhone)
+                        ->orWhere('whatsapp_number', $normalizedPhone);
+                }
+            })
+            ->first();
+    }
+
+    public function findByUuidGlobally(string $uuid, array $with = ['user', 'photoFile']): ?Guardian
+    {
+        return $this->model
+            ->withoutGlobalScopes()
+            ->whereNull('guardians.deleted_at')
+            ->with($with)
             ->where('uuid', $uuid)
             ->first();
     }

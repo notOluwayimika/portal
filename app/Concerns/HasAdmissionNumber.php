@@ -2,6 +2,7 @@
 
 namespace App\Concerns;
 
+use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 
 trait HasAdmissionNumber
@@ -11,7 +12,11 @@ trait HasAdmissionNumber
         // Reject duplicate manual entries before insert
         static::creating(function ($model) {
             if (!empty($model->admission_number)) {
-                $exists = static::where('admission_number', $model->admission_number)->exists();
+                $schoolId = $model->school_id ?: ActiveSchool::id();
+                $exists = static::withoutGlobalScopes()
+                    ->where('school_id', $schoolId)
+                    ->where('admission_number', $model->admission_number)
+                    ->exists();
                 if ($exists) {
                     throw new \InvalidArgumentException(
                         "Admission number {$model->admission_number} is already in use."
@@ -25,7 +30,9 @@ trait HasAdmissionNumber
             if (empty($model->admission_number)) {
                 $admissionNumber = $model->nextAdmissionNumber();
 
-                static::where('id', $model->id)
+                static::withoutGlobalScopes()
+                    ->where('school_id', $model->school_id)
+                    ->where('id', $model->id)
                     ->update(['admission_number' => $admissionNumber]);
 
                 $model->setAttribute('admission_number', $admissionNumber);
@@ -42,7 +49,9 @@ trait HasAdmissionNumber
     {
         $prefix = static::admissionNumberPrefix();
 
-        $latest = static::where('admission_number', 'like', $prefix . '%')
+        $latest = static::withoutGlobalScopes()
+            ->where('school_id', $this->school_id)
+            ->where('admission_number', 'like', $prefix . '%')
             ->orderByRaw('LENGTH(admission_number) DESC, admission_number DESC')
             ->value('admission_number');
 

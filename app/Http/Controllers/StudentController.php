@@ -206,7 +206,7 @@ class StudentController extends Controller
     private function processGuardianEntry(Student $student, array $entry, int $schoolId, array &$deferredNotifications): void
     {
         if (($entry['mode'] ?? null) === 'existing') {
-            $guardian = $this->guardianService->resolveExistingGuardian($entry, $schoolId);
+            $guardian = $this->guardianService->resolveExistingGuardianForAttachment($entry, $schoolId);
             $existingPivot = DB::table('guardian_student')
                 ->where('guardian_id', $guardian->id)
                 ->where('student_id', $student->id)
@@ -326,8 +326,12 @@ class StudentController extends Controller
         }
 
         if ($isAvailable && auth()->user()->hasRole('guardian') && $activeCurriculum->status === StudentStatusEnum::ACTIVE) {
+            if (! $activeCurriculum->principal_approval) {
+                $isAvailable = false;
+            }
+
             $deadline = $activeCurriculum->curriculum?->term?->result_visible_at;
-            if ($deadline && !now()->greaterThan($deadline)) {
+            if ($isAvailable && $deadline && !now()->greaterThan($deadline)) {
                 $isAvailable = false;
             }
         }

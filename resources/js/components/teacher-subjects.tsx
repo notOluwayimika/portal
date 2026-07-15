@@ -572,16 +572,7 @@ function SubjectCard({ tcs }: SubjectCardProps) {
                         <WeightBar components={components} />
                     )}
                     {/* view details for a single tcs */}
-                    {(tcs?.curriculum_subject?.students?.length ?? 0) > 0 &&
-                        (tcs?.curriculum_subject?.marking_components?.length ??
-                            0) > 0 &&
-                        Math.ceil(
-                            (components ?? []).reduce(
-                                (sum, component) =>
-                                    sum + Number(component?.weight ?? 0),
-                                0,
-                            ) * 100,
-                        ) === 100 && (
+                    {(tcs?.curriculum_subject?.students?.length ?? 0) > 0   && (
                             <div className="my-2 flex justify-end">
                                 <Link
                                     className="rounded-md bg-blue-900 p-2 text-sm text-white transition duration-100 hover:bg-blue-800"

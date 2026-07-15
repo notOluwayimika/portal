@@ -3,18 +3,28 @@ import axios from 'axios';
 import { ChevronDown, ChevronUp, Heart } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { AssessmentGradeFields } from '@/components/assessment-grade-fields';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
-import { TermFilterSelect } from '@/components/term-filter-select';
-import { formatDate, snakeToTitleCase } from '@/hooks/use-helper';
+import { formatDate } from '@/hooks/use-helper';
 import { useInitials } from '@/hooks/use-initials';
+import {
+    PILLARS,
+    PSYCHOMOTOR_CATEGORIES,
+    PSYCHOMOTOR_LABELS
+    
+    
+} from '@/lib/assessment';
+import type {Pillar, PsychomotorCategory} from '@/lib/assessment';
 import type {
     BehavioralAssessment,
     BehavioralGrade,
+    PsychomotorSkill,
     Student,
 } from '@/types/models';
 
@@ -22,31 +32,8 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const PILLARS = [
-    'punctuality',
-    'mental_alertness',
-    'respect',
-    'neatness',
-    'politeness',
-    'honesty',
-    'relationship_with_peers',
-    'teamwork',
-    'perseverance',
-] as const;
-
-type Pillar = (typeof PILLARS)[number];
-
-const GRADES: BehavioralGrade[] = ['A', 'B', 'C', 'D', 'E'];
-
-const GRADE_MAPPING = {
-    A: 'Excellent',
-    B: 'Very Good',
-    C: 'Good',
-    D: 'Below Average',
-    E: 'Poor',
-};
-
 type PillarGrades = Record<Pillar, BehavioralGrade | ''>;
+type PsychomotorGrades = Record<PsychomotorCategory, BehavioralGrade | ''>;
 
 const defaultGrades: PillarGrades = PILLARS.reduce((acc, pillar) => {
     acc[pillar] = '';
@@ -54,15 +41,31 @@ const defaultGrades: PillarGrades = PILLARS.reduce((acc, pillar) => {
     return acc;
 }, {} as PillarGrades);
 
+const defaultPsychomotorGrades: PsychomotorGrades = PSYCHOMOTOR_CATEGORIES.reduce(
+    (acc, category) => {
+        acc[category] = '';
+
+        return acc;
+    },
+    {} as PsychomotorGrades,
+);
+
 interface AssessmentRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
     assessment: BehavioralAssessment | null;
+    uses_categorical_grading: boolean;
+    psychomotor: PsychomotorSkill | null;
 }
 
 interface FormState {
     grades: PillarGrades;
+    comment: string;
+}
+
+interface PsychomotorFormState {
+    grades: PsychomotorGrades;
     comment: string;
 }
 
@@ -80,6 +83,20 @@ function rowToFormState(row: AssessmentRow): FormState {
     return { grades, comment: row.assessment.comment ?? '' };
 }
 
+function rowToPsychomotorFormState(row: AssessmentRow): PsychomotorFormState {
+    if (!row.psychomotor) {
+        return { grades: { ...defaultPsychomotorGrades }, comment: '' };
+    }
+
+    const grades = PSYCHOMOTOR_CATEGORIES.reduce((acc, category) => {
+        acc[category] = row.psychomotor![category];
+
+        return acc;
+    }, {} as PsychomotorGrades);
+
+    return { grades, comment: row.psychomotor.comment ?? '' };
+}
+
 // ---------------------------------------------------------------------------
 // Assessment Card
 // ---------------------------------------------------------------------------
@@ -87,21 +104,29 @@ function rowToFormState(row: AssessmentRow): FormState {
 interface AssessmentCardProps {
     row: AssessmentRow;
     form: FormState;
+    psychomotorForm: PsychomotorFormState;
     expanded: boolean;
     saving: boolean;
+    savingPsychomotor: boolean;
     onToggle: () => void;
     onChange: (form: FormState) => void;
+    onPsychomotorChange: (form: PsychomotorFormState) => void;
     onSave: () => void;
+    onSavePsychomotor: () => void;
 }
 
 function AssessmentCard({
     row,
     form,
+    psychomotorForm,
     expanded,
     saving,
+    savingPsychomotor,
     onToggle,
     onChange,
+    onPsychomotorChange,
     onSave,
+    onSavePsychomotor,
 }: AssessmentCardProps) {
     const getInitials = useInitials();
     const { student, assessment } = row;
@@ -150,36 +175,16 @@ function AssessmentCard({
 
             {expanded && (
                 <div className="space-y-4 border-t border-gray-100 p-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        {PILLARS.map((pillar) => (
-                            <label key={pillar} className="block">
-                                <span className="mb-1 block text-xs font-medium text-gray-600">
-                                    {snakeToTitleCase(pillar)}
-                                </span>
-                                <select
-                                    value={form.grades[pillar]}
-                                    onChange={(e) =>
-                                        onChange({
-                                            ...form,
-                                            grades: {
-                                                ...form.grades,
-                                                [pillar]: e.target
-                                                    .value as BehavioralGrade,
-                                            },
-                                        })
-                                    }
-                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
-                                >
-                                    <option value="">Select an option</option>
-                                    {GRADES.map((grade) => (
-                                        <option key={grade} value={grade}>
-                                            {grade} - {GRADE_MAPPING[grade]}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                        ))}
-                    </div>
+                    <AssessmentGradeFields
+                        fields={PILLARS}
+                        values={form.grades}
+                        onChange={(pillar, value) =>
+                            onChange({
+                                ...form,
+                                grades: { ...form.grades, [pillar]: value },
+                            })
+                        }
+                    />
 
                     <label className="block">
                         <span className="mb-1 block text-xs font-medium text-gray-600">
@@ -202,6 +207,65 @@ function AssessmentCard({
                             Save Assessment
                         </Button>
                     </div>
+
+                    {row.uses_categorical_grading && (
+                        <div className="space-y-4 border-t border-gray-100 pt-4">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-800">
+                                    Psychomotor Skills
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                    Recorded for categorical-grading classes
+                                    alongside the behavioral assessment.
+                                </p>
+                            </div>
+
+                            <AssessmentGradeFields
+                                fields={PSYCHOMOTOR_CATEGORIES}
+                                labels={PSYCHOMOTOR_LABELS}
+                                values={psychomotorForm.grades}
+                                onChange={(category, value) =>
+                                    onPsychomotorChange({
+                                        ...psychomotorForm,
+                                        grades: {
+                                            ...psychomotorForm.grades,
+                                            [category]: value,
+                                        },
+                                    })
+                                }
+                            />
+
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-medium text-gray-600">
+                                    Comment
+                                </span>
+                                <textarea
+                                    value={psychomotorForm.comment}
+                                    onChange={(e) =>
+                                        onPsychomotorChange({
+                                            ...psychomotorForm,
+                                            comment: e.target.value,
+                                        })
+                                    }
+                                    rows={3}
+                                    placeholder="Optional remarks about this student's psychomotor skills this term…"
+                                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                                />
+                            </label>
+
+                            <div className="flex justify-end">
+                                <Button
+                                    onClick={onSavePsychomotor}
+                                    disabled={savingPsychomotor}
+                                >
+                                    {savingPsychomotor && (
+                                        <Spinner className="size-4" />
+                                    )}
+                                    Save Psychomotor Skills
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -215,9 +279,15 @@ function AssessmentCard({
 export default function BehavioralAssessmentsIndex() {
     const [rows, setRows] = useState<AssessmentRow[]>([]);
     const [forms, setForms] = useState<Record<string, FormState>>({});
+    const [psychomotorForms, setPsychomotorForms] = useState<
+        Record<string, PsychomotorFormState>
+    >({});
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [savingId, setSavingId] = useState<string | null>(null);
+    const [savingPsychomotorId, setSavingPsychomotorId] = useState<
+        string | null
+    >(null);
     const [termId, setTermId] = useState('');
 
     useEffect(() => {
@@ -236,6 +306,14 @@ export default function BehavioralAssessmentsIndex() {
                         data.map((row) => [
                             row.student_curriculum_id,
                             rowToFormState(row),
+                        ]),
+                    ),
+                );
+                setPsychomotorForms(
+                    Object.fromEntries(
+                        data.map((row) => [
+                            row.student_curriculum_id,
+                            rowToPsychomotorFormState(row),
                         ]),
                     ),
                 );
@@ -300,6 +378,41 @@ export default function BehavioralAssessmentsIndex() {
         }
     }
 
+    async function handleSavePsychomotor(row: AssessmentRow) {
+        const form = psychomotorForms[row.student_curriculum_id];
+
+        if (!form) {
+            return;
+        }
+
+        setSavingPsychomotorId(row.student_curriculum_id);
+
+        try {
+            const res = await axios.post('/api/psychomotor-skills', {
+                student_curriculum_id: row.student_curriculum_id,
+                ...form.grades,
+                comment: form.comment || null,
+            });
+
+            const updated: PsychomotorSkill = res.data.data;
+
+            setRows((prev) =>
+                prev.map((r) =>
+                    r.student_curriculum_id === row.student_curriculum_id
+                        ? { ...r, psychomotor: updated }
+                        : r,
+                ),
+            );
+            toast.success(
+                `Saved psychomotor skills for ${row.student.first_name} ${row.student.last_name}.`,
+            );
+        } catch {
+            toast.error('Failed to save psychomotor skills.');
+        } finally {
+            setSavingPsychomotorId(null);
+        }
+    }
+
     return (
         <>
             <Head title="Behavioral Assessments" />
@@ -348,6 +461,11 @@ export default function BehavioralAssessmentsIndex() {
                                             forms[row.student_curriculum_id] ??
                                             rowToFormState(row)
                                         }
+                                        psychomotorForm={
+                                            psychomotorForms[
+                                                row.student_curriculum_id
+                                            ] ?? rowToPsychomotorFormState(row)
+                                        }
                                         expanded={
                                             !!expanded[
                                                 row.student_curriculum_id
@@ -355,6 +473,10 @@ export default function BehavioralAssessmentsIndex() {
                                         }
                                         saving={
                                             savingId ===
+                                            row.student_curriculum_id
+                                        }
+                                        savingPsychomotor={
+                                            savingPsychomotorId ===
                                             row.student_curriculum_id
                                         }
                                         onToggle={() =>
@@ -374,7 +496,17 @@ export default function BehavioralAssessmentsIndex() {
                                                     form,
                                             }))
                                         }
+                                        onPsychomotorChange={(form) =>
+                                            setPsychomotorForms((prev) => ({
+                                                ...prev,
+                                                [row.student_curriculum_id]:
+                                                    form,
+                                            }))
+                                        }
                                         onSave={() => handleSave(row)}
+                                        onSavePsychomotor={() =>
+                                            handleSavePsychomotor(row)
+                                        }
                                     />
                                 ))}
                             </CardContent>

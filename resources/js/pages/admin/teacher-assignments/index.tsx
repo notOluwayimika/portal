@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import {
     Check,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     Heart,
@@ -17,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import Select from '@/components/ui/base-dropdown';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -576,22 +578,100 @@ function AssignmentSection({
     onReplace,
     onRemove,
 }: AssignmentSectionProps) {
+    const [open, setOpen] = useState(true);
+    const [search, setSearch] = useState('');
+    const [armFilter, setArmFilter] = useState('');
+
+    const armOptions = useMemo(() => {
+        const map = new Map<string, string>();
+
+        for (const assignment of assignments) {
+            if (assignment.class_level_arm) {
+                map.set(assignment.class_level_arm.id, assignment.class_level_arm.name ?? 'Unknown class');
+            }
+        }
+
+        const options = Array.from(map, ([value, label]) => ({ value, label })).sort((a, b) =>
+            a.label.localeCompare(b.label),
+        );
+
+        return [{ value: '', label: 'All classes' }, ...options];
+    }, [assignments]);
+
+    const filtered = useMemo(() => {
+        const query = search.trim().toLowerCase();
+
+        return assignments.filter((assignment) => {
+            if (armFilter && assignment.class_level_arm?.id !== armFilter) {
+                return false;
+            }
+
+            if (!query) {
+                return true;
+            }
+
+            const teacher = assignment.teacher;
+            const haystack = [
+                teacher ? `${teacher.first_name} ${teacher.last_name}` : '',
+                teacher?.staff_number ?? '',
+                assignment.class_level_arm?.name ?? '',
+            ]
+                .join(' ')
+                .toLowerCase();
+
+            return haystack.includes(query);
+        });
+    }, [assignments, search, armFilter]);
+
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                    <Icon className="h-4 w-4 text-indigo-600" />
-                    {title}
-                    <Badge variant="secondary">{assignments.length}</Badge>
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">{description}</p>
+                <button
+                    type="button"
+                    onClick={() => setOpen((o) => !o)}
+                    aria-expanded={open}
+                    className="w-full text-left"
+                >
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <Icon className="h-4 w-4 text-indigo-600" />
+                        {title}
+                        <Badge variant="secondary">{assignments.length}</Badge>
+                        <ChevronDown
+                            className={`ml-auto h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+                        />
+                    </CardTitle>
+                    <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+                </button>
             </CardHeader>
+            {open && (
             <CardContent>
-                {assignments.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-gray-400">No assignments yet.</p>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search by teacher, staff number or class…"
+                            className="pl-9"
+                        />
+                    </div>
+                    <div className="w-full sm:w-56">
+                        <Select
+                            value={armFilter}
+                            onChange={(val) => setArmFilter(String(val ?? ''))}
+                            options={armOptions}
+                            placeholder="All classes"
+                        />
+                    </div>
+                </div>
+
+                {filtered.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-gray-400">
+                        {assignments.length === 0 ? 'No assignments yet.' : 'No assignments match your filters.'}
+                    </p>
                 ) : (
                     <div className="divide-y divide-gray-100">
-                        {assignments.map((assignment) => (
+                        {filtered.map((assignment) => (
                             <div key={assignment.id} className="flex items-center gap-4 py-3">
                                 <Avatar>
                                     <AvatarImage src={assignment.teacher?.photo ?? undefined} />
@@ -636,6 +716,7 @@ function AssignmentSection({
                     </div>
                 )}
             </CardContent>
+            )}
         </Card>
     );
 }

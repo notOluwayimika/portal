@@ -28,3 +28,6 @@ yarn-error.log
 /.vscode
 /.zed
 implementation_plan.md
+plan_docs
+docs
+.codegraph

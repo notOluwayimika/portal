@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk read *)",
+      "Bash(rtk git *)",
+      "Bash(rtk find *)",
+      "Bash(rtk npx *)",
+      "Bash(rtk vitest *)",
+      "Skill(dataviz)",
+      "Skill(dataviz:*)"
     ]
   }
 }

@@ -62,13 +62,19 @@ jobs:
           tools: composer:v2
           coverage: xdebug
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Install Node Dependencies
-        run: npm i
+        run: pnpm install --frozen-lockfile
 
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -83,7 +89,7 @@ jobs:
         run: php artisan migrate --force
 
       - name: Build Assets
-        run: npm run build
+        run: pnpm run build
 
       # The suite is not yet fully green (pre-existing debt is repaired by later
       # slices). The ratchet fails CI only on failures NOT in the committed

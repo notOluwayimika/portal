@@ -29,7 +29,14 @@ trait ResolvesTermFilter
             return $term;
         }
 
-        return Term::where('status', TermStatusEnum::ACTIVE->value)->first();
+        $schoolId = \App\Support\ActiveSchool::id();
+        $schoolActiveTerms = fn () => Term::where('status', TermStatusEnum::ACTIVE->value)
+            ->whereHas('academicSession', fn ($query) => $query->where('school_id', $schoolId));
+
+        return $schoolActiveTerms()
+            ->whereHas('academicSession', fn ($query) => $query->where('is_current', true))
+            ->first()
+            ?? $schoolActiveTerms()->latest('id')->first();
     }
 
     /**

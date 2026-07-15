@@ -14,6 +14,9 @@ class TeacherAssignmentPermissionSeeder extends Seeder
         'view_behavioral_assessments',
         'create_behavioral_assessments',
         'edit_behavioral_assessments',
+        'view_psychomotor_skills',
+        'create_psychomotor_skills',
+        'edit_psychomotor_skills',
         'manage_form_teacher_comments',
         'manage_head_of_school_comments',
     ];
@@ -22,6 +25,12 @@ class TeacherAssignmentPermissionSeeder extends Seeder
         'view_behavioral_assessments',
         'create_behavioral_assessments',
         'edit_behavioral_assessments',
+    ];
+
+    private const PSYCHOMOTOR_SKILL_PERMISSIONS = [
+        'view_psychomotor_skills',
+        'create_psychomotor_skills',
+        'edit_psychomotor_skills',
     ];
 
     public function run(): void
@@ -39,6 +48,7 @@ class TeacherAssignmentPermissionSeeder extends Seeder
             $this->syncPermissions($admin, [
                 'manage_teacher_assignments',
                 ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
+                ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
                 'manage_head_of_school_comments',
             ]);
         }
@@ -46,16 +56,27 @@ class TeacherAssignmentPermissionSeeder extends Seeder
         if ($headOfSchool) {
             $this->syncPermissions($headOfSchool, [
                 ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
+                ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
                 'manage_head_of_school_comments',
             ]);
         }
 
         if ($boardingParent) {
-            $this->syncPermissions($boardingParent, self::BEHAVIORAL_ASSESSMENT_PERMISSIONS);
+            $this->syncPermissions($boardingParent, [
+                ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
+                ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
+            ]);
         }
 
         if ($formTeacher) {
-            $this->syncPermissions($formTeacher, ['manage_form_teacher_comments']);
+            // Form teachers can record assessments when the school has no
+            // boarding parents; the fallback rule itself is enforced
+            // server-side (ResolvesAssessmentAccess::canRecordAssessmentFor).
+            $this->syncPermissions($formTeacher, [
+                'manage_form_teacher_comments',
+                ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
+                ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
+            ]);
         }
     }
 

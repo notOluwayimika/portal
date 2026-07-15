@@ -5,15 +5,14 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Concerns\BelongsToSchool;
-use App\Models\Scopes\SchoolScope;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
@@ -25,9 +24,10 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasRoles, HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToSchool, LogsActivity;
+    use BelongsToSchool, HasApiTokens, HasFactory, HasRoles, LogsActivity, Notifiable, TwoFactorAuthenticatable;
 
-    protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id', 'disabled_at'];
+    protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id', 'signature_id', 'disabled_at'];
+
     protected $appends = ['full_name', 'name'];
 
     /**
@@ -47,7 +47,7 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     private ?bool $isSuperAdminMemo = null;
@@ -84,6 +84,11 @@ class User extends Authenticatable
         return $this->belongsToMany(School::class)->withTimestamps();
     }
 
+    public function signatureFile(): BelongsTo
+    {
+        return $this->belongsTo(FileUpload::class, 'signature_id');
+    }
+
     /**
      * All school ids this user may log into:
      *  - super admins: every school
@@ -91,7 +96,7 @@ class User extends Authenticatable
      *  - guardians: schools of all their guardian records (wards)
      *  - fallback: their own school_id
      */
-    public function accessibleSchoolIds(): \Illuminate\Support\Collection
+    public function accessibleSchoolIds(): Collection
     {
         if ($this->isSuperAdmin()) {
             return School::query()->pluck('id')->map(fn ($id) => (int) $id);
@@ -166,7 +171,7 @@ class User extends Authenticatable
 
     public function getFullNameAttribute()
     {
-        return $this->first_name . ' ' . $this->last_name;
+        return $this->first_name.' '.$this->last_name;
     }
 
     public function getNameAttribute()
@@ -183,6 +188,7 @@ class User extends Authenticatable
     {
         return $this->belongsTo(School::class);
     }
+
     public function teacher()
     {
         return $this->hasOne(Teacher::class, 'user_id');
@@ -200,7 +206,7 @@ class User extends Authenticatable
 
     public function isDisabled(): bool
     {
-        return !is_null($this->disabled_at);
+        return ! is_null($this->disabled_at);
     }
 
     /**
@@ -210,7 +216,7 @@ class User extends Authenticatable
      */
     public function getAuthPassword(): string
     {
-        return $this->isDisabled() ? '$2y$12$disabled.account.cannot.login.' . bin2hex(random_bytes(8)) : $this->password;
+        return $this->isDisabled() ? '$2y$12$disabled.account.cannot.login.'.bin2hex(random_bytes(8)) : $this->password;
     }
 
     public function getActivitylogOptions(): LogOptions

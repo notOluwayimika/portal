@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -76,6 +77,21 @@ class Guardian extends Model
     public function getRouteKeyName(): string
     {
         return 'uuid';
+    }
+
+    /**
+     * A guardian profile is owned by its original school, but the linked
+     * user may be granted access to additional schools through school_user.
+     */
+    public function applySchoolScope(Builder $builder, int $schoolId): void
+    {
+        $builder->where(function (Builder $query) use ($schoolId) {
+            $query->where('guardians.school_id', $schoolId)
+                ->orWhereIn('guardians.user_id', fn ($subquery) => $subquery
+                    ->select('user_id')
+                    ->from('school_user')
+                    ->where('school_id', $schoolId));
+        });
     }
 
     public function getFullNameAttribute(): string

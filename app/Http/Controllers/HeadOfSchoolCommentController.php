@@ -157,6 +157,7 @@ class HeadOfSchoolCommentController extends Controller
 
         return ClassLevelArmTeacher::where('teacher_id', $teacher->id)
             ->where('role', TeacherAssignmentRoleEnum::HEAD_OF_SCHOOL->value)
+            ->inActiveSchool()
             ->pluck('class_level_arm_id');
     }
 }

@@ -437,8 +437,8 @@ it('restricts form teacher and head of school comment updates to their assigned 
     ta_assign($school, $formTeacher, 'form_teacher', [$armA->id]);
 
     $ftIndex = $this->actingAs($formTeacher->user)->getJson('/api/form-teacher/students');
-    $ftIndex->assertOk()->assertJsonCount(1, 'data');
-    expect($ftIndex->json('data.0.student_curriculum_id'))->toBe($scA->uuid);
+    $ftIndex->assertOk()->assertJsonCount(1, 'data.rows');
+    expect($ftIndex->json('data.rows.0.student_curriculum_id'))->toBe($scA->uuid);
 
     $this->actingAs($formTeacher->user)
         ->patchJson("/api/form-teacher/students/{$scA->uuid}/comment", ['comment' => 'Great progress.'])
@@ -464,4 +464,34 @@ it('restricts form teacher and head of school comment updates to their assigned 
     $this->actingAs($headOfSchool->user)
         ->patchJson("/api/head-of-school/students/{$scC->uuid}/comment", ['comment' => 'Out of scope'])
         ->assertForbidden();
+});
+
+it('uses the active school term for form teacher students and outstanding comments', function () {
+    // Create another school's active term first. The default term resolver
+    // must not accidentally use it for the school in the request context.
+    $otherSchool = al_makeSchool();
+    ta_activeTerm($otherSchool);
+
+    $school = al_makeSchool();
+    $admin = ta_admin($school);
+    $term = ta_activeTerm($school);
+    $examType = ta_examType($school);
+    $arm = ta_classLevelArm($school);
+    $curriculum = ta_curriculum($school, $arm, $term, $examType);
+    $studentCurriculum = ta_enrolledStudent($curriculum, 'male');
+    $formTeacher = ta_teacher($school, 'Scoped Form Teacher');
+    ta_assign($school, $formTeacher, 'form_teacher', [$arm->id]);
+
+    $this->actingAs($formTeacher->user)
+        ->withSession(['school_id' => $school->id])
+        ->getJson('/api/form-teacher/students')
+        ->assertOk()
+        ->assertJsonPath('data.rows.0.student_curriculum_id', $studentCurriculum->uuid);
+
+    $this->actingAs($admin)
+        ->withSession(['school_id' => $school->id])
+        ->getJson('/api/outstanding-comments')
+        ->assertOk()
+        ->assertJsonPath('data.form_teachers.0.teacher.id', $formTeacher->uuid)
+        ->assertJsonPath('data.form_teachers.0.total', 1);
 });

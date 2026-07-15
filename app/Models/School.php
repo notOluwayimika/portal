@@ -5,13 +5,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Str;
 
 class School extends Model
 {
-    protected $fillable = ['name', 'slug', 'address', 'phone', 'email', 'website', 'name_on_result', 'active'];
+    protected $fillable = ['name', 'slug', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'active'];
 
     protected $casts = ['active' => 'boolean'];
 
@@ -28,6 +29,11 @@ class School extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function fallbackSignatureFile(): BelongsTo
+    {
+        return $this->belongsTo(FileUpload::class, 'fallback_signature_id');
     }
 
     public function sessions(): HasMany

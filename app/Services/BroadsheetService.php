@@ -51,6 +51,7 @@ class BroadsheetService
             $c->is_ccm ? '1' : '0',
             $c->status,
             $c->min_subjects,
+            $c->grading_scheme_id ?? 'numeric',
         ]));
 
         return $groups->map(function (Collection $members) {
@@ -66,6 +67,7 @@ class BroadsheetService
                 'exam_type' => $first->examType->name,
                 'is_ccm' => $first->is_ccm,
                 'status' => $first->status,
+                'grading_mode' => $first->usesCategoricalGrading() ? 'categorical' : 'numeric',
                 'arms' => $members
                     ->map(fn (Curriculum $c) => $this->classLabel($c->classLevelArm))
                     ->values()
@@ -93,6 +95,7 @@ class BroadsheetService
             ->where('is_ccm', $curriculum->is_ccm)
             ->where('status', $curriculum->status)
             ->where('min_subjects', $curriculum->min_subjects)
+            ->where('grading_scheme_id', $curriculum->grading_scheme_id)
             ->with([
                 'classLevelArm.arm',
                 'classLevelArm.classLevel',
@@ -126,7 +129,7 @@ class BroadsheetService
                     $curriculumSubject = $sibling->curriculumSubjects->firstWhere('subject_id', $col['subject_id']);
                     $cell = $this->buildCell($student->id, $curriculumSubject, $col, $boundaries);
 
-                    if ($cell['gp'] !== null) {
+                    if (($cell['gp'] ?? null) !== null) {
                         $gpSum += (float) $cell['gp'];
                         $gpCount++;
                     }
@@ -162,6 +165,7 @@ class BroadsheetService
             'exam_type' => $curriculum->examType->name,
             'is_ccm' => $curriculum->is_ccm,
             'status' => $curriculum->status,
+            'grading_mode' => $curriculum->usesCategoricalGrading() ? 'categorical' : 'numeric',
             'subjects' => $columnSubjects,
             'classes' => $classes,
         ];
@@ -174,14 +178,15 @@ class BroadsheetService
      */
     private function buildColumnModel(Collection $siblings, bool $isCcm): array
     {
+        $isCategorical = (bool) $siblings->first()?->usesCategoricalGrading();
         $uniqueSubjects = $siblings
             ->flatMap(fn (Curriculum $c) => $c->curriculumSubjects)
             ->unique('subject_id');
 
         return $uniqueSubjects
             ->sortBy('display_order')
-            ->map(function (CurriculumSubject $cs) use ($isCcm) {
-                if ($cs->curriculum->usesCategoricalGrading()) {
+            ->map(function (CurriculumSubject $cs) use ($isCcm, $isCategorical) {
+                if ($isCategorical) {
                     return [
                         'subject_id' => $cs->subject_id,
                         'name' => $cs->subject->name,

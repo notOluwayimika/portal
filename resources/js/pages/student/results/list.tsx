@@ -1,4 +1,6 @@
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
+import { useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { CurriculumCardFinal } from '@/components/curriculum-card-final';
 import { GradeKeyTable } from '@/components/student-results/shared';
@@ -12,6 +14,9 @@ import { CurriculumCard, ResultDetails } from './active';
 interface ClassLevelArmPageProps {
     classLevelArms: { data: ClassLevelArm[] };
     defaultGradeBoundaries: { data: GradeBoundary[] };
+    approvalEndpoint: string;
+    approvalScopeName: string;
+    auth: { roles: string[] };
     [key: string]: unknown;
 }
 export const PRINT_STYLES = `
@@ -69,9 +74,61 @@ export const PRINT_STYLES = `
 `;
 
 export default function List() {
-    const { classLevelArms, defaultGradeBoundaries } =
-        usePage<ClassLevelArmPageProps>().props;
+    const {
+        classLevelArms,
+        defaultGradeBoundaries,
+        approvalEndpoint,
+        approvalScopeName,
+        auth,
+    } = usePage<ClassLevelArmPageProps>().props;
     const armData = classLevelArms.data;
+    const [updatingApproval, setUpdatingApproval] = useState(false);
+    const canApprove = auth.roles.some((role) =>
+        ['admin', 'principal'].includes(role),
+    );
+    const activeEnrollments = useMemo(
+        () =>
+            armData.flatMap((arm) =>
+                (arm.curricula ?? []).flatMap((curriculum) =>
+                    (curriculum.student_curricula ?? []).filter(
+                        (enrollment) => enrollment.status === 'active',
+                    ),
+                ),
+            ),
+        [armData],
+    );
+    const approvedCount = activeEnrollments.filter(
+        (enrollment) => enrollment.principal_approval,
+    ).length;
+    const approvalLabel =
+        activeEnrollments.length === 0
+            ? 'No active enrollments'
+            : approvedCount === activeEnrollments.length
+              ? 'Approved'
+              : approvedCount === 0
+                ? 'Disapproved'
+                : 'Mixed approval';
+
+    const updateApproval = async (approved: boolean) => {
+        const verb = approved ? 'approve' : 'disapprove';
+
+        if (
+            !window.confirm(
+                `Are you sure you want to ${verb} active-term results for ${approvalScopeName}?`,
+            )
+        ) {
+            return;
+        }
+
+        setUpdatingApproval(true);
+
+        try {
+            await axios.patch(approvalEndpoint, { approved });
+            router.reload({ only: ['classLevelArms'] });
+        } finally {
+            setUpdatingApproval(false);
+        }
+    };
     // const gradeBoundaries = defaultGradeBoundaries.data;
     const handlePrint = () => {
         // Browsers use document.title as the default "Save as PDF" filename,
@@ -130,13 +187,44 @@ export default function List() {
                         ← Go back
                     </button>
                     {armData.length > 0 && (
-                        <button
-                            type="button"
-                            onClick={handlePrint}
-                            className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-800"
-                        >
-                            Print / Save as PDF
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {canApprove && (
+                                <>
+                                    <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                                        {approvalLabel}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            updatingApproval ||
+                                            activeEnrollments.length === 0
+                                        }
+                                        onClick={() => updateApproval(true)}
+                                        className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            updatingApproval ||
+                                            activeEnrollments.length === 0
+                                        }
+                                        onClick={() => updateApproval(false)}
+                                        className="rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
+                                    >
+                                        Disapprove
+                                    </button>
+                                </>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handlePrint}
+                                className="rounded bg-blue-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-800"
+                            >
+                                Print / Save as PDF
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>

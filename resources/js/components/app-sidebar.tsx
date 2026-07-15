@@ -12,6 +12,7 @@ import {
     History,
     LayoutDashboard,
     MessageSquare,
+    PenTool,
     RefreshCw,
     Shield,
     UserCog,
@@ -75,6 +76,11 @@ const headOfSchoolNavGroups: NavGroup[] = [
                 href: '/outstanding-comments',
                 icon: AlertTriangle,
             },
+            {
+                title: 'Result Signature',
+                href: '/result-signature',
+                icon: PenTool,
+            },
         ],
     },
     {
@@ -115,6 +121,44 @@ const formTeacherNavGroups: NavGroup[] = [
                 title: 'Student Comments',
                 href: '/form-teacher/comments',
                 icon: MessageSquare,
+            },
+        ],
+    },
+];
+
+const principalNavGroups: NavGroup[] = [
+    {
+        label: 'Principal',
+        items: [
+            {
+                title: 'Results per Class',
+                href: '/reports/results-per-class',
+                icon: ClipboardList,
+            },
+            {
+                title: 'Pending Results',
+                href: '/setup/review/pending',
+                icon: ClipboardCopyIcon,
+            },
+            {
+                title: 'Incomplete Results',
+                href: '/results/incomplete',
+                icon: AlertTriangle,
+            },
+            {
+                title: 'Outstanding Comments',
+                href: '/outstanding-comments',
+                icon: AlertTriangle,
+            },
+            {
+                title: 'Broadsheets',
+                href: '/reports/broadsheets',
+                icon: FileSpreadsheet,
+            },
+            {
+                title: 'Result Signature',
+                href: '/result-signature',
+                icon: PenTool,
             },
         ],
     },
@@ -168,6 +212,11 @@ const adminNavGroups: NavGroup[] = [
                 title: 'Head of Schools',
                 href: '/setup/head-of-schools',
                 icon: GraduationCap,
+            },
+            {
+                title: 'Principals',
+                href: '/setup/principals',
+                icon: Shield,
             },
             {
                 title: 'Teacher Assignments',
@@ -261,7 +310,16 @@ const superAdminNavGroups: NavGroup[] = [
 const footerNavItems: NavItem[] = [];
 
 export function AppSidebar() {
-    const { auth }: { auth: { roles: string[]; user: User; isSuperAdmin?: boolean; school?: unknown } } = usePage<{
+    const {
+        auth,
+    }: {
+        auth: {
+            roles: string[];
+            user: User;
+            isSuperAdmin?: boolean;
+            school?: unknown;
+        };
+    } = usePage<{
         auth: { roles: string[] };
     }>().props;
     const roles = auth.roles;
@@ -296,6 +354,10 @@ export function AppSidebar() {
 
         if (roles.includes('form_teacher')) {
             groups.push(...formTeacherNavGroups);
+        }
+
+        if (roles.includes('principal')) {
+            groups.push(...principalNavGroups);
         }
 
         if (roles.includes('teacher')) {

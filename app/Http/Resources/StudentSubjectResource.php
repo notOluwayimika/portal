@@ -18,7 +18,10 @@ class StudentSubjectResource extends JsonResource
             'id' => $this->uuid,
             'status' => $this->status?->value,
             'student_curriculum' => $this->whenLoaded('studentCurriculum', fn () => new StudentCurriculumResource($this->studentCurriculum)),
-            'curriculum_subject' => $this->whenLoaded('curriculumSubject', fn () => new CurriculumSubjectResource($this->curriculumSubject)),
+            'curriculum_subject' => $this->whenLoaded(
+                'curriculumSubject',
+                fn () => (new CurriculumSubjectResource($this->curriculumSubject))->withoutStudentResults(),
+            ),
             // The class's full set of results for a subject lives once on
             // curriculumSubject.studentResults; this student's own result is
             // looked up from that same shared collection (tagged onto this

@@ -28,7 +28,7 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
     {
         $type = $this->data['is_ccm'] ? 'CCM' : 'End of Term';
 
-        return Str::limit($this->data['class_level'] . ' ' . $type, 31, '');
+        return Str::limit($this->data['class_level'].' '.$type, 31, '');
     }
 
     public function registerEvents(): array
@@ -43,15 +43,16 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
     private function buildSheet(Worksheet $sheet): void
     {
         $subjects = $this->data['subjects'];
+        $isCategorical = ($this->data['grading_mode'] ?? 'numeric') === 'categorical';
         $totalCols = count(self::FIXED_COLUMNS)
-            + array_sum(array_map(fn($s) => count($s['columns']), $subjects))
-            + 1; // + Term GPA
+            + array_sum(array_map(fn ($s) => count($s['columns']), $subjects))
+            + ($isCategorical ? 0 : 1);
 
         $lastCol = Coordinate::stringFromColumnIndex($totalCols);
 
         // Title rows
         $sheet->setCellValue('A1', strtoupper($this->data['school_name']));
-        $sheet->setCellValue('A2', $this->data['term']['full_name'] . ' session');
+        $sheet->setCellValue('A2', $this->data['term']['full_name'].' session');
         $type = $this->data['is_ccm'] ? 'CCM' : 'End of Term';
         $sheet->setCellValue('A3', "{$this->data['class_level']} {$type} Broadsheet");
 
@@ -95,9 +96,11 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
             }
         }
 
-        $gpaLetter = Coordinate::stringFromColumnIndex($col);
-        $sheet->setCellValue("{$gpaLetter}{$headerRow1}", 'Term GPA');
-        $sheet->mergeCells("{$gpaLetter}{$headerRow1}:{$gpaLetter}{$headerRow2}");
+        if (! $isCategorical) {
+            $gpaLetter = Coordinate::stringFromColumnIndex($col);
+            $sheet->setCellValue("{$gpaLetter}{$headerRow1}", 'Term GPA');
+            $sheet->mergeCells("{$gpaLetter}{$headerRow1}:{$gpaLetter}{$headerRow2}");
+        }
 
         $headerRange = "A{$headerRow1}:{$lastCol}{$headerRow2}";
         $sheet->getStyle($headerRange)->getFont()->setBold(true);
@@ -115,21 +118,23 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
         foreach ($this->data['classes'] as $class) {
             foreach ($class['students'] as $student) {
                 $col = 1;
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $student['sn']);
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $student['name']);
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $class['label']);
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $student['gender']);
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $student['sn']);
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $student['name']);
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $class['label']);
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $student['gender']);
 
                 foreach ($subjects as $subject) {
                     $cell = $student['subjects'][(string) $subject['subject_id']] ?? [];
 
                     foreach ($subject['columns'] as $colDef) {
                         $value = $cell[$colDef['key']] ?? null;
-                        $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $value ?? '');
+                        $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $value ?? '');
                     }
                 }
 
-                $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++) . $row, $student['gpa'] ?? '');
+                if (! $isCategorical) {
+                    $sheet->setCellValue(Coordinate::stringFromColumnIndex($col++).$row, $student['gpa'] ?? '');
+                }
 
                 $row++;
             }
@@ -138,11 +143,11 @@ class BroadsheetExport implements FromArray, WithEvents, WithTitle
         $lastRow = $row - 1;
 
         if ($lastRow >= $headerRow2 + 1) {
-            $dataRange = 'A' . ($headerRow2 + 1) . ":{$lastCol}{$lastRow}";
+            $dataRange = 'A'.($headerRow2 + 1).":{$lastCol}{$lastRow}";
             $sheet->getStyle($dataRange)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $sheet->getStyle($dataRange)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-            $nameRange = 'B' . ($headerRow2 + 1) . ":B{$lastRow}";
+            $nameRange = 'B'.($headerRow2 + 1).":B{$lastRow}";
             $sheet->getStyle($nameRange)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
         }
 

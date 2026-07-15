@@ -17,10 +17,13 @@ class TeacherAssignmentController extends Controller
 {
     public function index()
     {
-        // whereHas applies Teacher's SchoolScope, restricting assignments
-        // to teachers of the active school.
+        // inActiveSchool scopes assignments via the arm's school_id.
+        // Teachers may be visible in multiple schools via school_user, so
+        // whereHas('teacher') alone would leak home-school assignments
+        // into a pivot school.
         $assignments = ClassLevelArmTeacher::query()
             ->whereHas('teacher')
+            ->inActiveSchool()
             ->with([
                 'teacher.user',
                 'classLevelArm.classLevel',
@@ -114,8 +117,11 @@ class TeacherAssignmentController extends Controller
             return;
         }
 
+        // Roles are team-scoped: only assignments in the active school should
+        // decide whether the role is removed here.
         $stillAssigned = ClassLevelArmTeacher::where('teacher_id', $teacher->id)
             ->where('role', $role->value)
+            ->inActiveSchool()
             ->exists();
 
         if (!$stillAssigned) {

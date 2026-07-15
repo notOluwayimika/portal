@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Concerns\AddUuid;
 use App\Enums\GenderTypeEnum;
 use App\Enums\TeacherAssignmentRoleEnum;
+use App\Support\ActiveSchool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -30,6 +32,20 @@ class ClassLevelArmTeacher extends Model
     public function getRouteKeyName(): string
     {
         return 'uuid';
+    }
+
+    /**
+     * Limit assignments to the active school via the arm's school_id.
+     * This table has no school column and ClassLevelArm carries no tenant
+     * scope, so teachers visible in multiple schools (school_user pivot)
+     * would otherwise leak their assignments across schools.
+     */
+    public function scopeInActiveSchool(Builder $query): Builder
+    {
+        return $query->whereHas(
+            'classLevelArm',
+            fn ($q) => $q->where('school_id', ActiveSchool::id())
+        );
     }
 
     public function classLevelArm(): BelongsTo

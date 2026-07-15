@@ -12,15 +12,65 @@ import {
     toNum,
     totalGradePoint,
 } from '@/components/student-results/shared';
-import { convertNameToResultFmt, fmtDate, toShortName } from '@/helpers';
+import { convertNameToResultFmt, fmtDate } from '@/helpers';
 import type {
     CurriculumSubject,
     GradeBoundary,
     Score,
-    StudentCurriculum,
     TeacherCurriculumSubject,
 } from '@/types/models';
 import { BehavioralAssessmentTable } from './behavioral-assessment';
+import { PsychomotorSkillsTable } from './psychomotor-skills';
+
+export type ResultSignature = {
+    url: string;
+    label: string;
+    signer_name: string | null;
+    approval_date: string | null;
+    source: 'principal' | 'head_of_school' | 'fallback';
+};
+
+type CurriculumCardFinalProps = CurriculumCardProps & {
+    resultSignature?: ResultSignature | null;
+};
+
+function ResultSignatureBlock({
+    signature,
+}: {
+    signature?: ResultSignature | null;
+}) {
+    if (!signature) {
+        return null;
+    }
+
+    return (
+        <div>
+            <img
+                src={signature.url}
+                alt={signature.label}
+                className="h-10 w-auto object-contain sm:h-16"
+                draggable={false}
+            />
+            <p>{signature.label}</p>
+            {signature.approval_date && (
+                <p>Approval date: {fmtDate(signature.approval_date)}</p>
+            )}
+        </div>
+    );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+    if (!value) {
+        return null;
+    }
+
+    return (
+        <>
+            <div className="col-span-1 border font-bold">{label}</div>
+            <div className="col-span-3 border">{value}</div>
+        </>
+    );
+}
 
 function SubjectRow({
     r,
@@ -152,7 +202,7 @@ function SubjectRow({
     );
 }
 
-export function CurriculumCardFinal({ ...props }: CurriculumCardProps) {
+export function CurriculumCardFinal({ ...props }: CurriculumCardFinalProps) {
     if (props.sc.curriculum.grading_mode === 'categorical') {
         return <CategoricalCurriculumCard {...props} />;
     }
@@ -163,10 +213,10 @@ export function CurriculumCardFinal({ ...props }: CurriculumCardProps) {
 function NumericCurriculumCardFinal({
     sc,
     defaultBoundaries,
-    studentId,
     student,
     boundaries,
-}: CurriculumCardProps) {
+    resultSignature,
+}: CurriculumCardFinalProps) {
     const { auth } = usePage().props;
     const roles = auth.roles;
     const [scDetails, setScDetails] = useState<any | null>(null);
@@ -218,24 +268,24 @@ function NumericCurriculumCardFinal({
                 commented_by: ss.commented_by || '',
             };
         });
-    }, [sc, studentId, boundaries]);
+    }, [sc, boundaries, defaultBoundaries]);
     const isGuardian = roles.includes('guardian');
     const hasIncompleteResults = rows.some((r) => r.score === null);
     const resultsIncomplete = isGuardian && hasIncompleteResults;
 
-    const overall = useMemo<number | null>(() => {
-        const vals = rows
-            .map((r) => r.score)
-            .filter((n): n is number => n != null && !Number.isNaN(n));
-
-        if (!vals.length) {
-            return null;
-        }
-
-        return vals.reduce((s, n) => s + n, 0) / vals.length;
-    }, [rows]);
     const currentClass = student.class_details.full_class.split(' ');
     const promotedClass = Number(currentClass[1]) + 1;
+    const markingComponents =
+        sc.subjects?.[0]?.curriculum_subject?.marking_components ?? [];
+    const examinationWeight = Number(
+        markingComponents.find(
+            (component) => component.name.toLowerCase() === 'examination',
+        )?.weight ?? 0.7,
+    );
+    const examinationPercentage = Math.round(
+        examinationWeight <= 1 ? examinationWeight * 100 : examinationWeight,
+    );
+    const caPercentage = 100 - examinationPercentage;
 
     return (
         <div className="student-result-card overflow-hidden border border-slate-300">
@@ -291,11 +341,11 @@ function NumericCurriculumCardFinal({
                             </th>
                             <th className="border border-slate-300 px-1 text-center font-semibold">
                                 <div>CA</div>
-                                <div>30%</div>
+                                <div>{caPercentage}%</div>
                             </th>
                             <th className="border border-slate-300 px-1 text-center font-semibold">
                                 <div>Exam</div>
-                                <div>70%</div>
+                                <div>{examinationPercentage}%</div>
                             </th>
                             <th className="border border-slate-300 px-1 text-center font-semibold">
                                 <div>Total</div>
@@ -389,48 +439,41 @@ function NumericCurriculumCardFinal({
                 </div>
             </div>
             <div className="grid grid-cols-4 text-xs">
-                <div className="col-span-1 border font-bold">
-                    Form Tutor's Name:
-                </div>
-                <div className="col-span-3 border">
-                    {scDetails?.formTeacher?.full_name}
-                </div>
-                <div className="col-span-1 border font-bold">Comment:</div>
-                <div className="col-span-3 border">
-                    {scDetails?.studentCurriculum?.form_teacher_comment}
-                </div>
-                <div className="col-span-1 border font-bold">
-                    Boarding Parent's Name:
-                </div>
-                <div className="col-span-3 border">
-                    {scDetails?.boardingParent?.full_name}
-                </div>
-                <div className="col-span-1 border font-bold">Comment:</div>
-                <div className="col-span-3 border">
-                    {scDetails?.behavioralAssessments[0]?.comment}
-                </div>
-                <div className="col-span-1 border font-bold">
-                    Head of School Name:
-                </div>
-                <div className="col-span-3 border">
-                    {scDetails?.headOfSchool?.full_name}
-                </div>
-                <div className="col-span-1 border font-bold">Comment:</div>
-                <div className="col-span-3 border">
-                    {scDetails?.studentCurriculum?.head_of_school_comment}
-                </div>
-                <div className="col-span-1 border font-bold">
-                    Approved by the Principal:
-                </div>
-                <div className="col-span-3 border">
-                    <img
-                        src="/assets/images/signature_secondary.png"
-                        alt="Brookstone School"
-                        className={`h-8 w-auto sm:h-10`}
-                        draggable={false}
-                    />
-                </div>
-                {promotedClass <= 12 && (
+                <DetailRow
+                    label="Form Tutor's Name:"
+                    value={scDetails?.formTeacher?.full_name}
+                />
+                <DetailRow
+                    label="Form Tutor Comment:"
+                    value={scDetails?.studentCurriculum?.form_teacher_comment}
+                />
+                <DetailRow
+                    label="Boarding Parent's Name:"
+                    value={scDetails?.boardingParent?.full_name}
+                />
+                <DetailRow
+                    label="Boarding Parent Comment:"
+                    value={scDetails?.behavioralAssessments?.[0]?.comment}
+                />
+                <DetailRow
+                    label="Head of School Name:"
+                    value={scDetails?.headOfSchool?.full_name}
+                />
+                <DetailRow
+                    label="Head of School Comment:"
+                    value={scDetails?.studentCurriculum?.head_of_school_comment}
+                />
+                {resultSignature && (
+                    <>
+                        <div className="col-span-1 border font-bold">
+                            Result Approval:
+                        </div>
+                        <div className="col-span-3 border">
+                            <ResultSignatureBlock signature={resultSignature} />
+                        </div>
+                    </>
+                )}
+                {sc.curriculum.term?.is_last_term && promotedClass <= 12 && (
                     <div className="col-span-4 border text-center text-sm font-bold">
                         Promoted To Year {promotedClass}
                     </div>
@@ -440,7 +483,20 @@ function NumericCurriculumCardFinal({
     );
 }
 
-function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
+function CategoricalCurriculumCard({
+    sc,
+    student,
+    resultSignature,
+}: CurriculumCardFinalProps) {
+    const [scDetails, setScDetails] = useState<any | null>(null);
+    useEffect(() => {
+        const getScDetails = async (scId: string) => {
+            const response = await axios.get(`/api/student-curricula/${scId}`);
+            setScDetails(response.data);
+        };
+        getScDetails(sc.id);
+    }, [sc]);
+
     const rows = (sc.subjects ?? [])
         .slice()
         .sort(
@@ -449,6 +505,8 @@ function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
                 (right.curriculum_subject?.display_order ?? 0),
         );
     const items = sc.curriculum.grading_scheme?.items ?? [];
+    const currentClass = student.class_details.full_class.split(' ');
+    const promotedClass = Number(currentClass[1]) + 1;
 
     return (
         <div className="student-result-card overflow-hidden border border-slate-300">
@@ -467,13 +525,16 @@ function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
                 <thead>
                     <tr className="bg-blue-100 text-black">
                         <th className="border border-slate-300 px-2 py-1 text-left">
-                            Learning Area
+                            Subjects
                         </th>
                         <th className="border border-slate-300 px-2 py-1 text-center">
-                            Progress
+                            Evaluation
                         </th>
                         <th className="border border-slate-300 px-2 py-1 text-left">
-                            Description
+                            Subject Teacher
+                        </th>
+                        <th className="border border-slate-300 px-2 py-1 text-left">
+                            Comments
                         </th>
                     </tr>
                 </thead>
@@ -484,11 +545,18 @@ function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
                                 {subject.curriculum_subject?.subject?.name}
                             </td>
                             <td className="border border-slate-300 px-2 py-1 text-center font-bold">
-                                {subject.own_result?.grading_item?.code ?? '—'}
+                                {subject.own_result?.grading_item
+                                    ? `${subject.own_result.grading_item.code} — ${subject.own_result.grading_item.label}`
+                                    : 'Not assessed'}
                             </td>
                             <td className="border border-slate-300 px-2 py-1">
-                                {subject.own_result?.grading_item?.label ??
-                                    'Not assessed'}
+                                {convertNameToResultFmt(
+                                    subject.curriculum_subject?.teachers?.[0]
+                                        ?.teacher?.full_name ?? '',
+                                ) || '—'}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1">
+                                {subject.comment || '—'}
                             </td>
                         </tr>
                     ))}
@@ -500,6 +568,55 @@ function CategoricalCurriculumCard({ sc, student }: CurriculumCardProps) {
                         <strong>{item.code}</strong> — {item.label}
                     </span>
                 ))}
+            </div>
+            <div className="grid grid-cols-2 gap-4 p-2">
+                <BehavioralAssessmentTable
+                    assessment={scDetails?.behavioralAssessments?.[0]}
+                />
+                <PsychomotorSkillsTable
+                    skill={scDetails?.psychomotorSkills?.[0]}
+                />
+            </div>
+            <div className="grid grid-cols-4 text-xs">
+                <DetailRow
+                    label="Form Tutor's Name:"
+                    value={scDetails?.formTeacher?.full_name}
+                />
+                <DetailRow
+                    label="Form Tutor Comment:"
+                    value={scDetails?.studentCurriculum?.form_teacher_comment}
+                />
+                <DetailRow
+                    label="Boarding Parent's Name:"
+                    value={scDetails?.boardingParent?.full_name}
+                />
+                <DetailRow
+                    label="Boarding Parent Comment:"
+                    value={scDetails?.behavioralAssessments?.[0]?.comment}
+                />
+                <DetailRow
+                    label="Head of School Name:"
+                    value={scDetails?.headOfSchool?.full_name}
+                />
+                <DetailRow
+                    label="Head of School Comment:"
+                    value={scDetails?.studentCurriculum?.head_of_school_comment}
+                />
+                {resultSignature && (
+                    <>
+                        <div className="col-span-1 border font-bold">
+                            Result Approval:
+                        </div>
+                        <div className="col-span-3 border">
+                            <ResultSignatureBlock signature={resultSignature} />
+                        </div>
+                    </>
+                )}
+                {sc.curriculum.term?.is_last_term && promotedClass <= 12 && (
+                    <div className="col-span-4 border text-center text-sm font-bold">
+                        Promoted To Year {promotedClass}
+                    </div>
+                )}
             </div>
         </div>
     );

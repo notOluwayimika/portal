@@ -29,7 +29,7 @@ class DashboardController extends Controller
 
         if (auth()->user()->hasRole('guardian')) {
             return redirect('/parent/wards');
-        } else if (auth()->user()->hasRole('teacher')) {
+        } else if (auth()->user()->hasRole('teacher') && auth()->user()->teacher) {
             return redirect('/setup/teacher/' . auth()->user()->teacher->uuid);
         }
 

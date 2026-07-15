@@ -27,10 +27,6 @@ export default function Broadsheets() {
 
     useEffect(() => {
         if (!classLevelId) {
-            setGroups([]);
-            setSelectedCurriculum(null);
-            setBroadsheet(null);
-
             return;
         }
 
@@ -66,8 +62,6 @@ export default function Broadsheets() {
 
     useEffect(() => {
         if (!selectedCurriculum) {
-            setBroadsheet(null);
-
             return;
         }
 
@@ -130,7 +124,12 @@ export default function Broadsheets() {
                     </label>
                     <select
                         value={classLevelId}
-                        onChange={(e) => setClassLevelId(e.target.value)}
+                        onChange={(e) => {
+                            setClassLevelId(e.target.value);
+                            setGroups([]);
+                            setSelectedCurriculum(null);
+                            setBroadsheet(null);
+                        }}
                         className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-900"
                     >
                         <option value="">Select a class level</option>
@@ -148,7 +147,11 @@ export default function Broadsheets() {
                     </label>
                     <select
                         value={status}
-                        onChange={(e) => setStatus(e.target.value)}
+                        onChange={(e) => {
+                            setStatus(e.target.value);
+                            setSelectedCurriculum(null);
+                            setBroadsheet(null);
+                        }}
                         className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-900"
                     >
                         <option value="">All</option>
@@ -164,7 +167,11 @@ export default function Broadsheets() {
                     </label>
                     <select
                         value={isCcm}
-                        onChange={(e) => setIsCcm(e.target.value)}
+                        onChange={(e) => {
+                            setIsCcm(e.target.value);
+                            setSelectedCurriculum(null);
+                            setBroadsheet(null);
+                        }}
                         className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-900"
                     >
                         <option value="">All</option>
@@ -190,9 +197,10 @@ export default function Broadsheets() {
                     {groups.map((group) => (
                         <button
                             key={group.curriculum_id}
-                            onClick={() =>
-                                setSelectedCurriculum(group.curriculum_id)
-                            }
+                            onClick={() => {
+                                setSelectedCurriculum(group.curriculum_id);
+                                setBroadsheet(null);
+                            }}
                             className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-5 py-3 text-left transition-colors ${
                                 selectedCurriculum === group.curriculum_id
                                     ? 'border-blue-300 bg-blue-50'
@@ -217,6 +225,9 @@ export default function Broadsheets() {
                                 </span>
                                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 capitalize">
                                     {group.status}
+                                </span>
+                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 capitalize">
+                                    {group.grading_mode} grading
                                 </span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
@@ -301,12 +312,15 @@ export default function Broadsheets() {
                                                 {subject.name}
                                             </th>
                                         ))}
-                                        <th
-                                            rowSpan={2}
-                                            className="border border-gray-200 px-2 py-1 font-medium text-gray-600"
-                                        >
-                                            Term GPA
-                                        </th>
+                                        {broadsheet.grading_mode ===
+                                            'numeric' && (
+                                            <th
+                                                rowSpan={2}
+                                                className="border border-gray-200 px-2 py-1 font-medium text-gray-600"
+                                            >
+                                                Term GPA
+                                            </th>
+                                        )}
                                     </tr>
                                     <tr className="bg-gray-50">
                                         {broadsheet.subjects.flatMap(
@@ -369,9 +383,12 @@ export default function Broadsheets() {
                                                             },
                                                         ),
                                                 )}
-                                                <td className="border border-gray-200 px-2 py-1 font-medium">
-                                                    {student.gpa ?? '-'}
-                                                </td>
+                                                {broadsheet.grading_mode ===
+                                                    'numeric' && (
+                                                    <td className="border border-gray-200 px-2 py-1 font-medium">
+                                                        {student.gpa ?? '-'}
+                                                    </td>
+                                                )}
                                             </tr>
                                         )),
                                     )}

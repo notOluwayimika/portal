@@ -361,8 +361,12 @@ class CurriculumController extends Controller
         }
 
         if ($isAvailable && auth()->user()->hasRole('guardian') && $studentCurriculum->status === StudentStatusEnum::ACTIVE) {
+            if (! $studentCurriculum->principal_approval) {
+                $isAvailable = false;
+            }
+
             $deadline = $studentCurriculum->curriculum?->term?->result_visible_at;
-            if ($deadline && ! now()->greaterThan($deadline)) {
+            if ($isAvailable && $deadline && ! now()->greaterThan($deadline)) {
                 $isAvailable = false;
             }
         }

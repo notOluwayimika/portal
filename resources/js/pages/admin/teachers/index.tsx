@@ -1,7 +1,8 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
     BookOpen,
+    Building2,
     Download,
     Edit,
     GraduationCap,
@@ -16,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import { ImportTeacherForm } from '@/components/teachers/import-teacher-form';
+import { ManageTeacherSchoolsDialog } from '@/components/teachers/manage-teacher-schools-dialog';
 import { TeacherForm } from '@/components/teachers/teacher-form';
 import { TeacherSubjectsModal } from '@/components/teachers/teacher-subjects-modal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -27,6 +29,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { formatDate } from '@/hooks/use-helper';
 import { useInitials } from '@/hooks/use-initials';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
+import type { Auth } from '@/types';
 import type { Teacher } from '@/types/models';
 
 interface StatusOption {
@@ -48,6 +51,10 @@ interface TeacherListProps {
 
 export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const getInitials = useInitials();
+    const { auth } = usePage<{ auth: Auth }>().props;
+    // Admins with access to multiple schools can grant teachers access to
+    // those schools; single-school admins don't see the feature at all.
+    const multiSchool = (auth.schools ?? []).length > 1;
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -65,6 +72,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const [teacherFormProcessing, setTeacherFormProcessing] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
+    const [managingSchoolsFor, setManagingSchoolsFor] = useState<Teacher | null>(null);
     const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [exporting, setExporting] = useState(false);
@@ -313,6 +321,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                         <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                                             Status
                                         </th>
+                                        {multiSchool && (
+                                            <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                                Schools
+                                            </th>
+                                        )}
                                         <th className="px-3 py-2 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                                             Actions
                                         </th>
@@ -321,13 +334,13 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={6} className="py-10 text-center">
+                                            <td colSpan={multiSchool ? 7 : 6} className="py-10 text-center">
                                                 <Spinner className="mx-auto" />
                                             </td>
                                         </tr>
                                     ) : (teachers?.length ?? 0) === 0 ? (
                                         <tr>
-                                            <td colSpan={6} className="py-10 text-center text-xs text-muted-foreground">
+                                            <td colSpan={multiSchool ? 7 : 6} className="py-10 text-center text-xs text-muted-foreground">
                                                 No teachers found.
                                             </td>
                                         </tr>
@@ -380,6 +393,24 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                         buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${statusBadgeClass(teacher.status)}`}
                                                     />
                                                 </td>
+                                                {multiSchool && (
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {(teacher.schools ?? []).map((school) => (
+                                                                <span
+                                                                    key={school.uuid}
+                                                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                                        school.is_home
+                                                                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                                                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    {school.name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                )}
                                                 <td className="px-3 py-2.5 text-right">
                                                     <div className="flex justify-end gap-1">
                                                         <Button
@@ -391,6 +422,22 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                         >
                                                             <BookOpen className="h-3.5 w-3.5" />
                                                         </Button>
+                                                        {multiSchool && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-7 w-7"
+                                                                title={
+                                                                    teacher.has_user
+                                                                        ? 'Manage school access'
+                                                                        : 'Teacher has no login account'
+                                                                }
+                                                                disabled={!teacher.has_user}
+                                                                onClick={() => setManagingSchoolsFor(teacher)}
+                                                            >
+                                                                <Building2 className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        )}
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -485,7 +532,19 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 )}
             </Modal>
 
-
+            {managingSchoolsFor && (
+                <ManageTeacherSchoolsDialog
+                    key={managingSchoolsFor.id}
+                    teacher={managingSchoolsFor}
+                    adminSchools={auth.schools ?? []}
+                    isOpen
+                    onClose={() => setManagingSchoolsFor(null)}
+                    onSuccess={() => {
+                        setManagingSchoolsFor(null);
+                        fetchTeachers();
+                    }}
+                />
+            )}
         </>
     );
 }

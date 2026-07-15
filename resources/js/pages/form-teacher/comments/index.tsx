@@ -1,19 +1,21 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { CheckCircle, MessageSquare } from 'lucide-react';
+import { CheckCircle, ClipboardCheck, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
-import { TermFilterSelect } from '@/components/term-filter-select';
 import { useInitials } from '@/hooks/use-initials';
 import type { Student } from '@/types/models';
+import { AssessmentModal  } from './assessment-modal';
+import type {AssessableRow} from './assessment-modal';
 
-interface CommentRow {
+interface CommentRow extends AssessableRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
@@ -23,6 +25,8 @@ interface CommentRow {
 export default function FormTeacherCommentsIndex() {
     const getInitials = useInitials();
     const [rows, setRows] = useState<CommentRow[]>([]);
+    const [canAssess, setCanAssess] = useState(false);
+    const [assessingId, setAssessingId] = useState<string | null>(null);
     const [comments, setComments] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
@@ -36,8 +40,10 @@ export default function FormTeacherCommentsIndex() {
                 const res = await axios.get('/api/form-teacher/students', {
                     params: termId ? { term_id: termId } : {},
                 });
-                const data: CommentRow[] = res.data.data ?? [];
+                const payload = res.data.data ?? { can_assess: false, rows: [] };
+                const data: CommentRow[] = payload.rows ?? [];
 
+                setCanAssess(!!payload.can_assess);
                 setRows(data);
                 setComments(Object.fromEntries(data.map((row) => [row.student_curriculum_id, row.comment ?? ''])));
             } catch {
@@ -49,6 +55,10 @@ export default function FormTeacherCommentsIndex() {
 
         fetchData();
     }, [termId]);
+
+    const assessingRow = assessingId
+        ? rows.find((row) => row.student_curriculum_id === assessingId) ?? null
+        : null;
 
     async function handleSave(row: CommentRow) {
         setSavingId(row.student_curriculum_id);
@@ -123,7 +133,19 @@ export default function FormTeacherCommentsIndex() {
                                             placeholder="Write a comment for this student…"
                                             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
                                         />
-                                        <div className="flex justify-end">
+                                        <div className="flex justify-end gap-2">
+                                            {canAssess && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => setAssessingId(row.student_curriculum_id)}
+                                                >
+                                                    <ClipboardCheck
+                                                        className={`size-4 ${row.assessment ? 'text-green-500' : ''}`}
+                                                    />
+                                                    {row.assessment ? 'Edit Assessment' : 'Assessment'}
+                                                </Button>
+                                            )}
                                             <Button
                                                 size="sm"
                                                 onClick={() => handleSave(row)}
@@ -140,6 +162,24 @@ export default function FormTeacherCommentsIndex() {
                     </Card>
                 )}
             </div>
+
+            {assessingRow && (
+                <AssessmentModal
+                    key={assessingRow.student_curriculum_id}
+                    row={assessingRow}
+                    isOpen
+                    onClose={() => setAssessingId(null)}
+                    onSaved={(updates) =>
+                        setRows((prev) =>
+                            prev.map((row) =>
+                                row.student_curriculum_id === assessingRow.student_curriculum_id
+                                    ? { ...row, ...updates }
+                                    : row,
+                            ),
+                        )
+                    }
+                />
+            )}
         </>
     );
 }

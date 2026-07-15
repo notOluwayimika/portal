@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Concerns\HasStaffNumber;
+use App\Support\ActiveSchool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -35,6 +37,28 @@ class Teacher extends Model
     public function getRouteKeyName(): string
     {
         return 'uuid';
+    }
+
+    /**
+     * Custom SchoolScope filter: a teacher is visible in their home school
+     * (teachers.school_id) and in any school their linked user has been
+     * granted access to via the school_user pivot. Raw subquery (not a
+     * relation) so the scope cannot recurse.
+     */
+    public function applySchoolScope(Builder $builder, int $schoolId): void
+    {
+        $builder->where(function ($q) use ($schoolId) {
+            $q->where('teachers.school_id', $schoolId)
+                ->orWhereIn('teachers.user_id', fn ($sub) => $sub
+                    ->select('user_id')
+                    ->from('school_user')
+                    ->where('school_id', $schoolId));
+        });
+    }
+
+    public function isHomeSchool(?int $schoolId = null): bool
+    {
+        return (int) $this->school_id === (int) ($schoolId ?? ActiveSchool::id());
     }
 
     public function getFullNameAttribute(): string

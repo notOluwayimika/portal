@@ -56,20 +56,37 @@ return new class extends Migration {
                 // Ignore if unique key already dropped
             }
 
-            Schema::table('curricula', function (Blueprint $table) {
-                // Drop foreign key
-                if (DB::getDriverName() !== 'sqlite') {
-                    try {
-                        $table->dropForeign('fk_curricula_academic_session_id');
-                    } catch (\Exception $e) {
-                        try {
-                            $table->dropForeign(['academic_session_id']);
-                        } catch (\Exception $e2) {
-                            // Already dropped or different name
-                        }
-                    }
+            // Drop the foreign key in its own call: blueprint commands only
+            // compile when Schema::table runs, so a try/catch must wrap the
+            // whole call. SQLite supports dropping foreign keys by column
+            // (via table recreation) but not by name — and it refuses to
+            // drop a column still referenced by a foreign key definition.
+            try {
+                Schema::table('curricula', function (Blueprint $table) {
+                    $table->dropForeign('fk_curricula_academic_session_id');
+                });
+            } catch (\Exception $e) {
+                try {
+                    Schema::table('curricula', function (Blueprint $table) {
+                        $table->dropForeign(['academic_session_id']);
+                    });
+                } catch (\Exception $e2) {
+                    // Already dropped or different name
                 }
+            }
 
+            // The composite index also references the column and blocks the
+            // drop on sqlite; replace it with the surviving columns.
+            try {
+                Schema::table('curricula', function (Blueprint $table) {
+                    $table->dropIndex('curricula_school_id_academic_session_id_status_index');
+                    $table->index(['school_id', 'status']);
+                });
+            } catch (\Exception $e) {
+                // Index already dropped or renamed
+            }
+
+            Schema::table('curricula', function (Blueprint $table) {
                 $table->dropColumn(['term', 'academic_session_id']);
 
                 // Re-add unique constraint with term_id instead of term and academic_session_id

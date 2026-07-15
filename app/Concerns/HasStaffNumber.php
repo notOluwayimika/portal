@@ -2,6 +2,7 @@
 
 namespace App\Concerns;
 
+use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 
 trait HasStaffNumber
@@ -11,7 +12,11 @@ trait HasStaffNumber
         // Reject duplicate manual entries before insert
         static::creating(function ($model) {
             if (!empty($model->staff_number)) {
-                $exists = static::where('staff_number', $model->staff_number)->exists();
+                $schoolId = $model->school_id ?: ActiveSchool::id();
+                $exists = static::withoutGlobalScopes()
+                    ->where('school_id', $schoolId)
+                    ->where('staff_number', $model->staff_number)
+                    ->exists();
                 if ($exists) {
                     throw new \InvalidArgumentException(
                         "Staff number {$model->staff_number} is already in use."
@@ -25,7 +30,9 @@ trait HasStaffNumber
             if (empty($model->staff_number)) {
                 $staffNumber = $model->nextStaffNumber();
 
-                static::where('id', $model->id)
+                static::withoutGlobalScopes()
+                    ->where('school_id', $model->school_id)
+                    ->where('id', $model->id)
                     ->update(['staff_number' => $staffNumber]);
 
                 $model->setAttribute('staff_number', $staffNumber);
@@ -43,7 +50,9 @@ trait HasStaffNumber
         $prefix = static::staffNumberPrefix();
 
         // Pull the highest existing staff_number that matches this prefix
-        $latest = static::where('staff_number', 'like', $prefix . '%')
+        $latest = static::withoutGlobalScopes()
+            ->where('school_id', $this->school_id)
+            ->where('staff_number', 'like', $prefix . '%')
             ->orderByRaw('LENGTH(staff_number) DESC, staff_number DESC')
             ->value('staff_number');
 

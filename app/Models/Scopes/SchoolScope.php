@@ -37,7 +37,14 @@ class SchoolScope implements Scope
                 $schoolId = ActiveSchool::id();
 
                 if ($schoolId) {
-                    $builder->where($model->getTable() . '.school_id', $schoolId);
+                    // Models can override how they scope to a school (e.g.
+                    // Teacher, which is also visible in schools granted via
+                    // the school_user pivot).
+                    if (method_exists($model, 'applySchoolScope')) {
+                        $model->applySchoolScope($builder, (int) $schoolId);
+                    } else {
+                        $builder->where($model->getTable() . '.school_id', $schoolId);
+                    }
                 }
             }
         } catch (\Throwable $th) {

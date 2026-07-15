@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Guardian;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Validators\GuardianImportRowValidator;
@@ -56,7 +57,8 @@ class GuardianImportService
         $data = $result['normalized'];
 
         // Step 2: Locate student (soft-deleted = not found).
-        $student = Student::query()
+        $student = Student::withoutGlobalScopes()
+            ->whereNull('deleted_at')
             ->where('school_id', $schoolId)
             ->where('admission_number', $data['admission_number'])
             ->first();
@@ -168,6 +170,12 @@ class GuardianImportService
         int $schoolId,
         bool $updateExistingLinks
     ): array {
+        try {
+            $this->ensureSchoolAccess($guardian, $schoolId);
+        } catch (\Throwable $e) {
+            return $this->failed('Failed to grant guardian access to this school: '.$e->getMessage());
+        }
+
         $existingPivot = DB::table('guardian_student')
             ->where('guardian_id', $guardian->id)
             ->where('student_id', $student->id)
@@ -231,15 +239,15 @@ class GuardianImportService
         $byPhone = null;
 
         if ($email) {
-            $byEmail = Guardian::query()
-                ->where('school_id', $schoolId)
-                ->whereHas('user', fn($q) => $q->where('email', $email))
+            $byEmail = Guardian::withoutGlobalScopes()
+                ->whereNull('guardians.deleted_at')
+                ->whereHas('user', fn($q) => $q->whereRaw('LOWER(email) = ?', [strtolower($email)]))
                 ->first();
         }
 
         if ($phone) {
-            $byPhone = Guardian::query()
-                ->where('school_id', $schoolId)
+            $byPhone = Guardian::withoutGlobalScopes()
+                ->whereNull('guardians.deleted_at')
                 ->where(function ($q) use ($phone) {
                     $q->where('phone', $phone)->orWhere('whatsapp_number', $phone);
                 })
@@ -248,8 +256,8 @@ class GuardianImportService
 
         // Whatsapp fallback only if phone didn't match anything.
         if (!$byPhone && $whatsapp) {
-            $byPhone = Guardian::query()
-                ->where('school_id', $schoolId)
+            $byPhone = Guardian::withoutGlobalScopes()
+                ->whereNull('guardians.deleted_at')
                 ->where(function ($q) use ($whatsapp) {
                     $q->where('phone', $whatsapp)->orWhere('whatsapp_number', $whatsapp);
                 })
@@ -265,6 +273,17 @@ class GuardianImportService
         }
 
         return $byEmail ?: $byPhone;
+    }
+
+    private function ensureSchoolAccess(Guardian $guardian, int $schoolId): void
+    {
+        $user = $guardian->user;
+
+        if (! $user) {
+            throw new \RuntimeException('The existing guardian has no user account.');
+        }
+
+        $user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
     }
 
     private function lookupRowCache(?string $email, ?string $phone, ?string $whatsapp): ?Guardian

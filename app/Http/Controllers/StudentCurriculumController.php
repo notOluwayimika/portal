@@ -35,13 +35,16 @@ class StudentCurriculumController extends Controller
         $boardingParent = $studentCurriculum->boardingParent();
         $headOfSchool = $studentCurriculum->headOfSchool();
         $behavioralAssessments = $studentCurriculum->behavioralAssessments;
+        $psychomotorSkills = $studentCurriculum->psychomotorSkills()
+            ->where('assessment_term_id', $studentCurriculum->curriculum?->term_id)
+            ->get();
         return response()->json([
             "studentCurriculum" => new StudentCurriculumResource($studentCurriculum),
             "formTeacher" => $formTeacher,
             "boardingParent" => $boardingParent,
             "headOfSchool" => $headOfSchool,
             "behavioralAssessments" => $behavioralAssessments,
-
+            "psychomotorSkills" => $psychomotorSkills,
         ]);
     }
 

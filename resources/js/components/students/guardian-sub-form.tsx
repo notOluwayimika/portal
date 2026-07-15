@@ -5,9 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { useGuardianLookup, type GuardianLookupResult } from '@/hooks/use-guardian-lookup';
+import { useGuardianLookup } from '@/hooks/use-guardian-lookup';
+import type { GuardianLookupResult } from '@/hooks/use-guardian-lookup';
 
 export interface GuardianFormEntry {
     mode: 'new' | 'existing';
@@ -59,7 +66,9 @@ interface GuardianSubFormProps {
     errors?: Record<string, string>;
 }
 
-export function emptyGuardianEntry(overrides: Partial<GuardianFormEntry> = {}): GuardianFormEntry {
+export function emptyGuardianEntry(
+    overrides: Partial<GuardianFormEntry> = {},
+): GuardianFormEntry {
     return {
         mode: 'new',
         relationship: '',
@@ -72,41 +81,67 @@ export function emptyGuardianEntry(overrides: Partial<GuardianFormEntry> = {}): 
     };
 }
 
-export function GuardianSubForm({ value, onChange, errors = {} }: GuardianSubFormProps) {
-    const [resources, setResources] = useState<GuardianResources>({ genders: [], id_types: [], relationships: [], marital_statuses: [] });
+export function GuardianSubForm({
+    value,
+    onChange,
+    errors = {},
+}: GuardianSubFormProps) {
+    const [resources, setResources] = useState<GuardianResources>({
+        genders: [],
+        id_types: [],
+        relationships: [],
+        marital_statuses: [],
+    });
 
     useEffect(() => {
         let mounted = true;
-        axios.get('/api/guardians/resources')
+        axios
+            .get('/api/guardians/resources')
             .then((res) => {
-                if (mounted) setResources(res.data.data ?? res.data);
+                if (mounted) {
+                    setResources(res.data.data ?? res.data);
+                }
             })
             .catch(() => {});
-        return () => { mounted = false; };
+
+        return () => {
+            mounted = false;
+        };
     }, []);
 
     const updateEntry = (index: number, patch: Partial<GuardianFormEntry>) => {
-        const next = value.map((entry, i) => (i === index ? { ...entry, ...patch } : entry));
+        const next = value.map((entry, i) =>
+            i === index ? { ...entry, ...patch } : entry,
+        );
+
         // Enforce a single primary across the array.
         if (patch.is_primary === true) {
             next.forEach((entry, i) => {
-                if (i !== index) entry.is_primary = false;
+                if (i !== index) {
+                    entry.is_primary = false;
+                }
             });
         }
+
         onChange(next);
     };
 
     const removeEntry = (index: number) => {
         const next = value.filter((_, i) => i !== index);
+
         // If we removed the primary, mark the first remaining as primary.
         if (next.length > 0 && !next.some((g) => g.is_primary)) {
             next[0].is_primary = true;
         }
+
         onChange(next);
     };
 
     const addEntry = () => {
-        onChange([...value, emptyGuardianEntry({ is_primary: value.length === 0 })]);
+        onChange([
+            ...value,
+            emptyGuardianEntry({ is_primary: value.length === 0 }),
+        ]);
     };
 
     const fieldError = (index: number, field: string): string | undefined =>
@@ -117,22 +152,30 @@ export function GuardianSubForm({ value, onChange, errors = {} }: GuardianSubFor
             <div className="flex items-center justify-between border-t pt-4">
                 <div>
                     <h3 className="text-base font-semibold">Guardians</h3>
-                    <p className="text-muted-foreground text-xs">
-                        Add at least one guardian. Exactly one must be marked as primary.
+                    <p className="text-xs text-muted-foreground">
+                        Add at least one guardian. Exactly one must be marked as
+                        primary.
                     </p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={addEntry}>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addEntry}
+                >
                     <Plus className="mr-1 h-4 w-4" />
                     Add Guardian
                 </Button>
             </div>
 
             {errors['guardians'] && (
-                <p className="text-destructive text-xs">{errors['guardians']}</p>
+                <p className="text-xs text-destructive">
+                    {errors['guardians']}
+                </p>
             )}
 
             {value.length === 0 && (
-                <div className="border-muted-foreground/30 text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
+                <div className="rounded-md border border-dashed border-muted-foreground/30 p-4 text-center text-sm text-muted-foreground">
                     No guardians added yet. Click "Add Guardian" to begin.
                 </div>
             )}
@@ -165,12 +208,29 @@ interface GuardianRowProps {
     getError: (field: string) => string | undefined;
 }
 
-export function GuardianRow({ index, entry, resources, onChange, onRemove, canRemove, getError }: GuardianRowProps) {
-    const { status, result, error: lookupError, lookup, reset: resetLookup } = useGuardianLookup();
-    const [identifierDraft, setIdentifierDraft] = useState(entry.identifier ?? '');
+export function GuardianRow({
+    index,
+    entry,
+    resources,
+    onChange,
+    onRemove,
+    canRemove,
+    getError,
+}: GuardianRowProps) {
+    const {
+        status,
+        result,
+        error: lookupError,
+        lookup,
+        reset: resetLookup,
+    } = useGuardianLookup();
+    const [identifierDraft, setIdentifierDraft] = useState(
+        entry.identifier ?? '',
+    );
 
     const handleLookup = async () => {
         const found = await lookup(identifierDraft);
+
         if (found) {
             onChange({
                 guardian_id: found.id,
@@ -178,7 +238,11 @@ export function GuardianRow({ index, entry, resources, onChange, onRemove, canRe
                 looked_up: found,
             });
         } else {
-            onChange({ guardian_id: undefined, looked_up: null, identifier: identifierDraft });
+            onChange({
+                guardian_id: undefined,
+                looked_up: null,
+                identifier: identifierDraft,
+            });
         }
     };
 
@@ -203,24 +267,36 @@ export function GuardianRow({ index, entry, resources, onChange, onRemove, canRe
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
                 <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm font-semibold">Guardian {index + 1}</span>
+                    <span className="text-sm font-semibold">
+                        Guardian {index + 1}
+                    </span>
                     <label className="flex items-center gap-2 text-sm">
                         <Checkbox
                             checked={entry.is_primary}
-                            onCheckedChange={(c) => onChange({ is_primary: Boolean(c) })}
+                            onCheckedChange={(c) =>
+                                onChange({ is_primary: Boolean(c) })
+                            }
                         />
                         Primary
                     </label>
                     <label className="flex items-center gap-2 text-sm">
                         <Checkbox
                             checked={entry.can_login}
-                            onCheckedChange={(c) => onChange({ can_login: Boolean(c) })}
+                            onCheckedChange={(c) =>
+                                onChange({ can_login: Boolean(c) })
+                            }
                         />
                         Can log in
                     </label>
                 </div>
                 {canRemove && (
-                    <Button type="button" variant="ghost" size="sm" onClick={onRemove} className="text-destructive">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={onRemove}
+                        className="text-destructive"
+                    >
                         <Trash2 className="h-4 w-4" />
                     </Button>
                 )}
@@ -233,10 +309,14 @@ export function GuardianRow({ index, entry, resources, onChange, onRemove, canRe
                     checked={entry.mode === 'new'}
                     onCheckedChange={(c) => toggleMode(Boolean(c))}
                 />
-                <Label htmlFor={`guardian-${index}-new`} className="cursor-pointer text-sm font-normal">
+                <Label
+                    htmlFor={`guardian-${index}-new`}
+                    className="cursor-pointer text-sm font-normal"
+                >
                     I don't have any other child in this school
-                    <span className="text-muted-foreground ml-1 text-xs">
-                        (check this for a brand-new guardian; uncheck to look up an existing one)
+                    <span className="ml-1 text-xs text-muted-foreground">
+                        (check this for a brand-new guardian; uncheck to look up
+                        an existing one)
                     </span>
                 </Label>
             </div>
@@ -245,17 +325,26 @@ export function GuardianRow({ index, entry, resources, onChange, onRemove, canRe
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                     <Label>Relationship</Label>
-                    <Select value={entry.relationship} onValueChange={(v) => onChange({ relationship: v })}>
+                    <Select
+                        value={entry.relationship}
+                        onValueChange={(v) => onChange({ relationship: v })}
+                    >
                         <SelectTrigger>
                             <SelectValue placeholder="Select relationship" />
                         </SelectTrigger>
                         <SelectContent>
                             {resources.relationships.map((r) => (
-                                <SelectItem key={r.value} value={r.value}>{r.name}</SelectItem>
+                                <SelectItem key={r.value} value={r.value}>
+                                    {r.name}
+                                </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
-                    {getError('relationship') && <p className="text-destructive text-xs">{getError('relationship')}</p>}
+                    {getError('relationship') && (
+                        <p className="text-xs text-destructive">
+                            {getError('relationship')}
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -270,7 +359,12 @@ export function GuardianRow({ index, entry, resources, onChange, onRemove, canRe
                     getError={getError}
                 />
             ) : (
-                <NewGuardianBody entry={entry} resources={resources} onChange={onChange} getError={getError} />
+                <NewGuardianBody
+                    entry={entry}
+                    resources={resources}
+                    onChange={onChange}
+                    getError={getError}
+                />
             )}
         </div>
     );
@@ -298,7 +392,10 @@ function ExistingGuardianBody({
     return (
         <div className="space-y-3">
             <div className="space-y-2">
-                <Label>Look up existing guardian (email or phone)</Label>
+                <Label>
+                    Look up existing guardian across all schools (email or
+                    phone)
+                </Label>
                 <div className="flex gap-2">
                     <Input
                         placeholder="guardian@example.com or 08012345678"
@@ -311,7 +408,12 @@ function ExistingGuardianBody({
                             }
                         }}
                     />
-                    <Button type="button" variant="outline" onClick={onLookup} disabled={status === 'loading'}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onLookup}
+                        disabled={status === 'loading'}
+                    >
                         {status === 'loading' ? (
                             <Spinner className="mr-1 h-4 w-4 animate-spin" />
                         ) : (
@@ -321,27 +423,54 @@ function ExistingGuardianBody({
                     </Button>
                 </div>
                 {(getError('guardian_id') || getError('identifier')) && (
-                    <p className="text-destructive text-xs">{getError('guardian_id') ?? getError('identifier')}</p>
+                    <p className="text-xs text-destructive">
+                        {getError('guardian_id') ?? getError('identifier')}
+                    </p>
                 )}
                 {status === 'not_found' && (
-                    <p className="text-destructive text-xs">{lookupError}</p>
+                    <p className="text-xs text-destructive">{lookupError}</p>
                 )}
                 {status === 'error' && lookupError && (
-                    <p className="text-destructive text-xs">{lookupError}</p>
+                    <p className="text-xs text-destructive">{lookupError}</p>
                 )}
             </div>
 
             {result && (
-                <div className="bg-muted/30 flex items-start gap-3 rounded-md border p-3">
-                    <UserCheck className="text-primary mt-0.5 h-5 w-5 flex-shrink-0" />
+                <div className="flex items-start gap-3 rounded-md border bg-muted/30 p-3">
+                    <UserCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
                     <div className="space-y-1 text-sm">
                         <p className="font-medium">{result.full_name}</p>
-                        <p className="text-muted-foreground text-xs">
+                        <p className="text-xs text-muted-foreground">
                             Phone: {result.phone}
                             {result.email && <> · Email: {result.email}</>}
                         </p>
                         {result.occupation && (
-                            <p className="text-muted-foreground text-xs">Occupation: {result.occupation}</p>
+                            <p className="text-xs text-muted-foreground">
+                                Occupation: {result.occupation}
+                            </p>
+                        )}
+                        {result.has_wards_in_other_schools && (
+                            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                                <p className="font-medium">
+                                    This guardian has wards in another school.
+                                </p>
+                                <ul className="mt-1 space-y-0.5">
+                                    {result.ward_schools
+                                        .filter(
+                                            (school) =>
+                                                !school.is_current_school,
+                                        )
+                                        .map((school) => (
+                                            <li key={school.name}>
+                                                {school.name}:{' '}
+                                                {school.wards_count}{' '}
+                                                {school.wards_count === 1
+                                                    ? 'ward'
+                                                    : 'wards'}
+                                            </li>
+                                        ))}
+                                </ul>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -357,39 +486,81 @@ interface NewBodyProps {
     getError: (field: string) => string | undefined;
 }
 
-function NewGuardianBody({ entry, resources, onChange, getError }: NewBodyProps) {
+function NewGuardianBody({
+    entry,
+    resources,
+    onChange,
+    getError,
+}: NewBodyProps) {
     return (
         <div className="space-y-4">
-            <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <UserPlus className="h-3.5 w-3.5" /> Creating a new guardian
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label="First Name" required error={getError('first_name')}>
-                    <Input value={entry.first_name ?? ''} onChange={(e) => onChange({ first_name: e.target.value })} required />
+                <Field
+                    label="First Name"
+                    required
+                    error={getError('first_name')}
+                >
+                    <Input
+                        value={entry.first_name ?? ''}
+                        onChange={(e) =>
+                            onChange({ first_name: e.target.value })
+                        }
+                        required
+                    />
                 </Field>
                 <Field label="Last Name" required error={getError('last_name')}>
-                    <Input value={entry.last_name ?? ''} onChange={(e) => onChange({ last_name: e.target.value })} required />
+                    <Input
+                        value={entry.last_name ?? ''}
+                        onChange={(e) =>
+                            onChange({ last_name: e.target.value })
+                        }
+                        required
+                    />
                 </Field>
                 <Field label="Middle Name">
-                    <Input value={entry.middle_name ?? ''} onChange={(e) => onChange({ middle_name: e.target.value })} />
+                    <Input
+                        value={entry.middle_name ?? ''}
+                        onChange={(e) =>
+                            onChange({ middle_name: e.target.value })
+                        }
+                    />
                 </Field>
                 <Field label="Gender">
-                    <Select value={entry.gender ?? ''} onValueChange={(v) => onChange({ gender: v })}>
-                        <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                    <Select
+                        value={entry.gender ?? ''}
+                        onValueChange={(v) => onChange({ gender: v })}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
                         <SelectContent>
                             {resources.genders.map((g) => (
-                                <SelectItem key={g.value} value={g.value}>{g.name}</SelectItem>
+                                <SelectItem key={g.value} value={g.value}>
+                                    {g.name}
+                                </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </Field>
 
                 <Field label="Phone" required error={getError('phone')}>
-                    <Input value={entry.phone ?? ''} onChange={(e) => onChange({ phone: e.target.value })} required />
+                    <Input
+                        value={entry.phone ?? ''}
+                        onChange={(e) => onChange({ phone: e.target.value })}
+                        required
+                    />
                 </Field>
                 <Field label="WhatsApp Number">
-                    <Input value={entry.whatsapp_number ?? ''} onChange={(e) => onChange({ whatsapp_number: e.target.value })} />
+                    <Input
+                        value={entry.whatsapp_number ?? ''}
+                        onChange={(e) =>
+                            onChange({ whatsapp_number: e.target.value })
+                        }
+                    />
                 </Field>
 
                 {entry.can_login && (
@@ -397,17 +568,29 @@ function NewGuardianBody({ entry, resources, onChange, getError }: NewBodyProps)
                         <Input
                             type="email"
                             value={entry.email ?? ''}
-                            onChange={(e) => onChange({ email: e.target.value })}
+                            onChange={(e) =>
+                                onChange({ email: e.target.value })
+                            }
                             required
                         />
                     </Field>
                 )}
 
                 <Field label="Occupation">
-                    <Input value={entry.occupation ?? ''} onChange={(e) => onChange({ occupation: e.target.value })} />
+                    <Input
+                        value={entry.occupation ?? ''}
+                        onChange={(e) =>
+                            onChange({ occupation: e.target.value })
+                        }
+                    />
                 </Field>
                 <Field label="Employer">
-                    <Input value={entry.employer_name ?? ''} onChange={(e) => onChange({ employer_name: e.target.value })} />
+                    <Input
+                        value={entry.employer_name ?? ''}
+                        onChange={(e) =>
+                            onChange({ employer_name: e.target.value })
+                        }
+                    />
                 </Field>
 
                 <Field label="Marital Status">
@@ -415,49 +598,86 @@ function NewGuardianBody({ entry, resources, onChange, getError }: NewBodyProps)
                         value={entry.marital_status ?? ''}
                         onValueChange={(v) => onChange({ marital_status: v })}
                     >
-                        <SelectTrigger><SelectValue placeholder="Select marital status" /></SelectTrigger>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select marital status" />
+                        </SelectTrigger>
                         <SelectContent>
                             {resources.marital_statuses.map((m) => (
-                                <SelectItem key={m.value} value={m.value}>{m.name}</SelectItem>
+                                <SelectItem key={m.value} value={m.value}>
+                                    {m.name}
+                                </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </Field>
                 <Field label="Emergency Contact">
-                    <Input value={entry.emergency_contact ?? ''} onChange={(e) => onChange({ emergency_contact: e.target.value })} />
+                    <Input
+                        value={entry.emergency_contact ?? ''}
+                        onChange={(e) =>
+                            onChange({ emergency_contact: e.target.value })
+                        }
+                    />
                 </Field>
 
                 <Field label="City">
-                    <Input value={entry.city ?? ''} onChange={(e) => onChange({ city: e.target.value })} />
+                    <Input
+                        value={entry.city ?? ''}
+                        onChange={(e) => onChange({ city: e.target.value })}
+                    />
                 </Field>
                 <Field label="State">
-                    <Input value={entry.state ?? ''} onChange={(e) => onChange({ state: e.target.value })} />
+                    <Input
+                        value={entry.state ?? ''}
+                        onChange={(e) => onChange({ state: e.target.value })}
+                    />
                 </Field>
                 <Field label="Country">
-                    <Input value={entry.country ?? ''} onChange={(e) => onChange({ country: e.target.value })} />
+                    <Input
+                        value={entry.country ?? ''}
+                        onChange={(e) => onChange({ country: e.target.value })}
+                    />
                 </Field>
                 <Field label="Postal Code">
-                    <Input value={entry.postal_code ?? ''} onChange={(e) => onChange({ postal_code: e.target.value })} />
+                    <Input
+                        value={entry.postal_code ?? ''}
+                        onChange={(e) =>
+                            onChange({ postal_code: e.target.value })
+                        }
+                    />
                 </Field>
 
                 <Field label="ID Type">
-                    <Select value={entry.id_type ?? ''} onValueChange={(v) => onChange({ id_type: v })}>
-                        <SelectTrigger><SelectValue placeholder="Select ID type" /></SelectTrigger>
+                    <Select
+                        value={entry.id_type ?? ''}
+                        onValueChange={(v) => onChange({ id_type: v })}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select ID type" />
+                        </SelectTrigger>
                         <SelectContent>
                             {resources.id_types.map((t) => (
-                                <SelectItem key={t.value} value={t.value}>{t.name}</SelectItem>
+                                <SelectItem key={t.value} value={t.value}>
+                                    {t.name}
+                                </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </Field>
                 <Field label="ID Number">
-                    <Input value={entry.id_number ?? ''} onChange={(e) => onChange({ id_number: e.target.value })} />
+                    <Input
+                        value={entry.id_number ?? ''}
+                        onChange={(e) =>
+                            onChange({ id_number: e.target.value })
+                        }
+                    />
                 </Field>
                 <Field label="ID Expiry Date">
                     <Input
                         type="date"
                         value={entry.id_expiry_date ?? ''}
-                        onChange={(e) => onChange({ id_expiry_date: e.target.value })}
+                        onChange={(e) =>
+                            onChange({ id_expiry_date: e.target.value })
+                        }
                     />
                 </Field>
             </div>
@@ -480,10 +700,10 @@ function Field({
         <div className="space-y-1.5">
             <Label>
                 {label}
-                {required && <span className="text-destructive ml-0.5">*</span>}
+                {required && <span className="ml-0.5 text-destructive">*</span>}
             </Label>
             {children}
-            {error && <p className="text-destructive text-xs">{error}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
     );
 }

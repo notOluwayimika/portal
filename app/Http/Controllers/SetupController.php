@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Guardian;
+use App\Models\Teacher;
 use App\Models\Term;
 use Illuminate\Http\Request;
 
@@ -51,7 +52,7 @@ class SetupController extends Controller
             'grade_boundaries'  => $school->gradeBoundaries()->count(),
             'curricula'         => $school->curricula()->count(),
             'students'          => $school->students()->count(),
-            'teachers'          => $school->teachers()->count(),
+            'teachers'          => Teacher::count(), // tenant-scoped; includes school_user pivot teachers
             'guardians'         => Guardian::count(), // tenant-scoped by SchoolScope
         ]);
     }

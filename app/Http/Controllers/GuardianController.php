@@ -21,6 +21,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Services\GuardianService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Response;
@@ -64,7 +65,8 @@ class GuardianController extends Controller
 
     /**
      * GET /api/guardians/lookup?identifier=...
-     * Scoped to current school. Returns guardian details or 404.
+     * Searches all schools and returns ward-school context without exposing
+     * the identities of students outside the active school.
      */
     public function lookup(Request $request)
     {
@@ -74,15 +76,38 @@ class GuardianController extends Controller
 
         $schoolId = (int) \App\Support\ActiveSchool::id();
 
-        $guardian = $this->guardianService->findInSchoolByIdentifier($data['identifier'], $schoolId);
+        $guardian = $this->guardianService->findGloballyByIdentifier($data['identifier']);
 
         if (!$guardian) {
             return response()->json([
-                'message' => 'No guardian found for this identifier in your school.',
+                'message' => 'No guardian found with that identifier.',
             ], 404);
         }
 
-        return response()->json(['data' => GuardianResource::make($guardian)]);
+        $wardSchools = DB::table('guardian_student')
+            ->join('students', 'students.id', '=', 'guardian_student.student_id')
+            ->join('schools', 'schools.id', '=', 'students.school_id')
+            ->where('guardian_student.guardian_id', $guardian->id)
+            ->whereNull('students.deleted_at')
+            ->groupBy('schools.id', 'schools.name')
+            ->orderBy('schools.name')
+            ->get([
+                'schools.id',
+                'schools.name',
+                DB::raw('COUNT(DISTINCT students.id) as wards_count'),
+            ])
+            ->map(fn ($school) => [
+                'name' => $school->name,
+                'wards_count' => (int) $school->wards_count,
+                'is_current_school' => (int) $school->id === $schoolId,
+            ])
+            ->values();
+
+        return response()->json(['data' => [
+            ...(new GuardianResource($guardian))->resolve($request),
+            'ward_schools' => $wardSchools,
+            'has_wards_in_other_schools' => $wardSchools->contains(fn ($school) => ! $school['is_current_school']),
+        ]]);
     }
 
     public function resources()
@@ -194,7 +219,7 @@ class GuardianController extends Controller
         $schoolId = (int) \App\Support\ActiveSchool::id();
 
         if ($data['mode'] === 'existing') {
-            $guardian = $this->guardianService->resolveExistingGuardian($data, $schoolId);
+            $guardian = $this->guardianService->resolveExistingGuardianForAttachment($data, $schoolId);
         } else {
             $result = $this->guardianService->createGuardianWithUser(
                 attributes: $request->only([

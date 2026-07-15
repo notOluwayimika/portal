@@ -227,10 +227,18 @@ export interface Student {
     updated_at?: string;
 }
 
+export interface TeacherSchoolAccess {
+    uuid: string;
+    name: string;
+    is_home: boolean;
+}
+
 export interface Teacher {
     id: string;
     school_id: string;
     school?: School;
+    schools?: TeacherSchoolAccess[];
+    has_user?: boolean;
     user_id?: string;
     user?: User;
     email?: string;
@@ -283,6 +291,16 @@ export interface BehavioralAssessment {
     updated_at?: string;
 }
 
+export interface PsychomotorSkill {
+    id: string;
+    drawing_colouring: BehavioralGrade;
+    cutting_pasting: BehavioralGrade;
+    puzzles_building: BehavioralGrade;
+    climbing_sliding: BehavioralGrade;
+    comment?: string | null;
+    updated_at?: string;
+}
+
 export interface TeacherSubjectAssignment {
     id: string;
     curriculum_subject: {
@@ -309,6 +327,7 @@ export interface Term {
     academic_session?: AcademicSession;
     registration_deadline?: string;
     result_visible_at?: string;
+    is_last_term?: boolean;
 }
 
 export interface Curriculum {
@@ -421,6 +440,7 @@ export interface StudentCurriculum {
     student: Student;
     curriculum: Curriculum;
     status: string;
+    principal_approval: boolean;
     promoted_to?: Curriculum;
     subjects?: StudentSubject[];
     ended_at?: string | null;
@@ -429,7 +449,9 @@ export interface StudentCurriculum {
     is_ended?: boolean;
     form_teacher_comment?: string | null;
     head_of_school_comment?: string | null;
+    updated_at?: string;
     behavioral_assessments?: BehavioralAssessment[];
+    psychomotor_skills?: PsychomotorSkill[];
 }
 
 export type StudentSubjectStatus = 'active' | 'dropped';
@@ -495,6 +517,7 @@ export interface BroadsheetGroup {
     exam_type: string;
     is_ccm: boolean;
     status: string;
+    grading_mode: 'numeric' | 'categorical';
     arms: string[];
     arm_count: number;
 }
@@ -535,6 +558,7 @@ export interface Broadsheet {
     exam_type: string;
     is_ccm: boolean;
     status: string;
+    grading_mode: 'numeric' | 'categorical';
     subjects: BroadsheetSubject[];
     classes: BroadsheetClass[];
 }

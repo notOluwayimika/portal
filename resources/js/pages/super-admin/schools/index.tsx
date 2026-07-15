@@ -1,15 +1,19 @@
-import { Head, useForm } from '@inertiajs/react';
-import { Building2, GraduationCap, Pencil, Plus, UserCog } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { Head, router, useForm } from '@inertiajs/react';
+import {
+    Building2,
+    GraduationCap,
+    ImageUp,
+    Pencil,
+    Plus,
+    Trash2,
+    UserCog,
+} from 'lucide-react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
@@ -29,6 +33,8 @@ type SchoolRow = {
     email: string | null;
     website: string | null;
     name_on_result: string | null;
+    fallback_signature_url: string | null;
+    result_approver_name: string | null;
     active: boolean;
     students_count: number;
     teachers_count: number;
@@ -46,6 +52,7 @@ type SchoolFormData = {
     email: string;
     website: string;
     name_on_result: string;
+    result_approver_name: string;
     active: boolean;
 };
 
@@ -68,6 +75,7 @@ function SchoolFormDialog({
             email: school?.email ?? '',
             website: school?.website ?? '',
             name_on_result: school?.name_on_result ?? '',
+            result_approver_name: school?.result_approver_name ?? '',
             active: school?.active ?? true,
         });
 
@@ -125,7 +133,9 @@ function SchoolFormDialog({
                             <Input
                                 id="school-phone"
                                 value={data.phone}
-                                onChange={(e) => setData('phone', e.target.value)}
+                                onChange={(e) =>
+                                    setData('phone', e.target.value)
+                                }
                             />
                             <InputError message={errors.phone} />
                         </div>
@@ -135,7 +145,9 @@ function SchoolFormDialog({
                                 id="school-email"
                                 type="email"
                                 value={data.email}
-                                onChange={(e) => setData('email', e.target.value)}
+                                onChange={(e) =>
+                                    setData('email', e.target.value)
+                                }
                             />
                             <InputError message={errors.email} />
                         </div>
@@ -154,14 +166,37 @@ function SchoolFormDialog({
                     </div>
 
                     <div className="space-y-1">
-                        <Label htmlFor="school-name-on-result">Name on result cards</Label>
+                        <Label htmlFor="school-name-on-result">
+                            Name on result cards
+                        </Label>
                         <Input
                             id="school-name-on-result"
                             placeholder="Defaults to the school name"
                             value={data.name_on_result}
-                            onChange={(e) => setData('name_on_result', e.target.value)}
+                            onChange={(e) =>
+                                setData('name_on_result', e.target.value)
+                            }
                         />
                         <InputError message={errors.name_on_result} />
+                    </div>
+
+                    <div className="space-y-1">
+                        <Label htmlFor="school-result-approver-name">
+                            Fallback result approver name
+                        </Label>
+                        <Input
+                            id="school-result-approver-name"
+                            placeholder="e.g. Dr Jane Doe"
+                            value={data.result_approver_name}
+                            onChange={(e) =>
+                                setData('result_approver_name', e.target.value)
+                            }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Displayed below the fallback signature as the person
+                            who reviewed and approved the result.
+                        </p>
+                        <InputError message={errors.result_approver_name} />
                     </div>
 
                     {isEdit && (
@@ -175,7 +210,11 @@ function SchoolFormDialog({
                     )}
 
                     <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={onClose}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onClose}
+                        >
                             Cancel
                         </Button>
                         <Button type="submit" disabled={processing}>
@@ -185,6 +224,71 @@ function SchoolFormDialog({
                 </form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+function FallbackSignatureForm({ school }: { school: SchoolRow }) {
+    const form = useForm<{ signature: File | null }>({ signature: null });
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+        form.post(`/super-admin/schools/${school.uuid}/fallback-signature`, {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => form.reset(),
+        });
+    };
+
+    return (
+        <form onSubmit={submit} className="space-y-2 border-t pt-3">
+            <div className="flex items-center justify-between gap-2">
+                <p className="font-medium text-foreground">
+                    Fallback result signature
+                </p>
+                {school.fallback_signature_url && (
+                    <img
+                        src={school.fallback_signature_url}
+                        alt={`${school.name} fallback signature`}
+                        className="h-10 max-w-28 object-contain"
+                    />
+                )}
+            </div>
+            <Input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) =>
+                    form.setData('signature', event.target.files?.[0] ?? null)
+                }
+            />
+            <InputError message={form.errors.signature} />
+            <div className="flex justify-end gap-2">
+                {school.fallback_signature_url && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                            router.delete(
+                                `/super-admin/schools/${school.uuid}/fallback-signature`,
+                                {
+                                    preserveScroll: true,
+                                },
+                            )
+                        }
+                    >
+                        <Trash2 className="h-4 w-4" /> Remove
+                    </Button>
+                )}
+                <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!form.data.signature || form.processing}
+                >
+                    <ImageUp className="h-4 w-4" />
+                    {school.fallback_signature_url ? 'Replace' : 'Upload'}
+                </Button>
+            </div>
+        </form>
     );
 }
 
@@ -222,7 +326,10 @@ export default function SuperAdminSchools({ schools }: Props) {
                                         {school.name}
                                     </CardTitle>
                                     {!school.active && (
-                                        <Badge variant="destructive" className="mt-1">
+                                        <Badge
+                                            variant="destructive"
+                                            className="mt-1"
+                                        >
                                             Inactive
                                         </Badge>
                                     )}
@@ -249,6 +356,7 @@ export default function SuperAdminSchools({ schools }: Props) {
                                     {school.teachers_count} teachers
                                 </span>
                             </div>
+                            <FallbackSignatureForm school={school} />
                         </CardContent>
                     </Card>
                 ))}

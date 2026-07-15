@@ -17,7 +17,7 @@ class TermResource extends JsonResource
         return [
             'id' => $this->uuid,
             'name' => $this->name,
-            'full_name' => $this->name . ' - ' . $this->academicSession->name,
+            'full_name' => $this->name.' - '.$this->academicSession->name,
             'slug' => $this->slug,
             'order' => $this->order,
             'status' => $this->status,
@@ -26,6 +26,10 @@ class TermResource extends JsonResource
             'registration_deadline' => $this->registration_deadline,
             'result_visible_at' => $this->result_visible_at,
             'academic_session' => new SessionResource($this->whenLoaded('academicSession')),
+            'is_last_term' => $this->relationLoaded('academicSession')
+                && $this->academicSession?->relationLoaded('terms')
+                ? (int) $this->order === (int) $this->academicSession->terms->max('order')
+                : false,
         ];
     }
 }

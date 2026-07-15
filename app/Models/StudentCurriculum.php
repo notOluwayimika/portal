@@ -27,11 +27,13 @@ class StudentCurriculum extends Model
         'end_reason',
         'form_teacher_comment',
         'head_of_school_comment',
+        'principal_approval',
     ];
 
     protected $casts = [
         'status' => StudentStatusEnum::class,
         'ended_at' => 'datetime',
+        'principal_approval' => 'boolean',
     ];
 
     protected static function booted(): void
@@ -76,6 +78,11 @@ class StudentCurriculum extends Model
     public function behavioralAssessments(): HasMany
     {
         return $this->hasMany(BehavioralAssessment::class);
+    }
+
+    public function psychomotorSkills(): HasMany
+    {
+        return $this->hasMany(PsychomotorSkill::class);
     }
 
     /* ── Query helpers ───────────────────────────────────────────────────── */
@@ -164,7 +171,7 @@ class StudentCurriculum extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'ended_at', 'end_reason'])
+            ->logOnly(['status', 'ended_at', 'end_reason', 'principal_approval'])
             ->logOnlyDirty();
     }
 }

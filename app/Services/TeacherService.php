@@ -34,7 +34,7 @@ class TeacherService
                 });
             })
             ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->with(['photoFile'])
+            ->with(['photoFile', 'school', 'user.schools'])
             ->latest()
             ->paginate($request->integer('per_page', $limit));
     }
@@ -47,7 +47,10 @@ class TeacherService
     public function preparedDto(Request $request, ?int $photoId = null): TeacherDto
     {
         $data = $request->validated();
-        $data['school_id'] = \App\Support\ActiveSchool::id();
+        // Only stamp the home school on create. On update this would re-home
+        // a teacher being edited from a pivot-granted school (update() writes
+        // non-null values through array_filter).
+        $data['school_id'] = $request->isMethod('post') ? \App\Support\ActiveSchool::id() : null;
         $data['photo_id'] = $request->isMethod('post')
             ? $this->uploadPhoto($request)
             : $this->replacePhoto($request, $photoId);

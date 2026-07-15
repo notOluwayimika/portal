@@ -1,4 +1,5 @@
 <?php
+
 // database/seeders/ArmsDatabaseSeeder.php
 
 namespace Database\Seeders;
@@ -11,11 +12,11 @@ class ArmsDatabaseSeeder extends Seeder
     {
         // Order matters — respect foreign key dependencies
         $this->call([
-                // SchoolSeeder::class,
+            // SchoolSeeder::class,
             RoleSeeder::class,
-                // StudentSubjectPermissionSeeder::class,
-                // ActivityLogPermissionSeeder::class,
-                // GuardianPermissionSeeder::class,
+            StudentSubjectPermissionSeeder::class,
+            GuardianPermissionSeeder::class,
+            // ActivityLogPermissionSeeder is seeded directly by DatabaseSeeder.
             TeacherAssignmentPermissionSeeder::class,
             // UserSeeder::class,
             // GradeBoundarySeeder::class,

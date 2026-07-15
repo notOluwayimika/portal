@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Concerns\HasAdmissionNumber;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Student extends Model
 {
-    use HasAdmissionNumber, SoftDeletes, BelongsToSchool, AddUuid;
+    use HasAdmissionNumber, HasFactory, SoftDeletes, BelongsToSchool, AddUuid;
 
     protected $fillable = [
         'school_id',

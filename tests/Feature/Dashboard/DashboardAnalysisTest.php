@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     // Ensure roles exist for middleware
     foreach (['admin', 'head_of_school', 'teacher', 'guardian'] as $role) {
-        \Spatie\Permission\Models\Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
+        \App\Models\Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
     }
 });
 

@@ -3,16 +3,14 @@
 namespace App\Providers;
 
 use App\Models\StudentCurriculum;
+use App\Models\User;
 use App\Observers\StudentCurriculumObserver;
-use App\Repositories\ClassLevel\ClassLevelRepository;
-use App\Repositories\ClassLevel\ClassLevelRepositoryInterface;
-use App\Repositories\Session\SessionRepository;
-use App\Repositories\Session\SessionRepositoryInterface;
-use App\Services\ClassLevelService;
-use App\Services\SessionService;
+use App\Services\ActivityLog\ActivitySensitiveService;
+use App\Services\ActivityLog\ActivitySeverityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -27,12 +25,12 @@ class AppServiceProvider extends ServiceProvider
         // ::make() factories so the container can resolve them (and anything
         // that depends on them, e.g. ActivityLogQueryService).
         $this->app->bind(
-            \App\Services\ActivityLog\ActivitySensitiveService::class,
-            fn () => \App\Services\ActivityLog\ActivitySensitiveService::make(),
+            ActivitySensitiveService::class,
+            fn () => ActivitySensitiveService::make(),
         );
         $this->app->bind(
-            \App\Services\ActivityLog\ActivitySeverityService::class,
-            fn () => \App\Services\ActivityLog\ActivitySeverityService::make(),
+            ActivitySeverityService::class,
+            fn () => ActivitySeverityService::make(),
         );
     }
 
@@ -42,8 +40,26 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->registerSuperAdminGate();
 
         StudentCurriculum::observe(StudentCurriculumObserver::class);
+    }
+
+    /**
+     * Grant the team-less `super_admin` role every ability via a Gate::before
+     * hook. isSuperAdmin() resolves the role in a null-team context, so this
+     * works regardless of the school/team currently active. Kept behind a flag
+     * so the bypass can be disabled instantly if it misbehaves (auth.php).
+     */
+    protected function registerSuperAdminGate(): void
+    {
+        Gate::before(function (User $user, string $ability) {
+            if (config('auth.gate_before_superadmin') && $user->isSuperAdmin()) {
+                return true;
+            }
+
+            return null;
+        });
     }
 
     /**
@@ -58,7 +74,7 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Password::defaults(
-            fn(): ?Password => app()->isProduction()
+            fn (): ?Password => app()->isProduction()
             ? Password::min(12)
                 ->mixedCase()
                 ->letters()

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Permission as Perm;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
@@ -10,27 +11,27 @@ use Illuminate\Support\Facades\DB;
 class TeacherAssignmentPermissionSeeder extends Seeder
 {
     private const PERMISSIONS = [
-        'manage_teacher_assignments',
-        'view_behavioral_assessments',
-        'create_behavioral_assessments',
-        'edit_behavioral_assessments',
-        'view_psychomotor_skills',
-        'create_psychomotor_skills',
-        'edit_psychomotor_skills',
-        'manage_form_teacher_comments',
-        'manage_head_of_school_comments',
+        Perm::MANAGE_TEACHER_ASSIGNMENTS->value,
+        Perm::VIEW_BEHAVIORAL_ASSESSMENTS->value,
+        Perm::CREATE_BEHAVIORAL_ASSESSMENTS->value,
+        Perm::EDIT_BEHAVIORAL_ASSESSMENTS->value,
+        Perm::VIEW_PSYCHOMOTOR_SKILLS->value,
+        Perm::CREATE_PSYCHOMOTOR_SKILLS->value,
+        Perm::EDIT_PSYCHOMOTOR_SKILLS->value,
+        Perm::MANAGE_FORM_TEACHER_COMMENTS->value,
+        Perm::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
     ];
 
     private const BEHAVIORAL_ASSESSMENT_PERMISSIONS = [
-        'view_behavioral_assessments',
-        'create_behavioral_assessments',
-        'edit_behavioral_assessments',
+        Perm::VIEW_BEHAVIORAL_ASSESSMENTS->value,
+        Perm::CREATE_BEHAVIORAL_ASSESSMENTS->value,
+        Perm::EDIT_BEHAVIORAL_ASSESSMENTS->value,
     ];
 
     private const PSYCHOMOTOR_SKILL_PERMISSIONS = [
-        'view_psychomotor_skills',
-        'create_psychomotor_skills',
-        'edit_psychomotor_skills',
+        Perm::VIEW_PSYCHOMOTOR_SKILLS->value,
+        Perm::CREATE_PSYCHOMOTOR_SKILLS->value,
+        Perm::EDIT_PSYCHOMOTOR_SKILLS->value,
     ];
 
     public function run(): void
@@ -46,10 +47,10 @@ class TeacherAssignmentPermissionSeeder extends Seeder
 
         if ($admin) {
             $this->syncPermissions($admin, [
-                'manage_teacher_assignments',
+                Perm::MANAGE_TEACHER_ASSIGNMENTS->value,
                 ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
                 ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
-                'manage_head_of_school_comments',
+                Perm::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
             ]);
         }
 
@@ -57,7 +58,7 @@ class TeacherAssignmentPermissionSeeder extends Seeder
             $this->syncPermissions($headOfSchool, [
                 ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
                 ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
-                'manage_head_of_school_comments',
+                Perm::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
             ]);
         }
 
@@ -73,7 +74,7 @@ class TeacherAssignmentPermissionSeeder extends Seeder
             // boarding parents; the fallback rule itself is enforced
             // server-side (ResolvesAssessmentAccess::canRecordAssessmentFor).
             $this->syncPermissions($formTeacher, [
-                'manage_form_teacher_comments',
+                Perm::MANAGE_FORM_TEACHER_COMMENTS->value,
                 ...self::BEHAVIORAL_ASSESSMENT_PERMISSIONS,
                 ...self::PSYCHOMOTOR_SKILL_PERMISSIONS,
             ]);

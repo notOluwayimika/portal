@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Permission as Perm;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
@@ -9,15 +10,15 @@ use Illuminate\Database\Seeder;
 class StudentSubjectPermissionSeeder extends Seeder
 {
     private const PERMISSIONS = [
-        'student_subject.view',
-        'student_subject.add_optional',
-        'student_subject.drop_optional',
-        'student_subject.restore',
-        'student_subject.view_history',
-        'student_curriculum.unenroll',
-        'curriculum_subject.archive',
-        'curriculum_subject.restore',
-        'curriculum_subject.force_delete',
+        Perm::STUDENT_SUBJECT_VIEW->value,
+        Perm::STUDENT_SUBJECT_ADD_OPTIONAL->value,
+        Perm::STUDENT_SUBJECT_DROP_OPTIONAL->value,
+        Perm::STUDENT_SUBJECT_RESTORE->value,
+        Perm::STUDENT_SUBJECT_VIEW_HISTORY->value,
+        Perm::STUDENT_CURRICULUM_UNENROLL->value,
+        Perm::CURRICULUM_SUBJECT_ARCHIVE->value,
+        Perm::CURRICULUM_SUBJECT_RESTORE->value,
+        Perm::CURRICULUM_SUBJECT_FORCE_DELETE->value,
     ];
 
     public function run(): void
@@ -27,36 +28,36 @@ class StudentSubjectPermissionSeeder extends Seeder
         }
 
         $registrar = Role::where('name', 'registrar')->first();
-        $teacher   = Role::where('name', 'teacher')->first();
-        $admin     = Role::where('name', 'admin')->first();
-        $head      = Role::where('name', 'head_of_school')->first();
-        $super     = Role::where('name', 'super_admin')->first();
+        $teacher = Role::where('name', 'teacher')->first();
+        $admin = Role::where('name', 'admin')->first();
+        $head = Role::where('name', 'head_of_school')->first();
+        $super = Role::where('name', 'super_admin')->first();
 
         if ($registrar) {
             $registrar->givePermissionTo([
-                'student_subject.view',
-                'student_subject.add_optional',
-                'student_subject.drop_optional',
-                'student_subject.restore',
-                'student_subject.view_history',
+                Perm::STUDENT_SUBJECT_VIEW->value,
+                Perm::STUDENT_SUBJECT_ADD_OPTIONAL->value,
+                Perm::STUDENT_SUBJECT_DROP_OPTIONAL->value,
+                Perm::STUDENT_SUBJECT_RESTORE->value,
+                Perm::STUDENT_SUBJECT_VIEW_HISTORY->value,
             ]);
         }
 
         if ($teacher) {
-            $teacher->givePermissionTo(['student_subject.view']);
+            $teacher->givePermissionTo([Perm::STUDENT_SUBJECT_VIEW->value]);
         }
 
         foreach ([$admin, $head] as $role) {
             if ($role) {
                 $role->givePermissionTo([
-                    'student_subject.view',
-                    'student_subject.add_optional',
-                    'student_subject.drop_optional',
-                    'student_subject.restore',
-                    'student_subject.view_history',
-                    'student_curriculum.unenroll',
-                    'curriculum_subject.archive',
-                    'curriculum_subject.restore',
+                    Perm::STUDENT_SUBJECT_VIEW->value,
+                    Perm::STUDENT_SUBJECT_ADD_OPTIONAL->value,
+                    Perm::STUDENT_SUBJECT_DROP_OPTIONAL->value,
+                    Perm::STUDENT_SUBJECT_RESTORE->value,
+                    Perm::STUDENT_SUBJECT_VIEW_HISTORY->value,
+                    Perm::STUDENT_CURRICULUM_UNENROLL->value,
+                    Perm::CURRICULUM_SUBJECT_ARCHIVE->value,
+                    Perm::CURRICULUM_SUBJECT_RESTORE->value,
                 ]);
             }
         }

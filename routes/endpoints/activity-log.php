@@ -9,7 +9,7 @@ Route::prefix('activity-logs')->group(function () {
     Route::get('/filters/options',        [ActivityLogController::class, 'filterOptions']);
     Route::get('/stats',                  [ActivityLogController::class, 'stats']);
     Route::get('/export',                 [ActivityLogController::class, 'export']);
-    Route::get('/exports/{filename}',     [ActivityLogController::class, 'downloadExport']);
+    Route::get('/exports/{export}',       [ActivityLogController::class, 'downloadExport']);
 
     Route::get('/saved-filters',                          [SavedActivityFilterController::class, 'index']);
     Route::post('/saved-filters',                         [SavedActivityFilterController::class, 'store']);

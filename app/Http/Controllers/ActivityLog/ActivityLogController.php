@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ActivityDetailResource;
 use App\Http\Resources\ActivityResource;
 use App\Jobs\ExportActivityLogJob;
+use App\Models\Export;
 use App\Models\User;
 use App\Services\ActivityLog\ActivityLogQueryService;
 use App\Services\ActivityLog\ActivitySeverityService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -20,9 +22,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ActivityLogController extends Controller
 {
-    public function __construct(private readonly ActivityLogQueryService $queries)
-    {
-    }
+    public function __construct(private readonly ActivityLogQueryService $queries) {}
 
     private function filterRules(): array
     {
@@ -83,7 +83,7 @@ class ActivityLogController extends Controller
 
         $payload = (new ActivityDetailResource($activity))->toArray($request);
 
-        if (!empty($activity->batch_uuid)) {
+        if (! empty($activity->batch_uuid)) {
             $related = $this->queries->baseQuery($request->user(), true)
                 ->where('batch_uuid', $activity->batch_uuid)
                 ->where('activity_log.id', '!=', $activity->id)
@@ -114,7 +114,7 @@ class ActivityLogController extends Controller
                 "activity-log:options:{$schoolId}:{$user->id}",
                 now()->addMinutes(5),
                 function () use ($user) {
-                    $base = fn() => $this->queries->baseQuery($user, true);
+                    $base = fn () => $this->queries->baseQuery($user, true);
 
                     $causers = $base()
                         ->where('causer_type', User::class)
@@ -125,7 +125,7 @@ class ActivityLogController extends Controller
                         ->pluck('causer')
                         ->filter()
                         ->unique('id')
-                        ->map(fn($c) => [
+                        ->map(fn ($c) => [
                             'id' => $c->getKey(),
                             'name' => $c->full_name ?? $c->name,
                             'avatar' => $c->avatar ?? null,
@@ -136,7 +136,7 @@ class ActivityLogController extends Controller
                         'causers' => $causers,
                         'subject_types' => $base()->whereNotNull('subject_type')
                             ->distinct()->pluck('subject_type')
-                            ->map(fn($t) => ['value' => $t, 'label' => class_basename($t)])
+                            ->map(fn ($t) => ['value' => $t, 'label' => class_basename($t)])
                             ->values(),
                         'events' => $base()->whereNotNull('event')
                             ->distinct()->orderBy('event')->pluck('event')->values(),
@@ -162,7 +162,7 @@ class ActivityLogController extends Controller
                 function () use ($user) {
                     $severity = ActivitySeverityService::make();
 
-                    $count = fn($from) => $this->queries->baseQuery($user, true)
+                    $count = fn ($from) => $this->queries->baseQuery($user, true)
                         ->where('activity_log.created_at', '>=', $from)->count();
 
                     $topCausers = $this->queries->baseQuery($user, true)
@@ -172,7 +172,7 @@ class ActivityLogController extends Controller
                         ->with('causer:id,first_name,last_name,avatar')
                         ->get()
                         ->groupBy('causer_id')
-                        ->map(fn($rows) => [
+                        ->map(fn ($rows) => [
                             'id' => $rows->first()->causer?->getKey(),
                             'name' => $rows->first()->causer?->full_name,
                             'avatar' => $rows->first()->causer?->avatar,
@@ -185,7 +185,7 @@ class ActivityLogController extends Controller
                         ->get(['log_name', 'event', 'created_at']);
 
                     $bySeverity = $recent
-                        ->groupBy(fn($a) => $severity->for($a->log_name, $a->event))
+                        ->groupBy(fn ($a) => $severity->for($a->log_name, $a->event))
                         ->map->count();
 
                     return [
@@ -205,7 +205,7 @@ class ActivityLogController extends Controller
                         'by_event' => $recent->groupBy('event')->map->count(),
                         'by_severity' => $bySeverity,
                         'heatmap' => $recent
-                            ->groupBy(fn($a) => $a->created_at->format('Y-m-d H'))
+                            ->groupBy(fn ($a) => $a->created_at->format('Y-m-d H'))
                             ->map->count(),
                     ];
                 }
@@ -224,7 +224,9 @@ class ActivityLogController extends Controller
         $total = (clone $query)->count();
 
         if ($total > 1000) {
-            ExportActivityLogJob::dispatch($request->user()->id, $data);
+            $schoolId = ActiveSchool::id();
+            abort_unless($schoolId, 403, 'No active school selected.');
+            ExportActivityLogJob::dispatch($request->user()->id, $schoolId, $data);
 
             return response()->json([
                 'queued' => true,
@@ -234,13 +236,13 @@ class ActivityLogController extends Controller
 
         $rows = $query->orderByDesc('activity_log.created_at')->get();
 
-        $filename = 'activity-log-' . now()->format('Ymd_His') . '.csv';
+        $filename = 'activity-log-'.now()->format('Ymd_His').'.csv';
 
         return new StreamedResponse(function () use ($rows, $request, $data, $total) {
             $out = fopen('php://output', 'w');
             fputcsv($out, ['# Activity Log Export']);
             fputcsv($out, ['# Exported by', $request->user()->full_name]);
-            fputcsv($out, ['# Date range', ($data['date_from'] ?? 'any') . ' to ' . ($data['date_to'] ?? 'any')]);
+            fputcsv($out, ['# Date range', ($data['date_from'] ?? 'any').' to '.($data['date_to'] ?? 'any')]);
             fputcsv($out, ['# Total rows', $total]);
             fputcsv($out, []);
             fputcsv($out, ['ID', 'Date', 'Log', 'Event', 'Severity', 'Causer', 'Subject', 'Description']);
@@ -254,7 +256,7 @@ class ActivityLogController extends Controller
                     $a->event,
                     $severity->for($a->log_name, $a->event),
                     $a->causer?->full_name ?? ($a->causer_id ? "Deleted #{$a->causer_id}" : 'System'),
-                    $a->subject_type ? class_basename($a->subject_type) . " #{$a->subject_id}" : '',
+                    $a->subject_type ? class_basename($a->subject_type)." #{$a->subject_id}" : '',
                     $a->description,
                 ]);
             }
@@ -265,24 +267,22 @@ class ActivityLogController extends Controller
         ]);
     }
 
-    /** GET /api/activity-logs/exports/{filename} — async export download. */
-    public function downloadExport(Request $request, string $filename)
+    /**
+     * GET /api/activity-logs/exports/{export} — async export download.
+     *
+     * Served by DB id (the export uuid), never by a client-supplied filename.
+     * The Export is School-scoped (BelongsToSchool), so a cross-School id does
+     * not resolve (404); ownership and permission are enforced explicitly.
+     */
+    public function downloadExport(Request $request, Export $export)
     {
-        // abort_unless($request->user()?->can('activity_log.export'), 403);
+        $user = $request->user();
 
-        // Filename embeds the owner's id (activity-export-{userId}-...).
-        // abort_unless(
-        //     preg_match('/^activity-export-(\d+)-[0-9_]+\.csv$/', $filename, $m)
-        //     && (int) $m[1] === $request->user()->id,
-        //     403
-        // );
+        abort_unless($user?->can('activity_log.export'), 403);
+        abort_unless($export->user_id === $user->id || $user->isSuperAdmin(), 403);
+        abort_if($export->isExpired(), 410, 'Export expired');
+        abort_unless(Storage::disk($export->disk)->exists($export->file_path), 404);
 
-        $path = "activity-exports/{$filename}";
-        // abort_unless(Storage::exists($path), 404);
-
-        // Links are valid for 7 days.
-        abort_if(Storage::lastModified($path) < now()->subDays(7)->timestamp, 410, 'Export expired');
-
-        return Storage::download($path);
+        return Storage::disk($export->disk)->download($export->file_path, $export->file_name);
     }
 }

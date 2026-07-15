@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Permission as Perm;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
@@ -15,28 +16,28 @@ class ActivityLogPermissionSeeder extends Seeder
      * rows are global; only role assignments use Spatie teams).
      */
     private const PERMISSIONS = [
-        'activity_log.view',
-        'activity_log.view_all',
-        'activity_log.view_own',
-        'activity_log.view_system',
-        'activity_log.view_cross_school',
-        'activity_log.export',
-        'activity_log.view_sensitive',
+        Perm::ACTIVITY_LOG_VIEW->value,
+        Perm::ACTIVITY_LOG_VIEW_ALL->value,
+        Perm::ACTIVITY_LOG_VIEW_OWN->value,
+        Perm::ACTIVITY_LOG_VIEW_SYSTEM->value,
+        Perm::ACTIVITY_LOG_VIEW_CROSS_SCHOOL->value,
+        Perm::ACTIVITY_LOG_EXPORT->value,
+        Perm::ACTIVITY_LOG_VIEW_SENSITIVE->value,
     ];
 
     // Day-to-day staff: see only their own activity.
     private const STAFF_PERMISSIONS = [
-        'activity_log.view',
-        'activity_log.view_own',
+        Perm::ACTIVITY_LOG_VIEW->value,
+        Perm::ACTIVITY_LOG_VIEW_OWN->value,
     ];
 
     // School administrators: full school-scoped visibility + export.
     private const ADMIN_PERMISSIONS = [
-        'activity_log.view',
-        'activity_log.view_all',
-        'activity_log.view_own',
-        'activity_log.export',
-        'activity_log.view_sensitive',
+        Perm::ACTIVITY_LOG_VIEW->value,
+        Perm::ACTIVITY_LOG_VIEW_ALL->value,
+        Perm::ACTIVITY_LOG_VIEW_OWN->value,
+        Perm::ACTIVITY_LOG_EXPORT->value,
+        Perm::ACTIVITY_LOG_VIEW_SENSITIVE->value,
     ];
 
     public function run(): void
@@ -45,9 +46,9 @@ class ActivityLogPermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
 
-        $admin      = Role::where('name', 'admin')->first();
-        $head       = Role::where('name', 'head_of_school')->first();
-        $teacher    = Role::where('name', 'teacher')->first();
+        $admin = Role::where('name', 'admin')->first();
+        $head = Role::where('name', 'head_of_school')->first();
+        $teacher = Role::where('name', 'teacher')->first();
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 
         if ($admin) {

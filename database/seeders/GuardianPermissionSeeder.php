@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Permission as Perm;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
@@ -14,23 +15,23 @@ class GuardianPermissionSeeder extends Seeder
      * Registrars get the everyday set; admins get everything (including credential changes).
      */
     private const PERMISSIONS = [
-        'guardian.view',
-        'guardian.update',
-        'guardian.update_credentials',
-        'guardian.detach',
-        'guardian.enable_login',
-        'guardian.create',
-        'guardian.export',
-        'guardian.message',
-        'guardian.view_audit',
-        'guardian.import',
+        Perm::GUARDIAN_VIEW->value,
+        Perm::GUARDIAN_UPDATE->value,
+        Perm::GUARDIAN_UPDATE_CREDENTIALS->value,
+        Perm::GUARDIAN_DETACH->value,
+        Perm::GUARDIAN_ENABLE_LOGIN->value,
+        Perm::GUARDIAN_CREATE->value,
+        Perm::GUARDIAN_EXPORT->value,
+        Perm::GUARDIAN_MESSAGE->value,
+        Perm::GUARDIAN_VIEW_AUDIT->value,
+        Perm::GUARDIAN_IMPORT->value,
     ];
 
     private const REGISTRAR_PERMISSIONS = [
-        'guardian.view',
-        'guardian.update',
-        'guardian.detach',
-        'guardian.create',
+        Perm::GUARDIAN_VIEW->value,
+        Perm::GUARDIAN_UPDATE->value,
+        Perm::GUARDIAN_DETACH->value,
+        Perm::GUARDIAN_CREATE->value,
     ];
 
     public function run(): void
@@ -39,9 +40,9 @@ class GuardianPermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
 
-        $adminRole     = Role::where('name', 'admin')->first();
+        $adminRole = Role::where('name', 'admin')->first();
         $registrarRole = Role::firstOrCreate(['name' => 'registrar', 'guard_name' => 'web']);
-        $headRole      = Role::where('name', 'head_of_school')->first();
+        $headRole = Role::where('name', 'head_of_school')->first();
 
         // Make role-permission assignment idempotent without team scoping
         // (permission rows themselves are global; only role assignments use teams).

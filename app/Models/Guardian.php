@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,7 +15,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Guardian extends Model
 {
-    use AddUuid, BelongsToSchool, SoftDeletes, LogsActivity;
+    use AddUuid, BelongsToSchool, HasFactory, SoftDeletes, LogsActivity;
 
     public function getActivitylogOptions(): LogOptions
     {

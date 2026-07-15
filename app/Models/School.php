@@ -4,6 +4,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,6 +13,8 @@ use Illuminate\Support\Str;
 
 class School extends Model
 {
+    use HasFactory;
+
     protected $fillable = ['name', 'slug', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'active'];
 
     protected $casts = ['active' => 'boolean'];

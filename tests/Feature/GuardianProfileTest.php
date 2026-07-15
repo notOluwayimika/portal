@@ -10,7 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Spatie\Activitylog\Models\Activity;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 
 uses(RefreshDatabase::class);
 

@@ -11,12 +11,13 @@
  *                               (Constitution 13). HARD — zero occurrences
  *                               remain, so there is no baseline for it.
  *   school-id-fallback-context  a `$user->school_id` / `->user()->school_id`
- *                               READ inside app/Support/ (the School-context
- *                               primitives). Same Constitution 13 concern in its
- *                               guarded form. Known temporary exceptions are
- *                               BASELINED (see boundary-lint-baseline.txt): they
- *                               expire when users.school_id is dropped (§5.3,
- *                               §7.1 — Phase 1C contract step).
+ *                               occurrence anywhere in app/ — Constitution 13 is
+ *                               application-wide, so the guarded form of the
+ *                               fallback is banned everywhere, not just in the
+ *                               context primitives. Known temporary exceptions
+ *                               are BASELINED (see boundary-lint-baseline.txt):
+ *                               they expire when users.school_id is dropped
+ *                               (§5.3, §7.1 — Phase 1C contract step).
  *   decimal-money-cast          `decimal:` cast on a money-named attribute
  *                               (Constitution 10). Deliberately app-wide, NOT
  *                               Finance-scoped: the known upcoming money columns
@@ -94,9 +95,8 @@ foreach ($app as [$rel, $line]) {
         $add('school-id-fallback-literal', $rel, $line);
     }
 
-    // school-id-fallback-context — guarded fallback reads inside the context primitives.
-    if (str_starts_with($rel, 'app/Support/')
-        && preg_match('/(\$user->school_id|->user\(\)->school_id)/', $line)) {
+    // school-id-fallback-context — guarded fallback reads, app-wide (Constitution 13).
+    if (preg_match('/(\$user->school_id|->user\(\)->school_id)/', $line)) {
         $add('school-id-fallback-context', $rel, $line);
     }
 
@@ -138,6 +138,13 @@ if ($mode === 'generate') {
 # school-id-fallback-context entries expire when users.school_id is dropped
 #   (§5.3/§7.1 — after the rbac.single_source_access parity gate; ActiveSchool's
 #   guarded fallback and ActivitySchoolResolver's user fallback go with it).
+#   NOTE on the SuperAdmin/AdminController entry: that one is a legacy-column
+#   MAINTENANCE WRITE (keeping the retained expand/contract users.school_id
+#   pointing at a School the user can access), NOT a context-read fallback —
+#   a rule true-positive on the column's existence rather than a Constitution 13
+#   violation in logic. Same expiry (the users.school_id drop); when burning down
+#   this baseline, delete that code with the column — there is no fallback logic
+#   to remove there.
 # fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
 #   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
 

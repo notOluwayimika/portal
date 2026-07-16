@@ -67,3 +67,13 @@ jobs:
       # a NEW one. (No DB needed.)
       - name: Authorization guard (no new commented-out checks)
         run: php bin/ci-authz-lint.php
+
+      # Constitution rule 13 / §5.3: School context is explicit or absent, never
+      # defaulted from a user column. Ban the `?? $user->school_id` fallback.
+      - name: No user-column School-context fallback
+        run: |
+          if grep -rnE '\?\?[[:space:]]*\$(user|this)->school_id' app/; then
+            echo "Found a '?? \$user->school_id' School-context fallback — resolve context via ActiveSchool (Constitution 13, §5.3)."
+            exit 1
+          fi
+          echo "OK: no user-column School-context fallback."

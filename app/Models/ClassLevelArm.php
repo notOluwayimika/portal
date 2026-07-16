@@ -8,15 +8,16 @@ use App\Enums\TeacherAssignmentRoleEnum;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
-use Spatie\Activitylog\Models\Concerns\LogsActivity;
-use Spatie\Activitylog\Support\LogOptions;
 
 class ClassLevelArm extends Model
 {
-    protected $fillable = ['stream_id', 'class_level_id', 'arm_id'];
+    use BelongsToSchool;
+
+    protected $fillable = ['school_id', 'stream_id', 'class_level_id', 'arm_id'];
+
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function getRouteKeyName()

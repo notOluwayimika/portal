@@ -4,6 +4,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +14,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class MarkingComponent extends Model
 {
-    use LogsActivity;
+    use BelongsToSchool, LogsActivity;
 
     protected $fillable = ['curriculum_subject_id', 'marking_scheme_id', 'name', 'weight', 'school_id', 'is_ccm'];
 

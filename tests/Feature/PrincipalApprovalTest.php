@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Term;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -43,6 +44,7 @@ function pa_setup(): array
     ]);
     $term = Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => 'First Term',
         'slug' => 'term-'.Str::random(8),
         'order' => 1,
@@ -119,7 +121,7 @@ it('allows an admin to create a principal in the active school', function () {
         ])
         ->assertRedirect();
 
-    $created = \App\Models\User::where('email', 'principal@example.test')->firstOrFail();
+    $created = User::where('email', 'principal@example.test')->firstOrFail();
     expect($created->school_id)->toBe($data['school']->id)
         ->and($created->hasRole('principal'))->toBeTrue();
 });

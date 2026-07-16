@@ -24,8 +24,8 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    (new RoleSeeder())->run();
-    (new TeacherAssignmentPermissionSeeder())->run();
+    (new RoleSeeder)->run();
+    (new TeacherAssignmentPermissionSeeder)->run();
 });
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ function ta_teacher(School $school, string $firstName = 'Teacher'): Teacher
         'user_id' => $user->id,
         'first_name' => $firstName,
         'last_name' => 'Test',
-        'staff_number' => 'STF-' . Str::random(8),
+        'staff_number' => 'STF-'.Str::random(8),
     ]);
 }
 
@@ -79,14 +79,15 @@ function ta_activeTerm(School $school): Term
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     return Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -99,7 +100,7 @@ function ta_examType(School $school): ExamType
     return ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 }
 
@@ -122,7 +123,7 @@ function ta_enrolledStudent(Curriculum $curriculum, string $gender): StudentCurr
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => $gender,
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     return StudentCurriculum::create([

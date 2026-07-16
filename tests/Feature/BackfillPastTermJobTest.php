@@ -65,6 +65,7 @@ function bpt_term(AcademicSession $session, int $order, string $status): Term
 {
     return Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => "Term {$order}",
         'slug' => 'term-'.Str::random(8),
         'order' => $order,

@@ -1,8 +1,9 @@
 <?php
 
+use App\Support\Money;
 use Carbon\Carbon;
 
-if (!function_exists('normalizeDate')) {
+if (! function_exists('normalizeDate')) {
     /**
      * Normalize a date value that may be an Excel serial integer or a date string.
      * Always returns a Y-m-d string or null.
@@ -23,13 +24,13 @@ if (!function_exists('normalizeDate')) {
 
         try {
             return Carbon::parse($value)->format('Y-m-d');
-        } catch (\Exception) {
+        } catch (Exception) {
             return null;
         }
     }
 }
 
-if (!function_exists('isValidDate')) {
+if (! function_exists('isValidDate')) {
     /**
      * Check whether a raw value can be resolved to a valid calendar date.
      */
@@ -42,18 +43,19 @@ if (!function_exists('isValidDate')) {
 
         try {
             Carbon::parse($value);
+
             return true;
-        } catch (\Exception) {
+        } catch (Exception) {
             return false;
         }
     }
 }
 
-if (!function_exists('encodeData')) {
+if (! function_exists('encodeData')) {
     /**
      * Encoding Hashids
      */
-    function encodeData(int $id): String
+    function encodeData(int $id): string
     {
         $hashIds = new Hashids;
         $id = $hashIds->encode($id);
@@ -62,15 +64,39 @@ if (!function_exists('encodeData')) {
     }
 }
 
-if (!function_exists('decodeData')) {
+if (! function_exists('decodeData')) {
     /**
      * Decoding Hashids
      */
-    function decodeData(String $data): array
+    function decodeData(string $data): array
     {
         $hashIds = new Hashids;
         $id = $hashIds->decode($data);
 
         return $id;
+    }
+}
+
+if (! function_exists('formatNaira')) {
+    /**
+     * Format a Money value as a Naira string, e.g. "₦1,234.56", "-₦12.05".
+     *
+     * NGN-specific by design (the ₦ symbol): rejects non-NGN Money so a foreign
+     * currency can never be mislabelled as naira. Formatting is exact — it reads
+     * the integer minor units, never a float.
+     */
+    function formatNaira(Money $amount): string
+    {
+        if ($amount->currency !== Money::DEFAULT_CURRENCY) {
+            throw new InvalidArgumentException(
+                "formatNaira() expects an NGN amount, got [{$amount->currency}]."
+            );
+        }
+
+        $kobo = abs($amount->toKobo());
+        $major = number_format(intdiv($kobo, 100));
+        $minor = str_pad((string) ($kobo % 100), 2, '0', STR_PAD_LEFT);
+
+        return ($amount->isNegative() ? '-₦' : '₦')."{$major}.{$minor}";
     }
 }

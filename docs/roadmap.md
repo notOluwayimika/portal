@@ -32,9 +32,21 @@ Execution Plan split that into **Phase-1 Core** (gates Finance Ph2) and a
 | 53 commented-authz restores | Continuous (baseline burn-down) | security debt, not Ph2 |
 | Legacy jobs → `SchoolAware` (1.3b) | Continuous | precondition for enabling fail-closed on job-touched models |
 
-v10 §4.2/§4.4 contains stale counts (52/5 commented checks → actually 53/7;
-6 leaked routes → 7; 32 permissions → 28 at the time of audit); the Execution
-Plan's gap analysis holds the verified numbers.
+**Verified audit counts supersede the spec's.** The Execution Plan's code
+audit re-measured v10 §4.2/§4.4 and every figure was worse than claimed; the
+verified numbers below are authoritative, and v10's risk register, acceptance
+criteria and Phase-1 estimate — built on the lower figures — must be read
+against them:
+
+| Debt item | v10 claims | Verified (authoritative) |
+|---|---|---|
+| Commented-out authorization checks | 52 | **53** |
+| Controllers containing them | 5 | **7** |
+| Publicly leaked (unauthenticated) routes | 6 | **7** |
+| Permissions actually defined | 32 | **28** (19 of them never seeded at audit time) |
+
+(Jobs impersonating a causer without team context: 6 of 7 — consistent between
+both documents.)
 
 ## Phase-1 status (as of M1.5b)
 

@@ -5,6 +5,12 @@ Constitution** (spec §11, ADR 0035) plus the delivery workflow and CI gates.
 The Constitution is non-negotiable: violations fail CI, not code review, and
 changing any rule requires an ADR (see [docs/adr/](docs/adr/README.md)).
 
+**Authority:** the v10 Specification is the *architecture* authority — the
+Constitution below and every technical decision come from it. The approved
+Execution Plan governs **only sequencing, rollout and milestone packaging**;
+it does **not** supersede any architectural decision. See
+[docs/roadmap.md](docs/roadmap.md) for the full reconciliation.
+
 ## The Architecture Constitution — 16 non-negotiables
 
 **Boundaries**

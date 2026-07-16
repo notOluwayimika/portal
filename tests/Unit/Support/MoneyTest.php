@@ -98,18 +98,18 @@ it('refuses to format a non-NGN Money as naira', function () {
 it('serialises to the canonical wire contract: integer minor units + currency, never a decimal', function () {
     $money = Money::fromNaira('1234.56');
 
-    $expected = ['amount' => 123456, 'currency' => 'NGN'];
+    $expected = ['amount_minor' => 123456, 'currency' => 'NGN'];
 
     expect($money->toArray())->toBe($expected)
         ->and($money->jsonSerialize())->toBe($expected)
         // json_encode goes through jsonSerialize() -> stable shape for API Resources
-        ->and(json_encode($money))->toBe('{"amount":123456,"currency":"NGN"}');
+        ->and(json_encode($money))->toBe('{"amount_minor":123456,"currency":"NGN"}');
 });
 
-it('keeps amount an integer (not a decimal string) on the wire', function () {
+it('keeps amount_minor an integer (not a decimal string) on the wire', function () {
     $json = json_decode(json_encode(Money::fromNaira('0.05')), true);
 
-    expect($json['amount'])->toBe(5)
-        ->and($json['amount'])->toBeInt()
+    expect($json['amount_minor'])->toBe(5)
+        ->and($json['amount_minor'])->toBeInt()
         ->and($json['currency'])->toBe('NGN');
 });

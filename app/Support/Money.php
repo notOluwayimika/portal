@@ -127,19 +127,21 @@ final class Money implements Arrayable, JsonSerializable
      * The canonical wire contract (Constitution rule 10): integer minor units +
      * currency string, NEVER a decimal. Implementing it on the VO fixes the shape
      * once, so every API Resource / response()->json() serialises Money the same
-     * way by default instead of each consumer inventing its own shape. `amount` is
-     * integer minor units (kobo) — the frontend divides by 100 to display; it must
-     * never treat this as a naira-major number.
+     * way by default instead of each consumer inventing its own shape.
      *
-     * @return array{amount: int, currency: string}
+     * The key is `amount_minor` — the spec's vocabulary for a standalone money
+     * amount (§12.9) — so the unit is explicit on the wire and a frontend can
+     * never misread kobo as naira-major. Display divides by 100.
+     *
+     * @return array{amount_minor: int, currency: string}
      */
     public function toArray(): array
     {
-        return ['amount' => $this->minorUnits, 'currency' => $this->currency];
+        return ['amount_minor' => $this->minorUnits, 'currency' => $this->currency];
     }
 
     /**
-     * @return array{amount: int, currency: string}
+     * @return array{amount_minor: int, currency: string}
      */
     public function jsonSerialize(): array
     {

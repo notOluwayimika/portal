@@ -3,6 +3,7 @@
 use App\Casts\MoneyCast;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -36,6 +37,50 @@ it('round-trips a Money through a real model using the cast in $casts', function
         // stored columns hold the raw integer + currency, not a serialized blob
         ->and((int) $fresh->getRawOriginal('balance_kobo'))->toBe(123456)
         ->and($fresh->getRawOriginal('balance_currency'))->toBe('NGN');
+});
+
+/*
+ * Serialization behaviour of the VIRTUAL cast key. `balance` is not a database
+ * column — it is a virtual attribute backed by balance_kobo + balance_currency.
+ * Laravel's attributesToArray() only casts keys present in $attributes, so the
+ * virtual key never appears in raw model serialization; the raw columns do
+ * (integer + char(3) — still never a decimal). Money therefore reaches the wire
+ * through an API Resource (or accessor call) that explicitly reads the
+ * attribute, which serialises via the VO's canonical jsonSerialize() shape.
+ */
+it('omits the virtual money key from raw model toArray()/json_encode but exposes the raw columns', function () {
+    $model = new MoneyCastProbe;
+    $model->balance = Money::fromNaira('1234.56');
+    $model->save();
+
+    $fresh = MoneyCastProbe::query()->find($model->id);
+    $array = $fresh->toArray();
+
+    expect($array)->not->toHaveKey('balance')
+        ->and($array['balance_kobo'])->toBe(123456)
+        ->and($array['balance_currency'])->toBe('NGN')
+        ->and(json_decode(json_encode($fresh), true))->not->toHaveKey('balance');
+});
+
+it('serialises money through an API Resource reading the attribute, in the canonical wire shape', function () {
+    $model = new MoneyCastProbe;
+    $model->balance = Money::fromNaira('1234.56');
+    $model->save();
+
+    $resource = new class(MoneyCastProbe::query()->find($model->id)) extends JsonResource
+    {
+        public function toArray($request): array
+        {
+            return ['balance' => $this->balance];
+        }
+    };
+
+    $json = json_decode($resource->toResponse(request())->getContent(), true);
+
+    expect($json['data']['balance'])->toBe([
+        'amount_minor' => 123456,
+        'currency' => 'NGN',
+    ]);
 });
 
 it('round-trips a null money attribute as null', function () {

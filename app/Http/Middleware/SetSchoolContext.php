@@ -2,25 +2,26 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Support\ActiveSchool;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class SetTenantContext
+class SetSchoolContext
 {
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (!auth()->check()) {
+        if (! auth()->check()) {
             return $next($request);
         }
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = auth()->user();
 
         // Always check role in GLOBAL context first
@@ -30,7 +31,7 @@ class SetTenantContext
         $activeSchoolId = ActiveSchool::id();
 
         // Access may have been revoked mid-session: clear the stale context.
-        if ($activeSchoolId && !$user->canAccessSchool($activeSchoolId)) {
+        if ($activeSchoolId && ! $user->canAccessSchool($activeSchoolId)) {
             if ($request->hasSession()) {
                 $request->session()->forget('school_id');
             }
@@ -47,7 +48,7 @@ class SetTenantContext
             $user->unsetRelation('roles');
         }
 
-        if (!$isSuperAdmin && !$activeSchoolId) {
+        if (! $isSuperAdmin && ! $activeSchoolId) {
             if ($this->allowsMissingSchoolContext($request)) {
                 return $next($request);
             }

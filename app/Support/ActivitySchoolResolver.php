@@ -11,7 +11,7 @@ use Spatie\Activitylog\Contracts\Activity as ActivityContract;
  *
  * The precedence intentionally mirrors how tenant context is resolved
  * elsewhere in the app:
- *   - App\Http\Middleware\SetTenantContext
+ *   - App\Http\Middleware\SetSchoolContext
  *   - App\Concerns\BelongsToSchool
  *
  * There is no app('current_school') binding in this codebase; the request
@@ -46,13 +46,13 @@ class ActivitySchoolResolver
         Log::channel('activity-log-untagged')->warning(
             'Activity created without a resolvable school_id.',
             [
-                'log_name'     => $activity->log_name,
-                'event'        => $activity->event,
-                'description'  => $activity->description,
-                'causer_type'  => $activity->causer_type,
-                'causer_id'    => $activity->causer_id,
+                'log_name' => $activity->log_name,
+                'event' => $activity->event,
+                'description' => $activity->description,
+                'causer_type' => $activity->causer_type,
+                'causer_id' => $activity->causer_id,
                 'subject_type' => $activity->subject_type,
-                'subject_id'   => $activity->subject_id,
+                'subject_id' => $activity->subject_id,
             ]
         );
 

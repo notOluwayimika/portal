@@ -4,6 +4,7 @@ namespace App\Services\ActivityLog;
 
 use App\Models\Activity;
 use App\Models\User;
+use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
@@ -22,14 +23,16 @@ class ActivityLogQueryService
 {
     public function __construct(
         private readonly ActivitySensitiveService $sensitive,
-    ) {
-    }
+    ) {}
 
     public function currentSchoolId(User $user): int|string|null
     {
-        // ActiveSchool covers request contexts (session/token); the user's
-        // own school remains the fallback for queued jobs (no auth context).
-        return \App\Support\ActiveSchool::id() ?? $user->school_id;
+        // Active School is the single source of context. ActiveSchool::id()
+        // already covers request contexts (session/token) and, off-request, the
+        // user's own school — so no separate user-column fallback is read here
+        // (Constitution 13; §5.3). The $user parameter is retained for the
+        // interface; it is intentionally not used as a context source.
+        return ActiveSchool::id();
     }
 
     public function baseQuery(User $user, bool $includeSystem = false): Builder
@@ -65,7 +68,7 @@ class ActivityLogQueryService
     public function applyFilters(Builder $query, array $f): Builder
     {
         if (! empty($f['search'])) {
-            $term = '%' . $f['search'] . '%';
+            $term = '%'.$f['search'].'%';
             $query->where(function (Builder $q) use ($term) {
                 $q->where('activity_log.description', 'like', $term)
                     ->orWhereHasMorph('causer', [User::class], function (Builder $cq) use ($term) {
@@ -93,11 +96,11 @@ class ActivityLogQueryService
         }
 
         if (! empty($f['date_from'])) {
-            $query->where('activity_log.created_at', '>=', $f['date_from'] . ' 00:00:00');
+            $query->where('activity_log.created_at', '>=', $f['date_from'].' 00:00:00');
         }
 
         if (! empty($f['date_to'])) {
-            $query->where('activity_log.created_at', '<=', $f['date_to'] . ' 23:59:59');
+            $query->where('activity_log.created_at', '<=', $f['date_to'].' 23:59:59');
         }
 
         if (! empty($f['severity'])) {
@@ -123,7 +126,7 @@ class ActivityLogQueryService
             return $type;
         }
 
-        $candidate = 'App\\Models\\' . Str::studly($type);
+        $candidate = 'App\\Models\\'.Str::studly($type);
 
         return class_exists($candidate) ? $candidate : $type;
     }

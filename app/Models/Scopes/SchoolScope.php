@@ -2,10 +2,12 @@
 
 namespace App\Models\Scopes;
 
+use App\Models\User;
 use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
+use Illuminate\Support\Facades\Log;
 
 class SchoolScope implements Scope
 {
@@ -20,15 +22,19 @@ class SchoolScope implements Scope
      */
     public function apply(Builder $builder, Model $model): void
     {
-        if (static::$isApplying) return;
+        if (static::$isApplying) {
+            return;
+        }
 
         // Users are identities, not tenant data: they can span multiple
         // schools, and the auth layer (session guard retrieveById, login
         // email lookups) must always be able to find them. Scoping User
         // caused "credentials do not match" / forced logouts whenever the
         // session's school_id didn't match the user's own school_id.
-        // Per-school access is enforced by SetTenantContext instead.
-        if ($model instanceof \App\Models\User) return;
+        // Per-school access is enforced by SetSchoolContext instead.
+        if ($model instanceof User) {
+            return;
+        }
 
         static::$isApplying = true;
 
@@ -43,12 +49,12 @@ class SchoolScope implements Scope
                     if (method_exists($model, 'applySchoolScope')) {
                         $model->applySchoolScope($builder, (int) $schoolId);
                     } else {
-                        $builder->where($model->getTable() . '.school_id', $schoolId);
+                        $builder->where($model->getTable().'.school_id', $schoolId);
                     }
                 }
             }
         } catch (\Throwable $th) {
-            \Illuminate\Support\Facades\Log::error('SchoolScope error: ' . $th->getMessage());
+            Log::error('SchoolScope error: '.$th->getMessage());
         } finally {
             static::$isApplying = false;
         }

@@ -1,28 +1,32 @@
 <?php
+
+use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
-use App\Http\Middleware\SetTenantContext;
+use App\Http\Middleware\SetSchoolContext;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
-use Symfony\Component\Routing\Exception\RouteNotFoundException;
-use Symfony\Component\Mailer\Exception\TransportException;
+use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        web: __DIR__ . '/../routes/web.php',
-        api: __DIR__ . '/../routes/api.php',
-        commands: __DIR__ . '/../routes/console.php',
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
+        commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -33,27 +37,27 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
 
         $middleware->web(append: [
-            SetTenantContext::class,
+            SetSchoolContext::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
         $middleware->api(append: [
-            SetTenantContext::class
+            SetSchoolContext::class,
         ]);
 
         $middleware->alias([
-            'tenant' => SetTenantContext::class,
-            'role' => \App\Http\Middleware\EnsureRole::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'tenant' => SetSchoolContext::class,
+            'role' => EnsureRole::class,
+            'permission' => PermissionMiddleware::class,
+            'role_or_permission' => RoleOrPermissionMiddleware::class,
 
         ]);
 
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->report(function (\Throwable $e) {
+        $exceptions->report(function (Throwable $e) {
             \Log::error($e->getMessage(), [
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -102,7 +106,7 @@ return Application::configure(basePath: dirname(__DIR__))
         |----------------------------------------------------
         */
         $exceptions->renderable(function (ModelNotFoundException $e) {
-            return response()->not_found(class_basename($e->getModel()) . ' not found');
+            return response()->not_found(class_basename($e->getModel()).' not found');
         });
 
         $exceptions->renderable(function (NotFoundHttpException $e) {
@@ -135,8 +139,8 @@ return Application::configure(basePath: dirname(__DIR__))
             $code = $e->errorInfo[1] ?? null;
 
             return match ($code) {
-                23000   => response()->conflict('Duplicate entry detected'),
-                547     => response()->error('Record has dependencies'),
+                23000 => response()->conflict('Duplicate entry detected'),
+                547 => response()->error('Record has dependencies'),
                 '40001' => response()->error('Transaction conflict, retry'),
                 default => response()->error('Database error'),
             };
@@ -162,4 +166,3 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->service_unavailable('Mail service unavailable');
         });
     })->create();
-

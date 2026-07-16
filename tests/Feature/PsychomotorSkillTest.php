@@ -24,8 +24,8 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    (new RoleSeeder())->run();
-    (new TeacherAssignmentPermissionSeeder())->run();
+    (new RoleSeeder)->run();
+    (new TeacherAssignmentPermissionSeeder)->run();
 });
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ function ps_teacher(School $school, string $firstName = 'Teacher'): Teacher
         'user_id' => $user->id,
         'first_name' => $firstName,
         'last_name' => 'Test',
-        'staff_number' => 'STF-' . Str::random(8),
+        'staff_number' => 'STF-'.Str::random(8),
     ]);
 }
 
@@ -49,13 +49,13 @@ function ps_classLevelArm(School $school, string $className = 'JSS1', string $ar
 {
     $classLevel = ClassLevel::create([
         'school_id' => $school->id,
-        'name' => $className . '-' . Str::random(4),
+        'name' => $className.'-'.Str::random(4),
         'order' => 1,
     ]);
 
     $arm = Arm::create([
         'school_id' => $school->id,
-        'label' => $armLabel . '-' . Str::random(4),
+        'label' => $armLabel.'-'.Str::random(4),
     ]);
 
     return ClassLevelArm::forceCreate([
@@ -70,14 +70,15 @@ function ps_term(School $school, string $status = TermStatusEnum::ACTIVE->value)
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     return Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -92,7 +93,7 @@ function ps_curriculum(School $school, ClassLevelArm $classLevelArm, Term $term,
     if ($categorical) {
         $gradingSchemeId = GradingScheme::create([
             'school_id' => $school->id,
-            'name' => 'EYFS ' . Str::random(4),
+            'name' => 'EYFS '.Str::random(4),
             'mode' => 'categorical',
             'status' => 'active',
         ])->id;
@@ -101,7 +102,7 @@ function ps_curriculum(School $school, ClassLevelArm $classLevelArm, Term $term,
     $examType = ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 
     return Curriculum::create([
@@ -122,7 +123,7 @@ function ps_enrolledStudent(Curriculum $curriculum, string $gender): StudentCurr
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => $gender,
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     return StudentCurriculum::create([

@@ -51,14 +51,15 @@ function mfc_term(School $school): Term
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     return Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -71,7 +72,7 @@ function mfc_examType(School $school): ExamType
     return ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 }
 
@@ -138,7 +139,7 @@ it('carries scores for overlapping marking components onto the new non-ccm subje
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     // Creating the enrollment auto-attaches the compulsory $ccmSubject as an

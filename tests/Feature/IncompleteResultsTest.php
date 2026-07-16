@@ -12,6 +12,7 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentResult;
+use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,14 +47,15 @@ function ir_setup(): array
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     $term = Term::create([
         'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -63,7 +65,7 @@ function ir_setup(): array
     $examType = ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 
     $curriculum = Curriculum::create([
@@ -92,7 +94,7 @@ function ir_enrollStudent(School $school, Curriculum $curriculum, string $name):
         'first_name' => $name,
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     $enrollment = StudentCurriculum::create([
@@ -153,7 +155,7 @@ it('filters incomplete results by curriculum uuid', function () {
 
     $this->actingAs($s['admin'])
         ->withSession(['school_id' => $s['school']->id])
-        ->getJson('/api/results/incomplete?curriculum_id=' . $s['curriculum']->uuid)
+        ->getJson('/api/results/incomplete?curriculum_id='.$s['curriculum']->uuid)
         ->assertOk()
         ->assertJsonPath('data.0.student.uuid', $partial->uuid)
         ->assertJsonPath('pagination.total', 1);
@@ -168,12 +170,12 @@ it('filters incomplete results by reason', function () {
 
     // No active subjects: enrolled, then every subject dropped.
     [$empty, $emptyEnrollment] = ir_enrollStudent($s['school'], $s['curriculum'], 'Empty');
-    \App\Models\StudentSubject::where('student_curriculum_id', $emptyEnrollment->id)
+    StudentSubject::where('student_curriculum_id', $emptyEnrollment->id)
         ->update(['status' => 'dropped']);
 
-    $asAdmin = fn(string $query) => $this->actingAs($s['admin'])
+    $asAdmin = fn (string $query) => $this->actingAs($s['admin'])
         ->withSession(['school_id' => $s['school']->id])
-        ->getJson('/api/results/incomplete' . $query);
+        ->getJson('/api/results/incomplete'.$query);
 
     // Unfiltered: both appear.
     expect(collect($asAdmin('')->assertOk()->json('data'))->pluck('student.uuid'))

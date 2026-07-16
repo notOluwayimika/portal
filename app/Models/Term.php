@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToSchool;
 use App\Enums\TermStatusEnum;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,9 +13,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Term extends Model
 {
-    use LogsActivity;
+    use BelongsToSchool, LogsActivity;
+
     protected $fillable = [
         'academic_session_id',
+        'school_id',
         'name',
         'slug',
         'order',
@@ -22,7 +25,7 @@ class Term extends Model
         'start_date',
         'end_date',
         'registration_deadline',
-        'result_visible_at'
+        'result_visible_at',
     ];
 
     protected $casts = [
@@ -31,12 +34,12 @@ class Term extends Model
         'start_date' => 'date',
         'end_date' => 'date',
         'result_visible_at' => 'date',
-        'registration_deadline' => 'date'
+        'registration_deadline' => 'date',
     ];
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
     }
 
     public function academicSession(): BelongsTo

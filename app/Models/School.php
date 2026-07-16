@@ -15,7 +15,7 @@ class School extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'slug', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'active'];
+    protected $fillable = ['name', 'slug', 'timezone', 'working_hours_start', 'working_hours_end', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'active'];
 
     protected $casts = ['active' => 'boolean'];
 

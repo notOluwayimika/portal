@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
-use App\DTOs\GuardianDto;
 use App\Models\Guardian;
 use App\Models\School;
+use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\GuardianAccountCreatedNotification;
 use App\Repositories\GuardianRepository;
+use App\Support\ActiveSchool;
 use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -23,28 +24,30 @@ class GuardianService
         private FileUploadService $fileUploadService,
         private PasswordGeneratorService $passwordGenerator,
         private GuardianRepository $guardianRepository,
-    ) {
-    }
+    ) {}
 
     public function paginate(Request $request): LengthAwarePaginator
     {
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
         $sortBy = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
         $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
         $column = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
 
-        return Guardian::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
+        return Guardian::withoutGlobalScope(SchoolScope::class)
             ->join('users', 'users.id', '=', 'guardians.user_id')
             ->join('school_user as guardian_school_access', function ($join) use ($schoolId) {
                 $join->on('guardian_school_access.user_id', '=', 'users.id')
                     ->where('guardian_school_access.school_id', $schoolId);
             })
+            // A Guardian is a per-School record (§6.2): list only this School's rows,
+            // not every Guardian whose (shared) User can access this School.
+            ->where('guardians.school_id', $schoolId)
             ->select('guardians.*')
             ->withCount([
                 'students as students_count' => fn ($query) => $query->where('students.school_id', $schoolId),
             ])
             ->when($request->search, function ($q) use ($request) {
-                $term = '%' . $request->search . '%';
+                $term = '%'.$request->search.'%';
                 $q->where(function ($inner) use ($term) {
                     $inner->where('guardians.first_name', 'LIKE', $term)
                         ->orWhere('guardians.last_name', 'LIKE', $term)
@@ -53,14 +56,14 @@ class GuardianService
                         ->orWhere('users.email', 'LIKE', $term);
                 });
             })
-            ->when($request->status, fn($q) => $q->where('guardians.status', $request->status))
-            ->when($request->login_access === 'has_login', fn($q) => $q->whereNotNull('users.id')->whereNull('users.disabled_at'))
-            ->when($request->login_access === 'no_login', fn($q) => $q->where(fn($inner) => $inner->whereNull('users.id')->orWhereNotNull('users.disabled_at')))
-            ->when($request->children_count === '1', fn($q) => $q->havingRaw('students_count = 1'))
-            ->when($request->children_count === '2-3', fn($q) => $q->havingRaw('students_count BETWEEN 2 AND 3'))
-            ->when($request->children_count === '4+', fn($q) => $q->havingRaw('students_count >= 4'))
-            ->when($request->date_from, fn($q) => $q->whereDate('guardians.created_at', '>=', $request->date_from))
-            ->when($request->date_to, fn($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
+            ->when($request->status, fn ($q) => $q->where('guardians.status', $request->status))
+            ->when($request->login_access === 'has_login', fn ($q) => $q->whereNotNull('users.id')->whereNull('users.disabled_at'))
+            ->when($request->login_access === 'no_login', fn ($q) => $q->where(fn ($inner) => $inner->whereNull('users.id')->orWhereNotNull('users.disabled_at')))
+            ->when($request->children_count === '1', fn ($q) => $q->havingRaw('students_count = 1'))
+            ->when($request->children_count === '2-3', fn ($q) => $q->havingRaw('students_count BETWEEN 2 AND 3'))
+            ->when($request->children_count === '4+', fn ($q) => $q->havingRaw('students_count >= 4'))
+            ->when($request->date_from, fn ($q) => $q->whereDate('guardians.created_at', '>=', $request->date_from))
+            ->when($request->date_to, fn ($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
             ->with(['photoFile', 'user'])
             ->orderBy($column, $sortDir)
             ->paginate($request->integer('per_page', 25));
@@ -88,7 +91,7 @@ class GuardianService
         $count = 0;
 
         foreach ($guardians as $guardian) {
-            if ($guardian->user && !$guardian->user->isDisabled()) {
+            if ($guardian->user && ! $guardian->user->isDisabled()) {
                 $this->disableLogin($guardian);
                 $count++;
             }
@@ -129,13 +132,13 @@ class GuardianService
     {
         $guardian = null;
 
-        if (!empty($entry['guardian_id'])) {
+        if (! empty($entry['guardian_id'])) {
             $guardian = $this->guardianRepository->findByUuidInSchool($entry['guardian_id'], $schoolId);
-        } elseif (!empty($entry['identifier'])) {
+        } elseif (! empty($entry['identifier'])) {
             $guardian = $this->guardianRepository->findByIdentifierInSchool($entry['identifier'], $schoolId);
         }
 
-        if (!$guardian) {
+        if (! $guardian) {
             throw ValidationException::withMessages([
                 'guardians' => 'An existing guardian could not be found for the provided identifier in this school.',
             ]);
@@ -156,15 +159,47 @@ class GuardianService
             ]);
         }
 
-        if (! $guardian->user) {
+        $user = $guardian->user;
+
+        if (! $user) {
             throw ValidationException::withMessages([
                 'guardian_id' => 'The selected guardian has no user account.',
             ]);
         }
 
-        $guardian->user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
+        $user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
+
+        // A Guardian is a per-School record (§6.2): if the resolved Guardian
+        // belongs to another School, resolve (or create) the same User's Guardian
+        // in the target School so the eventual student link is never cross-School.
+        if ((int) $guardian->school_id !== $schoolId) {
+            $guardian = $this->resolveOrCreateGuardianForUserInSchool($user, $guardian, $schoolId);
+        }
 
         return $guardian;
+    }
+
+    /**
+     * The target-School Guardian for a User, creating one (cloned from an
+     * existing-School Guardian) if none exists yet. Preserves the shared User.
+     */
+    private function resolveOrCreateGuardianForUserInSchool(User $user, Guardian $template, int $schoolId): Guardian
+    {
+        $existing = Guardian::withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->where('school_id', $schoolId)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $guardian = $template->replicate(['uuid']);
+        $guardian->school_id = $schoolId;
+        $guardian->save();
+
+        return $guardian->fresh(['user']);
     }
 
     /**
@@ -193,17 +228,27 @@ class GuardianService
         return DB::transaction(function () use ($attributes, $schoolId, $canLogin, $email, $plainPassword) {
             $userEmail = $email ?: $this->syntheticEmail($schoolId);
 
-            $user = User::create([
-                'first_name' => $attributes['first_name'],
-                'last_name' => $attributes['last_name'],
-                'email' => $userEmail,
-                'school_id' => $schoolId,
-                'password' => $plainPassword,
-            ]);
+            // One human = one User (§6.2). Reuse the existing account when the same
+            // email is already registered (e.g. this guardian exists at another
+            // School); create a fresh User only for a genuinely new person.
+            $user = User::where('email', $userEmail)->first();
+            $isNewUser = $user === null;
+
+            if ($isNewUser) {
+                $user = User::create([
+                    'first_name' => $attributes['first_name'],
+                    'last_name' => $attributes['last_name'],
+                    'email' => $userEmail,
+                    'school_id' => $schoolId,
+                    'password' => $plainPassword,
+                ]);
+            }
 
             $user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
 
-            $guardian = $user->guardian()->create(array_merge($attributes, [
+            // Create the Guardian directly (not via the hasOne relation): one User
+            // may back one Guardian per School.
+            $guardian = Guardian::create(array_merge($attributes, [
                 'school_id' => $schoolId,
                 'user_id' => $user->id,
                 'status' => $attributes['status'] ?? 'active',
@@ -212,7 +257,8 @@ class GuardianService
             return [
                 'guardian' => $guardian->fresh(['user', 'photoFile']),
                 'user' => $user,
-                'plain_password' => $canLogin && $email ? $plainPassword : null,
+                // Surface a password only for a newly created, login-enabled account.
+                'plain_password' => $isNewUser && $canLogin && $email ? $plainPassword : null,
             ];
         });
     }
@@ -251,7 +297,7 @@ class GuardianService
             ]);
 
             // can_login was upgraded from false → true for an existing link — re-issue creds.
-            if (!$existingPivot->can_login && $canLogin) {
+            if (! $existingPivot->can_login && $canLogin) {
                 $this->reissueCredentialsIfPossible($guardian, $student);
             }
         }
@@ -271,7 +317,7 @@ class GuardianService
     public function notifyGuardian(User $user, string $plainPassword, array $studentNames = []): void
     {
         return;
-        if (!$user->email || $this->isSyntheticEmail($user->email)) {
+        if (! $user->email || $this->isSyntheticEmail($user->email)) {
             return;
         }
 
@@ -294,7 +340,7 @@ class GuardianService
     private function reissueCredentialsIfPossible(Guardian $guardian, Student $student): void
     {
         $user = $guardian->user;
-        if (!$user || !$user->email || $this->isSyntheticEmail($user->email)) {
+        if (! $user || ! $user->email || $this->isSyntheticEmail($user->email)) {
             return;
         }
 
@@ -322,7 +368,7 @@ class GuardianService
 
             $guardian->update(array_filter(
                 $attributes,
-                fn($v) => !is_null($v),
+                fn ($v) => ! is_null($v),
             ));
 
             return $guardian->fresh(['user', 'photoFile']);
@@ -346,7 +392,7 @@ class GuardianService
                 ->where('guardian_id', $guardian->id)
                 ->first();
 
-            if (!$existing) {
+            if (! $existing) {
                 throw ValidationException::withMessages([
                     'guardian_id' => 'This guardian is not attached to the specified student.',
                 ]);
@@ -370,10 +416,10 @@ class GuardianService
             $oldCanLogin = (bool) $existing->can_login;
             $newCanLogin = $merged['can_login'];
 
-            if (!$oldCanLogin && $newCanLogin) {
+            if (! $oldCanLogin && $newCanLogin) {
                 $this->enableLogin($guardian, [$student->full_name]);
                 $this->logPivotEvent($guardian, $student, 'login_enabled');
-            } elseif ($oldCanLogin && !$newCanLogin) {
+            } elseif ($oldCanLogin && ! $newCanLogin) {
                 $this->cascadeDisableIfNoLoginPivots($guardian);
                 $this->logPivotEvent($guardian, $student, 'login_disabled');
             } else {
@@ -411,17 +457,16 @@ class GuardianService
                 ->where('guardian_id', $guardian->id)
                 ->first();
 
-            if (!$existing) {
+            if (! $existing) {
                 throw ValidationException::withMessages([
                     'guardian_id' => 'This guardian is not attached to the specified student.',
                 ]);
             }
 
             if ((bool) $existing->is_primary) {
-                if (!$replacementPrimaryUuid) {
+                if (! $replacementPrimaryUuid) {
                     throw ValidationException::withMessages([
-                        'replacement_primary_guardian_uuid' =>
-                            'The guardian you are detaching is marked primary. Choose another linked guardian to promote first.',
+                        'replacement_primary_guardian_uuid' => 'The guardian you are detaching is marked primary. Choose another linked guardian to promote first.',
                     ]);
                 }
 
@@ -429,7 +474,7 @@ class GuardianService
                     ->where('school_id', $student->school_id)
                     ->first();
 
-                if (!$replacement) {
+                if (! $replacement) {
                     throw ValidationException::withMessages([
                         'replacement_primary_guardian_uuid' => 'The replacement guardian could not be found.',
                     ]);
@@ -440,7 +485,7 @@ class GuardianService
                     ->where('guardian_id', $replacement->id)
                     ->exists();
 
-                if (!$replacementLinked) {
+                if (! $replacementLinked) {
                     throw ValidationException::withMessages([
                         'replacement_primary_guardian_uuid' => 'The replacement guardian must already be linked to this student.',
                     ]);
@@ -473,7 +518,7 @@ class GuardianService
 
         // Scenario 1: shouldn't happen with current schema (user_id is NOT NULL),
         // but guard anyway in case of future changes.
-        if (!$user) {
+        if (! $user) {
             $email = $guardian->phone ? "{$guardian->phone}@no-email.local" : sprintf('guardian+%s@no-email.local', Str::random(12));
             $plainPassword = $this->passwordGenerator->generate();
             $newUser = User::create([
@@ -492,6 +537,7 @@ class GuardianService
                 ->causedBy(auth()->user())
                 ->event('login_enabled')
                 ->log('Login enabled by admin (new account created)');
+
             return;
         }
 
@@ -503,7 +549,7 @@ class GuardianService
                 'password' => $plainPassword,
             ]);
 
-            if (!$user->hasRole('guardian')) {
+            if (! $user->hasRole('guardian')) {
                 $user->assignRole('guardian');
             }
 
@@ -514,11 +560,12 @@ class GuardianService
                 ->causedBy(auth()->user())
                 ->event('login_enabled')
                 ->log('Login re-enabled by admin');
+
             return;
         }
 
         // Scenario 3: already active — make sure the role is in place, then no-op.
-        if (!$user->hasRole('guardian')) {
+        if (! $user->hasRole('guardian')) {
             $user->assignRole('guardian');
         }
 
@@ -537,7 +584,7 @@ class GuardianService
     {
         $user = $guardian->user;
 
-        if (!$user || $user->isDisabled()) {
+        if (! $user || $user->isDisabled()) {
             return;
         }
 
@@ -560,7 +607,7 @@ class GuardianService
     {
         $user = $guardian->user;
 
-        if (!$user || $user->email_verified_at !== null) {
+        if (! $user || $user->email_verified_at !== null) {
             throw ValidationException::withMessages([
                 'guardian_id' => 'Invitation can only be resent to guardians who have never activated their account.',
             ]);
@@ -588,7 +635,7 @@ class GuardianService
             ->where('can_login', true)
             ->exists();
 
-        if ($stillHasLogin || !$guardian->user) {
+        if ($stillHasLogin || ! $guardian->user) {
             return;
         }
 

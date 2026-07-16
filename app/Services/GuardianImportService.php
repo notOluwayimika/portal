@@ -7,7 +7,6 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\Validators\GuardianImportRowValidator;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -51,7 +50,7 @@ class GuardianImportService
     {
         // Step 1: Validate.
         $result = $this->validator->validate($row);
-        if (!empty($result['errors'])) {
+        if (! empty($result['errors'])) {
             return $this->failed(implode(' ', $result['errors']));
         }
         $data = $result['normalized'];
@@ -63,7 +62,7 @@ class GuardianImportService
             ->where('admission_number', $data['admission_number'])
             ->first();
 
-        if (!$student) {
+        if (! $student) {
             return $this->failed("Student with admission number {$data['admission_number']} not found.");
         }
 
@@ -81,6 +80,7 @@ class GuardianImportService
 
         if ($existing) {
             $this->cacheRow($existing, $data);
+
             return $this->attachExisting($existing, $student, $data, $schoolId, $updateExistingLinks);
         }
 
@@ -104,7 +104,7 @@ class GuardianImportService
             } catch (\Throwable $e) {
                 Log::error('Guardian import: deferred notification failed', [
                     'user_id' => $notify['user']->id ?? null,
-                    'error'   => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -122,24 +122,25 @@ class GuardianImportService
 
                 $result = $this->guardianService->createGuardianWithUser(
                     attributes: $attributes,
-                    schoolId:   $schoolId,
-                    canLogin:   $data['can_login'],
-                    email:      $data['email'],
+                    schoolId: $schoolId,
+                    canLogin: $data['can_login'],
+                    email: $data['email'],
                 );
 
                 $this->guardianService->attachToStudent(
-                    guardian:     $result['guardian'],
-                    student:      $student,
+                    guardian: $result['guardian'],
+                    student: $student,
                     relationship: $data['relationship'],
-                    isPrimary:    $data['is_primary'],
-                    canLogin:     $data['can_login'],
+                    isPrimary: $data['is_primary'],
+                    canLogin: $data['can_login'],
                 );
 
                 return $result;
             });
         } catch (\Throwable $e) {
             Log::error('Guardian import: create failed', ['error' => $e->getMessage()]);
-            return $this->failed('Failed to create guardian: ' . $e->getMessage());
+
+            return $this->failed('Failed to create guardian: '.$e->getMessage());
         }
 
         $this->cacheRow($created['guardian'], $data);
@@ -147,9 +148,9 @@ class GuardianImportService
         // Defer login notification — only after the transaction has committed.
         if ($data['can_login'] && $created['plain_password']) {
             $this->deferredNotifications[] = [
-                'user'           => $created['user'],
+                'user' => $created['user'],
                 'plain_password' => $created['plain_password'],
-                'student_names'  => [$student->full_name],
+                'student_names' => [$student->full_name],
             ];
         }
 
@@ -157,7 +158,7 @@ class GuardianImportService
             ? 'Guardian created and login enabled.'
             : 'Guardian created and attached.';
 
-        return $this->ok($message . $this->primaryWarning($student, $data['is_primary']), $created['guardian']->id);
+        return $this->ok($message.$this->primaryWarning($student, $data['is_primary']), $created['guardian']->id);
     }
 
     /**
@@ -182,7 +183,7 @@ class GuardianImportService
             ->first();
 
         if ($existingPivot) {
-            if (!$updateExistingLinks) {
+            if (! $updateExistingLinks) {
                 return $this->skipped('Already linked — skipped.', $guardian->id);
             }
 
@@ -190,44 +191,44 @@ class GuardianImportService
             try {
                 $this->guardianService->updatePivot($student, $guardian, [
                     'relationship' => $data['relationship'],
-                    'is_primary'   => $data['is_primary'],
-                    'can_login'    => $data['can_login'],
+                    'is_primary' => $data['is_primary'],
+                    'can_login' => $data['can_login'],
                 ]);
             } catch (\Throwable $e) {
-                return $this->failed('Failed to update existing link: ' . $e->getMessage());
+                return $this->failed('Failed to update existing link: '.$e->getMessage());
             }
 
-            return $this->ok('Existing link updated.' . $this->primaryWarning($student, $data['is_primary']), $guardian->id);
+            return $this->ok('Existing link updated.'.$this->primaryWarning($student, $data['is_primary']), $guardian->id);
         }
 
         // Not linked — attach.
         try {
             DB::transaction(function () use ($guardian, $student, $data) {
                 $this->guardianService->attachToStudent(
-                    guardian:     $guardian,
-                    student:      $student,
+                    guardian: $guardian,
+                    student: $student,
                     relationship: $data['relationship'],
-                    isPrimary:    $data['is_primary'],
-                    canLogin:     $data['can_login'],
+                    isPrimary: $data['is_primary'],
+                    canLogin: $data['can_login'],
                 );
 
                 // If row asks for login and guardian's user has no login (or is disabled), promote.
                 if ($data['can_login']) {
                     $user = $guardian->user;
-                    if (!$user || $user->isDisabled()) {
+                    if (! $user || $user->isDisabled()) {
                         $this->guardianService->enableLogin($guardian, [$student->full_name]);
                     }
                 }
             });
         } catch (\Throwable $e) {
-            return $this->failed('Failed to attach guardian: ' . $e->getMessage());
+            return $this->failed('Failed to attach guardian: '.$e->getMessage());
         }
 
         $msg = $data['can_login']
             ? 'Existing guardian attached and login ensured.'
             : 'Existing guardian attached.';
 
-        return $this->ok($msg . $this->primaryWarning($student, $data['is_primary']), $guardian->id);
+        return $this->ok($msg.$this->primaryWarning($student, $data['is_primary']), $guardian->id);
     }
 
     /**
@@ -238,16 +239,21 @@ class GuardianImportService
         $byEmail = null;
         $byPhone = null;
 
+        // Scoped to the target School: a Guardian is a per-School record (§6.2),
+        // so a match in another School must NOT be reused here — it becomes a new
+        // Guardian row sharing the same User (see createAndAttach).
         if ($email) {
             $byEmail = Guardian::withoutGlobalScopes()
                 ->whereNull('guardians.deleted_at')
-                ->whereHas('user', fn($q) => $q->whereRaw('LOWER(email) = ?', [strtolower($email)]))
+                ->where('guardians.school_id', $schoolId)
+                ->whereHas('user', fn ($q) => $q->whereRaw('LOWER(email) = ?', [strtolower($email)]))
                 ->first();
         }
 
         if ($phone) {
             $byPhone = Guardian::withoutGlobalScopes()
                 ->whereNull('guardians.deleted_at')
+                ->where('guardians.school_id', $schoolId)
                 ->where(function ($q) use ($phone) {
                     $q->where('phone', $phone)->orWhere('whatsapp_number', $phone);
                 })
@@ -255,9 +261,10 @@ class GuardianImportService
         }
 
         // Whatsapp fallback only if phone didn't match anything.
-        if (!$byPhone && $whatsapp) {
+        if (! $byPhone && $whatsapp) {
             $byPhone = Guardian::withoutGlobalScopes()
                 ->whereNull('guardians.deleted_at')
+                ->where('guardians.school_id', $schoolId)
                 ->where(function ($q) use ($whatsapp) {
                     $q->where('phone', $whatsapp)->orWhere('whatsapp_number', $whatsapp);
                 })
@@ -293,6 +300,7 @@ class GuardianImportService
                 return $this->rowCache[$key];
             }
         }
+
         return null;
     }
 
@@ -311,24 +319,24 @@ class GuardianImportService
     private function guardianAttributes(array $data): array
     {
         return [
-            'first_name'        => $data['first_name'],
-            'middle_name'       => $data['middle_name'],
-            'last_name'         => $data['last_name'],
-            'gender'            => $data['gender'],
-            'phone'             => $data['phone'],
-            'whatsapp_number'   => $data['whatsapp_number'],
-            'city'              => $data['city'],
-            'state'             => $data['state'],
-            'country'           => $data['country'],
-            'postal_code'       => $data['postal_code'],
-            'occupation'        => $data['occupation'],
-            'employer_name'     => $data['employer_name'],
-            'marital_status'    => $data['marital_status'],
+            'first_name' => $data['first_name'],
+            'middle_name' => $data['middle_name'],
+            'last_name' => $data['last_name'],
+            'gender' => $data['gender'],
+            'phone' => $data['phone'],
+            'whatsapp_number' => $data['whatsapp_number'],
+            'city' => $data['city'],
+            'state' => $data['state'],
+            'country' => $data['country'],
+            'postal_code' => $data['postal_code'],
+            'occupation' => $data['occupation'],
+            'employer_name' => $data['employer_name'],
+            'marital_status' => $data['marital_status'],
             'emergency_contact' => $data['emergency_contact'],
-            'id_type'           => $data['id_type'],
-            'id_number'         => $data['id_number'],
-            'id_expiry_date'    => $data['id_expiry_date'],
-            'status'            => $data['status'],
+            'id_type' => $data['id_type'],
+            'id_number' => $data['id_number'],
+            'id_expiry_date' => $data['id_expiry_date'],
+            'status' => $data['status'],
             // photo_id left null — bulk import never sets photos.
         ];
     }

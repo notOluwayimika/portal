@@ -39,6 +39,7 @@ jobs:
         run: |
           composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
           pnpm install --frozen-lockfile
+          cp .env.example .env
 
       - name: Determine base commit
         id: base
@@ -68,12 +69,20 @@ jobs:
       - name: Authorization guard (no new commented-out checks)
         run: php bin/ci-authz-lint.php
 
-      # Constitution rule 13 / §5.3: School context is explicit or absent, never
-      # defaulted from a user column. Ban the `?? $user->school_id` fallback.
-      - name: No user-column School-context fallback
-        run: |
-          if grep -rnE '\?\?[[:space:]]*\$(user|this)->school_id' app/; then
-            echo "Found a '?? \$user->school_id' School-context fallback — resolve context via ActiveSchool (Constitution 13, §5.3)."
-            exit 1
-          fi
-          echo "OK: no user-column School-context fallback."
+      # §17.2 boundary rules (Constitution 3/10/13): school_id fallbacks, decimal
+      # money casts, fee_* tables outside Finance, Finance escape hatches,
+      # forceCreate in Finance tests. Known temporary exceptions are frozen in
+      # boundary-lint-baseline.txt; fails only on a NEW violation. Supersedes the
+      # previous inline `?? $user->school_id` grep (now the lint's literal rule).
+      - name: Boundary lint (§17.2)
+        run: php bin/ci-boundary-lint.php
+
+      # §17.1 architecture rules (Kernel/module boundaries). No DB needed; the
+      # Finance-subject rules activate automatically when app/Finance appears.
+      - name: Architecture tests (§17.1)
+        run: ./vendor/bin/pest --group=arch
+
+      # §17.3: Larastan level 5 (FIXED for Phase 1) against the committed
+      # phpstan-baseline.neon — fails only on NEW static-analysis findings.
+      - name: Static analysis (Larastan level 5 vs baseline)
+        run: composer analyse

@@ -1,0 +1,3757 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method App\\Actions\\Fortify\\ResetUserPassword\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Actions/Fortify/ResetUserPassword.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/BackfillStudentResultGrades.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/MigrateMarkingSchemes.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$markingComponents\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Console/Commands/MigrateMarkingSchemes.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:mapWithKeys\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array\<string, App\\Models\\MarkingComponent\>, Closure\(App\\Models\\MarkingComponent\)\: non\-empty\-array\<string, App\\Models\\MarkingComponent\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Console/Commands/MigrateMarkingSchemes.php
+
+		-
+			message: '#^Offset ''example'' on array\{required\: false, format\: ''active\|inactive…'', example\: ''active'', notes\: ''Defaults to active\.'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''email'', example\: ''john\.doe@example\.com'', notes\: ''Login identifier\.…'', group\: ''Personal''\}\|array\{required\: false, format\: ''email\|sms\|whatsapp'', example\: ''email'', notes\: ''Channel used for…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''national_id…'', example\: ''national_id'', notes\: ''Must be paired with…'', group\: ''Identification''\}\|array\{required\: false, format\: ''phone'', example\: ''\+2348000000000''\|''\+2348111111111'', notes\: '''', group\: ''Contact''\}\|array\{required\: false, format\: ''single\|married…'', example\: ''married'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''100001''\|''Lagos''\|''Nigeria'', notes\: '''', group\: ''Address''\}\|array\{required\: false, format\: ''string'', example\: ''A12345678'', notes\: ''Required when id…'', group\: ''Identification''\}\|array\{required\: false, format\: ''string'', example\: ''Acme Inc\.''\|''Engineer'', notes\: '''', group\: ''Employment''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''yes/no or true/false'', example\: ''no'', notes\: ''Defaults to no\. If…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD'', example\: ''2030\-12\-31'', notes\: '''', group\: ''Identification''\}\|array\{required\: true, format\: ''father\|mother…'', example\: ''father'', notes\: ''Relationship of…'', group\: ''Linking''\}\|array\{required\: true, format\: ''string'', example\: ''\+2348000000000'', notes\: ''Phone number\. Used…'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''Doe'', notes\: ''Guardian last name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''John'', notes\: ''Guardian first name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''STU2025001'', notes\: ''Student admission…'', group\: ''Linking''\}\|array\{required\: true, format\: ''yes/no or true/false'', example\: ''yes'', notes\: ''Whether this…'', group\: ''Linking''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: app/Exports/GuardianImportTemplateExport.php
+
+		-
+			message: '#^Offset ''format'' on array\{required\: false, format\: ''active\|inactive…'', example\: ''active'', notes\: ''Defaults to active\.'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''email'', example\: ''john\.doe@example\.com'', notes\: ''Login identifier\.…'', group\: ''Personal''\}\|array\{required\: false, format\: ''email\|sms\|whatsapp'', example\: ''email'', notes\: ''Channel used for…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''national_id…'', example\: ''national_id'', notes\: ''Must be paired with…'', group\: ''Identification''\}\|array\{required\: false, format\: ''phone'', example\: ''\+2348000000000''\|''\+2348111111111'', notes\: '''', group\: ''Contact''\}\|array\{required\: false, format\: ''single\|married…'', example\: ''married'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''100001''\|''Lagos''\|''Nigeria'', notes\: '''', group\: ''Address''\}\|array\{required\: false, format\: ''string'', example\: ''A12345678'', notes\: ''Required when id…'', group\: ''Identification''\}\|array\{required\: false, format\: ''string'', example\: ''Acme Inc\.''\|''Engineer'', notes\: '''', group\: ''Employment''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''yes/no or true/false'', example\: ''no'', notes\: ''Defaults to no\. If…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD'', example\: ''2030\-12\-31'', notes\: '''', group\: ''Identification''\}\|array\{required\: true, format\: ''father\|mother…'', example\: ''father'', notes\: ''Relationship of…'', group\: ''Linking''\}\|array\{required\: true, format\: ''string'', example\: ''\+2348000000000'', notes\: ''Phone number\. Used…'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''Doe'', notes\: ''Guardian last name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''John'', notes\: ''Guardian first name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''STU2025001'', notes\: ''Student admission…'', group\: ''Linking''\}\|array\{required\: true, format\: ''yes/no or true/false'', example\: ''yes'', notes\: ''Whether this…'', group\: ''Linking''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/GuardianImportTemplateExport.php
+
+		-
+			message: '#^Offset ''group'' on array\{required\: false, format\: ''active\|inactive…'', example\: ''active'', notes\: ''Defaults to active\.'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''email'', example\: ''john\.doe@example\.com'', notes\: ''Login identifier\.…'', group\: ''Personal''\}\|array\{required\: false, format\: ''email\|sms\|whatsapp'', example\: ''email'', notes\: ''Channel used for…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''national_id…'', example\: ''national_id'', notes\: ''Must be paired with…'', group\: ''Identification''\}\|array\{required\: false, format\: ''phone'', example\: ''\+2348000000000''\|''\+2348111111111'', notes\: '''', group\: ''Contact''\}\|array\{required\: false, format\: ''single\|married…'', example\: ''married'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''100001''\|''Lagos''\|''Nigeria'', notes\: '''', group\: ''Address''\}\|array\{required\: false, format\: ''string'', example\: ''A12345678'', notes\: ''Required when id…'', group\: ''Identification''\}\|array\{required\: false, format\: ''string'', example\: ''Acme Inc\.''\|''Engineer'', notes\: '''', group\: ''Employment''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''yes/no or true/false'', example\: ''no'', notes\: ''Defaults to no\. If…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD'', example\: ''2030\-12\-31'', notes\: '''', group\: ''Identification''\}\|array\{required\: true, format\: ''father\|mother…'', example\: ''father'', notes\: ''Relationship of…'', group\: ''Linking''\}\|array\{required\: true, format\: ''string'', example\: ''\+2348000000000'', notes\: ''Phone number\. Used…'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''Doe'', notes\: ''Guardian last name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''John'', notes\: ''Guardian first name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''STU2025001'', notes\: ''Student admission…'', group\: ''Linking''\}\|array\{required\: true, format\: ''yes/no or true/false'', example\: ''yes'', notes\: ''Whether this…'', group\: ''Linking''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/GuardianImportTemplateExport.php
+
+		-
+			message: '#^Offset ''notes'' on array\{required\: false, format\: ''active\|inactive…'', example\: ''active'', notes\: ''Defaults to active\.'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''email'', example\: ''john\.doe@example\.com'', notes\: ''Login identifier\.…'', group\: ''Personal''\}\|array\{required\: false, format\: ''email\|sms\|whatsapp'', example\: ''email'', notes\: ''Channel used for…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''national_id…'', example\: ''national_id'', notes\: ''Must be paired with…'', group\: ''Identification''\}\|array\{required\: false, format\: ''phone'', example\: ''\+2348000000000''\|''\+2348111111111'', notes\: '''', group\: ''Contact''\}\|array\{required\: false, format\: ''single\|married…'', example\: ''married'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''100001''\|''Lagos''\|''Nigeria'', notes\: '''', group\: ''Address''\}\|array\{required\: false, format\: ''string'', example\: ''A12345678'', notes\: ''Required when id…'', group\: ''Identification''\}\|array\{required\: false, format\: ''string'', example\: ''Acme Inc\.''\|''Engineer'', notes\: '''', group\: ''Employment''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''yes/no or true/false'', example\: ''no'', notes\: ''Defaults to no\. If…'', group\: ''Status & Access''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD'', example\: ''2030\-12\-31'', notes\: '''', group\: ''Identification''\}\|array\{required\: true, format\: ''father\|mother…'', example\: ''father'', notes\: ''Relationship of…'', group\: ''Linking''\}\|array\{required\: true, format\: ''string'', example\: ''\+2348000000000'', notes\: ''Phone number\. Used…'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''Doe'', notes\: ''Guardian last name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''John'', notes\: ''Guardian first name\.'', group\: ''Identity''\}\|array\{required\: true, format\: ''string'', example\: ''STU2025001'', notes\: ''Student admission…'', group\: ''Linking''\}\|array\{required\: true, format\: ''yes/no or true/false'', example\: ''yes'', notes\: ''Whether this…'', group\: ''Linking''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/GuardianImportTemplateExport.php
+
+		-
+			message: '#^Method App\\Exports\\GuardiansExport\:\:query\(\) has invalid return type Laravel\\Scout\\Builder\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Exports/GuardiansExport.php
+
+		-
+			message: '#^Offset ''example'' on array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''15 Onne Road, GRA…''\|''Christianity''\|''Hopespring…''\|''Nigerian''\|''Rivers State'', notes\: '''', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''British'', notes\: ''If the student…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''BSS'', notes\: ''Scholarship name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Emerald'', notes\: ''Sport house name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2008\-03\-15'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2020\-09\-05'', notes\: ''Date the student…'', group\: ''Details''\}\|array\{required\: true, format\: ''string'', example\: ''20201004'', notes\: ''Student admission…'', group\: ''Lookup''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: app/Exports/StudentBulkUpdateTemplateExport.php
+
+		-
+			message: '#^Offset ''format'' on array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''15 Onne Road, GRA…''\|''Christianity''\|''Hopespring…''\|''Nigerian''\|''Rivers State'', notes\: '''', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''British'', notes\: ''If the student…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''BSS'', notes\: ''Scholarship name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Emerald'', notes\: ''Sport house name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2008\-03\-15'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2020\-09\-05'', notes\: ''Date the student…'', group\: ''Details''\}\|array\{required\: true, format\: ''string'', example\: ''20201004'', notes\: ''Student admission…'', group\: ''Lookup''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/StudentBulkUpdateTemplateExport.php
+
+		-
+			message: '#^Offset ''group'' on array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''15 Onne Road, GRA…''\|''Christianity''\|''Hopespring…''\|''Nigerian''\|''Rivers State'', notes\: '''', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''British'', notes\: ''If the student…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''BSS'', notes\: ''Scholarship name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Emerald'', notes\: ''Sport house name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2008\-03\-15'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2020\-09\-05'', notes\: ''Date the student…'', group\: ''Details''\}\|array\{required\: true, format\: ''string'', example\: ''20201004'', notes\: ''Student admission…'', group\: ''Lookup''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/StudentBulkUpdateTemplateExport.php
+
+		-
+			message: '#^Offset ''notes'' on array\{required\: false, format\: ''male\|female\|other'', example\: ''male'', notes\: ''Accepts m/f/o…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''15 Onne Road, GRA…''\|''Christianity''\|''Hopespring…''\|''Nigerian''\|''Rivers State'', notes\: '''', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''British'', notes\: ''If the student…'', group\: ''Personal''\}\|array\{required\: false, format\: ''string'', example\: ''BSS'', notes\: ''Scholarship name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Emerald'', notes\: ''Sport house name …'', group\: ''Details''\}\|array\{required\: false, format\: ''string'', example\: ''Michael'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2008\-03\-15'', notes\: '''', group\: ''Personal''\}\|array\{required\: false, format\: ''YYYY\-MM\-DD or DD/MM…'', example\: ''2020\-09\-05'', notes\: ''Date the student…'', group\: ''Details''\}\|array\{required\: true, format\: ''string'', example\: ''20201004'', notes\: ''Student admission…'', group\: ''Lookup''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Exports/StudentBulkUpdateTemplateExport.php
+
+		-
+			message: '#^Method App\\Exports\\StudentsExport\:\:query\(\) has invalid return type Laravel\\Scout\\Builder\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Exports/StudentsExport.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>value" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Exports/StudentsExport.php
+
+		-
+			message: '#^Method App\\Exports\\TeachersExport\:\:query\(\) has invalid return type Laravel\\Scout\\Builder\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Exports/TeachersExport.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>email" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Exports/TeachersExport.php
+
+		-
+			message: '#^Call to method decode\(\) on an unknown class Hashids\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Helpers/Helper.php
+
+		-
+			message: '#^Call to method encode\(\) on an unknown class Hashids\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Helpers/Helper.php
+
+		-
+			message: '#^Instantiated class Hashids not found\.$#'
+			identifier: class.notFound
+			count: 2
+			path: app/Helpers/Helper.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$causer\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$causer_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$event\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$log_name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, int\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>full_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/ActivityLog/ActivityLogController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\School\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Instanceof between Laravel\\Sanctum\\PersonalAccessToken and Laravel\\Sanctum\\PersonalAccessToken will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 2
+			path: app/Http/Controllers/Api/AuthenticationController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:assignRole\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/AuthenticationController.php
+
+		-
+			message: '#^Parameter \#1 \$user of class Illuminate\\Auth\\Events\\Registered constructor expects Illuminate\\Contracts\\Auth\\Authenticatable, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/AuthenticationController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$class_level_arm_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:usesCategoricalGrading\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\|string\)\: array\{student_curriculum_id\: mixed, student\: App\\Http\\Resources\\StudentResource, class_name\: string\|null, assessment\: App\\Http\\Resources\\BehavioralAssessmentResource\|null, uses_categorical_grading\: bool, psychomotor\: App\\Http\\Resources\\PsychomotorSkillResource\|null\}, Closure\(App\\Models\\StudentCurriculum\)\: array\{student_curriculum_id\: mixed, student\: App\\Http\\Resources\\StudentResource, class_name\: string\|null, assessment\: App\\Http\\Resources\\BehavioralAssessmentResource\|null, uses_categorical_grading\: bool, psychomotor\: App\\Http\\Resources\\PsychomotorSkillResource\|null\} given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Database\\Eloquent\\Model\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/BehavioralAssessmentController.php
+
+		-
+			message: '#^Parameter \#1 \$classLevel of method App\\Services\\BroadsheetService\:\:groups\(\) expects App\\Models\\ClassLevel, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/BroadsheetController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$curricula\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\School\:\:\$classLevelArms\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$terms\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:arms\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/ClassLevelArmController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevel\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curricula\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Call to function abort_unless\(\) with false and 404 will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and int\|null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Http/Controllers/ClassResultsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$admission_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculumSubject\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum_subject_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$markingComponents\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$school_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:markingComponents\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:resultStatus\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/CurriculumController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentResult\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$exam_type_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$grading_scheme_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_ccm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$studentCurricula\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$studentCurriculum\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:usesCategoricalGrading\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Parameter \#1 \$num of function abs expects float\|int, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/CurriculumSubjectController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$teacher\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/DashboardController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$class_level_arm_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:usesCategoricalGrading\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Database\\Eloquent\\Model\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/FormTeacherCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/GuardianController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>full_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/GuardianController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:notify\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/GuardianImportController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$class_level_arm_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type Illuminate\\Database\\Eloquent\\Model\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Http/Controllers/HeadOfSchoolCommentController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:assignRole\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:removeRole\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/HeadOfSchoolController.php
+
+		-
+			message: '#^Parameter \#1 \$message of static method Illuminate\\Log\\Logger\:\:info\(\) expects array\|Illuminate\\Contracts\\Support\\Arrayable\|Illuminate\\Contracts\\Support\\Jsonable\|Illuminate\\Support\\Stringable\|string, bool given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/MarkingComponentController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>components" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/MarkingComponentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$guardian\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$color\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Anonymous function has an unused use \$studentIds\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\Notice\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: string, Closure\(App\\Models\\Student\)\: string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:filter\(\) expects \(callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: bool\)\|null, Closure\(App\\Models\\Student\)\: bool given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>color" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>slug" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/NoticeController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$class_level_arm_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Parameter \#1 \$classLevelArm of method App\\Http\\Controllers\\OutstandingCommentController\:\:classLevelArmName\(\) expects App\\Models\\ClassLevelArm, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/OutstandingCommentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/PrincipalApprovalController.php
+
+		-
+			message: '#^Call to function abort_unless\(\) with false and 404 will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: app/Http/Controllers/PrincipalApprovalController.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and int\|null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Http/Controllers/PrincipalApprovalController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/PrincipalController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\User\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/PrincipalController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$class_level_arm_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/PsychomotorSkillController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/PsychomotorSkillController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:usesCategoricalGrading\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/PsychomotorSkillController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/PsychomotorSkillController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$folder_path\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ResultSignatureController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ResultSignatureController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ResultSignatureController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SchoolSwitchController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SchoolSwitchController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SchoolSwitchController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/SchoolSwitchController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 2
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between string and int will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\School\:\:\$currentSession\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SetupController.php
+
+		-
+			message: '#^Instanceof between App\\Enums\\TermStatusEnum and BackedEnum will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/SetupController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\School\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/SetupController.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Carbon\\CarbonImmutable\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Http/Controllers/SetupController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$activeSubjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$principal_approval\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Anonymous function has an unused use \$request\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Parameter \#1 \$id of method App\\Services\\FileUploadService\:\:deleteFileUpload\(\) expects string, int\<min, \-1\>\|int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/StudentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Parameter \#1 \$c of method App\\Http\\Controllers\\StudentCurriculumController\:\:presentCurriculum\(\) expects App\\Models\\Curriculum, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/StudentCurriculumController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$active\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculumSubject\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$resultStatus\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/StudentSubjectController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\School\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\User\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Anonymous function should return array\{uuid\: mixed, name\: mixed, email\: string, disabled\: bool, schools\: Illuminate\\Support\\Collection\<int, array\{uuid\: mixed, name\: mixed\}\>\} but returns array\{uuid\: mixed, name\: mixed, email\: string, disabled\: bool, schools\: Illuminate\\Support\\Collection\<int, array\{uuid\: mixed, name\: mixed\}\>\}\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\School\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\User\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Parameter \#1 \$school of method App\\Models\\User\:\:revokeSchoolAccess\(\) expects App\\Models\\School, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/AdminController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\School\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/SchoolController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$folder_path\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/SuperAdmin/SchoolController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/SuperAdmin/SchoolController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/SchoolController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\School\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/SuperAdmin/SchoolController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:assignRole\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherAssignmentController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:removeRole\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherAssignmentController.php
+
+		-
+			message: '#^Parameter \#1 \$teacher of method App\\Http\\Controllers\\TeacherAssignmentController\:\:revokeRoleIfUnused\(\) expects App\\Models\\Teacher\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Http/Controllers/TeacherAssignmentController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Curriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$display_order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_compulsory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Call to function abort_if\(\) with arguments true, 403 and ''Assignment does not…'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\Curriculum\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between string and int will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/TeacherController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:grantSchoolAccess\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherSchoolAccessController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:revokeSchoolAccess\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherSchoolAccessController.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:schools\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Controllers/TeacherSchoolAccessController.php
+
+		-
+			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/TeacherSchoolAccessController.php
+
+		-
+			message: '#^Call to function method_exists\(\) with App\\Models\\User and ''isSuperAdmin'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Http/Middleware/EnsureRole.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Middleware/HandleInertiaRequests.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Middleware/HandleInertiaRequests.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Http/Middleware/HandleInertiaRequests.php
+
+		-
+			message: '#^Relation ''currentSession'' is not found in App\\Models\\School model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Middleware/HandleInertiaRequests.php
+
+		-
+			message: '#^Method App\\Http\\Requests\\Settings\\PasswordUpdateRequest\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Http/Requests/Settings/PasswordUpdateRequest.php
+
+		-
+			message: '#^Method App\\Http\\Requests\\Settings\\ProfileDeleteRequest\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Http/Requests/Settings/ProfileDeleteRequest.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityDetailResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$batch_uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$causer\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$causer_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$event\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$log_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$school_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityResource\:\:\$subject_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ActivityResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ArmResource\:\:\$label\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ArmResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$honesty\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$mental_alertness\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$neatness\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$perseverance\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$politeness\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$punctuality\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$relationship_with_peers\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$respect\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$teamwork\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\BehavioralAssessmentResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/BehavioralAssessmentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmOptionsResource\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmOptionsResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmOptionsResource\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmOptionsResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmOptionsResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmOptionsResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmOptionsResource\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmOptionsResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmResource\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ClassLevelArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmResource\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ClassLevelArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmResource\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/ClassLevelArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$assignedBy\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$teacher\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelArmTeacherResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelArmTeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$arms\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$gradingScheme\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$grading_scheme_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ClassLevelResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ClassLevelResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumOptionResource\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/CurriculumOptionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumOptionResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumOptionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumOptionResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumOptionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumOptionResource\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/CurriculumOptionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$academicSession\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$curriculumSubjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$examType\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$gradingScheme\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$grading_scheme_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$is_ccm\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$min_subjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$term\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$archived_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$display_order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$is_compulsory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$studentResults\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumSubjectResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\CurriculumSubjectResource\:\:effectiveMarkingComponents\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\CurriculumSubjectResource\:\:relationLoaded\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/CurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ExamTypeResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ExamTypeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ExamTypeResource\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ExamTypeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ExamTypeResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ExamTypeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$grade\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$grade_point\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$label\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$max_score\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$min_score\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradeBoundaryResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradeBoundaryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradingSchemeResource\:\:\$items\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradingSchemeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradingSchemeResource\:\:\$mode\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradingSchemeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradingSchemeResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradingSchemeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradingSchemeResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradingSchemeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GradingSchemeResource\:\:\$version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GradingSchemeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$city\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$country\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$deleted_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$emergency_contact\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$employer_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$first_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$id_expiry_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$id_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$id_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$last_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$marital_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$middle_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$occupation\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$phone\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$photoFile\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$pivot\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$postal_code\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$state\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$students\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\GuardianResource\:\:\$whatsapp_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/GuardianResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MarkingComponentResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MarkingComponentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MarkingComponentResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MarkingComponentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\MarkingComponentResource\:\:\$weight\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/MarkingComponentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeCategoryResource\:\:\$color\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeCategoryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeCategoryResource\:\:\$is_default\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeCategoryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeCategoryResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeCategoryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeCategoryResource\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeCategoryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeCategoryResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeCategoryResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$body\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$category\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$classLevelArms\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$classLevels\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$creator\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$ends_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$starts_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$students\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$target_gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\NoticeResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\NoticeResource\:\:isActive\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/NoticeResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$climbing_sliding\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$cutting_pasting\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$drawing_colouring\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$puzzles_building\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\PsychomotorSkillResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/PsychomotorSkillResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ScholarshipResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ScholarshipResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ScholarshipResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ScoreResource\:\:\$score\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ScoreResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\ScoreResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/ScoreResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SessionResource\:\:\$is_current\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SessionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SessionResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SessionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SessionResource\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SessionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SessionResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SessionResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SportHouseResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SportHouseResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SportHouseResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SportHouseResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SportHouseResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SportHouseResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StreamResource\:\:\$code\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StreamResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StreamResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StreamResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StreamResource\:\:\$sort_order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StreamResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StreamResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StreamResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$form_teacher_comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$head_of_school_comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$principal_approval\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$student\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$studentSubjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StudentCurriculumResource\:\:relationLoaded\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Http/Resources/StudentCurriculumResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$address\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$admission_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$admission_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$date_of_birth\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$first_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$guardians\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$last_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$middle_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$nationality\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$other_nationality\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$photoFile\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$previous_school\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$religion\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$scholarship\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$scholarship_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$sportHouse\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$sport_house_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$state_of_origin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StudentResource\:\:studentCurricula\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/StudentResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$approved_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$grade\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$gradingSchemeItem\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$total_score\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResultResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentResultResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$comment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$commentedBy\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$curriculumSubject\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$drop_reason\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$droppedBy\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$dropped_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$restoredBy\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$restored_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$studentCurriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StudentSubjectResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StudentSubjectResource\:\:getAttribute\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StudentSubjectResource\:\:relationLoaded\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/StudentSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResource\:\:\$code\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResultStatusResource\:\:\$rejection_reason\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResultStatusResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResultStatusResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResultStatusResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResultStatusResource\:\:\$updatedBy\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResultStatusResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResultStatusResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResultStatusResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\SubjectResultStatusResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/SubjectResultStatusResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherCurriculumSubjectResource\:\:\$teacher\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherCurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherCurriculumSubjectResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherCurriculumSubjectResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$address\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$date_of_birth\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$first_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$hire_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$last_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$phone\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$photo\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$qualification\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$school\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$school_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$staff_number\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TeacherResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\TeacherResource\:\:relationLoaded\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>schools" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Resources/TeacherResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$academicSession\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$end_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$order\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$registration_deadline\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$result_visible_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$slug\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$start_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\TermResource\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\TermResource\:\:relationLoaded\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/TermResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$first_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$last_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$updated_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\UserResource\:\:getRoleNames\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/UserResource.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Responses/SchoolAwareLoginResponse.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$active\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$activeSubjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$display_order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_compulsory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$markingComponents\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$school_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$student_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$teacherAssignments\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BackfillPastTermJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/BulkMessageGuardiansJob.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:notify\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Jobs/BulkMessageGuardiansJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$causer_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$event\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$log_name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>full_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Jobs/ExportActivityLogJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$active\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$activeSubjects\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$archived_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$archived_by_user_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$display_order\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_compulsory\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$student_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$teacher_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Method App\\Jobs\\MoveFromCcmJob\:\:mapOverlappingMarkingComponents\(\) should return Illuminate\\Support\\Collection\<int, array\{old\: App\\Models\\MarkingComponent, new\: App\\Models\\MarkingComponent\}\> but returns Illuminate\\Support\\Collection\<int, array\{old\: App\\Models\\MarkingComponent, new\: mixed\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Parameter \#1 \$oldSubject of method App\\Jobs\\MoveFromCcmJob\:\:mapOverlappingMarkingComponents\(\) expects App\\Models\\CurriculumSubject, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Parameter \#1 \$oldSubject of method App\\Jobs\\MoveFromCcmJob\:\:migrateScores\(\) expects App\\Models\\CurriculumSubject, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Parameter \#1 \$oldSubject of method App\\Jobs\\MoveFromCcmJob\:\:migrateTeacherAssignments\(\) expects App\\Models\\CurriculumSubject, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Jobs/MoveFromCcmJob.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Listeners/LogFailedLogin.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Listeners/LogLogin.php
+
+		-
+			message: '#^Parameter \#1 \$modelOrId of method Spatie\\Activitylog\\ActivityLogger\:\:causedBy\(\) expects Illuminate\\Database\\Eloquent\\Model\|int\|string\|null, Illuminate\\Contracts\\Auth\\Authenticatable given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Listeners/LogLogin.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Listeners/LogLogout.php
+
+		-
+			message: '#^Parameter \#1 \$modelOrId of method Spatie\\Activitylog\\ActivityLogger\:\:causedBy\(\) expects Illuminate\\Database\\Eloquent\\Model\|int\|string\|null, Illuminate\\Contracts\\Auth\\Authenticatable given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Listeners/LogLogout.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$full_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Listeners/LogPasswordReset.php
+
+		-
+			message: '#^Parameter \#1 \$modelOrId of method Spatie\\Activitylog\\ActivityLogger\:\:causedBy\(\) expects Illuminate\\Database\\Eloquent\\Model\|int\|string\|null, Illuminate\\Contracts\\Auth\\Authenticatable given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Listeners/LogPasswordReset.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Illuminate\\Http\\Request\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: app/Listeners/LogPasswordReset.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Activity\:\:\$school_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Activity.php
+
+		-
+			message: '#^Method App\\Models\\AuditLog\:\:record\(\) should return static\(App\\Models\\AuditLog\) but returns App\\Models\\AuditLog\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/AuditLog.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$teacher\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Models/ClassLevelArm.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$end_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$start_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Curriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$markingScheme\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/CurriculumSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/CurriculumSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Guardian.php
+
+		-
+			message: '#^Unsafe access to private property App\\Models\\Scopes\\SchoolScope\:\:\$isApplying through static\:\:\.$#'
+			identifier: staticClassAccess.privateProperty
+			count: 3
+			path: app/Models/Scopes/SchoolScope.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Student.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Student.php
+
+		-
+			message: '#^Parameter \#1 \$string of function str_pad expects string, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Models/Student.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Models/StudentCurriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentCurriculum.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:curriculumSubjects\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/StudentCurriculum.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentResult.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentResult.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$is_compulsory\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/StudentSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$student\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/StudentSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Teacher.php
+
+		-
+			message: '#^Parameter \#1 \$string of function str_pad expects string, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Models/Teacher.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/TeacherCurriculumSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/TeacherCurriculumSubject.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculumSubject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Observers/StudentCurriculumObserver.php
+
+		-
+			message: '#^Class App\\Actions\\Fortify\\UpdateUserPassword not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Providers/FortifyServiceProvider.php
+
+		-
+			message: '#^Class App\\Actions\\Fortify\\UpdateUserProfileInformation not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Providers/FortifyServiceProvider.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Http\\Request\:\:validated\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Providers/RequestMacroProvider.php
+
+		-
+			message: '#^Method App\\Repositories\\CurriculumRepository\:\:find\(\) has invalid return type App\\Repositories\\ClassLevelArm\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Repositories/CurriculumRepository.php
+
+		-
+			message: '#^Method App\\Repositories\\CurriculumRepository\:\:find\(\) should return App\\Repositories\\ClassLevelArm\|null but returns App\\Models\\Curriculum\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Repositories/CurriculumRepository.php
+
+		-
+			message: '#^Offset 0 on non\-empty\-list\<string\> on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Services/ActivityLog/ActivityLogQueryService.php
+
+		-
+			message: '#^Property App\\Services\\ActivityLog\\ActivityLogQueryService\:\:\$sensitive is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: app/Services/ActivityLog/ActivityLogQueryService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$arm\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$stream\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Curriculum\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$academicSession\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevel\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$first_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$gender\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$grade\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$gradingSchemeItem\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$last_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$marking_component_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$middle_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 9
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$score\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:usesCategoricalGrading\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\Curriculum\>\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\Curriculum\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: \(array\{sn\: float\|int, name\: string, gender\: mixed, subjects\: array\<string, array\>, gpa\: string\|null\}\|null\), Closure\(App\\Models\\StudentCurriculum\)\: \(array\{sn\: float\|int, name\: string, gender\: mixed, subjects\: array\<string, array\>, gpa\: string\|null\}\|null\) given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array\{subject_id\: string, name\: mixed, columns\: non\-empty\-array\<int, array\{key\: string, label\: string, name\: mixed\}\>\}, Closure\(App\\Models\\CurriculumSubject\)\: array\{subject_id\: string, name\: mixed, columns\: non\-empty\-array\<int, array\{key\: string, label\: string, name\: mixed\}\>\} given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#1 \$classLevelArm of method App\\Services\\BroadsheetService\:\:classLabel\(\) expects App\\Models\\ClassLevelArm, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Parameter \#2 \$curriculumSubject of method App\\Services\\BroadsheetService\:\:buildCell\(\) expects App\\Models\\CurriculumSubject\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/BroadsheetService.php
+
+		-
+			message: '#^Cannot access property \$folder_path on array\<mixed\>\|object\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/FileUploadService.php
+
+		-
+			message: '#^Cannot access property \$name on array\<mixed\>\|object\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: app/Services/FileUploadService.php
+
+		-
+			message: '#^Parameter \#1 \$id of method App\\Services\\FileUploadService\:\:updateFileUpload\(\) expects string, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/FileUploadService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:grantSchoolAccess\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/GuardianImportService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isDisabled\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/GuardianImportService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Student\:\:\$uuid\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$email_verified_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:assignRole\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:grantSchoolAccess\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:hasRole\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isDisabled\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Parameter \#1 \$user of method App\\Services\\GuardianService\:\:notifyGuardian\(\) expects App\\Models\\User, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 3
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Parameter \#1 \$user of method App\\Services\\GuardianService\:\:resolveOrCreateGuardianForUserInSchool\(\) expects App\\Models\\User, Illuminate\\Database\\Eloquent\\Model given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Property App\\Services\\GuardianService\:\:\$fileUploadService is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: app/Services/GuardianService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$signatureFile\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ResultSignatureService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/ResultSignatureService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Student\:\:\$studentCurriculum\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/StudentService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:curriculumSubjects\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/StudentSubjectService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:isArchived\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/StudentSubjectService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/TeacherService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Http\\Request\:\:validated\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/TeacherService.php
+
+		-
+			message: '#^Parameter \#1 \$id of method App\\Services\\FileUploadService\:\:deleteFileUpload\(\) expects string, int\<min, \-1\>\|int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/TeacherService.php
+
+		-
+			message: '#^Parameter \#1 \$id of method App\\Services\\FileUploadService\:\:getFileUpload\(\) expects string, int\<min, \-1\>\|int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/TeacherService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/TeacherService.php
+
+		-
+			message: '#^Call to function method_exists\(\) with App\\Models\\User and ''currentAccessToken'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: app/Support/ActiveSchool.php
+
+		-
+			message: '#^Instanceof between Laravel\\Sanctum\\PersonalAccessToken and Laravel\\Sanctum\\PersonalAccessToken will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: app/Support/ActiveSchool.php
+
+		-
+			message: '#^Unsafe access to private property App\\Support\\ActiveSchool\:\:\$override through static\:\:\.$#'
+			identifier: staticClassAccess.privateProperty
+			count: 5
+			path: app/Support/ActiveSchool.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$causer\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$causer_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$causer_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$event\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$log_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$subject\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$subject_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php
+
+		-
+			message: '#^Access to an undefined property Spatie\\Activitylog\\Contracts\\Activity\:\:\$subject_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Support/ActivitySchoolResolver.php

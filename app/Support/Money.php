@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use Illuminate\Contracts\Support\Arrayable;
 use InvalidArgumentException;
+use JsonSerializable;
 
 /**
  * Immutable money value object (Constitution rule 10; §12.3).
@@ -26,7 +28,7 @@ use InvalidArgumentException;
  * NOT be guessed at here. Adding a rounding-bearing operation before the policy
  * is signed is a Constitution violation, not a feature.
  */
-final class Money
+final class Money implements Arrayable, JsonSerializable
 {
     public const DEFAULT_CURRENCY = 'NGN';
 
@@ -119,6 +121,29 @@ final class Money
         $this->assertSameCurrency($other);
 
         return $this->minorUnits === $other->minorUnits;
+    }
+
+    /**
+     * The canonical wire contract (Constitution rule 10): integer minor units +
+     * currency string, NEVER a decimal. Implementing it on the VO fixes the shape
+     * once, so every API Resource / response()->json() serialises Money the same
+     * way by default instead of each consumer inventing its own shape. `amount` is
+     * integer minor units (kobo) — the frontend divides by 100 to display; it must
+     * never treat this as a naira-major number.
+     *
+     * @return array{amount: int, currency: string}
+     */
+    public function toArray(): array
+    {
+        return ['amount' => $this->minorUnits, 'currency' => $this->currency];
+    }
+
+    /**
+     * @return array{amount: int, currency: string}
+     */
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
     }
 
     public function isZero(): bool

@@ -56,3 +56,47 @@ it('rejects setting a non-Money value', function () {
     expect(fn () => $cast->set(new class extends Model {}, 'balance', 1000, []))
         ->toThrow(InvalidArgumentException::class);
 });
+
+it('gets null only when BOTH columns are null (symmetric null)', function () {
+    $cast = new MoneyCast('balance_kobo', 'balance_currency');
+
+    expect($cast->get(new class extends Model {}, 'balance', null, [
+        'balance_kobo' => null,
+        'balance_currency' => null,
+    ]))->toBeNull();
+});
+
+it('fails loudly on a partially populated money row', function () {
+    $cast = new MoneyCast('balance_kobo', 'balance_currency');
+    $model = new class extends Model {};
+
+    // amount without currency
+    expect(fn () => $cast->get($model, 'balance', null, [
+        'balance_kobo' => 123456,
+        'balance_currency' => null,
+    ]))->toThrow(InvalidArgumentException::class);
+
+    // currency without amount
+    expect(fn () => $cast->get($model, 'balance', null, [
+        'balance_kobo' => null,
+        'balance_currency' => 'NGN',
+    ]))->toThrow(InvalidArgumentException::class);
+});
+
+it('fails loudly when the currency column is missing entirely rather than defaulting', function () {
+    $cast = new MoneyCast('balance_kobo', 'balance_currency');
+
+    // amount present, currency column absent from the row -> not a valid money.
+    expect(fn () => $cast->get(new class extends Model {}, 'balance', null, [
+        'balance_kobo' => 123456,
+    ]))->toThrow(InvalidArgumentException::class);
+});
+
+it('rejects a malformed currency in storage (format validated via the VO)', function () {
+    $cast = new MoneyCast('balance_kobo', 'balance_currency');
+
+    expect(fn () => $cast->get(new class extends Model {}, 'balance', null, [
+        'balance_kobo' => 123456,
+        'balance_currency' => 'naira',
+    ]))->toThrow(InvalidArgumentException::class);
+});

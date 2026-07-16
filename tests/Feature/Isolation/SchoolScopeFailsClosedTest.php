@@ -2,10 +2,21 @@
 
 use App\Exceptions\MissingSchoolContextException;
 use App\Models\Role;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+
+function superAdminWithoutSchool(): User
+{
+    setPermissionsTeamId(null);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $super = userWithoutSchool();
+    $super->assignRole('super_admin');
+
+    return $super;
+}
 
 uses(RefreshDatabase::class);
 
@@ -35,16 +46,23 @@ it('throws when the flag is on and there is no active School context', function 
     expect(fn () => Student::count())->toThrow(MissingSchoolContextException::class);
 });
 
-it('does not fail closed for a super admin without an active School', function () {
+it('requires School context for School-owned data even for a super admin (isolation, not authority)', function () {
     config(['rbac.scope_fail_closed' => true]);
-    setPermissionsTeamId(null);
-    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
-    $super = userWithoutSchool();
-    $super->assignRole('super_admin');
+    $this->actingAs(superAdminWithoutSchool());
 
-    $this->actingAs($super);
+    // A super admin bypasses authorization (Gate::before) but NOT isolation:
+    // School-owned data still needs an active School.
+    expect(fn () => Student::count())->toThrow(MissingSchoolContextException::class);
+});
 
-    expect(fn () => Student::count())->not->toThrow(MissingSchoolContextException::class);
+it('keeps platform models globally reachable without School context (super admin)', function () {
+    config(['rbac.scope_fail_closed' => true]);
+    $this->actingAs(superAdminWithoutSchool());
+
+    // Platform models are not School-scoped (BelongsToSchool), so the scope never
+    // applies and they remain globally accessible for platform operations.
+    expect(fn () => User::count())->not->toThrow(MissingSchoolContextException::class)
+        ->and(fn () => School::count())->not->toThrow(MissingSchoolContextException::class);
 });
 
 it('does not throw when an active School IS set, even with the flag on', function () {

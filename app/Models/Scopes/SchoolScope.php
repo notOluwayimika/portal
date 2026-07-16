@@ -68,18 +68,19 @@ class SchoolScope implements Scope
     }
 
     /**
-     * Fail closed only when the flag is on and the actor is a non-super-admin
-     * user (super admins act globally until they select a School). Off by
-     * default, so the legacy fail-open behaviour is unchanged.
+     * Fail closed when the flag is on. Off by default, so the legacy fail-open
+     * behaviour is unchanged.
+     *
+     * There is deliberately NO super-admin exemption: authority and isolation
+     * are separate axes. The team-less super_admin bypasses *authorization*
+     * (Gate::before) but not *School isolation* — access to School-owned data
+     * still requires an active School (or an explicit withoutSchoolScope()
+     * declared read model, §14). Platform models (User, School, Role) are not
+     * School-scoped, so this scope never applies to them and they stay globally
+     * reachable.
      */
     private function shouldFailClosed(): bool
     {
-        if (! config('rbac.scope_fail_closed')) {
-            return false;
-        }
-
-        $user = auth()->user();
-
-        return $user !== null && ! $user->isSuperAdmin();
+        return (bool) config('rbac.scope_fail_closed');
     }
 }

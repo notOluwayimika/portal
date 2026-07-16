@@ -50,3 +50,7 @@ Two ratchets fail CI only on **regressions**, not on the pre-existing backlog:
 Lint (Pint/Prettier/ESLint) runs in **check mode on changed files only**
 (`bin/lint-changed.sh`): new and modified code must be clean; the legacy drift is
 grandfathered and burns down as files are touched.
+
+The full gate list (including the commented-authz lint, boundary lint,
+architecture tests and Larastan) and every baseline's mechanics live in
+[CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\StudentMembershipStatus;
 use App\Models\School;
 use App\Models\Student;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -30,6 +31,16 @@ class StudentFactory extends Factory
             'gender' => fake()->randomElement(['male', 'female', 'other']),
             'date_of_birth' => fake()->dateTimeBetween('-18 years', '-5 years')->format('Y-m-d'),
             'admission_number' => 'ADM'.fake()->unique()->numerify('#####'),
+            'status' => StudentMembershipStatus::ACTIVE->value,
         ];
+    }
+
+    public function withdrawn(): static
+    {
+        return $this->state(fn () => [
+            'status' => StudentMembershipStatus::WITHDRAWN->value,
+            'left_at' => now(),
+            'leave_reason' => 'Relocated',
+        ]);
     }
 }

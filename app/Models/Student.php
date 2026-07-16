@@ -5,16 +5,20 @@ namespace App\Models;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Concerns\HasAdmissionNumber;
+use App\Enums\StudentMembershipStatus;
+use App\Enums\StudentStatusEnum;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Student extends Model
 {
-    use HasAdmissionNumber, HasFactory, SoftDeletes, BelongsToSchool, AddUuid;
+    use AddUuid, BelongsToSchool, HasAdmissionNumber, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'school_id',
@@ -23,6 +27,9 @@ class Student extends Model
         'last_name',
         'middle_name',
         'admission_number',
+        'status',
+        'left_at',
+        'leave_reason',
         'gender',
         'date_of_birth',
         'photo_id',
@@ -39,8 +46,19 @@ class Student extends Model
 
     protected $casts = [
         'admission_date' => 'date',
+        'status' => StudentMembershipStatus::class,
+        'left_at' => 'datetime',
     ];
 
+    /**
+     * Billing eligibility (§12.6): active members of the current School. Answers
+     * "active Students at School X" with a single indexed predicate — no join to
+     * the enrollment (StudentCurriculum) table, so it holds between terms too.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', StudentMembershipStatus::ACTIVE);
+    }
 
     public function getRouteKeyName()
     {
@@ -67,9 +85,9 @@ class Student extends Model
         return $this->hasMany(StudentCurriculum::class);
     }
 
-    public function currentCurriculum(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function currentCurriculum(): HasOne
     {
-        return $this->hasOne(StudentCurriculum::class)->where('status', \App\Enums\StudentStatusEnum::ACTIVE);
+        return $this->hasOne(StudentCurriculum::class)->where('status', StudentStatusEnum::ACTIVE);
     }
 
     public function scores(): HasMany
@@ -99,7 +117,6 @@ class Student extends Model
         return $this->belongsTo(SportHouse::class);
     }
 
-
     public function scholarship(): BelongsTo
     {
         return $this->belongsTo(Scholarship::class);
@@ -125,13 +142,14 @@ class Student extends Model
         $currentCurriculum = $this->currentCurriculum;
 
         $classLevelArm = $currentCurriculum?->curriculum?->classLevelArm;
-        if (!$classLevelArm)
+        if (! $classLevelArm) {
             return null;
+        }
 
-        $className = $classLevelArm->classLevel?->name . ' ' . $classLevelArm->arm?->label;
+        $className = $classLevelArm->classLevel?->name.' '.$classLevelArm->arm?->label;
 
         if ($classLevelArm->stream) {
-            $className .= ' (' . $classLevelArm->stream->name . ')';
+            $className .= ' ('.$classLevelArm->stream->name.')';
         }
 
         return $className;

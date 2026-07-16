@@ -2,6 +2,7 @@
 
 namespace App\Models\Scopes;
 
+use App\Exceptions\MissingSchoolContextException;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
@@ -51,12 +52,34 @@ class SchoolScope implements Scope
                     } else {
                         $builder->where($model->getTable().'.school_id', $schoolId);
                     }
+                } elseif ($this->shouldFailClosed()) {
+                    // §5.5: no context is an exception, never a silent unscoped
+                    // read. Rethrown past the catch below so it is never swallowed.
+                    throw new MissingSchoolContextException($model::class);
                 }
             }
+        } catch (MissingSchoolContextException $e) {
+            throw $e;
         } catch (\Throwable $th) {
             Log::error('SchoolScope error: '.$th->getMessage());
         } finally {
             static::$isApplying = false;
         }
+    }
+
+    /**
+     * Fail closed only when the flag is on and the actor is a non-super-admin
+     * user (super admins act globally until they select a School). Off by
+     * default, so the legacy fail-open behaviour is unchanged.
+     */
+    private function shouldFailClosed(): bool
+    {
+        if (! config('rbac.scope_fail_closed')) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        return $user !== null && ! $user->isSuperAdmin();
     }
 }

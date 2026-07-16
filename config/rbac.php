@@ -18,4 +18,22 @@ return [
     |
     */
     'single_source_access' => env('RBAC_SINGLE_SOURCE_ACCESS', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fail-closed School scope
+    |--------------------------------------------------------------------------
+    |
+    | When true, querying a School-scoped model while authenticated with no
+    | active School context throws MissingSchoolContextException instead of
+    | silently returning unscoped rows (§5.5). Super admins (who act globally
+    | until they select a School) are exempt.
+    |
+    | Temporary expand/contract rollout flag, default OFF. Enable per environment
+    | only after seeders/console paths that legitimately run without a School use
+    | Model::withoutSchoolScope() (or ActiveSchool::runFor()), verified by driving
+    | the affected flows in the running app.
+    |
+    */
+    'scope_fail_closed' => env('RBAC_SCOPE_FAIL_CLOSED', false),
 ];

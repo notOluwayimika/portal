@@ -17,11 +17,17 @@ use InvalidArgumentException;
  *   protected $casts = ['balance' => MoneyCast::class.':balance_kobo,balance_currency'];
  * and default to 'amount' / 'currency' when omitted.
  *
- * A null money is BOTH columns null (symmetric). A partially-populated row —
- * amount without currency, or currency without amount — is not a valid Money
- * (Constitution rule 10: money is minor units + EXPLICIT currency), so get()
- * fails loudly rather than silently manufacturing a default currency. set()
- * always writes both or neither, so it can never create a partial row.
+ * get() contract for the two configured columns (money is minor units + EXPLICIT
+ * currency, Constitution rule 10), distinguishing "not selected" from "NULL at
+ * rest" via array_key_exists:
+ *   1. Either column NOT selected -> throw a query-construction error naming the
+ *      unselected column. NEVER returns null on a partial select — a silently
+ *      null money in a Phase-2 report is worse than an exception.
+ *   2. Both selected and NULL      -> return null (a legitimate absence of value).
+ *   3. Both selected, exactly one NULL -> throw a data-integrity error (corrupt
+ *      row). Its message differs from case 1 so the reader looks at the data, not
+ *      the query.
+ * set() always writes both columns or neither, so it can never create a case-3 row.
  */
 class MoneyCast implements CastsAttributes
 {
@@ -35,19 +41,48 @@ class MoneyCast implements CastsAttributes
      */
     public function get(Model $model, string $key, mixed $value, array $attributes): ?Money
     {
-        $amount = $attributes[$this->amountColumn] ?? null;
-        $currency = $attributes[$this->currencyColumn] ?? null;
+        // array_key_exists (not ??) so "not selected" is distinguished from
+        // "selected and NULL" — they have different causes and different fixes.
+        $hasAmount = array_key_exists($this->amountColumn, $attributes);
+        $hasCurrency = array_key_exists($this->currencyColumn, $attributes);
 
-        // Symmetric null: a null money is both columns null.
+        // Case 1: a configured column was not selected, so the value cannot be
+        // reconstructed. This is a query-construction error upstream — never a
+        // silent null (a null money in an aged-debtors/collections report is worse
+        // than an exception). Name the unselected column(s) so the fix is the
+        // select(), not a corruption hunt.
+        if (! $hasAmount || ! $hasCurrency) {
+            $unselected = array_values(array_filter([
+                $hasAmount ? null : $this->amountColumn,
+                $hasCurrency ? null : $this->currencyColumn,
+            ]));
+
+            throw new InvalidArgumentException(sprintf(
+                'Cannot reconstruct the [%s] money attribute: column(s) [%s] were not selected. '
+                .'Select both [%s] and [%s], or omit [%s] from the query.',
+                $key,
+                implode(', ', $unselected),
+                $this->amountColumn,
+                $this->currencyColumn,
+                $key,
+            ));
+        }
+
+        $amount = $attributes[$this->amountColumn];
+        $currency = $attributes[$this->currencyColumn];
+
+        // Case 2: both selected and NULL — a legitimate absence of value.
         if ($amount === null && $currency === null) {
             return null;
         }
 
-        // A partial row is not a valid money — fail loudly, never default.
+        // Case 3: both selected, exactly one NULL — a data-integrity violation at
+        // rest (a corrupt row). Distinct message from case 1 so the reader looks at
+        // the data, not the query.
         if ($amount === null || $currency === null) {
             throw new InvalidArgumentException(sprintf(
-                'The [%s] money attribute is partially populated (%s=%s, %s=%s); '
-                .'a money must have both integer minor units and an explicit currency.',
+                'The [%s] money attribute is corrupt at rest (%s=%s, %s=%s): '
+                .'a stored money must have both integer minor units and currency, or both NULL.',
                 $key,
                 $this->amountColumn, var_export($amount, true),
                 $this->currencyColumn, var_export($currency, true),

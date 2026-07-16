@@ -57,7 +57,8 @@ it('rejects setting a non-Money value', function () {
         ->toThrow(InvalidArgumentException::class);
 });
 
-it('gets null only when BOTH columns are null (symmetric null)', function () {
+// Case 2: both columns selected and NULL -> null.
+it('gets null only when BOTH columns are selected and null (case 2)', function () {
     $cast = new MoneyCast('balance_kobo', 'balance_currency');
 
     expect($cast->get(new class extends Model {}, 'balance', null, [
@@ -66,30 +67,58 @@ it('gets null only when BOTH columns are null (symmetric null)', function () {
     ]))->toBeNull();
 });
 
-it('fails loudly on a partially populated money row', function () {
+// Case 1: a configured column was not selected -> query-construction error.
+it('throws a query-construction error naming the unselected column (case 1)', function () {
     $cast = new MoneyCast('balance_kobo', 'balance_currency');
     $model = new class extends Model {};
 
-    // amount without currency
+    // Both columns absent (money attribute not selected at all) — must NOT return null.
+    expect(fn () => $cast->get($model, 'balance', null, ['id' => 1]))
+        ->toThrow(InvalidArgumentException::class, 'were not selected');
+
+    // One selected, one not (e.g. select('balance_kobo') without the currency).
+    expect(fn () => $cast->get($model, 'balance', null, ['balance_kobo' => 123456]))
+        ->toThrow(InvalidArgumentException::class, 'balance_currency');
+});
+
+// Case 3: both selected, exactly one NULL -> data-integrity error.
+it('throws a data-integrity error on a corrupt (partial-NULL) row (case 3)', function () {
+    $cast = new MoneyCast('balance_kobo', 'balance_currency');
+    $model = new class extends Model {};
+
     expect(fn () => $cast->get($model, 'balance', null, [
         'balance_kobo' => 123456,
         'balance_currency' => null,
-    ]))->toThrow(InvalidArgumentException::class);
+    ]))->toThrow(InvalidArgumentException::class, 'corrupt at rest');
 
-    // currency without amount
     expect(fn () => $cast->get($model, 'balance', null, [
         'balance_kobo' => null,
         'balance_currency' => 'NGN',
-    ]))->toThrow(InvalidArgumentException::class);
+    ]))->toThrow(InvalidArgumentException::class, 'corrupt at rest');
 });
 
-it('fails loudly when the currency column is missing entirely rather than defaulting', function () {
+// Cases 1 and 3 must be diagnosably different, not an identical message.
+it('gives distinct messages for a not-selected column vs a corrupt row', function () {
     $cast = new MoneyCast('balance_kobo', 'balance_currency');
+    $model = new class extends Model {};
 
-    // amount present, currency column absent from the row -> not a valid money.
-    expect(fn () => $cast->get(new class extends Model {}, 'balance', null, [
-        'balance_kobo' => 123456,
-    ]))->toThrow(InvalidArgumentException::class);
+    $notSelected = null;
+    try {
+        $cast->get($model, 'balance', null, ['balance_kobo' => 123456]); // currency not selected
+    } catch (InvalidArgumentException $e) {
+        $notSelected = $e->getMessage();
+    }
+
+    $corrupt = null;
+    try {
+        $cast->get($model, 'balance', null, ['balance_kobo' => 123456, 'balance_currency' => null]);
+    } catch (InvalidArgumentException $e) {
+        $corrupt = $e->getMessage();
+    }
+
+    expect($notSelected)->toContain('not selected')
+        ->and($corrupt)->toContain('corrupt at rest')
+        ->and($notSelected)->not->toBe($corrupt);
 });
 
 it('rejects a malformed currency in storage (format validated via the VO)', function () {

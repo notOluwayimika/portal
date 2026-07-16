@@ -52,7 +52,7 @@ class SchoolScope implements Scope
                     } else {
                         $builder->where($model->getTable().'.school_id', $schoolId);
                     }
-                } elseif ($this->shouldFailClosed()) {
+                } elseif ($this->shouldFailClosed($model)) {
                     // §5.5: no context is an exception, never a silent unscoped
                     // read. Rethrown past the catch below so it is never swallowed.
                     throw new MissingSchoolContextException($model::class);
@@ -68,8 +68,11 @@ class SchoolScope implements Scope
     }
 
     /**
-     * Fail closed when the flag is on. Off by default, so the legacy fail-open
-     * behaviour is unchanged.
+     * Whether this specific model is fail-closed. Rollout is PER-MODEL (roadmap
+     * Rollout Flags table, Risk #14): a model throws on missing context only once
+     * it is added to the rbac.fail_closed_models allowlist. Empty by default, so
+     * un-opted-in models keep the legacy fail-open behaviour and each model can
+     * be enabled/reverted independently.
      *
      * There is deliberately NO super-admin exemption: authority and isolation
      * are separate axes. The team-less super_admin bypasses *authorization*
@@ -79,8 +82,16 @@ class SchoolScope implements Scope
      * School-scoped, so this scope never applies to them and they stay globally
      * reachable.
      */
-    private function shouldFailClosed(): bool
+    private function shouldFailClosed(Model $model): bool
     {
-        return (bool) config('rbac.scope_fail_closed');
+        $class = ltrim($model::class, '\\');
+
+        foreach ((array) config('rbac.fail_closed_models', []) as $enabled) {
+            if (ltrim((string) $enabled, '\\') === $class) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

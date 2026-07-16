@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Notice;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,7 +22,8 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    config(['rbac.scope_fail_closed' => true]);
+    // Opt the School-owned model behind the scoped route into fail-closed.
+    config(['rbac.fail_closed_models' => [Notice::class]]);
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 });

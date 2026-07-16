@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\MissingSchoolContextException;
+use App\Models\Notice;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
@@ -32,22 +33,33 @@ function userWithoutSchool(): User
     ]);
 }
 
-it('stays fail-open (no throw) when the flag is off — the default', function () {
-    config(['rbac.scope_fail_closed' => false]);
+it('stays fail-open (no throw) when no model is opted in — the default', function () {
+    config(['rbac.fail_closed_models' => []]);
     $this->actingAs(userWithoutSchool());
 
     expect(fn () => Student::count())->not->toThrow(MissingSchoolContextException::class);
 });
 
-it('throws when the flag is on and there is no active School context', function () {
-    config(['rbac.scope_fail_closed' => true]);
+it('throws when the model is opted in and there is no active School context', function () {
+    config(['rbac.fail_closed_models' => [Student::class]]);
     $this->actingAs(userWithoutSchool());
 
     expect(fn () => Student::count())->toThrow(MissingSchoolContextException::class);
 });
 
+it('rolls out per model: an opted-in model fails closed while a disabled one keeps legacy behaviour', function () {
+    // Only Student is opted in. Notice is School-owned (BelongsToSchool) too but
+    // is NOT on the allowlist, so it must still use the legacy fail-open path —
+    // proving the rollout is genuinely per-model, not a global switch.
+    config(['rbac.fail_closed_models' => [Student::class]]);
+    $this->actingAs(userWithoutSchool());
+
+    expect(fn () => Student::count())->toThrow(MissingSchoolContextException::class)
+        ->and(fn () => Notice::count())->not->toThrow(MissingSchoolContextException::class);
+});
+
 it('requires School context for School-owned data even for a super admin (isolation, not authority)', function () {
-    config(['rbac.scope_fail_closed' => true]);
+    config(['rbac.fail_closed_models' => [Student::class]]);
     $this->actingAs(superAdminWithoutSchool());
 
     // A super admin bypasses authorization (Gate::before) but NOT isolation:
@@ -56,7 +68,7 @@ it('requires School context for School-owned data even for a super admin (isolat
 });
 
 it('keeps platform models globally reachable without School context (super admin)', function () {
-    config(['rbac.scope_fail_closed' => true]);
+    config(['rbac.fail_closed_models' => [Student::class]]);
     $this->actingAs(superAdminWithoutSchool());
 
     // Platform models are not School-scoped (BelongsToSchool), so the scope never
@@ -65,8 +77,8 @@ it('keeps platform models globally reachable without School context (super admin
         ->and(fn () => School::count())->not->toThrow(MissingSchoolContextException::class);
 });
 
-it('does not throw when an active School IS set, even with the flag on', function () {
-    config(['rbac.scope_fail_closed' => true]);
+it('does not throw when an active School IS set, even for an opted-in model', function () {
+    config(['rbac.fail_closed_models' => [Student::class]]);
     $school = al_makeSchool();
     $this->actingAs(al_makeUser($school->id)); // users.school_id provides context
 

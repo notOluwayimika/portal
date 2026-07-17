@@ -56,6 +56,16 @@ class User extends Authenticatable
     private ?bool $isSuperAdminMemo = null;
 
     /**
+     * Request-scoped memo of accessibleSchoolIds(), keyed by the
+     * single_source_access flag so a mid-request flag change (the parity test)
+     * recomputes rather than returning a stale source. Flushed by
+     * grant/revokeSchoolAccess when access actually changes.
+     *
+     * @var array<int, Collection<int, int>>
+     */
+    private array $accessibleSchoolIdsMemo = [];
+
+    /**
      * super_admin is a GLOBAL role (no team). Check it outside whatever
      * team/school context is currently active, then restore the context.
      */
@@ -101,6 +111,14 @@ class User extends Authenticatable
      */
     public function accessibleSchoolIds(): Collection
     {
+        $key = config('rbac.single_source_access') ? 1 : 0;
+
+        return $this->accessibleSchoolIdsMemo[$key]
+            ??= $this->computeAccessibleSchoolIds();
+    }
+
+    private function computeAccessibleSchoolIds(): Collection
+    {
         if ($this->isSuperAdmin()) {
             return School::query()->pluck('id')->map(fn ($id) => (int) $id);
         }
@@ -126,6 +144,16 @@ class User extends Authenticatable
         }
 
         return $ids->map(fn ($id) => (int) $id)->unique()->values();
+    }
+
+    /**
+     * Clear the accessibleSchoolIds memo — call after any change to this user's
+     * School access (role assignment/removal, pivot grant/revoke).
+     */
+    public function flushSchoolAccessCache(): void
+    {
+        $this->accessibleSchoolIdsMemo = [];
+        $this->isSuperAdminMemo = null;
     }
 
     /**
@@ -176,6 +204,7 @@ class User extends Authenticatable
 
         setPermissionsTeamId($previousTeam);
         $this->unsetRelation('roles');
+        $this->flushSchoolAccessCache();
     }
 
     /**
@@ -196,6 +225,7 @@ class User extends Authenticatable
 
         setPermissionsTeamId($previousTeam);
         $this->unsetRelation('roles');
+        $this->flushSchoolAccessCache();
     }
 
     public function getFullNameAttribute()

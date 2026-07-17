@@ -333,6 +333,130 @@ which is gated by the same flag, so the soak now covers them.
   once the column is gone this maintenance has **nothing to maintain** and should
   **simply delete**, not translate. Both need sign-off before implementation.
 
+### S7 writer semantics — teacher creation already IS School assignment (§1 evidence)
+
+Investigated before proposing any writer change (do not infer from the column write):
+
+- **What creates a teacher:** `TeacherService::processTeacherAccount` (single) and
+  the bulk-import path (`~line 155`). Both, inside one DB transaction:
+  `User::create([... 'school_id' => ActiveSchool::id() ...])` → **`$user->assignRole('teacher')`** →
+  `store()` (the `teachers` row).
+- **When a teacher becomes authorized to a School:** at `assignRole('teacher')` —
+  in spatie teams mode this writes a `model_has_roles` row in the **active team**
+  (the admin's School, set by `SetSchoolContext`). **That row is the access
+  grant.** Additional Schools are granted via
+  `TeacherSchoolAccessController` → `grantSchoolAccess($school, 'teacher')`.
+- **Can a teacher exist before School access?** No — creation atomically assigns
+  the role in the same transaction.
+- **Is the `users.school_id` write a business rule or legacy compat?** **Legacy
+  compat.** Access is already conferred by `assignRole`; `users.school_id` is a
+  redundant home-School stamp on the *User*. It is distinct from
+  **`teachers.school_id`** (the Teacher model's own home-School column, a
+  `BelongsToSchool` field that is **NOT** part of S7 and stays).
+- **Proposed writer change (still STOP-for-review, not implemented):** delete
+  `'school_id'` from the two `User::create(...)` calls — **no new role grant is
+  needed, it already exists.** One implementation guard: `assignRole` must run
+  with the correct permissions-team set (true on the request path today); the
+  writer slice must assert/So set the team explicitly so an off-request create
+  path can never write a null-team (global) role row.
+
+### Runtime-zero gate — blind spots + compensating controls (§2)
+
+The gate is a grep; it cannot see everything. Each blind spot and its control:
+
+| Blind spot | Detected? | Compensating control |
+|---|---|---|
+| Explicit `school_user` string | **Yes** (pattern) | — |
+| Implicit `belongsToMany(School)` pivot + `->schools()` consumers | **Yes** (patterns added §2) | the gate now fails while any `->schools()` call remains — it cannot report 0 with the pivot still resolved |
+| `$user->school_id` / `->user()->school_id` reads, raw `users.school_id` | **Yes** (patterns) | — |
+| `$this->school_id` in User.php | **Yes** (file-scoped pattern) | — |
+| Column **writes** (`AdminController` forceFill, `TeacherService` `User::create`) | **No** (would over-match `'school_id' =>` everywhere) | **boundary-lint** (`school-id-fallback-context` + maintenance-write) + the writer disposition in the readiness matrix below |
+| Dynamic property access (`$model->{$attr}`, `getAttribute('school_id')`) | **No** | code review + the readiness matrix; `ActivitySchoolResolver::schoolIdOf` uses `getAttribute('school_id')` polymorphically and is intentionally model-agnostic (not a users.school_id reference) |
+| Dynamically-built SQL / raw `DB::statement` string interpolation | **No** | none automated — none exists today (grep for `DB::statement`/`DB::raw` with `school_user` is empty); a reviewer check at the writer/drop slice |
+| Reflection / container resolution | **No** | none exists; no `school_id`/`school_user` is resolved by string via the container |
+| Vendor callbacks (spatie relation naming) | Partially | the `belongsToMany(School)` + `->schools()` patterns catch the app-side wiring; spatie's internal pivot name derivation is covered by removing the relation |
+| Frontend (`auth.ts` `school_id`) | **No** (PHP-only lint) | tsc + the readiness matrix (delete at drop) |
+
+### S7 parity-soak exit criteria (§3) — required BEFORE `RBAC_SINGLE_SOURCE_ACCESS` in staging
+
+Parity is "complete" only when the soak log (`school-access-parity` channel) shows:
+
+- **Coverage — every category must appear** (count per category reported, not just the total):
+  single-School user, multi-School user, super admin, zero-access user; **≥2
+  Schools**; transports **HTTP and queue** (scheduled if any School-scoped
+  scheduled job exists by then).
+- **Minimum volume:** ≥1 observation per (category × transport) cell, and enough
+  distinct users that every active School appears at least once. Report the
+  decision count and its distribution — **zero mismatches over thin coverage is
+  not evidence.**
+- **Threshold:** **zero unexplained mismatches.** Any `lost` row blocks (a
+  revocation risk → backfill). Any `gained` row must be explained (usually a role
+  granted after the legacy source lapsed) or blocks.
+
+### S7 production divergence count (§3b) — a GATE, not a re-confirmation
+
+The dev-DB 0/0 result is **not evidence** — dev's `school_user` and
+`users.school_id` were seeded together, so they agree by construction (wrong
+sample). Drift only accumulates in production, and **the soak cannot substitute
+for this count**: the soak only sees users who generate traffic in the window; a
+teacher who does not log in that week is invisible to it but still loses access at
+the drop. **Run against production, before the soak:**
+
+```sql
+-- (a) school_user rows with no matching model_has_roles row
+SELECT su.school_id, COUNT(*) AS orphan_pivot_rows
+FROM school_user su
+LEFT JOIN model_has_roles mhr
+  ON mhr.model_id = su.user_id AND mhr.model_type = 'App\\Models\\User'
+ AND mhr.school_id = su.school_id
+WHERE mhr.role_id IS NULL
+GROUP BY su.school_id;
+
+-- (b) users.school_id values with no matching role row
+SELECT u.school_id, COUNT(*) AS orphan_home_school
+FROM users u
+LEFT JOIN model_has_roles mhr
+  ON mhr.model_id = u.id AND mhr.model_type = 'App\\Models\\User'
+ AND mhr.school_id = u.school_id
+WHERE u.school_id IS NOT NULL AND mhr.role_id IS NULL
+GROUP BY u.school_id;
+```
+
+Non-zero → a **backfill decision** (the single largest S7 risk), resolved before the soak.
+
+### S7 column-drop readiness matrix (§4) — every runtime reference classified
+
+The migration cannot begin until every row is `already removed` or has a landed
+disposition **and** `runtime-zero-lint` reports 0.
+
+| File / ref | Purpose | Owner slice | Disposition |
+|---|---|---|---|
+| `ActiveSchool::id()` source-3 (`$user->school_id` ×2) | single-School context fallback | S7 Step 3 | **delete** (redundant with session/token; §5 gates) |
+| `User.php` `computeAccessibleSchoolIds` legacy branch (`$this->school_id`, `->schools()`) | legacy access union | column-drop slice | **delete** (single-source is the path) |
+| `User.php` `belongsToMany(School)` + `schools()` (sync/detach/pluck) | pivot relation + grant writes | column-drop slice | **delete relation**; grant writes move to role-only (`grantSchoolAccess` already writes roles) |
+| `SchoolAccess` `from('school_user')` branch | flag-off reader path | column-drop slice | **delete** the else branch (flag-on model_has_roles path remains) |
+| `AdminController:104` read + `:105` forceFill write | home-School maintenance | writer slice | **delete** (nothing to maintain once the column is gone) |
+| `TeacherService` `User::create([...'school_id'])` ×2 | legacy home-School stamp | writer slice | **delete the `'school_id'` key** (role grant already present) |
+| `TeacherSchoolAccessController` `->schools()->get()` / `grantSchoolAccess` | extra-School grants | column-drop slice | repoint reads to roles; grant writes already role-based |
+| commented `users.school_id` ownership checks (StudentSubject/StudentCurriculum) | dead ownership guards | column-drop slice | **delete** (redundant with SchoolScope) |
+| `auth.ts` `school_id: string` | frontend user type | column-drop slice | **delete** + audit consumers |
+| the 4 nested parent-child integrity checks | route integrity | — | **retain** (not redundant with SchoolScope) |
+
+### S7 ADR regression gates (§5) — assert when source-3 is removed
+
+When Step 3 lands, these become explicit regression tests (not assumptions):
+
+- HTTP context resolves **only** from session/token School context (no
+  users.school_id) — a request with neither yields no context, not a stale home
+  School.
+- Queue workers still honour `ActiveSchool::runFor()` (extend
+  `ActivitySchoolResolverTest` / `NoTeamLeakBetweenJobs`).
+- Console commands needing School context **fail closed** unless explicitly
+  iterating Schools (extend `SchoolScopeFailsClosed`).
+- Activity logging attributes to the effective School, not the authenticated user
+  alone (`ActivitySchoolResolverTest` already covers runFor; add a
+  session-vs-user divergence case).
+
 ### Role-gate inventory (§7.2 debt — running code, confirmed 2026-07)
 
 The result/enrollment maker–checker workflow authorizes by **role**, in

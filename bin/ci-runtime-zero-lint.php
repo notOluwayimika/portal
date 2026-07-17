@@ -15,11 +15,12 @@
  * column drop.** When the baseline hits 0, the gate becomes an absolute "never
  * again" guard.
  *
- * Coverage note: this catches READS of `->school_id` on a user variable, the
- * `school_user` table name, and raw `users.school_id`. The two remaining WRITES
- * (SuperAdmin\AdminController forceFill, TeacherService User::create) are tracked
- * by boundary-lint (`school-id-fallback-context` / maintenance-write) and the S7
- * dependency graph in docs/roadmap.md — see there for the full accounting.
+ * Coverage: reads of `->school_id` on a user variable, the `school_user` table
+ * name (explicit), AND the IMPLICIT pivot — `belongsToMany(School::class)` plus
+ * every `->schools()` consumer — so the gate cannot certify zero while
+ * `User::schools()` still resolves `school_user`. Documented blind spots (each
+ * with a compensating control) are enumerated in docs/roadmap.md §"runtime-zero
+ * blind spots"; the two column WRITES are additionally tracked by boundary-lint.
  *
  * Usage:
  *   php bin/ci-runtime-zero-lint.php            # check (CI): exit 1 on a NEW ref
@@ -34,7 +35,9 @@ $mode = $argv[1] ?? 'check';
 // legitimate other-model `->school_id` (Student, Curriculum, …) is not flagged —
 // only a USER's school_id and the school_user pivot are the removal targets.
 $patterns = [
-    '/school_user/',                             // the pivot table (any usage)
+    '/school_user/',                             // the pivot table (explicit)
+    '/belongsToMany\(School::class/',            // the IMPLICIT pivot: User::schools() resolves school_user
+    '/->schools\(\)/',                           // every consumer of that relation (implicit pivot read/write)
     '/->user\(\)->school_id/',                   // auth()/request()->user()->school_id
     '/\$user->school_id/',                        // $user->school_id read/compare
     '/\busers\.school_id\b/',                     // raw SQL / column reference

@@ -18,4 +18,3 @@ fee-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php
 school-id-fallback-context	app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
 school-id-fallback-context	app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {
 school-id-fallback-context	app/Support/ActiveSchool.php	return (int) $user->school_id;
-school-id-fallback-context	app/Support/ActivitySchoolResolver.php	if (auth()->check() && ($schoolId = auth()->user()->school_id)) {

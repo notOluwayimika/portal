@@ -14,27 +14,36 @@ use Spatie\Activitylog\Contracts\Activity as ActivityContract;
  *   - App\Http\Middleware\SetSchoolContext
  *   - App\Concerns\BelongsToSchool
  *
- * There is no app('current_school') binding in this codebase; the request
- * tenant is `session('school_id') ?? auth()->user()->school_id`.
+ * Active context is resolved through App\Support\ActiveSchool so that the
+ * runFor() override is honoured — queue workers and off-request jobs set their
+ * School via ActiveSchool::runFor(), and audit attribution must follow it rather
+ * than reading a stale session or the user's own column directly (S7 / ADR 0042).
  */
 class ActivitySchoolResolver
 {
     /**
      * Full resolution used when a new activity is being created.
      *
-     * Order: request/session context -> authed user -> causer -> subject.
-     * If nothing resolves, null is returned and the gap is logged to the
-     * dedicated `activity-log-untagged` channel for later investigation.
+     * Order: active School context (runFor override -> session -> token ->
+     * users.school_id, via ActiveSchool) -> causer -> subject. If nothing
+     * resolves, null is returned and the gap is logged to the dedicated
+     * `activity-log-untagged` channel for later investigation.
      */
     public function resolveForNewActivity(ActivityContract $activity): int|string|null
     {
-        // 1. Request context (most reliable inside HTTP requests).
-        if ($schoolId = session('school_id')) {
+        // 1. Active School context. ActiveSchool::id() prefers the runFor()
+        //    override (so workers/jobs attribute to the School they run for),
+        //    then session, then token, then the users.school_id fallback — the
+        //    single funnel every other tenant read already goes through.
+        if ($schoolId = ActiveSchool::id()) {
             return $schoolId;
         }
 
-        // 2. The authenticated user performing the action.
-        if (auth()->check() && ($schoolId = auth()->user()->school_id)) {
+        // 2. Session context WITHOUT an authenticated user. ActiveSchool::id()
+        //    short-circuits to null when no user is bound, so a pre-auth request
+        //    that nonetheless carries a selected school (e.g. during a login
+        //    flow) still attributes correctly.
+        if ($schoolId = session('school_id')) {
             return $schoolId;
         }
 

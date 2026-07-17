@@ -213,6 +213,75 @@ and reads no School-owned data. The scheduling *mechanism* (a running
 `schedule:run` cron / `schedule:work`) must be provisioned in the deploy
 environment before any Phase-2 scheduled job is relied upon.
 
+**Deployment prerequisite — the scheduler must actually run (registration ≠
+execution).** `schedule:list` proves the task is *registered*; it does not prove
+the OS invokes it. Exactly one of the following must be configured in the
+deployment environment, and its execution **verified** (e.g. observe an
+`authz:prune` run in the logs, or a scheduled `->onSuccess()`/health ping):
+
+- **cron** (one entry, calls the runner every minute):
+  `* * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1`
+- **Supervisor / systemd** long-running worker (alternative to cron):
+  `php artisan schedule:work` under a process supervisor that restarts it.
+- **Platform scheduler** (Forge "Scheduler", a Kubernetes CronJob, Envoyer/
+  Vapor scheduler, etc.) configured to run `schedule:run` every minute.
+
+**This is an environment concern the repository cannot prove.** There is no cron
+manifest, Procfile, systemd unit, or platform-scheduler config committed; the repo
+only proves *registration* (`routes/console.php` + `ScheduleTest`). Whether
+`schedule:run` is actually invoked in any environment is **not determinable from
+this repository — do not infer it is.** **Binding: observe mode must not receive
+production traffic until scheduler execution has been verified in that
+environment** — otherwise `authz_observations` grows unbounded (§5b(b) is solved
+only on paper) and the data-minimization/retention guarantees are void.
+
+### S7 — remove `users.school_id` + `school_user` (execution plan + runtime-zero gate)
+
+The last mechanical §24 item (1.2f remainder). **The runtime dependency graph
+below shows runtime-zero is NOT yet satisfied — the schema migration is therefore
+prohibited** (hard gate). Every executable reference must first be removed,
+repointed, or justified.
+
+**Runtime dependency graph (executable references, verified 2026-07):**
+
+*`users.school_id` (read/write):*
+
+- `ActiveSchool::id()` [:54-55](../app/Support/ActiveSchool.php#L54) — the fallback source (source 3). **Remove (S7 Step 3).**
+- `ActivitySchoolResolver` — **DONE (S7 Step 2):** now reads through `ActiveSchool::id()`; the direct `auth()->user()->school_id` read is gone.
+- `SuperAdmin\AdminController` [:104-105](../app/Http/Controllers/SuperAdmin/AdminController.php#L104) — reads + **writes** the column (maintenance). **Delete (S7 Step 4).**
+- `TeacherService` [:69](../app/Services/TeacherService.php#L69) — **writes** `users.school_id` on teacher creation (from `TeacherRequest`'s validated `school_id`). **Repoint** to a role/pivot grant before the column drop.
+- `User` `$fillable` [:30](../app/Models/User.php#L30) + `computeAccessibleSchoolIds()` legacy branch [:142](../app/Models/User.php#L142) + `school()` relation [:246](../app/Models/User.php#L246). Legacy branch is bypassed when `rbac.single_source_access=on`; `$fillable`/relation removed at column drop.
+- Commented ownership checks: [StudentSubjectController:227](../app/Http/Controllers/StudentSubjectController.php#L227), [StudentCurriculumController:67](../app/Http/Controllers/StudentCurriculumController.php#L67) — **delete** at drop (do not migrate).
+- Frontend type `auth.ts` `school_id: string` [resources/js/types/auth.ts](../resources/js/types/auth.ts) — remove at drop; audit consumers.
+
+*`school_user` pivot (read/write):*
+
+- `User::schools()` belongsToMany + `computeAccessibleSchoolIds()` legacy branch — bypassed by the single-source flag; removed at drop.
+- **Direct data-visibility readers (independent of the flag — the load-bearing risk):** `GuardianService` [:38](../app/Services/GuardianService.php#L38) join, `Teacher` [:54](../app/Models/Teacher.php#L54) subquery, `Guardian` [:93](../app/Models/Guardian.php#L93) subquery. These scope guardian/teacher multi-school visibility off `school_user` and are **not** covered by flipping `single_source_access`. They must be repointed to `model_has_roles` (the backfilled single source) **before** the pivot is dropped.
+- `TeacherSchoolAccessController` (writes grants) + frontend `school-checklist.tsx` / `manage-teacher-schools-dialog.tsx` (manage grants) — repoint grant-writes to the single source.
+- Backfill migration `2026_07_14_000002_backfill_guardian_school_access.php` — historical; leave.
+
+**Runtime-zero verification method:** `grep -rn --include='*.php' 'users?\.school_id\|->school_id\b\|school_user' app/ database/ routes/` restricted to executable lines (exclude comments/tests/backfill), cross-checked against a grep for `->schools()` and `auth()->user()->school_id`. **Current result: NOT zero** — the readers above remain. An arch test asserting zero `school_user` / `user->school_id` executable references should be the machine-verifiable gate before the migration.
+
+**Sequence (each step independently mergeable; STOP for review before any
+destructive change):** Step 2 (ActivitySchoolResolver) ✅ done · Step 3 remove
+`ActiveSchool` fallback · Step 4 delete `AdminController:104` write · repoint
+`TeacherService`/`GuardianService`/`Teacher`/`Guardian`/`TeacherSchoolAccess` off
+the legacy sources · Step 5 enable `rbac.single_source_access` · Step 6 **parity
+soak** (dual-compute, see below) · Step 7 rollback rehearsal · **Step 8 STOP** ·
+then column drop (working `down()`, ADR 0042 expired, boundary-lint baseline 5→1).
+
+**Parity soak must be dual-compute, not flag-flip.** `accessibleSchoolIds()` memoizes
+keyed on `single_source_access` (S3), so a single request derives one path. Real
+per-user divergence is only caught by computing **both** paths for the **same**
+request and logging mismatches (user · School · old · new · source · reason) —
+a flag-flip between runs compares different traffic and misses it. **Coverage
+clause:** zero mismatches over zero (or unrepresentative) decisions is not
+evidence; the soak log must show every user category (single/multi-School, super
+admin, zero-access), ≥2 Schools, and both HTTP and queue transports, and must
+report the decision count + distribution. **Zero mismatches *with* coverage is the
+only condition permitting the migration.**
+
 ### Role-gate inventory (§7.2 debt — running code, confirmed 2026-07)
 
 The result/enrollment maker–checker workflow authorizes by **role**, in

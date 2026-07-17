@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/Subject.php
 
 namespace App\Models;
@@ -14,12 +15,15 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Subject extends Model
 {
     use LogsActivity;
+
     protected $fillable = ['school_id', 'name', 'code'];
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::addGlobalScope(new SchoolScope);
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()
@@ -31,10 +35,12 @@ class Subject extends Model
     {
         return $this->belongsTo(School::class);
     }
+
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);
     }
+
     protected static $logName = 'academics';
 
     public function getActivitylogOptions(): LogOptions

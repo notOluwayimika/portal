@@ -22,7 +22,9 @@ class MarkingComponent extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()

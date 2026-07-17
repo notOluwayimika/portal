@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Exports\GuardianImportResultExport;
 use App\Imports\GuardianImport;
+use App\Jobs\Middleware\SchoolAware;
 use App\Models\Import;
 use App\Models\User;
 use App\Notifications\GuardianImportCompletedNotification;
@@ -16,32 +17,55 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
+use Spatie\Activitylog\CauserResolver;
 
 class ProcessGuardianImport implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 3600;
+
     public int $tries = 1;
 
-    public function __construct(public int $importId) {}
+    public function __construct(
+        public int $importId,
+        public readonly int $schoolId,
+    ) {}
+
+    public function middleware(): array
+    {
+        return [new SchoolAware];
+    }
 
     public function handle(GuardianImportService $service): void
     {
+        // The declared schoolId is the sole School context (SchoolAware ->
+        // ActiveSchool::runFor()); BelongsToSchool scoping and creating-fills
+        // resolve from it, never from an impersonated causer (§5.6).
         $import = Import::find($this->importId);
-        if (!$import) {
+        if (! $import) {
             Log::error('ProcessGuardianImport: import not found', ['id' => $this->importId]);
+
             return;
         }
 
-        // Re-establish auth context so BelongsToSchool global scope picks up the right school.
+        // Audit attribution + completion notification only — not an execution identity.
         $causer = User::find($import->user_id);
         if ($causer) {
-            auth()->setUser($causer);
+            app(CauserResolver::class)->setCauser($causer);
         }
 
+        try {
+            $this->process($import, $service, $causer);
+        } finally {
+            app(CauserResolver::class)->setCauser(null);
+        }
+    }
+
+    private function process(Import $import, GuardianImportService $service, ?User $causer): void
+    {
         $import->forceFill([
-            'status'     => 'processing',
+            'status' => 'processing',
             'started_at' => now(),
         ])->save();
 
@@ -53,13 +77,14 @@ class ProcessGuardianImport implements ShouldQueue
         } catch (\Throwable $e) {
             Log::error('ProcessGuardianImport: failed', [
                 'import_id' => $import->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             $import->forceFill([
-                'status'       => 'failed',
-                'error'        => $e->getMessage(),
+                'status' => 'failed',
+                'error' => $e->getMessage(),
                 'completed_at' => now(),
             ])->save();
+
             return;
         }
 
@@ -68,8 +93,8 @@ class ProcessGuardianImport implements ShouldQueue
         Excel::store(new GuardianImportResultExport($importer->getResults()), $reportPath);
 
         $import->forceFill([
-            'status'       => 'completed',
-            'report_path'  => $reportPath,
+            'status' => 'completed',
+            'report_path' => $reportPath,
             'completed_at' => now(),
         ])->save();
 
@@ -79,7 +104,7 @@ class ProcessGuardianImport implements ShouldQueue
             } catch (\Throwable $e) {
                 Log::error('Failed to send guardian import completion email', [
                     'import_id' => $import->id,
-                    'error'     => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }

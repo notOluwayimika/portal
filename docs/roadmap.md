@@ -45,8 +45,42 @@ against them:
 | Publicly leaked (unauthenticated) routes | 6 | **7** |
 | Permissions actually defined | 32 | **28** (19 of them never seeded at audit time) |
 
-(Jobs impersonating a causer without team context: 6 of 7 — consistent between
-both documents.)
+(Jobs impersonating a causer without team context: **6 of 7 job classes**
+verified — v10's "5 jobs" undercounted by one, reconciled in slice 1.3b, which
+retrofitted **all 7** to `SchoolAware` and removed every impersonation.)
+
+### Debt corrections & residuals (post-1.3b investigation)
+
+- **Halting-event defect (slice 1.3b.1).** `BelongsToSchool::creating`'s
+  `school_id` auto-fill (§5.2 enforcement point 2) was silently inert on 9
+  models. Root cause: Laravel's `creating` event is halting (`until()`), and
+  `AddUuid`'s arrow-fn returned the uuid (non-null), halting the chain before
+  the fill. Fixed by converting `AddUuid` to a block closure; a reflection-wide
+  conformance test now guards every `BelongsToSchool` model, and a boundary-lint
+  rule (`halting-event-arrow-fn`) prevents recurrence. No live isolation breach
+  occurred (8 of 9 tables are `school_id NOT NULL` → fail-loud; the 9th,
+  `students`, is nullable but its sole create path passes `school_id`
+  explicitly).
+- **Debt item 17 (admission/staff numbering) — correction.** Previously
+  recorded only as a *concurrency race* (racy read-then-write in
+  `HasAdmissionNumber`/`HasStaffNumber`). The same halting defect means the
+  duplicate-number **validation** `creating` hooks **never executed** on
+  `AddUuid`-first models (Student, Teacher) — a **functional-correctness gap in
+  addition to the race**. The validation hooks now run (1.3b.1); the concurrency
+  race is still owned by the Sequences slice (1.4b).
+- **Debt item 7 (SchoolScope fail-open) — residual, NOT fully complete.** 1.3b
+  fixed queued *scope application* (scoping now applies under `runFor`), but the
+  fail-closed **throw remains auth-gated**: a principal-less off-request
+  execution (an unauth scheduled command, or a future non-`SchoolAware` job with
+  no auth) still reads **unscoped** rather than throwing. Owning future slice:
+  the `users.school_id`-drop / ADR 0042 slice (make `ActiveSchool::id()`
+  transport-agnostic), or a dedicated scope-level backstop. Debt item 7 stays
+  **open**.
+- **1.3b verification note — correction.** An earlier 1.3b verification
+  attributed the non-firing auto-fill to a "test-harness dispatcher blind spot."
+  That was wrong. The cause is **halting-event ordering** (above), reproducible
+  identically in **both PHPUnit and Tinker** — the harness faithfully reflected
+  production.
 
 ## Phase-1 status (as of M1.5b)
 
@@ -60,17 +94,21 @@ same-School constraint + timezone + queue) · 1.4a (Money VO + cast + wire
 contract) · 1.5a (arch tests + boundary lint + Larastan L5) · 1.5b (this docs
 slice).
 
+**Continuous — done:** 1.3b (all 7 queueable jobs retrofitted to `SchoolAware`;
+`auth()->setUser($causer)` eliminated; `SchoolScope`/`BelongsToSchool` now
+resolve off-request context from `ActiveSchool::runFor()`).
+
 **Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
-ADR 0042's debt) · 1.3b (retrofit 5 legacy jobs) · fail-closed per-model
-enablement (gated on 1.3b) · 1.4b–e (Sequences, audit immutability,
+ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
+per-model request-path audit remains the gate) · 1.4b–e (Sequences, audit immutability,
 observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-hoc
 `toLocaleString` rendering exists today).
 
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
 default, verified) · `rbac.single_source_access` (off; parity-gated) ·
-`rbac.fail_closed_models` (empty; per-model, gated on 1.3b for job-touched
-models).
+`rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
+longer blocks any model; each enablement still needs its request-path audit).
 
 ## Governance — current state (not intent)
 

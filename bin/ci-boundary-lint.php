@@ -115,6 +115,16 @@ foreach ($app as [$rel, $line]) {
         && preg_match('/(withoutGlobalScopes?\(|withoutSchoolScope\(|->hasRole\(|auth\(\)->setUser\(|DB::table\()/', $line)) {
         $add('finance-escape-hatches', $rel, $line);
     }
+
+    // halting-event-arrow-fn — Laravel's creating/updating/saving/deleting events
+    // are HALTING (dispatched via until()): a listener returning a non-null value
+    // silently stops the rest of the chain. An arrow fn `fn(...) => expr` always
+    // returns `expr`, so registering one for a halting event is a latent
+    // chain-halt (this is exactly how AddUuid halted BelongsToSchool's auto-fill).
+    // Register halting-event listeners with a block closure that returns nothing.
+    if (preg_match('/(static::|->)(creating|updating|saving|deleting)\(\s*fn\b/', $line)) {
+        $add('halting-event-arrow-fn', $rel, $line);
+    }
 }
 
 foreach ($tests as [$rel, $line]) {
@@ -147,6 +157,8 @@ if ($mode === 'generate') {
 #   to remove there.
 # fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
 #   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
+# halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
+#   uses a block closure, so the rule is pure enforcement (no exceptions).
 
 TXT;
     file_put_contents($baselinePath, $header.($found ? implode("\n", $found)."\n" : ''));

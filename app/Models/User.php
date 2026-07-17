@@ -48,7 +48,9 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     private ?bool $isSuperAdminMemo = null;

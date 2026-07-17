@@ -43,7 +43,9 @@ class Curriculum extends Model
     protected static function booted(): void
     {
         static::addGlobalScope(new SchoolScope);
-        static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()

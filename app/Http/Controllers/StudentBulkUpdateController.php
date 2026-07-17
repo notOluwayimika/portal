@@ -8,6 +8,7 @@ use App\Imports\StudentBulkUpdate;
 use App\Jobs\ProcessStudentBulkUpdate;
 use App\Models\Import;
 use App\Services\StudentBulkUpdateService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -24,7 +25,7 @@ class StudentBulkUpdateController extends Controller
             'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
         ]);
 
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
 
         $file = $request->file('file');
         $filePath = $file->store("imports/inbox/{$schoolId}");
@@ -32,12 +33,12 @@ class StudentBulkUpdateController extends Controller
         $totalRows = $this->countRows(Storage::path($filePath));
 
         $import = Import::create([
-            'school_id'  => $schoolId,
-            'user_id'    => $request->user()->id,
-            'type'       => 'student_bulk_update',
-            'file_name'  => $file->getClientOriginalName(),
-            'file_path'  => $filePath,
-            'status'     => 'queued',
+            'school_id' => $schoolId,
+            'user_id' => $request->user()->id,
+            'type' => 'student_bulk_update',
+            'file_name' => $file->getClientOriginalName(),
+            'file_path' => $filePath,
+            'status' => 'queued',
             'total_rows' => $totalRows,
         ]);
 
@@ -45,7 +46,7 @@ class StudentBulkUpdateController extends Controller
             $this->runSync($import);
             $import->refresh();
         } else {
-            ProcessStudentBulkUpdate::dispatch($import->id);
+            ProcessStudentBulkUpdate::dispatch($import->id, $import->school_id);
         }
 
         return response()->json(['import' => $this->serialize($import)]);
@@ -53,12 +54,13 @@ class StudentBulkUpdateController extends Controller
 
     public function template(Request $request)
     {
-        return Excel::download(new StudentBulkUpdateTemplateExport(), 'student-bulk-update-template.xlsx');
+        return Excel::download(new StudentBulkUpdateTemplateExport, 'student-bulk-update-template.xlsx');
     }
 
     public function status(Request $request, Import $import)
     {
         $this->authorizeSchool($request, $import);
+
         return response()->json(['import' => $this->serialize($import)]);
     }
 
@@ -66,7 +68,7 @@ class StudentBulkUpdateController extends Controller
     {
         $this->authorizeSchool($request, $import);
 
-        if (!$import->report_path || !Storage::exists($import->report_path)) {
+        if (! $import->report_path || ! Storage::exists($import->report_path)) {
             abort(404, 'Report is not available yet.');
         }
 
@@ -83,7 +85,7 @@ class StudentBulkUpdateController extends Controller
             ->get();
 
         return response()->json([
-            'data' => $imports->map(fn(Import $i) => $this->serialize($i)),
+            'data' => $imports->map(fn (Import $i) => $this->serialize($i)),
         ]);
     }
 
@@ -98,10 +100,11 @@ class StudentBulkUpdateController extends Controller
             Excel::import($importer, Storage::path($import->file_path));
         } catch (\Throwable $e) {
             $import->forceFill([
-                'status'       => 'failed',
-                'error'        => $e->getMessage(),
+                'status' => 'failed',
+                'error' => $e->getMessage(),
                 'completed_at' => now(),
             ])->save();
+
             return;
         }
 
@@ -109,15 +112,15 @@ class StudentBulkUpdateController extends Controller
         Excel::store(new StudentBulkUpdateResultExport($importer->getResults()), $reportPath);
 
         $import->forceFill([
-            'status'       => 'completed',
-            'report_path'  => $reportPath,
+            'status' => 'completed',
+            'report_path' => $reportPath,
             'completed_at' => now(),
         ])->save();
     }
 
     private function authorizeSchool(Request $request, Import $import): void
     {
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
         abort_unless($import->school_id === $schoolId, 404);
     }
 
@@ -134,10 +137,16 @@ class StudentBulkUpdateController extends Controller
             $dataRows = array_slice($sheet, 1);
             $nonEmpty = array_filter($dataRows, function ($row) {
                 foreach ((array) $row as $value) {
-                    if ($value === null) continue;
-                    if (is_string($value) && trim($value) === '') continue;
+                    if ($value === null) {
+                        continue;
+                    }
+                    if (is_string($value) && trim($value) === '') {
+                        continue;
+                    }
+
                     return true;
                 }
+
                 return false;
             });
 
@@ -150,19 +159,19 @@ class StudentBulkUpdateController extends Controller
     private function serialize(Import $import): array
     {
         return [
-            'uuid'           => $import->uuid,
-            'file_name'      => $import->file_name,
-            'status'         => $import->status,
-            'total_rows'     => $import->total_rows,
+            'uuid' => $import->uuid,
+            'file_name' => $import->file_name,
+            'status' => $import->status,
+            'total_rows' => $import->total_rows,
             'processed_rows' => $import->processed_rows,
-            'succeeded'      => $import->succeeded,
-            'failed'         => $import->failed,
-            'skipped'        => $import->skipped,
-            'started_at'     => $import->started_at?->toIso8601String(),
-            'completed_at'   => $import->completed_at?->toIso8601String(),
-            'created_at'     => $import->created_at?->toIso8601String(),
-            'has_report'     => (bool) $import->report_path,
-            'error'          => $import->error,
+            'succeeded' => $import->succeeded,
+            'failed' => $import->failed,
+            'skipped' => $import->skipped,
+            'started_at' => $import->started_at?->toIso8601String(),
+            'completed_at' => $import->completed_at?->toIso8601String(),
+            'created_at' => $import->created_at?->toIso8601String(),
+            'has_report' => (bool) $import->report_path,
+            'error' => $import->error,
         ];
     }
 }

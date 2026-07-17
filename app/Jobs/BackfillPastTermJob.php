@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\StudentStatusEnum;
 use App\Enums\StudentSubjectStatus;
 use App\Enums\TermStatusEnum;
+use App\Jobs\Middleware\SchoolAware;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\Scopes\SchoolScope;
@@ -19,6 +20,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Spatie\Activitylog\CauserResolver;
 
 /**
  * Mirror an active curriculum's structure into a past (completed) term so
@@ -47,7 +49,13 @@ class BackfillPastTermJob implements ShouldQueue
         public readonly Curriculum $sourceCurriculum,
         public readonly Term $targetTerm,
         public readonly int $causedByUserId,
+        public readonly int $schoolId,
     ) {}
+
+    public function middleware(): array
+    {
+        return [new SchoolAware];
+    }
 
     public function handle(): void
     {
@@ -55,16 +63,22 @@ class BackfillPastTermJob implements ShouldQueue
             return;
         }
 
+        // Audit attribution only — never auth()->setUser() (§5.6). School
+        // context comes solely from the declared schoolId via SchoolAware.
         $causer = User::find($this->causedByUserId);
         if ($causer) {
-            auth()->setUser($causer);
+            app(CauserResolver::class)->setCauser($causer);
         }
 
-        DB::transaction(function () {
-            $targetCurriculum = $this->resolveTargetCurriculum();
-            $subjectMap = $this->cloneCurriculumSubjects($targetCurriculum);
-            $this->enrollStudents($targetCurriculum, $subjectMap);
-        });
+        try {
+            DB::transaction(function () {
+                $targetCurriculum = $this->resolveTargetCurriculum();
+                $subjectMap = $this->cloneCurriculumSubjects($targetCurriculum);
+                $this->enrollStudents($targetCurriculum, $subjectMap);
+            });
+        } finally {
+            app(CauserResolver::class)->setCauser(null);
+        }
     }
 
     private function passesGuards(): bool
@@ -81,6 +95,9 @@ class BackfillPastTermJob implements ShouldQueue
             return false;
         };
 
+        if ($this->schoolId !== (int) $source->school_id) {
+            return $abort('declared schoolId does not match the source curriculum school');
+        }
         if ($source->is_ccm === true) {
             return $abort('source curriculum is CCM');
         }

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\StudentSubjectStatus;
+use App\Jobs\Middleware\SchoolAware;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\MarkingComponent;
@@ -21,6 +22,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\CauserResolver;
 
 class MoveFromCcmJob implements ShouldQueue
 {
@@ -33,7 +35,13 @@ class MoveFromCcmJob implements ShouldQueue
     public function __construct(
         public readonly Curriculum $curriculum,
         public readonly int $causedByUserId,
+        public readonly int $schoolId,
     ) {}
+
+    public function middleware(): array
+    {
+        return [new SchoolAware];
+    }
 
     public function handle(): void
     {
@@ -45,20 +53,34 @@ class MoveFromCcmJob implements ShouldQueue
             return;
         }
 
-        $causer = User::find($this->causedByUserId);
-        if ($causer) {
-            auth()->setUser($causer);
+        if ($this->schoolId !== (int) $this->curriculum->school_id) {
+            Log::warning('MoveFromCcmJob: declared schoolId does not match the curriculum school, aborting', [
+                'curriculum_id' => $this->curriculum->id,
+            ]);
+
+            return;
         }
 
-        DB::transaction(function () {
-            $curriculum = $this->curriculum;
+        // Audit attribution only — never auth()->setUser() (§5.6). School
+        // context comes solely from the declared schoolId via SchoolAware.
+        $causer = User::find($this->causedByUserId);
+        if ($causer) {
+            app(CauserResolver::class)->setCauser($causer);
+        }
 
-            $targetCurriculum = $this->resolveTargetCurriculum($curriculum);
-            $curriculum->update(['status' => 'closed']);
-            $subjectMap = $this->cloneCurriculumSubjects($curriculum, $targetCurriculum);
+        try {
+            DB::transaction(function () {
+                $curriculum = $this->curriculum;
 
-            $this->migrateStudents($curriculum, $targetCurriculum, $subjectMap);
-        });
+                $targetCurriculum = $this->resolveTargetCurriculum($curriculum);
+                $curriculum->update(['status' => 'closed']);
+                $subjectMap = $this->cloneCurriculumSubjects($curriculum, $targetCurriculum);
+
+                $this->migrateStudents($curriculum, $targetCurriculum, $subjectMap);
+            });
+        } finally {
+            app(CauserResolver::class)->setCauser(null);
+        }
     }
 
     /**

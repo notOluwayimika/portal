@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/Score.php
 
 namespace App\Models;
@@ -12,6 +13,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Score extends Model
 {
     use LogsActivity;
+
     protected $fillable = [
         'student_id',
         'curriculum_subject_id',
@@ -28,7 +30,9 @@ class Score extends Model
      */
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
         static::saving(function (Score $score) {
             $status = SubjectResultStatus::where('curriculum_subject_id', $score->curriculum_subject_id)
                 ->value('status');
@@ -48,14 +52,17 @@ class Score extends Model
     {
         return $this->belongsTo(Student::class);
     }
+
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
+
     public function markingComponent(): BelongsTo
     {
         return $this->belongsTo(MarkingComponent::class);
     }
+
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

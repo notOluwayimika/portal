@@ -1,6 +1,11 @@
 <?php
 
+use App\Models\Guardian;
+use App\Models\Role;
+use App\Models\School;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /*
@@ -53,11 +58,11 @@ function something()
  * Create a School row. The project has no SchoolFactory, and School only
  * needs name + slug (uuid is auto-generated in the model's booted hook).
  */
-function al_makeSchool(): \App\Models\School
+function al_makeSchool(): School
 {
-    return \App\Models\School::create([
-        'name' => 'Test School ' . \Illuminate\Support\Str::random(6),
-        'slug' => (string) \Illuminate\Support\Str::uuid(),
+    return School::create([
+        'name' => 'Test School '.Str::random(6),
+        'slug' => (string) Str::uuid(),
     ]);
 }
 
@@ -66,27 +71,77 @@ function al_makeSchool(): \App\Models\School
  * the schema (it inserts a `name` column that doesn't exist), so tests
  * build users from the real columns instead.
  */
-function al_makeUser(int|string $schoolId): \App\Models\User
+function al_makeUser(int|string $schoolId): User
 {
-    return \App\Models\User::forceCreate([
-        'uuid'       => (string) \Illuminate\Support\Str::uuid(),
+    return User::forceCreate([
+        'uuid' => (string) Str::uuid(),
         'first_name' => 'Test',
-        'last_name'  => 'User ' . \Illuminate\Support\Str::random(5),
-        'email'      => \Illuminate\Support\Str::uuid() . '@example.test',
-        'password'   => bcrypt('password'),
-        'school_id'  => $schoolId,
+        'last_name' => 'User '.Str::random(5),
+        'email' => Str::uuid().'@example.test',
+        'password' => bcrypt('password'),
+        'school_id' => $schoolId,
     ]);
 }
 
-function al_makeGuardian(int|string $schoolId, int|string $userId): \App\Models\Guardian
+function al_makeGuardian(int|string $schoolId, int|string $userId): Guardian
 {
-    return \App\Models\Guardian::forceCreate([
-        'uuid'       => (string) \Illuminate\Support\Str::uuid(),
-        'school_id'  => $schoolId,
-        'user_id'    => $userId,
+    return Guardian::forceCreate([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $schoolId,
+        'user_id' => $userId,
         'first_name' => 'Guardian',
-        'last_name'  => 'Test',
-        'phone'      => '0800' . random_int(1000000, 9999999),
-        'status'     => 'active',
+        'last_name' => 'Test',
+        'phone' => '0800'.random_int(1000000, 9999999),
+        'status' => 'active',
     ]);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Authentication scenario helpers
+|--------------------------------------------------------------------------
+|
+| Express the supported multi-School authentication scenarios (§6.5, §7.1)
+| instead of hand-assembling RBAC state in every test. School access is granted
+| through the real path (grantSchoolAccess = school_user pivot + per-team role),
+| so these hold under both the legacy union and the single-source path.
+*/
+
+/** A user with exactly one accessible School. */
+function singleSchoolUser(array $attributes = []): User
+{
+    $school = al_makeSchool();
+    $user = User::factory()->create(array_merge(['school_id' => $school->id], $attributes));
+    $user->grantSchoolAccess($school, 'admin');
+
+    return $user;
+}
+
+/** A user with several accessible Schools and no default context (must pick one). */
+function multiSchoolUser(int $schools = 2, array $attributes = []): User
+{
+    $user = User::factory()->create($attributes); // no school_id: access via grants only
+    foreach (range(1, $schools) as $ignored) {
+        $user->grantSchoolAccess(al_makeSchool(), 'admin');
+    }
+
+    return $user;
+}
+
+/** A platform super admin (global context, no School). */
+function superAdminUser(array $attributes = []): User
+{
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $user = User::factory()->create($attributes);
+    setPermissionsTeamId(null);
+    $user->assignRole('super_admin');
+    $user->flushSchoolAccessCache();
+
+    return $user;
+}
+
+/** A user with zero accessible Schools (no pivot, no role, no school_id). */
+function userWithNoAccessibleSchools(array $attributes = []): User
+{
+    return User::factory()->create(array_merge(['school_id' => null], $attributes));
 }

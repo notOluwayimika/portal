@@ -1,11 +1,11 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Fortify\Features;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->skipUnlessFortifyHas(Features::emailVerification());
@@ -14,7 +14,7 @@ beforeEach(function () {
 test('sends verification notification', function () {
     Notification::fake();
 
-    $user = User::factory()->unverified()->create();
+    $user = singleSchoolUser(['email_verified_at' => null]);
 
     $this->actingAs($user)
         ->post(route('verification.send'))
@@ -26,7 +26,7 @@ test('sends verification notification', function () {
 test('does not send verification notification if email is verified', function () {
     Notification::fake();
 
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $this->actingAs($user)
         ->post(route('verification.send'))

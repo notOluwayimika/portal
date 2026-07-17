@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Actions\Fortify\UpdateUserProfileInformation;
@@ -41,7 +40,8 @@ class FortifyServiceProvider extends ServiceProvider
 
     private function configureActions(): void
     {
-        Fortify::createUsersUsing(CreateNewUser::class);
+        // Self-registration is disabled (no register route), so createUsersUsing()
+        // was dead wiring and is removed. Users are administrator-created.
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
         Fortify::updateUserProfileInformationUsing(UpdateUserProfileInformation::class);

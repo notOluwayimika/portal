@@ -63,9 +63,19 @@ return [
         // schools and admins; admins provision everyone else.
         // Features::registration(),
         Features::resetPasswords(),
-        Features::emailVerification(),
+        // Email verification is intentionally NOT enabled: registration is
+        // disabled and users are administrator-created, so MustVerifyEmail adds
+        // little today. The email_verified_at column and the reset-on-email-change
+        // behaviour are retained (see UpdateUserProfileInformation /
+        // Settings\ProfileController) for future self-onboarding work.
         Features::updateProfileInformation(),
         Features::updatePasswords(),
-        Features::twoFactorAuthentication(),
+        // confirm: users must prove a working authenticator before enrolment
+        // completes. confirmPassword: a hijacked session cannot disable 2FA
+        // without re-entering the password.
+        Features::twoFactorAuthentication([
+            'confirm' => true,
+            'confirmPassword' => true,
+        ]),
     ],
 ];

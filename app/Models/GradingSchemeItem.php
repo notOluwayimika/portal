@@ -12,7 +12,9 @@ class GradingSchemeItem extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn (self $item) => $item->uuid ??= (string) Str::uuid());
+        static::creating(function (self $item) {
+            $item->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName(): string

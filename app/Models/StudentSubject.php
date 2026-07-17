@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/StudentSubject.php
 
 namespace App\Models;
@@ -9,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class StudentSubject extends Model
@@ -25,7 +27,7 @@ class StudentSubject extends Model
         'restored_by_user_id',
         'restored_at',
         'comment',
-        'commented_by'
+        'commented_by',
     ];
 
     protected $casts = [
@@ -36,7 +38,9 @@ class StudentSubject extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()
@@ -82,7 +86,7 @@ class StudentSubject extends Model
 
     public function isOptional(): bool
     {
-        return $this->curriculumSubject && !$this->curriculumSubject->is_compulsory;
+        return $this->curriculumSubject && ! $this->curriculumSubject->is_compulsory;
     }
 
     public function isCompulsory(): bool
@@ -116,7 +120,7 @@ class StudentSubject extends Model
             ->logOnlyDirty();
     }
 
-    public function beforeActivityLogged(\Spatie\Activitylog\Models\Activity $activity, string $eventName): void
+    public function beforeActivityLogged(Activity $activity, string $eventName): void
     {
         $subjectName = optional($this->curriculumSubject?->subject)->name ?? 'Unknown subject';
         $studentName = optional($this->studentCurriculum?->student)->full_name ?? 'Unknown student';

@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/TeacherCurriculumSubject.php
 
 namespace App\Models;
@@ -12,11 +13,14 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class TeacherCurriculumSubject extends Model
 {
     use LogsActivity;
+
     protected $fillable = ['teacher_id', 'curriculum_subject_id'];
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()
@@ -28,6 +32,7 @@ class TeacherCurriculumSubject extends Model
     {
         return $this->belongsTo(Teacher::class, 'teacher_id');
     }
+
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
@@ -41,6 +46,7 @@ class TeacherCurriculumSubject extends Model
             ->logOnly(['status', 'total_score', 'grade'])
             ->logOnlyDirty();
     }
+
     public function beforeActivityLogged(Activity $activity, string $eventName): void
     {
         $teacherName = $this->teacher->full_name ?? 'Unknown student';

@@ -157,12 +157,8 @@ if ($mode === 'generate') {
 #   to remove there.
 # fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
 #   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
-# halting-event-arrow-fn entries are pre-existing per-model `creating(fn => uuid)`
-#   setters. They are currently HARMLESS (each is the last creating hook in its
-#   model, so it halts nothing — proven by BelongsToSchoolConformanceTest), but
-#   they are latent chain-halts. Convert each to a block closure opportunistically;
-#   the baseline may only shrink. The live defect (AddUuid, which DID halt
-#   BelongsToSchool) is fixed, not baselined.
+# halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
+#   uses a block closure, so the rule is pure enforcement (no exceptions).
 
 TXT;
     file_put_contents($baselinePath, $header.($found ? implode("\n", $found)."\n" : ''));

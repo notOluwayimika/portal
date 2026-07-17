@@ -12,36 +12,9 @@
 #   to remove there.
 # fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
 #   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
-# halting-event-arrow-fn entries are pre-existing per-model `creating(fn => uuid)`
-#   setters. They are currently HARMLESS (each is the last creating hook in its
-#   model, so it halts nothing — proven by BelongsToSchoolConformanceTest), but
-#   they are latent chain-halts. Convert each to a block closure opportunistically;
-#   the baseline may only shrink. The live defect (AddUuid, which DID halt
-#   BelongsToSchool) is fixed, not baselined.
+# halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
+#   uses a block closure, so the rule is pure enforcement (no exceptions).
 fee-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php	foreach (['fee_invoices', 'fee_payments', 'fee_structures'] as $table) {
-halting-event-arrow-fn	app/Models/AcademicSession.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Arm.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/AuditLog.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/ClassLevel.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/ClassLevelArm.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Curriculum.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/CurriculumSubject.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/ExamType.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/GradeBoundary.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/GradingSchemeItem.php	static::creating(fn (self $item) => $item->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/MarkingComponent.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/MarkingScheme.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Permission.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Role.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/School.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Score.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/StudentResult.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/StudentSubject.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Subject.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/SubjectResultStatus.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/TeacherCurriculumSubject.php	static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/Term.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
-halting-event-arrow-fn	app/Models/User.php	static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
 school-id-fallback-context	app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
 school-id-fallback-context	app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {
 school-id-fallback-context	app/Support/ActiveSchool.php	return (int) $user->school_id;

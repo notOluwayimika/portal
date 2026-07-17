@@ -72,14 +72,14 @@ it('carries over optional subjects from the previous active enrollment', functio
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     $term = Term::create([
         'academic_session_id' => $session->id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -89,7 +89,7 @@ it('carries over optional subjects from the previous active enrollment', functio
     $examType = ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 
     $curriculumA = sco_curriculum($school, $jss1, $term, $examType);
@@ -109,7 +109,7 @@ it('carries over optional subjects from the previous active enrollment', functio
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     // Enrolling in curriculum A auto-attaches compulsory Mathematics.
@@ -158,14 +158,14 @@ it('does not carry over optional subjects when none exist on the previous enroll
     $session = AcademicSession::create([
         'school_id' => $school->id,
         'name' => 'Test Session',
-        'slug' => 'session-' . Str::random(8),
+        'slug' => 'session-'.Str::random(8),
         'is_current' => true,
     ]);
 
     $term = Term::create([
         'academic_session_id' => $session->id,
         'name' => 'First Term',
-        'slug' => 'term-' . Str::random(8),
+        'slug' => 'term-'.Str::random(8),
         'order' => 1,
         'start_date' => now()->subMonth(),
         'end_date' => now()->addMonths(2),
@@ -175,7 +175,7 @@ it('does not carry over optional subjects when none exist on the previous enroll
     $examType = ExamType::create([
         'school_id' => $school->id,
         'name' => 'Internal Exam',
-        'slug' => 'exam-' . Str::random(8),
+        'slug' => 'exam-'.Str::random(8),
     ]);
 
     $curriculumA = sco_curriculum($school, $jss1, $term, $examType);
@@ -193,7 +193,7 @@ it('does not carry over optional subjects when none exist on the previous enroll
         'first_name' => 'Student',
         'last_name' => Str::random(6),
         'gender' => 'male',
-        'admission_number' => 'ADM-' . Str::random(8),
+        'admission_number' => 'ADM-'.Str::random(8),
     ]);
 
     $enrollmentA = StudentCurriculum::create([
@@ -220,4 +220,61 @@ it('does not carry over optional subjects when none exist on the previous enroll
         ->exists())->toBeFalse();
 
     expect($enrollmentA)->not->toBeNull();
+});
+
+// §3b (slice 1.3b.1 follow-up): StudentCurriculum uses AddUuid; confirm its
+// observer still fires after the AddUuid halting-event fix. The observer's
+// `created` hook (non-halting) auto-attaches compulsory subjects — a bare
+// enrollment gaining its compulsory subject proves `created` ran.
+it('fires StudentCurriculumObserver::created after the AddUuid fix (auto-attaches compulsory subjects)', function () {
+    $school = al_makeSchool();
+    auth()->setUser(al_makeUser($school->id));
+
+    $session = AcademicSession::create([
+        'school_id' => $school->id,
+        'name' => 'Test Session',
+        'slug' => 'session-'.Str::random(8),
+        'is_current' => true,
+    ]);
+    $term = Term::create([
+        'academic_session_id' => $session->id,
+        'name' => 'First Term',
+        'slug' => 'term-'.Str::random(8),
+        'order' => 1,
+        'start_date' => now()->subMonth(),
+        'end_date' => now()->addMonths(2),
+        'status' => 'active',
+    ]);
+    $examType = ExamType::create([
+        'school_id' => $school->id,
+        'name' => 'Internal Exam',
+        'slug' => 'exam-'.Str::random(8),
+    ]);
+    $curriculum = sco_curriculum($school, sco_classLevelArm($school, 'JSS1'), $term, $examType);
+
+    $math = CurriculumSubject::create([
+        'curriculum_id' => $curriculum->id,
+        'subject_id' => Subject::create(['school_id' => $school->id, 'name' => 'Mathematics'])->id,
+        'is_compulsory' => true,
+        'active' => true,
+    ]);
+
+    $student = Student::create([
+        'school_id' => $school->id,
+        'first_name' => 'Observer',
+        'last_name' => Str::random(6),
+        'gender' => 'male',
+    ]);
+
+    // Bare enrollment — no subjects attached explicitly.
+    $enrollment = StudentCurriculum::create([
+        'student_id' => $student->id,
+        'curriculum_id' => $curriculum->id,
+        'status' => 'active',
+    ]);
+
+    // Only the observer's created() hook attaches the compulsory subject.
+    expect(StudentSubject::where('student_curriculum_id', $enrollment->id)
+        ->where('curriculum_subject_id', $math->id)
+        ->exists())->toBeTrue();
 });

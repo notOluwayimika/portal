@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/GradeBoundary.php
 
 namespace App\Models;
@@ -13,6 +14,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class GradeBoundary extends Model
 {
     use LogsActivity;
+
     protected $fillable = ['school_id', 'exam_type_id', 'min_score', 'max_score', 'grade', 'label', 'grade_point'];
 
     protected $casts = [
@@ -22,8 +24,10 @@ class GradeBoundary extends Model
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new SchoolScope());
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::addGlobalScope(new SchoolScope);
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()
@@ -35,6 +39,7 @@ class GradeBoundary extends Model
     {
         return $this->belongsTo(School::class);
     }
+
     public function examType(): BelongsTo
     {
         return $this->belongsTo(ExamType::class);
@@ -47,7 +52,7 @@ class GradeBoundary extends Model
     public static function resolveGrade(string $schoolId, ?string $examTypeId, float $totalScore): ?string
     {
         return static::where('school_id', $schoolId)
-            ->where(fn($q) => $q->where('exam_type_id', $examTypeId)->orWhereNull('exam_type_id'))
+            ->where(fn ($q) => $q->where('exam_type_id', $examTypeId)->orWhereNull('exam_type_id'))
             ->where('min_score', '<=', $totalScore)
             ->where('max_score', '>', $totalScore)
             ->orderByRaw('exam_type_id IS NULL ASC') // exam-type-specific first

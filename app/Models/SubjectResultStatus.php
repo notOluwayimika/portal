@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/SubjectResultStatus.php
 
 namespace App\Models;
@@ -12,6 +13,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class SubjectResultStatus extends Model
 {
     use LogsActivity;
+
     protected $fillable = [
         'curriculum_subject_id',
         'status',
@@ -29,7 +31,9 @@ class SubjectResultStatus extends Model
 
     protected static function booted(): void
     {
-        static::creating(fn($model) => $model->uuid ??= (string) Str::uuid());
+        static::creating(function ($model) {
+            $model->uuid ??= (string) Str::uuid();
+        });
     }
 
     public function getRouteKeyName()
@@ -41,6 +45,7 @@ class SubjectResultStatus extends Model
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
+
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
@@ -53,7 +58,7 @@ class SubjectResultStatus extends Model
 
     public function transitionTo(string $newStatus, string $actorId, ?string $reason = null): void
     {
-        if (!$this->canTransitionTo($newStatus)) {
+        if (! $this->canTransitionTo($newStatus)) {
             throw new \DomainException("Cannot transition from [{$this->status}] to [{$newStatus}].");
         }
 

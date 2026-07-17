@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useInitials } from '@/hooks/use-initials';
 import type { Guardian } from '@/types/models';
 
-type SortCol = 'name' | 'phone' | 'students_count' | 'created_at';
+type SortCol = 'name' | 'phone' | 'students_count' | 'login' | 'created_at';
 
 interface GuardianTableProps {
     guardians: Guardian[];
@@ -89,7 +89,7 @@ export function GuardianTable({
                         <SortBtn col="phone" label="Phone" />
                         <th className="hidden px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase sm:table-cell whitespace-nowrap">Email</th>
                         <SortBtn col="students_count" label="Children" />
-                        <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase whitespace-nowrap">Login</th>
+                        <SortBtn col="login" label="Login" />
                         <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase whitespace-nowrap">Status</th>
                         <SortBtn col="created_at" label="Created" hidden />
                         <th className="px-3 py-2 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase whitespace-nowrap">Actions</th>

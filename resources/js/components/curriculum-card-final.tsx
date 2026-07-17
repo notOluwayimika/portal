@@ -36,8 +36,10 @@ type CurriculumCardFinalProps = CurriculumCardProps & {
 
 function ResultSignatureBlock({
     signature,
+    showCaption = true,
 }: {
     signature?: ResultSignature | null;
+    showCaption?: boolean;
 }) {
     if (!signature) {
         return null;
@@ -51,7 +53,7 @@ function ResultSignatureBlock({
                 className="h-10 w-auto object-contain sm:h-16"
                 draggable={false}
             />
-            <p>{signature.label}</p>
+            {showCaption && <p>{signature.label}</p>}
             {signature.approval_date && (
                 <p>Approval date: {fmtDate(signature.approval_date)}</p>
             )}
@@ -466,10 +468,13 @@ function NumericCurriculumCardFinal({
                 {resultSignature && (
                     <>
                         <div className="col-span-1 border font-bold">
-                            Result Approval:
+                            {resultSignature.label}
                         </div>
                         <div className="col-span-3 border">
-                            <ResultSignatureBlock signature={resultSignature} />
+                            <ResultSignatureBlock
+                                signature={resultSignature}
+                                showCaption={false}
+                            />
                         </div>
                     </>
                 )}
@@ -605,10 +610,13 @@ function CategoricalCurriculumCard({
                 {resultSignature && (
                     <>
                         <div className="col-span-1 border font-bold">
-                            Result Approval:
+                            {resultSignature.label}
                         </div>
                         <div className="col-span-3 border">
-                            <ResultSignatureBlock signature={resultSignature} />
+                            <ResultSignatureBlock
+                                signature={resultSignature}
+                                showCaption={false}
+                            />
                         </div>
                     </>
                 )}

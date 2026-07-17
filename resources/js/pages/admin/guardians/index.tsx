@@ -18,7 +18,7 @@ interface Props {
     guardian_statuses: Option[];
 }
 
-type SortCol = 'name' | 'phone' | 'students_count' | 'created_at';
+type SortCol = 'name' | 'phone' | 'students_count' | 'login' | 'created_at';
 
 const DEFAULT_PAGINATION = {
     current_page: 1, last_page: 1, per_page: 25,

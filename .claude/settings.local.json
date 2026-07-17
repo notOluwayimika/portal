@@ -10,7 +10,16 @@
       "Bash(rtk npx *)",
       "Bash(rtk vitest *)",
       "Skill(dataviz)",
-      "Skill(dataviz:*)"
+      "Skill(dataviz:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(pnpm install *)",
+      "Bash(pnpm store *)",
+      "Bash(cd /Users/oluwayimika/Documents/portal; find /Users/oluwayimika/Library/pnpm/store/v11 -path \"*eventemitter3*\" -name \"package.json\" 2>/dev/null | head; echo \"=== index in store ===\"; find /Users/oluwayimika/Library/pnpm/store/v11 -name \"*eventemitter3*5.0.4*\" 2>/dev/null | head)",
+      "Read(//Users/oluwayimika/Library/pnpm/store/v11/**)",
+      "Bash(pnpm build *)",
+      "Bash(grep -rn \"year-average\\\\|/teachers\\\\`\\\\|curriculum-subjects/\\\\${\" resources/js --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(echo \"exit $?\")",
+      "Bash(npx tsc *)"
     ]
   }
 }

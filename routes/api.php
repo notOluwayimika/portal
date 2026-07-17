@@ -155,11 +155,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_tea
     Route::prefix('students/{student:uuid}/enrollments/{studentCurriculum:uuid}')
         ->withoutScopedBindings()
         ->group(function () {
-            Route::get('subjects', [StudentSubjectController::class, 'index']);
+            // GET subjects + subjects/history are declared in the principal-inclusive
+            // read group below; the write routes (store/drop/restore/end) stay here.
             Route::post('subjects', [StudentSubjectController::class, 'store']);
             Route::patch('subjects/{studentSubject:uuid}/drop', [StudentSubjectController::class, 'drop'])->withoutScopedBindings();
             Route::patch('subjects/{studentSubject:uuid}/restore', [StudentSubjectController::class, 'restore']);
-            Route::get('subjects/history', [StudentSubjectController::class, 'history']);
             Route::patch('end', [StudentCurriculumController::class, 'unenroll']);
         });
 
@@ -257,14 +257,27 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {
     // protected guardian routes
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
     Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
     Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian'])->group(function () {
+// Read-only student data also available to principals (oversight role). The
+// matching write routes (store/update/delete, subject add/drop/restore) stay in
+// their admin-scoped groups above, so principals cannot mutate these records.
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_teacher|principal'])->group(function () {
+    Route::get('/students', [StudentController::class, 'index']);
+    Route::get('/students/{student:uuid}', [StudentController::class, 'show']);
+
+    Route::get('students/{student:uuid}/enrollments/{studentCurriculum:uuid}/subjects', [StudentSubjectController::class, 'index'])
+        ->withoutScopedBindings();
+    Route::get('students/{student:uuid}/enrollments/{studentCurriculum:uuid}/subjects/history', [StudentSubjectController::class, 'history'])
+        ->withoutScopedBindings();
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian|principal'])->group(function () {
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
     Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);

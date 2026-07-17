@@ -93,6 +93,10 @@ function isSyntheticEmail(email?: string | null): boolean {
 export default function StudentProfile() {
     const { student: studentWrapper } = usePage<ShowPageProps>()
         .props as unknown as ShowPageProps;
+    const { auth } = usePage().props;
+    // Edit student / add guardian / edit subjects are admin-only; principals get
+    // a read-only profile view.
+    const isAdmin = auth.roles.includes('admin');
     const student = studentWrapper.data;
     const getInitials = useInitials();
 
@@ -226,14 +230,16 @@ export default function StudentProfile() {
 
                             {/* Action buttons */}
                             <div className="flex shrink-0 items-center gap-2">
-                                <Button
-                                    size="sm"
-                                    onClick={() => setShowEditModal(true)}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                >
-                                    <Edit className="mr-1.5 h-4 w-4" />
-                                    Edit Student
-                                </Button>
+                                {isAdmin && (
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setShowEditModal(true)}
+                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    >
+                                        <Edit className="mr-1.5 h-4 w-4" />
+                                        Edit Student
+                                    </Button>
+                                )}
                                 <Link
                                     href={`/setup/student-curricula/${student.id}`}
                                     className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"
@@ -255,15 +261,17 @@ export default function StudentProfile() {
                                         align="end"
                                         className="w-48 rounded-xl p-1 shadow-xl"
                                     >
-                                        <DropdownMenuItem
-                                            onClick={() =>
-                                                setShowEditModal(true)
-                                            }
-                                            className="cursor-pointer rounded-lg py-2"
-                                        >
-                                            <Edit className="mr-2 h-4 w-4 text-slate-500" />
-                                            Edit Details
-                                        </DropdownMenuItem>
+                                        {isAdmin && (
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    setShowEditModal(true)
+                                                }
+                                                className="cursor-pointer rounded-lg py-2"
+                                            >
+                                                <Edit className="mr-2 h-4 w-4 text-slate-500" />
+                                                Edit Details
+                                            </DropdownMenuItem>
+                                        )}
                                         <DropdownMenuItem
                                             disabled
                                             className="cursor-not-allowed rounded-lg py-2 opacity-50"
@@ -290,14 +298,16 @@ export default function StudentProfile() {
                                         </div>
                                         Personal Details
                                     </CardTitle>
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => setShowEditModal(true)}
-                                        className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
-                                    >
-                                        <Edit className="h-4 w-4" />
-                                    </Button>
+                                    {isAdmin && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => setShowEditModal(true)}
+                                            className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                 </CardHeader>
                                 <CardContent className="p-5">
                                     <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
@@ -390,14 +400,16 @@ export default function StudentProfile() {
                                         </div>
                                         Guardians ({guardians.length})
                                     </CardTitle>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setShowAddGuardian(true)}
-                                        className="rounded-lg bg-indigo-600 px-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
-                                    >
-                                        <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                        Add Guardian
-                                    </Button>
+                                    {isAdmin && (
+                                        <Button
+                                            size="sm"
+                                            onClick={() => setShowAddGuardian(true)}
+                                            className="rounded-lg bg-indigo-600 px-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
+                                        >
+                                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                                            Add Guardian
+                                        </Button>
+                                    )}
                                 </CardHeader>
                                 <CardContent className="p-4">
                                     {hasNoGuardians ? (
@@ -413,16 +425,18 @@ export default function StudentProfile() {
                                                 least one guardian for
                                                 communication and emergency.
                                             </p>
-                                            <Button
-                                                size="sm"
-                                                onClick={() =>
-                                                    setShowAddGuardian(true)
-                                                }
-                                                variant="link"
-                                                className="mt-2 font-semibold text-indigo-600"
-                                            >
-                                                Add the first guardian
-                                            </Button>
+                                            {isAdmin && (
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setShowAddGuardian(true)
+                                                    }
+                                                    variant="link"
+                                                    className="mt-2 font-semibold text-indigo-600"
+                                                >
+                                                    Add the first guardian
+                                                </Button>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 gap-3">
@@ -431,6 +445,7 @@ export default function StudentProfile() {
                                                     key={g.id}
                                                     guardian={g}
                                                     studentUuid={student.id}
+                                                    canManage={isAdmin}
                                                     isOnlyGuardian={
                                                         guardians.length === 1
                                                     }
@@ -449,7 +464,7 @@ export default function StudentProfile() {
                             </Card>
 
                             {/* Subjects Section */}
-                            <StudentSubjectsSection student={student} />
+                            <StudentSubjectsSection student={student} canManage={isAdmin} />
                         </div>
 
                         {/* Right column (1/3 width on lg) */}

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\ActivityLog;
 
+use App\Support\Authz;
+
 use App\Http\Controllers\Controller;
 use App\Models\SavedActivityFilter;
 use App\Services\ActivityLog\ActivityLogQueryService;
@@ -26,7 +28,7 @@ class SavedActivityFilterController extends Controller
 
     public function index(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'SavedActivityFilterController@index');
 
         return response()->json([
             'data' => [
@@ -40,7 +42,7 @@ class SavedActivityFilterController extends Controller
 
     public function store(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'SavedActivityFilterController@store');
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],

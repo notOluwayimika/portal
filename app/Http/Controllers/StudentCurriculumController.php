@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentStatusEnum;
 use App\Exceptions\BusinessRuleException;
+use App\Support\Authz;
 use App\Http\Requests\PromoteStudentRequest;
 use App\Http\Requests\RegisterStudentCurriculumRequest;
 use App\Http\Requests\StudentSubject\UnenrollStudentRequest;
@@ -57,7 +58,12 @@ class StudentCurriculumController extends Controller
         Student $student,
         StudentCurriculum $studentCurriculum
     ): JsonResponse {
-        // abort_unless($studentCurriculum->student_id === $student->id, 404);
+        // Nested-route integrity (the enrollment must belong to the student in the URL).
+        Authz::ensure((int) $studentCurriculum->student_id === (int) $student->id, 'enrollment.belongs_to_student', 'ownership', 'StudentCurriculumController@unenroll', 404);
+
+        // Ownership-by-users.school_id is intentionally NOT restored: redundant under
+        // SchoolScope and reintroduces the users.school_id fallback (ADR 0042 debt).
+        // Awaiting §7 decision (see S5 classification report) — recommend deletion.
         // abort_unless($student->school_id === $request->user()->school_id, 403);
 
         try {

@@ -11,6 +11,7 @@ use App\Models\Import;
 use App\Notifications\GuardianImportCompletedNotification;
 use App\Services\GuardianImportService;
 use App\Support\ActiveSchool;
+use App\Support\Authz;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -26,7 +27,7 @@ class GuardianImportController extends Controller
      */
     public function store(GuardianImportRequest $request)
     {
-        // abort_unless($request->user()?->can('guardian.import'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.import', 'GuardianImportController@store');
 
         $schoolId = (int) ActiveSchool::id();
 
@@ -61,7 +62,7 @@ class GuardianImportController extends Controller
      */
     public function template(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.import'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.import', 'GuardianImportController@template');
 
         return Excel::download(new GuardianImportTemplateExport, 'guardians-import-template.xlsx');
     }
@@ -71,7 +72,7 @@ class GuardianImportController extends Controller
      */
     public function status(Request $request, Import $import)
     {
-        // abort_unless($request->user()?->can('guardian.import'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.import', 'GuardianImportController@status');
         $this->authorizeSchool($request, $import);
 
         return response()->json(['import' => $this->serialize($import)]);
@@ -82,7 +83,7 @@ class GuardianImportController extends Controller
      */
     public function report(Request $request, Import $import)
     {
-        // abort_unless($request->user()?->can('guardian.import'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.import', 'GuardianImportController@report');
         $this->authorizeSchool($request, $import);
 
         if (! $import->report_path || ! Storage::exists($import->report_path)) {
@@ -97,7 +98,7 @@ class GuardianImportController extends Controller
      */
     public function index(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.import'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.import', 'GuardianImportController@index');
 
         // Import is tenant-scoped (SchoolScope) — no explicit filter needed.
         $imports = Import::query()
@@ -153,7 +154,10 @@ class GuardianImportController extends Controller
     private function authorizeSchool(Request $request, Import $import): void
     {
         $schoolId = (int) ActiveSchool::id();
-        // abort_unless($import->school_id === $schoolId, 404);
+        // Isolation/ownership: the import must belong to the active School. Observed
+        // via Authz until enforcement (SchoolScope already scopes reads; this is the
+        // explicit guard on the bound resource).
+        Authz::ensure($import->school_id === $schoolId, 'import.belongs_to_school', 'ownership', 'GuardianImportController@authorizeSchool', 404);
     }
 
     /**

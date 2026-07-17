@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Authz;
+
 use App\Http\Requests\RejectSubjectResultRequest;
 use App\Http\Requests\UpsertScoreRequest;
 use App\Http\Resources\CurriculumSubjectResource;
@@ -457,7 +459,7 @@ class CurriculumSubjectController extends Controller
      */
     public function archive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
     {
-        // abort_unless($request->user()->can('curriculum_subject.archive'), 403);
+        Authz::abilityCheck(request()->user(), 'curriculum_subject.archive', 'CurriculumSubjectController@archive');
         abort_if($curriculumSubject->isArchived(), 409, 'This subject is already archived.');
 
         $curriculumSubject->update([
@@ -475,8 +477,11 @@ class CurriculumSubjectController extends Controller
      */
     public function unarchive(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
     {
-        // abort_unless($request->user()->can('curriculum_subject.restore'), 403);
-        // abort_unless($curriculumSubject->isArchived(), 409, 'This subject is not archived.');
+        Authz::abilityCheck(request()->user(), 'curriculum_subject.restore', 'CurriculumSubjectController@unarchive');
+        // Business rule (state validation, not authorization — ADR 0043 §4): restored
+        // as a live guard, independent of AUTHZ_ENFORCE. You cannot restore a subject
+        // that is not archived.
+        abort_unless($curriculumSubject->isArchived(), 409, 'This subject is not archived.');
 
         $curriculumSubject->update([
             'active' => true,

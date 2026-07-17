@@ -98,12 +98,21 @@ slice).
 `auth()->setUser($causer)` eliminated; `SchoolScope`/`BelongsToSchool` now
 resolve off-request context from `ActiveSchool::runFor()`).
 
-**Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53) ·
+**Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53),
+now rolling out **observe-first** via `App\Support\Authz` (S5 — see below) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
 ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
 per-model request-path audit remains the gate) · 1.4b–e (Sequences, audit immutability,
 observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-hoc
 `toLocaleString` rendering exists today).
+
+**Not authorization debt — test role-seeding debt (reclassified):** the ~25
+Guardian / ActivityLog feature-test failures are produced by the `role:`
+route-middleware that is *already enforcing* on those routes, not by the dormant
+`->can()` checks (which are still commented and inert). They are test-seeding
+gaps — the tests do not seed the role the middleware requires — and must be
+fixed by correcting test setup, **not** by touching authorization. They are
+**not** S5 observe-mode evidence and prove nothing about the commented checks.
 
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
 default, verified) · `rbac.single_source_access` (off; parity-gated) ·
@@ -128,6 +137,50 @@ debt, fail on regressions). An absolute-zero Larastan bar would be the sole
 exception, would gate Phase-1 exit on a multi-week static-analysis cleanup with
 no Finance-blocking payoff, and would contradict the approved delivery model.
 This decision makes the ratchet interpretation explicit and binding.
+
+## Decision: the §24 authorization checkpoint is not closed by `authz-lint = 0`
+
+**A green authz-lint is a false signal for §24.** The lint counts *commented-out*
+authorization; the S5 rollout clears each commented check by restoring it as live
+code that runs in **observe mode** (records a would-be denial, then continues —
+never blocks). So authz-lint reaches 0 the moment the checks are restored, while
+**no request is actually authorized** — enforcement is still off. Treating
+authz-lint = 0 as the exit condition would mark §24 "done" over an app that
+authorizes nothing.
+
+**Binding: the §24 authorization checkpoint closes only when all four hold —**
+
+1. `authz-lint = 0` (no commented authorization remains), **and**
+2. `AUTHZ_ENFORCE=true` is set in the production environment, **and**
+3. the observe-mode evidence (`authz_observations`) has been reviewed and every
+   would-be denial classified as expected (not a legitimate-access regression), **and**
+4. enforcement is verified *active* in production — a request lacking a required
+   permission actually receives 403, confirmed by a live check, not by config alone.
+
+Until all four hold, §24 authorization is **open**, regardless of the lint number.
+
+### `AUTHZ_ENFORCE` is temporary rollout infrastructure (not permanent config)
+
+`config/authz.php` (`AUTHZ_ENFORCE`, default `false`) and `App\Support\Authz`'s
+two-mode gate exist **only** to roll authorization out safely (observe → analyse
+→ enforce). This is scaffolding with a defined end, not a permanent feature flag:
+
+- **Owning slice for removal:** the S5 enforcement slice (the one that sets
+  `AUTHZ_ENFORCE=true` in production and closes §24 above).
+- **Removal condition:** enforcement has been active and stable in production for
+  one full release cycle with the observation table reviewed and quiet (no new
+  unexpected denials), i.e. §24 closed per the four criteria above.
+- **Planned deletion:** once that holds, delete the `enforce` branch from
+  `App\Support\Authz` (checks become unconditional — fail = `abort(403)`), drop
+  `config/authz.php`'s `enforce` key and the `AUTHZ_ENFORCE` env var, and prune +
+  drop the `authz_observations` table (see ADR 0043). If enforcement instead
+  becomes permanently config-toggleable, that reversal requires its own ADR — it
+  must not become permanent-by-default drift.
+
+`Authz` itself (the call-site shape) is likewise transitional; its long-term
+disposition — fold into Laravel Policies/Gates, or keep as a thin wrapper — is
+decided in **ADR 0043**, which also records that no new (Finance) business logic
+may depend on `Authz`.
 
 ## Governance — current state (not intent)
 

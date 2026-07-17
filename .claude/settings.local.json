@@ -10,7 +10,14 @@
       "Bash(rtk npx *)",
       "Bash(rtk vitest *)",
       "Skill(dataviz)",
-      "Skill(dataviz:*)"
+      "Skill(dataviz:*)",
+      "Bash(DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Isolation/SchoolContextRouteAccessTest.php)",
+      "Bash(rtk wc *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(composer show *)",
+      "Bash(awk -F: '{print $1}')"
     ]
   }
 }

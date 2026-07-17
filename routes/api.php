@@ -281,9 +281,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
     Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
-});
-
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian'])->group(function () {
     Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
 });
 

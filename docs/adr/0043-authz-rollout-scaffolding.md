@@ -102,6 +102,32 @@ School A must not authorize the same action while the active context is School B
   gated by `AUTHZ_ENFORCE`, must never record as permission denials, and are not
   counted in the authz-lint baseline. Restoring them is orthogonal to §24.
 
+### 5. Teardown sequence (ordered — deletion must never remove authorization)
+
+The scaffolding is removed in this exact order. The invariant is that **every
+step preserves authorization**: a check is migrated to its permanent home
+*before* the wrapper that carried it is deleted.
+
+1. **Migrate** every `Authz::abilityCheck()` / `Authz::ensure()` call to its
+   permanent destination — a Policy, FormRequest `authorize()`, Gate, route-model
+   binding / scoped binding (for nested-parent ownership), or business-rule
+   validation. (Redundant checks — the `users.school_id` guards and the
+   GuardianImport direct-School `ensure`, which `SchoolScope` already covers — are
+   deleted here, not migrated.)
+2. **Verify** no `Authz::` reference remains (`grep -rn 'Authz::' app/` empty; an
+   arch test asserts it).
+3. **Delete** `App\Support\Authz`.
+4. **Remove** the `AUTHZ_ENFORCE` flag and `config/authz.php`'s `enforce` key.
+5. **Remove** the `authz_observations` table (drop migration) and the
+   `authz:observations` / `authz:prune` commands + their schedule entry.
+6. **Delete** rollout-only tests: `AuthzObserveModeTest`, `AuthzPruneTest`,
+   the `authz:prune` case in `ScheduleTest`.
+7. **Keep** the permanent invariant tests: `AuthorizationOrderingTest` (context
+   before authz is a standing rule) and `FortifyPostureTest`.
+
+Step 1 before step 3 is the load-bearing ordering: deleting the wrapper first
+would silently remove live checks.
+
 ## Consequences
 
 - The commented-authz debt clears without a big-bang 403 cutover; enforcement is

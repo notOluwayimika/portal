@@ -180,7 +180,68 @@ two-mode gate exist **only** to roll authorization out safely (observe → analy
 `Authz` itself (the call-site shape) is likewise transitional; its long-term
 disposition — fold into Laravel Policies/Gates, or keep as a thin wrapper — is
 decided in **ADR 0043**, which also records that no new (Finance) business logic
-may depend on `Authz`.
+may depend on `Authz`. The ordered **teardown sequence** (migrate every call to
+its permanent home → verify no `Authz::` remains → delete wrapper → remove flag →
+drop table + commands + schedule → delete rollout-only tests, keep the invariant
+tests) is fixed in **ADR 0043 §5**. Deletion must never remove authorization:
+each check is migrated before the wrapper is removed.
+
+### `authz_observations` retention & pruning
+
+- **Retention window: 30 days.** Rows older than 30 days are deleted daily by the
+  scheduled `authz:prune --older-than=30` ([routes/console.php](../routes/console.php)) —
+  the retention period lives here (roadmap + schedule), not only as a command
+  default. At rollout teardown the table is dropped entirely (ADR 0043 §5).
+- **Data minimization:** observations store the request **path only**
+  (`getPathInfo()`), never `fullUrl()` — no query string, so no PII from query
+  parameters enters the table (ADR 0043 §4). It is rollout evidence, not an audit
+  log.
+- **Pruning is scheduled, not merely available:** without a schedule an evidence
+  table becomes permanent telemetry by default, which ADR 0043 §4 forbids.
+
+### Scheduler is the first-and-only scheduled task — a Phase-2 gap
+
+`authz:prune` (2026-07, this slice) is the **first scheduled task in the
+codebase**; before it, no `withSchedule()` / `Schedule::` existed. The
+registration point is now `routes/console.php`. **Gap (owning slice: a Phase-2
+"scheduling infrastructure" slice, not built now):** Phase 2+ assumes ambient
+scheduled work that does not yet exist — revenue recognition on term start (§9),
+dunning reminders (§11), the ledger drift-verification job (§12.2), reconciliation.
+Those are **School-scoped** and per §5.4 must iterate Schools via
+`ActiveSchool::runFor()`; `authz:prune` is exempt only because it deletes by age
+and reads no School-owned data. The scheduling *mechanism* (a running
+`schedule:run` cron / `schedule:work`) must be provisioned in the deploy
+environment before any Phase-2 scheduled job is relied upon.
+
+### Role-gate inventory (§7.2 debt — running code, confirmed 2026-07)
+
+The result/enrollment maker–checker workflow authorizes by **role**, in
+violation of Constitution §7.2 (authorize by permission, never role). This is the
+authoritative inventory; the permission model that replaces it is designed in
+**ADR 0044** (implementation is a later slice).
+
+- **Live `hasRole()` in FormRequests (enforcing now):**
+  [RejectSubjectResultRequest](../app/Http/Requests/RejectSubjectResultRequest.php),
+  [PromoteStudentRequest](../app/Http/Requests/PromoteStudentRequest.php),
+  [UpdateStudentCurriculumStatusRequest](../app/Http/Requests/UpdateStudentCurriculumStatusRequest.php),
+  [RegisterStudentCurriculumRequest](../app/Http/Requests/RegisterStudentCurriculumRequest.php)
+  — all `admin || head_of_school`.
+- **Live role-gate:** `PrincipalController@…` `abort_unless($principal->hasRole('principal'), 404)`.
+- **Commented role checks (dormant, in the authz-lint baseline):**
+  `CurriculumSubjectController` submit (`isTeacher`), approve / reject
+  (`isReviewer`), `StudentCurriculumController@getScoresWithMarkingComponents`.
+- **NOT authorization — presentation/relationship branching (leave; confirmed
+  none is a security decision):** `DashboardController@…` guardian/teacher landing
+  branch, `CurriculumController` / `StudentController` "guardian viewing their own
+  child" checks, `GuardianService` guardian-relationship branch. These choose what
+  to *show*, not whether to *permit*; the actual gate is the route `role:`
+  middleware + FormRequest authorize on those endpoints.
+- **Already correct (the convention to match):**
+  `student_curriculum.unenroll` authorizes by permission
+  ([UnenrollStudentRequest](../app/Http/Requests/StudentSubject/UnenrollStudentRequest.php)).
+
+Re-audit is deferred to **after the implementation slice** (a design does not
+change what is in the code).
 
 ## Governance — current state (not intent)
 

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -65,7 +66,12 @@ class Authz
                 'check_type' => $checkType,
                 'controller_action' => $controllerAction,
                 'route' => $request->route()?->getName(),
-                'request_uri' => substr($request->fullUrl(), 0, 1024),
+                // Path only — NEVER fullUrl(). The query string adds nothing to
+                // classifying denials by ability/route and can carry PII (search
+                // terms, filter values, tokens). This table is rollout evidence,
+                // not an audit log. getPathInfo() keeps the leading slash and drops
+                // scheme/host/query.
+                'request_uri' => substr($request->getPathInfo(), 0, 1024),
                 'method' => $request->method(),
                 'transport' => self::transport($request),
                 'roles' => json_encode($user ? $user->getRoleNames()->values()->all() : []),
@@ -81,7 +87,7 @@ class Authz
         }
     }
 
-    private static function transport(\Illuminate\Http\Request $request): string
+    private static function transport(Request $request): string
     {
         // An HTTP request is bound in web/api (and feature tests) — classify by path.
         if ($request->route()) {

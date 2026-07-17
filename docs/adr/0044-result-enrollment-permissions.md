@@ -62,6 +62,23 @@ with ADR 0040 (`super_admin` never overrides maker–checker).
   (a)** — admin approves/rejects and views, but does not submit. This decision is
   explicitly deferred to the implementation slice, not assumed here.
 
+**This is not a fresh SoD decision — it inherits the Finance model.** The
+maker≠checker constraint is already established for the platform by **ADR 0009**
+(maker–checker approval) and **ADR 0040** (`super_admin` never overrides
+maker–checker): structural separation (`decided_by ≠ initiator_id`), Policy
+enforcement, and the super-admin bypass explicitly excluded from approval. The
+result workflow **adopts that same model** rather than inventing a second SoD
+interpretation. Concretely, the implementation slice:
+
+- enforces the maker/checker split with the same structure Finance uses
+  (`updated_by` / approver identity recorded, checker ≠ maker), not a bespoke rule;
+- excludes `super_admin` from the approval bypass for `result.approve`/`reject`,
+  per ADR 0040 (a super admin may act, but does not get maker–checker-free
+  approval);
+- so the admin-holds-both question above is resolved **the Finance way** — a
+  single identity may not both submit and approve the same result — not
+  re-litigated here.
+
 `result.view_scores` is a read permission and carries no SoD constraint; guardians
 continue to see their child's results through the guardian-facing endpoints, not
 this one (the commented `getScores` role check intended to exclude guardians —

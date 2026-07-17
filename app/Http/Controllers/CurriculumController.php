@@ -269,7 +269,7 @@ class CurriculumController extends Controller
             return response()->json(['error' => 'Curriculum is not a CCM curriculum'], 422);
         }
 
-        MoveFromCcmJob::dispatch($curriculum, auth()->id());
+        MoveFromCcmJob::dispatch($curriculum, auth()->id(), (int) $curriculum->school_id);
 
         return response()->json(['message' => 'Migration to non-CCM has been queued'], 202);
     }
@@ -299,7 +299,7 @@ class CurriculumController extends Controller
             return response()->json(['error' => 'Only completed terms can be backfilled'], 422);
         }
 
-        BackfillPastTermJob::dispatch($curriculum, $term, auth()->id());
+        BackfillPastTermJob::dispatch($curriculum, $term, auth()->id(), (int) $curriculum->school_id);
 
         return response()->json(['message' => 'Past-term backfill has been queued'], 202);
     }

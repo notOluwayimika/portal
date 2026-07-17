@@ -10,6 +10,7 @@ use App\Jobs\ProcessGuardianImport;
 use App\Models\Import;
 use App\Notifications\GuardianImportCompletedNotification;
 use App\Services\GuardianImportService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -18,9 +19,7 @@ class GuardianImportController extends Controller
 {
     private const SYNC_THRESHOLD = 50;
 
-    public function __construct(private GuardianImportService $service)
-    {
-    }
+    public function __construct(private GuardianImportService $service) {}
 
     /**
      * POST /api/guardians/import
@@ -29,7 +28,7 @@ class GuardianImportController extends Controller
     {
         // abort_unless($request->user()?->can('guardian.import'), 403);
 
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
 
         $file = $request->file('file');
         $filePath = $file->store("imports/inbox/{$schoolId}");
@@ -51,7 +50,7 @@ class GuardianImportController extends Controller
             $this->runSync($import);
             $import->refresh();
         } else {
-            ProcessGuardianImport::dispatch($import->id);
+            ProcessGuardianImport::dispatch($import->id, $import->school_id);
         }
 
         return response()->json(['import' => $this->serialize($import)]);
@@ -64,7 +63,7 @@ class GuardianImportController extends Controller
     {
         // abort_unless($request->user()?->can('guardian.import'), 403);
 
-        return Excel::download(new GuardianImportTemplateExport(), 'guardians-import-template.xlsx');
+        return Excel::download(new GuardianImportTemplateExport, 'guardians-import-template.xlsx');
     }
 
     /**
@@ -86,7 +85,7 @@ class GuardianImportController extends Controller
         // abort_unless($request->user()?->can('guardian.import'), 403);
         $this->authorizeSchool($request, $import);
 
-        if (!$import->report_path || !Storage::exists($import->report_path)) {
+        if (! $import->report_path || ! Storage::exists($import->report_path)) {
             abort(404, 'Report is not available yet.');
         }
 
@@ -108,7 +107,7 @@ class GuardianImportController extends Controller
             ->get();
 
         return response()->json([
-            'data' => $imports->map(fn(Import $i) => $this->serialize($i)),
+            'data' => $imports->map(fn (Import $i) => $this->serialize($i)),
         ]);
     }
 
@@ -131,6 +130,7 @@ class GuardianImportController extends Controller
                 'error' => $e->getMessage(),
                 'completed_at' => now(),
             ])->save();
+
             return;
         }
 
@@ -152,7 +152,7 @@ class GuardianImportController extends Controller
 
     private function authorizeSchool(Request $request, Import $import): void
     {
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
         // abort_unless($import->school_id === $schoolId, 404);
     }
 
@@ -174,12 +174,16 @@ class GuardianImportController extends Controller
             $dataRows = array_slice($sheet, 1);
             $nonEmpty = array_filter($dataRows, function ($row) {
                 foreach ((array) $row as $value) {
-                    if ($value === null)
+                    if ($value === null) {
                         continue;
-                    if (is_string($value) && trim($value) === '')
+                    }
+                    if (is_string($value) && trim($value) === '') {
                         continue;
+                    }
+
                     return true;
                 }
+
                 return false;
             });
 

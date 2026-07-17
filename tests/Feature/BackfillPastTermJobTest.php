@@ -189,7 +189,7 @@ function bpt_findTarget(array $w): ?Curriculum
 it('mirrors the source curriculum into the past term as closed, with promoted enrollments and no scores', function () {
     $w = bpt_world();
 
-    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
 
     $target = bpt_findTarget($w);
     expect($target)->not->toBeNull();
@@ -236,8 +236,8 @@ it('mirrors the source curriculum into the past term as closed, with promoted en
 it('is idempotent on re-run', function () {
     $w = bpt_world();
 
-    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id))->handle();
-    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
+    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
 
     $target = bpt_findTarget($w);
 
@@ -283,7 +283,7 @@ it('reuses the source marking scheme instead of cloning subject components', fun
     ]);
     $w['source']->update(['marking_scheme_id' => $scheme->id]);
 
-    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
 
     $target = bpt_findTarget($w);
     $newSubject = CurriculumSubject::where('curriculum_id', $target->id)->firstOrFail();
@@ -310,7 +310,7 @@ it('reuses categorical grading and does not create numerical marking components'
     ]);
     $w['source']->update(['grading_scheme_id' => $scheme->id]);
 
-    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
 
     $target = bpt_findTarget($w);
     $newSubject = CurriculumSubject::where('curriculum_id', $target->id)->firstOrFail();
@@ -333,18 +333,18 @@ it('refuses ccm sources, non-completed target terms, the source term itself, and
         'is_ccm' => true,
         'min_subjects' => 1,
     ]);
-    (new BackfillPastTermJob($ccm, $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($ccm, $w['pastTerm'], $w['admin']->id, (int) $ccm->school_id))->handle();
     expect(bpt_findTarget($w))->toBeNull();
 
     // Target term not completed (upcoming)
     $upcoming = bpt_term($w['session'], 2, TermStatusEnum::UPCOMING->value);
-    (new BackfillPastTermJob($w['source'], $upcoming, $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $upcoming, $w['admin']->id, (int) $w['source']->school_id))->handle();
     expect(
         Curriculum::withoutGlobalScope(SchoolScope::class)->where('term_id', $upcoming->id)->count()
     )->toBe(0);
 
     // Target term = source's own term
-    (new BackfillPastTermJob($w['source'], $w['activeTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $w['activeTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
     expect(
         Curriculum::withoutGlobalScope(SchoolScope::class)->where('term_id', $w['activeTerm']->id)->count()
     )->toBe(2); // source + ccm fixture only, nothing new
@@ -353,14 +353,14 @@ it('refuses ccm sources, non-completed target terms, the source term itself, and
     $otherSchool = al_makeSchool();
     $otherSession = bpt_session($otherSchool);
     $otherTerm = bpt_term($otherSession, 1, TermStatusEnum::COMPLETED->value);
-    (new BackfillPastTermJob($w['source'], $otherTerm, $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $otherTerm, $w['admin']->id, (int) $w['source']->school_id))->handle();
     expect(
         Curriculum::withoutGlobalScope(SchoolScope::class)->where('term_id', $otherTerm->id)->count()
     )->toBe(0);
 
     // Inactive source
     $w['source']->update(['status' => 'draft']);
-    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
     expect(bpt_findTarget($w))->toBeNull();
 });
 
@@ -380,7 +380,7 @@ it('skips withdrawn students and picks up new enrollments on a delta re-run', fu
         'status' => 'withdrawn',
     ]);
 
-    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source'], $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
 
     $target = bpt_findTarget($w);
     expect(StudentCurriculum::where('curriculum_id', $target->id)->count())->toBe(1);
@@ -399,6 +399,6 @@ it('skips withdrawn students and picks up new enrollments on a delta re-run', fu
         'status' => 'active',
     ]);
 
-    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id))->handle();
+    (new BackfillPastTermJob($w['source']->fresh(), $w['pastTerm'], $w['admin']->id, (int) $w['source']->school_id))->handle();
     expect(StudentCurriculum::where('curriculum_id', $target->id)->count())->toBe(2);
 });

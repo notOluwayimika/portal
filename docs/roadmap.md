@@ -45,8 +45,9 @@ against them:
 | Publicly leaked (unauthenticated) routes | 6 | **7** |
 | Permissions actually defined | 32 | **28** (19 of them never seeded at audit time) |
 
-(Jobs impersonating a causer without team context: 6 of 7 — consistent between
-both documents.)
+(Jobs impersonating a causer without team context: **6 of 7 job classes**
+verified — v10's "5 jobs" undercounted by one, reconciled in slice 1.3b, which
+retrofitted **all 7** to `SchoolAware` and removed every impersonation.)
 
 ## Phase-1 status (as of M1.5b)
 
@@ -60,17 +61,21 @@ same-School constraint + timezone + queue) · 1.4a (Money VO + cast + wire
 contract) · 1.5a (arch tests + boundary lint + Larastan L5) · 1.5b (this docs
 slice).
 
+**Continuous — done:** 1.3b (all 7 queueable jobs retrofitted to `SchoolAware`;
+`auth()->setUser($causer)` eliminated; `SchoolScope`/`BelongsToSchool` now
+resolve off-request context from `ActiveSchool::runFor()`).
+
 **Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
-ADR 0042's debt) · 1.3b (retrofit 5 legacy jobs) · fail-closed per-model
-enablement (gated on 1.3b) · 1.4b–e (Sequences, audit immutability,
+ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
+per-model request-path audit remains the gate) · 1.4b–e (Sequences, audit immutability,
 observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-hoc
 `toLocaleString` rendering exists today).
 
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
 default, verified) · `rbac.single_source_access` (off; parity-gated) ·
-`rbac.fail_closed_models` (empty; per-model, gated on 1.3b for job-touched
-models).
+`rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
+longer blocks any model; each enablement still needs its request-path audit).
 
 ## Governance — current state (not intent)
 

@@ -143,7 +143,9 @@ class SchoolAwareProbeJob implements ShouldQueue
 
     public function handle(): void
     {
-        auth()->setUser($this->causer);
+        // The approved pattern: NO auth impersonation — School context comes
+        // solely from the declared schoolId (runFor override); the causer is
+        // carried as data, not as an execution identity (§5.6).
         self::$count = Student::count();
     }
 }

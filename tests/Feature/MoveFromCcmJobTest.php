@@ -166,7 +166,7 @@ it('carries scores for overlapping marking components onto the new non-ccm subje
         'created_by' => $admin->id,
     ]);
 
-    (new MoveFromCcmJob($ccmCurriculum, $admin->id))->handle();
+    (new MoveFromCcmJob($ccmCurriculum, $admin->id, (int) $ccmCurriculum->school_id))->handle();
 
     $targetCurriculum = Curriculum::withoutGlobalScope(SchoolScope::class)
         ->where('school_id', $school->id)
@@ -217,7 +217,7 @@ it('carries scores for overlapping marking components onto the new non-ccm subje
     expect(Score::where('marking_component_id', $newExam->id)->exists())->toBeFalse();
 
     // Re-running the job is idempotent: no duplicates, no value changes.
-    (new MoveFromCcmJob($ccmCurriculum, $admin->id))->handle();
+    (new MoveFromCcmJob($ccmCurriculum, $admin->id, (int) $ccmCurriculum->school_id))->handle();
 
     expect(Score::where('marking_component_id', $newCa1->id)->count())->toBe(1);
     expect(Score::where('marking_component_id', $newHalfTerm->id)->count())->toBe(1);

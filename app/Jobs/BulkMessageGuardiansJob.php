@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\SchoolAware;
 use App\Models\Guardian;
 use App\Notifications\GuardianAnnouncementNotification;
 use Illuminate\Bus\Queueable;
@@ -22,6 +23,11 @@ class BulkMessageGuardiansJob implements ShouldQueue
         public readonly array $channels,
     ) {}
 
+    public function middleware(): array
+    {
+        return [new SchoolAware];
+    }
+
     public function handle(): void
     {
         Guardian::whereIn('id', $this->guardianIds)
@@ -31,7 +37,7 @@ class BulkMessageGuardiansJob implements ShouldQueue
             ->each(function (Guardian $guardian) {
                 $user = $guardian->user;
 
-                if (!$user || !$user->email || str_ends_with($user->email, '@no-email.local')) {
+                if (! $user || ! $user->email || str_ends_with($user->email, '@no-email.local')) {
                     return;
                 }
 

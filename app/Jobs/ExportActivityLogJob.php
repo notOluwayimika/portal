@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\SchoolAware;
 use App\Models\Export;
 use App\Models\User;
 use App\Notifications\ActivityLogExportReadyNotification;
@@ -15,8 +16,10 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Async export for >1000 rows. Re-resolves the same tenant/permission
- * scope as the controller by running the query as the requesting user.
+ * Async export for >1000 rows. School context comes solely from the declared
+ * schoolId (SchoolAware -> ActiveSchool::runFor()); the requesting user is a
+ * plain query parameter — their permission checks run against the job's team
+ * context, never via auth() impersonation (§5.6).
  */
 class ExportActivityLogJob implements ShouldQueue
 {
@@ -30,13 +33,17 @@ class ExportActivityLogJob implements ShouldQueue
         public readonly array $filters,
     ) {}
 
+    public function middleware(): array
+    {
+        return [new SchoolAware];
+    }
+
     public function handle(ActivityLogQueryService $queries): void
     {
         $user = User::find($this->userId);
         if (! $user) {
             return;
         }
-        auth()->setUser($user);
 
         $query = $queries->baseQuery($user, (bool) ($this->filters['include_system'] ?? false));
         $queries->applyFilters($query, $this->filters);

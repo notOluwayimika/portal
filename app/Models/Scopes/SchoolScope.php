@@ -40,23 +40,28 @@ class SchoolScope implements Scope
         static::$isApplying = true;
 
         try {
-            if (auth()->check()) {
-                $schoolId = ActiveSchool::id();
+            // Resolve context from ActiveSchool, which covers BOTH transports:
+            // request (auth + session/token) and off-request via runFor()
+            // (SchoolAware jobs, which no longer impersonate a causer — the
+            // scope must therefore not be gated on auth()->check(), or worker
+            // queries would silently run unscoped).
+            $schoolId = ActiveSchool::id();
 
-                if ($schoolId) {
-                    // Models can override how they scope to a school (e.g.
-                    // Teacher, which is also visible in schools granted via
-                    // the school_user pivot).
-                    if (method_exists($model, 'applySchoolScope')) {
-                        $model->applySchoolScope($builder, (int) $schoolId);
-                    } else {
-                        $builder->where($model->getTable().'.school_id', $schoolId);
-                    }
-                } elseif ($this->shouldFailClosed($model)) {
-                    // §5.5: no context is an exception, never a silent unscoped
-                    // read. Rethrown past the catch below so it is never swallowed.
-                    throw new MissingSchoolContextException($model::class);
+            if ($schoolId) {
+                // Models can override how they scope to a school (e.g.
+                // Teacher, which is also visible in schools granted via
+                // the school_user pivot).
+                if (method_exists($model, 'applySchoolScope')) {
+                    $model->applySchoolScope($builder, (int) $schoolId);
+                } else {
+                    $builder->where($model->getTable().'.school_id', $schoolId);
                 }
+            } elseif (auth()->check() && $this->shouldFailClosed($model)) {
+                // §5.5: no context is an exception, never a silent unscoped
+                // read. Rethrown past the catch below so it is never swallowed.
+                // (Still gated on an authenticated principal so unauthenticated
+                // request paths — login lookups, public pages — are unchanged.)
+                throw new MissingSchoolContextException($model::class);
             }
         } catch (MissingSchoolContextException $e) {
             throw $e;

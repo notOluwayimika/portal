@@ -1,11 +1,16 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
+
+// These expect an active School context: since commit 1895ae8 (multi-School
+// support) a user with no accessible School is redirected to school.select, so
+// the test subject is a single-School user, not a bare factory user.
 
 test('security page is displayed', function () {
     $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
@@ -15,7 +20,7 @@ test('security page is displayed', function () {
         'confirmPassword' => true,
     ]);
 
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $this->actingAs($user)
         ->withSession(['auth.password_confirmed_at' => time()])
@@ -30,7 +35,7 @@ test('security page is displayed', function () {
 test('security page requires password confirmation when enabled', function () {
     $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
 
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     Features::twoFactorAuthentication([
         'confirm' => true,
@@ -46,7 +51,7 @@ test('security page requires password confirmation when enabled', function () {
 test('security page does not require password confirmation when disabled', function () {
     $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
 
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     Features::twoFactorAuthentication([
         'confirm' => true,
@@ -66,7 +71,7 @@ test('security page renders without two factor when feature is disabled', functi
 
     config(['fortify.features' => []]);
 
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $this->actingAs($user)
         ->get(route('security.edit'))
@@ -80,7 +85,7 @@ test('security page renders without two factor when feature is disabled', functi
 });
 
 test('password can be updated', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)
@@ -99,7 +104,7 @@ test('password can be updated', function () {
 });
 
 test('correct password must be provided to update password', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)

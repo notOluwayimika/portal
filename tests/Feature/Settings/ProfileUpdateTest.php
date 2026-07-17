@@ -1,11 +1,15 @@
 <?php
 
-use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
+
+// These expect an active School context: since commit 1895ae8 (multi-School
+// support) a user with no accessible School is redirected to school.select, so
+// the test subject is a single-School user, not a bare factory user.
 
 test('profile page is displayed', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)
@@ -15,12 +19,14 @@ test('profile page is displayed', function () {
 });
 
 test('profile information can be updated', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
+    // Profile fields are first_name/last_name, not the scaffold's `name`.
     $response = $this
         ->actingAs($user)
         ->patch(route('profile.update'), [
-            'name' => 'Test User',
+            'first_name' => 'Test',
+            'last_name' => 'User',
             'email' => 'test@example.com',
         ]);
 
@@ -30,18 +36,20 @@ test('profile information can be updated', function () {
 
     $user->refresh();
 
-    expect($user->name)->toBe('Test User');
+    expect($user->first_name)->toBe('Test');
+    expect($user->last_name)->toBe('User');
     expect($user->email)->toBe('test@example.com');
     expect($user->email_verified_at)->toBeNull();
 });
 
 test('email verification status is unchanged when the email address is unchanged', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)
         ->patch(route('profile.update'), [
-            'name' => 'Test User',
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
             'email' => $user->email,
         ]);
 
@@ -53,7 +61,7 @@ test('email verification status is unchanged when the email address is unchanged
 });
 
 test('user can delete their account', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)
@@ -70,7 +78,7 @@ test('user can delete their account', function () {
 });
 
 test('correct password must be provided to delete account', function () {
-    $user = User::factory()->create();
+    $user = singleSchoolUser();
 
     $response = $this
         ->actingAs($user)

@@ -73,7 +73,8 @@
         ],
         "lint:boundaries": [
             "@php bin/ci-authz-lint.php",
-            "@php bin/ci-boundary-lint.php"
+            "@php bin/ci-boundary-lint.php",
+            "@php bin/ci-runtime-zero-lint.php"
         ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",

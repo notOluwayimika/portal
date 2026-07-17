@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Concerns\BelongsToSchool;
+use App\Support\SchoolAccessParity;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -65,6 +66,9 @@ class User extends Authenticatable
      */
     private array $accessibleSchoolIdsMemo = [];
 
+    /** S7 parity soak: ensures the dual-compare runs at most once per instance. */
+    private bool $paritySoakDone = false;
+
     /**
      * super_admin is a GLOBAL role (no team). Check it outside whatever
      * team/school context is currently active, then restore the context.
@@ -113,8 +117,24 @@ class User extends Authenticatable
     {
         $key = config('rbac.single_source_access') ? 1 : 0;
 
-        return $this->accessibleSchoolIdsMemo[$key]
+        $result = $this->accessibleSchoolIdsMemo[$key]
             ??= $this->computeAccessibleSchoolIds();
+
+        // S7 parity soak: when enabled, compute BOTH resolution paths for this
+        // decision and log any divergence (once per user instance per request).
+        // This runs regardless of which path is returned above — dual-compute,
+        // not flag-flip — so per-user divergence is caught on live traffic
+        // before the legacy columns are dropped.
+        if (config('rbac.parity_soak') && ! $this->paritySoakDone && ! $this->isSuperAdmin()) {
+            $this->paritySoakDone = true;
+            SchoolAccessParity::compare(
+                $this,
+                $this->legacyAccessibleSchoolIds(),
+                $this->schoolIdsFromRoles(),
+            );
+        }
+
+        return $result;
     }
 
     private function computeAccessibleSchoolIds(): Collection
@@ -125,11 +145,21 @@ class User extends Authenticatable
 
         // Single source of truth (§7.1): access derives solely from role
         // assignments. Behind an expand/contract flag (default off) until the
-        // parity test is green and the legacy sources are backfilled + dropped.
+        // parity soak is green and the legacy sources are backfilled + dropped.
         if (config('rbac.single_source_access')) {
             return $this->schoolIdsFromRoles();
         }
 
+        return $this->legacyAccessibleSchoolIds();
+    }
+
+    /**
+     * Legacy School-access union: school_user pivot + guardian records +
+     * users.school_id fallback. Retained (behind single_source_access=off and
+     * for the parity soak) until S7 drops the legacy columns.
+     */
+    private function legacyAccessibleSchoolIds(): Collection
+    {
         $ids = $this->schools()->pluck('schools.id');
 
         $ids = $ids->merge(
@@ -154,6 +184,7 @@ class User extends Authenticatable
     {
         $this->accessibleSchoolIdsMemo = [];
         $this->isSuperAdminMemo = null;
+        $this->paritySoakDone = false;
     }
 
     /**

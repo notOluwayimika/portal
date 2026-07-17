@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use App\Support\SchoolAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,7 +16,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Guardian extends Model
 {
-    use AddUuid, BelongsToSchool, HasFactory, SoftDeletes, LogsActivity;
+    use AddUuid, BelongsToSchool, HasFactory, LogsActivity, SoftDeletes;
 
     public function getActivitylogOptions(): LogOptions
     {
@@ -88,10 +89,7 @@ class Guardian extends Model
     {
         $builder->where(function (Builder $query) use ($schoolId) {
             $query->where('guardians.school_id', $schoolId)
-                ->orWhereIn('guardians.user_id', fn ($subquery) => $subquery
-                    ->select('user_id')
-                    ->from('school_user')
-                    ->where('school_id', $schoolId));
+                ->orWhereIn('guardians.user_id', SchoolAccess::userIdsWithAccessTo($schoolId));
         });
     }
 

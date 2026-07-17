@@ -11,6 +11,7 @@ use App\Notifications\GuardianAccountCreatedNotification;
 use App\Repositories\GuardianRepository;
 use App\Support\ActiveSchool;
 use App\Support\PhoneNormalizer;
+use App\Support\SchoolAccess;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -35,10 +36,11 @@ class GuardianService
 
         return Guardian::withoutGlobalScope(SchoolScope::class)
             ->join('users', 'users.id', '=', 'guardians.user_id')
-            ->join('school_user as guardian_school_access', function ($join) use ($schoolId) {
-                $join->on('guardian_school_access.user_id', '=', 'users.id')
-                    ->where('guardian_school_access.school_id', $schoolId);
-            })
+            // Only guardians whose User has access to this School. Flag-gated via
+            // SchoolAccess (school_user pivot today, model_has_roles under the S7
+            // single-source flag) — replaces the former INNER JOIN on school_user
+            // with an equivalent existence filter (no row duplication).
+            ->whereIn('users.id', SchoolAccess::userIdsWithAccessTo($schoolId))
             // A Guardian is a per-School record (§6.2): list only this School's rows,
             // not every Guardian whose (shared) User can access this School.
             ->where('guardians.school_id', $schoolId)

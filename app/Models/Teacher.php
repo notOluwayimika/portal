@@ -6,6 +6,7 @@ use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Concerns\HasStaffNumber;
 use App\Support\ActiveSchool;
+use App\Support\SchoolAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Teacher extends Model
 {
-    use AddUuid, SoftDeletes, HasStaffNumber, BelongsToSchool;
+    use AddUuid, BelongsToSchool, HasStaffNumber, SoftDeletes;
 
     protected $fillable = [
         'school_id',
@@ -49,10 +50,7 @@ class Teacher extends Model
     {
         $builder->where(function ($q) use ($schoolId) {
             $q->where('teachers.school_id', $schoolId)
-                ->orWhereIn('teachers.user_id', fn ($sub) => $sub
-                    ->select('user_id')
-                    ->from('school_user')
-                    ->where('school_id', $schoolId));
+                ->orWhereIn('teachers.user_id', SchoolAccess::userIdsWithAccessTo($schoolId));
         });
     }
 

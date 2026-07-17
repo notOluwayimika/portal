@@ -282,6 +282,57 @@ admin, zero-access), ≥2 Schools, and both HTTP and queue transports, and must
 report the decision count + distribution. **Zero mismatches *with* coverage is the
 only condition permitting the migration.**
 
+**Near-miss — a flag proves parity only for the paths it controls.**
+`rbac.single_source_access` gates `accessibleSchoolIds()`, but three `school_user`
+readers (`GuardianService`, `Teacher`/`Guardian` scopes) sat **outside** the
+flag. A parity soak would have measured the controlled path, reported green, and
+the column drop would then have broken guardian/teacher visibility in production.
+**Lesson (Phase 2 will use flags for exactly this pattern): enumerate every
+reader of a source before trusting a flagged rollout — control ≠ coverage.** Fixed
+in this slice by funnelling the three readers through `App\Support\SchoolAccess`,
+which is gated by the same flag, so the soak now covers them.
+
+**S7 progress (this slice — no schema change; runtime-zero still closed):**
+
+- **Runtime-zero gate landed + CI-wired** (`bin/ci-runtime-zero-lint.php`,
+  `runtime-zero-baseline.txt`, composer `lint:boundaries` + `lint.yml`). Fails on
+  any NEW executable `users.school_id` / `school_user` reference; baseline
+  **6** (was 8 before the reader consolidation), ratcheting to **0** at the column
+  drop (its expiry). Coverage caveat: it catches literal reads + the pivot table
+  name + raw `users.school_id`; the two column **writes** (`AdminController`
+  forceFill, `TeacherService` `User::create`) and Laravel's implicit
+  `belongsToMany` pivot (`User::schools()`) are tracked here in the graph, not by
+  the regex.
+- **Divergence count (§1) = 0 in dev** (`school_user` 776 rows / `users.school_id`
+  846 set → 0 orphans without a matching `model_has_roles` row). **Production must
+  reconfirm before the flag flip** — dev is not authoritative.
+- **Parity instrument built + bite-proven** (`App\Support\SchoolAccessParity`,
+  `rbac.parity_soak`): dual-computes both paths per decision, logs `lost`/`gained`
+  per `(user, School)`; a test injects a known divergence and asserts detection
+  with all fields.
+- **Readers repointed** (flag-gated via `SchoolAccess`); **Step 2 (audit
+  resolver)** already landed.
+- **§5 — `ActiveSchool::id()` null-dependants (before source-3 removal):** callers
+  that correctly want `null` with no principal and do **not** rely on the
+  `users.school_id` fallback — `SchoolScope` (console/worker), `SetSchoolContext`
+  (drives select-school), `HandleInertiaRequests` (guarded by `$user`),
+  `ActivitySchoolResolver` (falls through). Single-school request readers
+  (`(int) ActiveSchool::id()` in controllers) are covered by the **session**
+  school_id set at login ([SchoolAwareLoginResponse:45](../app/Http/Responses/SchoolAwareLoginResponse.php#L45)),
+  so source-3 is a redundant safety net — but any authenticated path with neither
+  session nor token school_id must be audited before Step 3. **Source-3 NOT
+  removed in this slice.**
+- **§2 — writer semantics (proposed; NOT implemented — stop for review):** the two
+  `users.school_id` writers need an intent decision, not a translation.
+  `TeacherService` writes the column on teacher creation from `TeacherRequest`'s
+  `school_id`; the proposed replacement is **teacher creation grants a role in
+  that School** (`model_has_roles` row) — a behaviour change (creation now confers
+  a role). Which role? Presumably `teacher` in the selected School. `AdminController`
+  [:104-105](../app/Http/Controllers/SuperAdmin/AdminController.php#L104) *maintains*
+  the column (resets a user's home School when it leaves their accessible set);
+  once the column is gone this maintenance has **nothing to maintain** and should
+  **simply delete**, not translate. Both need sign-off before implementation.
+
 ### Role-gate inventory (§7.2 debt — running code, confirmed 2026-07)
 
 The result/enrollment maker–checker workflow authorizes by **role**, in

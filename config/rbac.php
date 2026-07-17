@@ -21,6 +21,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Parity soak (S7) — dual-compute divergence detection
+    |--------------------------------------------------------------------------
+    |
+    | When true, every School-access decision computes BOTH the legacy union and
+    | the model_has_roles single source in the SAME request and logs any
+    | mismatch (App\Support\SchoolAccessParity). This is how divergence is
+    | proven zero on live traffic BEFORE the columns are dropped — a flag-flip
+    | between runs compares different traffic and would miss per-user
+    | divergence. Independent of single_source_access (which one is *returned*),
+    | so both paths are always exercised while the soak runs. OFF by default;
+    | enabled only during the S7 soak.
+    |
+    */
+    'parity_soak' => env('RBAC_PARITY_SOAK', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Fail-closed School scope — PER-MODEL rollout
     |--------------------------------------------------------------------------
     |

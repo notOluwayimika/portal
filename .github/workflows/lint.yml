@@ -77,6 +77,12 @@ jobs:
       - name: Boundary lint (§17.2)
         run: php bin/ci-boundary-lint.php
 
+      # S7 runtime-zero gate: no executable reference to the legacy access
+      # sources (users.school_id / school_user). Baselined non-empty today,
+      # ratchets to 0 as the S7 repoints land; expires at the column drop.
+      - name: Runtime-zero lint (S7 legacy access sources)
+        run: php bin/ci-runtime-zero-lint.php
+
       # §17.1 architecture rules (Kernel/module boundaries). No DB needed; the
       # Finance-subject rules activate automatically when app/Finance appears.
       - name: Architecture tests (§17.1)

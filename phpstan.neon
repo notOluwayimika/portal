@@ -1,0 +1,12 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    # Level 5 is the FIXED Phase-1 enforcement level (§17.3). Do not raise it in
+    # this milestone. Pre-existing findings are frozen in phpstan-baseline.neon
+    # (the same ratchet pattern as tests/tsc/authz/boundary); the gate fails only
+    # on NEW findings, and the baseline may only shrink.
+    level: 5
+    paths:
+        - app

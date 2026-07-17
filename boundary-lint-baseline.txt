@@ -1,0 +1,19 @@
+# boundary-lint baseline — intentional, TEMPORARY exceptions. May only shrink.
+#
+# school-id-fallback-context entries expire when users.school_id is dropped
+#   (§5.3/§7.1 — after the rbac.single_source_access parity gate; ActiveSchool's
+#   guarded fallback and ActivitySchoolResolver's user fallback go with it).
+#   NOTE on the SuperAdmin/AdminController entry: that one is a legacy-column
+#   MAINTENANCE WRITE (keeping the retained expand/contract users.school_id
+#   pointing at a School the user can access), NOT a context-read fallback —
+#   a rule true-positive on the column's existence rather than a Constitution 13
+#   violation in logic. Same expiry (the users.school_id drop); when burning down
+#   this baseline, delete that code with the column — there is no fallback logic
+#   to remove there.
+# fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
+#   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
+fee-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php	foreach (['fee_invoices', 'fee_payments', 'fee_structures'] as $table) {
+school-id-fallback-context	app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
+school-id-fallback-context	app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {
+school-id-fallback-context	app/Support/ActiveSchool.php	return (int) $user->school_id;
+school-id-fallback-context	app/Support/ActivitySchoolResolver.php	if (auth()->check() && ($schoolId = auth()->user()->school_id)) {

@@ -1,18 +1,21 @@
 <?php
 
 use App\Exceptions\Dashboard\PiiDetectedException;
+use App\Models\Role;
 use App\Services\Dashboard\DashboardAnalysisService;
 use App\Services\Dashboard\ModuleClassificationService;
 use App\Services\Dashboard\PiiSanitizationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Ensure roles exist for middleware
     foreach (['admin', 'head_of_school', 'teacher', 'guardian'] as $role) {
-        \App\Models\Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
     }
 });
 
@@ -33,7 +36,9 @@ test('analysis result contains threshold_used per module', function () {
     $analysis = $service->generate($school);
 
     foreach ($analysis['modules'] as $moduleName => $module) {
-        expect($module)->toHaveKey('threshold_used', "Module '{$moduleName}' missing threshold_used");
+        // Note: Pest's toHaveKey($key, $value) treats the 2nd arg as the expected
+        // VALUE, not a message — so assert presence, then the sub-keys.
+        expect($module)->toHaveKey('threshold_used');
         expect($module['threshold_used'])->toHaveKeys(['active_threshold', 'dormant_threshold', 'recency_window_days']);
     }
 });
@@ -81,8 +86,8 @@ test('module classification: rows >= dormant_threshold but stale → dormant', f
 
     // Insert students with old created_at
     foreach (range(1, 10) as $i) {
-        \Illuminate\Support\Facades\DB::table('students')->insert([
-            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        DB::table('students')->insert([
+            'uuid' => (string) Str::uuid(),
             'school_id' => $school->id,
             'user_id' => $user->id,
             'first_name' => "Student{$i}",
@@ -117,21 +122,21 @@ test('missing table for a module does not abort analysis', function () {
 });
 
 test('pii sanitization service rejects emails', function () {
-    $pii = new PiiSanitizationService();
+    $pii = new PiiSanitizationService;
 
-    expect(fn() => $pii->scan(['field' => 'test@example.com']))
+    expect(fn () => $pii->scan(['field' => 'test@example.com']))
         ->toThrow(PiiDetectedException::class);
 });
 
 test('pii sanitization service rejects person names in name fields', function () {
-    $pii = new PiiSanitizationService();
+    $pii = new PiiSanitizationService;
 
-    expect(fn() => $pii->scan(['first_name' => 'John Smith']))
+    expect(fn () => $pii->scan(['first_name' => 'John Smith']))
         ->toThrow(PiiDetectedException::class);
 });
 
 test('pii sanitization service allows synthetic placeholder names', function () {
-    $pii = new PiiSanitizationService();
+    $pii = new PiiSanitizationService;
 
     // Should not throw for synthetic placeholders
     $pii->scan(['first_name' => 'student_1']);
@@ -141,7 +146,7 @@ test('pii sanitization service allows synthetic placeholder names', function () 
 });
 
 test('pii sanitization service allows school_name', function () {
-    $pii = new PiiSanitizationService();
+    $pii = new PiiSanitizationService;
 
     // school_name is metadata, not a person name
     $pii->scan(['school_name' => 'Sunrise Academy']);

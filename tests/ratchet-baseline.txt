@@ -13,7 +13,6 @@ tests/Feature/Auth/PasswordConfirmationTest.php::confirm password screen can be 
 tests/Feature/Auth/TwoFactorChallengeTest.php::two factor challenge can be rendered
 tests/Feature/Auth/VerificationNotificationTest.php::does not send verification notification if email is verified
 tests/Feature/Auth/VerificationNotificationTest.php::sends verification notification
-tests/Feature/Dashboard/DashboardAnalysisTest.php::analysis result contains threshold_used per module
 tests/Feature/GuardianManagementTest.php::it admin can change a login-enabled guardians email with credential permission
 tests/Feature/GuardianManagementTest.php::it audit log records guardian updates and pivot events
 tests/Feature/GuardianManagementTest.php::it demoting can_login on one of many pivots keeps the user active

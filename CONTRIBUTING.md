@@ -67,7 +67,7 @@ Two platform rules that follow from these and are already enforced:
 | Commented-out authz (rule 15) | `lint.yml` → `bin/ci-authz-lint.php` | `authz-lint-baseline.txt` |
 | Boundary rules (§17.2: school-id fallbacks, decimal money casts, `fee_*` outside Finance, Finance escape hatches, `forceCreate` in Finance tests) | `lint.yml` → `bin/ci-boundary-lint.php` | `boundary-lint-baseline.txt` (entries carry documented expiries) |
 | Architecture rules (§17.1) | `lint.yml` → `pest --group=arch` (`tests/Arch/`) | none — hard; Finance rules auto-activate when `app/Finance` appears |
-| Static analysis | `lint.yml` → `composer analyse` (Larastan **level 5**, fixed for Phase 1) | `phpstan-baseline.neon` |
+| Static analysis | `lint.yml` → `composer analyse` (Larastan **level 5**, fixed for Phase 1; **baseline-relative** — see [roadmap decision](docs/roadmap.md)) | `phpstan-baseline.neon` |
 
 Baseline mechanics: the lint baselines are **content-keyed**
 (rule + file + trimmed line), not line-number-keyed — see ADR 0041 for the

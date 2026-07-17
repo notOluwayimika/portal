@@ -110,6 +110,25 @@ default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
 
+## Decision: Larastan is baseline-relative (ratchet)
+
+The §24 exit criterion "Larastan Level 5 + arch tests green" and the Execution
+Plan's ratchet philosophy were previously ambiguous about whether "green" means
+**absolute zero findings** or **zero findings above the committed baseline**.
+
+**Decision (architectural, not an assumption):** Larastan Level 5 is enforced
+**baseline-relative** — CI fails only on findings NOT in `phpstan-baseline.neon`,
+identically to the test / tsc / authz / boundary ratchets. Level 5 is fixed for
+Phase 1; the baseline may only shrink. "Green" at Phase-1 exit therefore means
+**green against the baseline**, and burning the baseline toward zero is
+opportunistic Continuous work, not a Phase-1 exit blocker.
+
+Rationale: every other CI gate in this repo is a ratchet (freeze pre-existing
+debt, fail on regressions). An absolute-zero Larastan bar would be the sole
+exception, would gate Phase-1 exit on a multi-week static-analysis cleanup with
+no Finance-blocking payoff, and would contradict the approved delivery model.
+This decision makes the ratchet interpretation explicit and binding.
+
 ## Governance — current state (not intent)
 
 - CI: `linter` + `tests` workflows run on PRs to `staging`/`main`.

@@ -20,6 +20,8 @@ use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\GuardianService;
+use App\Support\ActiveSchool;
+use App\Support\Authz;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -32,8 +34,7 @@ class GuardianController extends Controller
 {
     public function __construct(
         protected GuardianService $guardianService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request)
     {
@@ -60,6 +61,7 @@ class GuardianController extends Controller
     public function destroy(Guardian $guardian)
     {
         $this->guardianService->delete($guardian);
+
         return response()->noContent();
     }
 
@@ -74,11 +76,11 @@ class GuardianController extends Controller
             'identifier' => ['required', 'string', 'max:255'],
         ]);
 
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
 
         $guardian = $this->guardianService->findGloballyByIdentifier($data['identifier']);
 
-        if (!$guardian) {
+        if (! $guardian) {
             return response()->json([
                 'message' => 'No guardian found with that identifier.',
             ], 404);
@@ -130,7 +132,7 @@ class GuardianController extends Controller
     {
         // abort_unless($request->user()?->can('guardian.create'), 403);
 
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
 
         $result = $this->guardianService->createGuardianWithUser(
             attributes: $request->only([
@@ -216,7 +218,7 @@ class GuardianController extends Controller
             'email' => ['nullable', 'email', 'required_if:can_login,true'],
         ]);
 
-        $schoolId = (int) \App\Support\ActiveSchool::id();
+        $schoolId = (int) ActiveSchool::id();
 
         if ($data['mode'] === 'existing') {
             $guardian = $this->guardianService->resolveExistingGuardianForAttachment($data, $schoolId);
@@ -312,12 +314,16 @@ class GuardianController extends Controller
      */
     public function students(Guardian $guardian)
     {
-        // abort_unless(request()->user()?->can('guardian.view'), 403);
+        // S5 observe mode: records a would-be denial and continues; enforces
+        // (abort 403) only when config('authz.enforce') is on. Restores this gate
+        // as live code (clearing the commented-authz debt) without yet blocking.
+        Authz::abilityCheck(request()->user(), 'guardian.view', 'GuardianController@students');
 
         $students = $this->guardianService->studentsFor($guardian);
         $students->load('school', 'currentCurriculum');
+
         return response()->json([
-            'data' => $students->map(fn($s) => [
+            'data' => $students->map(fn ($s) => [
                 'id' => $s->uuid,
                 'full_name' => $s->full_name,
                 'admission_number' => $s->admission_number,
@@ -432,7 +438,7 @@ class GuardianController extends Controller
             ->latest()
             ->limit(10)
             ->get()
-            ->map(fn($a) => $this->serializeActivity($a));
+            ->map(fn ($a) => $this->serializeActivity($a));
 
         return response()->json(['data' => $logs]);
     }
@@ -453,14 +459,14 @@ class GuardianController extends Controller
         ]);
 
         $paginated = $this->guardianAuditQuery($guardian)
-            ->when($data['event'] ?? null, fn($q) => $q->where('event', $data['event']))
-            ->when($data['date_from'] ?? null, fn($q) => $q->whereDate('created_at', '>=', $data['date_from']))
-            ->when($data['date_to'] ?? null, fn($q) => $q->whereDate('created_at', '<=', $data['date_to']))
+            ->when($data['event'] ?? null, fn ($q) => $q->where('event', $data['event']))
+            ->when($data['date_from'] ?? null, fn ($q) => $q->whereDate('created_at', '>=', $data['date_from']))
+            ->when($data['date_to'] ?? null, fn ($q) => $q->whereDate('created_at', '<=', $data['date_to']))
             ->latest()
             ->paginate($data['per_page'] ?? 50);
 
         return response()->json([
-            'data' => collect($paginated->items())->map(fn($a) => $this->serializeActivity($a)),
+            'data' => collect($paginated->items())->map(fn ($a) => $this->serializeActivity($a)),
             'pagination' => [
                 'total' => $paginated->total(),
                 'per_page' => $paginated->perPage(),
@@ -483,18 +489,18 @@ class GuardianController extends Controller
         return Activity::query()
             ->with('causer')
             ->where(function ($q) use ($guardian, $userId) {
-                $q->where(fn($sub) => $sub
+                $q->where(fn ($sub) => $sub
                     ->where('subject_type', Guardian::class)
                     ->where('subject_id', $guardian->id));
 
                 if ($userId) {
                     // actions on the linked user account (password set/changed, disabled, ...)
-                    $q->orWhere(fn($sub) => $sub
+                    $q->orWhere(fn ($sub) => $sub
                         ->where('subject_type', User::class)
                         ->where('subject_id', $userId));
 
                     // actions performed by the account itself (login, logout, password reset, ...)
-                    $q->orWhere(fn($sub) => $sub
+                    $q->orWhere(fn ($sub) => $sub
                         ->where('causer_type', User::class)
                         ->where('causer_id', $userId));
                 }
@@ -531,7 +537,7 @@ class GuardianController extends Controller
 
         BulkMessageGuardiansJob::dispatch(
             $data['guardian_ids'],
-            \App\Support\ActiveSchool::id(),
+            ActiveSchool::id(),
             $data['subject'],
             $data['body'],
             $data['channels'],
@@ -555,7 +561,7 @@ class GuardianController extends Controller
 
         BulkEnableGuardianLoginJob::dispatch(
             $data['guardian_ids'],
-            \App\Support\ActiveSchool::id(),
+            ActiveSchool::id(),
             $request->user()->id,
         );
 
@@ -575,7 +581,7 @@ class GuardianController extends Controller
             'guardian_ids.*' => ['integer', 'exists:guardians,id'],
         ]);
 
-        $this->guardianService->bulkDisableLogin($data['guardian_ids'], \App\Support\ActiveSchool::id());
+        $this->guardianService->bulkDisableLogin($data['guardian_ids'], ActiveSchool::id());
 
         return Response::success('Bulk login disable processed successfully.');
     }
@@ -594,7 +600,7 @@ class GuardianController extends Controller
             'status' => ['required', 'string', Rule::in(GuardianStatusEnum::values())],
         ]);
 
-        $this->guardianService->bulkUpdateStatus($data['guardian_ids'], $data['status'], \App\Support\ActiveSchool::id());
+        $this->guardianService->bulkUpdateStatus($data['guardian_ids'], $data['status'], ActiveSchool::id());
 
         return Response::success('Bulk status update processed successfully.');
     }

@@ -19,7 +19,6 @@ app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->c
 app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.update_credentials'), 403);
 app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.view'), 403);
 app/Http/Controllers/GuardianController.php	// abort_unless($request->user()?->can('guardian.view_audit'), 403);
-app/Http/Controllers/GuardianController.php	// abort_unless(request()->user()?->can('guardian.view'), 403);
 app/Http/Controllers/GuardianImportController.php	// abort_unless($import->school_id === $schoolId, 404);
 app/Http/Controllers/GuardianImportController.php	// abort_unless($request->user()?->can('guardian.import'), 403);
 app/Http/Controllers/StudentCurriculumController.php	// abort_unless($student->school_id === $request->user()->school_id, 403);

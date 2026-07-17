@@ -1,6 +1,12 @@
+app/Http/Controllers/SuperAdmin/AdminController.php	$current = $user->schools()->get();
 app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
+app/Http/Controllers/TeacherSchoolAccessController.php	$current = $user->schools()->get();
+app/Models/User.php	$ids = $this->schools()->pluck('schools.id');
 app/Models/User.php	$ids->push($this->school_id);
+app/Models/User.php	$this->schools()->detach($school->id);
+app/Models/User.php	$this->schools()->syncWithoutDetaching([$school->id]);
 app/Models/User.php	if ($this->school_id) {
+app/Models/User.php	return $this->belongsToMany(School::class)->withTimestamps();
 app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {
 app/Support/ActiveSchool.php	return (int) $user->school_id;
 app/Support/SchoolAccess.php	->from('school_user')

@@ -3,8 +3,6 @@ tests/Feature/ActivityLog/ActivityLogApiTest.php::it does not leak activity acro
 tests/Feature/ActivityLog/ActivityLogApiTest.php::it hides sensitive entries without view_sensitive
 tests/Feature/ActivityLog/ActivityLogApiTest.php::it returns a paginated scoped feed
 tests/Feature/Auth/AuthenticationTest.php::users are rate limited
-tests/Feature/Auth/AuthenticationTest.php::users with two factor enabled are redirected to two factor challenge
-tests/Feature/Auth/TwoFactorChallengeTest.php::two factor challenge can be rendered
 tests/Feature/GuardianManagementTest.php::it admin can change a login-enabled guardians email with credential permission
 tests/Feature/GuardianManagementTest.php::it audit log records guardian updates and pivot events
 tests/Feature/GuardianManagementTest.php::it demoting can_login on one of many pivots keeps the user active
@@ -36,5 +34,3 @@ tests/Feature/GuardianRegistrationTest.php::it registers a student with one new 
 tests/Feature/GuardianRegistrationTest.php::it rejects registration when more than one guardian is primary
 tests/Feature/GuardianRegistrationTest.php::it rejects registration when no guardian is marked primary
 tests/Feature/GuardianRegistrationTest.php::it rolls back the student when a guardian processing failure occurs
-tests/Feature/Settings/SecurityTest.php::correct password must be provided to update password
-tests/Feature/Settings/SecurityTest.php::password can be updated

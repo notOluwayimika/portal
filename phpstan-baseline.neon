@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Method App\\Actions\\Fortify\\ResetUserPassword\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Actions/Fortify/ResetUserPassword.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
 			identifier: property.notFound
 			count: 1
@@ -1367,18 +1361,6 @@ parameters:
 			identifier: larastan.relationExistence
 			count: 1
 			path: app/Http/Middleware/HandleInertiaRequests.php
-
-		-
-			message: '#^Method App\\Http\\Requests\\Settings\\PasswordUpdateRequest\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Http/Requests/Settings/PasswordUpdateRequest.php
-
-		-
-			message: '#^Method App\\Http\\Requests\\Settings\\ProfileDeleteRequest\:\:passwordRules\(\) should return array\<int, array\<mixed\>\|Illuminate\\Contracts\\Validation\\ValidationRule\|string\> but returns array\<int, Illuminate\\Validation\\Rules\\Password\|string\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Http/Requests/Settings/ProfileDeleteRequest.php
 
 		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\ActivityDetailResource\:\:\$updated_at\.$#'
@@ -3335,18 +3317,6 @@ parameters:
 			identifier: property.notFound
 			count: 1
 			path: app/Observers/StudentCurriculumObserver.php
-
-		-
-			message: '#^Class App\\Actions\\Fortify\\UpdateUserPassword not found\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Providers/FortifyServiceProvider.php
-
-		-
-			message: '#^Class App\\Actions\\Fortify\\UpdateUserProfileInformation not found\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Providers/FortifyServiceProvider.php
 
 		-
 			message: '#^Call to an undefined method Illuminate\\Http\\Request\:\:validated\(\)\.$#'

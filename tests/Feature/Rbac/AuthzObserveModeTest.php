@@ -53,6 +53,27 @@ it('records a would-be denial and lets the request continue (observe mode)', fun
         ->and($row->occurred_at)->not->toBeNull();
 });
 
+it('records the path only — never the query string (data minimization)', function () {
+    config(['authz.enforce' => false]);
+
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'admin');
+    $user->flushSchoolAccessCache();
+    $guardian = al_makeGuardian($school->id, al_makeUser($school->id)->id);
+
+    // Include a query string carrying would-be PII.
+    $this->actingAs($user)->withSession(['school_id' => $school->id])
+        ->getJson("/api/guardians/{$guardian->uuid}/students?email=secret%40example.com&q=jane")
+        ->assertOk();
+
+    $uri = DB::table('authz_observations')->value('request_uri');
+    expect($uri)->toContain("/api/guardians/{$guardian->uuid}/students")
+        ->and($uri)->not->toContain('?')
+        ->and($uri)->not->toContain('secret')
+        ->and($uri)->not->toContain('email=');
+});
+
 it('does NOT record when the user holds the permission', function () {
     config(['authz.enforce' => false]);
 

@@ -53,3 +53,4 @@ implementing phase starts.
 | [0041](0041-ratchet-baseline-keying.md) | Ratchet baselines are content-keyed | 1 | **Issued** |
 | [0042](0042-activeschool-transport-coupling.md) | `ActiveSchool::id()` transport coupling — known debt + expiry | 1 | **Issued** |
 | [0043](0043-authz-rollout-scaffolding.md) | `App\Support\Authz` is temporary authorization-rollout scaffolding | 1→Continuous | **Issued** |
+| [0044](0044-result-enrollment-permissions.md) | Result & enrollment authorization moves from roles to permissions | 1→Continuous | **Issued (design)** |

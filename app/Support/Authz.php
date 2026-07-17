@@ -52,8 +52,11 @@ class Authz
     private static function record(string $ability, string $checkType, string $controllerAction): void
     {
         try {
+            // request() always resolves the bound Request (even off-request:
+            // console/queue get an empty one with no route), so it is non-null;
+            // only user()/route() are nullable and stay guarded.
             $request = request();
-            $user = $request?->user();
+            $user = $request->user();
 
             DB::table('authz_observations')->insert([
                 'user_id' => $user?->getKey(),
@@ -61,9 +64,9 @@ class Authz
                 'ability' => $ability,
                 'check_type' => $checkType,
                 'controller_action' => $controllerAction,
-                'route' => $request?->route()?->getName(),
-                'request_uri' => $request ? substr($request->fullUrl(), 0, 1024) : null,
-                'method' => $request?->method(),
+                'route' => $request->route()?->getName(),
+                'request_uri' => substr($request->fullUrl(), 0, 1024),
+                'method' => $request->method(),
                 'transport' => self::transport($request),
                 'roles' => json_encode($user ? $user->getRoleNames()->values()->all() : []),
                 'occurred_at' => now(),
@@ -78,10 +81,10 @@ class Authz
         }
     }
 
-    private static function transport($request): string
+    private static function transport(\Illuminate\Http\Request $request): string
     {
         // An HTTP request is bound in web/api (and feature tests) — classify by path.
-        if ($request && $request->route()) {
+        if ($request->route()) {
             return $request->is('api/*') ? 'api' : 'http';
         }
 

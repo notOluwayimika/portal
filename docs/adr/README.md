@@ -52,3 +52,4 @@ implementing phase starts.
 | [0040](0040-super-admin-never-overrides-maker-checker.md) | `super_admin` never overrides maker–checker (binds ADR 0009) | 3 (constraint issued now) | **Issued** |
 | [0041](0041-ratchet-baseline-keying.md) | Ratchet baselines are content-keyed | 1 | **Issued** |
 | [0042](0042-activeschool-transport-coupling.md) | `ActiveSchool::id()` transport coupling — known debt + expiry | 1 | **Issued** |
+| [0043](0043-authz-rollout-scaffolding.md) | `App\Support\Authz` is temporary authorization-rollout scaffolding | 1→Continuous | **Issued** |

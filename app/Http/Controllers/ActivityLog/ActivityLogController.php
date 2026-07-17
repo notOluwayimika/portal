@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\ActivityLog;
 
+use App\Support\Authz;
+
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ActivityDetailResource;
 use App\Http\Resources\ActivityResource;
@@ -46,7 +48,7 @@ class ActivityLogController extends Controller
     /** GET /api/activity-logs */
     public function index(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'ActivityLogController@index');
         $data = $request->validate($this->filterRules());
 
         $includeSystem = (bool) ($data['include_system'] ?? false);
@@ -75,7 +77,7 @@ class ActivityLogController extends Controller
     /** GET /api/activity-logs/{id} */
     public function show(Request $request, int $id)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'ActivityLogController@show');
 
         $activity = $this->queries->baseQuery($request->user(), true)
             ->where('activity_log.id', $id)
@@ -105,7 +107,7 @@ class ActivityLogController extends Controller
     /** GET /api/activity-logs/filters/options — cached 5 min per school. */
     public function filterOptions(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'ActivityLogController@filterOptions');
         $user = $request->user();
         $schoolId = $this->queries->currentSchoolId($user);
 
@@ -151,7 +153,7 @@ class ActivityLogController extends Controller
     /** GET /api/activity-logs/stats — cached 1 min per school per user. */
     public function stats(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.view'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.view', 'ActivityLogController@stats');
         $user = $request->user();
         $schoolId = $this->queries->currentSchoolId($user);
 
@@ -216,7 +218,7 @@ class ActivityLogController extends Controller
     /** GET /api/activity-logs/export — sync ≤1000 rows, queued otherwise. */
     public function export(Request $request)
     {
-        // abort_unless($request->user()?->can('activity_log.export'), 403);
+        Authz::abilityCheck(request()->user(), 'activity_log.export', 'ActivityLogController@export');
         $data = $request->validate($this->filterRules());
 
         $query = $this->queries->baseQuery($request->user(), (bool) ($data['include_system'] ?? false));

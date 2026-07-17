@@ -2,8 +2,10 @@
 
 use App\Models\Permission;
 use App\Models\Role;
+use App\Support\Authz;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Proves observe mode is not silent by construction: a user lacking the
@@ -66,6 +68,35 @@ it('does NOT record when the user holds the permission', function () {
     $this->actingAs($user)->withSession(['school_id' => $school->id])
         ->getJson("/api/guardians/{$guardian->uuid}/students")
         ->assertOk();
+
+    expect(DB::table('authz_observations')->count())->toBe(0);
+});
+
+it('ensure() records an ownership would-be denial in observe mode with the right check_type', function () {
+    config(['authz.enforce' => false]);
+
+    Authz::ensure(false, 'import.belongs_to_school', 'ownership', 'GuardianImportController@authorizeSchool', 404);
+
+    $row = DB::table('authz_observations')->first();
+    expect($row)->not->toBeNull()
+        ->and($row->ability)->toBe('import.belongs_to_school')
+        ->and($row->check_type)->toBe('ownership')
+        ->and($row->controller_action)->toBe('GuardianImportController@authorizeSchool');
+});
+
+it('ensure() aborts with the supplied status (404) in enforce mode', function () {
+    config(['authz.enforce' => true]);
+
+    expect(fn () => Authz::ensure(false, 'enrollment.belongs_to_student', 'ownership', 'X@y', 404))
+        ->toThrow(HttpException::class);
+
+    expect(DB::table('authz_observations')->count())->toBe(0); // enforce aborts, never records
+});
+
+it('ensure() does nothing when the condition holds', function () {
+    config(['authz.enforce' => false]);
+
+    Authz::ensure(true, 'enrollment.belongs_to_student', 'ownership', 'X@y', 404);
 
     expect(DB::table('authz_observations')->count())->toBe(0);
 });

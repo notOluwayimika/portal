@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Services\StudentSubjectService;
+use App\Support\Authz;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Spatie\Activitylog\Models\Activity;
@@ -26,7 +27,7 @@ class StudentSubjectController extends Controller
      */
     public function index(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        // abort_unless($request->user()->can('student_subject.view'), 403);
+        Authz::abilityCheck(request()->user(), 'student_subject.view', 'StudentSubjectController@index');
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         $studentCurriculum->load([
@@ -70,7 +71,7 @@ class StudentSubjectController extends Controller
      */
     public function store(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        // abort_unless($request->user()->can('student_subject.add_optional'), 403);
+        Authz::abilityCheck(request()->user(), 'student_subject.add_optional', 'StudentSubjectController@store');
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         if ($request->has('curriculum_subject_ids')) {
@@ -131,7 +132,7 @@ class StudentSubjectController extends Controller
         StudentSubject $studentSubject
     ): JsonResponse {
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
-        // abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
+        Authz::ensure((int) $studentSubject->student_curriculum_id === (int) $studentCurriculum->id, 'student_subject.belongs_to_enrollment', 'ownership', 'StudentSubjectController@drop', 404);
 
         try {
             $updated = $this->service->dropOptionalSubject(
@@ -159,7 +160,7 @@ class StudentSubjectController extends Controller
         StudentSubject $studentSubject
     ): JsonResponse {
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
-        // abort_unless($studentSubject->student_curriculum_id === $studentCurriculum->id, 404);
+        Authz::ensure((int) $studentSubject->student_curriculum_id === (int) $studentCurriculum->id, 'student_subject.belongs_to_enrollment', 'ownership', 'StudentSubjectController@restore', 404);
 
         try {
             $updated = $this->service->restoreDroppedSubject($studentSubject, $request->user());
@@ -178,7 +179,7 @@ class StudentSubjectController extends Controller
      */
     public function history(Request $request, Student $student, StudentCurriculum $studentCurriculum): JsonResponse
     {
-        // abort_unless($request->user()->can('student_subject.view_history'), 403);
+        Authz::abilityCheck(request()->user(), 'student_subject.view_history', 'StudentSubjectController@history');
         $this->authorizeEnrollmentBelongsToStudent($student, $studentCurriculum);
 
         $subjectIds = $studentCurriculum->studentSubjects()->pluck('id');
@@ -206,7 +207,7 @@ class StudentSubjectController extends Controller
         $request->validate([
             'comment' => 'required|string|max:50',
         ]);
-        // abort_unless(request()->user()->can('student_subject.view'), 403);
+        Authz::abilityCheck(request()->user(), 'student_subject.view', 'StudentSubjectController@storeComment');
         $this->service->storeComment($studentSubject, $request->user(), $request->comment);
 
         return response()->json([
@@ -216,7 +217,14 @@ class StudentSubjectController extends Controller
 
     private function authorizeEnrollmentBelongsToStudent(Student $student, StudentCurriculum $enrollment): void
     {
-        // abort_unless($enrollment->student_id === $student->id, 404);
+        // Nested-route integrity (the enrollment must belong to the student in the
+        // URL). Object-ownership guard — observed via Authz until enforcement.
+        Authz::ensure((int) $enrollment->student_id === (int) $student->id, 'enrollment.belongs_to_student', 'ownership', 'StudentSubjectController@enrollmentGuard', 404);
+
+        // Ownership-by-users.school_id is intentionally NOT restored: it is redundant
+        // under SchoolScope (the student/enrollment are already School-scoped) and would
+        // reintroduce the users.school_id fallback (ADR 0042 debt). Awaiting §7 decision
+        // (see S5 classification report) — recommend deletion, not restoration.
         // abort_unless($student->school_id === auth()->user()->school_id, 403);
     }
 }

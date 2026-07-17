@@ -130,7 +130,7 @@ class GuardianController extends Controller
      */
     public function store(GuardianRequest $request)
     {
-        // abort_unless($request->user()?->can('guardian.create'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.create', 'GuardianController@store');
 
         $schoolId = (int) ActiveSchool::id();
 
@@ -194,7 +194,7 @@ class GuardianController extends Controller
      */
     public function export(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.export'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.export', 'GuardianController@export');
 
         return Excel::download(new GuardiansExport($request), 'guardians.csv', \Maatwebsite\Excel\Excel::CSV);
     }
@@ -278,7 +278,7 @@ class GuardianController extends Controller
      */
     public function detach(Request $request, Student $student, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.detach'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.detach', 'GuardianController@detach');
 
         $data = $request->validate([
             'replacement_primary_guardian_uuid' => ['nullable', 'uuid'],
@@ -369,7 +369,7 @@ class GuardianController extends Controller
      */
     public function enableLogin(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.enable_login'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.enable_login', 'GuardianController@enableLogin');
 
         $this->guardianService->enableLogin($guardian, $guardian->students()->pluck('first_name')->toArray());
 
@@ -382,7 +382,7 @@ class GuardianController extends Controller
      */
     public function disableLogin(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.enable_login'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.enable_login', 'GuardianController@disableLogin');
 
         $this->guardianService->disableLogin($guardian);
 
@@ -395,7 +395,7 @@ class GuardianController extends Controller
      */
     public function resetPassword(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.update_credentials'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.update_credentials', 'GuardianController@resetPassword');
 
         $guardian->load('user');
         $user = $guardian->user;
@@ -417,7 +417,7 @@ class GuardianController extends Controller
      */
     public function resendInvitation(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.enable_login'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.enable_login', 'GuardianController@resendInvitation');
 
         $studentNames = $guardian->students()->pluck('first_name')->toArray();
 
@@ -432,7 +432,7 @@ class GuardianController extends Controller
      */
     public function activity(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.view'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.view', 'GuardianController@activity');
 
         $logs = $this->guardianAuditQuery($guardian)
             ->latest()
@@ -449,7 +449,7 @@ class GuardianController extends Controller
      */
     public function auditHistory(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.view_audit'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.view_audit', 'GuardianController@auditHistory');
 
         $data = $request->validate([
             'event' => ['nullable', 'string', 'max:100'],
@@ -525,7 +525,7 @@ class GuardianController extends Controller
      */
     public function bulkMessage(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.message'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.message', 'GuardianController@bulkMessage');
 
         $data = $request->validate([
             'guardian_ids' => ['required', 'array'],
@@ -552,7 +552,7 @@ class GuardianController extends Controller
      */
     public function bulkEnableLogin(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.enable_login'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.enable_login', 'GuardianController@bulkEnableLogin');
 
         $data = $request->validate([
             'guardian_ids' => ['required', 'array'],
@@ -574,7 +574,7 @@ class GuardianController extends Controller
      */
     public function bulkDisableLogin(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.enable_login'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.enable_login', 'GuardianController@bulkDisableLogin');
 
         $data = $request->validate([
             'guardian_ids' => ['required', 'array'],
@@ -592,7 +592,7 @@ class GuardianController extends Controller
      */
     public function bulkStatus(Request $request)
     {
-        // abort_unless($request->user()?->can('guardian.update'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.update', 'GuardianController@bulkStatus');
 
         $data = $request->validate([
             'guardian_ids' => ['required', 'array'],
@@ -607,7 +607,7 @@ class GuardianController extends Controller
 
     public function setPassword(Request $request, Guardian $guardian)
     {
-        // abort_unless($request->user()?->can('guardian.update'), 403);
+        Authz::abilityCheck(request()->user(), 'guardian.update', 'GuardianController@setPassword');
 
         $data = $request->validate([
             'password' => ['required', 'string', 'min:8', 'confirmed'],

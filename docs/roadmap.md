@@ -159,6 +159,69 @@ The thin bus (dispatcher + queued afterCommit listeners) is trivial to add once
 there is a stable fact to carry; building it now with no stable source earns no
 abstraction.
 
+### 1.4e deep-dive (second pass — findings, no implementation)
+
+**§1 enrollment convergence (proposal, smallest change).** `enroll()` already
+takes `(Student, Curriculum, User, array $options)` and does the compulsory-subject
+auto-attach. `@promote` and `@register` re-implement `StudentCurriculum::create`
+inline and **skip `autoAttachCompulsorySubjects`** — a functional divergence, not
+just a style one. Smallest convergence: `@register` → `enroll($student, $target, $user)`;
+`@promote` → `enroll($student, $target, $user, ['status' => …])` for the new row +
+keep the source→PROMOTED update in the same transaction. The controller already
+injects the service. No schema change; a behaviour *fix* (promotions/registrations
+would gain the compulsory subjects they currently miss). Its own slice + tests;
+not published as an event yet.
+
+**§2b deletion defect — does NOT clear; the dependency IS the finding.**
+`student_curricula` has `UNIQUE(student_id, curriculum_id)` and **no** soft-deletes
+(verified from schema). So `updateStatus('withdrawn')` → `->delete()` is a
+*workaround*: it removes the row so the student can re-enrol in the same curriculum
+— a retained withdrawn row would block that at the unique index (and at
+`@register`'s own `where(student_id,curriculum_id)->exists()` guard). The same
+constraint means `unenroll()` (which keeps the row with `ended_at`) **already**
+cannot re-enrol into the same curriculum — `enroll()` checks only
+`whereNull('ended_at')`, then `create` hits the unique index → unhandled
+`QueryException`. The two enrollment-end mechanisms diverge *because of* the
+uniqueness model. **Naive "stop the delete" is unsafe** — it breaks re-enrolment.
+Correct fix (soft-end on withdrawal **and** active-only uniqueness — MySQL has no
+partial unique index, so a generated `active_key` column with
+`UNIQUE(student_id, active_key)` where inactive rows key to NULL) is a coupled
+schema+logic slice, not a one-liner. Recorded as a prerequisite; nothing shipped.
+
+**§2a withdrawal state machine — half-built.** Two enums exist —
+`StudentStatusEnum` (used for *enrollment* status) and `StudentMembershipStatus`
+(student-level, also `withdrawn`) — but `students.status`/`left_at`/`leave_reason`
+are unwritten. Intended model appears two-level: enrollment lifecycle (per
+curriculum) vs student membership (per School — the Finance-relevant one). The
+authoritative state machine is a design proposal for a later slice; not designed
+here.
+
+**§3 term lifecycle — CRUD today, should be date-derived.** `terms.status` is
+written only by `TermController::update` (generic form edit); every other reference
+is a read; no start/close operation, no scheduler. `terms` already carries
+`start_date`/`end_date`. **Recommendation: term start/close is date-derived** —
+recognition (§9) keys off the date, so **no lifecycle operation and no event are
+needed**. If a deliberate close is ever wanted it needs the 1.4d scheduler; do not
+build lifecycle commands before it.
+
+**§4 published-fact inventory (candidates):**
+
+| Fact | Authoritative transition | Single point? | Atomic post-commit? | Consumer | Publish now? |
+|---|---|---|---|---|---|
+| EnrollmentCreated | `enroll` service | No (promote/register bypass) | yes | billing eligibility | prereq §1 |
+| EnrollmentEnded | `unenroll` (ended_at) | No (withdraw-delete competes) | yes | invoice cancel | prereq §2b |
+| StudentWithdrawn (membership) | does not exist | n/a | n/a | billing stop | prereq §2a |
+| StudentPromoted | `@promote` (direct) | no | yes | academics | prereq §1 |
+| TermStarted/Closed | none (CRUD status) | no | no | revenue recog | not an event — date-derived (§3) |
+| ResultApproved | `@approve` | single-ish | yes | Ph3 | prereq ADR 0044 |
+
+**§5 readiness — what blocks 1.4e.** Every fact needs one authoritative
+transition, one publication point, an atomic committed change, and a stable DTO.
+Today **zero** facts have all four. Order: §1 convergence → §2b uniqueness rework
++ soft-end withdrawal → §2a membership state machine → then EnrollmentCreated /
+EnrollmentEnded / StudentWithdrawn are publishable; TermStarted/Closed reclassified
+as date-derived (no event). The bus itself is trivial and comes last.
+
 ## 1.4c — audit-log immutability (2026-07)
 
 **Implemented.** `activity_log` (spatie, backed by `App\Models\Activity`) is now

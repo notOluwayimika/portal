@@ -151,6 +151,34 @@ Bite-proofs (`AuditLogImmutabilityTest`, MySQL, 7): model update/delete throw;
 raw DB update/delete denied at the DB; the mass-delete (clean) path denied at the
 DB; `activitylog:clean` deletes nothing; a normal audited action still writes.
 
+### 1.4c — trigger lifecycle & restore runbook (verification pass)
+
+**Triggers survive `ALTER TABLE` (verified).** In MySQL a trigger is a schema
+object bound to the table, not the column set — `ADD COLUMN`/`DROP COLUMN`
+preserves both `activity_log` triggers (empirically confirmed). So a routine Ph2
+audit-column addition cannot silently remove the guarantee. **Runbook rule:** a
+migration that DROPS/recreates `activity_log` (or rebuilds it) must recreate the
+triggers, and deploy must run `php artisan audit:verify-immutability` afterward.
+
+**Triggers do NOT reliably survive a logical restore — the real gap.** The model
+guard is application code and always present, but it does not stop raw SQL or a
+mass `->delete()`; the triggers are the layer a restore can strip. Per mechanism:
+
+| Restore mechanism | Triggers survive? |
+|---|---|
+| Logical dump/restore (`mysqldump`) — `activity_log` only OR full into a fresh DB | **Only if** dumped with `--triggers` (default-on but frequently disabled by managed-DB export tooling) AND the restoring user holds `TRIGGER` privilege. Often **stripped**. |
+| Physical / binary restore (XtraBackup, filesystem/volume snapshot) | **Yes** — triggers are in the physical data-dictionary files. |
+| Point-in-time recovery (base backup + binlog replay) | Survives if the base backup had them (physical) or the `CREATE TRIGGER` falls within the replayed binlog window; a logical base backup without `--triggers` does **not**. |
+
+**Mandated mitigation (implemented):** `php artisan audit:verify-immutability`
+asserts both `activity_log` triggers exist and **exits non-zero, loudly, if
+either is absent** (`VerifyAuditLogImmutabilityTest` proves pass-when-present /
+fail-when-stripped). **Runbook: run it after ANY database restore and in the
+deploy pipeline after `migrate`.** Without it, a restore that drops the triggers
+leaves the audit log silently mutable — discovered only when someone edits a row
+that should be immutable. (It already caught a genuinely-missing-triggers state on
+the dev DB before its migration was applied.)
+
 ## 1.4b — Shared Sequences (investigation + implementation, 2026-07)
 
 **Implemented.** `App\Support\Sequences\Sequences` (Shared Kernel) + a `sequences`

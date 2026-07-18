@@ -210,6 +210,24 @@ the 422/400 business-rule convention (then root-cause cross-school attach); (4)
 registrar partial-update decision; (5) triage the count/permission-scoping stale
 set.
 
+### Enrollment Option B — registrar selected; design done (2026-07)
+
+Registrar chose **Option B** (episodic enrollments, full history, active-only
+uniqueness; student code fixed; surrogate key on the episode). A **repeat** (no
+completion, no return in time) rolls the same curriculum forward with no gap,
+distinct from withdraw-and-return. Full investigation + design (no code, no
+migration): **[enrollment-option-b-design.md](enrollment-option-b-design.md)**.
+
+**Headline finding:** Option B's real cost is NOT the enrollment index — it is that
+`student_results` `UNIQUE(student_id, curriculum_subject_id)` and `scores`
+`UNIQUE(student_id, curriculum_subject_id, marking_component_id)` are keyed on the
+student+curriculum_subject, not the episode, and are written via `updateOrCreate` —
+so a **repeat (same curriculum) silently OVERWRITES the prior attempt's results**.
+Assessments/subjects are already `student_curriculum_id`-keyed (episode-safe). The
+results/scores re-key is the high-blast-radius change; the `active_key` unique is
+mechanical. **Held on** the registrar's repeat-billing answer (fresh vs
+continuation), designed against both branches in the doc.
+
 ### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
 
 **Specification scan (UI copy · validation messages · comments · ADRs · roadmap ·

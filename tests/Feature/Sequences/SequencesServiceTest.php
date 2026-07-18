@@ -41,6 +41,51 @@ it('never returns a duplicate across many rapid calls (deterministic reproductio
         ->and(DB::table('sequences')->where('scope', 'load')->where('key', 'k')->value('value'))->toBe(200);
 });
 
+it('concurrent FIRST-use cannot double-seed — UNIQUE(scope,key) index + INSERT IGNORE', function () {
+    // First-use is a DISTINCT guarantee from steady-state. Steady-state is
+    // protected by SELECT … FOR UPDATE on the existing counter row; but on first
+    // use no row exists, and FOR UPDATE on a non-existent row locks nothing. What
+    // serialises two concurrent first callers is the UNIQUE (scope, key) index
+    // together with INSERT IGNORE (insertOrIgnore): exactly one seed row can
+    // exist, the second insert is silently ignored — no exception, so no retry
+    // path that could "work by luck".
+    //
+    // This is a DETERMINISTIC reproduction of that interleaving (both callers
+    // observed exists()=false and both seed). The asserted guarantee is the
+    // index/IGNORE behaviour, not observed OS parallelism; under real concurrency
+    // InnoDB makes the second INSERT IGNORE wait on the first's uncommitted row,
+    // then ignore it.
+    $scope = 'firstuse';
+    $key = 'school|GFA/';
+    $n = 5; // domain max (deploy-day: existing records up to 5, no counter row)
+
+    $seed = fn () => DB::table('sequences')->insertOrIgnore([
+        'scope' => $scope, 'key' => $key, 'value' => $n,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $seed(); // caller A seeds the row at N
+    $seed(); // caller B — the UNIQUE index makes INSERT IGNORE a no-op (no throw, no reset)
+
+    expect(DB::table('sequences')->where('scope', $scope)->where('key', $key)->count())->toBe(1)  // exactly one row
+        ->and((int) DB::table('sequences')->where('scope', $scope)->where('key', $key)->value('value'))->toBe($n); // seeded at N, not reset
+
+    // Now both callers proceed to the increment; the FOR UPDATE lock on the
+    // (now-existing) row serialises them → unique N+1 and N+2, never two of N+1.
+    $a = Sequences::next($scope, $key, fn () => $n);
+    $b = Sequences::next($scope, $key, fn () => $n);
+
+    expect([$a, $b])->toBe([$n + 1, $n + 2]);
+});
+
+it('a duplicate INSERT IGNORE neither throws nor resets the counter', function () {
+    DB::table('sequences')->insertOrIgnore(['scope' => 's', 'key' => 'k', 'value' => 9, 'created_at' => now(), 'updated_at' => now()]);
+    // Second seed attempt with a DIFFERENT value must be ignored, not applied.
+    DB::table('sequences')->insertOrIgnore(['scope' => 's', 'key' => 'k', 'value' => 0, 'created_at' => now(), 'updated_at' => now()]);
+
+    expect((int) DB::table('sequences')->where('scope', 's')->where('key', 'k')->value('value'))->toBe(9);
+});
+
 it('holds the counter row under a lock during increment (FOR UPDATE present)', function () {
     // Assert the mechanism, not just the outcome: the increment path issues a
     // locking read so concurrent transactions serialise rather than both reading

@@ -13,34 +13,35 @@ class GuardianSeeder extends Seeder
 {
     private const GUARDIANS = [
         [
-            'first_name'  => 'Chinedu',
-            'last_name'   => 'Okafor',
-            'email'       => 'chinedu.okafor@brookstone.test',
-            'gender'      => 'male',
-            'phone'       => '08011112222',
-            'occupation'  => 'Engineer',
-            'relationship'=> 'father',
-            'is_primary'  => true,
-            'can_login'   => true,
+            'first_name' => 'Chinedu',
+            'last_name' => 'Okafor',
+            'email' => 'chinedu.okafor@brookstone.test',
+            'gender' => 'male',
+            'phone' => '08011112222',
+            'occupation' => 'Engineer',
+            'relationship' => 'father',
+            'is_primary' => true,
+            'can_login' => true,
         ],
         [
-            'first_name'  => 'Ngozi',
-            'last_name'   => 'Okafor',
-            'email'       => 'ngozi.okafor@brookstone.test',
-            'gender'      => 'female',
-            'phone'       => '08033334444',
-            'occupation'  => 'Doctor',
-            'relationship'=> 'mother',
-            'is_primary'  => false,
-            'can_login'   => false,
+            'first_name' => 'Ngozi',
+            'last_name' => 'Okafor',
+            'email' => 'ngozi.okafor@brookstone.test',
+            'gender' => 'female',
+            'phone' => '08033334444',
+            'occupation' => 'Doctor',
+            'relationship' => 'mother',
+            'is_primary' => false,
+            'can_login' => false,
         ],
     ];
 
     public function run(): void
     {
         $school = School::where('slug', 'secondary-school')->first();
-        if (!$school) {
+        if (! $school) {
             $this->command?->warn('No school with slug "secondary-school" found — skipping GuardianSeeder.');
+
             return;
         }
 
@@ -51,6 +52,7 @@ class GuardianSeeder extends Seeder
 
         if ($students->isEmpty()) {
             $this->command?->warn('No students found for the school — skipping GuardianSeeder.');
+
             return;
         }
 
@@ -59,23 +61,27 @@ class GuardianSeeder extends Seeder
                 ['school_id' => $school->id, 'email' => $data['email']],
                 [
                     'first_name' => $data['first_name'],
-                    'last_name'  => $data['last_name'],
-                    'password'   => Hash::make('password'),
-                    'school_id'  => $school->id,
+                    'last_name' => $data['last_name'],
+                    'password' => Hash::make('password'),
+                    'school_id' => $school->id,
                 ]
             );
 
+            // Establish the School/team context before assigning a school-scoped
+            // role (the S7 assignRole invariant; mirrors SetSchoolContext).
+            setPermissionsTeamId($school->id);
             $user->assignRole('guardian');
+            setPermissionsTeamId(null);
 
             $guardian = Guardian::withoutGlobalScopes()->updateOrCreate(
                 ['school_id' => $school->id, 'user_id' => $user->id],
                 [
                     'first_name' => $data['first_name'],
-                    'last_name'  => $data['last_name'],
-                    'gender'     => $data['gender'],
-                    'phone'      => $data['phone'],
+                    'last_name' => $data['last_name'],
+                    'gender' => $data['gender'],
+                    'phone' => $data['phone'],
                     'occupation' => $data['occupation'],
-                    'status'     => 'active',
+                    'status' => 'active',
                 ]
             );
 
@@ -84,8 +90,8 @@ class GuardianSeeder extends Seeder
                 $student->guardians()->syncWithoutDetaching([
                     $guardian->id => [
                         'relationship' => $data['relationship'],
-                        'is_primary'   => $data['is_primary'],
-                        'can_login'    => $data['can_login'],
+                        'is_primary' => $data['is_primary'],
+                        'can_login' => $data['can_login'],
                     ],
                 ]);
             }

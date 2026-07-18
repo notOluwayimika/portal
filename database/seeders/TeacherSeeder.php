@@ -7,7 +7,6 @@ use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class TeacherSeeder extends Seeder
 {
@@ -49,7 +48,11 @@ class TeacherSeeder extends Seeder
                 ]
             );
 
+            // Establish the School/team context before assigning a school-scoped
+            // role (the S7 assignRole invariant; mirrors SetSchoolContext).
+            setPermissionsTeamId($school->id);
             $user->assignRole('teacher');
+            setPermissionsTeamId(null);
 
             Teacher::withoutGlobalScopes()->updateOrCreate(
                 ['school_id' => $school->id, 'user_id' => $user->id],

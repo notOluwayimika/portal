@@ -1,6 +1,3 @@
-app/Console/Commands/S7DivergenceSnapshot.php	$pivotOrphans = DB::table('school_user as su')
-app/Console/Commands/S7DivergenceSnapshot.php	'school_user' => $pivotOrphans->mapWithKeys(fn ($r) => [$r->school_id => (int) $r->orphans]),
-app/Console/Commands/S7DivergenceSnapshot.php	foreach (['school_user', 'users_school_id', 'guardian_records'] as $src) {
 app/Http/Controllers/SuperAdmin/AdminController.php	$current = $user->schools()->get();
 app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
 app/Http/Controllers/TeacherSchoolAccessController.php	$current = $user->schools()->get();

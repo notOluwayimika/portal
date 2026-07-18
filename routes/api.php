@@ -194,6 +194,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|principal'])->group(fun
     Route::patch('/class-level-arms/{classLevelArm:uuid}/principal-approval', [PrincipalApprovalController::class, 'classLevelArm']);
 });
 
+// Finance (walking skeleton) — manual invoice/payment entry points. Finance-
+// specific roles (accounts_officer, …) + maker-checker are Ph2/Ph3; gated on admin
+// for now.
+Route::middleware(['auth:sanctum', 'tenant', 'role:admin|super_admin'])->group(function () {
+    require __DIR__.'/endpoints/finance.php';
+});
+
 Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
     // Shared read data (previously leaked as unauthenticated public routes).
     Route::get('/sessions', [SessionController::class, 'index']);

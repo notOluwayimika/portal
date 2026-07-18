@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Academics\BillableEnrollmentAdapter;
+use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Observers\StudentCurriculumObserver;
@@ -31,6 +33,15 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             ActivitySeverityService::class,
             fn () => ActivitySeverityService::make(),
+        );
+
+        // ACL wiring (composition root): Finance owns the port; the Academics side
+        // adapts to it. Binding lives here — not in Finance — so Finance never names
+        // a concrete Academics class and the dependency arrow stays one-way
+        // (Academics → Finance's contract).
+        $this->app->bind(
+            BillableEnrollmentProvider::class,
+            BillableEnrollmentAdapter::class,
         );
     }
 

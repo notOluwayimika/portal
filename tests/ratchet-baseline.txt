@@ -15,10 +15,6 @@ tests/Feature/GuardianManagementTest.php::it lists all students linked to a guar
 tests/Feature/GuardianManagementTest.php::it registrar cannot change a login-enabled guardians email (credential permission required)
 tests/Feature/GuardianManagementTest.php::it updating guardian details applies to all linked students (single record)
 tests/Feature/GuardianManagementTest.php::it updating pivot fields on student A does not affect student B
-tests/Feature/GuardianProfileTest.php::it disable-login is a no-op when login is already disabled
-tests/Feature/GuardianProfileTest.php::it disables login and sets disabled_at on the user
-tests/Feature/GuardianProfileTest.php::it loads the guardian profile page for an authenticated admin
-tests/Feature/GuardianProfileTest.php::it re-enables a disabled user then disables them again
 tests/Feature/GuardianProfileTest.php::it resends invitation for a never-activated guardian
 tests/Feature/GuardianProfileTest.php::it returns 422 when guardian has no valid email for reset
 tests/Feature/GuardianProfileTest.php::it returns 422 when resending invitation for an already-activated account

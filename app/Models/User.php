@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Concerns\BelongsToSchool;
+use App\Exceptions\NullTeamRoleAssignmentException;
 use App\Support\SchoolAccessParity;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -26,7 +27,11 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use BelongsToSchool, HasApiTokens, HasFactory, HasRoles, LogsActivity, Notifiable, TwoFactorAuthenticatable;
+    use BelongsToSchool, HasApiTokens, HasFactory, LogsActivity, Notifiable, TwoFactorAuthenticatable;
+
+    use HasRoles {
+        assignRole as protected spatieAssignRole;
+    }
 
     protected $fillable = ['first_name', 'last_name', 'email', 'password', 'school_id', 'signature_id', 'disabled_at'];
 
@@ -214,6 +219,30 @@ class User extends Authenticatable
     public function canAccessSchool(int|string $schoolId): bool
     {
         return $this->isSuperAdmin() || $this->accessibleSchoolIds()->contains((int) $schoolId);
+    }
+
+    /**
+     * Enforce the S7 invariant: a school-scoped role may never be assigned with a
+     * null permissions-team, because that grants access to no School (divergence).
+     * `super_admin` is the sole team-less role and is exempt. This overrides the
+     * spatie HasRoles method so the guard cannot be bypassed at any call site.
+     *
+     * @param  array<int, Collection|\Spatie\Permission\Contracts\Role|string>|Collection|\Spatie\Permission\Contracts\Role|string  ...$roles
+     */
+    public function assignRole(...$roles): static
+    {
+        if (getPermissionsTeamId() === null) {
+            $schoolScoped = collect($roles)->flatten()
+                ->map(fn ($r) => is_string($r) ? $r : ($r->name ?? null))
+                ->filter()
+                ->reject(fn ($n) => $n === 'super_admin');
+
+            if ($schoolScoped->isNotEmpty()) {
+                throw new NullTeamRoleAssignmentException($schoolScoped->values()->all());
+            }
+        }
+
+        return $this->spatieAssignRole(...$roles);
     }
 
     /**

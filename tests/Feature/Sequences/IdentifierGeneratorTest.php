@@ -109,6 +109,29 @@ it('adopts the existing max on first use — the switch never reissues a live nu
     expect($next->admission_number)->toBe(Student::admissionNumberPrefix().'043');
 });
 
+// ── Deploy-day first use: a School with existing numbers, no counter row yet ────
+
+it('first use on a School with existing numbers seeds from the domain max (deploy-day)', function () {
+    $school = al_makeSchool();
+    $prefix = Student::admissionNumberPrefix();
+
+    // Old max+1-era identifiers exist; there is NO sequence row — the exact,
+    // unrepeatable deploy-day state where old and new numbering overlap.
+    foreach (['003', '005', '004'] as $n) {
+        Student::factory()->create(['school_id' => $school->id, 'admission_number' => $prefix.$n]);
+    }
+    expect(DB::table('sequences')->count())->toBe(0); // genuinely first use
+
+    $first = Student::factory()->create(['school_id' => $school->id, 'admission_number' => null]);
+    $second = Student::factory()->create(['school_id' => $school->id, 'admission_number' => null]);
+
+    // Seeds from the domain max (005) → 006, 007. Never 001, never a reissue of a
+    // live number; exactly one counter row is created.
+    expect($first->admission_number)->toBe($prefix.'006')
+        ->and($second->admission_number)->toBe($prefix.'007')
+        ->and(DB::table('sequences')->count())->toBe(1);
+});
+
 // ── Gap-tolerant: a rolled-back create burns a value (documented, acceptable) ───
 
 it('is gap-tolerant — a deleted number is never reclaimed (a gap), never a duplicate', function () {

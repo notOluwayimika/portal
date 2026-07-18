@@ -225,8 +225,15 @@ student+curriculum_subject, not the episode, and are written via `updateOrCreate
 so a **repeat (same curriculum) silently OVERWRITES the prior attempt's results**.
 Assessments/subjects are already `student_curriculum_id`-keyed (episode-safe). The
 results/scores re-key is the high-blast-radius change; the `active_key` unique is
-mechanical. **Held on** the registrar's repeat-billing answer (fresh vs
-continuation), designed against both branches in the doc.
+mechanical. **Billing RESOLVED (registrar): every episode bills fresh, uniformly;
+terminal statuses are pure academic facts; no continuation branch.** The design is
+now single-model and **ready to sequence** as one coupled slice (`active_key` +
+end/create convergence + results/scores re-key + all read-side fixes). The
+read-side audit (broadsheet / transcript / result card / score-entry / approval /
+year-averages / completeness / getScores / dashboards all key on
+`(student, curriculum_subject)` and break under N episodes) is the true blast
+radius, now inventoried in the doc. Open for Ph2 only: §7 statement presentation of
+a waived fee.
 
 ### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
 

@@ -31,6 +31,37 @@ triggered specifically by the *repeat* rule (same curriculum).
 it, and it fails as a silent overwrite, never an error. This is the reporting bug
 the audit exists to catch.
 
+**Read-side audit (the other half — after the re-key to `student_curriculum_id`,
+every read still keyed on `(student, curriculum_subject)` returns the WRONG or a
+MIXED episode's results).** Same `->first()` pattern already caught at
+`CurriculumController:350`, one level down in the data:
+
+| Reader | Pattern | Breaks with N episodes |
+|---|---|---|
+| `StudentController:317` (result card / availability) | `StudentResult::where(student_id)->where(curriculum_subject_id)->first()` | returns an **arbitrary** episode's result → the current episode shows a prior attempt's result / wrong availability |
+| `CurriculumController:353` (transcript/result read) | same `->first()` | wrong episode's result |
+| `BroadsheetService:251, :309` (broadsheet) | `studentResults->firstWhere('student_id', $sid)` | broadsheet cell = arbitrary episode. **High impact — the whole-class results report** |
+| `StudentSubjectResource:35` | `studentResults->firstWhere('student_id', $sid)` | subject card shows arbitrary episode |
+| `CurriculumSubjectController:534` (year average) | `studentResults->avg('total_score')` over all rows for a subject | a repeating student is **counted twice** → the class/year average is wrong |
+| `CurriculumController:406-408, :441` (completeness map) | join / key on `(student_id, curriculum_subject_id)`, episode-blind | a result from ANY prior episode marks the current one "complete" → **"outstanding results" understated** |
+| `StudentCurriculumController:227` (getScoresWithMarkingComponents) | `Score::where(student_id)->where(curriculum_subject_id)->get()` — **has the episode (`$studentCurriculum`) but queries by student_id** | returns scores from **all** episodes mixed together |
+| `CurriculumSubjectController:84, :61, :68, :111` (score entry / submit / approve) | `scores()->where(student_id)->get()` / result reads keyed on `(cs, student)` | totals/grades computed across episodes; approval acts on the wrong episode |
+| `BroadsheetService:259` (scores) | `scores->where('student_id', $sid)` | sums scores across episodes |
+| Dashboard aggregates (`DashboardAnalysisService:148`, `ModuleClassificationService:137`) | counts/joins on `student_results`/`scores` by `curriculum_subject` | repeat episodes double-count in analytics |
+
+**Read-side fix shape:** every one of these must add the episode dimension —
+scope on `student_curriculum_id` (which the caller already has, or must resolve to
+the active episode). Getting the write-side re-key right without fixing these is
+worse than doing nothing: the data would be correctly episode-keyed but every
+report would still collapse it to one arbitrary episode. **The read-side is the
+true blast radius** — broadsheet, transcript, result card, score entry, approval,
+year averages, completeness maps, the getScores endpoint, and dashboards.
+
+Data migrations touching these tables (not reads, noted separately):
+`MoveFromCcmJob:238/255` (moves scores by `curriculum_subject_id`),
+`BackfillStudentResultGrades`, `MigrateMarkingSchemes:118` — must be episode-aware
+when the re-key lands.
+
 ### 1b. ENROLLMENT-level sites (student_curricula) — the mechanical part
 
 | Site | Assumption | Breaks with N | Fix shape |
@@ -87,25 +118,31 @@ certainly intended for exactly this):
 ends by setting a terminal status **and** `ended_at`; the row is **never deleted**
 (§15C append-only).
 
-### The billing divergence (the only part held on the registrar)
+### Billing — RESOLVED (registrar): every episode bills fresh, uniformly
 
-- **Repeat = fresh billing:** the repeat episode is a NEW billable unit — its own
-  invoice/fee schedule; the prior episode's charges close with it. Finance keys on
-  the **episode id** (`student_curriculum_id`) as the billable referent.
-- **Repeat = continuation:** the repeat inherits the prior episode's billing — no
-  new invoice; charges roll forward. Finance keys on the **(student, curriculum)**
-  pair or a linked billing thread across episodes.
+**Every enrollment episode bills fresh** — new curriculum, promotion, and repeat
+all generate a fresh bill, identically. The continuation branch is dropped; the
+four divergence points collapse to one answer ("fresh") and no longer exist as
+choices.
 
-**Divergence points (design both, decide later):**
-1. Does creating a repeat episode emit a "new billable enrolment" fact, or a
-   "billing continues" fact? (The eventual 1.4e published fact differs.)
-2. Does the repeat episode get its own fee schedule, or reference the prior's?
-3. On repeat, is the prior episode's outstanding balance cancelled, carried, or
-   merged? (fresh = closed with the episode; continuation = carried.)
-4. Reporting "amount billed for curriculum X": sum episodes (fresh) vs single
-   thread (continuation).
+Consequences for this design:
+- **Terminal statuses are pure ACADEMIC facts with no financial meaning.**
+  `completed` / `withdrawn` / `repeated` / `promoted` / `transferred` describe *why
+  an episode ended*, for academic history and reporting. `repeated` carries **no**
+  billing semantics — Finance does not read the terminal status to decide billing.
+- **One uniform fact per episode.** Every episode (however it was born — new,
+  promotion, repeat) emits a single "enrollment happened" fact; Finance bills all
+  episodes identically off the **episode id** (`student_curriculum_id`) as the
+  billable referent. **Repeat billing needs no special Finance logic** — it is
+  ordinary per-episode billing.
+- **Waive / discount are post-bill adjustments, not a billing mode.** They apply
+  *after* a bill exists (§10 credit note / write-off; §3 discount) through the
+  normal Finance approval + ledger + audit workflow — not repeat-specific, not an
+  enrollment concern. Nothing here.
 
-Everything **except** these four is common to both branches and can be built now.
+**Open §7 question, flagged for Ph2 (do NOT act now):** does a waived fee appear on
+the parent statement as "charged then waived," or not appear at all? A statement-
+presentation decision, independent of this enrollment slice.
 
 ---
 
@@ -165,24 +202,37 @@ repeat without it silently overwrites results.**
 | `down()` | drop `active_key` + its unique, restore `UNIQUE(student_id, curriculum_id)` — **only reversible while no student has 2 active/duplicate episodes**; once a repeat exists, the old unique cannot be restored (that data is the point of Option B). State this: rollback is safe pre-first-repeat, lossy after. |
 | Data-migration risks | (1) duplicate historical rows — none today (delete workaround erased them), so the forward migration is clean but **irreversible after first repeat**; (2) reporting impact — every `(student, curriculum_subject)` result read must choose an episode; (3) the results re-key is the high-blast-radius change, not the enrollment index. |
 
-**Do not run any of this.** It waits on the registrar's fresh-vs-continuation
-answer (§2), which changes 4b's Finance-facing shape and the repeat workflow.
+**Do not run any of this** *in this slice* (design only). Billing is resolved
+(fresh, uniform — §2), so nothing here is registrar-blocked any longer; the schema
++ re-key + read-side fixes are one coupled implementation slice, ready to sequence.
 
 ---
 
-## Summary — what unblocks implementation
+## Summary — READY TO SEQUENCE (billing resolved)
 
-1. **≤1 audit done:** enrollment-level sites are mechanical (scope checks to
-   active); the **real cost is re-keying `student_results`/`scores` to the episode**
-   — without it, a repeat silently overwrites results. Assessments/subjects are
-   already episode-safe. `CurriculumResource:32` null-guard is an adjacent small fix.
+Registrar: **every episode bills fresh, uniformly**; terminal statuses are pure
+academic facts; repeat billing needs no special Finance logic (ordinary billing +
+the general §10/§3 adjustment workflow). The design is now common to a single
+billing model — no branches remain.
+
+1. **≤1 audit complete — both sides.** WRITE side: re-key `student_results`/`scores`
+   from `(student_id, curriculum_subject_id)` to `student_curriculum_id` (a repeat
+   silently overwrites otherwise). READ side (**the true blast radius**): every
+   reader keyed on `(student, curriculum_subject)` — broadsheet, transcript, result
+   card, score entry, submit/approve, year averages, completeness maps, the
+   getScores endpoint, dashboards — must add the episode dimension, or reports
+   silently show an arbitrary/mixed episode. Assessments/subjects already
+   episode-safe. `CurriculumResource:32` null-guard is an adjacent small fix.
 2. **End-path:** one `endEpisode(terminalStatus)` + one `enroll()`; stops the
    §15C-violating delete; also fixes the create fan-out.
-3. **Terminal status:** revive `repeated`; `active_key` = which is active, terminal
-   status = why prior ended (what Finance reads). Designed for both billing branches.
+3. **Terminal status:** revive `repeated` as a **pure academic** status (no
+   financial meaning); `active_key` = which episode is active, terminal status = why
+   prior episodes ended.
 4. **Schema:** `active_key` generated column + `UNIQUE(student_id, active_key)`;
-   plus the coupled results/scores re-key; backfill clean today but rollback lossy
-   after the first repeat.
+   the coupled results/scores re-key + all read-side fixes; backfill clean today
+   but rollback lossy after the first repeat.
 
-**Held on:** registrar — repeat billing **fresh vs continuation** (§2 divergence
-points 1–4). Then implement.
+**The coupled slice = student_curricula `active_key` + end/create convergence +
+results/scores re-key + every read-side fix.** Its true blast radius (the read
+inventory in §1a) is now known. **Open for Ph2 only (do not act):** §7 statement
+presentation of a waived fee. No migration, no code in this design slice.

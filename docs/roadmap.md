@@ -159,6 +159,43 @@ The thin bus (dispatcher + queued afterCommit listeners) is trivial to add once
 there is a stable fact to carry; building it now with no stable source earns no
 abstraction.
 
+### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
+
+**Specification scan (UI copy · validation messages · comments · ADRs · roadmap ·
+migration comments · test names): no artifact specifies the rule.** The only
+statements are self-contradictory validation messages ("Student is already
+enrolled in this curriculum", `where(student_id,curriculum_id)->exists()` — implies
+forbidden) sitting beside the delete-on-withdrawal (implies permitted); the
+`unique(student_id, curriculum_id)` migration carries no intent comment; no ADR,
+roadmap line (only this investigation's own notes), or test name states it. A
+`'repeated'` status value exists (`StudentStatusEnum`, allowed by
+`UpdateStudentCurriculumStatusRequest`) but **no workflow uses it** — a hint at
+intent, not a specification. Archaeology cannot settle it; it is a product call.
+
+**Decision matrix — the registrar's one word (A/B/C) selects a fixed schema +
+identity model, no further investigation round.** (Not recommending one.)
+
+| Dimension | A — prohibited forever | B — re-enterable after withdrawal (history kept) | C — re-enterable only via a named workflow |
+|---|---|---|---|
+| Schema | keep `UNIQUE(student_id, curriculum_id)`; **stop the delete** (soft-end via `ended_at`/status) — the constraint then correctly means "one enrollment per curriculum, ever" | **change uniqueness** to active-only: MySQL has no partial index → generated `active_key = (ended_at IS NULL ? curriculum_id : NULL)`, `UNIQUE(student_id, active_key)`; stop the delete | same active-only uniqueness as B; general `register`/`promote` keep the prohibition, only the named path inserts a new episode |
+| StudentCurriculum identity | natural key `(student, curriculum)` — exactly one immutable row per pair; lifecycle on `status`/`ended_at` | surrogate `id`/`uuid` — **episodic**: many rows per `(student, curriculum)` over time | surrogate/episodic like B, but new episodes only from the gated workflow |
+| History retention | full (single row + its status/ended_at) | full (one row per episode) | full (one row per episode) |
+| Reporting impact | simplest — one row per `(student, curriculum)`; "ever enrolled" = row exists | richer but must handle N rows per pair; **audit every `where(student_id, curriculum_id)` query that assumes ≤1** | same as B for reporting; entry restricted |
+| Audit trail | append-only, no deletion (aligns §15C spirit) | append-only, per-episode | append-only, per-episode |
+| Finance §9 (durable referent for withdrawal→cancellation) | referent exists (the one row persists) — cancel against a stable id | **best** — each billing episode is its own durable row/id | good — episodic referent, entry-gated |
+| Migration complexity | **LOW** — replace delete with soft-end; constraint unchanged; existing "already enrolled" checks become correct | **HIGH** — uniqueness redesign (generated column + index) + stop delete + audit all `(student,curriculum)` reads | **MEDIUM–HIGH** — B's schema + a named re-enroll operation + keep general-path prohibitions |
+
+**Candidate workflows to name if the answer is C:** (C1) status-only repeat —
+model a repeat as `status='repeated'` on the SAME row (schema unchanged, but
+conflates the repeat term with the original enrollment); (C2) a dedicated
+"re-enroll after withdrawal" admin operation gated on prior `withdrawn` status
+(episodic rows like B, but general `register`/`promote` still refuse). The
+registrar names which, if C.
+
+**Common to all three:** the record-destroying `->delete()` on withdrawal must
+stop regardless (it violates §15C append-only and destroys the §9 referent) — A
+makes that a one-line soft-end; B/C couple it to the uniqueness redesign.
+
 ### 1.4e deep-dive (second pass — findings, no implementation)
 
 **§1 enrollment convergence (proposal, smallest change).** `enroll()` already

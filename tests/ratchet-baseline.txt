@@ -12,5 +12,4 @@ tests/Feature/GuardianProfileTest.php::it returns 422 when resending invitation 
 tests/Feature/GuardianProfileTest.php::it returns at most 10 activity entries in descending order
 tests/Feature/GuardianProfileTest.php::it returns empty activity list when no events exist
 tests/Feature/GuardianProfileTest.php::it sends a password reset notification to the guardian email
-tests/Feature/GuardianRegistrationTest.php::it attaches an existing cross-school guardian and grants school access
 tests/Feature/GuardianRegistrationTest.php::it rolls back the student when a guardian processing failure occurs

@@ -231,13 +231,31 @@ it('attaches an existing cross-school guardian and grants school access', functi
             'relationship' => 'guardian',
             'is_primary' => true,
             'can_login' => true,
+            // email is required_if:can_login,true (the old payload omitted it and
+            // failed validation — the 400 was never an isolation check).
+            'email' => $userB->email,
         ])
         ->assertCreated();
 
-    expect(DB::table('guardian_student')
-        ->where('guardian_id', $guardianB->id)
-        ->where('student_id', $studentA->id)
-        ->exists())->toBeTrue()
+    // A Guardian is a per-School record (§6.2): the attach resolves/creates the
+    // SAME USER's guardian record in school A and links THAT — never the
+    // school-B row. Assert against the school-A record, not $guardianB.
+    $schoolAGuardianId = DB::table('guardians')
+        ->where('user_id', $userB->id)
+        ->where('school_id', $schoolA->id)
+        ->value('id');
+
+    expect($schoolAGuardianId)->not->toBeNull()
+        ->and($schoolAGuardianId)->not->toBe($guardianB->id)
+        ->and(DB::table('guardian_student')
+            ->where('guardian_id', $schoolAGuardianId)
+            ->where('student_id', $studentA->id)
+            ->exists())->toBeTrue()
+        // ...and the school-B row was never cross-linked.
+        ->and(DB::table('guardian_student')
+            ->where('guardian_id', $guardianB->id)
+            ->where('student_id', $studentA->id)
+            ->exists())->toBeFalse()
         ->and(DB::table('school_user')
             ->where('user_id', $userB->id)
             ->where('school_id', $schoolA->id)

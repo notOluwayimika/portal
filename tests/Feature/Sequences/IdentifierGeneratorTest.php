@@ -172,6 +172,24 @@ it('numbers are per-School — the same admission number may exist in two School
     expect($bStudent->admission_number)->toBe(Student::admissionNumberPrefix().'001');
 });
 
+it('the identifier column is NOT NULL — an event-suppressed/raw write cannot persist a null number', function () {
+    $school = al_makeSchool();
+
+    // A raw insert WITH a valid uuid but WITHOUT an admission number isolates the
+    // identifier guard from the incidental uuid-NOT-NULL protection: the DB must
+    // reject it on admission_number itself. This is the deliberate guard that also
+    // catches saveQuietly()/createQuietly() (which suppress the generating event).
+    expect(fn () => DB::table('students')->insert([
+        'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id, 'status' => 'active',
+        'first_name' => 'N', 'last_name' => 'U', // NO admission_number
+    ]))->toThrow(QueryException::class);
+
+    expect(fn () => DB::table('teachers')->insert([
+        'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id,
+        'first_name' => 'N', 'last_name' => 'U', // NO staff_number
+    ]))->toThrow(QueryException::class);
+});
+
 it('still rejects a manual duplicate admission/staff number (creating hook)', function () {
     $school = al_makeSchool();
     Student::factory()->create(['school_id' => $school->id, 'admission_number' => 'GFA/2099/001']);

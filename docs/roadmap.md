@@ -475,6 +475,18 @@ year-averages / completeness / getScores / dashboards all key on
 radius, now inventoried in the doc. Open for Ph2 only: §7 statement presentation of
 a waived fee.
 
+**Design input for the re-key slice (parked 2026-07, do not act):** `scores` is
+**not append-only** — the prod audit-log query set surfaced **883 historical
+`Score` delete events** (`activity_log`, `App\Models\Score`), vs 0 for
+`StudentCurriculum`. The deleted values ARE recoverable, but only from
+`activity_log.properties` → `{"old": {"score": …}}` (all 883 carry it); the
+`attribute_changes` column is **NULL** for every one, and `properties.old`
+captures only the logged attribute (`score`), not the full row/context. So the
+re-key slice should decide whether the re-keyed `scores`/`student_results` tables
+**inherit the 1.4c immutability pattern** (DB triggers + guard) — 883 deletions
+with only a partial audit-side fallback is the evidence they probably should.
+This is design input for that slice, not work to do now.
+
 ### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
 
 **Specification scan (UI copy · validation messages · comments · ADRs · roadmap ·

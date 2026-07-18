@@ -13,6 +13,99 @@ Where the two describe delivery differently, **the Execution Plan governs** —
 it was approved later, for exactly that purpose. No technical decision from v10
 was changed by it.
 
+## Engineering Invariants (Permanent, ADR-amendable)
+
+Architectural rules stable across sessions — kept separate from status, progress,
+blocked work, and session plans, so handoffs update only volatile state while
+these remain stable.
+
+**Governance:** stable, not immutable. These change **only by ADR**, and every
+change records why the prior invariant failed contact with reality. An invariant
+that can't be amended by evidence calcifies the way v10's stale counts did.
+
+**Format rule:** every invariant names its enforcement mechanism. A rule without
+a mechanism is wallpaper — "never read `$user->school_id`" was true for months
+while the code did it anyway; the *lint* is what made it real. If an invariant
+has no enforcement, that gap is itself a finding (three are flagged below).
+
+1. **Authoritative domain facts.** No domain event ships until its transition is
+   authoritative (one canonical transition), single-sourced (one publication
+   point), atomic, and committed. If any is missing, STOP and fix the transition
+   first.
+   *Enforced by:* the published-fact inventory in this roadmap; no event class
+   without its four checks passing.
+
+2. **Expand/contract for one-way changes.** Any irreversible schema evolution
+   (enrollment episodes, `users.school_id` removal) follows expand →
+   migrate-readers → contract, with a STOP-for-review before the irreversible
+   step.
+   *Enforced by:* mandatory production snapshot **and a named owner's written
+   acknowledgement at the moment of crossing** — a snapshot nobody owns is a file
+   nobody restores.
+
+3. **Distrust green that rests on a disabled precondition.** Verification attacks
+   the implementation, never confirms it. Passing tests are evidence, not proof —
+   and the specific reflex: always ask what a green test is passing *because of*.
+   Every production defect found this way shared one shape — something looked
+   fine because the thing that would have revealed the problem was itself
+   disabled (impersonation masking scope; a dead method masking a notification;
+   team-state leaking between tests). Inventory known-positive cases; baselines
+   only shrink; "obviously stale" clusters contain live bugs (5/22, 2/18).
+   *Enforced by:* adversarial verification pass per slice; bite-prove every gate
+   before trusting its silence.
+
+4. **Modules communicate via DTOs, never models.** Immutable DTO contracts +
+   identifiers across boundaries; events publish past-tense facts, not commands.
+   *Enforced by:* Deptrac/arch test on the module boundary — an Eloquent model in
+   an event payload fails the build. **GAP (finding):** no event-payload arch
+   rule exists yet (`tests/Arch/ArchitectureBoundaryTest.php` has no event rule —
+   no domain events exist to test). The rule must land WITH the first event
+   class, not after it.
+
+5. **Finance separation.** Academic modules publish business facts only. Finance
+   owns all financial behaviour (billing, discounts, waivers, credit notes,
+   write-offs, ledger). Academic status values carry **no** financial semantics.
+   *Enforced by:* the `fee_*`-table-outside-Finance boundary lint; status enums
+   with no billing branch (registrar ruling 2026-07: terminal statuses are pure
+   academic facts).
+
+6. **Shared Kernel is domain-agnostic.** No Finance-, Admissions-, or
+   presentation-specific assumptions in shared infrastructure.
+   *Enforced by:* grep-clean of domain terms in `app/Support` — **GAP (finding):**
+   currently a manual, per-primitive check (done once for Sequences), not a CI
+   lint. Candidate: add a domain-term pattern to `bin/ci-boundary-lint.php`
+   scoped to `app/Support/`.
+
+7. **One authoritative service entry point per invariant.** Controllers, imports,
+   jobs, background processes converge through it — never duplicate business
+   logic. (This project has found the create-fan-out repeatedly: enrollment,
+   guardian, teacher.)
+   *Enforced by:* lint flagging direct `Model::create` on models that have an
+   authoritative service. **GAP (finding):** this lint does not exist —
+   `ci-identifier-generation-lint` covers raw inserts on Student/Teacher only;
+   `StudentCurriculum::create` fan-out (found 3×) is unlinted. The enrollment
+   Option-B slice converges the paths and must land this lint with it.
+
+8. **Money handling.** Integer minor units, explicit ISO-4217 currency, never a
+   float, never a `decimal:` cast; crosses the wire as `{amount_minor, currency}`,
+   never a decimal (Constitution rule 10).
+   *Enforced by:* decimal-cast boundary lint; the `Money` VO; the wire contract
+   in ADR 0037.
+
+9. **Append-only financial and audit records.** Never edited, never deleted;
+   corrections are reversals. Enforced at the database, not only the model (§15C).
+   *Enforced by:* `activity_log` UPDATE/DELETE triggers + model guard + disabled
+   clean command + `audit:verify-immutability` post-restore assertion (1.4c); the
+   ledger's reversal-only design (Ph2+).
+
+10. **Environment gates.** Environment-dependent work is not complete without its
+    runtime evidence — production snapshot, parity soak, running scheduler,
+    observe-mode traffic. Local success cannot substitute. (A registered
+    `schedule:run` that nothing invokes produces evidence into a table that never
+    prunes — inert.)
+    *Enforced by:* the blocked-on-prod list in volatile state; no "done" without
+    the named evidence.
+
 ## Reconciled deviations (Execution Plan — Validation Review §A)
 
 v10 §20 packs all foundation work into a 6-week Phase 1. The approved

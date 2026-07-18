@@ -194,12 +194,24 @@ assignRole". Unmasked, classified (no fixes):
   security-design — should a user with `guardian.update` but not
   `guardian.update_credentials` be hard-403'd, or allowed to update non-credential
   fields with the email change ignored? Test asserts partial-update; code hard-403s.
+- **Cross-school attach 201-vs-400 — ROOT-CAUSED: STALE TEST (no isolation bug).**
+  The 400 is an **incidental validation** error, not an isolation check:
+  `GuardianController@attach` validates `email` `required_if:can_login,true`, and
+  the test sends `can_login=true` with the email in `identifier` but **no `email`
+  field** (proven: adding `email` → 201). §6.2 cross-school attach is deliberate
+  and works — `resolveExistingGuardianForAttachment` looks the guardian up
+  **globally** then `grantSchoolAccess(activeSchool)` grants access (proven:
+  cross-school access granted). No isolation guard rejects it, correctly, because
+  §6 permits it. Secondary: (a) the `email required_if:can_login` rule is arguably
+  mis-scoped for `mode=existing` (an existing guardian already has an account) —
+  fix shape would be `required_if:mode,new`; (b) the test also asserts
+  `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
+  model a school-A record is attached, so that assertion is stale too. **No §6
+  gap.**
 - 422-vs-400 cluster (detach-only-guardian, detach-primary-no-replacement,
-  register rollback) and cross-school attach 201-vs-400: HTTP status **convention**
-  for business-rule violations (test expects 422/201; code returns 400). Either the
-  error-code convention changed (stale) or a flow regressed — **the cross-school
-  attach (a real §6 feature) is the one to root-cause first**; the detach 422/400
-  are likely convention.
+  register rollback): HTTP status **convention** for business-rule violations
+  (test expects 422; code returns 400 — the app renders ValidationException as 400
+  app-wide via `response()->validation_error`). Likely convention/stale.
 - ActivityLogApi 3 count mismatches + GuardianProfile counts/422/password-reset
   notification: permission-scoping + activity-count assertions likely shifted by the
   observe rollout + permission model; per-test triage, lower priority.

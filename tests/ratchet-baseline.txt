@@ -3,30 +3,17 @@ tests/Feature/ActivityLog/ActivityLogApiTest.php::it does not leak activity acro
 tests/Feature/ActivityLog/ActivityLogApiTest.php::it hides sensitive entries without view_sensitive
 tests/Feature/ActivityLog/ActivityLogApiTest.php::it returns a paginated scoped feed
 tests/Feature/Auth/AuthenticationTest.php::users are rate limited
-tests/Feature/GuardianManagementTest.php::it admin can change a login-enabled guardians email with credential permission
-tests/Feature/GuardianManagementTest.php::it audit log records guardian updates and pivot events
-tests/Feature/GuardianManagementTest.php::it demoting can_login on one of many pivots keeps the user active
-tests/Feature/GuardianManagementTest.php::it demoting can_login on the last pivot disables the user account
-tests/Feature/GuardianManagementTest.php::it detaching primary with valid replacement promotes the replacement
 tests/Feature/GuardianManagementTest.php::it detaching primary without replacement is blocked
 tests/Feature/GuardianManagementTest.php::it detaching the only guardian is blocked
 tests/Feature/GuardianManagementTest.php::it explicit enable-login on a disabled guardian re-enables and notifies
 tests/Feature/GuardianManagementTest.php::it lists all students linked to a guardian
 tests/Feature/GuardianManagementTest.php::it registrar cannot change a login-enabled guardians email (credential permission required)
-tests/Feature/GuardianManagementTest.php::it updating guardian details applies to all linked students (single record)
-tests/Feature/GuardianManagementTest.php::it updating pivot fields on student A does not affect student B
 tests/Feature/GuardianProfileTest.php::it resends invitation for a never-activated guardian
 tests/Feature/GuardianProfileTest.php::it returns 422 when guardian has no valid email for reset
 tests/Feature/GuardianProfileTest.php::it returns 422 when resending invitation for an already-activated account
 tests/Feature/GuardianProfileTest.php::it returns at most 10 activity entries in descending order
 tests/Feature/GuardianProfileTest.php::it returns empty activity list when no events exist
 tests/Feature/GuardianProfileTest.php::it sends a password reset notification to the guardian email
-tests/Feature/GuardianRegistrationTest.php::it assigns guardian role and only sends notification when can_login is true
 tests/Feature/GuardianRegistrationTest.php::it attaches an existing cross-school guardian and grants school access
-tests/Feature/GuardianRegistrationTest.php::it finds a guardian across schools and reports their other-school wards
-tests/Feature/GuardianRegistrationTest.php::it registers a student with an existing guardian (Case B) without creating a duplicate
-tests/Feature/GuardianRegistrationTest.php::it registers a student with mixed guardians (one new, one existing)
 tests/Feature/GuardianRegistrationTest.php::it registers a student with one new guardian (Case A)
-tests/Feature/GuardianRegistrationTest.php::it rejects registration when more than one guardian is primary
-tests/Feature/GuardianRegistrationTest.php::it rejects registration when no guardian is marked primary
 tests/Feature/GuardianRegistrationTest.php::it rolls back the student when a guardian processing failure occurs

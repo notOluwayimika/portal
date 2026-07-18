@@ -2,6 +2,7 @@
 
 use App\Models\Curriculum;
 use App\Models\Guardian;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
@@ -9,7 +10,6 @@ use App\Notifications\GuardianAccountCreatedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
-use App\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -23,7 +23,9 @@ function makeAdmin(): array
 {
     $school = School::factory()->create();
     $admin = User::factory()->create(['school_id' => $school->id]);
+    setPermissionsTeamId($school->id);
     $admin->assignRole('admin');
+
     return [$school, $admin];
 }
 
@@ -37,27 +39,27 @@ function curriculumFor(School $school): Curriculum
 function basePayload(int $curriculumId, array $guardians): array
 {
     return [
-        'first_name'    => 'Test',
-        'last_name'     => 'Student',
-        'gender'        => 'male',
+        'first_name' => 'Test',
+        'last_name' => 'Student',
+        'gender' => 'male',
         'curriculum_id' => $curriculumId,
-        'guardians'     => $guardians,
+        'guardians' => $guardians,
     ];
 }
 
 it('registers a student with one new guardian (Case A)', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     $payload = basePayload($curriculum->id, [[
-        'mode'         => 'new',
+        'mode' => 'new',
         'relationship' => 'father',
-        'is_primary'   => true,
-        'can_login'    => true,
-        'first_name'   => 'John',
-        'last_name'    => 'Doe',
-        'phone'        => '08011112222',
-        'email'        => 'john.doe@example.test',
+        'is_primary' => true,
+        'can_login' => true,
+        'first_name' => 'John',
+        'last_name' => 'Doe',
+        'phone' => '08011112222',
+        'email' => 'john.doe@example.test',
     ]]);
 
     $response = $this->actingAs($admin)->postJson('/api/students', $payload);
@@ -88,35 +90,36 @@ it('registers a student with one new guardian (Case A)', function () {
 
 it('registers a student with an existing guardian (Case B) without creating a duplicate', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     // Pre-existing guardian linked to a sibling.
-    $sibling          = Student::factory()->create(['school_id' => $school->id]);
-    $existingUser     = User::factory()->create([
+    $sibling = Student::factory()->create(['school_id' => $school->id]);
+    $existingUser = User::factory()->create([
         'school_id' => $school->id,
-        'email'     => 'existing.guardian@example.test',
+        'email' => 'existing.guardian@example.test',
     ]);
+    setPermissionsTeamId($school->id);
     $existingUser->assignRole('guardian');
     $existingGuardian = Guardian::factory()->create([
         'school_id' => $school->id,
-        'user_id'   => $existingUser->id,
-        'phone'     => '09099887766',
+        'user_id' => $existingUser->id,
+        'phone' => '09099887766',
     ]);
     $sibling->guardians()->attach($existingGuardian->id, [
         'relationship' => 'mother',
-        'is_primary'   => true,
-        'can_login'    => false,
+        'is_primary' => true,
+        'can_login' => false,
     ]);
 
-    $countUsersBefore     = User::count();
+    $countUsersBefore = User::count();
     $countGuardiansBefore = Guardian::count();
 
     $payload = basePayload($curriculum->id, [[
-        'mode'         => 'existing',
+        'mode' => 'existing',
         'relationship' => 'mother',
-        'is_primary'   => true,
-        'can_login'    => false,
-        'identifier'   => 'existing.guardian@example.test',
+        'is_primary' => true,
+        'can_login' => false,
+        'identifier' => 'existing.guardian@example.test',
     ]]);
 
     $response = $this->actingAs($admin)->postJson('/api/students', $payload);
@@ -137,39 +140,40 @@ it('registers a student with an existing guardian (Case B) without creating a du
 
 it('registers a student with mixed guardians (one new, one existing)', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
-    $sibling          = Student::factory()->create(['school_id' => $school->id]);
-    $existingUser     = User::factory()->create(['school_id' => $school->id, 'email' => 'mom@example.test']);
+    $sibling = Student::factory()->create(['school_id' => $school->id]);
+    $existingUser = User::factory()->create(['school_id' => $school->id, 'email' => 'mom@example.test']);
+    setPermissionsTeamId($school->id);
     $existingUser->assignRole('guardian');
     $existingGuardian = Guardian::factory()->create([
         'school_id' => $school->id,
-        'user_id'   => $existingUser->id,
-        'phone'     => '08000000001',
+        'user_id' => $existingUser->id,
+        'phone' => '08000000001',
     ]);
     $sibling->guardians()->attach($existingGuardian->id, [
         'relationship' => 'mother',
-        'is_primary'   => true,
-        'can_login'    => false,
+        'is_primary' => true,
+        'can_login' => false,
     ]);
 
     $payload = basePayload($curriculum->id, [
         [
-            'mode'         => 'existing',
+            'mode' => 'existing',
             'relationship' => 'mother',
-            'is_primary'   => false,
-            'can_login'    => false,
-            'identifier'   => 'mom@example.test',
+            'is_primary' => false,
+            'can_login' => false,
+            'identifier' => 'mom@example.test',
         ],
         [
-            'mode'         => 'new',
+            'mode' => 'new',
             'relationship' => 'father',
-            'is_primary'   => true,
-            'can_login'    => true,
-            'first_name'   => 'Dad',
-            'last_name'    => 'Doe',
-            'phone'        => '08000000002',
-            'email'        => 'dad@example.test',
+            'is_primary' => true,
+            'can_login' => true,
+            'first_name' => 'Dad',
+            'last_name' => 'Doe',
+            'phone' => '08000000002',
+            'email' => 'dad@example.test',
         ],
     ]);
 
@@ -183,12 +187,12 @@ it('registers a student with mixed guardians (one new, one existing)', function 
 
 it('finds a guardian across schools and reports their other-school wards', function () {
     [$schoolA, $adminA] = makeAdmin();
-    $schoolB            = School::factory()->create();
-    $userB              = User::factory()->create(['school_id' => $schoolB->id, 'email' => 'other.school@example.test']);
-    $guardianB          = Guardian::factory()->create([
+    $schoolB = School::factory()->create();
+    $userB = User::factory()->create(['school_id' => $schoolB->id, 'email' => 'other.school@example.test']);
+    $guardianB = Guardian::factory()->create([
         'school_id' => $schoolB->id,
-        'user_id'   => $userB->id,
-        'phone'     => '08099999999',
+        'user_id' => $userB->id,
+        'phone' => '08099999999',
     ]);
     $wardB = Student::factory()->create(['school_id' => $schoolB->id]);
     $wardB->guardians()->attach($guardianB->id, [
@@ -242,16 +246,16 @@ it('attaches an existing cross-school guardian and grants school access', functi
 
 it('rejects registration when no guardian is marked primary', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     $payload = basePayload($curriculum->id, [[
-        'mode'         => 'new',
+        'mode' => 'new',
         'relationship' => 'father',
-        'is_primary'   => false,
-        'can_login'    => false,
-        'first_name'   => 'John',
-        'last_name'    => 'Doe',
-        'phone'        => '08011112222',
+        'is_primary' => false,
+        'can_login' => false,
+        'first_name' => 'John',
+        'last_name' => 'Doe',
+        'phone' => '08011112222',
     ]]);
 
     $response = $this->actingAs($admin)->postJson('/api/students', $payload);
@@ -261,26 +265,26 @@ it('rejects registration when no guardian is marked primary', function () {
 
 it('rejects registration when more than one guardian is primary', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     $payload = basePayload($curriculum->id, [
         [
-            'mode'         => 'new',
+            'mode' => 'new',
             'relationship' => 'father',
-            'is_primary'   => true,
-            'can_login'    => false,
-            'first_name'   => 'A',
-            'last_name'    => 'A',
-            'phone'        => '08000000001',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'A',
+            'last_name' => 'A',
+            'phone' => '08000000001',
         ],
         [
-            'mode'         => 'new',
+            'mode' => 'new',
             'relationship' => 'mother',
-            'is_primary'   => true,
-            'can_login'    => false,
-            'first_name'   => 'B',
-            'last_name'    => 'B',
-            'phone'        => '08000000002',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'B',
+            'last_name' => 'B',
+            'phone' => '08000000002',
         ],
     ]);
 
@@ -291,17 +295,17 @@ it('rejects registration when more than one guardian is primary', function () {
 
 it('assigns guardian role and only sends notification when can_login is true', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     $payload = basePayload($curriculum->id, [
         [
-            'mode'         => 'new',
+            'mode' => 'new',
             'relationship' => 'father',
-            'is_primary'   => true,
-            'can_login'    => false,
-            'first_name'   => 'NoLogin',
-            'last_name'    => 'Parent',
-            'phone'        => '08011110000',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'NoLogin',
+            'last_name' => 'Parent',
+            'phone' => '08011110000',
         ],
     ]);
 
@@ -316,25 +320,25 @@ it('assigns guardian role and only sends notification when can_login is true', f
 
 it('rolls back the student when a guardian processing failure occurs', function () {
     [$school, $admin] = makeAdmin();
-    $curriculum       = curriculumFor($school);
+    $curriculum = curriculumFor($school);
 
     // First guardian is fine, second points at a non-existent existing guardian.
     $payload = basePayload($curriculum->id, [
         [
-            'mode'         => 'new',
+            'mode' => 'new',
             'relationship' => 'father',
-            'is_primary'   => true,
-            'can_login'    => false,
-            'first_name'   => 'Good',
-            'last_name'    => 'Parent',
-            'phone'        => '08077770000',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'Good',
+            'last_name' => 'Parent',
+            'phone' => '08077770000',
         ],
         [
-            'mode'         => 'existing',
+            'mode' => 'existing',
             'relationship' => 'mother',
-            'is_primary'   => false,
-            'can_login'    => false,
-            'identifier'   => 'does-not-exist@nowhere.test',
+            'is_primary' => false,
+            'can_login' => false,
+            'identifier' => 'does-not-exist@nowhere.test',
         ],
     ]);
 

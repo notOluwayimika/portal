@@ -119,6 +119,59 @@ default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
 
+## 1.4b — identifier-generator investigation (2026-07)
+
+**Inventory — exactly TWO runtime generators** (grep-verified, no others):
+`HasAdmissionNumber` (Student, `admission_number`) and `HasStaffNumber` (Teacher,
+`staff_number`). No `student_number` / `employee_number` / receipt / invoice
+generator exists; invoice/receipt are Finance (Ph2+, out of scope, none built).
+
+**Both are architecturally identical** — school-scoped, prefixed
+(`GFA/YYYY/NNN`, `STF/YYYY/NNN`), zero-padded-3 suffix, gap-tolerant `max+1`.
+
+**Schema (verified directly from MySQL, not inferred):**
+- `students`: `UNIQUE(school_id, admission_number)` — present.
+- `teachers`: `UNIQUE(school_id, staff_number)` — present (the flagged
+  `Teacher.staff_number` candidate — confirmed, not assumed).
+- Both columns nullable (transient NULLs allowed under the unique index). No
+  missing/redundant index. **The composite unique index makes the application
+  `creating` duplicate check redundant for *correctness*** (it survives only as a
+  friendlier error message).
+
+**Functional defect (the one the prompt names) — ALREADY FIXED.** Generation and
+the duplicate-detection `creating` hook were silently halted by `AddUuid`'s
+halting `creating` event (it returned the uuid, stopping the chain). Fixed in
+1.3b.1 (`AddUuid` is now a block closure, boundary-lint enforced). Bite-proven:
+the `creating` duplicate check now executes for both admission and staff numbers.
+
+**Concurrency finding — the race is real, but it cannot produce a duplicate.**
+`nextAdmissionNumber`/`nextStaffNumber` are unlocked read-then-write
+(`SELECT max … → +1 → write`); two concurrent reads compute the SAME next value
+(bite-proven). Under real concurrency the second write is rejected by the unique
+index, so the failure mode is a **generation FAILURE** (the row keeps a null
+number / the request errors), **never a duplicate**. Generation also happens in
+`created` (post-insert `UPDATE`), so the number is not part of the atomic insert
+and a failed update leaves a null. No transaction, no lock, no retry.
+
+**Classification (evidence-driven, not for consistency):**
+
+| Generator | Verdict | Why |
+|---|---|---|
+| `admission_number` (Student) | **Migrate → Shared Sequences** | racy unlocked read-then-write + non-atomic `created`-time generation; needs an atomic, school-scoped, prefixed counter |
+| `staff_number` (Teacher) | **Migrate → Shared Sequences** | identical architecture and identical defect → shares the service's requirements exactly |
+| invoice / receipt (Finance) | **Out of scope (identify only)** | do not exist; Finance Ph2+; likely need *gap-free* (regulatory), a stronger requirement than admission/staff gap-tolerance — must not be assumed to share this service without its own ADR |
+
+**Migration target & boundary (ADR 0033 §8.1/§8.2):** the shared service lives in
+`app/Support/Sequences/` (Shared Kernel). Student (Academics/Admissions) and
+Teacher (HR/Academics) depend on the Kernel, never on each other or on Finance;
+the Kernel never depends on a Module. The redesign generates the number **before
+insert** via an atomic per-`(school, prefix)` counter (a `sequences` table with a
+locked/`ON DUPLICATE KEY UPDATE` increment, gap-tolerant) so concurrent creates
+get distinct values without relying on the unique index as the failure backstop.
+Gap-free is NOT a requirement for admission/staff (only Finance receipts) — do not
+over-build. **Implementation is the next slice; this slice is investigation +
+bite-proofs only.**
+
 ## Decision: Larastan is baseline-relative (ratchet)
 
 The §24 exit criterion "Larastan Level 5 + arch tests green" and the Execution

@@ -158,7 +158,72 @@ MySQL tests:
 sequential, seed-from-max, gap-tolerance, per-School, unique-index backstop, staff
 path). Concurrency proof is a **deterministic reproduction, labelled as such**
 (true OS parallelism isn't reliably expressible in Pest; the row lock is the
-guarantee). Investigation findings that led here:
+guarantee).
+
+### Shared Sequences — guarantees, non-guarantees, failure modes (adversarial pass)
+
+**Guarantees:** uniqueness under concurrency · transactional allocation (allocation
++ INSERT are one unit via the trait `save()` override — a failed persist rolls the
+allocation back) · School isolation (the `FOR UPDATE` lock is on the `(scope, key)`
+counter row and the key embeds the School — different Schools lock different rows) ·
+gap tolerance. **Explicitly NOT guaranteed:** gap-free numbering · chronological
+ordering across Schools · any global ordering · regulatory/legal numbering. Those
+require a separate design + signed policy (not this Kernel primitive).
+
+**Lock ordering / deadlock (§1):** `Model::save()` fires `creating` (→
+`Sequences::next`, which locks the counter row) **before** `performInsert`
+(framework: `performInsert` fires `creating` then inserts). So every allocation
+locks the sequence row first, then inserts the domain row — one consistent order,
+no path inserts the domain row first. Same-School concurrent creates contend on
+the single counter row (serialise, cannot deadlock on one lock); different Schools
+lock independent rows and never contend. **No deadlock scenario exists.**
+
+**Bypass enforcement (§2):** the trait `save()` override is the only entry point
+carrying the transactional guarantee. All current create paths
+(`StudentService::create`, `TeacherService`'s `teacher()->create`, bulk import)
+go through it and already wrap in `DB::transaction`; `updateOrCreate` /
+`firstOrCreate` / `forceCreate` also route through `save()` (events fire → number
+generated). The genuinely dangerous bypasses — a raw
+`DB::table('students'|'teachers')->insert` or a model `::insert` / `createQuietly`
+— skip the event pipeline and would write a **NULL** identifier; none exist today
+and a new `bin/ci-identifier-generation-lint.php` (CI + `composer lint:boundaries`)
+now **fails** on any, so the prohibition is enforced, not prose. Residual: an
+instance `->saveQuietly()` on a Student/Teacher variable isn't greppable with
+confidence and is not linted — noted here as the one convention-only gap.
+**§2 inverse:** wrapping `save()` in a transaction did not change either
+consumer's error handling — both already wrapped creates in `DB::transaction`, and
+the bulk imports keep per-row `try/catch` failure tolerance (the trait's nested
+savepoint propagates the failure to the existing per-row handler unchanged).
+
+**Sequence-table lifecycle (§3):** sequence rows are **permanent state** — no
+prune / truncate / reset / cleanup touches the `sequences` table (only the
+migration `down()` drops it on rollback). **Partial-restore hazard (asymmetric,
+does NOT self-heal):** if `sequences` is restored to a state older than the domain
+table, the counter sits below the live domain max; because the row already exists,
+seed-from-max does **not** re-run, and the next allocation collides with the
+composite unique index → a generation *failure* (exception) that repeats until the
+counter passes the domain max. Nothing detects or auto-recovers this.
+**Operational runbook:** after any restore where `sequences` may lag the domain,
+`DELETE` the affected `(scope, key)` rows — they lazily re-seed from the domain max
+on next use — or `UPDATE value` to the current domain max.
+
+**Failure-mode inventory (§4) — none yields a duplicate or a silent null:**
+
+| Failure | Behaviour | dup? | reused? | skipped? | null? |
+|---|---|---|---|---|---|
+| Rollback before insert | savepoint reverts the increment | no | yes | no | no |
+| Rollback after insert | whole save-txn reverts (row + increment) | no | yes | no | no |
+| Unique-index violation | save-txn rolls back; surfaced as an exception | no | yes | no | no |
+| Deadlock victim | n/a — no deadlock scenario exists (§1) | no | — | — | no |
+| DB restart | InnoDB reverts uncommitted allocations | no | yes | no | no |
+| Txn / lock-wait timeout | waiter errors, save-txn rolls back; caller retries → next value | no | yes | maybe | no |
+| Manual DB edits | out of code scope; same as partial-restore if counter set low | no* | — | maybe | no* |
+| Sequence row corruption | same as manual edit / partial restore → collision, runbook re-seed | no | — | — | no |
+| Partial restore (counter < domain) | collision → generation failure until re-seeded (runbook) | no | — | — | no |
+
+\* the composite UNIQUE index prevents a duplicate and a NULL never persists (a
+bypassing raw insert is blocked by the §2 lint); the worst outcome is a surfaced
+generation failure, never a silent bad identifier.
 
 **Inventory — exactly TWO runtime generators** (grep-verified, no others):
 `HasAdmissionNumber` (Student, `admission_number`) and `HasStaffNumber` (Teacher,

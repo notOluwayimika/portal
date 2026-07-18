@@ -83,6 +83,11 @@ jobs:
       - name: Runtime-zero lint (S7 legacy access sources)
         run: php bin/ci-runtime-zero-lint.php
 
+      # 1.4b: no write path may bypass admission/staff number generation
+      # (raw insert / quiet create on Student|Teacher → NULL identifier).
+      - name: Identifier-generation bypass guard (1.4b)
+        run: php bin/ci-identifier-generation-lint.php
+
       # §17.1 architecture rules (Kernel/module boundaries). No DB needed; the
       # Finance-subject rules activate automatically when app/Finance appears.
       - name: Architecture tests (§17.1)

@@ -378,9 +378,24 @@ episodes; it needs an enrollment **reference that survives withdrawal**.
 
 **Sequencing (supersedes "enrollment is Finance's prerequisite"):**
 (1) withdraw soft-end slice — **DONE (2026-07)**; (2) Finance walking skeleton
-(manual trigger, stubbed numbering, no approvals) — **next**; (3) Option-B full
-slice before the repeat workflow / automated billing; (4) gap-free numbering ADR
-+ signed policy before production invoicing.
+(manual trigger, stubbed numbering, no approvals) — **DONE (2026-07), STOP for
+review**; (3) Option-B full slice before the repeat workflow / automated billing;
+(4) gap-free numbering ADR + signed policy before production invoicing.
+
+### Finance walking skeleton — landed (2026-07), conventions pending review
+
+First `app/Finance/` code + the module template. The thin vertical (enrollment →
+invoice → ledger charge → payment → allocation → cancel-by-reversal) is built and
+driven end-to-end through the HTTP stack. **Conventions report + future-phase
+check: [finance/walking-skeleton-conventions.md](finance/walking-skeleton-conventions.md)
+— review before slice 2 copies the template.** All six day-one rules honoured;
+the four guards bite-proven (boundary arch rule, ON DELETE RESTRICT, append-only
+ledger triggers, Money decimal lint). Future-phase check: maker-checker (Ph3), GL
+export (§13) and recurring billing are all additive — **no redesign forced, no
+STOP**. Open template decisions flagged for review: `fee_` vs `finance_` table
+prefix; uniform `school_id` on child tables; `@property`/`@mixin` as the module's
+Larastan convention; `/api/finance` vs `/api/v1/finance`; 422 error convention.
+Larastan 0, ratchet unchanged (15).
 
 **Boundary lock before the first Finance migration — DONE (2026-07):**
 [finance-data-ownership.md](finance-data-ownership.md) — ownership inventory

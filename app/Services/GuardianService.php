@@ -318,7 +318,6 @@ class GuardianService
      */
     public function notifyGuardian(User $user, string $plainPassword, array $studentNames = []): void
     {
-        return;
         if (! $user->email || $this->isSyntheticEmail($user->email)) {
             return;
         }

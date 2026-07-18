@@ -5,7 +5,6 @@ tests/Feature/ActivityLog/ActivityLogApiTest.php::it returns a paginated scoped 
 tests/Feature/Auth/AuthenticationTest.php::users are rate limited
 tests/Feature/GuardianManagementTest.php::it detaching primary without replacement is blocked
 tests/Feature/GuardianManagementTest.php::it detaching the only guardian is blocked
-tests/Feature/GuardianManagementTest.php::it explicit enable-login on a disabled guardian re-enables and notifies
 tests/Feature/GuardianManagementTest.php::it lists all students linked to a guardian
 tests/Feature/GuardianManagementTest.php::it registrar cannot change a login-enabled guardians email (credential permission required)
 tests/Feature/GuardianProfileTest.php::it resends invitation for a never-activated guardian
@@ -15,5 +14,4 @@ tests/Feature/GuardianProfileTest.php::it returns at most 10 activity entries in
 tests/Feature/GuardianProfileTest.php::it returns empty activity list when no events exist
 tests/Feature/GuardianProfileTest.php::it sends a password reset notification to the guardian email
 tests/Feature/GuardianRegistrationTest.php::it attaches an existing cross-school guardian and grants school access
-tests/Feature/GuardianRegistrationTest.php::it registers a student with one new guardian (Case A)
 tests/Feature/GuardianRegistrationTest.php::it rolls back the student when a guardian processing failure occurs

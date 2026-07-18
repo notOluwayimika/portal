@@ -315,6 +315,57 @@ the 422/400 business-rule convention (then root-cause cross-school attach); (4)
 registrar partial-update decision; (5) triage the count/permission-scoping stale
 set.
 
+### Finance walking-skeleton feasibility — SEQUENCING DECISION: B (2026-07)
+
+Traced the thin vertical (enrollment → invoice → ledger charge → payment
+allocation → withdraw-cancel) against TODAY's schema. **Outcome: B — one small
+blocker, not the full Option-B slice.** Finance does not need enrollment
+episodes; it needs an enrollment **reference that survives withdrawal**.
+
+- **Q1 — reference, not episodes.** Every step binds to enrollment identity
+  (`student_curriculum_id`/uuid, school, status). **No step reads
+  results/scores** — the Option-B re-key protects *grade history under repeats*,
+  a purely academic concern. N-episode enrollment becomes Finance-relevant only
+  when the **repeat workflow** exists (a second fresh bill for the same pair
+  needs a second row → the `active_key` flip). No repeat workflow exists, so no
+  Finance behaviour can trigger it yet. Exact dependency: **Option B full slice
+  must land before the repeat workflow ships — not before Finance starts.**
+- **Q2 — the withdraw-delete is the one blocker, and it is separable.** §9 needs
+  the enrollment row durable; `updateStatus('withdrawn')` DELETEs it. New
+  evidence makes this fix even less optional: the delete **already fails with a
+  QueryException for any enrollment that has `student_subjects` rows (FK
+  RESTRICT)** — and `enroll()` auto-attaches compulsory subjects, so the path is
+  half-broken today — while `behavioral_assessments`/`psychomotor_skills` FKs
+  **CASCADE**, silently destroying assessment history when it does succeed. Fix
+  shape: soft-end (status=withdrawn + `ended_at`/`ended_by`, same mechanics as
+  `unenroll()`), a small standalone slice. **Flagged trade:** with
+  `UNIQUE(student_id, curriculum_id)` still in place, soft-end removes the only
+  same-curriculum re-entry path (the delete) until the Option-B flip — accepted:
+  RESTRICT already blocks it for real enrollments, and the repeat workflow that
+  legitimises re-entry doesn't exist yet.
+- **Q3 — skeleton prerequisites.** Hard blocker: the soft-end fix, landed
+  **before the first invoice row exists** (referent durability + a future FK to
+  `student_curricula` would otherwise make withdraw 500 or cascade-destroy the
+  referent). Already built: Money VO, School isolation, the append-only
+  mechanism (replicate 1.4c triggers on ledger tables), authz observe. Stubbable
+  for the skeleton: invoice **numbering** (internal id; the gap-free sequence
+  needs its own ADR + signed accounting policy — a **production** gate, not a
+  skeleton gate), the approval/maker-checker engine (Ph3), the automated billing
+  trigger. NOT blockers: the enrollment-create fan-out, the event bus, the
+  results/scores re-key.
+- **Q4 — billing trigger.** The 3-path create fan-out makes an *automated*
+  trigger fire inconsistently — sidestepped for the skeleton by a single manual
+  "generate invoice for enrollment X" entry point. The fan-out convergence + the
+  `EnrollmentCreated` fact remain prerequisites for **automated** billing
+  (1.4e), not for the skeleton.
+
+**Sequencing (supersedes "enrollment is Finance's prerequisite"):**
+(1) withdraw soft-end slice (small, standalone — also stops the CASCADE
+assessment destruction); (2) Finance walking skeleton (manual trigger, stubbed
+numbering, no approvals); (3) Option-B full slice before the repeat workflow /
+automated billing; (4) gap-free numbering ADR + signed policy before production
+invoicing.
+
 ### Enrollment Option B — registrar selected; design done (2026-07)
 
 Registrar chose **Option B** (episodic enrollments, full history, active-only

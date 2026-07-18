@@ -401,6 +401,45 @@ additionally null-team-guarded by the invariant; converting it to
 path can create a null-team role or a role/legacy-source mismatch once the writer
 change + that deletion land.
 
+**CORRECTION (2026-07, empirically verified) — the writer deletion is NOT
+flag-independent.** The premise "the column write is redundant to a role grant"
+holds only under `single_source_access = ON`. Under the **legacy path (flag OFF,
+the production default)**, `accessibleSchoolIds()` does **not** read
+`model_has_roles`; for two writers the column is load-bearing:
+
+- **`TeacherService` (×2):** a teacher created role-only (no `users.school_id`,
+  and teacher creation writes **no** `school_user` pivot) resolves to an **empty**
+  accessible-school set under the legacy path — proven in tinker: flag OFF → `[]`,
+  flag ON → `[13]`. An empty set means `SchoolAwareLoginResponse` rejects the
+  login. Deleting this write while the flag is off **strips new teachers' login.**
+- **`AdminController:105`:** it *resets* `users.school_id` when a home-School is
+  revoked, precisely so the legacy fallback (`if ($this->school_id) push`) stops
+  granting the revoked School. Deleting it leaves a **revoked School still granted
+  via the fallback** — a security regression under the legacy path.
+- **`GuardianService::enableLogin`:** SAFE to delete — guardians resolve via the
+  guardian-record branch of the legacy union (proven: flag OFF → `[14]` with no
+  column), so the column is redundant for guardians.
+
+There is **no** role↔column/pivot sync listener (checked `app/Listeners`,
+`app/Observers`), so the legacy path genuinely depends on the column.
+**Corrected disposition:** the teacher and AdminController writes must be
+**flag-gated** (write only while `single_source_access` is off) or **coupled to
+the flag flip**, not deleted unconditionally. Deleting them now would regress
+production. Held for review; only the guardian removal is safe today.
+
+### S7 production divergence snapshot — the command (§3b/§1)
+
+`php artisan s7:divergence-snapshot [--json]` (read-only) is the baseline-snapshot
+gate. It counts users whose access came from a legacy source but was never
+mirrored into `model_has_roles`, across **all three** sources
+(`school_user`, `users.school_id`, guardian records), grouped by School,
+**excluding super_admin** (team-less by design). Emits `taken_at` / environment /
+database / per-source counts / total; exit 0 = PASS, exit 1 = STOP. Run against
+**production or a fresh untouched snapshot** immediately before enabling the
+parity instrumentation (dev is the wrong sample — sources seeded together agree by
+construction). Non-zero is a **review STOP** (a backfill grants real access to
+real people), never a mechanical fix. Locked by `S7DivergenceSnapshotTest`.
+
 ### Runtime-zero gate — blind spots + compensating controls (§2)
 
 The gate is a grep; it cannot see everything. Each blind spot and its control:

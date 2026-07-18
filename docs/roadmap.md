@@ -360,11 +360,49 @@ episodes; it needs an enrollment **reference that survives withdrawal**.
   (1.4e), not for the skeleton.
 
 **Sequencing (supersedes "enrollment is Finance's prerequisite"):**
-(1) withdraw soft-end slice (small, standalone — also stops the CASCADE
-assessment destruction); (2) Finance walking skeleton (manual trigger, stubbed
-numbering, no approvals); (3) Option-B full slice before the repeat workflow /
-automated billing; (4) gap-free numbering ADR + signed policy before production
-invoicing.
+(1) withdraw soft-end slice — **DONE (2026-07)**; (2) Finance walking skeleton
+(manual trigger, stubbed numbering, no approvals) — **next**; (3) Option-B full
+slice before the repeat workflow / automated billing; (4) gap-free numbering ADR
++ signed policy before production invoicing.
+
+### Withdraw soft-end — landed (2026-07)
+
+- **One shared soft-end**: `CurriculumEnrollmentService::softEnd(enrollment,
+  actor, terminalStatus, reason)` — sets the Option-B terminal status AND
+  `ended_at`/`ended_by`/`end_reason` together, never deletes, rejects `active` as
+  a terminal status, 409 on double-end. `unenroll()` delegates to it (fixing the
+  anomaly where unenrolled rows kept `status=active` and still read as
+  `currentCurriculum`); `updateStatus('withdrawn')` routes through it — **the
+  delete is gone**. `promote()`'s source→PROMOTED transition is the remaining
+  termination path NOT yet converged (sets status without `ended_at`) — deferred
+  by design to Option-B `endEpisode`.
+- **Delete-sensitive callers audited**: ClassResultsController + OutstandingComment
+  filter by status (safe); `CurriculumController@assignSubject` iterated
+  enrollments UNFILTERED → adjusted to active-only (withdrawn rows must not
+  receive new compulsory subjects); `StudentResource:18` fallback now shows the
+  withdrawn row as "last enrollment" (registrar-aligned: history visible);
+  `BackfillPastTermJob` already skips WITHDRAWN (now also skips unenrolled rows —
+  consistent with its intent).
+- **Historical CASCADE damage (dev DB `brookstone_portal_db`)**: **zero
+  enrollment deletions within audit coverage** — 0 `deleted` events for
+  StudentCurriculum in the immutable activity log (coverage begins 2026-05-25).
+  The evidence channel itself was bite-proven (a probe delete produced exactly
+  one audit row, so 0 means 0 — not "logging never fired"). Bounds: deletions
+  BEFORE 2026-05-25 are invisible (no surviving evidence — cannot be determined);
+  cascaded behavioral/psychomotor losses are not directly countable (those models
+  don't log) but are bounded by enrollment deletions = 0 within coverage.
+  **Production has NOT been assessed — requires the prod-snapshot access; run the
+  same audit-log count there before declaring zero damage. No stakeholder
+  escalation warranted on dev evidence.**
+- **Documented trade** (until the Option-B `active_key` flip):
+  `UNIQUE(student_id, curriculum_id)` still blocks same-curriculum re-enrolment
+  after withdrawal. Accepted: FK RESTRICT already blocked the old delete for real
+  enrollments (subjects attached), and no repeat workflow exists yet.
+- **Finance forward-compat confirmed**: the enrollment row survives withdrawal
+  with a stable id/uuid; a future invoice FK to `student_curricula` stays valid;
+  §9 cancellation can reference the withdrawn enrollment; **no delete path
+  remains** on any termination route (the only `->delete()` on StudentCurriculum
+  is gone from the app).
 
 ### Enrollment Option B — registrar selected; design done (2026-07)
 

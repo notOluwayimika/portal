@@ -209,7 +209,12 @@ class CurriculumController extends Controller
                 'display_order' => $request->display_order,
             ]);
             if ($request->is_compulsory) {
-                $students = $curriculum->studentCurricula;
+                // Active enrollments only: ended (withdrawn/soft-ended) rows now
+                // PERSIST instead of being deleted, and must not receive new
+                // compulsory subjects.
+                $students = $curriculum->studentCurricula()
+                    ->where('status', StudentStatusEnum::ACTIVE)
+                    ->get();
                 foreach ($students as $student) {
                     StudentSubject::updateOrCreate([
                         'student_curriculum_id' => $student->id,

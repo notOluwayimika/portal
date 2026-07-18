@@ -4,12 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentStatusEnum;
 use App\Exceptions\BusinessRuleException;
-use App\Support\Authz;
 use App\Http\Requests\PromoteStudentRequest;
 use App\Http\Requests\RegisterStudentCurriculumRequest;
 use App\Http\Requests\StudentSubject\UnenrollStudentRequest;
 use App\Http\Requests\UpdateStudentCurriculumStatusRequest;
-use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\ScoreResource;
 use App\Http\Resources\StudentCurriculumResource;
 use App\Models\Curriculum;
@@ -17,18 +15,15 @@ use App\Models\CurriculumSubject;
 use App\Models\Score;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
-use App\Models\StudentSubject;
 use App\Services\CurriculumEnrollmentService;
-use Illuminate\Http\Client\Response;
-use Illuminate\Http\Request;
+use App\Support\Authz;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class StudentCurriculumController extends Controller
 {
-    public function __construct(private CurriculumEnrollmentService $enrollmentService)
-    {
-    }
+    public function __construct(private CurriculumEnrollmentService $enrollmentService) {}
 
     public function getTeacherDetails(StudentCurriculum $studentCurriculum)
     {
@@ -39,13 +34,14 @@ class StudentCurriculumController extends Controller
         $psychomotorSkills = $studentCurriculum->psychomotorSkills()
             ->where('assessment_term_id', $studentCurriculum->curriculum?->term_id)
             ->get();
+
         return response()->json([
-            "studentCurriculum" => new StudentCurriculumResource($studentCurriculum),
-            "formTeacher" => $formTeacher,
-            "boardingParent" => $boardingParent,
-            "headOfSchool" => $headOfSchool,
-            "behavioralAssessments" => $behavioralAssessments,
-            "psychomotorSkills" => $psychomotorSkills,
+            'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
+            'formTeacher' => $formTeacher,
+            'boardingParent' => $boardingParent,
+            'headOfSchool' => $headOfSchool,
+            'behavioralAssessments' => $behavioralAssessments,
+            'psychomotorSkills' => $psychomotorSkills,
         ]);
     }
 
@@ -93,6 +89,26 @@ class StudentCurriculumController extends Controller
     ): JsonResponse {
         $this->authorizeReviewer($request);
 
+        // Withdrawal is a SOFT-END, never a delete (§15C append-only; the row is
+        // the durable referent §9 invoice cancellation needs; the old delete also
+        // cascaded behavioral/psychomotor assessments away and threw on the
+        // student_subjects FK RESTRICT). Routed through the one shared soft-end.
+        if ($request->validated('status') === 'withdrawn') {
+            $studentCurriculum->promoted_to_id = null; // moving off "promoted" clears the link
+            $studentCurriculum->save();
+
+            try {
+                $enrollment = $this->enrollmentService->softEnd(
+                    $studentCurriculum,
+                    $request->user(),
+                    StudentStatusEnum::WITHDRAWN,
+                );
+            } catch (BusinessRuleException $e) {
+                return response()->json(['message' => $e->getMessage()], 409);
+            }
+
+            return response()->json(new StudentCurriculumResource($enrollment));
+        }
 
         $studentCurriculum->status = $request->validated('status');
 
@@ -104,14 +120,9 @@ class StudentCurriculumController extends Controller
             abort_if(StudentCurriculum::where('student_id', $studentCurriculum->student->id)->where('status', 'active')->exists(), 422, 'Student is already enrolled in a curriculum.');
         }
 
-
         $studentCurriculum->save();
-        if ($request->validated('status') === 'withdrawn') {
-            $sc = new StudentCurriculumResource($studentCurriculum);
-            $studentCurriculum->delete();
-            return response()->json($sc);
-        }
         $studentCurriculum->load(['curriculum.examType', 'curriculum.classLevelArm.classLevel', 'curriculum.academicSession', 'promotedTo']);
+
         return response()->json(new StudentCurriculumResource($studentCurriculum));
     }
 
@@ -172,7 +183,6 @@ class StudentCurriculumController extends Controller
         $from->load(['curriculum.examType', 'curriculum.classLevelArm.classLevel', 'curriculum.academicSession', 'promotedTo']);
         $new->load(['curriculum.examType', 'curriculum.classLevelArm.classLevel', 'curriculum.academicSession', 'promotedTo']);
 
-
         return response()->json([
             'from' => new StudentCurriculumResource($from),
             'new' => new StudentCurriculumResource($new),
@@ -208,6 +218,7 @@ class StudentCurriculumController extends Controller
         );
 
         abort_if(StudentCurriculum::where('student_id', $student->id)->where('status', 'active')->exists(), 422, 'Student is already enrolled in a curriculum.');
+
         return DB::transaction(function () use ($student, $target) {
             $sc = StudentCurriculum::create([
                 'student_id' => $student->id,

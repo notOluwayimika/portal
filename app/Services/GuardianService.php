@@ -323,7 +323,7 @@ class GuardianService
         }
 
         try {
-            $schoolName = $user->school?->name ?? config('app.name');
+            $schoolName = optional($user->school)->name ?? config('app.name');
             $user->notify(new GuardianAccountCreatedNotification(
                 plainPassword: $plainPassword,
                 schoolName: $schoolName,

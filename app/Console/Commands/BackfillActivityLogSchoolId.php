@@ -13,36 +13,56 @@ use Illuminate\Support\Facades\DB;
 #[Description('Backfill the school_id column on existing activity_log rows from their causer/subject.')]
 class BackfillActivityLogSchoolId extends Command
 {
+    private function activityLogIsLocked(): bool
+    {
+        return DB::table('information_schema.triggers')
+            ->where('trigger_schema', DB::getDatabaseName())
+            ->where('trigger_name', 'activity_log_no_update')
+            ->exists();
+    }
+
     public function handle(ActivitySchoolResolver $resolver): int
     {
-        $dryRun    = (bool) $this->option('dry-run');
+        // Superseded by the `creating` resolver (new rows are tagged on insert)
+        // and blocked once the §15C immutability lock is in place — the raw
+        // UPDATE below would hit the BEFORE UPDATE trigger. Refuse gracefully
+        // rather than fail cryptically mid-run. This repair ran before the lock;
+        // the residual null-school_id rows are unresolvable system events.
+        if (! $this->option('dry-run') && $this->activityLogIsLocked()) {
+            $this->error('activity_log is immutable (§15C): the backfill can no longer UPDATE it.');
+            $this->line('This repair is complete and superseded by the creating-time school_id resolver. Use --dry-run to inspect only.');
+
+            return self::FAILURE;
+        }
+
+        $dryRun = (bool) $this->option('dry-run');
         $chunkSize = max(1, (int) $this->option('chunk-size'));
-        $since     = $this->option('since');
+        $since = $this->option('since');
 
         $query = Activity::query()
             ->with(['causer', 'subject'])
             ->whereNull('school_id');
 
         if ($since) {
-            $query->where('created_at', '>=', $since . ' 00:00:00');
+            $query->where('created_at', '>=', $since.' 00:00:00');
         }
 
         $stats = [
-            'started_at'  => now()->toIso8601String(),
-            'dry_run'     => $dryRun,
-            'chunk_size'  => $chunkSize,
-            'since'       => $since,
-            'processed'   => 0,
-            'updated'     => 0,
-            'unresolved'  => 0,
+            'started_at' => now()->toIso8601String(),
+            'dry_run' => $dryRun,
+            'chunk_size' => $chunkSize,
+            'since' => $since,
+            'processed' => 0,
+            'updated' => 0,
+            'unresolved' => 0,
             'unresolved_breakdown' => [
                 'no_causer_or_subject' => 0,
-                'causer_no_school'     => 0,
-                'subject_no_school'    => 0,
+                'causer_no_school' => 0,
+                'subject_no_school' => 0,
             ],
         ];
 
-        $this->info(($dryRun ? '[DRY RUN] ' : '') . 'Backfilling activity_log.school_id...');
+        $this->info(($dryRun ? '[DRY RUN] ' : '').'Backfilling activity_log.school_id...');
 
         $query->chunkById($chunkSize, function ($activities) use ($resolver, $dryRun, &$stats) {
             $pendingUpdates = [];
@@ -57,6 +77,7 @@ class BackfillActivityLogSchoolId extends Command
                     if (! $dryRun) {
                         $pendingUpdates[$schoolId][] = $activity->id;
                     }
+
                     continue;
                 }
 
@@ -73,7 +94,7 @@ class BackfillActivityLogSchoolId extends Command
 
         $stats['finished_at'] = now()->toIso8601String();
 
-        $reportPath = storage_path('logs/activity-log-backfill-' . now()->format('Ymd_His') . '.json');
+        $reportPath = storage_path('logs/activity-log-backfill-'.now()->format('Ymd_His').'.json');
         file_put_contents($reportPath, json_encode($stats, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
         $this->table(
@@ -95,7 +116,7 @@ class BackfillActivityLogSchoolId extends Command
 
     private function categorize(ActivitySchoolResolver $resolver, Activity $activity): string
     {
-        $hasCauser  = $activity->causer !== null;
+        $hasCauser = $activity->causer !== null;
         $hasSubject = $activity->subject !== null;
 
         if (! $hasCauser && ! $hasSubject) {

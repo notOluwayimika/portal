@@ -6,32 +6,34 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Shared Kernel atomic sequence generator (1.4b). Returns the next value for a
- * (scope, key) counter, incremented under a pessimistic row lock so concurrent
- * callers never receive the same value — the fix for the racy read-then-write in
- * the old HasAdmissionNumber/HasStaffNumber generators.
+ * Shared Kernel sequencing primitive: a per-`(scope, key)` monotonic counter.
+ * `next()` returns the successor value, incremented under a pessimistic row lock
+ * so concurrent callers never receive the same value.
  *
- * Contract:
- *  - GAP-TOLERANT ONLY. A caller whose surrounding transaction rolls back after
- *    calling next() leaves a consumed value (a gap). That is fine for admission
- *    and staff numbers. It is NOT a gap-free ledger sequence: Finance
- *    receipt/invoice numbering (§12.5) is legally gap-free, needs a signed
- *    accounting policy that does not yet exist, and MUST get its own design/ADR —
- *    do not reuse this service on the assumption that "a number generator is a
- *    number generator".
- *  - Atomicity requires a transaction. next() opens its own (DB::transaction), so
- *    it is correct whether or not the caller is already inside one. When the
- *    caller wraps generation + the domain insert in ONE transaction, generation
- *    and insert are fully atomic (the row lock is held to the outer commit); when
- *    it does not, a failed insert simply burns the value (gap-tolerant).
- *  - Shared Kernel: this depends on nothing in any Module and no Module owns it
- *    (ADR 0033 §8.1/§8.2). Consumers (Student/Teacher) depend on it, never the
- *    reverse, and never on each other.
+ * This is generic infrastructure — it carries no domain meaning. Any module may
+ * use it; it depends on nothing in any module and no module owns it (ADR 0033
+ * §8.1/§8.2). It makes no guarantee beyond the two below; a caller needing a
+ * stronger property (e.g. strict contiguity) must establish that itself.
  *
- * @param  Closure(): int|null  $seed  Computes the initial counter value when the
- *                                     (scope, key) row does not yet exist — used to adopt the current domain
- *                                     maximum on first use so the switch from max+1 never collides with
- *                                     existing identifiers. Evaluated at most once per (scope, key).
+ * Guarantees:
+ *  - Uniqueness under concurrency. The `SELECT … FOR UPDATE` row lock serialises
+ *    concurrent increments of the SAME `(scope, key)`, so no two committed
+ *    callers receive the same value. The lock is on that one counter row only —
+ *    distinct keys never contend (no global lock).
+ *  - Transactional atomicity of allocation with the caller's work. When `next()`
+ *    runs inside the caller's transaction, the increment is nested as a savepoint
+ *    and the row lock is held until the OUTER transaction commits; if the caller
+ *    rolls back, the allocation is rolled back with it and does NOT survive as a
+ *    committed value. Called outside any transaction, `next()`'s own transaction
+ *    commits the allocation immediately (standalone use).
+ *
+ * Values are monotonic but not guaranteed contiguous: a value allocated and then
+ * abandoned (a committed row later deleted) is not reclaimed.
+ *
+ * @param  Closure(): int|null  $seed  Initial value when the `(scope, key)` row
+ *                                     does not yet exist — used to adopt an existing maximum on first use so a
+ *                                     switch onto this counter never reissues a value already in use.
+ *                                     Evaluated at most once per `(scope, key)`.
  */
 class Sequences
 {

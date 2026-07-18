@@ -129,8 +129,30 @@ post-insert `UPDATE`, closing the null-number window and the max+1 race. The
 sequence **seeds from the current domain max on first use**, so the switch never
 reissues an existing identifier. **Gap-tolerant only** — the service docblock
 forbids reuse for gap-free Finance receipt/invoice numbering (§12.5), which needs a
-signed policy and its own ADR. Design chosen (row lock) over `LAST_INSERT_ID`
-upsert / advisory lock / optimistic-retry — evidence, not familiarity. MySQL tests:
+signed policy and its own ADR. **The Shared Kernel service carries NO domain
+meaning** — no Finance/invoice/receipt/accounting/gap-free terminology (it exposes
+only a generic per-`(scope, key)` counter). The **application-level** boundary
+lives here, not in the Kernel: any future *gap-free* identifier (e.g. Finance
+receipt/invoice numbering, which is legally contiguous) needs its own design + a
+signed accounting policy that does not yet exist, and must NOT assume this
+gap-tolerant counter satisfies it. **Transactional guarantee:** `save()` on the
+consuming models wraps allocation + INSERT in one transaction, so a failed
+persist rolls the allocation back with it — an allocated number never survives as
+a committed assignment without its row (bite-proven). **School-scoped
+concurrency:** the `FOR UPDATE` lock is on the `(scope, key)` counter row and the
+key embeds the School, so different Schools lock different rows — no global counter,
+no cross-School contention (bite-proven: two Schools → two independent rows).
+
+**Design comparison (evidence, not familiarity) — chosen: counter table + row lock:**
+
+| Option | Concurrency correctness | Txn atomicity | Rollback | Op. complexity | Portability | Perf | Verdict |
+|---|---|---|---|---|---|---|---|
+| **Counter table + `SELECT…FOR UPDATE`** | serialises same-key writers | participates in caller txn | reverts with caller | low (one table) | standard SQL | one indexed row lock/alloc | **CHOSEN** |
+| Counter table + `INSERT…ON DUPLICATE KEY UPDATE LAST_INSERT_ID` | correct | atomic single stmt | reverts | medium | MySQL-specific | fastest | rejected — `LAST_INSERT_ID()` returns the PK not the value on first insert; brittle read-back |
+| Advisory lock (`GET_LOCK`) | correct | **NOT** part of the row txn | lock ≠ data | medium | MySQL-specific | lock RTT | rejected — connection-scoped, not atomic with the insert/rollback |
+| Optimistic retry on `max+1` + unique index | correct after retries | n/a | n/a | high (retry loop) | portable | contends on the HOT domain table | rejected — retries under load, reads the domain table (the defect we're removing) |
+
+MySQL tests:
 `SequencesServiceTest` (counter mechanics, seed-once, 200-call uniqueness+contiguity,
 `FOR UPDATE` present) and `IdentifierGeneratorTest` (no null window, atomic
 sequential, seed-from-max, gap-tolerance, per-School, unique-index backstop, staff

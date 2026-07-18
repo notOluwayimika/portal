@@ -57,6 +57,46 @@ it('generates distinct sequential admission numbers (atomic counter, not max+1 r
         ]);
 });
 
+// ── Atomic unit of work: a failed insert must not consume the allocation ───────
+
+it('allocation and insert are one atomic unit — a failed insert never consumes the value', function () {
+    $school = al_makeSchool();
+    $prefix = Student::admissionNumberPrefix();
+    $key = $school->id.'|'.$prefix;
+
+    // A student already holds 001, and the counter is deliberately BEHIND it (0),
+    // so the next generated value (001) will collide with the existing row.
+    Student::factory()->create(['school_id' => $school->id, 'admission_number' => $prefix.'001']);
+    DB::table('sequences')->insert(['scope' => 'student.admission_number', 'key' => $key, 'value' => 0, 'created_at' => now(), 'updated_at' => now()]);
+
+    // The generating create allocates 001 → the INSERT hits the unique index → fails.
+    expect(fn () => Student::factory()->create(['school_id' => $school->id, 'admission_number' => null]))
+        ->toThrow(QueryException::class);
+
+    // Because save() wraps allocation + insert in ONE transaction, the failed
+    // insert rolled the increment back too — the counter did NOT advance.
+    expect((int) DB::table('sequences')->where('key', $key)->value('value'))->toBe(0);
+});
+
+// ── School-scoped isolation: distinct Schools use distinct counter rows ─────────
+
+it('different Schools use independent counter rows — no cross-School lock contention', function () {
+    $a = al_makeSchool();
+    $b = al_makeSchool();
+    $prefix = Student::admissionNumberPrefix();
+
+    $sa = Student::factory()->create(['school_id' => $a->id, 'admission_number' => null]);
+    $sb = Student::factory()->create(['school_id' => $b->id, 'admission_number' => null]);
+
+    // The FOR UPDATE lock is on the (scope, key) COUNTER ROW; the key embeds the
+    // School, so A and B lock different rows and never serialize against each
+    // other — there is no global counter and no cross-School contention.
+    expect($a->id.'|'.$prefix)->not->toBe($b->id.'|'.$prefix)
+        ->and($sa->admission_number)->toBe($prefix.'001')
+        ->and($sb->admission_number)->toBe($prefix.'001') // each School's counter starts independently
+        ->and(DB::table('sequences')->distinct()->count('key'))->toBe(2); // two independent rows
+});
+
 // ── Migration safety: the sequence seeds from the existing max, never reissues ──
 
 it('adopts the existing max on first use — the switch never reissues a live number', function () {

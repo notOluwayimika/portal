@@ -7,10 +7,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Shared Kernel sequence counters (1.4b). One row per (scope, key) holds a
  * monotonic counter, incremented atomically under a row lock (SELECT … FOR
- * UPDATE) by App\Support\Sequences\Sequences. Gap-TOLERANT: a rolled-back
- * consumer leaves a gap; that is acceptable for admission/staff numbers. NOT a
- * gap-free ledger — Finance receipt/invoice numbering (§12.5) needs a signed
- * policy and its own design, and must not reuse this table on that assumption.
+ * UPDATE) by App\Support\Sequences\Sequences. Generic infrastructure — no domain
+ * meaning. See the service class for the concurrency and transactional guarantees.
  */
 return new class extends Migration
 {

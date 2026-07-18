@@ -3229,12 +3229,6 @@ parameters:
 			path: app/Models/Student.php
 
 		-
-			message: '#^Parameter \#1 \$string of function str_pad expects string, int given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Models/Student.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$classLevelArm\.$#'
 			identifier: property.notFound
 			count: 4
@@ -3294,11 +3288,6 @@ parameters:
 			count: 1
 			path: app/Models/Teacher.php
 
-		-
-			message: '#^Parameter \#1 \$string of function str_pad expects string, int given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Models/Teacher.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'

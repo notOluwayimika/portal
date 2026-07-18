@@ -102,7 +102,7 @@ resolve off-request context from `ActiveSchool::runFor()`).
 now rolling out **observe-first** via `App\Support\Authz` (S5 — see below) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
 ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
-per-model request-path audit remains the gate) · 1.4b–e (Sequences, audit immutability,
+per-model request-path audit remains the gate) · 1.4c–e (audit immutability,
 observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-hoc
 `toLocaleString` rendering exists today).
 
@@ -119,7 +119,24 @@ default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
 
-## 1.4b — identifier-generator investigation (2026-07)
+## 1.4b — Shared Sequences (investigation + implementation, 2026-07)
+
+**Implemented.** `App\Support\Sequences\Sequences` (Shared Kernel) + a `sequences`
+table (unique `(scope, key)`) provide an atomic, gap-tolerant counter incremented
+under `SELECT … FOR UPDATE`. `HasAdmissionNumber` and `HasStaffNumber` now generate
+the number **in `creating`** (before the insert, from the sequence) instead of a
+post-insert `UPDATE`, closing the null-number window and the max+1 race. The
+sequence **seeds from the current domain max on first use**, so the switch never
+reissues an existing identifier. **Gap-tolerant only** — the service docblock
+forbids reuse for gap-free Finance receipt/invoice numbering (§12.5), which needs a
+signed policy and its own ADR. Design chosen (row lock) over `LAST_INSERT_ID`
+upsert / advisory lock / optimistic-retry — evidence, not familiarity. MySQL tests:
+`SequencesServiceTest` (counter mechanics, seed-once, 200-call uniqueness+contiguity,
+`FOR UPDATE` present) and `IdentifierGeneratorTest` (no null window, atomic
+sequential, seed-from-max, gap-tolerance, per-School, unique-index backstop, staff
+path). Concurrency proof is a **deterministic reproduction, labelled as such**
+(true OS parallelism isn't reliably expressible in Pest; the row lock is the
+guarantee). Investigation findings that led here:
 
 **Inventory — exactly TWO runtime generators** (grep-verified, no others):
 `HasAdmissionNumber` (Student, `admission_number`) and `HasStaffNumber` (Teacher,

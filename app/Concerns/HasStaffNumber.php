@@ -3,84 +3,75 @@
 namespace App\Concerns;
 
 use App\Support\ActiveSchool;
+use App\Support\Sequences\Sequences;
 use Illuminate\Database\Eloquent\Builder;
 
 trait HasStaffNumber
 {
-    protected static function bootHasStaffNumber()
+    protected static function bootHasStaffNumber(): void
     {
-        // Reject duplicate manual entries before insert
+        // Generate BEFORE insert (in `creating`, not `created`) so the number is
+        // part of the atomic INSERT — closes the null-number window and uses the
+        // atomic Sequences counter so concurrent creates never collide (1.4b).
         static::creating(function ($model) {
-            if (!empty($model->staff_number)) {
-                $schoolId = $model->school_id ?: ActiveSchool::id();
+            $schoolId = $model->school_id ?: ActiveSchool::id();
+
+            if (! empty($model->staff_number)) {
+                // Manual entry — reject a duplicate up front (defence in depth;
+                // the composite UNIQUE(school_id, staff_number) index is the
+                // actual guarantee).
                 $exists = static::withoutGlobalScopes()
                     ->where('school_id', $schoolId)
                     ->where('staff_number', $model->staff_number)
                     ->exists();
+
                 if ($exists) {
                     throw new \InvalidArgumentException(
                         "Staff number {$model->staff_number} is already in use."
                     );
                 }
+
+                return;
             }
-        });
 
-        // Auto-generate when not provided
-        static::created(function ($model) {
-            if (empty($model->staff_number)) {
-                $staffNumber = $model->nextStaffNumber();
+            $prefix = static::staffNumberPrefix();
+            $next = Sequences::next(
+                'teacher.staff_number',
+                $schoolId.'|'.$prefix,
+                fn () => static::currentStaffSuffixMax($schoolId, $prefix),
+            );
 
-                static::withoutGlobalScopes()
-                    ->where('school_id', $model->school_id)
-                    ->where('id', $model->id)
-                    ->update(['staff_number' => $staffNumber]);
-
-                $model->setAttribute('staff_number', $staffNumber);
-                $model->syncOriginalAttribute('staff_number');
-            }
+            $model->staff_number = static::buildStaffNumber($next);
         });
     }
 
     /**
-     * Build the next staff number by finding the highest existing
-     * suffix for the current prefix and incrementing it.
+     * The current highest numeric suffix for this School + prefix, used to seed
+     * the sequence on first use so the switch from the old max+1 scheme never
+     * reissues an existing staff number.
      */
-    protected function nextStaffNumber(): string
+    protected static function currentStaffSuffixMax(int|string|null $schoolId, string $prefix): int
     {
-        $prefix = static::staffNumberPrefix();
-
-        // Pull the highest existing staff_number that matches this prefix
         $latest = static::withoutGlobalScopes()
-            ->where('school_id', $this->school_id)
-            ->where('staff_number', 'like', $prefix . '%')
+            ->where('school_id', $schoolId)
+            ->where('staff_number', 'like', $prefix.'%')
             ->orderByRaw('LENGTH(staff_number) DESC, staff_number DESC')
             ->value('staff_number');
 
-        $lastNumber = 0;
-        if ($latest) {
-            // Strip the prefix to get just the numeric suffix
-            $suffix = substr($latest, strlen($prefix));
-            $lastNumber = (int) $suffix;
-        }
-
-        return $this->buildStaffNumber($lastNumber + 1);
+        return $latest ? (int) substr($latest, strlen($prefix)) : 0;
     }
 
-    /**
-     * Build a full staff number from a numeric suffix.
-     */
-    protected function buildStaffNumber(int $number): string
+    protected static function buildStaffNumber(int $number): string
     {
-        return static::staffNumberPrefix() . str_pad($number, 3, '0', STR_PAD_LEFT);
+        return static::staffNumberPrefix().str_pad((string) $number, 3, '0', STR_PAD_LEFT);
     }
 
     /**
-     * The prefix portion only (e.g. STF/2025/).
-     * Override in the model to customize.
+     * The prefix portion only (e.g. STF/2025/). Override in the model to customise.
      */
     public static function staffNumberPrefix(): string
     {
-        return 'STF/' . date('Y') . '/';
+        return 'STF/'.date('Y').'/';
     }
 
     public function scopeByStaffNumber(Builder $query, string $staffNumber): Builder

@@ -102,7 +102,7 @@ resolve off-request context from `ActiveSchool::runFor()`).
 now rolling out **observe-first** via `App\Support\Authz` (S5 — see below) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
 ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
-per-model request-path audit remains the gate) · 1.4c–e (audit immutability,
+per-model request-path audit remains the gate) · 1.4d–e (
 observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-hoc
 `toLocaleString` rendering exists today).
 
@@ -118,6 +118,38 @@ fixed by correcting test setup, **not** by touching authorization. They are
 default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
+
+## 1.4c — audit-log immutability (2026-07)
+
+**Implemented.** `activity_log` (spatie, backed by `App\Models\Activity`) is now
+append-only and permanent (§15C), enforced in depth:
+
+- **Model guard:** `Activity` `updating`/`deleting` throw
+  `AuditLogImmutableException`. Safe because the write path is insert-only —
+  verified 0 of 124k+ rows have `updated_at > created_at`; `school_id` is set in
+  `creating`, before insert. No legitimate in-cycle update exists, so ALL
+  mutation is blocked.
+- **Database backstop:** BEFORE UPDATE + BEFORE DELETE triggers on `activity_log`
+  SIGNAL an error — the layer that needs no application code, catching raw
+  `DB::table()` writes, tinker, and a mass `->delete()` (which bypasses model
+  events, e.g. `activitylog:clean`). DDL (future schema migrations) is unaffected;
+  only row DML is blocked.
+- **`activitylog:clean` disabled:** overridden by `App\Console\Commands\ActivitylogClean`
+  (wins the signature) which refuses with an explanation; the DELETE trigger is
+  the backstop if the spatie command is ever reached.
+
+**`BackfillActivityLogSchoolId` interaction:** it was a completed one-time repair
+(its raw `school_id` UPDATE). It ran BEFORE this lock; new rows are tagged at
+creation by the resolver, and the residual null-`school_id` rows are unresolvable
+system/cross-School events. Under the lock its UPDATE is now denied, so the
+command guards on `information_schema.triggers` and refuses gracefully (only
+`--dry-run` still works as a diagnostic). Its two update-path tests were replaced
+by a refuse-when-locked test. `App\Models\AuditLog` is a SEPARATE table
+(`audit_logs`), out of scope.
+
+Bite-proofs (`AuditLogImmutabilityTest`, MySQL, 7): model update/delete throw;
+raw DB update/delete denied at the DB; the mass-delete (clean) path denied at the
+DB; `activitylog:clean` deletes nothing; a normal audited action still writes.
 
 ## 1.4b — Shared Sequences (investigation + implementation, 2026-07)
 

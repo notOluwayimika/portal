@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\School;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -10,62 +9,41 @@ uses(RefreshDatabase::class);
 function insertActivity(array $overrides = []): int
 {
     return DB::table('activity_log')->insertGetId(array_merge([
-        'log_name'    => 'test',
+        'log_name' => 'test',
         'description' => 'legacy row',
-        'event'       => 'created',
-        'school_id'   => null,
-        'created_at'  => now(),
-        'updated_at'  => now(),
+        'event' => 'created',
+        'school_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
     ], $overrides));
 }
 
-it('backfills school_id from the causer in chunks', function () {
+/**
+ * The backfill was a completed one-time repair. Since 1.4c made activity_log
+ * immutable (§15C, BEFORE UPDATE trigger), its write path can no longer run —
+ * new rows are tagged at creation and the residual nulls are unresolvable. The
+ * command therefore refuses to write when the log is locked, and only --dry-run
+ * (which never updates) still works as a diagnostic. (In this test the lock is
+ * always present — RefreshDatabase applies every migration.)
+ */
+it('refuses to write when the audit log is immutable (§15C) and changes nothing', function () {
     $school = al_makeSchool();
-    $user   = al_makeUser($school->id);
+    $user = al_makeUser($school->id);
+    $id = insertActivity(['causer_type' => User::class, 'causer_id' => $user->id]);
 
-    $ids = collect(range(1, 5))->map(fn () => insertActivity([
-        'causer_type' => User::class,
-        'causer_id'   => $user->id,
-    ]));
+    $this->artisan('activity-log:backfill-school-id')->assertExitCode(1);
 
-    $this->artisan('activity-log:backfill-school-id', ['--chunk-size' => 2])
-        ->assertSuccessful();
-
-    foreach ($ids as $id) {
-        expect(DB::table('activity_log')->find($id)->school_id)->toEqual($school->id);
-    }
+    // Nothing was written — the immutable log is untouched.
+    expect(DB::table('activity_log')->find($id)->school_id)->toBeNull();
 });
 
-it('does not write changes on --dry-run', function () {
+it('does not write changes on --dry-run (diagnostic path still works under the lock)', function () {
     $school = al_makeSchool();
-    $user   = al_makeUser($school->id);
-    $id     = insertActivity(['causer_type' => User::class, 'causer_id' => $user->id]);
+    $user = al_makeUser($school->id);
+    $id = insertActivity(['causer_type' => User::class, 'causer_id' => $user->id]);
 
     $this->artisan('activity-log:backfill-school-id', ['--dry-run' => true])
         ->assertSuccessful();
 
     expect(DB::table('activity_log')->find($id)->school_id)->toBeNull();
-});
-
-it('limits scope with --since', function () {
-    $school = al_makeSchool();
-    $user   = al_makeUser($school->id);
-
-    $oldId = insertActivity([
-        'causer_type' => User::class,
-        'causer_id'   => $user->id,
-        'created_at'  => now()->subDays(10),
-    ]);
-    $newId = insertActivity([
-        'causer_type' => User::class,
-        'causer_id'   => $user->id,
-        'created_at'  => now(),
-    ]);
-
-    $this->artisan('activity-log:backfill-school-id', [
-        '--since' => now()->subDay()->format('Y-m-d'),
-    ])->assertSuccessful();
-
-    expect(DB::table('activity_log')->find($oldId)->school_id)->toBeNull();
-    expect(DB::table('activity_log')->find($newId)->school_id)->toEqual($school->id);
 });

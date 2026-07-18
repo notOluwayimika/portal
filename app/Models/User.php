@@ -112,11 +112,16 @@ class User extends Authenticatable
     }
 
     /**
-     * All school ids this user may log into:
-     *  - super admins: every school
-     *  - explicit grants via the school_user pivot
-     *  - guardians: schools of all their guardian records (wards)
-     *  - fallback: their own school_id
+     * All school ids this user may log into. Super admins always get every school.
+     * Otherwise the resolution is EITHER/OR on rbac.single_source_access, not a
+     * union of both:
+     *  - flag ON  (single source, §7.1): model_has_roles ONLY (schoolIdsFromRoles).
+     *    A user with a role in a School's team has access; nothing else is read.
+     *  - flag OFF (legacy, current default): the legacy UNION only —
+     *    school_user pivot ∪ guardian records ∪ users.school_id. Roles are NOT
+     *    read here, which is why a role-only user resolves to [] under the flag
+     *    (the S7 finding). The legacy sources are removed once the flag is on
+     *    everywhere and the columns are dropped.
      */
     public function accessibleSchoolIds(): Collection
     {

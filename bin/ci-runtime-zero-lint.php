@@ -49,7 +49,18 @@ $userModelPattern = '/\$this->school_id/';
 
 $isComment = '/^\s*(\/\/|\*|\/\*)/';
 
-$found = [];
+// Section B — temporary S7 MIGRATION TOOLING that legitimately references the
+// legacy schema (it exists to measure/verify it). Reported separately; it must
+// NEVER count toward Section A reaching zero, and it is deleted at the S7
+// teardown, so its references disappear with it.
+$migrationTooling = [
+    'app/Console/Commands/S7DivergenceSnapshot.php',
+    'app/Support/SchoolAccessParity.php',
+];
+$isTooling = fn ($rel) => in_array($rel, $migrationTooling, true);
+
+$found = [];        // Section A — application references (must reach 0)
+$toolingRefs = [];  // Section B — migration tooling references (expire at teardown)
 $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS));
 foreach ($rii as $file) {
     if ($file->getExtension() !== 'php') {
@@ -72,14 +83,17 @@ foreach ($rii as $file) {
 
         foreach ($active as $p) {
             if (preg_match($p, $code)) {
-                $found[$rel."\t".trim($line)] = true;
+                $entry = $rel."\t".trim($line);
+                $isTooling($rel) ? $toolingRefs[$entry] = true : $found[$entry] = true;
                 break;
             }
         }
     }
 }
 $found = array_keys($found);
+$toolingRefs = array_keys($toolingRefs);
 sort($found);
+sort($toolingRefs);
 
 if ($mode === 'generate') {
     file_put_contents($baselinePath, $found ? implode("\n", $found)."\n" : '');
@@ -109,9 +123,18 @@ if ($new) {
     exit(1);
 }
 
+// Section B — migration tooling. Reported for visibility only; never gates.
+$b = count($toolingRefs);
+if ($b > 0) {
+    fwrite(STDERR, "\nruntime-zero-lint: Section B — {$b} migration-tooling reference(s) (expire at S7 teardown, do NOT gate the drop):\n");
+    foreach ($toolingRefs as $t) {
+        fwrite(STDERR, '  · '.str_replace("\t", '  ', $t)."\n");
+    }
+}
+
 $n = count($found);
 $msg = $n === 0
-    ? 'runtime-zero-lint: OK — ZERO legacy access references (S7 complete; safe to drop the columns).'
-    : "runtime-zero-lint: OK — no NEW legacy access references ({$n} known, ratcheting to 0 at the S7 column drop).";
+    ? "runtime-zero-lint: OK — Section A = ZERO application references (S7 complete; safe to drop the columns). Section B tooling = {$b} (expire at teardown)."
+    : "runtime-zero-lint: OK — Section A: no NEW application references ({$n} known, ratcheting to 0 at the S7 column drop). Section B tooling = {$b}.";
 fwrite(STDERR, $msg."\n");
 exit(0);

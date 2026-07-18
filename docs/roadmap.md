@@ -440,6 +440,54 @@ parity instrumentation (dev is the wrong sample — sources seeded together agre
 construction). Non-zero is a **review STOP** (a backfill grants real access to
 real people), never a mechanical fix. Locked by `S7DivergenceSnapshotTest`.
 
+### S7 architectural corrections (2026-07)
+
+- **§0 — `accessibleSchoolIds()` is EITHER/OR, not a union with roles.**
+  `computeAccessibleSchoolIds()` returns `schoolIdsFromRoles()` (roles only) when
+  `single_source_access` is ON, **else** `legacyAccessibleSchoolIds()` — which is
+  `school_user` pivot ∪ guardian records ∪ `users.school_id`, and **does not read
+  roles**. The two paths are mutually exclusive. This is why a role-only user
+  resolves to `[]` under the flag-off legacy path. Any earlier phrasing implying
+  the legacy branch *unions* `schoolIdsFromRoles()` is wrong; the model docblock
+  is corrected to state the either/or explicitly.
+- **§2 — writer strategy is Option B (not A).** Leave ALL compatibility writers
+  (`TeacherService` ×2, `AdminController:105`, `GuardianService::enableLogin`)
+  untouched until the column-drop slice; delete them together there. Option A
+  (flag-gated writes that self-disable at the flip) is **rejected**: a teacher
+  onboarded *after* the flip would have no column value, so a flip-back (soak
+  surprise / prod ≠ staging) drops them to `[]` and rejects login — Option A makes
+  the flag one-way for everyone onboarded after it, destroying the reversibility
+  that is the point of expand/contract. Option B keeps the column populated until
+  the schema actually changes, so the flip stays reversible. The guardian
+  `enableLogin` write is safe to remove independently but is **not** removed early
+  — that would fragment the writer set for one line that dies at the drop anyway.
+  `AdminController:105` is reclassified: not maintenance but the control that
+  stops the legacy fallback granting a revoked School — it dies **with** the
+  fallback.
+- **§3 — every role assignment flows through the invariant; no bypass.** All
+  `assignRole` call sites are on `User` instances, so the `User::assignRole`
+  override (the team invariant) governs them; the only direct `model_has_roles`
+  access is a **read** (`AdminController:21`). No `syncRoles` / `roles()->attach` /
+  direct role INSERT exists. Two seeders (`TeacherSeeder`, `GuardianSeeder`)
+  assigned roles with no team — the invariant correctly caught them; fixed to
+  establish context (`UserSeeder` already did). The dead, unrouted
+  `AuthenticationController@register` `assignRole('admin')` would throw under the
+  invariant if ever wired — a latent bug the invariant surfaces, left as-is
+  (registration is disabled).
+- **§4 — runtime-zero gate is now two sections.** *Section A* = application
+  references (must reach 0 before the drop) — baseline **12**. *Section B* =
+  migration tooling that legitimately references the legacy schema
+  (`S7DivergenceSnapshot`, `SchoolAccessParity`) — reported separately, **never**
+  gates Section A, expires with the S7 teardown. Section B = 3.
+- **§7 — hidden write-path audit.** Sweep of observers, jobs, console commands,
+  factories, seeders, listeners, imports, exports, notifications, scheduled tasks,
+  services, traits: the ONLY writers to `users.school_id` are `TeacherService` ×2,
+  `GuardianService::enableLogin`, `AdminController:105`, and the seeders
+  (Teacher/Guardian/User — seed data). The ONLY writers to `school_user` are
+  `User::grantSchoolAccess` (`schools()->syncWithoutDetaching`) and
+  `revokeSchoolAccess` (`detach`). No hidden path in any other layer. A final
+  re-sweep is required immediately before the drop (§7 gate).
+
 ### Runtime-zero gate — blind spots + compensating controls (§2)
 
 The gate is a grep; it cannot see everything. Each blind spot and its control:

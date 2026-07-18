@@ -119,6 +119,46 @@ default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
 
+## 1.4e — domain event bus + Academics facts: investigation STOP (2026-07)
+
+Investigation-first. **All four proposed published facts hit the STOP condition —
+none has a single authoritative, atomic transition to publish from. No event bus
+or events implemented; publishing now would bake unstable contracts every Ph2
+Finance consumer would later churn on.** Evidence + the prerequisite each needs:
+
+- **StudentEnrolled — no single publication point (fan-out debt).** The authority
+  is `CurriculumEnrollmentService::enroll` (atomic, transaction-wrapped), and its
+  own docblock says "Controllers MUST NOT create StudentCurriculum directly" — but
+  `StudentCurriculumController@promote` (:159) and `@register` (:212) each
+  `StudentCurriculum::create(...)` **directly**, bypassing the service. Three
+  creation points. *Prerequisite:* route promote/register through the service, then
+  publish once from it.
+- **StudentWithdrawn — the business transition does not exist.** The Finance-
+  relevant fact is the STUDENT leaving (billing stops; §12.6 `students.status`).
+  `students.left_at` / `leave_reason` have **zero writes** anywhere (unwritten Ph5
+  placeholders); no code sets `students.status` to withdrawn. What exists is
+  ENROLLMENT-level and split: `unenroll()` (service, atomic → `ended_at`) versus
+  `StudentCurriculumController@updateStatus('withdrawn')` which sets the status and
+  then **DELETEs the enrollment row** — a competing, record-destroying path that
+  bypasses `unenroll()`. *Prerequisite:* build the student-level withdrawal
+  transition and reconcile the two enrollment-end mechanisms (a deleted row is a
+  fact Finance cannot later reference).
+- **TermStarted / TermClosed — no authoritative transition operation.** `terms`
+  has a `status` enum (upcoming/active/completed), but every reference is a READ;
+  the only writer is `TermController::update` — a generic CRUD form edit
+  (`->update([...$request->all()])`) — and there is no dedicated start/close
+  operation and no scheduled date-driven activation. Revenue recognition on term
+  start (§9) cannot hang off a form edit. *Prerequisite:* an explicit term-
+  lifecycle operation (or a date-driven scheduler once 1.4d scheduling exists).
+
+**Recommendation:** defer 1.4e until the prerequisite transitions exist and are
+atomic/single-sourced. The correct first published contract is likely
+`EnrollmentEnded` (from a consolidated `unenroll`) and a real student-status
+transition — derived from the consumer's need — not the four names as proposed.
+The thin bus (dispatcher + queued afterCommit listeners) is trivial to add once
+there is a stable fact to carry; building it now with no stable source earns no
+abstraction.
+
 ## 1.4c — audit-log immutability (2026-07)
 
 **Implemented.** `activity_log` (spatie, backed by `App\Models\Activity`) is now

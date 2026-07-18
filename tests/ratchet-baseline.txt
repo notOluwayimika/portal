@@ -5,7 +5,6 @@ tests/Feature/ActivityLog/ActivityLogApiTest.php::it returns a paginated scoped 
 tests/Feature/Auth/AuthenticationTest.php::users are rate limited
 tests/Feature/GuardianManagementTest.php::it detaching primary without replacement is blocked
 tests/Feature/GuardianManagementTest.php::it detaching the only guardian is blocked
-tests/Feature/GuardianManagementTest.php::it lists all students linked to a guardian
 tests/Feature/GuardianManagementTest.php::it registrar cannot change a login-enabled guardians email (credential permission required)
 tests/Feature/GuardianProfileTest.php::it resends invitation for a never-activated guardian
 tests/Feature/GuardianProfileTest.php::it returns 422 when guardian has no valid email for reset

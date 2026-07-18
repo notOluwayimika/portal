@@ -109,6 +109,14 @@ it('lists all students linked to a guardian', function () {
 
     $res = $this->actingAs($admin)->getJson("/api/guardians/{$guardian->uuid}/students");
     $res->assertOk()->assertJsonCount(2, 'data');
+
+    // Bug #2 null-guard: both linked students have NO current enrollment
+    // (setupGuardianLinkedToTwoStudents creates bare students). Before the fix
+    // this 500'd (`currentCurriculum->load()` on null); now each renders with a
+    // null current_class and the list succeeds.
+    foreach ($res->json('data') as $row) {
+        expect($row['current_class'])->toBeNull();
+    }
 });
 
 it('detaching the only guardian is blocked', function () {

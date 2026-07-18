@@ -340,7 +340,12 @@ class GuardianController extends Controller
                     'id' => $s->school->id,
                     'name' => $s->school->name,
                 ] : null,
-                'current_class' => new StudentCurriculumResource($s->currentCurriculum->load(['curriculum'])),
+                // A student between/without enrollments (or withdrawn) has no
+                // current curriculum — null-guard so one such student does not 500
+                // the guardian's entire student list.
+                'current_class' => $s->currentCurriculum
+                    ? new StudentCurriculumResource($s->currentCurriculum->load(['curriculum']))
+                    : null,
             ]),
         ]);
     }

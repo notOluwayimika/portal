@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Guardian;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
@@ -8,8 +10,6 @@ use App\Notifications\GuardianAccountCreatedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
-use App\Models\Permission;
-use App\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -37,16 +37,18 @@ beforeEach(function () {
 function actingAsAdmin(School $school): User
 {
     $admin = User::factory()->create(['school_id' => $school->id]);
-    $admin->assignRole('admin');
     setPermissionsTeamId($school->id);
+    $admin->assignRole('admin');
+
     return $admin;
 }
 
 function actingAsRegistrar(School $school): User
 {
     $reg = User::factory()->create(['school_id' => $school->id]);
-    $reg->assignRole('registrar');
     setPermissionsTeamId($school->id);
+    $reg->assignRole('registrar');
+
     return $reg;
 }
 
@@ -56,11 +58,12 @@ function setupGuardianLinkedToTwoStudents(School $school): array
     $studentB = Student::factory()->create(['school_id' => $school->id]);
 
     $user = User::factory()->create(['school_id' => $school->id, 'email' => 'shared.guardian@example.test']);
+    setPermissionsTeamId($school->id);
     $user->assignRole('guardian');
     $guardian = Guardian::factory()->create([
         'school_id' => $school->id,
-        'user_id'   => $user->id,
-        'phone'     => '08055555555',
+        'user_id' => $user->id,
+        'phone' => '08055555555',
     ]);
 
     $studentA->guardians()->attach($guardian->id, ['relationship' => 'father', 'is_primary' => true, 'can_login' => true]);
@@ -71,8 +74,8 @@ function setupGuardianLinkedToTwoStudents(School $school): array
 
 it('updating guardian details applies to all linked students (single record)', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
-    [$guardian]   = setupGuardianLinkedToTwoStudents($school);
+    $admin = actingAsAdmin($school);
+    [$guardian] = setupGuardianLinkedToTwoStudents($school);
 
     $this->actingAs($admin)
         ->putJson("/api/guardians/{$guardian->uuid}", ['occupation' => 'Engineer', 'city' => 'Lagos'])
@@ -86,7 +89,7 @@ it('updating guardian details applies to all linked students (single record)', f
 
 it('updating pivot fields on student A does not affect student B', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     [$guardian, $studentA, $studentB] = setupGuardianLinkedToTwoStudents($school);
 
     $this->actingAs($admin)
@@ -101,7 +104,7 @@ it('updating pivot fields on student A does not affect student B', function () {
 
 it('lists all students linked to a guardian', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     [$guardian, $studentA, $studentB] = setupGuardianLinkedToTwoStudents($school);
 
     $res = $this->actingAs($admin)->getJson("/api/guardians/{$guardian->uuid}/students");
@@ -110,7 +113,7 @@ it('lists all students linked to a guardian', function () {
 
 it('detaching the only guardian is blocked', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     $student = Student::factory()->create(['school_id' => $school->id]);
     $user = User::factory()->create(['school_id' => $school->id]);
     $guardian = Guardian::factory()->create(['school_id' => $school->id, 'user_id' => $user->id]);
@@ -124,7 +127,7 @@ it('detaching the only guardian is blocked', function () {
 
 it('detaching primary without replacement is blocked', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     $student = Student::factory()->create(['school_id' => $school->id]);
 
     $u1 = User::factory()->create(['school_id' => $school->id]);
@@ -143,7 +146,7 @@ it('detaching primary without replacement is blocked', function () {
 
 it('detaching primary with valid replacement promotes the replacement', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     $student = Student::factory()->create(['school_id' => $school->id]);
 
     $u1 = User::factory()->create(['school_id' => $school->id]);
@@ -167,7 +170,7 @@ it('detaching primary with valid replacement promotes the replacement', function
 
 it('demoting can_login on the last pivot disables the user account', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     $student = Student::factory()->create(['school_id' => $school->id]);
 
     $u1 = User::factory()->create(['school_id' => $school->id]);
@@ -188,7 +191,7 @@ it('demoting can_login on the last pivot disables the user account', function ()
 
 it('demoting can_login on one of many pivots keeps the user active', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     [$guardian, $studentA, $studentB] = setupGuardianLinkedToTwoStudents($school);
 
     $this->actingAs($admin)
@@ -200,10 +203,10 @@ it('demoting can_login on one of many pivots keeps the user active', function ()
 
 it('explicit enable-login on a disabled guardian re-enables and notifies', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     $student = Student::factory()->create(['school_id' => $school->id]);
     $user = User::factory()->create([
-        'school_id'   => $school->id,
+        'school_id' => $school->id,
         'disabled_at' => now(),
     ]);
     $user->assignRole('guardian');
@@ -225,7 +228,7 @@ it('registrar cannot change a login-enabled guardians email (credential permissi
 
     $this->actingAs($registrar)
         ->putJson("/api/guardians/{$guardian->uuid}", [
-            'email'      => 'new.email@example.test',
+            'email' => 'new.email@example.test',
             'occupation' => 'Doctor', // allowed
         ])
         ->assertOk();
@@ -237,7 +240,7 @@ it('registrar cannot change a login-enabled guardians email (credential permissi
 
 it('admin can change a login-enabled guardians email with credential permission', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     [$guardian] = setupGuardianLinkedToTwoStudents($school);
 
     $this->actingAs($admin)
@@ -249,7 +252,7 @@ it('admin can change a login-enabled guardians email with credential permission'
 
 it('audit log records guardian updates and pivot events', function () {
     $school = School::factory()->create();
-    $admin  = actingAsAdmin($school);
+    $admin = actingAsAdmin($school);
     [$guardian, $studentA] = setupGuardianLinkedToTwoStudents($school);
 
     $this->actingAs($admin)

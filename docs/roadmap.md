@@ -317,7 +317,24 @@ set.
 
 ### Finance walking-skeleton feasibility — SEQUENCING DECISION: B (2026-07)
 
-Traced the thin vertical (enrollment → invoice → ledger charge → payment
+**Aggregate split (do not conflate): the skeleton needs the STUDENT SUBLEDGER
+only, not the GL journal.** Two easily-conflated aggregates are not peers:
+
+- **Student subledger** — per-student receivable movements (charge, payment,
+  allocation, reversal), append-only, School-scoped, the balance §12 derives.
+  Every step in the skeleton trace below is a subledger movement. **This is what
+  the skeleton creates.**
+- **GL journal / Sage export (§13)** — account-level double-entry against a
+  chart of accounts, periodic export. **A later phase.** The skeleton creates NO
+  GL/journal tables, and no FK inventory is owed for them; when §13 lands, the
+  journal derives FROM committed subledger movements (one-way), so building the
+  subledger first loses nothing.
+
+"Ledger" anywhere in the skeleton scope below means the student subledger.
+(The §12.2 drift-verification job is likewise subledger-internal — derived
+balance vs movements — not a GL concern.)
+
+Traced the thin vertical (enrollment → invoice → subledger charge → payment
 allocation → withdraw-cancel) against TODAY's schema. **Outcome: B — one small
 blocker, not the full Option-B slice.** Finance does not need enrollment
 episodes; it needs an enrollment **reference that survives withdrawal**.
@@ -364,6 +381,20 @@ episodes; it needs an enrollment **reference that survives withdrawal**.
 (manual trigger, stubbed numbering, no approvals) — **next**; (3) Option-B full
 slice before the repeat workflow / automated billing; (4) gap-free numbering ADR
 + signed policy before production invoicing.
+
+**Boundary lock before the first Finance migration — DONE (2026-07):**
+[finance-data-ownership.md](finance-data-ownership.md) — ownership inventory
+(subledger vs GL split: skeleton builds the student subledger only), FK inventory
+(REF / LOOKUP / SNAPSHOT per relationship), cross-module identity classification
+(student/episode/school = durable FK; **curricula/terms/sessions = never a live
+FK** — routed hard-deletes + CASCADE chains, labels snapshot), lifetime analysis
+(the academic FK graph is CASCADE end-to-end; **every Finance FK is `ON DELETE
+RESTRICT`, which armors the whole upstream chain the moment one invoice
+exists**), and the ledger-immutability decision (**reuse the 1.4c
+trigger+guard+verify pattern**, not a new mechanism). Skeleton confirmed safe to
+begin under the six day-one rules recorded there. Ph2 follow-up noted:
+`CurriculumController::destroy` will need a graceful "has financial records"
+guard once RESTRICT FKs exist.
 
 ### Withdraw soft-end — landed (2026-07)
 

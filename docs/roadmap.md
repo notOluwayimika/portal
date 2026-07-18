@@ -159,6 +159,57 @@ The thin bus (dispatcher + queued afterCommit listeners) is trivial to add once
 there is a stable fact to carry; building it now with no stable source earns no
 abstraction.
 
+### Unmasked baseline failures — classification (2026-07, investigation only)
+
+The S7 assignRole invariant was masking 18 baseline failures behind "no team on
+assignRole". Unmasked, classified (no fixes):
+
+**LIVE BUGS (ranked by blast radius):**
+
+1. **`GuardianService::notifyGuardian()` is a dead method — `return;` on its first
+   line** (committed in a vague "feat: updates", no comment). The ONLY dispatch of
+   `GuardianAccountCreatedNotification` (`:328`) sits *after* that return, so **no
+   guardian ever receives an account/invite notification** — account creation,
+   enable-login, and resend-invitation all silently send nothing in the REAL path,
+   not just the test. **Finance-adjacent (§7 parent statements / Ph7 guardian
+   portal):** the guardian portal-invite delivery is broken, so Finance's
+   parent-facing statement delivery inherits a dead dependency. Caught by
+   GuardianManagement "enable-login…notifies", GuardianProfile "resends
+   invitation", GuardianRegistration new-guardian. **Fix = delete the `return;`**
+   (then verify the synthetic-email/queue guards below it behave).
+2. **`GuardianController@students:343` — 500 (`load() on null`).**
+   `$s->currentCurriculum->load(['curriculum'])` assumes every linked student has a
+   current enrollment; a student between/without enrollments (or withdrawn) makes
+   `currentCurriculum` null → the whole guardian's student list 500s. One
+   enrollment-less student breaks the entire response. Guardian/parent-facing view.
+   **Fix = null-guard** (`$s->currentCurriculum ? … : null`).
+
+**STALE (architecture deliberately changed — proven, not asserted-to-pass):**
+- ActivityLogApi "blocks users without activity_log.view" (expects 403, gets 200):
+  S5 made `activity_log.view` **observe-mode** (records, does not block, until
+  `AUTHZ_ENFORCE=true`; ADR 0043). The test asserts pre-observe enforcement.
+
+**AMBIGUOUS (need a decision, named):**
+- Registrar email update (expects 200 with the email silently ignored, gets 403):
+  security-design — should a user with `guardian.update` but not
+  `guardian.update_credentials` be hard-403'd, or allowed to update non-credential
+  fields with the email change ignored? Test asserts partial-update; code hard-403s.
+- 422-vs-400 cluster (detach-only-guardian, detach-primary-no-replacement,
+  register rollback) and cross-school attach 201-vs-400: HTTP status **convention**
+  for business-rule violations (test expects 422/201; code returns 400). Either the
+  error-code convention changed (stale) or a flow regressed — **the cross-school
+  attach (a real §6 feature) is the one to root-cause first**; the detach 422/400
+  are likely convention.
+- ActivityLogApi 3 count mismatches + GuardianProfile counts/422/password-reset
+  notification: permission-scoping + activity-count assertions likely shifted by the
+  observe rollout + permission model; per-test triage, lower priority.
+
+**Next fix slices (order):** (1) delete the `notifyGuardian` `return;` — smallest,
+highest blast radius, Finance-adjacent; (2) null-guard `students:343`; (3) decide
+the 422/400 business-rule convention (then root-cause cross-school attach); (4)
+registrar partial-update decision; (5) triage the count/permission-scoping stale
+set.
+
 ### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
 
 **Specification scan (UI copy · validation messages · comments · ADRs · roadmap ·

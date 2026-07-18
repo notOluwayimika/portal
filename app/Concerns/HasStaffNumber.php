@@ -5,9 +5,25 @@ namespace App\Concerns;
 use App\Support\ActiveSchool;
 use App\Support\Sequences\Sequences;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 trait HasStaffNumber
 {
+    /**
+     * Sequence allocation and the INSERT are a single atomic unit of work: when a
+     * new record needs a generated number, wrap the whole create in a transaction
+     * so that if persistence fails the allocation is rolled back with it and never
+     * survives as a committed assignment. Updates and manual numbers are untouched.
+     */
+    public function save(array $options = [])
+    {
+        if (! $this->exists && empty($this->staff_number)) {
+            return DB::transaction(fn () => parent::save($options));
+        }
+
+        return parent::save($options);
+    }
+
     protected static function bootHasStaffNumber(): void
     {
         // Generate BEFORE insert (in `creating`, not `created`) so the number is

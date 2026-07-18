@@ -360,6 +360,47 @@ Investigated before proposing any writer change (do not infer from the column wr
   writer slice must assert/So set the team explicitly so an off-request create
   path can never write a null-team (global) role row.
 
+### S7 divergence-prevention — the assignRole team invariant + writer disposition (§2)
+
+The objective is not that divergence is zero today but that the app can no longer
+**create** it tomorrow. Two mechanisms:
+
+**1. Permanent invariant (landed):** `User::assignRole` is overridden to throw
+`NullTeamRoleAssignmentException` if a school-scoped role is assigned with a null
+permissions-team (`super_admin` exempt). A null-team role grants access to no
+School — the precise divergence S7 removes. Enforced at the model so no call site
+can bypass it, on request or off (proven by `AssignRoleTeamInvariantTest`,
+including the `runFor` off-request case). It surfaced one real test-setup bug
+(`GuardianProfileTest` helpers assigned roles with no team — fixed to establish
+context; they had only "passed" via team-state leaking between tests).
+
+**2. Every writer to a legacy source — location · disposition:**
+
+| Writer | Source | Writes a role too? | Divergence-capable? | Disposition |
+|---|---|---|---|---|
+| `TeacherService` `User::create` (×2) | `users.school_id` | Yes — `assignRole('teacher')`, now team-guaranteed | No | delete the `school_id` key (writer change, gated on prod count) |
+| `GuardianService::enableLogin` scenario-1 `User::create` | `users.school_id` | Yes — `assignRole('guardian')` + a Guardian record | No | delete the `school_id` key at the writer change |
+| `SuperAdmin\AdminController:105` `forceFill(['school_id'])` | `users.school_id` | **No** — resets the column only | **Yes** (column without role) | **delete** — nothing to maintain once the column is gone |
+| `User::grantSchoolAccess` `schools()->syncWithoutDetaching` | `school_user` | Yes — role + pivot written together | No | delete the pivot write at the column drop (role write stays) |
+| `User::revokeSchoolAccess` `schools()->detach` | `school_user` | removes role + pivot together | No | delete the pivot side at the column drop |
+| `createGuardianWithUser` / attach path → `grantSchoolAccess('guardian')` | `school_user` (+ role) | Yes (via grantSchoolAccess) | No | pivot side removed at drop |
+| backfill migration `2026_07_14_000002` | `school_user` | historical one-time | No | leave (history) |
+| `Api\AuthenticationController` `forceFill(['school_id'])` (×2) | **`personal_access_tokens.school_id`** — NOT `users.school_id` | n/a | No | **out of S7 scope** (token column, not the user column) |
+
+**Guardians (explicitly checked, §2):** guardian access is written as a Guardian
+record **plus** a role — via `grantSchoolAccess('guardian')` (create/attach) or a
+team-guaranteed `assignRole('guardian')` (enableLogin). Both sides are written
+together, so no guardian path creates divergence. `enableLogin`'s bare
+`assignRole('guardian')` is correct-by-context (the Guardian is `SchoolScope`d to
+the active School, so the ambient team is the guardian's School) and is now
+additionally null-team-guarded by the invariant; converting it to
+`grantSchoolAccess` for symmetry is a recommended (non-blocking) tidy.
+
+**Conclusion:** after the invariant, the **only** divergence-capable writer is
+`AdminController:105` (column-only reset), whose disposition is deletion. No code
+path can create a null-team role or a role/legacy-source mismatch once the writer
+change + that deletion land.
+
 ### Runtime-zero gate — blind spots + compensating controls (§2)
 
 The gate is a grep; it cannot see everything. Each blind spot and its control:

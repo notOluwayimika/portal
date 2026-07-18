@@ -1,16 +1,16 @@
 <?php
 
 use App\Models\Guardian;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\GuardianAccountCreatedNotification;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Spatie\Activitylog\Models\Activity;
-use App\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -23,11 +23,16 @@ beforeEach(function () {
 function profileSchoolAndAdmin(): array
 {
     $school = School::factory()->create();
-    $admin  = User::factory()->create(['school_id' => $school->id]);
+    $admin = User::factory()->create(['school_id' => $school->id]);
+    // Establish the School/team context before assigning a school-scoped role
+    // (mirrors SetSchoolContext on a real request; required by the S7 invariant).
+    setPermissionsTeamId($school->id);
     $admin->assignRole('admin');
+    setPermissionsTeamId(null);
     // Assign the permission so the controller gate passes.
     $adminRole = Role::findByName('admin');
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
     return [$school, $admin];
 }
 
@@ -35,13 +40,15 @@ function makeGuardian(School $school, ?User $user = null, bool $withEmail = true
 {
     $u = $user ?? User::factory()->create([
         'school_id' => $school->id,
-        'email'     => $withEmail ? fake()->unique()->safeEmail() : 'guardian+' . fake()->unique()->lexify('????') . '@no-email.local',
+        'email' => $withEmail ? fake()->unique()->safeEmail() : 'guardian+'.fake()->unique()->lexify('????').'@no-email.local',
     ]);
+    setPermissionsTeamId($school->id);
     $u->assignRole('guardian');
+    setPermissionsTeamId(null);
 
     return Guardian::factory()->create([
         'school_id' => $school->id,
-        'user_id'   => $u->id,
+        'user_id' => $u->id,
     ]);
 }
 
@@ -50,8 +57,8 @@ function attachGuardianToStudent(Guardian $guardian, Student $student, bool $isP
     $student->guardians()->syncWithoutDetaching([
         $guardian->id => [
             'relationship' => 'father',
-            'is_primary'   => $isPrimary,
-            'can_login'    => false,
+            'is_primary' => $isPrimary,
+            'can_login' => false,
         ],
     ]);
 }
@@ -132,7 +139,7 @@ it('sends a password reset notification to the guardian email', function () {
     $this->actingAs($admin)
         ->postJson("/api/guardians/{$guardian->uuid}/reset-password")
         ->assertOk()
-        ->assertJsonPath('message', fn($msg) => str_contains($msg, 'reset'));
+        ->assertJsonPath('message', fn ($msg) => str_contains($msg, 'reset'));
 });
 
 it('returns 422 when guardian has no valid email for reset', function () {
@@ -209,7 +216,7 @@ it('returns empty activity list when no events exist', function () {
 
 it('returns 404 when accessing a guardian from another school', function () {
     [$school1, $admin] = profileSchoolAndAdmin();
-    $school2  = School::factory()->create();
+    $school2 = School::factory()->create();
     $guardian = makeGuardian($school2);
 
     $this->actingAs($admin)

@@ -437,9 +437,7 @@ guard once RESTRICT FKs exist.
   BEFORE 2026-05-25 are invisible (no surviving evidence — cannot be determined);
   cascaded behavioral/psychomotor losses are not directly countable (those models
   don't log) but are bounded by enrollment deletions = 0 within coverage.
-  **Production has NOT been assessed — requires the prod-snapshot access; run the
-  same audit-log count there before declaring zero damage. No stakeholder
-  escalation warranted on dev evidence.**
+  **Production assessed (2026-07-19) — see the verification block below.**
 - **Documented trade** (until the Option-B `active_key` flip):
   `UNIQUE(student_id, curriculum_id)` still blocks same-curriculum re-enrolment
   after withdrawal. Accepted: FK RESTRICT already blocked the old delete for real
@@ -449,6 +447,31 @@ guard once RESTRICT FKs exist.
   §9 cancellation can reference the withdrawn enrollment; **no delete path
   remains** on any termination route (the only `->delete()` on StudentCurriculum
   is gone from the app).
+
+### Production verification — S7 divergence + CASCADE damage (2026-07-19)
+
+The environment owner ran the validated read-only set
+([prod-divergence-and-cascade-queries.sql](runbooks/prod-divergence-and-cascade-queries.sql))
+against live production. Audit coverage window there: **2026-05-22 → 2026-07-19**
+(~2 months, 124,687 rows).
+
+- **S7 access divergence — CLEAN.** A1 (`school_user`) / A2 (`users.school_id`) /
+  A3 (guardians) all returned **none**: every legacy access source is fully
+  mirrored in `model_has_roles`. **Dropping `users.school_id` / `school_user`
+  costs no user their access — no backfill required.** This closes the divergence
+  *data* STOP-gate; the drop itself is still a later post-deploy one-way step with
+  its own STOP-before-flip (this settles only the data question).
+- **CASCADE assessment loss — no detectable damage, with an honest ceiling.** B1
+  (StudentCurriculum delete events) = **0**; B2 (orphaned behavioral/psychomotor)
+  = **0/0**; B3 (withdrawn carrying assessments) = **0**. Orphans persist
+  regardless of when created, so their absence is the stronger signal. **For any
+  Brookstone disclosure:** no enrollment deletions and no orphaned assessment data
+  *within coverage*; deletions **before 2026-05-22 are unquantifiable from
+  surviving data** — a known blind spot, not a proven-clean history. No stakeholder
+  escalation warranted; the pre-coverage window must be stated, not papered over.
+- **Scheduler — confirmed running** every minute in production (observe-mode
+  `authz:prune` and future Finance jobs will fire — clears the deployment
+  prerequisite recorded below).
 
 ### Enrollment Option B — registrar selected; design done (2026-07)
 

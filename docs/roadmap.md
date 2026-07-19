@@ -129,14 +129,20 @@ with a scope limit, one is a GAP pending slice 2.
   rewrites.** *Enforced by:* the 1.4c DB triggers on the ledger/lines/payments/
   allocations (UPDATE+DELETE denied; invoice DELETE denied, status may mutate).
   Confirmed surviving the `fee_→finance_` rename, verified by name. ✅ real.
-- **F5. Finance owns financial truth; Academic never mutates it.** *Enforced by:*
-  the arch rule (`App\Finance\Models` private to `App\Finance` — Academic cannot
-  reference a Finance model) + the `finance-table-outside-finance` lint (Academic
-  cannot touch a `finance_*` table via raw SQL). ✅ real for both ACCESS paths
-  (model-reference and raw-SQL). **Scope limit:** this enforces *no access*, which
-  is stronger than needed but narrower than a semantic "no mutation" proof — a
-  future Finance **Contract** that exposed a mutator would pass these rules and
-  needs its own review. Recorded as access-enforced, not semantically proven.
+- **F5. Finance owns financial truth; Academic never mutates it.**
+  *Access-enforced by:* the arch rule (`App\Finance\Models` private to
+  `App\Finance` — Academic cannot reference a Finance model) + the
+  `finance-table-outside-finance` lint (Academic cannot touch a `finance_*` table
+  via raw SQL). Both ACCESS paths (model-reference, raw-SQL) are ✅ real. **GAP —
+  the semantic "no mutation" is NOT proven:** the two rules block *access* to
+  Finance internals, but a future Finance **Contract** (the sanctioned public API)
+  that exposed a *mutator* method would pass both rules and let Academic drive a
+  Finance state change. *Closing mechanism (pending):* a lint/arch rule asserting
+  Finance **Contracts are read-only by default** (a mutating contract method is an
+  explicit, reviewed exception). **Pending until a second Contract exists** — today
+  there is one (`BillableEnrollmentProvider`, a read port), so the rule would have
+  nothing to discriminate; it lands with the next Contract, whose shape defines
+  what "read-only by default" must catch.
 - **F6. Invoice total = SUM(lines), computed once and snapshotted.** **GAP —
   pending slice 2.** The skeleton has single-line invoices, so there is nothing
   to enforce yet; slice 2 introduces multi-line invoices and must land the
@@ -433,6 +439,20 @@ Engineering Invariants section): the open decisions were resolved — `finance_*
 prefix, uniform DB-enforced `school_id`, `@property`/`@mixin`, `/api/v1/finance`;
 the 422-vs-400 error shape is deferred to the app-wide decision.
 Larastan 0, ratchet unchanged (15).
+
+**Accounting policy signed (Brookstone, 2026-07):**
+[finance/accounting-policy.md](finance/accounting-policy.md) — banker's rounding
+(remainder on the final installment), unique-with-gaps numbering (the gap-tolerant
+`Sequences` kernel is correct as-is — no gap-free work), cancellation = VOID (never
+delete, never `SoftDeletes`), void-must-not-leak (default-exclude scope + reversing
+ledger entry), waiver/discount shown beneath the full fee (snapshot lines), repeat
+billed fresh, per-School configurable prefix/approver/repeat. Each enforcement is
+marked ENFORCED (gap-tolerant numbering, never-hard-delete, not-soft-delete,
+reversing-ledger-nets-to-zero, snapshot integrity, no-repeat-logic) or PENDING
+slice-2/Ph2-3 (banker's rounding op, VOID status + exclude-void scope, prefixes,
+waiver/discount presentation, School-scoped config). The `Money` VO docblock still
+reads "policy unsigned" — a known staleness to update in slice 2 when the rounding
+op lands (not touched here: no code changes in this doc slice).
 
 **Boundary lock before the first Finance migration — DONE (2026-07):**
 [finance-data-ownership.md](finance-data-ownership.md) — ownership inventory
@@ -979,6 +999,20 @@ this repository — do not infer it is.** **Binding: observe mode must not recei
 production traffic until scheduler execution has been verified in that
 environment** — otherwise `authz_observations` grows unbounded (§5b(b) is solved
 only on paper) and the data-minimization/retention guarantees are void.
+
+**Deployment pre-flight — every FK-dropping migration's `down()` must be verified
+for RE-UPGRADE, not just rollback.** Found once, check everywhere: the Finance
+template rename's `down()` had a real bug — MySQL's `DROP FOREIGN KEY` leaves the
+FK's backing index behind, so the first `down()` left a state `up()` could not
+reapply (the re-added single-col FK reused the leftover composite index, so the
+expected-named index never came back and the re-`up()`'s `DROP INDEX` failed). It
+was caught only by running rollback **then migrating again** — not by rollback
+alone. This is a general MySQL gotcha, not specific to those tables. So when the
+first-deploy is planned, for every Phase-1 migration that drops a foreign key,
+verify the four paths (fresh / upgrade / rollback / **re-upgrade**), because a
+broken `down()` hurts most during an incident: you roll back to recover, then
+cannot re-deploy the fix. *Do not audit them now — this is the captured pre-flight,
+looked-for at deploy planning.*
 
 ### S7 — remove `users.school_id` + `school_user` (execution plan + runtime-zero gate)
 

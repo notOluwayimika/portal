@@ -5,12 +5,14 @@ namespace App\Http\Requests;
 use App\Enums\GuardianIdTypeEnum;
 use App\Enums\GuardianRelationshipEnum;
 use App\Enums\MaritalStatusEnum;
+use App\Models\User;
 use App\Rules\ExactlyOnePrimaryGuardian;
+use App\Support\ActiveSchool;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class StudentRequest extends FormRequest
 {
@@ -42,7 +44,7 @@ class StudentRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -59,10 +61,23 @@ class StudentRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('students', 'admission_number')
-                    ->ignore($this->student?->id, 'id')
+                    ->ignore($this->student?->id, 'id'),
             ],
             'photo' => ['nullable', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
-            'curriculum_id' => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:curricula,id'],
+            // School-SCOPED existence (slice (i)). An unscoped `exists:curricula,id`
+            // lets another School's curriculum through, which the new composite FK
+            // on student_curricula (curriculum_id, school_id) then rejects as a raw
+            // QueryException instead of a clean validation error.
+            'curriculum_id' => [
+                $isUpdate ? 'sometimes' : 'required',
+                'integer',
+                Rule::exists('curricula', 'id')->where('school_id', ActiveSchool::id()),
+            ],
+            // NOT scoped here on purpose: `promoted_to_id`'s FK actually targets
+            // `student_curricula` (self-referencing), so this rule names the wrong
+            // TABLE, not merely the wrong scope. Fixing the table is Option-B's
+            // promotion-chain slice — see the defect list. Scoping it to `curricula`
+            // now would only entrench the wrong target.
             'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
 
             'admission_date' => ['nullable', 'date'],
@@ -77,7 +92,7 @@ class StudentRequest extends FormRequest
 
             // Guardians array — only required on creation. On update, guardians are managed
             // via the dedicated attach/detach endpoints; the array is optional here.
-            'guardians' => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1', new ExactlyOnePrimaryGuardian()],
+            'guardians' => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1', new ExactlyOnePrimaryGuardian],
             'guardians.*.mode' => ['required_with:guardians', 'in:new,existing'],
             'guardians.*.relationship' => ['required_with:guardians', 'string', Rule::in(GuardianRelationshipEnum::values())],
             'guardians.*.is_primary' => ['required_with:guardians', 'boolean'],
@@ -180,8 +195,8 @@ class StudentRequest extends FormRequest
                     );
                 }
 
-                if ($mode === 'new' && !empty($email)) {
-                    $exists = \App\Models\User::query()->where('email', $email)->exists();
+                if ($mode === 'new' && ! empty($email)) {
+                    $exists = User::query()->where('email', $email)->exists();
                     if ($exists) {
                         $v->errors()->add(
                             "guardians.{$i}.email",
@@ -198,7 +213,7 @@ class StudentRequest extends FormRequest
         throw new HttpResponseException(response()->json([
             'status' => 'error',
             'message' => 'Validation failed',
-            'errors' => $validator->errors()
+            'errors' => $validator->errors(),
         ], 422));
     }
 }

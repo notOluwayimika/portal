@@ -125,6 +125,15 @@ with a scope limit, one is a GAP pending slice 2.
   composite FK `(child_fk, school_id) → parent(id, school_id)` at the DB — a
   divergent child is rejected as a foreign-key violation (bite-proven at the DB,
   not the model). ✅ real.
+  **Extended across the Finance↔Academic seam by slice (i) (2026-07-19).**
+  `finance_invoices (student_curriculum_id, school_id) → student_curricula (id,
+  school_id)` means an invoice's School is now structurally tied to its episode's,
+  instead of being satisfied *by proxy* through the ACL adapter's
+  `students.school_id → curricula.school_id → 0` derivation. The null→0 fallback is
+  no longer load-bearing for correctness — it remains only as a fail-closed guard
+  in `GenerateInvoice`. Same slice also made F3 hold on the academic side:
+  `student_curricula` composite FKs to **both** `students` and `curricula`, so a
+  cross-School episode is unrepresentable whichever `school_id` is supplied.
 - **F4. Financial movements are append-only; corrections are reversals, never
   rewrites.** *Enforced by:* the 1.4c DB triggers on the ledger/lines/payments/
   allocations (UPDATE+DELETE denied; invoice DELETE denied, status may mutate).
@@ -682,6 +691,38 @@ look-for, not audited here.
 4. `StudentRequest` / `ImportStudentRequest` scoped-`exists` fixes folded in — the
    FK would otherwise surface as a raw `QueryException`.
 5. Opened as a fresh deliberate session — one-way, four-table, creation-path-touching.
+
+**SLICE (i) LANDED (2026-07-19).** Two migration files, same deploy (Gate 1 —
+"own file" buys clean `down()` ordering and independent rollback, never deferred
+shipping; and the FK's creation doubles as a total consistency check over existing
+data). Four tables: additive `UNIQUE(id, school_id)` on `students` + `curricula` +
+`student_curricula`; `student_curricula.school_id` backfilled from
+`students.school_id`; single-column FKs **swapped** (not stacked) for composites —
+`(student_id, school_id) → students`, `(curriculum_id, school_id) → curricula`,
+`finance_invoices (student_curriculum_id, school_id) → student_curricula`.
+
+*ON DELETE was mapped per-FK, not chosen globally:* each composite preserves the
+semantics of the FK it replaces (CASCADE on the academic pair, RESTRICT on the
+Finance child). Verified this is safe — a `students` delete cannot reach a
+`finance_invoices` row: `finance_invoices.student_id` (RESTRICT) blocks it directly
+and `finance_invoices.student_curriculum_id` (RESTRICT) blocks the cascade, and in
+InnoDB a cascaded delete reaching a RESTRICT child fails the whole statement. The
+armour for an invoiced episode lives on `finance_invoices`, not on the episode.
+*ON UPDATE is NO ACTION everywhere* (D2). Verified on the dev DB: **977/977**
+episodes backfilled, 0 nulls, 0 mismatches against either parent; `down()` restores
+the original FK names and index set exactly, and re-`up()` is clean.
+
+`StudentCurriculum` now DERIVES `school_id` from the student in its `creating` hook
+(a block closure — `creating` is a halting event), so no caller passes it; an
+explicitly wrong value is *not* masked and is rejected by the FK. `Student` guards
+`school_id` as immutable-after-create on `updating` (removing it from `$fillable`
+would have silently dropped it on `create()` and broken student creation).
+
+**Still open — slice (ii):** `BelongsToSchool` on `StudentCurriculum`. Slice (i)
+closed cross-School integrity **at creation** and closed **none** of the 9 unscoped
+`{studentCurriculum:uuid}` bindings, nor the `PrincipalApprovalController:50` mass
+write. A standalone index on `student_curricula.school_id` belongs with (ii), when
+SchoolScope gives it a consumer — not built speculatively here.
 
 **Defects confirmed during this pass (both live, neither gated on the migration):**
 

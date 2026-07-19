@@ -7,6 +7,7 @@ use App\Concerns\BelongsToSchool;
 use App\Concerns\HasAdmissionNumber;
 use App\Enums\StudentMembershipStatus;
 use App\Enums\StudentStatusEnum;
+use App\Exceptions\BusinessRuleException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -49,6 +50,31 @@ class Student extends Model
         'status' => StudentMembershipStatus::class,
         'left_at' => 'datetime',
     ];
+
+    /**
+     * `school_id` is IMMUTABLE AFTER CREATE (slice (i), D2).
+     *
+     * A student moving School is a NEW ADMISSION, not an UPDATE (v10 §2.1) — their
+     * record stays with the originating School. Nothing in the codebase updates
+     * `students.school_id` today, and the composite FKs added by slice (i)
+     * deliberately carry NO `ON UPDATE CASCADE`: if this value could change, the
+     * cascade would silently rewrite the School attribution of every historical
+     * billed and graded episode hanging off this student.
+     *
+     * Guarded on `updating` rather than by removing `school_id` from `$fillable`,
+     * because removal would silently DROP it from `Student::create()` (the column is
+     * NOT NULL) and break student creation. Creation sets it; nothing may change it.
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (self $student): void {
+            if ($student->isDirty('school_id')) {
+                throw new BusinessRuleException(
+                    'A student\'s School is immutable — moving School is a new admission, not an update.'
+                );
+            }
+        });
+    }
 
     /**
      * Billing eligibility (§12.6): active members of the current School. Answers

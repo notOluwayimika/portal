@@ -1,4 +1,5 @@
 <?php
+
 // app/Models/StudentCurriculum.php
 
 namespace App\Models;
@@ -19,6 +20,7 @@ class StudentCurriculum extends Model
 
     protected $fillable = [
         'student_id',
+        'school_id',
         'curriculum_id',
         'status',
         'promoted_to_id',
@@ -36,10 +38,34 @@ class StudentCurriculum extends Model
         'principal_approval' => 'boolean',
     ];
 
+    /**
+     * NOTE: `creating` is a HALTING event — returning a non-null value silently
+     * stops the rest of the chain, which is why this is a block closure and never
+     * an arrow fn (enforced by the halting-event-arrow-fn boundary lint).
+     */
     protected static function booted(): void
     {
         static::creating(function ($model) {
             $model->status ??= StudentStatusEnum::ACTIVE;
+
+            // school_id is the episode's own tenant anchor (slice (i)). Its value is
+            // not free: it MUST equal the student's, and the composite FK
+            // student_curricula (student_id, school_id) -> students (id, school_id)
+            // enforces exactly that. So it is DERIVED here rather than pushed onto
+            // every caller — the same shape BelongsToSchool::creating uses.
+            //
+            // Scopes are bypassed deliberately: the student may be soft-deleted
+            // (Finance reads use withTrashed) or resolved outside an active School
+            // context (jobs, console, backfills). This lookup is a convenience that
+            // supplies the value; the FK is the guarantee that it is correct — an
+            // explicitly-passed wrong school_id is NOT overridden here and is
+            // rejected by the database.
+            if ($model->school_id === null && $model->student_id !== null) {
+                $model->school_id = Student::withoutGlobalScopes()
+                    ->withTrashed()
+                    ->whereKey($model->student_id)
+                    ->value('school_id');
+            }
         });
     }
 
@@ -94,7 +120,6 @@ class StudentCurriculum extends Model
             ->with('curriculumSubject.subject');
     }
 
-
     public function droppedSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
@@ -124,7 +149,7 @@ class StudentCurriculum extends Model
 
     public function isEnded(): bool
     {
-        return !is_null($this->ended_at);
+        return ! is_null($this->ended_at);
     }
 
     public function formTeacher(): ?Teacher

@@ -740,19 +740,39 @@ SchoolScope gives it a consumer — not built speculatively here.
 **Parked debt — homed here so it survives the handoff docs that first recorded it.**
 Each has a named TRIGGER; none is fixed by slice (i).
 
-- **tsc ratchet is a false-green.** Committed `tsc-baseline` = **149** (regenerated
-  *up* from the origin 143 on 2026-07-15, `93aaef4`); working tree = **151**. The
-  check IS wired (`bin/ci-tsc-ratchet.php` in `lint.yml`, push + PR) and trips
-  exit 1 at 151 > 149 *when it runs* — yet 2 above-baseline errors sit in the tree,
-  so it is not hard-blocking. Cause unconfirmed (no `gh` locally to read branch
-  protection): either the `linter` job is not a *required* status check, or errors
-  entered by a non-gated path. Tool weakness: `generate` writes ANY count (the
-  baseline rose 143→149) and `count < baseline` only prints "please lower"
-  (exit 0, no auto-lock) — so "baselines only shrink" is **unenforced**.
-  *Was recorded only in `docs/handoff/slice-2-brief.md` and v10 §28.1, both
-  supersedable.* **Trigger: its own slice — verify branch protection requires
-  `linter`, ratchet the baseline DOWN to the real count, make it block. Do not
-  cite "143" or treat the ratchet as a floor until then.**
+- **~~tsc ratchet is a false-green~~ — RESOLVED 2026-07-19, and the recorded cause
+  was WRONG.** The earlier entry claimed a "+2 regression above baseline". There was
+  never a regression. `resources/js/routes` **and** `resources/js/actions` are
+  wayfinder-**generated** from the PHP routes and **gitignored**, and `lint.yml` had
+  no generation step — so a fresh CI checkout did not contain them at all. The same
+  commit therefore produced three different counts:
+
+  | Measurement | Count |
+  |---|---|
+  | Stale local generation | 151 |
+  | **CI-equivalent (no generation)** | **145** |
+  | **True — freshly generated from current PHP routes** | **148** |
+  | Old committed baseline | 149 |
+
+  CI computed **145 ≤ 149 and passed unconditionally**, with ~4 errors of slack: the
+  generated files' real errors were simply replaced by cheaper `TS2307`
+  "cannot find module" ones. The gate was wired and did run — it was **measuring a
+  different, smaller codebase than any developer sees.** The "151" that prompted the
+  defect was an artifact of *stale* generated files; the true count (148) was
+  already **below** the floor.
+
+  *Fixed:* `lint.yml` now runs `php artisan wayfinder:generate` before
+  `types:check` (so the count is reproducible and CI measures the real tree);
+  `tsc-baseline` ratcheted **down** 149 → **148** (the true count); and
+  `ci-tsc-ratchet.php` now **exit 1 on a decrease** instead of printing "please
+  lower" — so "baselines only shrink" is enforced. Bite-proven: planted type error →
+  exit 1; removed → green; simulated improvement → exit 1 demanding the floor drop.
+  **`ci-test-ratchet.php` shared the same warn-only weakness and was fixed
+  identically** (it now exits 1 when a baselined test starts passing).
+
+  ⚠️ **Still needs a human:** whether the `linter` / `tests` jobs are *required
+  status checks* in branch protection. "The job fails" is proven here; "a failing
+  job blocks merge" is a GitHub settings fact that cannot be read from the tree.
 - **`DashboardAnalysisService:237-256` — unfiltered `student_curricula` join leg.**
   The `leftJoin('student_curricula', …)` at `:237` and the DISTINCT count at
   `:252-256` (keyed on `student_curricula.student_id`) carry **no school

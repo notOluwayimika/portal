@@ -15,7 +15,6 @@
  *   php bin/ci-test-ratchet.php <junit.xml>            # check (CI): exit 1 on a new failure
  *   php bin/ci-test-ratchet.php <junit.xml> generate   # (re)write the baseline
  */
-
 $junitPath = $argv[1] ?? 'junit.xml';
 $mode = $argv[2] ?? 'check';
 $baselinePath = dirname(__DIR__).'/tests/ratchet-baseline.txt';
@@ -56,11 +55,16 @@ $baseline = is_file($baselinePath)
 $new = array_values(array_diff($failing, $baseline));
 $fixed = array_values(array_diff($baseline, $failing));
 
+// Baselines only SHRINK — enforced, not remembered. A test that starts passing but
+// stays baselined leaves slack: the suite could later regress back to failing and
+// this gate would stay green. Matches ci-authz-lint / ci-boundary-lint /
+// ci-runtime-zero-lint, which all exit 1 when a baselined entry is fixed.
 if ($fixed) {
-    fwrite(STDERR, "\nratchet: ".count($fixed)." baselined test(s) now PASS — remove from tests/ratchet-baseline.txt:\n");
+    fwrite(STDERR, "\nratchet: ".count($fixed)." baselined test(s) now PASS (good!) — lock it in by removing them from tests/ratchet-baseline.txt:\n");
     foreach ($fixed as $f) {
         fwrite(STDERR, "  - {$f}\n");
     }
+    exit(1);
 }
 
 if ($new) {

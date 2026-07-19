@@ -9,14 +9,15 @@ use App\Finance\Http\Requests\CancelInvoiceRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
 use App\Finance\Http\Resources\InvoiceResource;
 use App\Finance\Models\Invoice;
-use App\Support\Money;
+use App\Finance\Services\InvoiceReadModel;
+use App\Models\Student;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
 /**
- * The manual entry points for the walking skeleton: "generate invoice for
- * enrollment X" and "cancel invoice X". No automated billing trigger (that needs
- * the enrollment-create fan-out convergence + EnrollmentCreated event, 1.4e).
+ * The manual entry points: "generate a multi-line invoice for enrollment X",
+ * "void invoice X", and the student invoice read.
  *
  * Controllers validate → authorize → delegate → respond; the transaction lives in
  * the Action, and the DB facade is never touched here (arch rule).
@@ -25,16 +26,10 @@ class InvoiceController extends Controller
 {
     public function generate(GenerateInvoiceRequest $request, GenerateInvoice $action): JsonResponse
     {
-        $amount = Money::fromKobo(
-            $request->integer('amount_minor'),
-            (string) $request->input('currency', Money::DEFAULT_CURRENCY),
-        );
-
         try {
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
-                $amount,
-                (string) $request->input('description'),
+                $request->lineSpecs(),
             );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -52,5 +47,22 @@ class InvoiceController extends Controller
         }
 
         return response()->json(new InvoiceResource($invoice));
+    }
+
+    /**
+     * Invoices for a student. Voided invoices are excluded by DEFAULT — they were
+     * never really billed. `?include_void=1` is the explicit audit view, which is
+     * the only way to see them.
+     */
+    public function forStudent(Request $request, Student $student, InvoiceReadModel $invoices): JsonResponse
+    {
+        $includeVoid = $request->boolean('include_void');
+
+        return response()->json([
+            'billed_total' => $invoices->billedTotalForStudent($student->id, $includeVoid),
+            'invoices' => InvoiceResource::collection(
+                $invoices->forStudent($student->id, $includeVoid)
+            ),
+        ]);
     }
 }

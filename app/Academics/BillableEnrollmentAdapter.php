@@ -25,8 +25,13 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
 {
     public function findByUuid(string $enrollmentUuid): ?BillableEnrollment
     {
-        // The SchoolScope on StudentCurriculum constrains this to the active School,
-        // so a cross-School uuid resolves to null — isolation for free.
+        // NOTE (corrected slice 2): StudentCurriculum is deliberately UNSCOPED —
+        // `student_curricula` has no school_id column and the model does not use
+        // BelongsToSchool (v10 §14). An earlier comment here claimed a SchoolScope
+        // gave "isolation for free"; that scope does not exist, so this lookup is
+        // NOT School-constrained. Isolation for the billing path is therefore
+        // asserted downstream, from the STUDENT's school (below) — see the
+        // cross-School regression test in tests/Feature/Finance.
         $enrollment = StudentCurriculum::query()
             ->where('uuid', $enrollmentUuid)
             ->with(['student', 'curriculum.classLevelArm.classLevel', 'curriculum.classLevelArm.arm', 'curriculum.academicSession', 'curriculum.term'])
@@ -42,10 +47,37 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
             enrollmentId: (int) $enrollment->getKey(),
             enrollmentUuid: (string) $enrollment->getAttribute('uuid'),
             studentId: (int) $enrollment->getAttribute('student_id'),
-            schoolId: (int) $enrollment->getAttribute('school_id'),
+            // The enrollment row carries NO school_id (see above), so reading one
+            // here silently produced 0 — and the invoice then got its School from
+            // whatever ActiveSchool context happened to be set, via
+            // BelongsToSchool::creating. That made an invoice's School a function
+            // of WHO WAS LOGGED IN rather than of the episode being billed, and it
+            // made any school_id-keyed Finance query against this value dead code.
+            // The episode's School is the STUDENT's School (the account holder);
+            // the curriculum is the fallback when the student is unreadable.
+            schoolId: $this->schoolId($enrollment),
             studentName: $this->studentName($enrollment),
             academicContext: $this->academicContext($enrollment),
         );
+    }
+
+    /**
+     * The School that owns this billable episode, derived from the durable
+     * academic identities rather than from ambient request context.
+     */
+    private function schoolId(StudentCurriculum $enrollment): int
+    {
+        $student = $enrollment->getAttribute('student');
+        if (is_object($student) && $student->getAttribute('school_id') !== null) {
+            return (int) $student->getAttribute('school_id');
+        }
+
+        $curriculum = $enrollment->getAttribute('curriculum');
+        if (is_object($curriculum) && $curriculum->getAttribute('school_id') !== null) {
+            return (int) $curriculum->getAttribute('school_id');
+        }
+
+        return 0;
     }
 
     private function studentName(StudentCurriculum $enrollment): string

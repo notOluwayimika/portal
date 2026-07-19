@@ -13,7 +13,13 @@ split (e.g. a fee divided into installments that does not divide evenly), the
 remainder lands on the **final** installment, so the parts reconcile to the total
 exactly — no penny is created or lost.
 
-**Enforcement — PENDING (slice 2, installments/splits).** Today `App\Support\Money`
+**Enforcement — PENDING (first *dividing* consumer; NOT slice 2).** Slice 2 shipped
+multi-line invoicing without it, correctly: a multi-line total is `Money::plus` over
+exact integer minor units, so it never divides and therefore never rounds. Rounding
+is only reachable once something *splits* an amount (installments, %-discounts).
+The split/allocate op is a self-contained addition to the VO when that consumer
+lands — building it earlier would be a rounding-bearing operation with nothing to
+round. Today `App\Support\Money`
 deliberately offers **no** rounding- or division-bearing operation: only exact
 integer scaling (`times(int)`), with a class docblock forbidding any rounding op
 until this policy was signed. The policy is now signed, so the split/allocate

@@ -143,10 +143,45 @@ with a scope limit, one is a GAP pending slice 2.
   there is one (`BillableEnrollmentProvider`, a read port), so the rule would have
   nothing to discriminate; it lands with the next Contract, whose shape defines
   what "read-only by default" must catch.
-- **F6. Invoice total = SUM(lines), computed once and snapshotted.** **GAP —
-  pending slice 2.** The skeleton has single-line invoices, so there is nothing
-  to enforce yet; slice 2 introduces multi-line invoices and must land the
-  derive-and-snapshot rule with a multi-line test. Not recorded as active.
+- **F6. Invoice total = SUM(lines), computed once and snapshotted.** ✅ real
+  (slice 2), with one residual GAP recorded below.
+  *Enforced by:* (1) **derivation** — `GenerateInvoice` takes line specs and
+  derives the total by exact integer addition (`Money::plus`); there is no wire
+  field and no Action parameter by which a caller can supply a total, so a
+  mismatch cannot be *authored*. `Money::plus` also throws on currency mismatch,
+  making a mixed-currency invoice impossible by construction. (2) **immutability**
+  — the `finance_invoices_total_immutable` BEFORE UPDATE trigger denies any change
+  to `total_minor`/`total_currency` at the DB while leaving the status transition
+  free, so the snapshot cannot *drift* afterwards. Bite-proven: a raw
+  `UPDATE … SET total_minor` throws, and removing the trigger turns exactly that
+  test red. Multi-line proof uses three distinct non-round amounts
+  (12345+67891+250003=330239) so a count×price or max() bug cannot pass.
+  **Residual GAP — post-creation line INSERT.** `total ≠ SUM(lines)` has a second
+  source: inserting a line into an already-created invoice. `finance_invoice_lines`
+  denies UPDATE and DELETE but permits INSERT, so at the DB this remains possible.
+  It is **not domain-reachable** — a grep of every line-INSERT path found exactly
+  one, inside `GenerateInvoice`'s creating transaction; there is no
+  add-line-to-existing-invoice route, method, or raw write, and `Invoice::lines()`
+  is otherwise read-only. So this is a tamper vector, not an operational path.
+  *Closing mechanism (pending):* the **seal** — a `lines_sealed_at` column plus a
+  BEFORE INSERT trigger on `finance_invoice_lines` rejecting lines on a sealed
+  invoice, and a seal-time SQL re-verification that `total = SUM(lines)`. It lands
+  when a draft / multi-step-build lifecycle makes "sealed" an observable state the
+  domain actually has. Building it now would front-load a shape with no consumer —
+  the mistake recorded in v10 §28.4.
+
+- **F7. At most one ACTIVE invoice per enrollment episode.** ✅ real (slice 2).
+  A *set*-based invariant no single Invoice aggregate can see, so it is enforced at
+  the DB: a STORED generated column
+  `active_enrollment_key = IF(status='issued', student_curriculum_id, NULL)` with
+  `UNIQUE(school_id, active_enrollment_key)`. Issued ⇒ the slot is taken; void ⇒ it
+  recomputes to NULL and NULLs do not collide, so the policy's "repeat = billed
+  fresh" re-bill after a void still works (a naive
+  `UNIQUE(school_id, student_curriculum_id)` would forbid it, since voided invoices
+  are append-only and never leave). Generated rather than app-maintained, so no code
+  path can forget to set or clear it. The Action's pre-check is only the friendly-422
+  path; **bite-proven** that the index is the real guarantee — with the index removed
+  the raw-insert and concurrency tests go red while the pre-check test still passes.
 
 ## Reconciled deviations (Execution Plan — Validation Review §A)
 
@@ -566,6 +601,110 @@ re-key slice should decide whether the re-keyed `scores`/`student_results` table
 **inherit the 1.4c immutability pattern** (DB triggers + guard) — 883 deletions
 with only a partial audit-side fallback is the evidence they probably should.
 This is design input for that slice, not work to do now.
+
+### Enrollment `school_id` — two-slice verdict + design decisions CLOSED (2026-07-19)
+
+An enrollment episode has **no School of its own**: `student_curricula` carries no
+`school_id` and the model is globally unscoped (verified — no `BelongsToSchool`,
+no `addGlobalScope`). Every consumer re-derives school through scoped relations,
+which is what produced Finance slice 2's three-branch resolution
+(`students.school_id` → `curricula.school_id` → `0`) and forced cross-School
+isolation into application code instead of the schema.
+
+**VERDICT (settled, not re-litigable): two slices, `school_id` FIRST.** Bundling
+it into Option B would forfeit independent rollback — `school_id` is *always*
+reversible, Option B's re-key is lossy after the first repeat — and would put two
+independent one-way clocks in one migration file, to save one ~1k-row table
+rebuild. The two also share no backfill work (Option B's `active_key` is a STORED
+generated column needing **no** backfill pass) and have disjoint reader sets.
+
+**The (i)/(ii) split — load-bearing, do not blur:**
+
+- **(i) Column + composite FKs.** Makes `episode.school == student.school ==
+  curriculum.school` structural; cross-School episodes become unrepresentable **at
+  creation**; retires 3 hand-rolled checks (`CurriculumEnrollmentService:34`,
+  `StudentCurriculumController:154`, `:206`) and closes the `StudentService::update`
+  gap. Always reversible. **Closes ZERO read-side lookup holes.**
+- **(ii) `BelongsToSchool` adoption on `StudentCurriculum`.** Closes the **9**
+  unscoped `{studentCurriculum:uuid}` route bindings and changes the
+  `PrincipalApprovalController:50` mass write. A fail-closed behaviour change =
+  its own per-model rollout (§5.5). **NOT part of (i).**
+
+**D1 — win boundary (framing, enforced).** Slice (i)'s completion report MUST lead
+with: *"(i) makes cross-school episodes unrepresentable at creation and closes none
+of the read-side binding/lookup holes; those are (ii)."* Verified: all 9 bindings
+(`web.php:312,:394`; `api.php:130,:136,:261,:262`;
+`endpoints/form-teacher.php:8`; `endpoints/head-of-school.php:8,:9`) resolve a
+uuid against a globally unscoped model and **remain unscoped after (i)** — adding
+a column scopes nothing.
+
+**D2 — `students.school_id` is IMMUTABLE-after-create; NO `ON UPDATE CASCADE`.**
+Evidence: a grep of every `school_id` write path in `app/` finds **no operation
+that updates `students.school_id`**. It is set once in `StudentService::store()`
+and `StudentService::update()` deliberately omits it. The only `forceFill` on a
+`school_id` is `SuperAdmin/AdminController:105`, which targets **users**, not
+students. Domain-wise this is correct: a student moving School is a *new admission*
+(v10 §2.1), not an UPDATE — and CASCADE would silently rewrite the School
+attribution of every historical billed/graded episode. **Consequence:** composite
+FKs need no cascade, history is safe by construction, and the latent defect is
+that `'school_id'` sits in `Student::$fillable` (`Student.php:24`) with nothing
+enforcing immutability. Slice (i) guards it (remove from `$fillable` or add an
+`updating` guard).
+
+**D3 — the `finance_invoices` composite FK RIDES slice (i), in its own migration
+file.** Slice 2's guard is `UNIQUE(school_id, active_enrollment_key)` where the key
+is `student_curriculum_id` — it already depends on the episode's School while
+deriving it from a different table. Once `student_curricula.school_id` exists the
+same fact lives in two tables, and a column without the FK that disciplines it is
+the wallpaper pattern (i) exists to end. So
+`finance_invoices (student_curriculum_id, school_id) → student_curricula (id,
+school_id)` lands **in the same slice** — but as a **separate migration file**, so
+the Finance coupling can be rolled back independently of the academic column (the
+same principle that produced the two-slice verdict, applied in miniature).
+
+**D4 — footprint is FOUR tables, not three.** Verified: neither parent has
+`UNIQUE(id, school_id)` today — `students` has `PRIMARY(id)`, `unique_uuid`,
+`(school_id, admission_number)`; `curricula` has `PRIMARY(id)`, `unique_uuid`,
+`(school_id, class_level_arm_id, term_id, exam_type_id, is_ccm)`. Both need one
+added. With D3, `student_curricula` also needs its own `UNIQUE(id, school_id)` to
+parent the Finance FK. So slice (i) touches **`students` + `curricula` +
+`student_curricula` + `finance_invoices`**. ⚠️ `students` prod row count is the one
+place the "trivial in dev" (611 rows) estimate may not hold — a deploy-planning
+look-for, not audited here.
+
+**Slice (i) ENTRY CONDITIONS (all must hold before it opens):**
+
+1. D1–D4 resolved and recorded (this section) — ✅ done.
+2. Prod re-verification: `students.school_id` null-free **and** zero
+   student↔curriculum School drift. Dev shows 611/0 nulls, 46/0 nulls, 0 drift —
+   **prod is a deploy-time re-verification, not claimed here.**
+3. `BelongsToSchool` adoption is explicitly OUT of scope for (i).
+4. `StudentRequest` / `ImportStudentRequest` scoped-`exists` fixes folded in — the
+   FK would otherwise surface as a raw `QueryException`.
+5. Opened as a fresh deliberate session — one-way, four-table, creation-path-touching.
+
+**Defects confirmed during this pass (both live, neither gated on the migration):**
+
+- **`promotedTo()` loads the wrong entity.** The FK is self-referencing —
+  `promoted_to_id → student_curricula.id`, with the migration comment stating the
+  intent outright: *"Self-referencing FK — points to the next student_curricula row
+  after promotion."* Both internal writers agree (`StudentCurriculumController:178`
+  `=> $new->id`; `BackfillPastTermJob:254` `=> $sourceEnrollment->id`). But
+  `StudentCurriculum::promotedTo()` (`:63-66`) does
+  `belongsTo(Curriculum::class, 'promoted_to_id')`, `StudentRequest:66` validates it
+  as `exists:curricula,id`, and `models.ts:444` types it `promoted_to?: Curriculum`.
+  **The FK is right; the model, the request rule and the TS type are wrong.**
+  Currently latent — **0 rows** have `promoted_to_id` set — and it activates on the
+  first promotion (or FK-fails if a curriculum id is submitted). Fix belongs with
+  the Option-B promotion-chain slice, which is built on this column.
+- **`StudentService::update` dead guard.** `:118` reads
+  `$student->studentCurriculum?->curriculum_id`, but `Student` has no
+  `studentCurriculum` (singular) relation — only `studentCurricula()` (`:83`) and
+  `currentCurriculum()` (`:88`). Laravel returns null for an undefined relation, so
+  the branch **always fires**, and the `updateOrCreate` beneath it is the one
+  enrollment-creation path with no School check. (`store()`/`import()` are
+  double-guarded — `Curriculum::findOrFail` under SchoolScope, then
+  `enroll()`'s check.)
 
 ### Same-curriculum re-enrollment — registrar decision matrix (awaiting product input)
 

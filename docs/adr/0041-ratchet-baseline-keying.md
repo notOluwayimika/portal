@@ -30,7 +30,7 @@ file would pass forever).
 - Baselines may only shrink; the gates report removable entries when a
   baselined finding is fixed. Widening a baseline to get a PR green is never
   acceptable — a deliberate, documented, expiring exception requires review.
-- Boundary-baseline entries carry documented expiries (e.g. the `fee_*` reads
+- Boundary-baseline entries carry documented expiries (e.g. the `finance_*` reads
   expire at ADR 0030; the `users.school_id` fallbacks at the §5.3/§7.1 column
   drop — see ADR 0042), including nature notes so burn-down work isn't
   misdirected (the `SuperAdmin/AdminController` entry is a legacy-column

@@ -33,7 +33,7 @@ final class RecordPayment
         }
 
         return DB::transaction(function () use ($invoice, $amount, $payerName, $actor) {
-            $reference = Sequences::next('fee_payment', (string) $invoice->school_id);
+            $reference = Sequences::next('finance_payment', (string) $invoice->school_id);
 
             $payment = Payment::create([
                 'school_id' => $invoice->school_id,

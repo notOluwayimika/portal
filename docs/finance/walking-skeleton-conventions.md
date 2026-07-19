@@ -1,9 +1,33 @@
-# Finance walking skeleton — convention report (template for future modules)
+# Finance module — frozen template (was: walking-skeleton convention report)
 
-**STOP-for-review artifact.** This is the first `app/Finance/` code and the
-template every future Finance slice + every future module copies. The code is the
-vehicle; *this report is the deliverable*. Every structural choice below is a
-**proposal** — reviewed and adjusted before slice 2 inherits it.
+**FROZEN 2026-07-19.** This is the first `app/Finance/` code and the template
+every future Finance slice + every future module copies. The proposals below were
+reviewed and the template is now frozen — the ratified conventions are locked at
+the top; the rest of the document is the original walking-skeleton report kept as
+rationale.
+
+## Ratified conventions (locked — every future Finance aggregate inherits these)
+
+| Decision | Ratified | Enforcement |
+|---|---|---|
+| **Table prefix** | `finance_*` (was `fee_*`) | `finance-table-outside-finance` boundary lint keys on the prefix |
+| **Tenanting** | every Finance table (incl. child tables) carries `school_id`, directly filterable | `SchemaConventionsTest` asserts the column on every `finance_*` table; arch rule requires `BelongsToSchool` on every model |
+| **Child = parent `school_id`** | a child's `school_id` must equal its parent's; unrepresentable-when-violated | composite FK `(child_fk, school_id)` → `parent(id, school_id)` at the DB (bite-proven: mismatch rejected as a FK violation) |
+| **API prefix** | `/api/v1/finance/*` | route file frozen; every aggregate hangs off it |
+| **Larastan** | `@property` on models, `@mixin` on resources | Larastan level 5 (0 new errors; no baseline growth) |
+| **Money** | VO + `_minor`/`_currency` + Resource-only wire (`{amount_minor, currency}`) | `decimal-money-cast` boundary lint; the `Money` VO / ADR 0037 |
+| **Append-only** | ledger/lines/payments/allocations immutable; invoice DELETE-denied (status mutates) | 1.4c DB triggers (survive rename; verified by name) |
+| **Validation error shape** | **DEFERRED** — pending the app-wide 422-vs-400 decision | not yet enforced; controllers currently 422 |
+| **Invoice total = SUM(lines)** | **slice-2 gate** — computed once at creation, snapshotted, never hand-edited | **not yet enforced** (skeleton is single-line); prove with a multi-line test in slice 2 |
+
+Two items above are deliberately NOT active invariants yet: the 422-vs-400 shape
+(deferred to the app-wide decision) and the total=SUM(lines) rule (a slice-2 gate
+— the skeleton only has single-line invoices, so enforcing it now would assert
+nothing). Both are recorded as pending, not promoted.
+
+---
+
+*Original walking-skeleton report follows (rationale for the choices above).*
 
 ## What was built
 
@@ -16,9 +40,9 @@ enrollment (ACL port) → invoice + line → ledger CHARGE
                       → cancel → ledger REVERSAL (credit); invoice row persists
 ```
 
-Tables (all `fee_*`, RESTRICT referent FKs, `_minor`/`_currency` money, 1.4c
-triggers in the creating migration): `fee_invoices`, `fee_invoice_lines`,
-`fee_ledger_transactions`, `fee_payments`, `fee_payment_allocations`.
+Tables (all `finance_*`, RESTRICT referent FKs, `_minor`/`_currency` money, 1.4c
+triggers in the creating migration): `finance_invoices`, `finance_invoice_lines`,
+`finance_ledger_transactions`, `finance_payments`, `finance_payment_allocations`.
 
 Stubbed as planned (recorded, not built): gap-free numbering (Sequences is the
 gap-tolerant stub), approvals/maker-checker (Ph3), automated billing trigger
@@ -98,33 +122,30 @@ guards `deleting` alone. This distinction should be explicit in the module docs.
    `SubledgerPoster` never opens its own, so the ledger post commits atomically with
    the state change. A charge cannot exist without its invoice. **Held; natural.**
 
-## Additional template decisions to REVIEW before slice 2 copies them
+## Template decisions — RATIFIED at the freeze (2026-07-19)
 
-- **`fee_` table prefix** = the lint-enforced Finance-ownership marker (matches the
-  existing `fee-table-outside-finance` lint and `ModuleClassificationService`'s
-  `fee_invoices`/`fee_payments` reads). `fee_ledger_transactions` reads slightly
-  oddly (a ledger row isn't a "fee"). **Decision needed:** keep `fee_` as the
-  ownership marker, or adopt `finance_`? (If renamed, the lint pattern must follow.)
-- **Uniform `school_id` on every Finance table**, including child tables
-  (`fee_invoice_lines`, `fee_payment_allocations`) — denormalized so
-  `BelongsToSchool` scopes identically everywhere (arch rule 5). The alternative
-  was an `applySchoolScope`-through-parent override. Chose uniformity for the
-  template. **Confirm.**
-- **`@property` on models + `@mixin` on resources** = the module's Larastan
-  convention. No existing model uses it (the legacy code baselines its ~924
-  property errors instead); this keeps new Finance code at **0** without growing
-  the baseline. **Adopt as the module standard?**
-- **REF vs LOOKUP FKs** — durable referents (school/student/enrollment/invoice/
-  payment) are live FKs, all `RESTRICT`; LOOKUP attributions (`cancelled_by_user_id`,
-  `received_by_user_id`) and the polymorphic ledger `source_id` are plain columns,
-  **not** FKs — so they never block a user's lifecycle and a reversal joins nothing.
-- **Authorization** = route middleware `role:admin|super_admin` (inline `->hasRole(`
-  is banned inside Finance by the escape-hatch lint — which is *why* authz sits at
-  the edge). Finance Policies + SoD roles are Ph2/Ph3.
-- **Error status** = `BusinessRuleException` → **422** uniformly. Align with the
-  pending registrar error-code convention.
-- **Route path** = `/api/finance/*` (unversioned, matching the existing surface).
-  `/api/v1/finance/*` versioning (§16) is a Ph2 decision when the surface broadens.
+These were the open proposals; they are now decided (see the ratified table at the
+top of this document and the Engineering Invariants in the roadmap):
+
+- **Table prefix** → **`finance_*`** (renamed from `fee_*`). The
+  `finance-table-outside-finance` lint keys on it; `ModuleClassificationService`
+  and all tables/models/tests/routes moved over.
+- **Uniform `school_id` on every Finance table** (incl. child tables) → **adopted**,
+  and now DB-enforced: `SchemaConventionsTest` asserts the column, and a composite
+  FK `(child_fk, school_id) → parent(id, school_id)` makes a child `school_id` that
+  diverges from its parent's unrepresentable (bite-proven).
+- **`@property` on models + `@mixin` on resources** → **adopted** as the module's
+  Larastan standard (keeps new Finance code at 0 without growing the baseline).
+- **REF vs LOOKUP FKs** → **kept**: durable referents (school/student/enrollment/
+  invoice/payment) are live `RESTRICT` FKs; LOOKUP attributions
+  (`cancelled_by_user_id`, `received_by_user_id`) and the polymorphic ledger
+  `source_id` are plain columns, not FKs.
+- **Authorization** → route middleware `role:admin|super_admin` (inline `->hasRole(`
+  is banned inside Finance by the escape-hatch lint). Finance Policies + SoD roles
+  are Ph2/Ph3 — unchanged.
+- **Error status** → **DEFERRED**: `BusinessRuleException` → 422 for now, pending
+  the app-wide 422-vs-400 decision (not frozen as an invariant).
+- **Route path** → **`/api/v1/finance/*`** (frozen; §16).
 
 ## Future-phase check — does this shape preclude Ph3 / §13 / recurring billing?
 
@@ -169,6 +190,6 @@ app/Finance/
     └── Resources/   @mixin the model; serialize Money via the VO ({amount_minor, currency})
 
 ACL adapter → app/<Provider>/…  (OUTSIDE the consuming module; bound in AppServiceProvider)
-migrations  → database/migrations/  (fee_* tables; RESTRICT referent FKs; 1.4c triggers in-migration)
+migrations  → database/migrations/  (finance_* tables; RESTRICT referent FKs; 1.4c triggers in-migration)
 routes      → routes/endpoints/finance.php → required into api.php inside an auth+role group
 ```

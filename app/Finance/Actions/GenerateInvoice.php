@@ -42,7 +42,7 @@ final class GenerateInvoice
         }
 
         return DB::transaction(function () use ($enrollment, $amount, $description) {
-            $number = Sequences::next('fee_invoice', (string) $enrollment->schoolId);
+            $number = Sequences::next('finance_invoice', (string) $enrollment->schoolId);
 
             $invoice = Invoice::create([
                 'school_id' => $enrollment->schoolId,

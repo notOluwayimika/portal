@@ -35,7 +35,7 @@ class Invoice extends Model
 {
     use AddUuid, BelongsToSchool;
 
-    protected $table = 'fee_invoices';
+    protected $table = 'finance_invoices';
 
     protected $guarded = ['id'];
 

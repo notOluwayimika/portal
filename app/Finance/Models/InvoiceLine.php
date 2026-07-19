@@ -27,7 +27,7 @@ class InvoiceLine extends Model
 {
     use AddUuid, AppendOnly, BelongsToSchool;
 
-    protected $table = 'fee_invoice_lines';
+    protected $table = 'finance_invoice_lines';
 
     protected $guarded = ['id'];
 

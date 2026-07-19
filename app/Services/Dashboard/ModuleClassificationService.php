@@ -51,6 +51,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, $dailyCounts);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'students' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -73,6 +74,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, $dailyCounts);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'guardians' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -97,6 +99,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, []);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'academic' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -106,7 +109,7 @@ class ModuleClassificationService
         $thresholds = config('dashboard_thresholds.modules.attendance');
 
         // Attendance module not yet in schema — gracefully return empty
-        if (!Schema::hasTable('attendance_records')) {
+        if (! Schema::hasTable('attendance_records')) {
             return $this->emptyModuleResult($thresholds);
         }
 
@@ -124,6 +127,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, $dailyCounts);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'attendance' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -155,12 +159,13 @@ class ModuleClassificationService
                 ->groupByRaw('DATE(scores.created_at)')
                 ->orderBy('date')
                 ->get()
-                ->map(fn($r) => ['date' => $r->date, 'count' => (int) $r->count])
+                ->map(fn ($r) => ['date' => $r->date, 'count' => (int) $r->count])
                 ->toArray();
 
             return $this->buildModuleResult($count, $lastActivity, $thresholds, $dailyCounts);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'assessments' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -170,11 +175,12 @@ class ModuleClassificationService
         $thresholds = config('dashboard_thresholds.modules.finance');
 
         // Finance module not yet in schema
-        foreach (['fee_invoices', 'fee_payments', 'fee_structures'] as $table) {
+        foreach (['finance_invoices', 'finance_payments', 'finance_fee_structures'] as $table) {
             if (Schema::hasTable($table)) {
                 try {
                     $count = DB::table($table)->where('school_id', $this->schoolId)->count();
                     $lastActivity = DB::table($table)->where('school_id', $this->schoolId)->max('created_at');
+
                     return $this->buildModuleResult($count, $lastActivity, $thresholds, []);
                 } catch (\Throwable $e) {
                     Log::channel('dashboard-analysis')->warning("Module 'finance' query failed: {$e->getMessage()}");
@@ -195,6 +201,7 @@ class ModuleClassificationService
                 try {
                     $count = DB::table($table)->where('school_id', $this->schoolId)->count();
                     $lastActivity = DB::table($table)->where('school_id', $this->schoolId)->max('created_at');
+
                     return $this->buildModuleResult($count, $lastActivity, $thresholds, []);
                 } catch (\Throwable $e) {
                     Log::channel('dashboard-analysis')->warning("Module 'communication' query failed: {$e->getMessage()}");
@@ -209,7 +216,7 @@ class ModuleClassificationService
     {
         $thresholds = config('dashboard_thresholds.modules.files');
 
-        if (!Schema::hasTable('file_uploads')) {
+        if (! Schema::hasTable('file_uploads')) {
             return $this->emptyModuleResult($thresholds);
         }
 
@@ -221,6 +228,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, []);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'files' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -243,6 +251,7 @@ class ModuleClassificationService
             return $this->buildModuleResult($count, $lastActivity, $thresholds, $dailyCounts);
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Module 'activity_log' query failed: {$e->getMessage()}");
+
             return $this->emptyModuleResult($thresholds);
         }
     }
@@ -263,7 +272,7 @@ class ModuleClassificationService
                 ->orderBy('date')
                 ->get();
 
-            return $rows->map(fn($r) => ['date' => $r->date, 'count' => (int) $r->count])->toArray();
+            return $rows->map(fn ($r) => ['date' => $r->date, 'count' => (int) $r->count])->toArray();
         } catch (\Throwable) {
             return [];
         }

@@ -72,6 +72,41 @@ when the re-key lands.
 | `CurriculumController:350` `StudentCurriculum::where(curriculum_id)->where(student_id)->first()` | one row | returns an **arbitrary** episode (default order) | `->whereNull('ended_at')->first()` (active episode) or `->latest('id')` per intent |
 | `unique(student_id, curriculum_id)` (the constraint itself) | one enrolment per pair ever | forbids every second episode — the constraint Option B replaces | → `active_key` (§4) |
 
+### 1b-bis. ⚠️ BLOCKING DEFECT this slice must fix — `promotedTo()` loads the wrong entity
+
+Confirmed 2026-07-19. **This slice is the one that fires it**, because §3's promotion
+path writes `promoted_to_id`.
+
+The FK is self-referencing and the migration says so outright — *"Self-referencing
+FK — points to the next student_curricula row after promotion"*
+(`2026_05_01_100910`, `->constrained('student_curricula')`). Live schema agrees:
+`promoted_to_id → student_curricula.id`. Both internal writers agree too
+(`StudentCurriculumController:178` → `$new->id`; `BackfillPastTermJob:254` →
+`$sourceEnrollment->id`).
+
+Three sites disagree with the FK:
+
+| Site | Says | |
+|---|---|---|
+| `StudentCurriculum::promotedTo()` `:63-66` | `belongsTo(Curriculum::class, 'promoted_to_id')` | ❌ wrong entity |
+| `StudentRequest.php:66` | `exists:curricula,id` | ❌ wrong table |
+| `resources/js/types/models.ts:444` | `promoted_to?: Curriculum` | ❌ wrong type |
+
+**The FK is right; the model, the request rule and the TS type are wrong.** Both are
+auto-increment bigints in overlapping ranges, so this does not error — it silently
+loads an arbitrary `Curriculum` that happens to share the integer id.
+
+**Latent only because `promoted_to_id` is set on 0 rows today.** It activates on the
+first real promotion — i.e. the moment §3's `@promote → endEpisode(source, promoted)
++ enroll(new, ['promoted_to_id' => …])` path ships. Note §3 above passes
+`promoted_to_id` as if it works; that line inherits the bug.
+
+**Trigger: fix it in this slice, before the promotion path is wired.** Deliberately
+NOT fixed by slice (i) (`student_curricula.school_id`) — it belongs with the
+promotion chain, not with School integrity. Slice (i) also left
+`StudentRequest:66`'s rule unscoped on purpose: scoping it to `curricula` would only
+entrench the wrong target table.
+
 ### 1c. Accessors / relations — safe **only** while "one active enrolment total" holds
 
 | Site | Why it stays ≤1 | Watch |

@@ -125,6 +125,15 @@ with a scope limit, one is a GAP pending slice 2.
   composite FK `(child_fk, school_id) → parent(id, school_id)` at the DB — a
   divergent child is rejected as a foreign-key violation (bite-proven at the DB,
   not the model). ✅ real.
+  **Extended across the Finance↔Academic seam by slice (i) (2026-07-19).**
+  `finance_invoices (student_curriculum_id, school_id) → student_curricula (id,
+  school_id)` means an invoice's School is now structurally tied to its episode's,
+  instead of being satisfied *by proxy* through the ACL adapter's
+  `students.school_id → curricula.school_id → 0` derivation. The null→0 fallback is
+  no longer load-bearing for correctness — it remains only as a fail-closed guard
+  in `GenerateInvoice`. Same slice also made F3 hold on the academic side:
+  `student_curricula` composite FKs to **both** `students` and `curricula`, so a
+  cross-School episode is unrepresentable whichever `school_id` is supplied.
 - **F4. Financial movements are append-only; corrections are reversals, never
   rewrites.** *Enforced by:* the 1.4c DB triggers on the ledger/lines/payments/
   allocations (UPDATE+DELETE denied; invoice DELETE denied, status may mutate).
@@ -675,13 +684,87 @@ look-for, not audited here.
 **Slice (i) ENTRY CONDITIONS (all must hold before it opens):**
 
 1. D1–D4 resolved and recorded (this section) — ✅ done.
-2. Prod re-verification: `students.school_id` null-free **and** zero
-   student↔curriculum School drift. Dev shows 611/0 nulls, 46/0 nulls, 0 drift —
-   **prod is a deploy-time re-verification, not claimed here.**
+2. **Pre-flight is the integrity test, not a checkbox.** Run the detection query
+   (`docs/runbooks/prod-divergence-and-cascade-queries.sql` §C1, with §C1b's
+   partition proof), **list** the offending episodes, **remediate to zero**
+   (`docs/runbooks/slice-i-preflight-and-remediation.md`), *then* run the
+   migration. Rationale: the backfill copies `school_id` from the student, so the
+   student composite FK is tautologically satisfied and the **curriculum**
+   composite FK is the only one that can reject real data — it fails for every
+   episode where `students.school_id <> curricula.school_id`, aborting the
+   migration mid-deploy. Those rows are **expected, not hypothetical**: slice (i)
+   exists because `StudentService::update`'s dead guard and the unscoped
+   `exists:curricula,id` were live, and both produce exactly "local student +
+   foreign curriculum". ⚠️ Dev cannot test this — it holds **one** School in both
+   `students` and `curricula`, so a mismatch is structurally impossible there and
+   its zero carries no information. Note `finance_invoices` is created *empty* in
+   the same deploy, so its composite FK cannot fail at the first Phase-1 deploy
+   (the invoiced-offender case applies only to re-runs / Finance-bearing envs).
 3. `BelongsToSchool` adoption is explicitly OUT of scope for (i).
 4. `StudentRequest` / `ImportStudentRequest` scoped-`exists` fixes folded in — the
    FK would otherwise surface as a raw `QueryException`.
 5. Opened as a fresh deliberate session — one-way, four-table, creation-path-touching.
+
+**SLICE (i) LANDED (2026-07-19).** Two migration files, same deploy (Gate 1 —
+"own file" buys clean `down()` ordering and independent rollback, never deferred
+shipping; and the FK's creation doubles as a total consistency check over existing
+data). Four tables: additive `UNIQUE(id, school_id)` on `students` + `curricula` +
+`student_curricula`; `student_curricula.school_id` backfilled from
+`students.school_id`; single-column FKs **swapped** (not stacked) for composites —
+`(student_id, school_id) → students`, `(curriculum_id, school_id) → curricula`,
+`finance_invoices (student_curriculum_id, school_id) → student_curricula`.
+
+*ON DELETE was mapped per-FK, not chosen globally:* each composite preserves the
+semantics of the FK it replaces (CASCADE on the academic pair, RESTRICT on the
+Finance child). Verified this is safe — a `students` delete cannot reach a
+`finance_invoices` row: `finance_invoices.student_id` (RESTRICT) blocks it directly
+and `finance_invoices.student_curriculum_id` (RESTRICT) blocks the cascade, and in
+InnoDB a cascaded delete reaching a RESTRICT child fails the whole statement. The
+armour for an invoiced episode lives on `finance_invoices`, not on the episode.
+*ON UPDATE is NO ACTION everywhere* (D2). Verified on the dev DB: **977/977**
+episodes backfilled, 0 nulls, 0 mismatches against either parent; `down()` restores
+the original FK names and index set exactly, and re-`up()` is clean.
+
+`StudentCurriculum` now DERIVES `school_id` from the student in its `creating` hook
+(a block closure — `creating` is a halting event), so no caller passes it; an
+explicitly wrong value is *not* masked and is rejected by the FK. `Student` guards
+`school_id` as immutable-after-create on `updating` (removing it from `$fillable`
+would have silently dropped it on `create()` and broken student creation).
+
+**Still open — slice (ii):** `BelongsToSchool` on `StudentCurriculum`. Slice (i)
+closed cross-School integrity **at creation** and closed **none** of the 9 unscoped
+`{studentCurriculum:uuid}` bindings, nor the `PrincipalApprovalController:50` mass
+write. A standalone index on `student_curricula.school_id` belongs with (ii), when
+SchoolScope gives it a consumer — not built speculatively here.
+
+**Parked debt — homed here so it survives the handoff docs that first recorded it.**
+Each has a named TRIGGER; none is fixed by slice (i).
+
+- **tsc ratchet is a false-green.** Committed `tsc-baseline` = **149** (regenerated
+  *up* from the origin 143 on 2026-07-15, `93aaef4`); working tree = **151**. The
+  check IS wired (`bin/ci-tsc-ratchet.php` in `lint.yml`, push + PR) and trips
+  exit 1 at 151 > 149 *when it runs* — yet 2 above-baseline errors sit in the tree,
+  so it is not hard-blocking. Cause unconfirmed (no `gh` locally to read branch
+  protection): either the `linter` job is not a *required* status check, or errors
+  entered by a non-gated path. Tool weakness: `generate` writes ANY count (the
+  baseline rose 143→149) and `count < baseline` only prints "please lower"
+  (exit 0, no auto-lock) — so "baselines only shrink" is **unenforced**.
+  *Was recorded only in `docs/handoff/slice-2-brief.md` and v10 §28.1, both
+  supersedable.* **Trigger: its own slice — verify branch protection requires
+  `linter`, ratchet the baseline DOWN to the real count, make it block. Do not
+  cite "143" or treat the ratchet as a floor until then.**
+- **`DashboardAnalysisService:237-256` — unfiltered `student_curricula` join leg.**
+  The `leftJoin('student_curricula', …)` at `:237` and the DISTINCT count at
+  `:252-256` (keyed on `student_curricula.student_id`) carry **no school
+  predicate**; isolation there rides on `class_levels.school_id` (`:217`) and
+  `curricula.school_id` (`:245`) upstream. Probably safe today — the leg is reached
+  only from already-scoped `curriculum_subjects` — but it is the weakest of the
+  raw-SQL sites and the only one not explicitly filtered. *Had no home until
+  2026-07-19.* **Trigger: slice (ii).** When `StudentCurriculum` adopts
+  `BelongsToSchool`, every Eloquent path gains a `school_id` predicate while this
+  raw join does not — re-audit it then, and add the standalone
+  `student_curricula.school_id` index at the same time (`EXPLAIN` confirms a
+  school-only filter is currently a full index scan, `type=index rows=977`).
 
 **Defects confirmed during this pass (both live, neither gated on the migration):**
 

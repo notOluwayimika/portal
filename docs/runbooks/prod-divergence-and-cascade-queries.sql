@@ -158,3 +158,123 @@ SELECT
     ), 0) AS withdrawn_with_assessments
 FROM student_curricula sc
 WHERE sc.status = 'withdrawn';
+
+
+-- ============================================================================
+-- C — slice (i) PRE-FLIGHT: episodes that will FAIL the new composite FK
+-- ============================================================================
+-- READ-ONLY. Run against LIVE production by the environment owner BEFORE the
+-- slice (i) migration (2026_07_19_130000_add_school_id_to_student_curricula).
+--
+-- WHY THIS IS THE INTEGRITY TEST, NOT A RE-CONFIRMATION.
+-- The migration backfills student_curricula.school_id FROM students.school_id,
+-- then adds two composite FKs. Only ONE of them can fail on real data:
+--
+--   (student_id,    school_id) -> students  (id, school_id)   CANNOT fail:
+--       tautological — school_id was copied from that very student. (A NULL
+--       students.school_id is caught first by the migration's own guard.)
+--   (curriculum_id, school_id) -> curricula (id, school_id)   CAN fail:
+--       fails for EVERY episode where students.school_id <> curricula.school_id.
+--   finance_invoices (student_curriculum_id, school_id)       CANNOT fail at the
+--       first Phase-1 deploy: finance_invoices is CREATED EMPTY in that same
+--       deploy, so it has no rows to validate. It becomes live on any re-run or
+--       in an environment that already holds Finance data — see C2.
+--
+-- So the whole slice-(i) deploy risk is C1. And these rows are NOT hypothetical:
+-- slice (i) exists precisely because cross-School enrollment paths were live and
+-- unguarded (StudentService::update's dead guard; the unscoped
+-- exists:curricula,id in StudentRequest/ImportStudentRequest). Those paths
+-- produce exactly "local student + FOREIGN curriculum". Finding zero would be the
+-- surprise; finding some is the expected case.
+--
+-- VALIDATION CAVEAT — read this before trusting a zero.
+-- Unlike groups A and B, this filter could NOT be partition-proven against real
+-- matching rows: the dev DB (brookstone_portal_db, 2026-07-19) holds exactly ONE
+-- school in both `students` and `curricula`, so a mismatch is structurally
+-- impossible there. What WAS proven on dev is the mechanics: agree(977) +
+-- disagree(0) = total(977), and 0 episodes fail to join either parent. The join
+-- and the comparison are therefore correct and nothing is silently dropped — but
+-- the disagree branch has never matched a real row. **On prod, treat a non-zero
+-- result as the expected outcome and a zero as pleasant news, not as
+-- confirmation that the query works.**
+-- ----------------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------------
+-- C1 — THE BLOCKING QUERY. Episodes whose student's School disagrees with their
+--      curriculum's School (or whose parent School is NULL). Each listed row
+--      WILL fail the curriculum composite FK and abort the migration.
+-- Zero      = the migration can run.
+-- Non-zero  = STOP. Remediate to zero first (docs/runbooks/slice-i-preflight-and-
+--             remediation.md). Ending the episode does NOT fix it — the FK
+--             constrains curriculum_id regardless of status.
+-- ---------------------------------------------------------------------------
+SELECT sc.id            AS episode_id,
+       sc.uuid          AS episode_uuid,
+       sc.status,
+       sc.ended_at,
+       sc.student_id,
+       s.school_id      AS student_school_id,
+       s.admission_number,
+       sc.curriculum_id,
+       c.school_id      AS curriculum_school_id,
+       (SELECT COUNT(*) FROM student_subjects ss
+         WHERE ss.student_curriculum_id = sc.id)        AS subject_rows,
+       (SELECT COUNT(*) FROM behavioral_assessments ba
+         WHERE ba.student_curriculum_id = sc.id)        AS behavioural_rows,
+       (SELECT COUNT(*) FROM psychomotor_skills ps
+         WHERE ps.student_curriculum_id = sc.id)        AS psychomotor_rows
+FROM student_curricula sc
+JOIN students  s ON s.id = sc.student_id
+JOIN curricula c ON c.id = sc.curriculum_id
+WHERE s.school_id <> c.school_id
+   OR s.school_id IS NULL
+   OR c.school_id IS NULL
+ORDER BY sc.id;
+
+
+-- ---------------------------------------------------------------------------
+-- C1b — partition proof for C1. Run it in the SAME session: agree + disagree
+--       MUST equal total, and orphans MUST be 0. If they don't, C1's joins are
+--       dropping rows and its zero means nothing.
+-- ---------------------------------------------------------------------------
+SELECT
+  (SELECT COUNT(*) FROM student_curricula sc
+     JOIN students s ON s.id = sc.student_id
+     JOIN curricula c ON c.id = sc.curriculum_id
+    WHERE s.school_id = c.school_id)                                AS agree,
+  (SELECT COUNT(*) FROM student_curricula sc
+     JOIN students s ON s.id = sc.student_id
+     JOIN curricula c ON c.id = sc.curriculum_id
+    WHERE s.school_id <> c.school_id
+       OR s.school_id IS NULL OR c.school_id IS NULL)               AS disagree,
+  (SELECT COUNT(*) FROM student_curricula sc
+     JOIN students s ON s.id = sc.student_id
+     JOIN curricula c ON c.id = sc.curriculum_id)                   AS joined_total,
+  (SELECT COUNT(*) FROM student_curricula)                          AS episodes_total;
+
+
+-- ---------------------------------------------------------------------------
+-- C2 — invoice linkage for any C1 offender. RUN ONLY where finance_invoices
+--      already exists (a re-run, or a staging env that already holds Finance
+--      data). At the first Phase-1 deploy this table is created empty in the
+--      same deploy, so this query is not applicable and C1 is sufficient.
+-- Any row here = remediation crosses the Finance<->Academic seam and touches
+--      append-only rows: it is NOT a SQL fix. See the remediation runbook.
+-- ---------------------------------------------------------------------------
+SELECT sc.id  AS episode_id,
+       fi.id  AS invoice_id,
+       fi.uuid AS invoice_uuid,
+       fi.status AS invoice_status,
+       fi.school_id AS invoice_school_id,
+       s.school_id  AS student_school_id,
+       c.school_id  AS curriculum_school_id,
+       fi.total_minor, fi.total_currency
+FROM student_curricula sc
+JOIN students  s ON s.id = sc.student_id
+JOIN curricula c ON c.id = sc.curriculum_id
+JOIN finance_invoices fi ON fi.student_curriculum_id = sc.id
+WHERE s.school_id <> c.school_id
+   OR s.school_id IS NULL
+   OR c.school_id IS NULL
+ORDER BY sc.id, fi.id;

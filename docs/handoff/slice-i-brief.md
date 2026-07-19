@@ -69,12 +69,29 @@ check at all.
   slice, gates the repeat workflow, not gated on this one.
 - The `promotedTo()` fix — belongs with Option-B's promotion-chain slice.
 
-## Pre-flight (deploy-time, NOT claimed from dev)
+## Pre-flight — the integrity test, NOT a checkbox (deploy-time; nothing claimed from dev)
 
-1. `students.school_id` null-free in **prod** (dev: 611 rows, 0 null).
-2. Zero student↔curriculum School drift in **prod** (dev: 0).
-3. `curricula.school_id` null-free (dev: 46 rows, 0 null).
-4. ⚠️ **`students` prod row count** — the one place the "trivial in dev" rebuild
+**Full procedure: [`docs/runbooks/slice-i-preflight-and-remediation.md`](../runbooks/slice-i-preflight-and-remediation.md);
+queries: `prod-divergence-and-cascade-queries.sql` §C.**
+
+The backfill copies `school_id` **from the student**, so the student composite FK is
+tautologically satisfied and only the **curriculum** composite FK can reject real
+data — it fails for every episode where `students.school_id <> curricula.school_id`,
+aborting the migration mid-deploy. Those rows are **expected, not hypothetical**:
+this slice exists because `StudentService::update`'s dead guard and the unscoped
+`exists:curricula,id` were live, and both produce exactly "local student + foreign
+curriculum".
+
+1. Run **§C1b** (partition proof), then **§C1** — *list* offenders, don't count them.
+2. Remediate to zero per the runbook's decision tree, then re-run §C1.
+3. ⚠️ **Dev cannot test this.** It holds **one** School in both `students` and
+   `curricula`, so a mismatch is structurally impossible and its zero carries no
+   information. Only the mechanics were proven there (agree 977 + disagree 0 =
+   total 977, 0 orphans).
+4. `finance_invoices` is created **empty** in the same deploy, so its composite FK
+   cannot fail at the first Phase-1 deploy — the invoiced-offender case (the
+   Finance↔Academic knot) applies only to re-runs / Finance-bearing environments.
+5. ⚠️ **`students` prod row count** — the one place the "trivial in dev" rebuild
    estimate may not hold. Check before scheduling.
 
 ## Acceptance

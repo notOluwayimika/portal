@@ -684,9 +684,22 @@ look-for, not audited here.
 **Slice (i) ENTRY CONDITIONS (all must hold before it opens):**
 
 1. D1–D4 resolved and recorded (this section) — ✅ done.
-2. Prod re-verification: `students.school_id` null-free **and** zero
-   student↔curriculum School drift. Dev shows 611/0 nulls, 46/0 nulls, 0 drift —
-   **prod is a deploy-time re-verification, not claimed here.**
+2. **Pre-flight is the integrity test, not a checkbox.** Run the detection query
+   (`docs/runbooks/prod-divergence-and-cascade-queries.sql` §C1, with §C1b's
+   partition proof), **list** the offending episodes, **remediate to zero**
+   (`docs/runbooks/slice-i-preflight-and-remediation.md`), *then* run the
+   migration. Rationale: the backfill copies `school_id` from the student, so the
+   student composite FK is tautologically satisfied and the **curriculum**
+   composite FK is the only one that can reject real data — it fails for every
+   episode where `students.school_id <> curricula.school_id`, aborting the
+   migration mid-deploy. Those rows are **expected, not hypothetical**: slice (i)
+   exists because `StudentService::update`'s dead guard and the unscoped
+   `exists:curricula,id` were live, and both produce exactly "local student +
+   foreign curriculum". ⚠️ Dev cannot test this — it holds **one** School in both
+   `students` and `curricula`, so a mismatch is structurally impossible there and
+   its zero carries no information. Note `finance_invoices` is created *empty* in
+   the same deploy, so its composite FK cannot fail at the first Phase-1 deploy
+   (the invoiced-offender case applies only to re-runs / Finance-bearing envs).
 3. `BelongsToSchool` adoption is explicitly OUT of scope for (i).
 4. `StudentRequest` / `ImportStudentRequest` scoped-`exists` fixes folded in — the
    FK would otherwise surface as a raw `QueryException`.

@@ -177,6 +177,66 @@ it('SCOPED EXISTS — a foreign-School curriculum is a validation error, never a
         ->and($validateCurriculum($ownCurriculum->id))->toBeFalse();  // own School still fine
 });
 
+it('RUNBOOK §C1 — the detection predicate flags a REAL cross-School row (true positive)', function () {
+    $schoolA = School::factory()->create();
+    $schoolB = School::factory()->create();
+    $studentA = Student::factory()->create(['school_id' => $schoolA->id]);
+    $curriculumB = Curriculum::factory()->create(['school_id' => $schoolB->id]);
+    $cleanStudent = Student::factory()->create(['school_id' => $schoolA->id]);
+    $cleanCurriculum = Curriculum::factory()->create(['school_id' => $schoolA->id]);
+
+    // A clean episode, so the query has to DISCRIMINATE rather than match everything.
+    StudentCurriculum::create([
+        'student_id' => $cleanStudent->id,
+        'curriculum_id' => $cleanCurriculum->id,
+        'status' => 'active',
+    ]);
+
+    // Plant the offender. The composite FK now FORBIDS this row — which is the
+    // point: §C1 exists to find rows that predate the FK. Disabling FK checks is
+    // how we reconstruct that pre-migration database, and it is the only way to
+    // produce a true positive at all.
+    DB::statement('SET FOREIGN_KEY_CHECKS=0');
+    try {
+        rawEpisode($studentA->id, $curriculumB->id, $schoolA->id); // school_id as the backfill would set it
+    } finally {
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    // The runbook's §C1 predicate, verbatim.
+    $offenders = DB::select(
+        'SELECT sc.id AS episode_id, s.school_id AS student_school_id, c.school_id AS curriculum_school_id
+           FROM student_curricula sc
+           JOIN students  s ON s.id = sc.student_id
+           JOIN curricula c ON c.id = sc.curriculum_id
+          WHERE s.school_id <> c.school_id OR s.school_id IS NULL OR c.school_id IS NULL
+          ORDER BY sc.id'
+    );
+
+    // TRUE POSITIVE: exactly the planted row, and not the clean one.
+    expect($offenders)->toHaveCount(1)
+        ->and((int) $offenders[0]->student_school_id)->toBe($schoolA->id)
+        ->and((int) $offenders[0]->curriculum_school_id)->toBe($schoolB->id);
+
+    // …and §C1b's partition still holds with a genuine mismatch present, so the
+    // two halves are complementary rather than one silently swallowing the other.
+    $p = DB::selectOne(
+        'SELECT
+           (SELECT COUNT(*) FROM student_curricula sc
+              JOIN students s ON s.id=sc.student_id JOIN curricula c ON c.id=sc.curriculum_id
+             WHERE s.school_id = c.school_id) AS agree,
+           (SELECT COUNT(*) FROM student_curricula sc
+              JOIN students s ON s.id=sc.student_id JOIN curricula c ON c.id=sc.curriculum_id
+             WHERE s.school_id <> c.school_id OR s.school_id IS NULL OR c.school_id IS NULL) AS disagree,
+           (SELECT COUNT(*) FROM student_curricula sc
+              JOIN students s ON s.id=sc.student_id JOIN curricula c ON c.id=sc.curriculum_id) AS joined_total'
+    );
+
+    expect((int) $p->agree)->toBe(1)
+        ->and((int) $p->disagree)->toBe(1)
+        ->and((int) $p->joined_total)->toBe(2);
+});
+
 it('D2 — a student\'s School is immutable after create', function () {
     [$schoolA, $student] = episodeSetup();
     $schoolB = School::factory()->create();

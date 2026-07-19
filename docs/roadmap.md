@@ -737,6 +737,35 @@ closed cross-School integrity **at creation** and closed **none** of the 9 unsco
 write. A standalone index on `student_curricula.school_id` belongs with (ii), when
 SchoolScope gives it a consumer — not built speculatively here.
 
+**Parked debt — homed here so it survives the handoff docs that first recorded it.**
+Each has a named TRIGGER; none is fixed by slice (i).
+
+- **tsc ratchet is a false-green.** Committed `tsc-baseline` = **149** (regenerated
+  *up* from the origin 143 on 2026-07-15, `93aaef4`); working tree = **151**. The
+  check IS wired (`bin/ci-tsc-ratchet.php` in `lint.yml`, push + PR) and trips
+  exit 1 at 151 > 149 *when it runs* — yet 2 above-baseline errors sit in the tree,
+  so it is not hard-blocking. Cause unconfirmed (no `gh` locally to read branch
+  protection): either the `linter` job is not a *required* status check, or errors
+  entered by a non-gated path. Tool weakness: `generate` writes ANY count (the
+  baseline rose 143→149) and `count < baseline` only prints "please lower"
+  (exit 0, no auto-lock) — so "baselines only shrink" is **unenforced**.
+  *Was recorded only in `docs/handoff/slice-2-brief.md` and v10 §28.1, both
+  supersedable.* **Trigger: its own slice — verify branch protection requires
+  `linter`, ratchet the baseline DOWN to the real count, make it block. Do not
+  cite "143" or treat the ratchet as a floor until then.**
+- **`DashboardAnalysisService:237-256` — unfiltered `student_curricula` join leg.**
+  The `leftJoin('student_curricula', …)` at `:237` and the DISTINCT count at
+  `:252-256` (keyed on `student_curricula.student_id`) carry **no school
+  predicate**; isolation there rides on `class_levels.school_id` (`:217`) and
+  `curricula.school_id` (`:245`) upstream. Probably safe today — the leg is reached
+  only from already-scoped `curriculum_subjects` — but it is the weakest of the
+  raw-SQL sites and the only one not explicitly filtered. *Had no home until
+  2026-07-19.* **Trigger: slice (ii).** When `StudentCurriculum` adopts
+  `BelongsToSchool`, every Eloquent path gains a `school_id` predicate while this
+  raw join does not — re-audit it then, and add the standalone
+  `student_curricula.school_id` index at the same time (`EXPLAIN` confirms a
+  school-only filter is currently a full index scan, `type=index rows=977`).
+
 **Defects confirmed during this pass (both live, neither gated on the migration):**
 
 - **`promotedTo()` loads the wrong entity.** The FK is self-referencing —

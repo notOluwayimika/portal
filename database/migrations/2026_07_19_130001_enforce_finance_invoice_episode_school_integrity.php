@@ -31,8 +31,15 @@ use Illuminate\Support\Facades\DB;
  * armour that makes an invoiced episode undeletable and blocks the academic CASCADE
  * chain (docs/finance-data-ownership.md Part 4); it must not weaken.
  *
- * finance_invoices_id_school_unique already exists (slice 2's integrity migration),
- * so only student_curricula needs a new parent key here.
+ * PARENT KEY. This FK points FROM finance_invoices TO student_curricula, so the new
+ * parent key it needs is student_curricula (id, school_id) — added below.
+ * finance_invoices already carries its own finance_invoices_id_school_unique, but
+ * that one parents ITS children (finance_invoice_lines, finance_payment_allocations)
+ * and is irrelevant here; it was added by the template-freeze migration
+ * 2026_07_19_110001_enforce_finance_child_school_integrity, NOT by slice 2.
+ * finance_invoices itself, and the single-column FK swapped below, both come from
+ * the walking skeleton (2026_07_19_100000) — so this migration depends only on
+ * changes already on staging, never on slice 2's 120000.
  */
 return new class extends Migration
 {

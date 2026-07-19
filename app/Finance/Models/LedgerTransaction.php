@@ -29,7 +29,7 @@ class LedgerTransaction extends Model
 {
     use AddUuid, AppendOnly, BelongsToSchool;
 
-    protected $table = 'fee_ledger_transactions';
+    protected $table = 'finance_ledger_transactions';
 
     protected $guarded = ['id'];
 

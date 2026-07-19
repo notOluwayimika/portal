@@ -10,11 +10,11 @@
 #   violation in logic. Same expiry (the users.school_id drop); when burning down
 #   this baseline, delete that code with the column — there is no fallback logic
 #   to remove there.
-# fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
-#   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
+# finance-table-outside-finance entries expire when Ph2's FinanceModuleStatus
+#   contract (ADR 0030) replaces ModuleClassificationService's direct finance_* reads.
 # halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
 #   uses a block closure, so the rule is pure enforcement (no exceptions).
-fee-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php	foreach (['fee_invoices', 'fee_payments', 'fee_structures'] as $table) {
+finance-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php	foreach (['finance_invoices', 'finance_payments', 'finance_fee_structures'] as $table) {
 school-id-fallback-context	app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
 school-id-fallback-context	app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {
 school-id-fallback-context	app/Support/ActiveSchool.php	return (int) $user->school_id;

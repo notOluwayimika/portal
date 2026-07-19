@@ -24,10 +24,10 @@
  *                               live on legacy models (e.g. Scholarship, Ph2).
  *                               The name pattern excludes the academic
  *                               score/weight decimals.
- *   fee-table-outside-finance   a `fee_*` table-name literal outside app/Finance
- *                               (Constitution 3): fee_ tables are Finance-owned.
- *                               Known temporary exception baselined —
- *                               ModuleClassificationService reads fee_ tables
+ *   finance-table-outside-finance  a `finance_*` table-name literal outside
+ *                               app/Finance (Constitution 3): finance_ tables are
+ *                               Finance-owned. Known temporary exception baselined
+ *                               — ModuleClassificationService reads finance_ tables
  *                               until Ph2's FinanceModuleStatus contract
  *                               (ADR 0030) replaces it.
  *   force-create-finance-tests  `forceCreate(` in Finance tests — bypasses
@@ -105,9 +105,11 @@ foreach ($app as [$rel, $line]) {
         $add('decimal-money-cast', $rel, $line);
     }
 
-    // fee-table-outside-finance — Constitution 3.
-    if (! str_starts_with($rel, 'app/Finance/') && preg_match('/[\'"]fee_\w+[\'"]/', $line)) {
-        $add('fee-table-outside-finance', $rel, $line);
+    // finance-table-outside-finance — Constitution 3. finance_* tables are
+    // Finance-owned; a `finance_<table>` literal anywhere outside app/Finance/ is
+    // a boundary violation. (Renamed from the fee_* marker at the template freeze.)
+    if (! str_starts_with($rel, 'app/Finance/') && preg_match('/[\'"]finance_\w+[\'"]/', $line)) {
+        $add('finance-table-outside-finance', $rel, $line);
     }
 
     // finance-escape-hatches — §17.1 rule 4, method calls inside app/Finance/.
@@ -155,8 +157,8 @@ if ($mode === 'generate') {
 #   violation in logic. Same expiry (the users.school_id drop); when burning down
 #   this baseline, delete that code with the column — there is no fallback logic
 #   to remove there.
-# fee-table-outside-finance entries expire when Ph2's FinanceModuleStatus
-#   contract (ADR 0030) replaces ModuleClassificationService's direct fee_* reads.
+# finance-table-outside-finance entries expire when Ph2's FinanceModuleStatus
+#   contract (ADR 0030) replaces ModuleClassificationService's direct finance_* reads.
 # halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
 #   uses a block closure, so the rule is pure enforcement (no exceptions).
 

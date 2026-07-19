@@ -56,7 +56,7 @@ reverse.
 
 **Reference cases (current repo):**
 - `App\Services\Dashboard\ModuleClassificationService` still reads
-  `fee_invoices`/`fee_payments`/`fee_structures` via `DB::table()` — a
+  `finance_invoices`/`finance_payments`/`finance_fee_structures` via `DB::table()` — a
   baselined, expiring exception (see `boundary-lint-baseline.txt`). It will
   depend on a **`FinanceModuleStatus` contract** (ADR 0030, Ph2) with a null
   implementation while Finance is disabled.

@@ -65,7 +65,8 @@ has no enforcement, that gap is itself a finding (three are flagged below).
 5. **Finance separation.** Academic modules publish business facts only. Finance
    owns all financial behaviour (billing, discounts, waivers, credit notes,
    write-offs, ledger). Academic status values carry **no** financial semantics.
-   *Enforced by:* the `fee_*`-table-outside-Finance boundary lint; status enums
+   *Enforced by:* the `finance-table-outside-finance` boundary lint (keys on the
+   `finance_*` prefix, renamed from `fee_*` at the template freeze); status enums
    with no billing branch (registrar ruling 2026-07: terminal statuses are pure
    academic facts).
 
@@ -105,6 +106,41 @@ has no enforcement, that gap is itself a finding (three are flagged below).
     prunes — inert.)
     *Enforced by:* the blocked-on-prod list in volatile state; no "done" without
     the named evidence.
+
+### Finance module template invariants (frozen 2026-07-19)
+
+Same rule as above — recorded only with a named, verified mechanism; not-yet-
+enforced items are marked GAP, never promoted. Four are enforced, one is enforced
+with a scope limit, one is a GAP pending slice 2.
+
+- **F1. Finance tables use the `finance_*` prefix.** *Enforced by:* the
+  `finance-table-outside-finance` boundary lint (bite-proven: a `finance_` table
+  literal in a non-Finance app file fails CI). ✅ real.
+- **F2. Every Finance aggregate carries `school_id` (uniform, filterable).**
+  *Enforced by:* `SchemaConventionsTest` asserts the column on every `finance_*`
+  table (added this slice), plus the arch rule requiring `BelongsToSchool` on
+  every Finance model. ✅ real (previously would have been aspirational — the
+  arch rule alone asserts the trait, not the column; the schema test closes that).
+- **F3. A child row's `school_id` equals its parent's.** *Enforced by:* the
+  composite FK `(child_fk, school_id) → parent(id, school_id)` at the DB — a
+  divergent child is rejected as a foreign-key violation (bite-proven at the DB,
+  not the model). ✅ real.
+- **F4. Financial movements are append-only; corrections are reversals, never
+  rewrites.** *Enforced by:* the 1.4c DB triggers on the ledger/lines/payments/
+  allocations (UPDATE+DELETE denied; invoice DELETE denied, status may mutate).
+  Confirmed surviving the `fee_→finance_` rename, verified by name. ✅ real.
+- **F5. Finance owns financial truth; Academic never mutates it.** *Enforced by:*
+  the arch rule (`App\Finance\Models` private to `App\Finance` — Academic cannot
+  reference a Finance model) + the `finance-table-outside-finance` lint (Academic
+  cannot touch a `finance_*` table via raw SQL). ✅ real for both ACCESS paths
+  (model-reference and raw-SQL). **Scope limit:** this enforces *no access*, which
+  is stronger than needed but narrower than a semantic "no mutation" proof — a
+  future Finance **Contract** that exposed a mutator would pass these rules and
+  needs its own review. Recorded as access-enforced, not semantically proven.
+- **F6. Invoice total = SUM(lines), computed once and snapshotted.** **GAP —
+  pending slice 2.** The skeleton has single-line invoices, so there is nothing
+  to enforce yet; slice 2 introduces multi-line invoices and must land the
+  derive-and-snapshot rule with a multi-line test. Not recorded as active.
 
 ## Reconciled deviations (Execution Plan — Validation Review §A)
 
@@ -392,9 +428,10 @@ check: [finance/walking-skeleton-conventions.md](finance/walking-skeleton-conven
 the four guards bite-proven (boundary arch rule, ON DELETE RESTRICT, append-only
 ledger triggers, Money decimal lint). Future-phase check: maker-checker (Ph3), GL
 export (§13) and recurring billing are all additive — **no redesign forced, no
-STOP**. Open template decisions flagged for review: `fee_` vs `finance_` table
-prefix; uniform `school_id` on child tables; `@property`/`@mixin` as the module's
-Larastan convention; `/api/finance` vs `/api/v1/finance`; 422 error convention.
+STOP**. **Template FROZEN 2026-07-19** (see the Finance template invariants in the
+Engineering Invariants section): the open decisions were resolved — `finance_*`
+prefix, uniform DB-enforced `school_id`, `@property`/`@mixin`, `/api/v1/finance`;
+the 422-vs-400 error shape is deferred to the app-wide decision.
 Larastan 0, ratchet unchanged (15).
 
 **Boundary lock before the first Finance migration — DONE (2026-07):**

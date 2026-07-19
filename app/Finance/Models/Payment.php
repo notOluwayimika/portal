@@ -31,7 +31,7 @@ class Payment extends Model
 {
     use AddUuid, AppendOnly, BelongsToSchool;
 
-    protected $table = 'fee_payments';
+    protected $table = 'finance_payments';
 
     protected $guarded = ['id'];
 

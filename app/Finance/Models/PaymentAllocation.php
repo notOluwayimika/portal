@@ -26,7 +26,7 @@ class PaymentAllocation extends Model
 {
     use AddUuid, AppendOnly, BelongsToSchool;
 
-    protected $table = 'fee_payment_allocations';
+    protected $table = 'finance_payment_allocations';
 
     protected $guarded = ['id'];
 

@@ -39,7 +39,7 @@ implementing phase starts.
 | 0027 | `SchoolScope` fails closed; escape hatches banned in Modules | 1 | Reserved (shipped per-model flag-gated in 1.3c) |
 | 0028 | Exports School-partitioned, served by DB id | 1 | Reserved (shipped in 1.1a) |
 | 0029 | `Student` owns School membership; `StudentCurriculum` owns enrollment | 1 | Reserved (shipped in 1.3e) |
-| 0030 | Cross-Module reads via contracts; `FinanceModuleStatus` | 2 | Reserved (expiry anchor for the `fee_*` lint baseline) |
+| 0030 | Cross-Module reads via contracts; `FinanceModuleStatus` | 2 | Reserved (expiry anchor for the `finance_*` lint baseline) |
 | 0031 | Observability before money moves | 1→Continuous | Reserved (delivery: pre-Ph6) |
 | 0032 | Audit log delete-protected at DB level | 1→Continuous | Reserved |
 | 0033 | Shared Kernel boundary; Kernel never depends on a Module | 1 | Reserved (enforced by live arch tests since 1.5a) |

@@ -42,9 +42,17 @@ if ($count > $baseline) {
     exit(1);
 }
 
+// Baselines only SHRINK — and that is enforced here, not left to whoever remembers.
+// An improvement that does not lower the floor leaves slack the next regression can
+// hide in; this is exactly how the floor drifted loose before (a stale-high baseline
+// silently tolerated errors below it). Matches ci-authz-lint / ci-boundary-lint /
+// ci-runtime-zero-lint, which all exit 1 when a baselined entry is fixed.
 if ($count < $baseline) {
-    fwrite(STDERR, "\ntsc-ratchet: type errors decreased ({$count} < {$baseline}) — please lower tsc-baseline to {$count}.\n");
+    fwrite(STDERR, "\ntsc-ratchet: type errors DECREASED — {$count} < baseline {$baseline} (good!).\n");
+    fwrite(STDERR, "Lock the improvement in so the floor cannot drift back up: run\n");
+    fwrite(STDERR, "  php bin/ci-tsc-ratchet.php tsc-output.txt generate\nand commit tsc-baseline ({$baseline} -> {$count}).\n");
+    exit(1);
 }
 
-fwrite(STDERR, "tsc-ratchet: OK ({$count} <= baseline {$baseline}).\n");
+fwrite(STDERR, "tsc-ratchet: OK ({$count} == baseline {$baseline}).\n");
 exit(0);

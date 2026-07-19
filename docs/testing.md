@@ -38,14 +38,30 @@ it is not needed to run the suite locally today.
 CI is a real gate even though the suite and type-check are not yet fully clean.
 Two ratchets fail CI only on **regressions**, not on the pre-existing backlog:
 
+**Baselines only shrink, and every ratchet ENFORCES it** — each exits non-zero both
+when the count/set gets *worse* (a regression) and when it gets *better* without the
+baseline being lowered (an improvement left unlocked leaves slack the next regression
+can hide in). Bite-proven 2026-07-19: a planted regression was watched go red at
+every gate, and the shrink-lock was watched fire on a simulated improvement.
+
 - **Tests** — `tests/ratchet-baseline.txt` lists the known-failing tests. CI fails
-  if a test outside the baseline fails. Regenerate after fixing/adding known
-  failures: `./vendor/bin/pest --log-junit junit.xml || true` then
+  if a test outside the baseline fails, **and** if a baselined test starts passing
+  (remove it). Regenerate: `./vendor/bin/pest --log-junit junit.xml || true` then
   `php bin/ci-test-ratchet.php junit.xml generate`.
 - **Types** — `tsc-baseline` holds the current `tsc --noEmit` error count. CI fails
-  if the count increases. After reducing errors, lower it:
+  if the count increases **or decreases** (lower the baseline to lock the win):
   `pnpm run types:check > tsc-output.txt 2>&1 || true` then
   `php bin/ci-tsc-ratchet.php tsc-output.txt generate`.
+
+  ⚠️ **The count is only meaningful with wayfinder output present.**
+  `resources/js/{routes,actions}` are generated from the PHP routes and gitignored,
+  so a fresh checkout has neither and `tsc` then measures a *different, smaller*
+  codebase (missing-module errors replace the real ones). CI runs
+  `php artisan wayfinder:generate` before `types:check` for exactly this reason —
+  and locally you must regenerate before trusting a count, or you will compare a
+  stale tree against the baseline and see a phantom regression. That is precisely
+  what happened once: a "+2 regression" turned out to be stale generated files, and
+  the true count was *below* the floor.
 
 Lint (Pint/Prettier/ESLint) runs in **check mode on changed files only**
 (`bin/lint-changed.sh`): new and modified code must be clean; the legacy drift is

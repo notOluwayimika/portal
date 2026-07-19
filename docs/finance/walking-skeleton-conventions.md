@@ -18,7 +18,10 @@ rationale.
 | **Money** | VO + `_minor`/`_currency` + Resource-only wire (`{amount_minor, currency}`) | `decimal-money-cast` boundary lint; the `Money` VO / ADR 0037 |
 | **Append-only** | ledger/lines/payments/allocations immutable; invoice DELETE-denied (status mutates) | 1.4c DB triggers (survive rename; verified by name) |
 | **Validation error shape** | **DEFERRED** — pending the app-wide 422-vs-400 decision | not yet enforced; controllers currently 422 |
-| **Invoice total = SUM(lines)** | **slice-2 gate** — computed once at creation, snapshotted, never hand-edited | **not yet enforced** (skeleton is single-line); prove with a multi-line test in slice 2 |
+| **Invoice total = SUM(lines)** | computed once at creation, snapshotted, never hand-edited | **ENFORCED (slice 2).** Derived in `GenerateInvoice` from line specs — no wire field or Action parameter accepts a total; plus the `finance_invoices_total_immutable` BEFORE UPDATE trigger denying `total_minor`/`total_currency` edits. Multi-line proof uses 3 distinct non-round amounts. Residual GAP (post-creation line INSERT — tamper-only, not domain-reachable) and its closing mechanism are recorded under F6 in `docs/roadmap.md` |
+| **Invoice lifecycle vocabulary** | `ISSUED` → `VOID` (the signed policy's word; never "cancelled", never a delete) | `InvoiceStatus` enum + a data migration; `Invoice::isVoid()`. The reversing-entry mechanism was already built in the skeleton |
+| **One ACTIVE invoice per enrollment episode** | a *set*-based invariant — at most one non-void invoice per episode, re-billable after a void | STORED generated column `active_enrollment_key` + `UNIQUE(school_id, active_enrollment_key)` (F7 in `docs/roadmap.md`). Generated, not app-maintained |
+| **Void exclusion is a READ-MODEL rule, not a global scope** | voided invoices drop out of reporting totals; they never drop out of existence | `Invoice::scopeExcludingVoid()` applied by `InvoiceReadModel`. A global scope was deliberately **rejected**: it would make route-model binding on `{invoice:uuid}` miss a voided invoice and turn the double-void 422 into a 404, destroying the guard |
 
 Two items above are deliberately NOT active invariants yet: the 422-vs-400 shape
 (deferred to the app-wide decision) and the total=SUM(lines) rule (a slice-2 gate

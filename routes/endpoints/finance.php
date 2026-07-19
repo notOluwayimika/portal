@@ -15,3 +15,11 @@ use Illuminate\Support\Facades\Route;
 Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate']);
 Route::post('/v1/finance/invoices/{invoice:uuid}/cancel', [InvoiceController::class, 'cancel']);
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
+
+/*
+ * Read side. Voided invoices are excluded by default; ?include_void=1 is the
+ * explicit audit view. The exclusion lives in the read model, not a global scope —
+ * a global scope would make the {invoice:uuid} bindings above miss a voided
+ * invoice and turn the double-void 422 into a 404.
+ */
+Route::get('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'forStudent']);

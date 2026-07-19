@@ -14,9 +14,13 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Finance walking skeleton — the thin vertical driven end to end through the API:
- * enrollment → invoice → ledger charge → payment → allocation → cancellation
- * (reversal). Plus the four guards the slice exists to prove: RESTRICT FK, the
- * append-only ledger, Money's wire shape, and (separately, via bin/) the boundary.
+ * enrollment → invoice → ledger charge → payment → allocation → void (reversal).
+ * Plus the four guards the slice exists to prove: RESTRICT FK, the append-only
+ * ledger, Money's wire shape, and (separately, via bin/) the boundary.
+ *
+ * Slice 2 updated the wire (lines[] instead of a single amount) and the
+ * vocabulary (cancelled → void). The assertions are otherwise unchanged, which is
+ * the point: the template's guarantees survived the change.
  */
 uses(RefreshDatabase::class);
 
@@ -46,14 +50,19 @@ function ledgerBalance(int $studentId): int
     return (int) DB::table('finance_ledger_transactions')->where('student_id', $studentId)->sum('amount_minor');
 }
 
+/** One-line invoice payload — the skeleton's shape, expressed as a single line. */
+function oneLine(int $amountMinor, string $description = 'Tuition'): array
+{
+    return [['description' => $description, 'amount_minor' => $amountMinor]];
+}
+
 it('generates an invoice bound to the enrollment, with a Money wire shape and a ledger charge', function () {
     [$school, $admin, $enrollment] = financeSetup();
 
     $response = $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'amount_minor' => 150000,
-            'description' => 'Term 1 tuition',
+            'lines' => oneLine(150000, 'Term 1 tuition'),
         ])
         ->assertCreated();
 
@@ -69,22 +78,22 @@ it('generates an invoice bound to the enrollment, with a Money wire shape and a 
         ->and(ledgerBalance($enrollment->student_id))->toBe(150000); // one charge posted
 });
 
-it('cancels by REVERSAL: invoice row persists, status flips, ledger nets to zero', function () {
+it('voids by REVERSAL: invoice row persists, status flips, ledger nets to zero', function () {
     [$school, $admin, $enrollment] = financeSetup();
 
     $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 150000, 'description' => 'Tuition'])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(150000)])
         ->assertCreated();
     $invoiceUuid = $create->json('id');
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'entered in error'])
         ->assertOk()
-        ->assertJsonPath('status', 'cancelled');
+        ->assertJsonPath('status', 'void');
 
     $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->first();
     expect($invoice)->not->toBeNull()                                  // never deleted
-        ->and($invoice->status)->toBe(InvoiceStatus::Cancelled)
+        ->and($invoice->status)->toBe(InvoiceStatus::Void)
         ->and($invoice->cancelled_at)->not->toBeNull()
         ->and($invoice->cancelled_by_user_id)->toBe($admin->id)
         ->and(ledgerBalance($enrollment->student_id))->toBe(0)        // charge + reversal net to zero
@@ -95,7 +104,7 @@ it('records a payment allocated to the invoice, crediting the ledger to zero', f
     [$school, $admin, $enrollment] = financeSetup();
 
     $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 150000, 'description' => 'Tuition'])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(150000)])
         ->assertCreated();
     $invoiceUuid = $create->json('id');
 
@@ -108,10 +117,10 @@ it('records a payment allocated to the invoice, crediting the ledger to zero', f
         ->and(ledgerBalance($enrollment->student_id))->toBe(0); // charge +150000, payment -150000
 });
 
-it('GUARD — a payment allocation survives invoice cancellation, leaving a credit balance', function () {
+it('GUARD — a payment allocation survives invoice void, leaving a credit balance', function () {
     [$school, $admin, $enrollment] = financeSetup();
     $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 150000, 'description' => 'Tuition'])->assertCreated();
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(150000)])->assertCreated();
     $invoiceUuid = $create->json('id');
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'payer_name' => 'Mr Obi'])->assertCreated();
@@ -124,10 +133,10 @@ it('GUARD — a payment allocation survives invoice cancellation, leaving a cred
         ->and(ledgerBalance($enrollment->student_id))->toBe(-150000);
 });
 
-it('GUARD — cancelling an already-cancelled invoice is rejected', function () {
+it('GUARD — voiding an already-voided invoice is rejected', function () {
     [$school, $admin, $enrollment] = financeSetup();
     $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 5000, 'description' => 'x'])->assertCreated();
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(5000, 'x')])->assertCreated();
     $invoiceUuid = $create->json('id');
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'a'])->assertOk();
@@ -140,7 +149,7 @@ it('GUARD — cancelling an already-cancelled invoice is rejected', function () 
 it('GUARD — ON DELETE RESTRICT: once an invoice references it, the enrollment/curriculum cannot be cascaded away', function () {
     [$school, $admin, $enrollment] = financeSetup();
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 5000, 'description' => 'x'])->assertCreated();
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(5000, 'x')])->assertCreated();
 
     // curricula ← student_curricula is CASCADE; finance_invoices ← student_curricula is
     // RESTRICT — so deleting the curriculum fails the whole statement at the DB.
@@ -155,7 +164,7 @@ it('GUARD — ON DELETE RESTRICT: once an invoice references it, the enrollment/
 it('GUARD — the subledger is append-only: raw UPDATE and DELETE are denied at the DB', function () {
     [$school, $admin, $enrollment] = financeSetup();
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'amount_minor' => 5000, 'description' => 'x'])->assertCreated();
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(5000, 'x')])->assertCreated();
 
     $rowId = DB::table('finance_ledger_transactions')->value('id');
 

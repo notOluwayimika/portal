@@ -28,8 +28,8 @@ final class RecordPayment
             throw new BusinessRuleException('A payment amount must be positive.');
         }
 
-        if ($invoice->isCancelled()) {
-            throw new BusinessRuleException('Cannot record a payment against a cancelled invoice.');
+        if ($invoice->isVoid()) {
+            throw new BusinessRuleException('Cannot record a payment against a void invoice.');
         }
 
         return DB::transaction(function () use ($invoice, $amount, $payerName, $actor) {

@@ -30,8 +30,10 @@ Per-School prefix, configurable with defaults:
 |---|---|
 | Secondary | `BSS-` |
 | Primary | `BSP-` |
-| Abuja | `BSA-` |
-| Port Harcourt | `BSPH-` |
+| IFY | `BSI-LAG-` |
+
+(These are configurable *defaults* for a pending feature — the authoritative list
+is set per-School when the config lands, §7.)
 
 **Enforcement — split:**
 - Gap-tolerant uniqueness: **ENFORCED.** The Shared-Kernel `App\Support\Sequences`

@@ -18,6 +18,19 @@
 #   * plus bin/quality-clean-db: throwaway DB, migrate-from-zero, data planted, and
 #     rollback/re-up reversibility — the dimensions the per-push gate skips for speed
 #
+# KNOWN BLIND SPOT — release scope alone does NOT cover a reconciliation merge.
+# Lint is relative to a base, so the base decides what is invisible. Basing on
+# origin/main lints what STAGING adds; it is structurally blind to what MAIN carries
+# in, because those files are unchanged relative to origin/main and never enter its
+# diff. On the first staging->main promotion this was not academic: release scope
+# caught 6 drifted PHP files and missed 17 ESLint + 1 Pint error that the ordinary
+# per-push gate (base = merge-base with staging) caught by blocking the branch.
+# Land the reconciliation through a normal PR first so the per-push gate lints main's
+# side, THEN run this. It compounds with the fact that main has never been gated at
+# all — no tsc-baseline, no bin/quality, no hook, Actions never ran — so everything it
+# carries arrives unlinted and untyped for the first time. See docs/testing.md
+# "Merges need BOTH lint scopes".
+#
 # On success it stamps .quality-promote-ok with the exact verified SHA. The pre-push
 # hook refuses a push to `main` unless that stamp matches the commit being pushed —
 # so the gate is enforced by a check, not by remembering to run it.

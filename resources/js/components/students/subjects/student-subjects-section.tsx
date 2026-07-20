@@ -20,11 +20,14 @@ import { SubjectListGroup } from './subject-list-group';
 interface StudentSubjectsSectionProps {
     student: Student;
     studentCurriculum?: StudentCurriculum | null;
+    // When false, subjects are read-only (no add/drop/restore). Defaults to true.
+    canManage?: boolean;
 }
 
 export function StudentSubjectsSection({
     student,
     studentCurriculum = null,
+    canManage = true,
 }: StudentSubjectsSectionProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -67,6 +70,7 @@ export function StudentSubjectsSection({
     }
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchSubjects();
     }, [enrollmentId]);
 
@@ -110,7 +114,7 @@ export function StudentSubjectsSection({
                         )}
                     </CardTitle>
                     <div className="flex items-center gap-2">
-                        {!isEnded && (
+                        {canManage && !isEnded && (
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -172,7 +176,11 @@ export function StudentSubjectsSection({
                                     title="Optional — Active"
                                     subjects={grouped.optional_active}
                                     isEnrollmentEnded={isEnded}
-                                    onDrop={(s) => setDropSubject(s)}
+                                    onDrop={
+                                        canManage
+                                            ? (s) => setDropSubject(s)
+                                            : undefined
+                                    }
                                 />
 
                                 {droppedCount > 0 && (
@@ -213,10 +221,13 @@ export function StudentSubjectsSection({
                                                             isEnrollmentEnded={
                                                                 isEnded
                                                             }
-                                                            onRestore={(s) =>
-                                                                setRestoreSubject(
-                                                                    s,
-                                                                )
+                                                            onRestore={
+                                                                canManage
+                                                                    ? (s) =>
+                                                                          setRestoreSubject(
+                                                                              s,
+                                                                          )
+                                                                    : undefined
                                                             }
                                                         />
                                                     ),

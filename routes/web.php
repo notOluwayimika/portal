@@ -130,36 +130,11 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
         ]);
     })->name('setup.curricula.show');
 
-    // Students
-    Route::get('students', function () {
-        return Inertia::render('admin/students/index', [
-            'student_statuses' => StudentStatusEnum::options(),
-        ]);
-    })->name('students.index');
-
+    // Students (write-oriented; index + profile view live in the admin|principal
+    // group below so principals get read-only access).
     Route::get('students/bulk-update', function () {
         return Inertia::render('admin/students/bulk-update');
     })->name('students.bulk-update');
-
-    Route::get('students/{student:uuid}', function (Student $student) {
-        $student->load([
-            'photoFile',
-            'currentCurriculum.curriculum.classLevelArm.classLevel',
-            'currentCurriculum.curriculum.classLevelArm.arm',
-            'currentCurriculum.curriculum.classLevelArm.stream',
-            'currentCurriculum.curriculum.term',
-            'guardians.user',
-            'guardians.photoFile',
-            'studentCurricula.curriculum.classLevelArm.classLevel',
-            'studentCurricula.curriculum.classLevelArm.arm',
-            'studentCurricula.curriculum.term',
-        ]);
-
-        return Inertia::render('admin/students/show', [
-            'student' => new StudentResource($student),
-            'student_statuses' => StudentStatusEnum::options(),
-        ]);
-    })->name('students.show');
 
     // Teachers
     Route::get('teachers', function () {
@@ -222,6 +197,36 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
     Route::post('students', [StudentController::class, 'store']);
     Route::put('students/{student:uuid}', [StudentController::class, 'update']);
 
+});
+
+// Read-only student index + profile. Principals (oversight role) share this with
+// admins; write controls are hidden in the UI and their API routes exclude principal.
+Route::middleware(['auth', 'tenant', 'role:admin|principal'])->group(function () {
+    Route::get('students', function () {
+        return Inertia::render('admin/students/index', [
+            'student_statuses' => StudentStatusEnum::options(),
+        ]);
+    })->name('students.index');
+
+    Route::get('students/{student:uuid}', function (Student $student) {
+        $student->load([
+            'photoFile',
+            'currentCurriculum.curriculum.classLevelArm.classLevel',
+            'currentCurriculum.curriculum.classLevelArm.arm',
+            'currentCurriculum.curriculum.classLevelArm.stream',
+            'currentCurriculum.curriculum.term',
+            'guardians.user',
+            'guardians.photoFile',
+            'studentCurricula.curriculum.classLevelArm.classLevel',
+            'studentCurricula.curriculum.classLevelArm.arm',
+            'studentCurricula.curriculum.term',
+        ]);
+
+        return Inertia::render('admin/students/show', [
+            'student' => new StudentResource($student),
+            'student_statuses' => StudentStatusEnum::options(),
+        ]);
+    })->name('students.show');
 });
 
 Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
@@ -300,15 +305,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
         ]);
     })->name('setup.curriculumSubjects.show');
 
-    // student curricula
-    Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
-        $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo', 'studentCurricula.curriculum.term']);
-
-        return Inertia::render('admin/student-curricula/index', [
-            'student' => new StudentResource($student),
-        ]);
-    })->name('setup.studentCurricula.index');
-
+    // student curricula subject management (drill-down; admin/head/teacher/guardian only)
     Route::get('setup/student-curricula/{studentCurriculum:uuid}/subjects', function (StudentCurriculum $studentCurriculum) {
         $studentCurriculum->load(['student']);
 
@@ -318,6 +315,17 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
         ]);
     })->name('setup.studentCurricula.index');
 
+});
+
+// Student curricula (academic records) index — read-only view shared with principals.
+Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {
+    Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
+        $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo', 'studentCurricula.curriculum.term']);
+
+        return Inertia::render('admin/student-curricula/index', [
+            'student' => new StudentResource($student),
+        ]);
+    })->name('setup.studentCurricula.index');
 });
 
 Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {

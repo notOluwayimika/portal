@@ -2,6 +2,7 @@
 
 namespace App\Http\Responses;
 
+use App\Models\User;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\LoginResponse;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
@@ -17,14 +18,13 @@ class SchoolAwareLoginResponse implements LoginResponse, TwoFactorLoginResponse
 {
     public function toResponse($request)
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = auth()->user();
 
         setPermissionsTeamId(null);
 
         if ($user->isSuperAdmin()) {
             $request->session()->forget('school_id');
-            $request->session()->save();
 
             return redirect()->intended('/super-admin');
         }
@@ -43,14 +43,12 @@ class SchoolAwareLoginResponse implements LoginResponse, TwoFactorLoginResponse
 
         if ($schools->count() === 1) {
             $request->session()->put('school_id', $schools->first()->id);
-            $request->session()->save();
 
             return redirect()->intended(config('fortify.home', '/dashboard'));
         }
 
         // Multiple schools: let the user pick which one to enter.
         $request->session()->forget('school_id');
-        $request->session()->save();
 
         return redirect()->route('school.select');
     }

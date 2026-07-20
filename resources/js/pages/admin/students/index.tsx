@@ -1,6 +1,19 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, RefreshCw, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
+import {
+    Download,
+    Edit,
+    Eye,
+    FileX,
+    GraduationCap,
+    RefreshCw,
+    Save,
+    Search,
+    Trash2,
+    Users,
+    UserPlus,
+    X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
@@ -15,6 +28,7 @@ import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
+import type { Auth } from '@/types';
 import type { Student } from '@/types/models';
 
 interface StatusOption {
@@ -28,6 +42,10 @@ interface StudentListProps {
 
 export default function StudentList({ student_statuses }: StudentListProps) {
     const getInitials = useInitials();
+    const { auth } = usePage<{ auth: Auth }>().props;
+    // Write controls (import/bulk/export/add + row edit/delete/guardians + status
+    // change) are admin-only. Principals get a read-only view of this page.
+    const isAdmin = auth.roles.includes('admin');
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -44,11 +62,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
     const [studentFormProcessing, setStudentFormProcessing] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    const [guardiansPanelStudent, setGuardiansPanelStudent] = useState<Student | null>(null);
+    const [guardiansPanelStudent, setGuardiansPanelStudent] =
+        useState<Student | null>(null);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
-
-
-
 
     const fetchStudents = async () => {
         try {
@@ -118,7 +134,11 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                 responseType: 'blob',
                 params: { search },
             });
-            const url = URL.createObjectURL(new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+            const url = URL.createObjectURL(
+                new Blob([response.data], {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                }),
+            );
             const link = document.createElement('a');
             link.href = url;
             link.download = `students-${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -166,9 +186,8 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         <>
             <Head title="Students" />
 
-            <div className="min-h-screen bg-[#f5f7fb] py-5 px-4 sm:px-6 lg:px-8 pb-24 dark:bg-background">
+            <div className="min-h-screen bg-[#f5f7fb] px-4 py-5 pb-24 sm:px-6 lg:px-8 dark:bg-background">
                 <div className="mx-auto max-w-7xl space-y-5">
-
                     {/* ── Hero Card ─────────────────────────────────────────────── */}
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -186,45 +205,47 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                 </div>
                             </div>
 
-                            <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleStudentImport}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <FileX className="mr-1.5 h-4 w-4" />
-                                    Import
-                                </Button>
-                                <Link href="/students/bulk-update">
+                            {isAdmin && (
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
                                     <Button
                                         size="sm"
                                         variant="outline"
+                                        onClick={handleStudentImport}
                                         className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                     >
-                                        <RefreshCw className="mr-1.5 h-4 w-4" />
-                                        Bulk Update
+                                        <FileX className="mr-1.5 h-4 w-4" />
+                                        Import
                                     </Button>
-                                </Link>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleExport}
-                                    disabled={exporting}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <Download className="mr-1.5 h-4 w-4" />
-                                    {exporting ? 'Exporting…' : 'Export'}
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={handleAdd}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                >
-                                    <UserPlus className="mr-1.5 h-4 w-4" />
-                                    Add Student
-                                </Button>
-                            </div>
+                                    <Link href="/students/bulk-update">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                        >
+                                            <RefreshCw className="mr-1.5 h-4 w-4" />
+                                            Bulk Update
+                                        </Button>
+                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={handleExport}
+                                        disabled={exporting}
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Download className="mr-1.5 h-4 w-4" />
+                                        {exporting ? 'Exporting…' : 'Export'}
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={handleAdd}
+                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    >
+                                        <UserPlus className="mr-1.5 h-4 w-4" />
+                                        Add Student
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -239,14 +260,22 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                         placeholder="Search by name or admission number…"
                                         className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
                                         value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
+                                        onChange={(e) =>
+                                            setSearch(e.target.value)
+                                        }
                                     />
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
                                     <span className="hidden text-xs font-medium text-slate-500 sm:inline">
-                                        Showing <span className="font-bold text-slate-700 dark:text-slate-200">{students.length}</span> of{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">{pagination.total}</span>
+                                        Showing{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {students.length}
+                                        </span>{' '}
+                                        of{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {pagination.total}
+                                        </span>
                                     </span>
                                     {search && (
                                         <Button
@@ -265,7 +294,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                         </div>
 
                         {/* Table */}
-                        <div className="overflow-x-auto custom-scrollbar">
+                        <div className="custom-scrollbar overflow-x-auto">
                             <table className="w-full text-xs">
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
@@ -289,13 +318,19 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={5} className="py-10 text-center">
+                                            <td
+                                                colSpan={5}
+                                                className="py-10 text-center"
+                                            >
                                                 <Spinner className="mx-auto" />
                                             </td>
                                         </tr>
                                     ) : (students?.length ?? 0) === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="py-10 text-center text-xs text-muted-foreground">
+                                            <td
+                                                colSpan={5}
+                                                className="py-10 text-center text-xs text-muted-foreground"
+                                            >
                                                 No students found.
                                             </td>
                                         </tr>
@@ -309,50 +344,89 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                     <div className="flex items-center gap-2.5">
                                                         <Avatar className="size-7 shrink-0 overflow-hidden rounded-full">
                                                             <AvatarImage
-                                                                src={student?.photo}
-                                                                alt={student?.first_name + ' ' + student?.last_name}
+                                                                src={
+                                                                    student?.photo
+                                                                }
+                                                                alt={
+                                                                    student?.first_name +
+                                                                    ' ' +
+                                                                    student?.last_name
+                                                                }
                                                             />
                                                             <AvatarFallback className="rounded-full bg-neutral-200 text-[10px] text-black dark:bg-neutral-700 dark:text-white">
-                                                                {getInitials(student?.first_name + ' ' + student?.last_name)}
+                                                                {getInitials(
+                                                                    student?.first_name +
+                                                                        ' ' +
+                                                                        student?.last_name,
+                                                                )}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                         <Link
                                                             href={`/students/${student.id}`}
-                                                            className="hover:text-primary hover:underline transition-colors"
+                                                            className="transition-colors hover:text-primary hover:underline"
                                                         >
                                                             {student.full_name}
                                                         </Link>
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2.5 text-muted-foreground">
-                                                    {student.admission_number || '—'}
+                                                    {student.admission_number ||
+                                                        '—'}
                                                 </td>
                                                 <td className="px-3 py-2.5">
                                                     <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
                                                         <GraduationCap className="h-3.5 w-3.5 opacity-60" />
-                                                        {student.class_details?.full_class || 'N/A'}
+                                                        {student.class_details
+                                                            ?.full_class ||
+                                                            'N/A'}
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2.5">
-                                                    <Select
-                                                        value={student.status}
-                                                        onChange={(val) =>
-                                                            val && handleStatusChange(student, String(val))
-                                                        }
-                                                        options={
-                                                            student_statuses?.map((s) => ({
-                                                                label: s.name,
-                                                                value: s.value,
-                                                            })) || []
-                                                        }
-                                                        buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${
-                                                            student.status === 'active'
-                                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                : student.status === 'withdrawn'
-                                                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                                        }`}
-                                                    />
+                                                    {isAdmin ? (
+                                                        <Select
+                                                            value={
+                                                                student.status
+                                                            }
+                                                            onChange={(val) =>
+                                                                val &&
+                                                                handleStatusChange(
+                                                                    student,
+                                                                    String(val),
+                                                                )
+                                                            }
+                                                            options={
+                                                                student_statuses?.map(
+                                                                    (s) => ({
+                                                                        label: s.name,
+                                                                        value: s.value,
+                                                                    }),
+                                                                ) || []
+                                                            }
+                                                            buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${
+                                                                student.status ===
+                                                                'active'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : student.status ===
+                                                                        'withdrawn'
+                                                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                            }`}
+                                                        />
+                                                    ) : (
+                                                        <span
+                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${
+                                                                student.status ===
+                                                                'active'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : student.status ===
+                                                                        'withdrawn'
+                                                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                            }`}
+                                                        >
+                                                            {student.status}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2.5 text-right">
                                                     <div className="flex justify-end gap-1">
@@ -360,27 +434,56 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-7 w-7"
-                                                            title="Manage guardians"
-                                                            onClick={() => setGuardiansPanelStudent(student)}
+                                                            title="View profile"
+                                                            asChild
                                                         >
-                                                            <Users className="h-3.5 w-3.5" />
+                                                            <Link
+                                                                href={`/students/${student.id}`}
+                                                            >
+                                                                <Eye className="h-3.5 w-3.5" />
+                                                            </Link>
                                                         </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-7 w-7"
-                                                            onClick={() => handleEdit(student)}
-                                                        >
-                                                            <Edit className="h-3.5 w-3.5" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                                            onClick={() => handleDelete(student)}
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </Button>
+                                                        {isAdmin && (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7"
+                                                                    title="Manage guardians"
+                                                                    onClick={() =>
+                                                                        setGuardiansPanelStudent(
+                                                                            student,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Users className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7"
+                                                                    onClick={() =>
+                                                                        handleEdit(
+                                                                            student,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Edit className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                                                    onClick={() =>
+                                                                        handleDelete(
+                                                                            student,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -408,12 +511,27 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                 size="lg"
                 footer={
                     <div className="flex justify-end gap-3">
-                        <Button type="button" variant="outline" onClick={() => setIsStudentModalOpen(false)} disabled={studentFormProcessing}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsStudentModalOpen(false)}
+                            disabled={studentFormProcessing}
+                        >
                             Cancel
                         </Button>
-                        <Button type="submit" form="student-form" disabled={studentFormProcessing}>
-                            {studentFormProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            {currentStudent ? 'Update Student' : 'Create Student'}
+                        <Button
+                            type="submit"
+                            form="student-form"
+                            disabled={studentFormProcessing}
+                        >
+                            {studentFormProcessing ? (
+                                <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                            )}
+                            {currentStudent
+                                ? 'Update Student'
+                                : 'Create Student'}
                         </Button>
                     </div>
                 }
@@ -445,8 +563,6 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
-
-
         </>
     );
 }

@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\Authz;
-
 use App\Http\Requests\RejectSubjectResultRequest;
 use App\Http\Requests\UpsertScoreRequest;
 use App\Http\Resources\CurriculumSubjectResource;
@@ -21,6 +19,7 @@ use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
 use App\Models\TeacherCurriculumSubject;
 use App\Support\ActiveSchool;
+use App\Support\Authz;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;

@@ -131,6 +131,11 @@ const principalNavGroups: NavGroup[] = [
         label: 'Principal',
         items: [
             {
+                title: 'Students',
+                href: '/students',
+                icon: GraduationCap,
+            },
+            {
                 title: 'Results per Class',
                 href: '/reports/results-per-class',
                 icon: ClipboardList,

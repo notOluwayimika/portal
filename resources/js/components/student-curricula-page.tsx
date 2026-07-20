@@ -1,12 +1,12 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { FileText } from 'lucide-react';
 import type { SetStateAction } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
 import { handleBack } from '@/helpers';
 import type { Curriculum, Student, StudentCurriculum } from '@/types/models';
-import { toast } from 'react-toastify';
 import { Button } from './ui/button';
-import { FileText } from 'lucide-react';
 
 // ---------- Types ----------
 
@@ -98,25 +98,27 @@ function CurriculumRow({
                     >
                         {sc.status}
                     </span>
-                    {!roles.includes('guardian') && (
-                        <select
-                            value={sc.status}
-                            onChange={(e) =>
-                                handleStatusChange(
-                                    sc,
-                                    e.target.value as StudentCurriculumStatus,
-                                )
-                            }
-                            disabled={busy}
-                            className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
-                        >
-                            {STATUS_OPTIONS.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                    {o.label}
-                                </option>
-                            ))}
-                        </select>
-                    )}
+                    {!roles.includes('guardian') &&
+                        !roles.includes('principal') && (
+                            <select
+                                value={sc.status}
+                                onChange={(e) =>
+                                    handleStatusChange(
+                                        sc,
+                                        e.target
+                                            .value as StudentCurriculumStatus,
+                                    )
+                                }
+                                disabled={busy}
+                                className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                            >
+                                {STATUS_OPTIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                        {o.label}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                 </div>
             </Td>
             {/* <Td>

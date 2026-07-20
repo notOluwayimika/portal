@@ -20,4 +20,17 @@ return new class extends Migration
             $table->timestamps();
         });
     }
+
+    /**
+     * Added by the Phase-1 four-path migration audit.
+     *
+     * This migration had NO down() at all, so rolling it back was a silent no-op:
+     * the table survived, `migrate` then failed with 1050 "Table 'activity_log'
+     * already exists", and the whole re-upgrade path was blocked. A missing down()
+     * is invisible to migrate:fresh, which never rolls back.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('activity_log');
+    }
 };

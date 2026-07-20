@@ -121,6 +121,11 @@ return new class extends Migration {
         }
 
         Schema::table('curricula', function (Blueprint $table) {
+            // Drop the constraint before the column it references — MySQL 1828
+            // ("Cannot drop column 'term_id': needed in a foreign key constraint")
+            // otherwise aborts this down() entirely. Found by the Phase-1 four-path
+            // migration audit; migrate:fresh never calls down(), so this had never run.
+            $table->dropForeign(['term_id']);
             $table->dropColumn('term_id');
             $table->unique(['school_id', 'academic_session_id', 'class_level_arm_id', 'term', 'exam_type_id'], 'curricula_unique_key');
         });

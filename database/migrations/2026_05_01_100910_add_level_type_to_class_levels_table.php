@@ -23,7 +23,7 @@ return new class extends Migration
                 ->after('arm_id')
                 ->constrained('streams')
                 ->nullOnDelete();
- 
+
             // Prevent duplicate arm+stream combos within the same class level
             $table->unique(['class_level_id', 'arm_id', 'stream_id'], 'unique_class_level_arm_stream');
         });
@@ -46,7 +46,7 @@ return new class extends Migration
             $table->enum('status', ['active', 'promoted', 'repeated', 'withdrawn'])
                 ->default('active')
                 ->after('curriculum_id');
- 
+
             // Self-referencing FK — points to the next student_curricula row after promotion.
             // NULL means this is the student's current (active) row.
             $table->foreignId('promoted_to_id')
@@ -54,7 +54,7 @@ return new class extends Migration
                 ->after('status')
                 ->constrained('student_curricula')
                 ->nullOnDelete();
- 
+
             // Fast lookup: "what is this student's current class?"
             $table->index(['student_id', 'status'], 'idx_student_curricula_student_status');
         });

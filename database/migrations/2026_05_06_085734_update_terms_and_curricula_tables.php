@@ -2,10 +2,12 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     /**
      * Run the migrations.
      */
@@ -13,7 +15,7 @@ return new class extends Migration {
     {
         // 1. Update terms table
         Schema::table('terms', function (Blueprint $table) {
-            if (!Schema::hasColumn('terms', 'slug')) {
+            if (! Schema::hasColumn('terms', 'slug')) {
                 $table->string('slug')->after('name');
                 $table->unique(['academic_session_id', 'slug']);
             }
@@ -21,11 +23,11 @@ return new class extends Migration {
 
         // 2. Seed terms (we need them for data migration)
         // Note: Running seeder here to ensure terms exist before migrating curricula data
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--class' => 'TermSeeder', '--force' => true]);
+        Artisan::call('db:seed', ['--class' => 'TermSeeder', '--force' => true]);
 
         // 3. Update curricula table
         Schema::table('curricula', function (Blueprint $table) {
-            if (!Schema::hasColumn('curricula', 'term_id')) {
+            if (! Schema::hasColumn('curricula', 'term_id')) {
                 $table->foreignId('term_id')->nullable()->after('exam_type_id')->constrained()->cascadeOnDelete();
             }
         });
@@ -52,7 +54,7 @@ return new class extends Migration {
                 Schema::table('curricula', function (Blueprint $table) {
                     $table->dropUnique('curricula_unique_key');
                 });
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 // Ignore if unique key already dropped
             }
 
@@ -65,12 +67,12 @@ return new class extends Migration {
                 Schema::table('curricula', function (Blueprint $table) {
                     $table->dropForeign('fk_curricula_academic_session_id');
                 });
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 try {
                     Schema::table('curricula', function (Blueprint $table) {
                         $table->dropForeign(['academic_session_id']);
                     });
-                } catch (\Exception $e2) {
+                } catch (Exception $e2) {
                     // Already dropped or different name
                 }
             }
@@ -82,7 +84,7 @@ return new class extends Migration {
                     $table->dropIndex('curricula_school_id_academic_session_id_status_index');
                     $table->index(['school_id', 'status']);
                 });
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 // Index already dropped or renamed
             }
 
@@ -115,7 +117,7 @@ return new class extends Migration {
                     ->where('id', $curriculum->id)
                     ->update([
                         'term' => $term->order,
-                        'academic_session_id' => $term->academic_session_id
+                        'academic_session_id' => $term->academic_session_id,
                     ]);
             }
         }

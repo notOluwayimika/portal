@@ -1,10 +1,9 @@
 <?php
 
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\Log;
 
 return new class extends Migration
 {
@@ -22,7 +21,7 @@ return new class extends Migration
 
         // 0. Roles Table
         if (Schema::hasTable($tableNames['roles'])) {
-            if (!Schema::hasColumn($tableNames['roles'], $teamKey)) {
+            if (! Schema::hasColumn($tableNames['roles'], $teamKey)) {
                 Schema::table($tableNames['roles'], function (Blueprint $table) use ($teamKey) {
                     $table->unsignedBigInteger($teamKey)->nullable()->after('id');
                     $table->index($teamKey, 'roles_team_foreign_key_index');
@@ -32,11 +31,13 @@ return new class extends Migration
                     Schema::table($tableNames['roles'], function (Blueprint $table) {
                         $table->dropUnique('roles_name_guard_name_unique');
                     });
-                } catch (\Exception $e) {}
+                } catch (Exception $e) {
+                }
 
                 try {
                     DB::statement("ALTER TABLE `{$tableNames['roles']}` ADD UNIQUE INDEX `roles_team_name_guard_unique` ((IFNULL(`{$teamKey}`, 0)), `name`, `guard_name`)");
-                } catch (\Exception $e) {}
+                } catch (Exception $e) {
+                }
             }
         }
 
@@ -46,15 +47,17 @@ return new class extends Migration
                 Schema::table($tableNames['model_has_roles'], function (Blueprint $table) {
                     $table->dropPrimary();
                 });
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
 
             try {
                 Schema::table($tableNames['model_has_roles'], function (Blueprint $table) {
                     $table->dropUnique('model_has_roles_team_unique');
                 });
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
 
-            if (!Schema::hasColumn($tableNames['model_has_roles'], $teamKey)) {
+            if (! Schema::hasColumn($tableNames['model_has_roles'], $teamKey)) {
                 Schema::table($tableNames['model_has_roles'], function (Blueprint $table) use ($teamKey, $pivotRole) {
                     $table->unsignedBigInteger($teamKey)->nullable()->after($pivotRole);
                 });
@@ -62,7 +65,8 @@ return new class extends Migration
 
             try {
                 DB::statement("ALTER TABLE `{$tableNames['model_has_roles']}` ADD UNIQUE INDEX `model_has_roles_team_unique` ((IFNULL(`{$teamKey}`, 0)), `{$pivotRole}`, `{$modelKey}`, `model_type`)");
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
         }
 
         // 2. Permissions Pivot Table
@@ -71,15 +75,17 @@ return new class extends Migration
                 Schema::table($tableNames['model_has_permissions'], function (Blueprint $table) {
                     $table->dropPrimary();
                 });
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
 
             try {
                 Schema::table($tableNames['model_has_permissions'], function (Blueprint $table) {
                     $table->dropUnique('model_has_permissions_team_unique');
                 });
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
 
-            if (!Schema::hasColumn($tableNames['model_has_permissions'], $teamKey)) {
+            if (! Schema::hasColumn($tableNames['model_has_permissions'], $teamKey)) {
                 Schema::table($tableNames['model_has_permissions'], function (Blueprint $table) use ($teamKey, $pivotPermission) {
                     $table->unsignedBigInteger($teamKey)->nullable()->after($pivotPermission);
                 });
@@ -87,7 +93,8 @@ return new class extends Migration
 
             try {
                 DB::statement("ALTER TABLE `{$tableNames['model_has_permissions']}` ADD UNIQUE INDEX `model_has_permissions_team_unique` ((IFNULL(`{$teamKey}`, 0)), `{$pivotPermission}`, `{$modelKey}`, `model_type`)");
-            } catch (\Exception $e) {}
+            } catch (Exception $e) {
+            }
         }
     }
 

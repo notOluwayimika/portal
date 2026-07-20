@@ -92,6 +92,47 @@ orphaned index with it. Green here means "the last N migrations are reversible
 against data", not "all of them are"; raise `STEPS` when a release adds more than
 three migrations.
 
+### Gate audit — every gate bite-proven (2026-07-20)
+
+Three gates had already been caught reporting protection they were not providing
+(Actions that never ran; the tsc baseline calibrated against a mis-generated tree; the
+authz-lint's warn-only shrink plus a dedup bypass). Three of one failure mode is a
+class, so every gate in the floor was audited **empirically** — planting the regression
+it exists to catch and watching the exit code. Reading a script and concluding "it
+looks like it exits 1" is not the audit; two of the three defects looked fine and
+`exit 0`'d in practice.
+
+| gate                                | clean | new violation     | stale baseline entry         |
+| ----------------------------------- | ----- | ----------------- | ---------------------------- |
+| lint-changed (Pint/Prettier/ESLint) | 0     | **1**             | n/a (no baseline)            |
+| tsc ratchet                         | 0     | **1** (146 > 145) | **1** (decrease detected)    |
+| authz-lint                          | 0     | **1**             | **1**                        |
+| boundary-lint                       | 0     | **1**             | **1** _(was 0 — fixed)_      |
+| runtime-zero-lint                   | 0     | **1**             | **1** _(was 0 — fixed)_      |
+| identifier-generation-lint          | 0     | **1**             | **1** _(was absent — added)_ |
+| architecture tests                  | 0     | **1**             | n/a                          |
+| Larastan                            | 0     | **1**             | n/a (baseline is per-error)  |
+| test ratchet                        | 0     | **1**             | **1**                        |
+| wayfinder generate                  | 0     | **1** on failure  | n/a                          |
+
+**Three more defective gates were found — the fourth, fifth and sixth of the class.**
+`boundary-lint` and `runtime-zero-lint` printed _"baselined exception(s) removed
+(good)"_ and **exited 0**; `identifier-generation-lint` had no stale-entry handling at
+all and reported _"OK"_ while ignoring one. All three now `exit 1`, bite-proven in both
+directions, with **detection scope unchanged** — the fix is enforcement, never coverage.
+
+Baselines verified at their true counts by regenerating and diffing: boundary 20,
+runtime-zero 12, identifier-generation 0, authz 2, tsc 145, tests 13.
+
+**Two process lessons worth more than the fixes:**
+
+1. A gate can be **wrong in its own docblock**. `ci-boundary-lint` said _"the baseline
+   may only shrink"_ while not enforcing it. Comments are not evidence.
+2. **`git reset --hard` mid-audit destroyed uncommitted fixes**, and every proof taken
+   before it was silently invalidated — the scripts on disk no longer contained what
+   had been proven. It was caught only because the baseline-truth check regenerated a
+   file and saw the _old_ behaviour return. Commit fixes before probing anything else.
+
 ### Accepted permanent residuals
 
 The PHP version matrix (CI matrixed 8.3/8.4/8.5; only your local PHP runs), a true

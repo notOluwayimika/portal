@@ -175,18 +175,26 @@ $baseline = is_file($baselinePath)
 $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
-if ($fixed) {
-    fwrite(STDERR, "\nboundary-lint: ".count($fixed)." baselined exception(s) removed (good) — update boundary-lint-baseline.txt:\n");
-    foreach ($fixed as $f) {
-        fwrite(STDERR, '  - '.str_replace("\t", '  ', $f)."\n");
-    }
-}
 
 if ($new) {
     fwrite(STDERR, "\nboundary-lint: ".count($new)." NEW boundary violation(s):\n");
     foreach ($new as $n) {
         fwrite(STDERR, '  '."\u{2717}".' '.str_replace("\t", '  ', $n)."\n");
     }
+    exit(1);
+}
+
+// SHRINK-LOCK. This block previously only WARNED and still exited 0, so the baseline
+// could sit above the true count indefinitely — slack a future regression can hide in.
+// Audited and fixed 2026-07-20, after the identical defect was found in ci-authz-lint:
+// a stale baseline entry was planted, the lint printed "removed (good)" and exited 0.
+// It now FAILS, matching the tests, tsc and authz ratchets.
+if ($fixed) {
+    fwrite(STDERR, "\nboundary-lint: ".count($fixed)." baselined exception(s) removed (good!) — lock it in by removing them from boundary-lint-baseline.txt:\n");
+    foreach ($fixed as $f) {
+        fwrite(STDERR, '  - '.str_replace("\t", '  ', $f)."\n");
+    }
+    fwrite(STDERR, "  regenerate: php bin/ci-boundary-lint.php generate\n");
     exit(1);
 }
 

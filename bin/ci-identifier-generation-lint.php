@@ -69,12 +69,25 @@ $baseline = is_file($baselinePath)
     : [];
 
 $new = array_values(array_diff($found, $baseline));
+$fixed = array_values(array_diff($baseline, $found));
 
 if ($new) {
     fwrite(STDERR, "\nidentifier-generation-lint: ".count($new)." write path(s) bypass identifier generation on Student/Teacher (raw/quiet create → NULL identifier). Create through the model (Model::create / save), never a raw insert:\n");
     foreach ($new as $n) {
         fwrite(STDERR, '  '."\u{2717}".' '.str_replace("\t", '  ', $n)."\n");
     }
+    exit(1);
+}
+
+// SHRINK-LOCK. This lint had NO stale-entry handling at all: a baselined bypass later
+// fixed left its entry in place forever and the lint still reported "OK". Audited and
+// fixed 2026-07-20 — a planted stale entry was silently ignored and it exited 0.
+if ($fixed) {
+    fwrite(STDERR, "\nidentifier-generation-lint: ".count($fixed)." baselined bypass(es) removed (good!) — lock it in by removing them from identifier-generation-baseline.txt:\n");
+    foreach ($fixed as $f) {
+        fwrite(STDERR, '  - '.str_replace("\t", '  ', $f)."\n");
+    }
+    fwrite(STDERR, "  regenerate: php bin/ci-identifier-generation-lint.php generate\n");
     exit(1);
 }
 

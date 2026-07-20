@@ -108,18 +108,26 @@ $baseline = is_file($baselinePath)
 $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
-if ($fixed) {
-    fwrite(STDERR, "\nruntime-zero-lint: ".count($fixed)." baselined legacy-access reference(s) removed (good) — update runtime-zero-baseline.txt:\n");
-    foreach ($fixed as $f) {
-        fwrite(STDERR, '  - '.str_replace("\t", '  ', $f)."\n");
-    }
-}
 
 if ($new) {
     fwrite(STDERR, "\nruntime-zero-lint: ".count($new)." NEW reference(s) to a legacy access source (users.school_id / school_user). Access derives from model_has_roles only:\n");
     foreach ($new as $n) {
         fwrite(STDERR, '  '."\u{2717}".' '.str_replace("\t", '  ', $n)."\n");
     }
+    exit(1);
+}
+
+// SHRINK-LOCK. This block previously only WARNED and still exited 0, so the baseline
+// could sit above the true count indefinitely — slack a future regression can hide in.
+// Audited and fixed 2026-07-20, after the identical defect was found in ci-authz-lint:
+// a stale baseline entry was planted, the lint printed "removed (good)" and exited 0.
+// It now FAILS, matching the tests, tsc and authz ratchets.
+if ($fixed) {
+    fwrite(STDERR, "\nruntime-zero-lint: ".count($fixed)." baselined legacy-access reference(s) removed (good!) — lock it in by removing them from runtime-zero-baseline.txt:\n");
+    foreach ($fixed as $f) {
+        fwrite(STDERR, '  - '.str_replace("\t", '  ', $f)."\n");
+    }
+    fwrite(STDERR, "  regenerate: php bin/ci-runtime-zero-lint.php generate\n");
     exit(1);
 }
 

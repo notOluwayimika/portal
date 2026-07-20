@@ -34,12 +34,22 @@ $mode = $argv[1] ?? 'check';
 // helpers are a narrow, high-signal shape, whereas commented conditionals are mostly
 // dead code and debugging leftovers. A general "no commented control flow" lint would
 // drown the real signal in false positives, and a lint people learn to ignore is worse
-// than no lint. Bare `abort(` is included because a commented one is essentially
-// always a disabled guard.
+// than no lint.
 //
 // Requiring the "(" avoids flagging prose that merely mentions Gate::/authorize/can
 // while still catching commented-out checks, which are always calls.
-$authz = '/^\s*\/\/.*(->can\(|->cannot\(|->authorize\(|\$this->authorize\(|Gate::\w+\(|abort_unless\(|abort_if\(|abort\()/';
+// TWO patterns, not one, and the split is a bug fix — I introduced the bug myself.
+// Adding bare `abort(` to the anywhere-in-line alternation immediately produced a
+// FALSE POSITIVE against a prose comment that merely explains behaviour:
+//
+//   // 422 via abort(), not a ValidationException, so this is an HttpException
+//
+// The named constructs (`abort_unless(`, `->can(`, `Gate::…`) are distinctive enough
+// that a prose mention is rare and usually worth a look anyway. Bare `abort(` is an
+// ordinary English-adjacent token, so it is matched ONLY when the comment STARTS with
+// it — a commented-out statement, not a sentence about one.
+$authz = '/^\s*\/\/.*(->can\(|->cannot\(|->authorize\(|\$this->authorize\(|Gate::\w+\(|abort_unless\(|abort_if\()/';
+$authzBareAbort = '/^\s*\/\/\s*abort\(/';
 
 $found = [];
 $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS));
@@ -50,7 +60,7 @@ foreach ($rii as $file) {
     $rel = ltrim(str_replace($root, '', $file->getPathname()), '/');
     $seen = [];
     foreach (file($file->getPathname(), FILE_IGNORE_NEW_LINES) as $line) {
-        if (preg_match($authz, $line)) {
+        if (preg_match($authz, $line) || preg_match($authzBareAbort, $line)) {
             // Keyed by file + text + OCCURRENCE ORDINAL — not file + text alone.
             //
             // Keying on the text alone silently DEDUPED duplicates: five commented

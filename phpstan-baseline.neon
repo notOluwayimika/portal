@@ -1683,7 +1683,7 @@ parameters:
 		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\CurriculumResource\:\:\$classLevelArm\.$#'
 			identifier: property.notFound
-			count: 5
+			count: 2
 			path: app/Http/Resources/CurriculumResource.php
 
 		-

@@ -60,11 +60,17 @@ class SavedActivityFilterController extends Controller
 
     public function destroy(Request $request, SavedActivityFilter $savedActivityFilter)
     {
-        // abort_unless(
-        //     $request->user()?->can('activity_log.view')
-        //     && $savedActivityFilter->user_id === $request->user()->id,
-        //     403
-        // );
+        // Restored 2026-07-20 (observe mode, ADR 0043). index() and store() above were
+        // restored by the S5 sweep; destroy() was missed, so anyone could delete
+        // anyone else's saved filter. Split into its two distinct halves — the
+        // ability and the ownership — so the evidence table can tell them apart.
+        Authz::abilityCheck($request->user(), 'activity_log.view', 'SavedActivityFilterController@destroy');
+        Authz::ensure(
+            $savedActivityFilter->user_id === $request->user()?->id,
+            'saved_activity_filter.owned_by_user',
+            'ownership',
+            'SavedActivityFilterController@destroy',
+        );
 
         $savedActivityFilter->delete();
 

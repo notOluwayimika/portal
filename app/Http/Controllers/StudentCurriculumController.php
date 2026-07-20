@@ -240,10 +240,31 @@ class StudentCurriculumController extends Controller
 
     // ---------- Helpers ----------
 
+    /**
+     * Reviewer authorization for promote / register / updateStatus.
+     *
+     * INTENTIONALLY A NO-OP DELEGATION, and documented rather than deleted so the
+     * next reader does not "restore" it a second time.
+     *
+     * The body was a commented-out `abort_unless(admin||head_of_school)`, which
+     * looked like a live authorization hole — a method named authorizeReviewer that
+     * authorized nothing, called from three places that read as if it did. It is
+     * not a hole: all three callers take a FormRequest
+     * (PromoteStudentRequest / RegisterStudentCurriculumRequest /
+     * UpdateStudentCurriculumStatusRequest) whose authorize() enforces exactly
+     * `admin || head_of_school`, and a FormRequest is authorized BEFORE the
+     * controller method runs. Verified by request: a form_teacher — allowed through
+     * the route's role middleware — is already rejected with 403 and never reaches
+     * this line.
+     *
+     * Re-adding the check here (even in observe mode) would be actively harmful: it
+     * could never fire, so it would record no evidence while reading like a gate.
+     * The FormRequest is the single enforcement point; see
+     * tests/Feature/Rbac/RestoredCommentedGuardsTest.php, which pins it.
+     */
     protected function authorizeReviewer(Request $request): void
     {
-        $user = $request->user();
-        // abort_unless($user && ($user->hasRole('admin') || $user->hasRole('head_of_school')), 403);
+        // Enforcement lives in the FormRequest (see docblock). Nothing to do here.
     }
 
     protected function presentStudentCurriculum(StudentCurriculum $sc): array

@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+#
+# Clean-database verification — the dimension a purely-local floor would otherwise
+# never cover, now that GitHub Actions is intentionally off for good.
+#
+# WHAT WAS ALREADY COVERED (verified, not assumed): Laravel's RefreshDatabase calls
+# `migrate:fresh` on the first test of every run, so the ordinary suite ALREADY
+# rebuilds every table from migrations each time. "The suite runs against your
+# stale working DB" is NOT true of tests/.
+#
+# WHAT WAS COVERED NOWHERE — not locally, and not by CI either:
+#   1. A dedicated THROWAWAY database. The suite shares one `portal_testing` DB
+#      with your experiments, tinker sessions and DatabaseTruncation tests. This
+#      builds a separate DB that nothing else has ever touched.
+#   2. The INCREMENTAL migration path against DATA. `migrate:fresh` runs every
+#      up() against an EMPTY schema; CI's `migrate --force` ran against an empty
+#      service DB too. Production runs `migrate` against a POPULATED database.
+#      Slice (i) is the worked example: its backfill (`UPDATE student_curricula
+#      JOIN students ...`) touches zero rows on an empty DB, and its composite FKs
+#      validate zero rows — so every data-migration risk it carries is INVISIBLE to
+#      migrate:fresh and was invisible to CI.
+#   3. down() / re-up() REVERSIBILITY against data — the found-once hazard where
+#      MySQL leaves a FK's backing index behind, so a naive down() leaves a state
+#      up() cannot reapply. That bites hardest during an incident: roll back to
+#      recover, then fail to re-deploy the fix.
+#
+# NEVER TOUCHES: your working DB, your .env, or your APP_KEY. It provisions its own
+# database (name must contain "test" — Tests\TestCase fails closed otherwise) and
+# generates its own PHPUnit config, because phpunit.xml PINS DB_DATABASE via <env>
+# and that pin beats a shell variable (verified empirically).
+#
+# REACH OF THE REVERSIBILITY CHECK (found while bite-proving this script): it is
+# exactly $STEPS migrations deep, and a defect can be MASKED by a deeper migration's
+# down(). The first planted defect — an index on `student_curricula.school_id` whose
+# down() forgot to drop it — did NOT fail this gate, because 130000's down() drops the
+# school_id column and took the orphaned index with it. Re-pointed at a column that
+# survives the rollback, the same defect failed the gate immediately. So: a green here
+# means "the last $STEPS migrations are reversible against data", not "all of them are".
+# Raise STEPS when a release adds more than three migrations.
+#
+# Usage: bin/quality-clean-db [rollback-steps]   (default 3)
+#        KEEP_CLEAN_DB=1 bin/quality-clean-db    (leave the DB for inspection)
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 2
+
+RED=$'\033[31m'; GREEN=$'\033[32m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
+DB="${CLEAN_DB_NAME:-portal_gate_test}"
+STEPS="${1:-3}"
+CFG=".phpunit.clean-db.xml"
+FAILED=()
+
+case "$DB" in *test*) ;; *) echo "${RED}refusing: clean DB name must contain 'test' ($DB)${OFF}"; exit 2 ;; esac
+
+say()  { printf '%s»%s %s\n' "$BOLD" "$OFF" "$1"; }
+ok()   { printf '   %s✓%s %s\n' "$GREEN" "$OFF" "$1"; }
+bad()  { printf '   %s✗%s %s\n' "$RED" "$OFF" "$1"; FAILED+=("$1"); sed 's/^/       /' /tmp/cleandb.log | tail -20; }
+run()  { if "$@" >/tmp/cleandb.log 2>&1; then return 0; else return 1; fi; }
+
+cleanup() {
+    rm -f "$CFG"
+    if [ "${KEEP_CLEAN_DB:-0}" != "1" ]; then
+        php artisan tinker --execute="DB::statement('DROP DATABASE IF EXISTS \`$DB\`');" >/dev/null 2>&1
+    fi
+}
+trap cleanup EXIT
+
+printf '%sclean-DB verification — throwaway database [%s]%s\n\n' "$DIM" "$DB" "$OFF"
+
+# 1 ── provision a database nothing else has ever written to.
+say "provision throwaway database"
+if run php artisan tinker --execute="DB::statement('DROP DATABASE IF EXISTS \`$DB\`'); DB::statement('CREATE DATABASE \`$DB\`');"; then
+    ok "created $DB (dropped first if it existed)"
+else
+    bad "could not create $DB"; exit 1
+fi
+
+# 2 ── full up() chain from zero. Catches a migration that only works because
+#      something outside the migration history already exists.
+say "migrate from zero (full up() chain)"
+if run env DB_DATABASE="$DB" php artisan migrate --force; then ok "migrate"; else bad "migrate from zero"; fi
+
+# 3 ── give the migrations something to chew on. Without rows, a backfill is a
+#      no-op and an FK validates nothing — which is exactly why this gap existed.
+say "plant representative data (so migrations meet rows, not an empty schema)"
+if run env DB_DATABASE="$DB" php artisan tinker --execute="
+\$s = App\Models\School::factory()->create();
+\$st = App\Models\Student::factory()->create(['school_id' => \$s->id]);
+\$c = App\Models\Curriculum::factory()->create(['school_id' => \$s->id]);
+App\Support\ActiveSchool::runFor(\$s->id, fn () => App\Models\StudentCurriculum::create([
+    'student_id' => \$st->id, 'curriculum_id' => \$c->id, 'status' => 'active',
+]));
+echo 'episodes=' . DB::table('student_curricula')->count();
+"; then ok "$(grep -o 'episodes=[0-9]*' /tmp/cleandb.log | tail -1) planted"; else bad "could not plant data"; fi
+
+# 4 ── the four-path check: rollback then re-up, WITH DATA PRESENT. This is where
+#      the FK-leaves-its-index bug shows up, and it cannot show up on an empty DB.
+say "reversibility: rollback $STEPS then re-migrate (down() + re-up(), against data)"
+if run env DB_DATABASE="$DB" php artisan migrate:rollback --step="$STEPS" --force; then
+    ok "rollback --step=$STEPS"
+    if run env DB_DATABASE="$DB" php artisan migrate --force; then
+        ok "re-up after rollback (down() left a reappliable state)"
+    else
+        bad "RE-UP FAILED — a down() left a state up() cannot reapply"
+    fi
+else
+    bad "rollback --step=$STEPS failed"
+fi
+
+# 5 ── full suite against the throwaway DB. phpunit.xml pins DB_DATABASE via <env>,
+#      which beats the shell, so generate a config from it rather than commit a
+#      duplicate that can silently drift out of sync.
+say "full suite against the throwaway database"
+sed "s|<env name=\"DB_DATABASE\" value=\"[^\"]*\"/>|<env name=\"DB_DATABASE\" value=\"$DB\"/>|" phpunit.xml > "$CFG"
+grep -q "value=\"$DB\"" "$CFG" || { echo "${RED}config generation failed${OFF}"; exit 2; }
+./vendor/bin/pest -c "$CFG" --log-junit /tmp/cleandb-junit.xml >/tmp/cleandb-pest.log 2>&1 || true
+if run php bin/ci-test-ratchet.php /tmp/cleandb-junit.xml; then ok "suite + failure ratchet (clean DB)"; else bad "suite on clean DB"; fi
+
+echo
+if [ ${#FAILED[@]} -eq 0 ]; then
+    printf '%s✓ clean-DB: PASS%s\n' "$GREEN" "$OFF"; exit 0
+fi
+printf '%s✗ clean-DB: FAIL%s (%d): %s\n' "$RED" "$OFF" "${#FAILED[@]}" "${FAILED[*]}"
+exit 1

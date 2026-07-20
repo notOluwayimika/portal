@@ -269,12 +269,11 @@ class CurriculumSubjectController extends Controller
 
             $curriculumSubjectId = $cs->id;
 
-            // abort_unless(
-            //     $cs->markingComponents
-            //         ->contains(fn($mc) => $mc->uuid === $data['marking_component_id']),
-            //     422,
-            //     'Marking component does not belong to this subject.'
-            // );
+            // (A commented-out marking-component precondition lived here. DELETED
+            // rather than restored: it is now superseded by the live
+            // effectiveMarkingComponents() lookup below, which returns the same 422
+            // and additionally covers shared marking schemes — restoring the old one
+            // would re-add a narrower duplicate check.)
 
             // Ensure the student is actually enrolled in this curriculum subject.
             $isEnrolled = Student::where('uuid', $data['student_id'])
@@ -374,15 +373,26 @@ class CurriculumSubjectController extends Controller
     public function submit(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
     {
         $user = $request->user();
-        // abort_unless($this->isTeacher($user), 403);
+        // Restored 2026-07-20 (observe mode, ADR 0043) — these were commented out by
+        // 883ff6c's 47-guard sweep, leaving POST /curriculum-subjects/{uuid}/submit
+        // open to ANY authenticated user, teacher or not, for ANY subject.
+        Authz::ensure($this->isTeacher($user), 'curriculum_subject.submit', 'role', 'CurriculumSubjectController@submit');
 
-        // Ensure the teacher actually owns this curriculum_subject via teacher_curriculum_subjects.
-        // abort_unless(
-        //     TeacherCurriculumSubject::where('teacher_id', optional($user->teacher)->id)
-        //         ->where('curriculum_subject_id', $curriculumSubject->id)
-        //         ->exists(),
-        //     403,
-        // );
+        // …and the teacher must actually own this curriculum_subject. Resolved via an
+        // explicit Teacher lookup rather than the original `optional($user->teacher)`:
+        // User::teacher() carries no return type, so Larastan cannot see it, and
+        // typing it there un-matched a baseline ignore and surfaced an unrelated error
+        // in DashboardController — scope this slice should not absorb.
+        $teacherId = Teacher::where('user_id', $user?->id)->value('id');
+        Authz::ensure(
+            $teacherId !== null
+                && TeacherCurriculumSubject::where('teacher_id', $teacherId)
+                    ->where('curriculum_subject_id', $curriculumSubject->id)
+                    ->exists(),
+            'curriculum_subject.owned_by_teacher',
+            'ownership',
+            'CurriculumSubjectController@submit',
+        );
 
         $status = DB::transaction(function () use ($curriculumSubject, $user) {
             $this->handleStudentResults($curriculumSubject, 'submitted');
@@ -403,7 +413,9 @@ class CurriculumSubjectController extends Controller
     public function approve(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
     {
         $user = $request->user();
-        // abort_unless($this->isReviewer($user), 403);
+        // Restored 2026-07-20 (observe mode, ADR 0043): approving results is a
+        // reviewer action; uncommented, any authenticated user could approve.
+        Authz::ensure($this->isReviewer($user), 'curriculum_subject.approve', 'role', 'CurriculumSubjectController@approve');
 
         $status = DB::transaction(function () use ($curriculumSubject, $user) {
             $this->handleStudentResults($curriculumSubject, 'approved');
@@ -426,7 +438,13 @@ class CurriculumSubjectController extends Controller
         CurriculumSubject $curriculumSubject
     ): JsonResponse {
         $user = $request->user();
-        // abort_unless($this->isReviewer($user), 403);
+        // NOT restored, deliberately: RejectSubjectResultRequest::authorize() already
+        // enforces this exact condition (admin|head_of_school) and, being a
+        // FormRequest, runs BEFORE this method. The commented guard here was a
+        // duplicate, not a hole — and re-adding it as an observe-mode check would be
+        // worse than nothing: it could never fire, so it would record no evidence
+        // while reading like a live gate. Contrast approve() above, which takes a
+        // plain Request and genuinely had no check.
 
         $status = DB::transaction(function () use ($curriculumSubject, $user, $request) {
             $this->handleStudentResults($curriculumSubject, 'rejected');

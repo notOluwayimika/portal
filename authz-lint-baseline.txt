@@ -1,9 +1,3 @@
-app/Http/Controllers/ActivityLog/SavedActivityFilterController.php	//     $request->user()?->can('activity_log.view')
-app/Http/Controllers/ActivityLog/SavedActivityFilterController.php	// abort_unless(
-app/Http/Controllers/CurriculumSubjectController.php	// abort_unless(
-app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($this->isReviewer($user), 403);
-app/Http/Controllers/CurriculumSubjectController.php	// abort_unless($this->isTeacher($user), 403);
 app/Http/Controllers/GuardianController.php	// abort_unless(
 app/Http/Controllers/StudentCurriculumController.php	// abort_unless($student->school_id === $request->user()->school_id, 403);
-app/Http/Controllers/StudentCurriculumController.php	// abort_unless($user && ($user->hasRole('admin') || $user->hasRole('head_of_school')), 403);
 app/Http/Controllers/StudentSubjectController.php	// abort_unless($student->school_id === auth()->user()->school_id, 403);

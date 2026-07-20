@@ -98,7 +98,7 @@ function CurriculumRow({
                     >
                         {sc.status}
                     </span>
-                    {!roles.includes('guardian') && (
+                    {!roles.includes('guardian') && !roles.includes('principal') && (
                         <select
                             value={sc.status}
                             onChange={(e) =>

@@ -30,6 +30,9 @@ interface GuardianCardProps {
     onEditPivot: (guardian: Guardian) => void;
     onDetach: (guardian: Guardian) => void;
     onEnableLogin?: (guardian: Guardian) => void;
+    // When false, hides the management dropdown (edit relationship / enable login /
+    // remove). Defaults to true so existing admin call sites are unaffected.
+    canManage?: boolean;
 }
 
 export function GuardianCard({
@@ -38,6 +41,7 @@ export function GuardianCard({
     onEditPivot,
     onDetach,
     onEnableLogin,
+    canManage = true,
 }: GuardianCardProps) {
     const getInitials = useInitials();
     const isSoftDeleted = !!guardian.deleted_at;
@@ -100,7 +104,7 @@ export function GuardianCard({
             </div>
 
             <div className="flex items-center gap-1">
-                {!isSoftDeleted && (
+                {canManage && !isSoftDeleted && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-400 hover:bg-slate-50">

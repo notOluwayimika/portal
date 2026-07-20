@@ -30,9 +30,16 @@ class GuardianService
     public function paginate(Request $request): LengthAwarePaginator
     {
         $schoolId = (int) ActiveSchool::id();
-        $sortBy = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at']) ? $request->sort_by : 'created_at';
+        // 'login' comes from main's guardian-login sort; the rest from staging. The
+        // two sides changed different things here, so the merge keeps both.
+        $sortBy = in_array($request->sort_by, ['name', 'phone', 'students_count', 'created_at', 'login']) ? $request->sort_by : 'created_at';
         $sortDir = $request->sort_dir === 'asc' ? 'asc' : 'desc';
-        $column = $sortBy === 'name' ? 'last_name' : ($sortBy === 'students_count' ? 'students_count' : "guardians.{$sortBy}");
+        $column = match ($sortBy) {
+            'name' => 'last_name',
+            'students_count' => 'students_count',
+            'login' => null,
+            default => "guardians.{$sortBy}",
+        };
 
         return Guardian::withoutGlobalScope(SchoolScope::class)
             ->join('users', 'users.id', '=', 'guardians.user_id')
@@ -67,7 +74,11 @@ class GuardianService
             ->when($request->date_from, fn ($q) => $q->whereDate('guardians.created_at', '>=', $request->date_from))
             ->when($request->date_to, fn ($q) => $q->whereDate('guardians.created_at', '<=', $request->date_to))
             ->with(['photoFile', 'user'])
-            ->orderBy($column, $sortDir)
+            // 'login' sorts by whether the User is enabled, so it has no $column
+            // ($column is null for it) — hence the two mutually-exclusive branches
+            // rather than a single orderBy.
+            ->when($sortBy === 'login', fn ($q) => $q->orderByRaw('(users.disabled_at IS NULL) '.$sortDir))
+            ->when($sortBy !== 'login', fn ($q) => $q->orderBy($column, $sortDir))
             ->paginate($request->integer('per_page', 25));
     }
 

@@ -1,6 +1,6 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { Download, Edit, FileX, GraduationCap, RefreshCw, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
+import { Download, Edit, Eye, FileX, GraduationCap, RefreshCw, Save, Search, Trash2, Users, UserPlus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
@@ -28,6 +28,10 @@ interface StudentListProps {
 
 export default function StudentList({ student_statuses }: StudentListProps) {
     const getInitials = useInitials();
+    const { auth } = usePage().props;
+    // Write controls (import/bulk/export/add + row edit/delete/guardians + status
+    // change) are admin-only. Principals get a read-only view of this page.
+    const isAdmin = auth.roles.includes('admin');
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -186,45 +190,47 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                 </div>
                             </div>
 
-                            <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleStudentImport}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <FileX className="mr-1.5 h-4 w-4" />
-                                    Import
-                                </Button>
-                                <Link href="/students/bulk-update">
+                            {isAdmin && (
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
                                     <Button
                                         size="sm"
                                         variant="outline"
+                                        onClick={handleStudentImport}
                                         className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                     >
-                                        <RefreshCw className="mr-1.5 h-4 w-4" />
-                                        Bulk Update
+                                        <FileX className="mr-1.5 h-4 w-4" />
+                                        Import
                                     </Button>
-                                </Link>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleExport}
-                                    disabled={exporting}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <Download className="mr-1.5 h-4 w-4" />
-                                    {exporting ? 'Exporting…' : 'Export'}
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={handleAdd}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                >
-                                    <UserPlus className="mr-1.5 h-4 w-4" />
-                                    Add Student
-                                </Button>
-                            </div>
+                                    <Link href="/students/bulk-update">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                        >
+                                            <RefreshCw className="mr-1.5 h-4 w-4" />
+                                            Bulk Update
+                                        </Button>
+                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={handleExport}
+                                        disabled={exporting}
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Download className="mr-1.5 h-4 w-4" />
+                                        {exporting ? 'Exporting…' : 'Export'}
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={handleAdd}
+                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    >
+                                        <UserPlus className="mr-1.5 h-4 w-4" />
+                                        Add Student
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -334,25 +340,39 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2.5">
-                                                    <Select
-                                                        value={student.status}
-                                                        onChange={(val) =>
-                                                            val && handleStatusChange(student, String(val))
-                                                        }
-                                                        options={
-                                                            student_statuses?.map((s) => ({
-                                                                label: s.name,
-                                                                value: s.value,
-                                                            })) || []
-                                                        }
-                                                        buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${
-                                                            student.status === 'active'
-                                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                : student.status === 'withdrawn'
-                                                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                                        }`}
-                                                    />
+                                                    {isAdmin ? (
+                                                        <Select
+                                                            value={student.status}
+                                                            onChange={(val) =>
+                                                                val && handleStatusChange(student, String(val))
+                                                            }
+                                                            options={
+                                                                student_statuses?.map((s) => ({
+                                                                    label: s.name,
+                                                                    value: s.value,
+                                                                })) || []
+                                                            }
+                                                            buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${
+                                                                student.status === 'active'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : student.status === 'withdrawn'
+                                                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                            }`}
+                                                        />
+                                                    ) : (
+                                                        <span
+                                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${
+                                                                student.status === 'active'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : student.status === 'withdrawn'
+                                                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                            }`}
+                                                        >
+                                                            {student.status}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2.5 text-right">
                                                     <div className="flex justify-end gap-1">
@@ -360,27 +380,42 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-7 w-7"
-                                                            title="Manage guardians"
-                                                            onClick={() => setGuardiansPanelStudent(student)}
+                                                            title="View profile"
+                                                            asChild
                                                         >
-                                                            <Users className="h-3.5 w-3.5" />
+                                                            <Link href={`/students/${student.id}`}>
+                                                                <Eye className="h-3.5 w-3.5" />
+                                                            </Link>
                                                         </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-7 w-7"
-                                                            onClick={() => handleEdit(student)}
-                                                        >
-                                                            <Edit className="h-3.5 w-3.5" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                                            onClick={() => handleDelete(student)}
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </Button>
+                                                        {isAdmin && (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7"
+                                                                    title="Manage guardians"
+                                                                    onClick={() => setGuardiansPanelStudent(student)}
+                                                                >
+                                                                    <Users className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7"
+                                                                    onClick={() => handleEdit(student)}
+                                                                >
+                                                                    <Edit className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                                                    onClick={() => handleDelete(student)}
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

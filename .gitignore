@@ -32,3 +32,11 @@ plan_docs
 .codegraph
 junit.xml
 tsc-output.txt
+
+# Claude Code — PER-USER / runtime state, never shared.
+# settings.local.json holds one machine's permission allowlist (it has carried
+# absolute /Users/<name>/... paths) and conflicted on every cross-machine merge;
+# scheduled_tasks.lock is runtime state. Shared Claude config (.claude/settings.json,
+# agents/, skills/, commands/) stays tracked — only these two are ignored.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

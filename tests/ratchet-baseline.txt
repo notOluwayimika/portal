@@ -7,7 +7,6 @@ tests/Feature/GuardianManagementTest.php::it detaching primary without replaceme
 tests/Feature/GuardianManagementTest.php::it detaching the only guardian is blocked
 tests/Feature/GuardianManagementTest.php::it registrar cannot change a login-enabled guardians email (credential permission required)
 tests/Feature/GuardianProfileTest.php::it returns 422 when resending invitation for an already-activated account
-tests/Feature/GuardianProfileTest.php::it returns at most 10 activity entries in descending order
 tests/Feature/GuardianProfileTest.php::it returns empty activity list when no events exist
 tests/Feature/GuardianProfileTest.php::it sends a password reset notification to the guardian email
 tests/Feature/GuardianRegistrationTest.php::it rolls back the student when a guardian processing failure occurs

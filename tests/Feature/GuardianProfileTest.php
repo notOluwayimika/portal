@@ -205,8 +205,20 @@ it('returns at most 10 activity entries in descending order', function () {
     $data = $response->json('data');
 
     expect($data)->toHaveCount(10);
-    // Most recent first.
-    expect($data[0]['id'])->toBeGreaterThan($data[9]['id']);
+
+    // Assert the FULL ordering, not just the endpoints. The old version compared
+    // data[0] to data[9] only, which an arbitrary permutation can satisfy by luck —
+    // and it was flaky for exactly that reason: all 12 rows are written in the same
+    // second, `latest()` ordered by created_at alone, and MySQL's ordering among ties
+    // is unspecified. The endpoint now tie-breaks on the append-only id, so this is
+    // deterministic.
+    $ids = array_column($data, 'id');
+    expect($ids)->toBe(collect($ids)->sortDesc()->values()->all());
+
+    // …and it is the NEWEST 10, not an arbitrary 10 — the half that catches a query
+    // returning the right count in the right order from the wrong window.
+    $allIds = Activity::query()->where('subject_id', $guardian->id)->pluck('id')->sortDesc()->take(10)->values()->all();
+    expect($ids)->toBe($allIds);
 });
 
 it('returns empty activity list when no events exist', function () {

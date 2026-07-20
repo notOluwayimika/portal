@@ -108,7 +108,6 @@ $baseline = is_file($baselinePath)
 $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
-
 if ($new) {
     fwrite(STDERR, "\nruntime-zero-lint: ".count($new)." NEW reference(s) to a legacy access source (users.school_id / school_user). Access derives from model_has_roles only:\n");
     foreach ($new as $n) {

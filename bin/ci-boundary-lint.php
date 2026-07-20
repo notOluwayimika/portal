@@ -175,7 +175,6 @@ $baseline = is_file($baselinePath)
 $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
-
 if ($new) {
     fwrite(STDERR, "\nboundary-lint: ".count($new)." NEW boundary violation(s):\n");
     foreach ($new as $n) {

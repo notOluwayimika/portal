@@ -157,7 +157,14 @@ it('resends invitation for a never-activated guardian', function () {
     [$school, $admin] = profileSchoolAndAdmin();
     $guardian = makeGuardian($school);
     // email_verified_at is null — account never activated.
-    $guardian->user->update(['email_verified_at' => null]);
+    //
+    // forceFill, NOT update(): `email_verified_at` is absent from User::$fillable,
+    // so mass assignment SILENTLY DISCARDS it. This test used update() and therefore
+    // never created a never-activated guardian at all — the user stayed verified, the
+    // service correctly refused, and the 400 it "caught" had nothing to do with the
+    // notifyGuardian bug this test is credited with catching.
+    $guardian->user->forceFill(['email_verified_at' => null])->save();
+    expect($guardian->user->fresh()->email_verified_at)->toBeNull();
 
     $this->actingAs($admin)
         ->postJson("/api/guardians/{$guardian->uuid}/resend-invitation")

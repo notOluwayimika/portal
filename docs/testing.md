@@ -38,6 +38,34 @@ it is not needed to run the suite locally today.
 CI is a real gate even though the suite and type-check are not yet fully clean.
 Two ratchets fail CI only on **regressions**, not on the pre-existing backlog:
 
+## ⚠️ INTERIM (2026-07-20): `bin/quality` is the gate — Actions has never run
+
+GitHub Actions is **billing-locked** and has never executed a job on this repo
+(every run is annotated *"The job was not started because your account is locked
+due to a billing issue"*, `steps=0`, ~4s). CI has neither passed nor failed. Until
+billing is resolved:
+
+```bash
+bin/quality          # or: composer quality
+```
+
+runs the CI jobs' steps **in order, locally** — wayfinder generation, changed-files
+Pint/Prettier/ESLint, the tsc ratchet, all four lints, arch, Larastan, and the
+suite + failure ratchet — and exits non-zero on any failure. A committed pre-push
+hook (`.githooks/pre-push`, via `core.hooksPath`, installed by `composer install`)
+blocks a push that fails it.
+
+**Keep `bin/quality` and the workflows in lockstep.** If you change
+`.github/workflows/{lint,tests}.yml`, change `bin/quality` too — a fork between
+them re-creates the exact bug that started the tsc saga, where CI and a developer
+measured different trees and *both* reported green. The script documents what it
+deliberately omits (dependency install, `.env` copy, `key:generate`, `migrate`,
+asset build) and why each is provisioning rather than a gate.
+
+Exit trigger back to CI-gating: **CLAUDE.md § Workflow**.
+
+---
+
 **Baselines only shrink, and every ratchet ENFORCES it** — each exits non-zero both
 when the count/set gets *worse* (a regression) and when it gets *better* without the
 baseline being lowered (an improvement left unlocked leaves slack the next regression

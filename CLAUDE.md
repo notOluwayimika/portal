@@ -42,6 +42,23 @@ Slice branches off `staging` → PR → `staging` (CI + manual validation) →
 milestone merge to `main`. Never stack branches. Conventional Commits with
 scope. Rollout flags in `config/rbac.php` / `config/auth.php` ship dark.
 
+**Branch names carry a Conventional-Commits type prefix**, so the branch says what
+kind of change it is before anyone opens it — same vocabulary as the commits:
+`feat/` · `fix/` · `chore/` · `docs/` · `ci/` · `refactor/` · `test/` · `perf/`
+
+```text
+feat/slice-2-multi-line-invoicing      ci/enforcement-floor
+fix/promoted-to-wrong-entity           docs/branch-naming-convention
+```
+
+Use the type of the branch's *primary* change; a slice that ships a feature plus
+its docs is `feat/`. Prefer `feat/` over the older `feature/` for new branches.
+
+This is the established pattern, not a new rule: essentially every branch in the
+repo already carries a prefix. The unprefixed exceptions
+(`slice-2-multi-line-invoicing`, `slice-i-enrollment-school-id`,
+`ci-enforcement-floor`) are recent deviations, not precedent — don't copy them.
+
 ### ⚠️ INTERIM (from 2026-07-20): local quality is the gate
 
 **GitHub Actions has never executed a job on this repo — the account is

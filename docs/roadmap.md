@@ -340,6 +340,27 @@ abstraction.
 
 ### Unmasked baseline failures — classification (2026-07, investigation only)
 
+> **STATUS 2026-07-20 — both LIVE BUGS are FIXED; baseline 18 → 14.**
+> Bug 1 `5beec0a` (+ `ea383c9` Larastan follow-up), Bug 2 `5b79f6e`, all on staging.
+> Both were re-verified against the code and **bite-proven red-when-removed**:
+> reintroducing the `return;` fails all three notification tests on the
+> _dispatch assertion itself_ (`the expected GuardianAccountCreatedNotification
+notification was not sent`), not on an incidental one.
+>
+> **One classification below is WRONG and is corrected here.** GuardianProfile
+> "resends invitation" was credited with catching Bug 1. It did not, and could not:
+> its setup called `$user->update(['email_verified_at' => null])`, and
+> `email_verified_at` is **absent from `User::$fillable`**, so mass assignment
+> silently discarded it. The guardian stayed _activated_, the service correctly
+> refused, and the 400 it "caught" was unrelated to `notifyGuardian`. Repaired to
+> `forceFill(...)->save()` with an assertion that the write actually landed — it now
+> passes and left the baseline. **A test whose setup silently no-ops asserts nothing,
+> and reads as evidence for whatever it happens to be filed under.**
+>
+> Two findings opened while verifying, neither fixed here (see "Follow-ups" below):
+> the guardian students-list mixed case is uncovered, and `CurriculumResource::32`
+> chains four relations unguarded.
+
 The S7 assignRole invariant was masking 18 baseline failures behind "no team on
 assignRole". Unmasked, classified (no fixes):
 
@@ -401,14 +422,24 @@ assignRole". Unmasked, classified (no fixes):
 
 `883ff6c` ("feat: phase 1 updates", 62 files) blanket-commented **47 `abort_unless`
 guards** in one sweep. `a27b0a3`'s S5 rollout restored the _authorization_ ones as
-`Authz::abilityCheck` — but that sweep was scoped to authorization **by design**, and
-`ci-authz-lint` reads authorization only. So a commented-out **precondition/validation**
-guard has no lint at all and survived the remediation invisibly. Constitution rule 15
+`Authz::abilityCheck` — but that sweep was scoped to _authorization_ **by design**, and
+this is a **precondition**, so it was outside the remediation's remit and stayed
+commented. Constitution rule 15
 says _"Authorization checks are never commented out"_ — by its own wording this class is
 **outside** rule 15, which is why nothing flagged it. Correctly classified as
 correctness/hygiene, not an invariant breach — but it was live behaviour: the endpoint
 dereferenced a possibly-null `$user->email` and mailed reset links to synthetic
 `@no-email.local` addresses, reporting success.
+
+> **CORRECTION (2026-07-20, later the same day).** This block first said the guard
+> survived because "`ci-authz-lint` reads authorization only". **That was wrong.** The
+> lint's regex has always matched `abort_unless(`/`abort_if(`, so commented
+> _preconditions_ were never invisible to it. It survived because the lint's **baseline
+> grandfathered it** — and because the lint's shrink-check only _warned_ and still
+> exited 0, so the baseline could never be forced down. Both defects are fixed in the
+> commented-guard-cluster slice, along with a third: the baseline keyed entries by
+> file+text, so duplicate lines silently deduped and a newly-commented guard matching a
+> baselined line passed the lint entirely.
 
 **9 commented guards remain** (StudentSubjectController:228,
 StudentCurriculumController:63/246, CurriculumSubjectController:272/377/380/406/429,
@@ -418,8 +449,30 @@ needs the same treatment applied here: find the commit, establish whether the di
 was deliberate, and restore to correct intent rather than blanket-uncommenting.
 Worth a slice; the pattern clusters because one careless sweep created all of it.
 
-**Next fix slices (order):** (1) delete the `notifyGuardian` `return;` — smallest,
-highest blast radius, Finance-adjacent; (2) null-guard `students:343`; (3) decide
+**Follow-ups opened while verifying the two fixes (2026-07-20, not fixed here):**
+
+- **Guardian students-list MIXED case is uncovered.** `GuardianManagementTest`
+  "lists all students linked to a guardian" asserts the null-guard, but **both** its
+  students are enrollment-less, so it cannot distinguish "one bad apple does not spoil
+  the list" — which is the production scenario Bug 2 actually described. Writing it
+  was attempted and **abandoned deliberately**: an enrolled sibling makes
+  `CurriculumResource` render, which needs academicSession + classLevelArm
+  (+ classLevel, arm) + examType + term. `CurriculumFactory` supplies none of them,
+  there is no factory state that does, and **no test in the repo renders
+  `CurriculumResource` at all**. Same cost/value call already made for the dashboard
+  join test. Worth doing only alongside a reusable complete-curriculum factory state.
+- **`CurriculumResource::32` chains four relations with no null-guards** — **FIXED**
+  in the reset-guard/null-chain slice (rebuilt with the `?->` idiom, every hop guarded,
+  absent parts omitted rather than concatenated as empty strings; bite-proven by
+  restoring the raw chain and watching it fatal). Original note follows —
+  `$this->academicSession->name . $this->classLevelArm->classLevel->name . …
+$this->examType->name . $this->term->name`. Every link is FK-backed and
+  non-nullable, so production should be safe, but it is the _same family_ as Bug 2 and
+  it 500s the entire guardian students list (and every other consumer) if any one is
+  missing. Found because an incomplete fixture reproduced it exactly.
+
+**Next fix slices (order):** ~~(1) delete the `notifyGuardian` `return;`~~ **DONE**;
+~~(2) null-guard `students:343`~~ **DONE**; (3) decide
 the 422/400 business-rule convention (then root-cause cross-school attach); (4)
 registrar partial-update decision; (5) triage the count/permission-scoping stale
 set.

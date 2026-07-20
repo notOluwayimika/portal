@@ -731,11 +731,42 @@ explicitly wrong value is *not* masked and is rejected by the FK. `Student` guar
 `school_id` as immutable-after-create on `updating` (removing it from `$fillable`
 would have silently dropped it on `create()` and broken student creation).
 
-**Still open — slice (ii):** `BelongsToSchool` on `StudentCurriculum`. Slice (i)
-closed cross-School integrity **at creation** and closed **none** of the 9 unscoped
-`{studentCurriculum:uuid}` bindings, nor the `PrincipalApprovalController:50` mass
-write. A standalone index on `student_curricula.school_id` belongs with (ii), when
-SchoolScope gives it a consumer — not built speculatively here.
+**SLICE (ii) LANDED (2026-07-20) — the read side.** Boundary sentence: *slice (ii)
+closes the read-side holes — the `{studentCurriculum:uuid}` bindings, the
+`where('uuid')->firstOrFail()` assessment lookups, the three
+`exists:student_curricula,uuid` rules, the `DashboardAnalysisService` join and the
+`PrincipalApprovalController` mass write. It does **not** close Debt 7's
+off-request fail-open, and it does not enable `rbac.fail_closed_models`.*
+
+*Shape:* `addGlobalScope(new SchoolScope)` directly, **not** the `BelongsToSchool`
+trait. The trait bundles the scope with a `creating` hook filling `school_id` from
+**ambient ActiveSchool**, which registers first and would beat slice (i)'s
+student-derived fill — re-coupling an episode's School to *who is logged in*, the
+exact defect slice (i) removed. Follows the 7-model precedent (`Curriculum`,
+`ClassLevel`, `Arm`, `Subject`, `ExamType`, `AcademicSession`, `GradeBoundary`).
+**The rule:** use the trait when ambient context is the right *source* of
+`school_id`; use the bare scope when the value is *derived from a parent*.
+
+*What the scope does NOT reach* (found by re-derivation, fixed explicitly):
+`exists:student_curricula,uuid` — Laravel's presence verifier queries the DB
+directly and applies no Eloquent scope (3 rules scoped by hand); and the raw
+`DashboardAnalysisService` join (predicate added **inside the JOIN condition**, so
+`LEFT JOIN` semantics survive — a `WHERE` would silently make it an inner join and
+drop no-enrollment rows from the slot counts).
+
+*Off-request audit (Debt 7):* `BackfillPastTermJob` and `MoveFromCcmJob` both carry
+`public readonly int $schoolId` + `middleware(): [new SchoolAware]`, so they run
+under `runFor` and the scope filters correctly. No console command touches
+`StudentCurriculum`. `StudentCurriculumObserver` inherits its caller's context.
+**No reader relies on the fail-closed throw**, which is what makes leaving
+`rbac.fail_closed_models` alone safe here — the throw is `auth()->check()`-gated
+(Debt 7) and would not have covered those paths anyway.
+
+*Follow-on, unchanged trigger:* enabling `RBAC_FAIL_CLOSED_MODELS` for
+`App\Models\StudentCurriculum` is an independent behaviour change over every
+context-less read path and needs its own audit. The standalone
+`student_curricula.school_id` index also stays deferred — `EXPLAIN` still shows a
+school-only filter as a full index scan, but no query this slice adds needs it.
 
 **Parked debt — homed here so it survives the handoff docs that first recorded it.**
 Each has a named TRIGGER; none is fixed by slice (i).

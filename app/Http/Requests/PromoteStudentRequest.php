@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class PromoteStudentRequest extends FormRequest
 {
@@ -19,7 +21,9 @@ class PromoteStudentRequest extends FormRequest
             'from_student_curriculum_id' => [
                 'required',
                 'uuid',
-                'exists:student_curricula,uuid',
+                // School-SCOPED existence (slice ii) — the presence verifier bypasses
+                // Eloquent global scopes, so SchoolScope does not reach this rule.
+                Rule::exists('student_curricula', 'uuid')->where('school_id', ActiveSchool::id()),
             ],
             'to_curriculum_id' => [
                 'required',

@@ -233,8 +233,18 @@ class DashboardAnalysisService
                 // subject enrollment
                 ->leftJoin('student_subjects', 'student_subjects.curriculum_subject_id', '=', 'curriculum_subjects.id')
 
-                // get actual student
-                ->leftJoin('student_curricula', 'student_curricula.id', '=', 'student_subjects.student_curriculum_id')
+                // get actual student — School predicate is EXPLICIT (slice ii).
+                // This is raw SQL, so StudentCurriculum's SchoolScope does not apply
+                // here; isolation was previously only *inferred* through five joins
+                // from class_levels/curricula, and the DISTINCT below keys on
+                // student_curricula.student_id with no School filter of its own.
+                // The predicate lives in the JOIN condition, not a WHERE, so LEFT
+                // JOIN semantics are preserved — a WHERE would silently make this an
+                // inner join and drop the no-enrollment rows from the slot counts.
+                ->leftJoin('student_curricula', function ($join) use ($schoolId) {
+                    $join->on('student_curricula.id', '=', 'student_subjects.student_curriculum_id')
+                        ->where('student_curricula.school_id', '=', $schoolId);
+                })
 
                 ->leftJoin('scores', function ($join) {
                     $join->on('scores.student_id', '=', 'student_curricula.student_id')

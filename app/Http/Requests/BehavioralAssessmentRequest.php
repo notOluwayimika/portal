@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\BehavioralGradeEnum;
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,7 +20,15 @@ class BehavioralAssessmentRequest extends FormRequest
         $pillarRules = ['required', Rule::enum(BehavioralGradeEnum::class)];
 
         return [
-            'student_curriculum_id' => ['required', 'string', 'exists:student_curricula,uuid'],
+            // School-SCOPED existence (slice ii). Laravel's presence verifier queries
+            // the DB directly and does NOT apply Eloquent global scopes, so adding
+            // SchoolScope to StudentCurriculum does not reach this rule — a foreign
+            // School's uuid would still validate and only fail later (or not at all).
+            'student_curriculum_id' => [
+                'required',
+                'string',
+                Rule::exists('student_curricula', 'uuid')->where('school_id', ActiveSchool::id()),
+            ],
             'punctuality' => $pillarRules,
             'mental_alertness' => $pillarRules,
             'respect' => $pillarRules,

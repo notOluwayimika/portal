@@ -38,31 +38,51 @@ it is not needed to run the suite locally today.
 CI is a real gate even though the suite and type-check are not yet fully clean.
 Two ratchets fail CI only on **regressions**, not on the pre-existing backlog:
 
-## ⚠️ INTERIM (2026-07-20): `bin/quality` is the gate — Actions has never run
+## The quality gate is LOCAL and permanent
 
-GitHub Actions is **billing-locked** and has never executed a job on this repo
-(every run is annotated *"The job was not started because your account is locked
-due to a billing issue"*, `steps=0`, ~4s). CI has neither passed nor failed. Until
-billing is resolved:
+**GitHub Actions is intentionally disabled** (billing-locked, not being pursued). It
+has never executed a job here — every run is annotated *"The job was not started
+because your account is locked due to a billing issue"*, `steps=0`, ~4s — so CI has
+neither passed nor failed. `bin/quality` is the intended floor, not a stopgap.
 
 ```bash
-bin/quality          # or: composer quality
+bin/quality              # every push (enforced by .githooks/pre-push)
+bin/quality-clean-db     # throwaway DB: migrate-from-zero, data, rollback/re-up
+bin/quality-promote      # RELEASE gate for staging -> main (runs both of the above)
 ```
 
-runs the CI jobs' steps **in order, locally** — wayfinder generation, changed-files
-Pint/Prettier/ESLint, the tsc ratchet, all four lints, arch, Larastan, and the
-suite + failure ratchet — and exits non-zero on any failure. A committed pre-push
-hook (`.githooks/pre-push`, via `core.hooksPath`, installed by `composer install`)
-blocks a push that fails it.
+**Keep `bin/quality` and `.github/workflows/{lint,tests}.yml` in lockstep** even
+though the workflows do not run: they remain the specification of what the gate
+means, and a fork between them re-creates the bug that started the tsc saga, where
+CI and a developer measured different trees and *both* reported green.
 
-**Keep `bin/quality` and the workflows in lockstep.** If you change
-`.github/workflows/{lint,tests}.yml`, change `bin/quality` too — a fork between
-them re-creates the exact bug that started the tsc saga, where CI and a developer
-measured different trees and *both* reported green. The script documents what it
-deliberately omits (dependency install, `.env` copy, `key:generate`, `migrate`,
-asset build) and why each is provisioning rather than a gate.
+### What the clean-DB run covers that nothing else did
 
-Exit trigger back to CI-gating: **CLAUDE.md § Workflow**.
+Laravel's `RefreshDatabase` already calls `migrate:fresh`, so the ordinary suite
+**does** rebuild every table from migrations each run — "tests run against your
+stale DB" was never true. The real gap was elsewhere, and CI did not cover it
+either: CI ran `migrate --force` against an **empty** service DB, so the
+**incremental migration path against populated data** was exercised nowhere.
+
+Slice (i) is the worked example: its backfill (`UPDATE student_curricula JOIN
+students …`) touches zero rows on an empty database and its composite FKs validate
+zero rows — every data-migration risk it carries is invisible to `migrate:fresh`.
+`bin/quality-clean-db` provisions a throwaway DB, migrates from zero, **plants
+representative rows**, then rolls back and re-migrates — which is also the
+four-path `down()`/re-up() check for the found-once hazard where MySQL leaves a
+FK's backing index behind and `up()` cannot reapply.
+
+It never touches your working database or `APP_KEY`: it creates its own DB (the
+name must contain `test`, or `Tests\TestCase` fails closed) and generates its own
+PHPUnit config, because `phpunit.xml` pins `DB_DATABASE` via `<env>` and that pin
+beats a shell variable.
+
+### Accepted permanent residuals
+
+The PHP version matrix (CI matrixed 8.3/8.4/8.5; only your local PHP runs), a true
+clean-room OS/environment, and any remote enforcement (no required status checks;
+`--no-verify` bypasses; a clone without `composer install` has no hook). These are
+known and accepted, not hidden.
 
 ---
 

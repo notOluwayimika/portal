@@ -59,39 +59,40 @@ repo already carries a prefix. The unprefixed exceptions
 (`slice-2-multi-line-invoicing`, `slice-i-enrollment-school-id`,
 `ci-enforcement-floor`) are recent deviations, not precedent — don't copy them.
 
-### ⚠️ INTERIM (from 2026-07-20): local quality is the gate
+### The enforcement floor is LOCAL, permanently
 
-**GitHub Actions has never executed a job on this repo — the account is
-billing-locked** (every run: *"The job was not started because your account is
-locked due to a billing issue"*, `steps=0`). CI has therefore neither passed nor
-failed. The checks are also not required status checks (PRs #56/#57/#58 merged
-over red), so nothing has ever blocked a merge.
+**GitHub Actions is intentionally disabled** — the account is billing-locked and
+billing is not being pursued. Actions has never executed a single job here (every
+run: *"The job was not started because your account is locked due to a billing
+issue"*, `steps=0`), so CI has neither passed nor failed. This is a **decision, not
+a pending fix**: `bin/quality` is the intended, permanent enforcement floor. Do not
+read this as something to "restore CI" to solve. If Actions is ever revisited that
+is a fresh decision, not a trigger waiting to fire.
 
-Until that is fixed, **`bin/quality` is the gate** — it mirrors
-`.github/workflows/{lint,tests}.yml` step for step, so local green means what CI
-green would mean. It is enforced by a committed **pre-push hook**
-(`.githooks/pre-push`, wired via `core.hooksPath`, installed automatically by
-`composer install`). Push only on green.
+**Day-to-day (every push):** `.githooks/pre-push` runs `bin/quality` — wayfinder
+generate, changed-files Pint/Prettier/ESLint, tsc ratchet, four lints, arch,
+Larastan, suite + failure ratchet. Committed hook, wired via `core.hooksPath`,
+installed by `composer install`.
 
-*Honest limits:* the hook guards against **forgetting**, not intent — `--no-verify`
-bypasses it by design, so a bypass is a recorded decision rather than a routine.
-And it gates on your **working tree**, not on the commits being pushed.
+**Releases (`staging → main`):** `bin/quality-promote`, run **on staging's HEAD
+before the merge** (verify-then-promote). It is heavier on purpose: release-scoped
+lint (everything staging adds over main) plus `bin/quality-clean-db` — a throwaway
+database, migrate-from-zero, data planted, and rollback/re-up reversibility. It
+stamps the verified SHA and the pre-push hook **refuses a push to `main`** without a
+stamp matching that exact commit.
 
-**EXIT TRIGGER — this stopgap has a named end condition; it is not the new normal:**
+**What this floor CANNOT prove — accepted, permanent residuals:**
 
-1. Billing resolved → Actions can run.
-2. Trigger the first-ever real CI run. **Treat its result as never-before-seen** —
-   root-cause anything red *then*; local greens do not carry, because local and CI
-   have already been proven able to measure different trees (the tsc/wayfinder bug).
-3. Make `linter` and `tests` **required status checks** on `main` and `staging`
-   (needs a repo admin — the current token has push, not admin).
-4. Revert to CI-gating. `bin/quality` stays as fast local feedback; it stops being
-   the floor. Delete this section then.
+| Gap | Why it stays |
+|---|---|
+| **PHP version matrix** | CI matrixed 8.3/8.4/8.5; only your local PHP is exercised. Reproducing that locally is real infrastructure, deliberately out of scope. |
+| **Clean-room OS/env** | Runs on your machine, your extensions, your MySQL. A dependency or extension you have and a teammate lacks is invisible. |
+| **Remote enforcement** | No required status checks. `--no-verify` bypasses, and a push from a clone without `composer install` has no hook at all. |
+| **Intent** | The hook stops forgetting, not deliberate bypass. |
 
-*Note on the current push-to-`main` decision:* it trades away the
-`off staging → PR → staging` record. An alternative that keeps history without
-losing speed is PR-to-staging gated on local `bin/quality`, then promote
-staging → main. Flagged, not decided.
+Everything else CI would have checked is covered locally, including the database
+dimension CI itself never covered (CI migrated an *empty* service DB, so incremental
+migration against real data was never exercised anywhere until `bin/quality-clean-db`).
 
 ## Where things live
 

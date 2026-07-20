@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
-# Local quality gate — the INTERIM definition of "green" while GitHub Actions is
-# billing-locked and has never executed.
+# Local quality gate — the PERMANENT definition of "green" for a per-push change.
+#
+# GitHub Actions is intentionally disabled and has never executed a job here. This is
+# the floor by design, not a stopgap. Two things stand alongside it:
+# bin/quality-clean-db (throwaway DB, migrate-from-zero, data, rollback/re-up) and
+# bin/quality-promote (the staging -> main release gate, which runs both).
 #
 # This mirrors the CI jobs step for step so that "local green" means exactly what
 # "CI green" would mean. If you change .github/workflows/{lint,tests}.yml, change
@@ -121,7 +125,7 @@ check "test-ratchet" php bin/ci-test-ratchet.php /tmp/quality-junit.xml
 # ---------------------------------------------------------------------- verdict
 echo
 if [ ${#FAILED[@]} -eq 0 ]; then
-    printf '%s✓ quality: PASS%s — this is the interim gate while Actions is billing-locked.\n' "$GREEN" "$OFF"
+    printf '%s✓ quality: PASS%s — per-push floor. Promoting to main? run bin/quality-promote.\n' "$GREEN" "$OFF"
     exit 0
 fi
 

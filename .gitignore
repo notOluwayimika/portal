@@ -32,6 +32,8 @@ plan_docs
 .codegraph
 junit.xml
 tsc-output.txt
+.phpunit.clean-db.xml
+.quality-promote-ok
 
 # Claude Code — PER-USER / runtime state, never shared.
 # settings.local.json holds one machine's permission allowlist (it has carried

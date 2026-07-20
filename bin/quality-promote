@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# RELEASE GATE — staging → main promotion.
+#
+# The pre-push hook gates pushes to feature branches. Promotion to `main` is a
+# different, higher-stakes action, and per-branch green is NOT merged-result green:
+# slice 2 and slice (i) were each verified on themselves and neither was verified
+# on the combination until someone ran the suite on staging. Branches accumulate on
+# staging; their individual greens prove nothing about staging's merged HEAD.
+#
+# ORDER IS VERIFY-THEN-PROMOTE: this runs against staging's actual merged HEAD
+# BEFORE anything reaches main. Verifying after the merge would mean discovering a
+# bad release on the branch you cannot easily rewind.
+#
+# It is deliberately HEAVIER than the per-push hook:
+#   * lint scope is the WHOLE release (everything staging adds over main), not just
+#     what one branch changed
+#   * plus bin/quality-clean-db: throwaway DB, migrate-from-zero, data planted, and
+#     rollback/re-up reversibility — the dimensions the per-push gate skips for speed
+#
+# On success it stamps .quality-promote-ok with the exact verified SHA. The pre-push
+# hook refuses a push to `main` unless that stamp matches the commit being pushed —
+# so the gate is enforced by a check, not by remembering to run it.
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 2
+
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+STAMP=".quality-promote-ok"
+rm -f "$STAMP"
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+HEAD_SHA="$(git rev-parse HEAD)"
+
+printf '%s%sRELEASE GATE%s  %s @ %s\n\n' "$BOLD" "$YELLOW" "$OFF" "$BRANCH" "${HEAD_SHA:0:8}"
+
+# --- preconditions -----------------------------------------------------------
+if [ "$BRANCH" != "staging" ]; then
+    printf '%s✗ promotion is verified on staging'"'"'s HEAD; you are on %s%s\n' "$RED" "$BRANCH" "$OFF"
+    printf '  git checkout staging && git pull --ff-only\n'
+    exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+    printf '%s✗ working tree is dirty — a release must be verified on exactly what ships%s\n' "$RED" "$OFF"
+    exit 1
+fi
+git fetch -q origin 2>/dev/null || true
+if [ -n "$(git rev-list origin/staging..HEAD 2>/dev/null)" ] || [ -n "$(git rev-list HEAD..origin/staging 2>/dev/null)" ]; then
+    printf '%s✗ staging is not in sync with origin/staging — verify what everyone else will get%s\n' "$RED" "$OFF"
+    exit 1
+fi
+
+AHEAD="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo '?')"
+BEHIND="$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)"
+printf '%sreleasing %s commit(s) over origin/main%s\n' "$DIM" "$AHEAD" "$OFF"
+if [ "$BEHIND" != "0" ]; then
+    printf '%s⚠ main has %s commit(s) NOT in staging — merging will need them reconciled;%s\n' "$YELLOW" "$BEHIND" "$OFF"
+    printf '%s  never force-push or reset main, that would destroy them.%s\n' "$YELLOW" "$OFF"
+fi
+echo
+
+# --- the gate ----------------------------------------------------------------
+# Release-scoped lint: base is origin/main, so every file the release introduces is
+# linted, not just one branch's diff. (A truly full-repo lint is not achievable —
+# the pre-existing legacy drift is grandfathered by design; see bin/lint-changed.sh.)
+printf '%s── full quality gate (lint scope: everything staging adds over main) ──%s\n' "$BOLD" "$OFF"
+if ! ./bin/quality origin/main; then
+    printf '\n%s✗ RELEASE BLOCKED — quality gate failed%s\n' "$RED" "$OFF"
+    exit 1
+fi
+
+printf '\n%s── clean-database verification ──%s\n' "$BOLD" "$OFF"
+if ! ./bin/quality-clean-db; then
+    printf '\n%s✗ RELEASE BLOCKED — clean-DB verification failed%s\n' "$RED" "$OFF"
+    exit 1
+fi
+
+echo "$HEAD_SHA" > "$STAMP"
+printf '\n%s✓ RELEASE GATE PASSED%s for %s\n' "$GREEN" "$OFF" "${HEAD_SHA:0:8}"
+printf '%sstamped %s — the pre-push hook will now allow a push to main at this exact commit.%s\n' "$DIM" "$STAMP" "$OFF"
+printf '\nPromote with:\n  git checkout main && git merge --no-ff staging && git push\n'

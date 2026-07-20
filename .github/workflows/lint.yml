@@ -64,10 +64,14 @@ jobs:
       # in CI no matter what. Generating here is what makes the count reproducible
       # and the baseline meaningful. If generation fails, this step fails loudly,
       # which is strictly better than silently measuring the wrong tree.
+      # --with-form must match vite.config.ts's `wayfinder({ formVariants: true })`.
+      # Without it the generator omits every `.form` helper — a codebase the app
+      # cannot run (11 files call `.form()`; the login page renders blank) — and the
+      # tsc count is taken against that, not against what ships.
       - name: Generate wayfinder output (routes/actions) — tsc measures the real tree
         run: |
           php artisan key:generate
-          php artisan wayfinder:generate
+          php artisan wayfinder:generate --with-form
 
       # tsc has a backlog of pre-existing errors; the ratchet fails when the error
       # count INCREASES (a new type error) and also when it DECREASES without the

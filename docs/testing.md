@@ -99,6 +99,28 @@ clean-room OS/environment, and any remote enforcement (no required status checks
 `--no-verify` bypasses; a clone without `composer install` has no hook). These are
 known and accepted, not hidden.
 
+**Nothing in the gate renders a page.** The suite exercises HTTP/JSON and the database;
+tsc and lint read source. No step mounts a React tree, so a page that type-checks and
+lints can still throw at render and come up blank. The browser click-through before
+promotion is the only gate that covers this, and it is not ceremony — on 2026-07-20 it
+caught a blank login page that all ten checks had passed.
+
+Two cheap substitutes were evaluated and **rejected on evidence**, so nobody re-proposes
+them from intuition:
+
+- **`pnpm run build`** (~3 s, so cost was not the objection) — _bite-proven not to
+  work._ The broken `import { send } from '@/routes/verification'` was restored and the
+  build **still exited 0**; the unresolved import did not fail it. It would not have
+  caught this.
+- **An SSR smoke render** of the top few routes _would_ catch it — that is exactly the
+  layer the errors surfaced at — but it needs the SSR bundle built, a node process
+  running, and a booted Laravel to render against. That is real infrastructure, not a
+  step; worth doing only if this class recurs.
+
+What actually closed this hole was correcting the generation flags above, which returns
+the three failure modes to tsc's reach — `.form` errors become `TS2339`, a missing
+generated module becomes `TS2307`. **Prefer fixing the measurement over adding a gate.**
+
 ---
 
 **Baselines only shrink, and every ratchet ENFORCES it** — each exits non-zero both
@@ -125,6 +147,33 @@ every gate, and the shrink-lock was watched fire on a simulated improvement.
     stale tree against the baseline and see a phantom regression. That is precisely
     what happened once: a "+2 regression" turned out to be stale generated files, and
     the true count was _below_ the floor.
+
+#### ⚠️ Generation flags are part of the measurement — `--with-form` is mandatory
+
+`vite.config.ts` builds with `wayfinder({ formVariants: true })`. `bin/quality` and
+`lint.yml` must therefore generate with **`--with-form`**, or they overwrite the dev
+server's correct output with a build **the application cannot run**: every `.form`
+helper vanishes, 11 files call `.form()`, and the login page renders blank.
+
+This is not a subtle difference — it is a **different codebase**, and it is how a blank
+login page sat inside a green ratchet for a whole release cycle:
+
+1. `bin/quality` generated _without_ `--with-form`, then measured tsc against that.
+2. tsc **did** report all 11 `.form` errors — it was never silent.
+3. But the baseline (148) had been calibrated on that same wrong tree, so those 11
+   errors **were the baseline**. The ratchet compared broken against broken and said OK.
+4. Meanwhile the running dev server had correct files from the vite plugin — until the
+   next `bin/quality` run overwrote them. Whoever generated last won.
+
+Corrected 2026-07-20: both call sites now pass `--with-form`, and the baseline was
+re-derived on the correct tree at **145** — a _shrink_, because removing 11 artifact
+errors and fixing 4 real ones outweighed 12 generator errors the wrong tree had been
+hiding. **If you ever change the wayfinder flags, re-derive the baseline in the same
+commit**; a baseline is only meaningful relative to the generation that produced it.
+
+The general rule: **the ratchet does not measure your code, it measures your code _as
+generated_.** Any change to how generation is invoked silently redefines what "green"
+means.
 
 #### The three ways the tsc count has lied here
 

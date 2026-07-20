@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+#
+# Local quality gate — the INTERIM definition of "green" while GitHub Actions is
+# billing-locked and has never executed.
+#
+# This mirrors the CI jobs step for step so that "local green" means exactly what
+# "CI green" would mean. If you change .github/workflows/{lint,tests}.yml, change
+# this too — a fork between the two re-creates the bug that started the tsc saga,
+# where CI and a developer measured different trees and both reported green.
+#
+#   lint.yml (job: quality)          -> steps 1..9 below
+#   tests.yml (job: ci)              -> step 10 below
+#
+# DELIBERATELY OMITTED, and why — these are environment PROVISIONING, not gates:
+#   composer install / pnpm install  - your working copy already has them; this
+#                                      script verifies they exist instead.
+#   cp .env.example .env             - would clobber your real local .env.
+#   php artisan key:generate         - CI runs it on a throwaway .env copy. Locally
+#                                      it would ROTATE your APP_KEY and can render
+#                                      existing encrypted data unreadable. Never here.
+#   php artisan migrate --force      - CI migrates a fresh service DB; locally the
+#                                      suite's RefreshDatabase migrates per run, so
+#                                      a broken migration still fails step 10.
+#   pnpm run build                   - asset compilation, not a quality signal. The
+#                                      wayfinder generation it would perform IS
+#                                      needed, and is done explicitly in step 1.
+#
+# Usage: bin/quality            (base auto-detected: merge-base with origin/staging)
+#        bin/quality <base-ref>
+#
+# Exit code is the gate: 0 = push allowed, non-zero = blocked.
+set -uo pipefail
+
+cd "$(dirname "$0")/.." || exit 2
+
+RED=$'\033[31m'; GREEN=$'\033[32m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
+FAILED=()
+STEP=0
+
+step() {
+    STEP=$((STEP + 1))
+    printf '%s[%d/10]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+}
+
+# Run a command; record failure but keep going so one push surfaces every problem
+# rather than one-at-a-time. (CI stops at the first failing step; collecting them
+# locally is strictly more useful and cannot make the gate weaker — any failure
+# still fails the whole run.)
+check() {
+    local label="$1"; shift
+    if "$@" >/tmp/quality-step.log 2>&1; then
+        printf '   %s✓%s %s\n' "$GREEN" "$OFF" "$label"
+    else
+        printf '   %s✗%s %s\n' "$RED" "$OFF" "$label"
+        sed 's/^/       /' /tmp/quality-step.log | tail -25
+        FAILED+=("$label")
+    fi
+}
+
+# ---------------------------------------------------------------- preconditions
+[ -d vendor ] || { echo "${RED}vendor/ missing — run: composer install${OFF}"; exit 2; }
+[ -d node_modules ] || { echo "${RED}node_modules/ missing — run: pnpm install${OFF}"; exit 2; }
+
+# The base commit for the changed-files lint, mirroring lint.yml's "Determine base
+# commit": a PR compares against its base branch; we compare against the merge-base
+# with origin/staging (falling back to origin/main, then HEAD~1).
+BASE="${1:-}"
+if [ -z "$BASE" ]; then
+    for ref in origin/staging origin/main; do
+        if git rev-parse --verify --quiet "$ref" >/dev/null; then
+            BASE="$(git merge-base HEAD "$ref" 2>/dev/null)" && [ -n "$BASE" ] && break
+        fi
+    done
+    [ -n "$BASE" ] || BASE="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+fi
+printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE" 2>/dev/null || echo "$BASE")" "$OFF"
+
+# 1. Wayfinder FIRST. resources/js/{routes,actions} are generated from the PHP
+#    routes and gitignored; without this, tsc measures a stale or absent tree and
+#    the ratchet compares against a number that means nothing. This ordering is the
+#    fix from the tsc slice — do not move it below step 3.
+step "wayfinder:generate (so tsc measures the real tree)"
+check "wayfinder:generate" php artisan wayfinder:generate
+
+# 2. Pint / Prettier / ESLint — CHECK MODE, CHANGED FILES ONLY.
+#    Never a directory glob: globbing has silently reformatted ~12 unrelated legacy
+#    files twice in this project. bin/lint-changed.sh is the only sanctioned entry
+#    point, and it is what CI runs.
+step "lint changed files (Pint / Prettier / ESLint, check mode)"
+check "lint-changed" bash bin/lint-changed.sh "$BASE"
+
+# 3. tsc ratchet — pest/tsc may exit non-zero; the RATCHET script is the gate.
+step "types (tsc ratchet vs tsc-baseline)"
+pnpm run types:check >/tmp/quality-tsc.txt 2>&1 || true
+check "tsc-ratchet" php bin/ci-tsc-ratchet.php /tmp/quality-tsc.txt
+
+step "authorization guard (no new commented-out checks)"
+check "authz-lint" php bin/ci-authz-lint.php
+
+step "boundary lint (§17.2)"
+check "boundary-lint" php bin/ci-boundary-lint.php
+
+step "runtime-zero lint (S7 legacy access sources)"
+check "runtime-zero-lint" php bin/ci-runtime-zero-lint.php
+
+step "identifier-generation bypass guard (1.4b)"
+check "identifier-generation-lint" php bin/ci-identifier-generation-lint.php
+
+step "architecture tests (§17.1)"
+check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
+
+step "static analysis (Larastan level 5 vs baseline)"
+check "larastan" composer analyse
+
+# 10. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
+#     non-empty); the ratchet script is the gate, exactly as in tests.yml.
+step "tests (failure ratchet vs tests/ratchet-baseline.txt)"
+env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit /tmp/quality-junit.xml >/tmp/quality-pest.log 2>&1 || true
+check "test-ratchet" php bin/ci-test-ratchet.php /tmp/quality-junit.xml
+
+# ---------------------------------------------------------------------- verdict
+echo
+if [ ${#FAILED[@]} -eq 0 ]; then
+    printf '%s✓ quality: PASS%s — this is the interim gate while Actions is billing-locked.\n' "$GREEN" "$OFF"
+    exit 0
+fi
+
+printf '%s✗ quality: FAIL%s (%d): %s\n' "$RED" "$OFF" "${#FAILED[@]}" "${FAILED[*]}"
+printf '%sPush blocked. Fix the above, or bypass deliberately with --no-verify (recorded as intent, not accident).%s\n' "$DIM" "$OFF"
+exit 1

@@ -106,6 +106,15 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "setup-hooks": [
+            "@php -r \"exec('git config core.hooksPath .githooks');\""
+        ],
+        "post-install-cmd": [
+            "@setup-hooks"
+        ],
+        "quality": [
+            "bin/quality"
         ]
     },
     "extra": {

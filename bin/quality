@@ -83,8 +83,16 @@ printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE
 #    routes and gitignored; without this, tsc measures a stale or absent tree and
 #    the ratchet compares against a number that means nothing. This ordering is the
 #    fix from the tsc slice — do not move it below step 3.
-step "wayfinder:generate (so tsc measures the real tree)"
-check "wayfinder:generate" php artisan wayfinder:generate
+#
+#    --with-form IS REQUIRED and must match vite.config.ts's `wayfinder({
+#    formVariants: true })`. Without it the generator omits every `.form` helper, so
+#    this step OVERWRITES the dev server's correct output with a build the app cannot
+#    run: 11 files call `.form()`, and the login page renders blank. It is not a
+#    harmless difference — it is a different codebase, and the tsc baseline was
+#    calibrated against it, which is how a blank login page sat inside a green
+#    ratchet. If you change the flag here, change vite.config.ts and lint.yml too.
+step "wayfinder:generate --with-form (must match vite.config.ts formVariants)"
+check "wayfinder:generate" php artisan wayfinder:generate --with-form
 
 # 2. Pint / Prettier / ESLint — CHECK MODE, CHANGED FILES ONLY.
 #    Never a directory glob: globbing has silently reformatted ~12 unrelated legacy

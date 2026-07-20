@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { edit } from '@/routes/profile';
-import { send } from '@/routes/verification';
+import type { Auth } from '@/types';
+// Fortify's `verification.send` endpoint, written out rather than imported from
+// `@/routes/verification`: email verification is intentionally OFF
+// (config/fortify.php), so the route is never registered, wayfinder never generates
+// the module, and importing it crashed this page at module load. The block below is
+// already gated on `mustVerifyEmail`, which is false while the feature is off. Swap
+// back to the generated helper if `Features::emailVerification()` is ever enabled.
+const VERIFICATION_SEND_URL = '/email/verification-notification';
 
 export default function Profile({
     mustVerifyEmail,
@@ -16,7 +23,7 @@ export default function Profile({
     mustVerifyEmail: boolean;
     status?: string;
 }) {
-    const { auth } = usePage().props;
+    const { auth } = usePage<{ auth: Auth }>().props;
 
     return (
         <>
@@ -103,7 +110,7 @@ export default function Profile({
                                         <p className="-mt-4 text-sm text-muted-foreground">
                                             Your email address is unverified.{' '}
                                             <Link
-                                                href={send()}
+                                                href={VERIFICATION_SEND_URL}
                                                 as="button"
                                                 className="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
                                             >

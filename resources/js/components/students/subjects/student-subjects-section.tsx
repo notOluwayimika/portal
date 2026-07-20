@@ -70,6 +70,7 @@ export function StudentSubjectsSection({
     }
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchSubjects();
     }, [enrollmentId]);
 
@@ -175,7 +176,11 @@ export function StudentSubjectsSection({
                                     title="Optional — Active"
                                     subjects={grouped.optional_active}
                                     isEnrollmentEnded={isEnded}
-                                    onDrop={canManage ? (s) => setDropSubject(s) : undefined}
+                                    onDrop={
+                                        canManage
+                                            ? (s) => setDropSubject(s)
+                                            : undefined
+                                    }
                                 />
 
                                 {droppedCount > 0 && (

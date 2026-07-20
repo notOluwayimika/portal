@@ -2,6 +2,7 @@
 
 namespace App\Http\Responses;
 
+use App\Models\User;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\LoginResponse;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse;
@@ -17,7 +18,7 @@ class SchoolAwareLoginResponse implements LoginResponse, TwoFactorLoginResponse
 {
     public function toResponse($request)
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = auth()->user();
 
         setPermissionsTeamId(null);

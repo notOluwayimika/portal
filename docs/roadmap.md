@@ -4,10 +4,10 @@ Two approved documents govern this work. They do not compete — they answer
 different questions, and this page records the reconciliation so there is a
 single authoritative roadmap.
 
-| Question | Authority |
-|---|---|
-| **What the architecture is** (Constitution, isolation/identity/RBAC models, financial architecture, Module Blueprint, ADR register 0001–0035) | **Finance Implementation Specification v10** (`plan_docs/`, untracked) |
-| **When and in what order it is delivered** (milestones 1.0–1.5, slice contents, Core vs Continuous, rollout flags, deferrals) | **Phase 1 Execution Plan** (approved after v10; explicitly preserves v10's architecture and re-sequences only delivery) |
+| Question                                                                                                                                      | Authority                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **What the architecture is** (Constitution, isolation/identity/RBAC models, financial architecture, Module Blueprint, ADR register 0001–0035) | **Finance Implementation Specification v10** (`plan_docs/`, untracked)                                                  |
+| **When and in what order it is delivered** (milestones 1.0–1.5, slice contents, Core vs Continuous, rollout flags, deferrals)                 | **Phase 1 Execution Plan** (approved after v10; explicitly preserves v10's architecture and re-sequences only delivery) |
 
 Where the two describe delivery differently, **the Execution Plan governs** —
 it was approved later, for exactly that purpose. No technical decision from v10
@@ -25,38 +25,38 @@ that can't be amended by evidence calcifies the way v10's stale counts did.
 
 **Format rule:** every invariant names its enforcement mechanism. A rule without
 a mechanism is wallpaper — "never read `$user->school_id`" was true for months
-while the code did it anyway; the *lint* is what made it real. If an invariant
+while the code did it anyway; the _lint_ is what made it real. If an invariant
 has no enforcement, that gap is itself a finding (three are flagged below).
 
 1. **Authoritative domain facts.** No domain event ships until its transition is
    authoritative (one canonical transition), single-sourced (one publication
    point), atomic, and committed. If any is missing, STOP and fix the transition
    first.
-   *Enforced by:* the published-fact inventory in this roadmap; no event class
+   _Enforced by:_ the published-fact inventory in this roadmap; no event class
    without its four checks passing.
 
 2. **Expand/contract for one-way changes.** Any irreversible schema evolution
    (enrollment episodes, `users.school_id` removal) follows expand →
    migrate-readers → contract, with a STOP-for-review before the irreversible
    step.
-   *Enforced by:* mandatory production snapshot **and a named owner's written
+   _Enforced by:_ mandatory production snapshot **and a named owner's written
    acknowledgement at the moment of crossing** — a snapshot nobody owns is a file
    nobody restores.
 
 3. **Distrust green that rests on a disabled precondition.** Verification attacks
    the implementation, never confirms it. Passing tests are evidence, not proof —
-   and the specific reflex: always ask what a green test is passing *because of*.
+   and the specific reflex: always ask what a green test is passing _because of_.
    Every production defect found this way shared one shape — something looked
    fine because the thing that would have revealed the problem was itself
    disabled (impersonation masking scope; a dead method masking a notification;
    team-state leaking between tests). Inventory known-positive cases; baselines
    only shrink; "obviously stale" clusters contain live bugs (5/22, 2/18).
-   *Enforced by:* adversarial verification pass per slice; bite-prove every gate
+   _Enforced by:_ adversarial verification pass per slice; bite-prove every gate
    before trusting its silence.
 
 4. **Modules communicate via DTOs, never models.** Immutable DTO contracts +
    identifiers across boundaries; events publish past-tense facts, not commands.
-   *Enforced by:* Deptrac/arch test on the module boundary — an Eloquent model in
+   _Enforced by:_ Deptrac/arch test on the module boundary — an Eloquent model in
    an event payload fails the build. **GAP (finding):** no event-payload arch
    rule exists yet (`tests/Arch/ArchitectureBoundaryTest.php` has no event rule —
    no domain events exist to test). The rule must land WITH the first event
@@ -65,14 +65,14 @@ has no enforcement, that gap is itself a finding (three are flagged below).
 5. **Finance separation.** Academic modules publish business facts only. Finance
    owns all financial behaviour (billing, discounts, waivers, credit notes,
    write-offs, ledger). Academic status values carry **no** financial semantics.
-   *Enforced by:* the `finance-table-outside-finance` boundary lint (keys on the
+   _Enforced by:_ the `finance-table-outside-finance` boundary lint (keys on the
    `finance_*` prefix, renamed from `fee_*` at the template freeze); status enums
    with no billing branch (registrar ruling 2026-07: terminal statuses are pure
    academic facts).
 
 6. **Shared Kernel is domain-agnostic.** No Finance-, Admissions-, or
    presentation-specific assumptions in shared infrastructure.
-   *Enforced by:* grep-clean of domain terms in `app/Support` — **GAP (finding):**
+   _Enforced by:_ grep-clean of domain terms in `app/Support` — **GAP (finding):**
    currently a manual, per-primitive check (done once for Sequences), not a CI
    lint. Candidate: add a domain-term pattern to `bin/ci-boundary-lint.php`
    scoped to `app/Support/`.
@@ -81,7 +81,7 @@ has no enforcement, that gap is itself a finding (three are flagged below).
    jobs, background processes converge through it — never duplicate business
    logic. (This project has found the create-fan-out repeatedly: enrollment,
    guardian, teacher.)
-   *Enforced by:* lint flagging direct `Model::create` on models that have an
+   _Enforced by:_ lint flagging direct `Model::create` on models that have an
    authoritative service. **GAP (finding):** this lint does not exist —
    `ci-identifier-generation-lint` covers raw inserts on Student/Teacher only;
    `StudentCurriculum::create` fan-out (found 3×) is unlinted. The enrollment
@@ -90,12 +90,12 @@ has no enforcement, that gap is itself a finding (three are flagged below).
 8. **Money handling.** Integer minor units, explicit ISO-4217 currency, never a
    float, never a `decimal:` cast; crosses the wire as `{amount_minor, currency}`,
    never a decimal (Constitution rule 10).
-   *Enforced by:* decimal-cast boundary lint; the `Money` VO; the wire contract
+   _Enforced by:_ decimal-cast boundary lint; the `Money` VO; the wire contract
    in ADR 0037.
 
 9. **Append-only financial and audit records.** Never edited, never deleted;
    corrections are reversals. Enforced at the database, not only the model (§15C).
-   *Enforced by:* `activity_log` UPDATE/DELETE triggers + model guard + disabled
+   _Enforced by:_ `activity_log` UPDATE/DELETE triggers + model guard + disabled
    clean command + `audit:verify-immutability` post-restore assertion (1.4c); the
    ledger's reversal-only design (Ph2+).
 
@@ -104,7 +104,7 @@ has no enforcement, that gap is itself a finding (three are flagged below).
     observe-mode traffic. Local success cannot substitute. (A registered
     `schedule:run` that nothing invokes produces evidence into a table that never
     prunes — inert.)
-    *Enforced by:* the blocked-on-prod list in volatile state; no "done" without
+    _Enforced by:_ the blocked-on-prod list in volatile state; no "done" without
     the named evidence.
 
 ### Finance module template invariants (frozen 2026-07-19)
@@ -113,40 +113,40 @@ Same rule as above — recorded only with a named, verified mechanism; not-yet-
 enforced items are marked GAP, never promoted. Four are enforced, one is enforced
 with a scope limit, one is a GAP pending slice 2.
 
-- **F1. Finance tables use the `finance_*` prefix.** *Enforced by:* the
+- **F1. Finance tables use the `finance_*` prefix.** _Enforced by:_ the
   `finance-table-outside-finance` boundary lint (bite-proven: a `finance_` table
   literal in a non-Finance app file fails CI). ✅ real.
 - **F2. Every Finance aggregate carries `school_id` (uniform, filterable).**
-  *Enforced by:* `SchemaConventionsTest` asserts the column on every `finance_*`
+  _Enforced by:_ `SchemaConventionsTest` asserts the column on every `finance_*`
   table (added this slice), plus the arch rule requiring `BelongsToSchool` on
   every Finance model. ✅ real (previously would have been aspirational — the
   arch rule alone asserts the trait, not the column; the schema test closes that).
-- **F3. A child row's `school_id` equals its parent's.** *Enforced by:* the
+- **F3. A child row's `school_id` equals its parent's.** _Enforced by:_ the
   composite FK `(child_fk, school_id) → parent(id, school_id)` at the DB — a
   divergent child is rejected as a foreign-key violation (bite-proven at the DB,
   not the model). ✅ real.
   **Extended across the Finance↔Academic seam by slice (i) (2026-07-19).**
   `finance_invoices (student_curriculum_id, school_id) → student_curricula (id,
-  school_id)` means an invoice's School is now structurally tied to its episode's,
-  instead of being satisfied *by proxy* through the ACL adapter's
+school_id)` means an invoice's School is now structurally tied to its episode's,
+  instead of being satisfied _by proxy_ through the ACL adapter's
   `students.school_id → curricula.school_id → 0` derivation. The null→0 fallback is
   no longer load-bearing for correctness — it remains only as a fail-closed guard
   in `GenerateInvoice`. Same slice also made F3 hold on the academic side:
   `student_curricula` composite FKs to **both** `students` and `curricula`, so a
   cross-School episode is unrepresentable whichever `school_id` is supplied.
 - **F4. Financial movements are append-only; corrections are reversals, never
-  rewrites.** *Enforced by:* the 1.4c DB triggers on the ledger/lines/payments/
+  rewrites.** _Enforced by:_ the 1.4c DB triggers on the ledger/lines/payments/
   allocations (UPDATE+DELETE denied; invoice DELETE denied, status may mutate).
   Confirmed surviving the `fee_→finance_` rename, verified by name. ✅ real.
 - **F5. Finance owns financial truth; Academic never mutates it.**
-  *Access-enforced by:* the arch rule (`App\Finance\Models` private to
+  _Access-enforced by:_ the arch rule (`App\Finance\Models` private to
   `App\Finance` — Academic cannot reference a Finance model) + the
   `finance-table-outside-finance` lint (Academic cannot touch a `finance_*` table
   via raw SQL). Both ACCESS paths (model-reference, raw-SQL) are ✅ real. **GAP —
-  the semantic "no mutation" is NOT proven:** the two rules block *access* to
+  the semantic "no mutation" is NOT proven:** the two rules block _access_ to
   Finance internals, but a future Finance **Contract** (the sanctioned public API)
-  that exposed a *mutator* method would pass both rules and let Academic drive a
-  Finance state change. *Closing mechanism (pending):* a lint/arch rule asserting
+  that exposed a _mutator_ method would pass both rules and let Academic drive a
+  Finance state change. _Closing mechanism (pending):_ a lint/arch rule asserting
   Finance **Contracts are read-only by default** (a mutating contract method is an
   explicit, reviewed exception). **Pending until a second Contract exists** — today
   there is one (`BillableEnrollmentProvider`, a read port), so the rule would have
@@ -154,14 +154,14 @@ with a scope limit, one is a GAP pending slice 2.
   what "read-only by default" must catch.
 - **F6. Invoice total = SUM(lines), computed once and snapshotted.** ✅ real
   (slice 2), with one residual GAP recorded below.
-  *Enforced by:* (1) **derivation** — `GenerateInvoice` takes line specs and
+  _Enforced by:_ (1) **derivation** — `GenerateInvoice` takes line specs and
   derives the total by exact integer addition (`Money::plus`); there is no wire
   field and no Action parameter by which a caller can supply a total, so a
-  mismatch cannot be *authored*. `Money::plus` also throws on currency mismatch,
+  mismatch cannot be _authored_. `Money::plus` also throws on currency mismatch,
   making a mixed-currency invoice impossible by construction. (2) **immutability**
   — the `finance_invoices_total_immutable` BEFORE UPDATE trigger denies any change
   to `total_minor`/`total_currency` at the DB while leaving the status transition
-  free, so the snapshot cannot *drift* afterwards. Bite-proven: a raw
+  free, so the snapshot cannot _drift_ afterwards. Bite-proven: a raw
   `UPDATE … SET total_minor` throws, and removing the trigger turns exactly that
   test red. Multi-line proof uses three distinct non-round amounts
   (12345+67891+250003=330239) so a count×price or max() bug cannot pass.
@@ -172,7 +172,7 @@ with a scope limit, one is a GAP pending slice 2.
   one, inside `GenerateInvoice`'s creating transaction; there is no
   add-line-to-existing-invoice route, method, or raw write, and `Invoice::lines()`
   is otherwise read-only. So this is a tamper vector, not an operational path.
-  *Closing mechanism (pending):* the **seal** — a `lines_sealed_at` column plus a
+  _Closing mechanism (pending):_ the **seal** — a `lines_sealed_at` column plus a
   BEFORE INSERT trigger on `finance_invoice_lines` rejecting lines on a sealed
   invoice, and a seal-time SQL re-verification that `total = SUM(lines)`. It lands
   when a draft / multi-step-build lifecycle makes "sealed" an observable state the
@@ -180,7 +180,7 @@ with a scope limit, one is a GAP pending slice 2.
   the mistake recorded in v10 §28.4.
 
 - **F7. At most one ACTIVE invoice per enrollment episode.** ✅ real (slice 2).
-  A *set*-based invariant no single Invoice aggregate can see, so it is enforced at
+  A _set_-based invariant no single Invoice aggregate can see, so it is enforced at
   the DB: a STORED generated column
   `active_enrollment_key = IF(status='issued', student_curriculum_id, NULL)` with
   `UNIQUE(school_id, active_enrollment_key)`. Issued ⇒ the slot is taken; void ⇒ it
@@ -198,18 +198,18 @@ v10 §20 packs all foundation work into a 6-week Phase 1. The approved
 Execution Plan split that into **Phase-1 Core** (gates Finance Ph2) and a
 **Continuous track** (each item lands before the phase it actually blocks):
 
-| v10 Phase-1 item | Reconciled delivery | Actually gates |
-|---|---|---|
-| Idempotency table + middleware (§12.4, ADR 0008) | **Ph5** | record-payment / webhooks |
-| FeatureFlags service | **Ph2** | per-School Finance flag |
-| Approvals engine (ADR 0009) | **Ph3** | the approval-engine phase |
-| Pdf engine (ADR 0014) | **Ph5** | first invoice/statement template |
-| Sequences (ADR 0007) | Continuous (early) | Ph5 (also fixes the live admission-number race) |
-| Observability (ADR 0031) | Continuous | before Ph6 ("before money moves") |
-| Event bus + 4 Academics facts (ADR 0011) | Continuous | Ph5 (first Finance listener) |
-| Audit immutability (ADR 0032) | Continuous (early) | protects the existing log |
-| 53 commented-authz restores | Continuous (baseline burn-down) | security debt, not Ph2 |
-| Legacy jobs → `SchoolAware` (1.3b) | Continuous | precondition for enabling fail-closed on job-touched models |
+| v10 Phase-1 item                                 | Reconciled delivery             | Actually gates                                              |
+| ------------------------------------------------ | ------------------------------- | ----------------------------------------------------------- |
+| Idempotency table + middleware (§12.4, ADR 0008) | **Ph5**                         | record-payment / webhooks                                   |
+| FeatureFlags service                             | **Ph2**                         | per-School Finance flag                                     |
+| Approvals engine (ADR 0009)                      | **Ph3**                         | the approval-engine phase                                   |
+| Pdf engine (ADR 0014)                            | **Ph5**                         | first invoice/statement template                            |
+| Sequences (ADR 0007)                             | Continuous (early)              | Ph5 (also fixes the live admission-number race)             |
+| Observability (ADR 0031)                         | Continuous                      | before Ph6 ("before money moves")                           |
+| Event bus + 4 Academics facts (ADR 0011)         | Continuous                      | Ph5 (first Finance listener)                                |
+| Audit immutability (ADR 0032)                    | Continuous (early)              | protects the existing log                                   |
+| 53 commented-authz restores                      | Continuous (baseline burn-down) | security debt, not Ph2                                      |
+| Legacy jobs → `SchoolAware` (1.3b)               | Continuous                      | precondition for enabling fail-closed on job-touched models |
 
 **Verified audit counts supersede the spec's.** The Execution Plan's code
 audit re-measured v10 §4.2/§4.4 and every figure was worse than claimed; the
@@ -217,12 +217,12 @@ verified numbers below are authoritative, and v10's risk register, acceptance
 criteria and Phase-1 estimate — built on the lower figures — must be read
 against them:
 
-| Debt item | v10 claims | Verified (authoritative) |
-|---|---|---|
-| Commented-out authorization checks | 52 | **53** |
-| Controllers containing them | 5 | **7** |
-| Publicly leaked (unauthenticated) routes | 6 | **7** |
-| Permissions actually defined | 32 | **28** (19 of them never seeded at audit time) |
+| Debt item                                | v10 claims | Verified (authoritative)                       |
+| ---------------------------------------- | ---------- | ---------------------------------------------- |
+| Commented-out authorization checks       | 52         | **53**                                         |
+| Controllers containing them              | 5          | **7**                                          |
+| Publicly leaked (unauthenticated) routes | 6          | **7**                                          |
+| Permissions actually defined             | 32         | **28** (19 of them never seeded at audit time) |
 
 (Jobs impersonating a causer without team context: **6 of 7 job classes**
 verified — v10's "5 jobs" undercounted by one, reconciled in slice 1.3b, which
@@ -241,14 +241,14 @@ retrofitted **all 7** to `SchoolAware` and removed every impersonation.)
   `students`, is nullable but its sole create path passes `school_id`
   explicitly).
 - **Debt item 17 (admission/staff numbering) — correction.** Previously
-  recorded only as a *concurrency race* (racy read-then-write in
+  recorded only as a _concurrency race_ (racy read-then-write in
   `HasAdmissionNumber`/`HasStaffNumber`). The same halting defect means the
   duplicate-number **validation** `creating` hooks **never executed** on
   `AddUuid`-first models (Student, Teacher) — a **functional-correctness gap in
   addition to the race**. The validation hooks now run (1.3b.1); the concurrency
   race is still owned by the Sequences slice (1.4b).
 - **Debt item 7 (SchoolScope fail-open) — residual, NOT fully complete.** 1.3b
-  fixed queued *scope application* (scoping now applies under `runFor`), but the
+  fixed queued _scope application_ (scoping now applies under `runFor`), but the
   fail-closed **throw remains auth-gated**: a principal-less off-request
   execution (an unauth scheduled command, or a future non-`SchoolAware` job with
   no auth) still reads **unscoped** rather than throwing. Owning future slice:
@@ -287,7 +287,7 @@ observability, event bus) · frontend `formatNaira` (§12.3 names it; only ad-ho
 
 **Not authorization debt — test role-seeding debt (reclassified):** the ~25
 Guardian / ActivityLog feature-test failures are produced by the `role:`
-route-middleware that is *already enforcing* on those routes, not by the dormant
+route-middleware that is _already enforcing_ on those routes, not by the dormant
 `->can()` checks (which are still commented and inert). They are test-seeding
 gaps — the tests do not seed the role the middleware requires — and must be
 fixed by correcting test setup, **not** by touching authorization. They are
@@ -310,7 +310,7 @@ Finance consumer would later churn on.** Evidence + the prerequisite each needs:
   own docblock says "Controllers MUST NOT create StudentCurriculum directly" — but
   `StudentCurriculumController@promote` (:159) and `@register` (:212) each
   `StudentCurriculum::create(...)` **directly**, bypassing the service. Three
-  creation points. *Prerequisite:* route promote/register through the service, then
+  creation points. _Prerequisite:_ route promote/register through the service, then
   publish once from it.
 - **StudentWithdrawn — the business transition does not exist.** The Finance-
   relevant fact is the STUDENT leaving (billing stops; §12.6 `students.status`).
@@ -319,7 +319,7 @@ Finance consumer would later churn on.** Evidence + the prerequisite each needs:
   ENROLLMENT-level and split: `unenroll()` (service, atomic → `ended_at`) versus
   `StudentCurriculumController@updateStatus('withdrawn')` which sets the status and
   then **DELETEs the enrollment row** — a competing, record-destroying path that
-  bypasses `unenroll()`. *Prerequisite:* build the student-level withdrawal
+  bypasses `unenroll()`. _Prerequisite:_ build the student-level withdrawal
   transition and reconcile the two enrollment-end mechanisms (a deleted row is a
   fact Finance cannot later reference).
 - **TermStarted / TermClosed — no authoritative transition operation.** `terms`
@@ -327,7 +327,7 @@ Finance consumer would later churn on.** Evidence + the prerequisite each needs:
   the only writer is `TermController::update` — a generic CRUD form edit
   (`->update([...$request->all()])`) — and there is no dedicated start/close
   operation and no scheduled date-driven activation. Revenue recognition on term
-  start (§9) cannot hang off a form edit. *Prerequisite:* an explicit term-
+  start (§9) cannot hang off a form edit. _Prerequisite:_ an explicit term-
   lifecycle operation (or a date-driven scheduler once 1.4d scheduling exists).
 
 **Recommendation:** defer 1.4e until the prerequisite transitions exist and are
@@ -347,7 +347,7 @@ assignRole". Unmasked, classified (no fixes):
 
 1. **`GuardianService::notifyGuardian()` is a dead method — `return;` on its first
    line** (committed in a vague "feat: updates", no comment). The ONLY dispatch of
-   `GuardianAccountCreatedNotification` (`:328`) sits *after* that return, so **no
+   `GuardianAccountCreatedNotification` (`:328`) sits _after_ that return, so **no
    guardian ever receives an account/invite notification** — account creation,
    enable-login, and resend-invitation all silently send nothing in the REAL path,
    not just the test. **Finance-adjacent (§7 parent statements / Ph7 guardian
@@ -364,11 +364,13 @@ assignRole". Unmasked, classified (no fixes):
    **Fix = null-guard** (`$s->currentCurriculum ? … : null`).
 
 **STALE (architecture deliberately changed — proven, not asserted-to-pass):**
+
 - ActivityLogApi "blocks users without activity_log.view" (expects 403, gets 200):
   S5 made `activity_log.view` **observe-mode** (records, does not block, until
   `AUTHZ_ENFORCE=true`; ADR 0043). The test asserts pre-observe enforcement.
 
 **AMBIGUOUS (need a decision, named):**
+
 - Registrar email update (expects 200 with the email silently ignored, gets 403):
   security-design — should a user with `guardian.update` but not
   `guardian.update_credentials` be hard-403'd, or allowed to update non-credential
@@ -394,6 +396,27 @@ assignRole". Unmasked, classified (no fixes):
 - ActivityLogApi 3 count mismatches + GuardianProfile counts/422/password-reset
   notification: permission-scoping + activity-count assertions likely shifted by the
   observe rollout + permission model; per-test triage, lower priority.
+
+**Commented-guard coverage gap (2026-07-20, found restoring the `resetPassword` guard):**
+
+`883ff6c` ("feat: phase 1 updates", 62 files) blanket-commented **47 `abort_unless`
+guards** in one sweep. `a27b0a3`'s S5 rollout restored the _authorization_ ones as
+`Authz::abilityCheck` — but that sweep was scoped to authorization **by design**, and
+`ci-authz-lint` reads authorization only. So a commented-out **precondition/validation**
+guard has no lint at all and survived the remediation invisibly. Constitution rule 15
+says _"Authorization checks are never commented out"_ — by its own wording this class is
+**outside** rule 15, which is why nothing flagged it. Correctly classified as
+correctness/hygiene, not an invariant breach — but it was live behaviour: the endpoint
+dereferenced a possibly-null `$user->email` and mailed reset links to synthetic
+`@no-email.local` addresses, reporting success.
+
+**9 commented guards remain** (StudentSubjectController:228,
+StudentCurriculumController:63/246, CurriculumSubjectController:272/377/380/406/429,
+SavedActivityFilterController:63). Most are `403` and therefore rule-15/authz-lint
+territory, grandfathered by that lint's baseline (it fails only on _new_ ones). Each
+needs the same treatment applied here: find the commit, establish whether the disabling
+was deliberate, and restore to correct intent rather than blanket-uncommenting.
+Worth a slice; the pattern clusters because one careless sweep created all of it.
 
 **Next fix slices (order):** (1) delete the `notifyGuardian` `return;` — smallest,
 highest blast radius, Finance-adjacent; (2) null-guard `students:343`; (3) decide
@@ -427,7 +450,7 @@ episodes; it needs an enrollment **reference that survives withdrawal**.
 
 - **Q1 — reference, not episodes.** Every step binds to enrollment identity
   (`student_curriculum_id`/uuid, school, status). **No step reads
-  results/scores** — the Option-B re-key protects *grade history under repeats*,
+  results/scores** — the Option-B re-key protects _grade history under repeats_,
   a purely academic concern. N-episode enrollment becomes Finance-relevant only
   when the **repeat workflow** exists (a second fresh bill for the same pair
   needs a second row → the `active_key` flip). No repeat workflow exists, so no
@@ -456,7 +479,7 @@ episodes; it needs an enrollment **reference that survives withdrawal**.
   skeleton gate), the approval/maker-checker engine (Ph3), the automated billing
   trigger. NOT blockers: the enrollment-create fan-out, the event bus, the
   results/scores re-key.
-- **Q4 — billing trigger.** The 3-path create fan-out makes an *automated*
+- **Q4 — billing trigger.** The 3-path create fan-out makes an _automated_
   trigger fire inconsistently — sidestepped for the skeleton by a single manual
   "generate invoice for enrollment X" entry point. The fan-out convergence + the
   `EnrollmentCreated` fact remain prerequisites for **automated** billing
@@ -515,7 +538,7 @@ guard once RESTRICT FKs exist.
 ### Withdraw soft-end — landed (2026-07)
 
 - **One shared soft-end**: `CurriculumEnrollmentService::softEnd(enrollment,
-  actor, terminalStatus, reason)` — sets the Option-B terminal status AND
+actor, terminalStatus, reason)` — sets the Option-B terminal status AND
   `ended_at`/`ended_by`/`end_reason` together, never deletes, rejects `active` as
   a terminal status, 409 on double-end. `unenroll()` delegates to it (fixing the
   anomaly where unenrolled rows kept `status=active` and still read as
@@ -560,14 +583,14 @@ against live production. Audit coverage window there: **2026-05-22 → 2026-07-1
   A3 (guardians) all returned **none**: every legacy access source is fully
   mirrored in `model_has_roles`. **Dropping `users.school_id` / `school_user`
   costs no user their access — no backfill required.** This closes the divergence
-  *data* STOP-gate; the drop itself is still a later post-deploy one-way step with
+  _data_ STOP-gate; the drop itself is still a later post-deploy one-way step with
   its own STOP-before-flip (this settles only the data question).
 - **CASCADE assessment loss — no detectable damage, with an honest ceiling.** B1
   (StudentCurriculum delete events) = **0**; B2 (orphaned behavioral/psychomotor)
   = **0/0**; B3 (withdrawn carrying assessments) = **0**. Orphans persist
   regardless of when created, so their absence is the stronger signal. **For any
   Brookstone disclosure:** no enrollment deletions and no orphaned assessment data
-  *within coverage*; deletions **before 2026-05-22 are unquantifiable from
+  _within coverage_; deletions **before 2026-05-22 are unquantifiable from
   surviving data** — a known blind spot, not a proven-clean history. No stakeholder
   escalation warranted; the pre-coverage window must be stated, not papered over.
 - **Scheduler — confirmed running** every minute in production (observe-mode
@@ -621,7 +644,7 @@ which is what produced Finance slice 2's three-branch resolution
 isolation into application code instead of the schema.
 
 **VERDICT (settled, not re-litigable): two slices, `school_id` FIRST.** Bundling
-it into Option B would forfeit independent rollback — `school_id` is *always*
+it into Option B would forfeit independent rollback — `school_id` is _always_
 reversible, Option B's re-key is lossy after the first repeat — and would put two
 independent one-way clocks in one migration file, to save one ~1k-row table
 rebuild. The two also share no backfill work (Option B's `active_key` is a STORED
@@ -630,7 +653,7 @@ generated column needing **no** backfill pass) and have disjoint reader sets.
 **The (i)/(ii) split — load-bearing, do not blur:**
 
 - **(i) Column + composite FKs.** Makes `episode.school == student.school ==
-  curriculum.school` structural; cross-School episodes become unrepresentable **at
+curriculum.school` structural; cross-School episodes become unrepresentable **at
   creation**; retires 3 hand-rolled checks (`CurriculumEnrollmentService:34`,
   `StudentCurriculumController:154`, `:206`) and closes the `StudentService::update`
   gap. Always reversible. **Closes ZERO read-side lookup holes.**
@@ -640,8 +663,8 @@ generated column needing **no** backfill pass) and have disjoint reader sets.
   its own per-model rollout (§5.5). **NOT part of (i).**
 
 **D1 — win boundary (framing, enforced).** Slice (i)'s completion report MUST lead
-with: *"(i) makes cross-school episodes unrepresentable at creation and closes none
-of the read-side binding/lookup holes; those are (ii)."* Verified: all 9 bindings
+with: _"(i) makes cross-school episodes unrepresentable at creation and closes none
+of the read-side binding/lookup holes; those are (ii)."_ Verified: all 9 bindings
 (`web.php:312,:394`; `api.php:130,:136,:261,:262`;
 `endpoints/form-teacher.php:8`; `endpoints/head-of-school.php:8,:9`) resolve a
 uuid against a globally unscoped model and **remain unscoped after (i)** — adding
@@ -652,7 +675,7 @@ Evidence: a grep of every `school_id` write path in `app/` finds **no operation
 that updates `students.school_id`**. It is set once in `StudentService::store()`
 and `StudentService::update()` deliberately omits it. The only `forceFill` on a
 `school_id` is `SuperAdmin/AdminController:105`, which targets **users**, not
-students. Domain-wise this is correct: a student moving School is a *new admission*
+students. Domain-wise this is correct: a student moving School is a _new admission_
 (v10 §2.1), not an UPDATE — and CASCADE would silently rewrite the School
 attribution of every historical billed/graded episode. **Consequence:** composite
 FKs need no cascade, history is safe by construction, and the latent defect is
@@ -687,7 +710,7 @@ look-for, not audited here.
 2. **Pre-flight is the integrity test, not a checkbox.** Run the detection query
    (`docs/runbooks/prod-divergence-and-cascade-queries.sql` §C1, with §C1b's
    partition proof), **list** the offending episodes, **remediate to zero**
-   (`docs/runbooks/slice-i-preflight-and-remediation.md`), *then* run the
+   (`docs/runbooks/slice-i-preflight-and-remediation.md`), _then_ run the
    migration. Rationale: the backfill copies `school_id` from the student, so the
    student composite FK is tautologically satisfied and the **curriculum**
    composite FK is the only one that can reject real data — it fails for every
@@ -697,7 +720,7 @@ look-for, not audited here.
    `exists:curricula,id` were live, and both produce exactly "local student +
    foreign curriculum". ⚠️ Dev cannot test this — it holds **one** School in both
    `students` and `curricula`, so a mismatch is structurally impossible there and
-   its zero carries no information. Note `finance_invoices` is created *empty* in
+   its zero carries no information. Note `finance_invoices` is created _empty_ in
    the same deploy, so its composite FK cannot fail at the first Phase-1 deploy
    (the invoiced-offender case applies only to re-runs / Finance-bearing envs).
 3. `BelongsToSchool` adoption is explicitly OUT of scope for (i).
@@ -714,47 +737,47 @@ data). Four tables: additive `UNIQUE(id, school_id)` on `students` + `curricula`
 `(student_id, school_id) → students`, `(curriculum_id, school_id) → curricula`,
 `finance_invoices (student_curriculum_id, school_id) → student_curricula`.
 
-*ON DELETE was mapped per-FK, not chosen globally:* each composite preserves the
+_ON DELETE was mapped per-FK, not chosen globally:_ each composite preserves the
 semantics of the FK it replaces (CASCADE on the academic pair, RESTRICT on the
 Finance child). Verified this is safe — a `students` delete cannot reach a
 `finance_invoices` row: `finance_invoices.student_id` (RESTRICT) blocks it directly
 and `finance_invoices.student_curriculum_id` (RESTRICT) blocks the cascade, and in
 InnoDB a cascaded delete reaching a RESTRICT child fails the whole statement. The
 armour for an invoiced episode lives on `finance_invoices`, not on the episode.
-*ON UPDATE is NO ACTION everywhere* (D2). Verified on the dev DB: **977/977**
+_ON UPDATE is NO ACTION everywhere_ (D2). Verified on the dev DB: **977/977**
 episodes backfilled, 0 nulls, 0 mismatches against either parent; `down()` restores
 the original FK names and index set exactly, and re-`up()` is clean.
 
 `StudentCurriculum` now DERIVES `school_id` from the student in its `creating` hook
 (a block closure — `creating` is a halting event), so no caller passes it; an
-explicitly wrong value is *not* masked and is rejected by the FK. `Student` guards
+explicitly wrong value is _not_ masked and is rejected by the FK. `Student` guards
 `school_id` as immutable-after-create on `updating` (removing it from `$fillable`
 would have silently dropped it on `create()` and broken student creation).
 
-**SLICE (ii) LANDED (2026-07-20) — the read side.** Boundary sentence: *slice (ii)
+**SLICE (ii) LANDED (2026-07-20) — the read side.** Boundary sentence: _slice (ii)
 closes the read-side holes — the `{studentCurriculum:uuid}` bindings, the
 `where('uuid')->firstOrFail()` assessment lookups, the three
 `exists:student_curricula,uuid` rules, the `DashboardAnalysisService` join and the
 `PrincipalApprovalController` mass write. It does **not** close Debt 7's
-off-request fail-open, and it does not enable `rbac.fail_closed_models`.*
+off-request fail-open, and it does not enable `rbac.fail_closed_models`._
 
-*Shape:* `addGlobalScope(new SchoolScope)` directly, **not** the `BelongsToSchool`
+_Shape:_ `addGlobalScope(new SchoolScope)` directly, **not** the `BelongsToSchool`
 trait. The trait bundles the scope with a `creating` hook filling `school_id` from
 **ambient ActiveSchool**, which registers first and would beat slice (i)'s
-student-derived fill — re-coupling an episode's School to *who is logged in*, the
+student-derived fill — re-coupling an episode's School to _who is logged in_, the
 exact defect slice (i) removed. Follows the 7-model precedent (`Curriculum`,
 `ClassLevel`, `Arm`, `Subject`, `ExamType`, `AcademicSession`, `GradeBoundary`).
-**The rule:** use the trait when ambient context is the right *source* of
-`school_id`; use the bare scope when the value is *derived from a parent*.
+**The rule:** use the trait when ambient context is the right _source_ of
+`school_id`; use the bare scope when the value is _derived from a parent_.
 
-*What the scope does NOT reach* (found by re-derivation, fixed explicitly):
+_What the scope does NOT reach_ (found by re-derivation, fixed explicitly):
 `exists:student_curricula,uuid` — Laravel's presence verifier queries the DB
 directly and applies no Eloquent scope (3 rules scoped by hand); and the raw
 `DashboardAnalysisService` join (predicate added **inside the JOIN condition**, so
 `LEFT JOIN` semantics survive — a `WHERE` would silently make it an inner join and
 drop no-enrollment rows from the slot counts).
 
-*Off-request audit (Debt 7):* `BackfillPastTermJob` and `MoveFromCcmJob` both carry
+_Off-request audit (Debt 7):_ `BackfillPastTermJob` and `MoveFromCcmJob` both carry
 `public readonly int $schoolId` + `middleware(): [new SchoolAware]`, so they run
 under `runFor` and the scope filters correctly. No console command touches
 `StudentCurriculum`. `StudentCurriculumObserver` inherits its caller's context.
@@ -762,7 +785,7 @@ under `runFor` and the scope filters correctly. No console command touches
 `rbac.fail_closed_models` alone safe here — the throw is `auth()->check()`-gated
 (Debt 7) and would not have covered those paths anyway.
 
-*Follow-on, unchanged trigger:* enabling `RBAC_FAIL_CLOSED_MODELS` for
+_Follow-on, unchanged trigger:_ enabling `RBAC_FAIL_CLOSED_MODELS` for
 `App\Models\StudentCurriculum` is an independent behaviour change over every
 context-less read path and needs its own audit. The standalone
 `student_curricula.school_id` index also stays deferred — `EXPLAIN` still shows a
@@ -778,40 +801,41 @@ Each has a named TRIGGER; none is fixed by slice (i).
   no generation step — so a fresh CI checkout did not contain them at all. The same
   commit therefore produced three different counts:
 
-  | Measurement | Count |
-  |---|---|
-  | Stale local generation | 151 |
-  | **CI-equivalent (no generation)** | **145** |
-  | **True — freshly generated from current PHP routes** | **148** |
-  | Old committed baseline | 149 |
+    | Measurement                                          | Count   |
+    | ---------------------------------------------------- | ------- |
+    | Stale local generation                               | 151     |
+    | **CI-equivalent (no generation)**                    | **145** |
+    | **True — freshly generated from current PHP routes** | **148** |
+    | Old committed baseline                               | 149     |
 
-  CI computed **145 ≤ 149 and passed unconditionally**, with ~4 errors of slack: the
-  generated files' real errors were simply replaced by cheaper `TS2307`
-  "cannot find module" ones. The gate was wired and did run — it was **measuring a
-  different, smaller codebase than any developer sees.** The "151" that prompted the
-  defect was an artifact of *stale* generated files; the true count (148) was
-  already **below** the floor.
+    CI computed **145 ≤ 149 and passed unconditionally**, with ~4 errors of slack: the
+    generated files' real errors were simply replaced by cheaper `TS2307`
+    "cannot find module" ones. The gate was wired and did run — it was **measuring a
+    different, smaller codebase than any developer sees.** The "151" that prompted the
+    defect was an artifact of _stale_ generated files; the true count (148) was
+    already **below** the floor.
 
-  *Fixed:* `lint.yml` now runs `php artisan wayfinder:generate` before
-  `types:check` (so the count is reproducible and CI measures the real tree);
-  `tsc-baseline` ratcheted **down** 149 → **148** (the true count); and
-  `ci-tsc-ratchet.php` now **exit 1 on a decrease** instead of printing "please
-  lower" — so "baselines only shrink" is enforced. Bite-proven: planted type error →
-  exit 1; removed → green; simulated improvement → exit 1 demanding the floor drop.
-  **`ci-test-ratchet.php` shared the same warn-only weakness and was fixed
-  identically** (it now exits 1 when a baselined test starts passing).
+    _Fixed:_ `lint.yml` now runs `php artisan wayfinder:generate` before
+    `types:check` (so the count is reproducible and CI measures the real tree);
+    `tsc-baseline` ratcheted **down** 149 → **148** (the true count); and
+    `ci-tsc-ratchet.php` now **exit 1 on a decrease** instead of printing "please
+    lower" — so "baselines only shrink" is enforced. Bite-proven: planted type error →
+    exit 1; removed → green; simulated improvement → exit 1 demanding the floor drop.
+    **`ci-test-ratchet.php` shared the same warn-only weakness and was fixed
+    identically** (it now exits 1 when a baselined test starts passing).
 
-  ⚠️ **Still needs a human:** whether the `linter` / `tests` jobs are *required
-  status checks* in branch protection. "The job fails" is proven here; "a failing
-  job blocks merge" is a GitHub settings fact that cannot be read from the tree.
+    ⚠️ **Still needs a human:** whether the `linter` / `tests` jobs are _required
+    status checks_ in branch protection. "The job fails" is proven here; "a failing
+    job blocks merge" is a GitHub settings fact that cannot be read from the tree.
+
 - **`DashboardAnalysisService:237-256` — unfiltered `student_curricula` join leg.**
   The `leftJoin('student_curricula', …)` at `:237` and the DISTINCT count at
   `:252-256` (keyed on `student_curricula.student_id`) carry **no school
   predicate**; isolation there rides on `class_levels.school_id` (`:217`) and
   `curricula.school_id` (`:245`) upstream. Probably safe today — the leg is reached
   only from already-scoped `curriculum_subjects` — but it is the weakest of the
-  raw-SQL sites and the only one not explicitly filtered. *Had no home until
-  2026-07-19.* **Trigger: slice (ii).** When `StudentCurriculum` adopts
+  raw-SQL sites and the only one not explicitly filtered. _Had no home until
+  2026-07-19._ **Trigger: slice (ii).** When `StudentCurriculum` adopts
   `BelongsToSchool`, every Eloquent path gains a `school_id` predicate while this
   raw join does not — re-audit it then, and add the standalone
   `student_curricula.school_id` index at the same time (`EXPLAIN` confirms a
@@ -821,8 +845,8 @@ Each has a named TRIGGER; none is fixed by slice (i).
 
 - **`promotedTo()` loads the wrong entity.** The FK is self-referencing —
   `promoted_to_id → student_curricula.id`, with the migration comment stating the
-  intent outright: *"Self-referencing FK — points to the next student_curricula row
-  after promotion."* Both internal writers agree (`StudentCurriculumController:178`
+  intent outright: _"Self-referencing FK — points to the next student_curricula row
+  after promotion."_ Both internal writers agree (`StudentCurriculumController:178`
   `=> $new->id`; `BackfillPastTermJob:254` `=> $sourceEnrollment->id`). But
   `StudentCurriculum::promotedTo()` (`:63-66`) does
   `belongsTo(Curriculum::class, 'promoted_to_id')`, `StudentRequest:66` validates it
@@ -856,15 +880,15 @@ intent, not a specification. Archaeology cannot settle it; it is a product call.
 **Decision matrix — the registrar's one word (A/B/C) selects a fixed schema +
 identity model, no further investigation round.** (Not recommending one.)
 
-| Dimension | A — prohibited forever | B — re-enterable after withdrawal (history kept) | C — re-enterable only via a named workflow |
-|---|---|---|---|
-| Schema | keep `UNIQUE(student_id, curriculum_id)`; **stop the delete** (soft-end via `ended_at`/status) — the constraint then correctly means "one enrollment per curriculum, ever" | **change uniqueness** to active-only: MySQL has no partial index → generated `active_key = (ended_at IS NULL ? curriculum_id : NULL)`, `UNIQUE(student_id, active_key)`; stop the delete | same active-only uniqueness as B; general `register`/`promote` keep the prohibition, only the named path inserts a new episode |
-| StudentCurriculum identity | natural key `(student, curriculum)` — exactly one immutable row per pair; lifecycle on `status`/`ended_at` | surrogate `id`/`uuid` — **episodic**: many rows per `(student, curriculum)` over time | surrogate/episodic like B, but new episodes only from the gated workflow |
-| History retention | full (single row + its status/ended_at) | full (one row per episode) | full (one row per episode) |
-| Reporting impact | simplest — one row per `(student, curriculum)`; "ever enrolled" = row exists | richer but must handle N rows per pair; **audit every `where(student_id, curriculum_id)` query that assumes ≤1** | same as B for reporting; entry restricted |
-| Audit trail | append-only, no deletion (aligns §15C spirit) | append-only, per-episode | append-only, per-episode |
-| Finance §9 (durable referent for withdrawal→cancellation) | referent exists (the one row persists) — cancel against a stable id | **best** — each billing episode is its own durable row/id | good — episodic referent, entry-gated |
-| Migration complexity | **LOW** — replace delete with soft-end; constraint unchanged; existing "already enrolled" checks become correct | **HIGH** — uniqueness redesign (generated column + index) + stop delete + audit all `(student,curriculum)` reads | **MEDIUM–HIGH** — B's schema + a named re-enroll operation + keep general-path prohibitions |
+| Dimension                                                 | A — prohibited forever                                                                                                                                                     | B — re-enterable after withdrawal (history kept)                                                                                                                                         | C — re-enterable only via a named workflow                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Schema                                                    | keep `UNIQUE(student_id, curriculum_id)`; **stop the delete** (soft-end via `ended_at`/status) — the constraint then correctly means "one enrollment per curriculum, ever" | **change uniqueness** to active-only: MySQL has no partial index → generated `active_key = (ended_at IS NULL ? curriculum_id : NULL)`, `UNIQUE(student_id, active_key)`; stop the delete | same active-only uniqueness as B; general `register`/`promote` keep the prohibition, only the named path inserts a new episode |
+| StudentCurriculum identity                                | natural key `(student, curriculum)` — exactly one immutable row per pair; lifecycle on `status`/`ended_at`                                                                 | surrogate `id`/`uuid` — **episodic**: many rows per `(student, curriculum)` over time                                                                                                    | surrogate/episodic like B, but new episodes only from the gated workflow                                                       |
+| History retention                                         | full (single row + its status/ended_at)                                                                                                                                    | full (one row per episode)                                                                                                                                                               | full (one row per episode)                                                                                                     |
+| Reporting impact                                          | simplest — one row per `(student, curriculum)`; "ever enrolled" = row exists                                                                                               | richer but must handle N rows per pair; **audit every `where(student_id, curriculum_id)` query that assumes ≤1**                                                                         | same as B for reporting; entry restricted                                                                                      |
+| Audit trail                                               | append-only, no deletion (aligns §15C spirit)                                                                                                                              | append-only, per-episode                                                                                                                                                                 | append-only, per-episode                                                                                                       |
+| Finance §9 (durable referent for withdrawal→cancellation) | referent exists (the one row persists) — cancel against a stable id                                                                                                        | **best** — each billing episode is its own durable row/id                                                                                                                                | good — episodic referent, entry-gated                                                                                          |
+| Migration complexity                                      | **LOW** — replace delete with soft-end; constraint unchanged; existing "already enrolled" checks become correct                                                            | **HIGH** — uniqueness redesign (generated column + index) + stop delete + audit all `(student,curriculum)` reads                                                                         | **MEDIUM–HIGH** — B's schema + a named re-enroll operation + keep general-path prohibitions                                    |
 
 **Candidate workflows to name if the answer is C:** (C1) status-only repeat —
 model a repeat as `status='repeated'` on the SAME row (schema unchanged, but
@@ -886,20 +910,20 @@ inline and **skip `autoAttachCompulsorySubjects`** — a functional divergence, 
 just a style one. Smallest convergence: `@register` → `enroll($student, $target, $user)`;
 `@promote` → `enroll($student, $target, $user, ['status' => …])` for the new row +
 keep the source→PROMOTED update in the same transaction. The controller already
-injects the service. No schema change; a behaviour *fix* (promotions/registrations
+injects the service. No schema change; a behaviour _fix_ (promotions/registrations
 would gain the compulsory subjects they currently miss). Its own slice + tests;
 not published as an event yet.
 
 **§2b deletion defect — does NOT clear; the dependency IS the finding.**
 `student_curricula` has `UNIQUE(student_id, curriculum_id)` and **no** soft-deletes
 (verified from schema). So `updateStatus('withdrawn')` → `->delete()` is a
-*workaround*: it removes the row so the student can re-enrol in the same curriculum
+_workaround_: it removes the row so the student can re-enrol in the same curriculum
 — a retained withdrawn row would block that at the unique index (and at
 `@register`'s own `where(student_id,curriculum_id)->exists()` guard). The same
 constraint means `unenroll()` (which keeps the row with `ended_at`) **already**
 cannot re-enrol into the same curriculum — `enroll()` checks only
 `whereNull('ended_at')`, then `create` hits the unique index → unhandled
-`QueryException`. The two enrollment-end mechanisms diverge *because of* the
+`QueryException`. The two enrollment-end mechanisms diverge _because of_ the
 uniqueness model. **Naive "stop the delete" is unsafe** — it breaks re-enrolment.
 Correct fix (soft-end on withdrawal **and** active-only uniqueness — MySQL has no
 partial unique index, so a generated `active_key` column with
@@ -907,7 +931,7 @@ partial unique index, so a generated `active_key` column with
 schema+logic slice, not a one-liner. Recorded as a prerequisite; nothing shipped.
 
 **§2a withdrawal state machine — half-built.** Two enums exist —
-`StudentStatusEnum` (used for *enrollment* status) and `StudentMembershipStatus`
+`StudentStatusEnum` (used for _enrollment_ status) and `StudentMembershipStatus`
 (student-level, also `withdrawn`) — but `students.status`/`left_at`/`leave_reason`
 are unwritten. Intended model appears two-level: enrollment lifecycle (per
 curriculum) vs student membership (per School — the Finance-relevant one). The
@@ -924,21 +948,22 @@ build lifecycle commands before it.
 
 **§4 published-fact inventory (candidates):**
 
-| Fact | Authoritative transition | Single point? | Atomic post-commit? | Consumer | Publish now? |
-|---|---|---|---|---|---|
-| EnrollmentCreated | `enroll` service | No (promote/register bypass) | yes | billing eligibility | prereq §1 |
-| EnrollmentEnded | `unenroll` (ended_at) | No (withdraw-delete competes) | yes | invoice cancel | prereq §2b |
-| StudentWithdrawn (membership) | does not exist | n/a | n/a | billing stop | prereq §2a |
-| StudentPromoted | `@promote` (direct) | no | yes | academics | prereq §1 |
-| TermStarted/Closed | none (CRUD status) | no | no | revenue recog | not an event — date-derived (§3) |
-| ResultApproved | `@approve` | single-ish | yes | Ph3 | prereq ADR 0044 |
+| Fact                          | Authoritative transition | Single point?                 | Atomic post-commit? | Consumer            | Publish now?                     |
+| ----------------------------- | ------------------------ | ----------------------------- | ------------------- | ------------------- | -------------------------------- |
+| EnrollmentCreated             | `enroll` service         | No (promote/register bypass)  | yes                 | billing eligibility | prereq §1                        |
+| EnrollmentEnded               | `unenroll` (ended_at)    | No (withdraw-delete competes) | yes                 | invoice cancel      | prereq §2b                       |
+| StudentWithdrawn (membership) | does not exist           | n/a                           | n/a                 | billing stop        | prereq §2a                       |
+| StudentPromoted               | `@promote` (direct)      | no                            | yes                 | academics           | prereq §1                        |
+| TermStarted/Closed            | none (CRUD status)       | no                            | no                  | revenue recog       | not an event — date-derived (§3) |
+| ResultApproved                | `@approve`               | single-ish                    | yes                 | Ph3                 | prereq ADR 0044                  |
 
 **§5 readiness — what blocks 1.4e.** Every fact needs one authoritative
 transition, one publication point, an atomic committed change, and a stable DTO.
 Today **zero** facts have all four. Order: §1 convergence → §2b uniqueness rework
-+ soft-end withdrawal → §2a membership state machine → then EnrollmentCreated /
-EnrollmentEnded / StudentWithdrawn are publishable; TermStarted/Closed reclassified
-as date-derived (no event). The bus itself is trivial and comes last.
+
+- soft-end withdrawal → §2a membership state machine → then EnrollmentCreated /
+  EnrollmentEnded / StudentWithdrawn are publishable; TermStarted/Closed reclassified
+  as date-derived (no event). The bus itself is trivial and comes last.
 
 ## 1.4c — audit-log immutability (2026-07)
 
@@ -985,11 +1010,11 @@ triggers, and deploy must run `php artisan audit:verify-immutability` afterward.
 guard is application code and always present, but it does not stop raw SQL or a
 mass `->delete()`; the triggers are the layer a restore can strip. Per mechanism:
 
-| Restore mechanism | Triggers survive? |
-|---|---|
+| Restore mechanism                                                                | Triggers survive?                                                                                                                                                            |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Logical dump/restore (`mysqldump`) — `activity_log` only OR full into a fresh DB | **Only if** dumped with `--triggers` (default-on but frequently disabled by managed-DB export tooling) AND the restoring user holds `TRIGGER` privilege. Often **stripped**. |
-| Physical / binary restore (XtraBackup, filesystem/volume snapshot) | **Yes** — triggers are in the physical data-dictionary files. |
-| Point-in-time recovery (base backup + binlog replay) | Survives if the base backup had them (physical) or the `CREATE TRIGGER` falls within the replayed binlog window; a logical base backup without `--triggers` does **not**. |
+| Physical / binary restore (XtraBackup, filesystem/volume snapshot)               | **Yes** — triggers are in the physical data-dictionary files.                                                                                                                |
+| Point-in-time recovery (base backup + binlog replay)                             | Survives if the base backup had them (physical) or the `CREATE TRIGGER` falls within the replayed binlog window; a logical base backup without `--triggers` does **not**.    |
 
 **Mandated mitigation (implemented):** `php artisan audit:verify-immutability`
 asserts both `activity_log` triggers exist and **exits non-zero, loudly, if
@@ -1013,7 +1038,7 @@ forbids reuse for gap-free Finance receipt/invoice numbering (§12.5), which nee
 signed policy and its own ADR. **The Shared Kernel service carries NO domain
 meaning** — no Finance/invoice/receipt/accounting/gap-free terminology (it exposes
 only a generic per-`(scope, key)` counter). The **application-level** boundary
-lives here, not in the Kernel: any future *gap-free* identifier (e.g. Finance
+lives here, not in the Kernel: any future _gap-free_ identifier (e.g. Finance
 receipt/invoice numbering, which is legally contiguous) needs its own design + a
 signed accounting policy that does not yet exist, and must NOT assume this
 gap-tolerant counter satisfies it. **Transactional guarantee:** `save()` on the
@@ -1026,12 +1051,12 @@ no cross-School contention (bite-proven: two Schools → two independent rows).
 
 **Design comparison (evidence, not familiarity) — chosen: counter table + row lock:**
 
-| Option | Concurrency correctness | Txn atomicity | Rollback | Op. complexity | Portability | Perf | Verdict |
-|---|---|---|---|---|---|---|---|
-| **Counter table + `SELECT…FOR UPDATE`** | serialises same-key writers | participates in caller txn | reverts with caller | low (one table) | standard SQL | one indexed row lock/alloc | **CHOSEN** |
-| Counter table + `INSERT…ON DUPLICATE KEY UPDATE LAST_INSERT_ID` | correct | atomic single stmt | reverts | medium | MySQL-specific | fastest | rejected — `LAST_INSERT_ID()` returns the PK not the value on first insert; brittle read-back |
-| Advisory lock (`GET_LOCK`) | correct | **NOT** part of the row txn | lock ≠ data | medium | MySQL-specific | lock RTT | rejected — connection-scoped, not atomic with the insert/rollback |
-| Optimistic retry on `max+1` + unique index | correct after retries | n/a | n/a | high (retry loop) | portable | contends on the HOT domain table | rejected — retries under load, reads the domain table (the defect we're removing) |
+| Option                                                          | Concurrency correctness     | Txn atomicity               | Rollback            | Op. complexity    | Portability    | Perf                             | Verdict                                                                                       |
+| --------------------------------------------------------------- | --------------------------- | --------------------------- | ------------------- | ----------------- | -------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Counter table + `SELECT…FOR UPDATE`**                         | serialises same-key writers | participates in caller txn  | reverts with caller | low (one table)   | standard SQL   | one indexed row lock/alloc       | **CHOSEN**                                                                                    |
+| Counter table + `INSERT…ON DUPLICATE KEY UPDATE LAST_INSERT_ID` | correct                     | atomic single stmt          | reverts             | medium            | MySQL-specific | fastest                          | rejected — `LAST_INSERT_ID()` returns the PK not the value on first insert; brittle read-back |
+| Advisory lock (`GET_LOCK`)                                      | correct                     | **NOT** part of the row txn | lock ≠ data         | medium            | MySQL-specific | lock RTT                         | rejected — connection-scoped, not atomic with the insert/rollback                             |
+| Optimistic retry on `max+1` + unique index                      | correct after retries       | n/a                         | n/a                 | high (retry loop) | portable       | contends on the HOT domain table | rejected — retries under load, reads the domain table (the defect we're removing)             |
 
 MySQL tests:
 `SequencesServiceTest` (counter mechanics, seed-once, 200-call uniqueness+contiguity,
@@ -1044,12 +1069,13 @@ guarantee).
 ### Shared Sequences — guarantees, non-guarantees, failure modes (adversarial pass)
 
 **Guarantees:** uniqueness under concurrency · transactional allocation (allocation
-+ INSERT are one unit via the trait `save()` override — a failed persist rolls the
-allocation back) · School isolation (the `FOR UPDATE` lock is on the `(scope, key)`
-counter row and the key embeds the School — different Schools lock different rows) ·
-gap tolerance. **Explicitly NOT guaranteed:** gap-free numbering · chronological
-ordering across Schools · any global ordering · regulatory/legal numbering. Those
-require a separate design + signed policy (not this Kernel primitive).
+
+- INSERT are one unit via the trait `save()` override — a failed persist rolls the
+  allocation back) · School isolation (the `FOR UPDATE` lock is on the `(scope, key)`
+  counter row and the key embeds the School — different Schools lock different rows) ·
+  gap tolerance. **Explicitly NOT guaranteed:** gap-free numbering · chronological
+  ordering across Schools · any global ordering · regulatory/legal numbering. Those
+  require a separate design + signed policy (not this Kernel primitive).
 
 **Lock ordering / deadlock (§1):** `Model::save()` fires `creating` (→
 `Sequences::next`, which locks the counter row) **before** `performInsert`
@@ -1082,7 +1108,7 @@ migration `down()` drops it on rollback). **Partial-restore hazard (asymmetric,
 does NOT self-heal):** if `sequences` is restored to a state older than the domain
 table, the counter sits below the live domain max; because the row already exists,
 seed-from-max does **not** re-run, and the next allocation collides with the
-composite unique index → a generation *failure* (exception) that repeats until the
+composite unique index → a generation _failure_ (exception) that repeats until the
 counter passes the domain max. Nothing detects or auto-recovers this.
 **Operational runbook:** after any restore where `sequences` may lag the domain,
 `DELETE` the affected `(scope, key)` rows — they lazily re-seed from the domain max
@@ -1090,17 +1116,17 @@ on next use — or `UPDATE value` to the current domain max.
 
 **Failure-mode inventory (§4) — none yields a duplicate or a silent null:**
 
-| Failure | Behaviour | dup? | reused? | skipped? | null? |
-|---|---|---|---|---|---|
-| Rollback before insert | savepoint reverts the increment | no | yes | no | no |
-| Rollback after insert | whole save-txn reverts (row + increment) | no | yes | no | no |
-| Unique-index violation | save-txn rolls back; surfaced as an exception | no | yes | no | no |
-| Deadlock victim | n/a — no deadlock scenario exists (§1) | no | — | — | no |
-| DB restart | InnoDB reverts uncommitted allocations | no | yes | no | no |
-| Txn / lock-wait timeout | waiter errors, save-txn rolls back; caller retries → next value | no | yes | maybe | no |
-| Manual DB edits | out of code scope; same as partial-restore if counter set low | no* | — | maybe | no* |
-| Sequence row corruption | same as manual edit / partial restore → collision, runbook re-seed | no | — | — | no |
-| Partial restore (counter < domain) | collision → generation failure until re-seeded (runbook) | no | — | — | no |
+| Failure                            | Behaviour                                                          | dup? | reused? | skipped? | null? |
+| ---------------------------------- | ------------------------------------------------------------------ | ---- | ------- | -------- | ----- |
+| Rollback before insert             | savepoint reverts the increment                                    | no   | yes     | no       | no    |
+| Rollback after insert              | whole save-txn reverts (row + increment)                           | no   | yes     | no       | no    |
+| Unique-index violation             | save-txn rolls back; surfaced as an exception                      | no   | yes     | no       | no    |
+| Deadlock victim                    | n/a — no deadlock scenario exists (§1)                             | no   | —       | —        | no    |
+| DB restart                         | InnoDB reverts uncommitted allocations                             | no   | yes     | no       | no    |
+| Txn / lock-wait timeout            | waiter errors, save-txn rolls back; caller retries → next value    | no   | yes     | maybe    | no    |
+| Manual DB edits                    | out of code scope; same as partial-restore if counter set low      | no\* | —       | maybe    | no\*  |
+| Sequence row corruption            | same as manual edit / partial restore → collision, runbook re-seed | no   | —       | —        | no    |
+| Partial restore (counter < domain) | collision → generation failure until re-seeded (runbook)           | no   | —       | —        | no    |
 
 \* the composite UNIQUE index prevents a duplicate and a NULL never persists (a
 bypassing raw insert is blocked by the §2 lint); the worst outcome is a surfaced
@@ -1115,12 +1141,13 @@ generator exists; invoice/receipt are Finance (Ph2+, out of scope, none built).
 (`GFA/YYYY/NNN`, `STF/YYYY/NNN`), zero-padded-3 suffix, gap-tolerant `max+1`.
 
 **Schema (verified directly from MySQL, not inferred):**
+
 - `students`: `UNIQUE(school_id, admission_number)` — present.
 - `teachers`: `UNIQUE(school_id, staff_number)` — present (the flagged
   `Teacher.staff_number` candidate — confirmed, not assumed).
 - Both columns nullable (transient NULLs allowed under the unique index). No
   missing/redundant index. **The composite unique index makes the application
-  `creating` duplicate check redundant for *correctness*** (it survives only as a
+  `creating` duplicate check redundant for _correctness_** (it survives only as a
   friendlier error message).
 
 **Functional defect (the one the prompt names) — ALREADY FIXED.** Generation and
@@ -1140,11 +1167,11 @@ and a failed update leaves a null. No transaction, no lock, no retry.
 
 **Classification (evidence-driven, not for consistency):**
 
-| Generator | Verdict | Why |
-|---|---|---|
-| `admission_number` (Student) | **Migrate → Shared Sequences** | racy unlocked read-then-write + non-atomic `created`-time generation; needs an atomic, school-scoped, prefixed counter |
-| `staff_number` (Teacher) | **Migrate → Shared Sequences** | identical architecture and identical defect → shares the service's requirements exactly |
-| invoice / receipt (Finance) | **Out of scope (identify only)** | do not exist; Finance Ph2+; likely need *gap-free* (regulatory), a stronger requirement than admission/staff gap-tolerance — must not be assumed to share this service without its own ADR |
+| Generator                    | Verdict                          | Why                                                                                                                                                                                        |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `admission_number` (Student) | **Migrate → Shared Sequences**   | racy unlocked read-then-write + non-atomic `created`-time generation; needs an atomic, school-scoped, prefixed counter                                                                     |
+| `staff_number` (Teacher)     | **Migrate → Shared Sequences**   | identical architecture and identical defect → shares the service's requirements exactly                                                                                                    |
+| invoice / receipt (Finance)  | **Out of scope (identify only)** | do not exist; Finance Ph2+; likely need _gap-free_ (regulatory), a stronger requirement than admission/staff gap-tolerance — must not be assumed to share this service without its own ADR |
 
 **Migration target & boundary (ADR 0033 §8.1/§8.2):** the shared service lives in
 `app/Support/Sequences/` (Shared Kernel). Student (Academics/Admissions) and
@@ -1178,7 +1205,7 @@ This decision makes the ratchet interpretation explicit and binding.
 
 ## Decision: the §24 authorization checkpoint is not closed by `authz-lint = 0`
 
-**A green authz-lint is a false signal for §24.** The lint counts *commented-out*
+**A green authz-lint is a false signal for §24.** The lint counts _commented-out_
 authorization; the S5 rollout clears each commented check by restoring it as live
 code that runs in **observe mode** (records a would-be denial, then continues —
 never blocks). So authz-lint reaches 0 the moment the checks are restored, while
@@ -1192,7 +1219,7 @@ authorizes nothing.
 2. `AUTHZ_ENFORCE=true` is set in the production environment, **and**
 3. the observe-mode evidence (`authz_observations`) has been reviewed and every
    would-be denial classified as expected (not a legitimate-access regression), **and**
-4. enforcement is verified *active* in production — a request lacking a required
+4. enforcement is verified _active_ in production — a request lacking a required
    permission actually receives 403, confirmed by a live check, not by config alone.
 
 Until all four hold, §24 authorization is **open**, regardless of the lint number.
@@ -1247,12 +1274,12 @@ scheduled work that does not yet exist — revenue recognition on term start (§
 dunning reminders (§11), the ledger drift-verification job (§12.2), reconciliation.
 Those are **School-scoped** and per §5.4 must iterate Schools via
 `ActiveSchool::runFor()`; `authz:prune` is exempt only because it deletes by age
-and reads no School-owned data. The scheduling *mechanism* (a running
+and reads no School-owned data. The scheduling _mechanism_ (a running
 `schedule:run` cron / `schedule:work`) must be provisioned in the deploy
 environment before any Phase-2 scheduled job is relied upon.
 
 **Deployment prerequisite — the scheduler must actually run (registration ≠
-execution).** `schedule:list` proves the task is *registered*; it does not prove
+execution).** `schedule:list` proves the task is _registered_; it does not prove
 the OS invokes it. Exactly one of the following must be configured in the
 deployment environment, and its execution **verified** (e.g. observe an
 `authz:prune` run in the logs, or a scheduled `->onSuccess()`/health ping):
@@ -1266,7 +1293,7 @@ deployment environment, and its execution **verified** (e.g. observe an
 
 **This is an environment concern the repository cannot prove.** There is no cron
 manifest, Procfile, systemd unit, or platform-scheduler config committed; the repo
-only proves *registration* (`routes/console.php` + `ScheduleTest`). Whether
+only proves _registration_ (`routes/console.php` + `ScheduleTest`). Whether
 `schedule:run` is actually invoked in any environment is **not determinable from
 this repository — do not infer it is.** **Binding: observe mode must not receive
 production traffic until scheduler execution has been verified in that
@@ -1284,8 +1311,8 @@ alone. This is a general MySQL gotcha, not specific to those tables. So when the
 first-deploy is planned, for every Phase-1 migration that drops a foreign key,
 verify the four paths (fresh / upgrade / rollback / **re-upgrade**), because a
 broken `down()` hurts most during an incident: you roll back to recover, then
-cannot re-deploy the fix. *Do not audit them now — this is the captured pre-flight,
-looked-for at deploy planning.*
+cannot re-deploy the fix. _Do not audit them now — this is the captured pre-flight,
+looked-for at deploy planning._
 
 ### S7 — remove `users.school_id` + `school_user` (execution plan + runtime-zero gate)
 
@@ -1296,7 +1323,7 @@ repointed, or justified.
 
 **Runtime dependency graph (executable references, verified 2026-07):**
 
-*`users.school_id` (read/write):*
+_`users.school_id` (read/write):_
 
 - `ActiveSchool::id()` [:54-55](../app/Support/ActiveSchool.php#L54) — the fallback source (source 3). **Remove (S7 Step 3).**
 - `ActivitySchoolResolver` — **DONE (S7 Step 2):** now reads through `ActiveSchool::id()`; the direct `auth()->user()->school_id` read is gone.
@@ -1306,7 +1333,7 @@ repointed, or justified.
 - Commented ownership checks: [StudentSubjectController:227](../app/Http/Controllers/StudentSubjectController.php#L227), [StudentCurriculumController:67](../app/Http/Controllers/StudentCurriculumController.php#L67) — **delete** at drop (do not migrate).
 - Frontend type `auth.ts` `school_id: string` [resources/js/types/auth.ts](../resources/js/types/auth.ts) — remove at drop; audit consumers.
 
-*`school_user` pivot (read/write):*
+_`school_user` pivot (read/write):_
 
 - `User::schools()` belongsToMany + `computeAccessibleSchoolIds()` legacy branch — bypassed by the single-source flag; removed at drop.
 - **Direct data-visibility readers (independent of the flag — the load-bearing risk):** `GuardianService` [:38](../app/Services/GuardianService.php#L38) join, `Teacher` [:54](../app/Models/Teacher.php#L54) subquery, `Guardian` [:93](../app/Models/Guardian.php#L93) subquery. These scope guardian/teacher multi-school visibility off `school_user` and are **not** covered by flipping `single_source_access`. They must be repointed to `model_has_roles` (the backfilled single source) **before** the pivot is dropped.
@@ -1331,7 +1358,7 @@ a flag-flip between runs compares different traffic and misses it. **Coverage
 clause:** zero mismatches over zero (or unrepresentative) decisions is not
 evidence; the soak log must show every user category (single/multi-School, super
 admin, zero-access), ≥2 Schools, and both HTTP and queue transports, and must
-report the decision count + distribution. **Zero mismatches *with* coverage is the
+report the decision count + distribution. **Zero mismatches _with_ coverage is the
 only condition permitting the migration.**
 
 **Near-miss — a flag proves parity only for the paths it controls.**
@@ -1380,7 +1407,7 @@ which is gated by the same flag, so the soak now covers them.
   `school_id`; the proposed replacement is **teacher creation grants a role in
   that School** (`model_has_roles` row) — a behaviour change (creation now confers
   a role). Which role? Presumably `teacher` in the selected School. `AdminController`
-  [:104-105](../app/Http/Controllers/SuperAdmin/AdminController.php#L104) *maintains*
+  [:104-105](../app/Http/Controllers/SuperAdmin/AdminController.php#L104) _maintains_
   the column (resets a user's home School when it leaves their accessible set);
   once the column is gone this maintenance has **nothing to maintain** and should
   **simply delete**, not translate. Both need sign-off before implementation.
@@ -1402,7 +1429,7 @@ Investigated before proposing any writer change (do not infer from the column wr
   the role in the same transaction.
 - **Is the `users.school_id` write a business rule or legacy compat?** **Legacy
   compat.** Access is already conferred by `assignRole`; `users.school_id` is a
-  redundant home-School stamp on the *User*. It is distinct from
+  redundant home-School stamp on the _User_. It is distinct from
   **`teachers.school_id`** (the Teacher model's own home-School column, a
   `BelongsToSchool` field that is **NOT** part of S7 and stays).
 - **Proposed writer change (still STOP-for-review, not implemented):** delete
@@ -1428,16 +1455,16 @@ context; they had only "passed" via team-state leaking between tests).
 
 **2. Every writer to a legacy source — location · disposition:**
 
-| Writer | Source | Writes a role too? | Divergence-capable? | Disposition |
-|---|---|---|---|---|
-| `TeacherService` `User::create` (×2) | `users.school_id` | Yes — `assignRole('teacher')`, now team-guaranteed | No | delete the `school_id` key (writer change, gated on prod count) |
-| `GuardianService::enableLogin` scenario-1 `User::create` | `users.school_id` | Yes — `assignRole('guardian')` + a Guardian record | No | delete the `school_id` key at the writer change |
-| `SuperAdmin\AdminController:105` `forceFill(['school_id'])` | `users.school_id` | **No** — resets the column only | **Yes** (column without role) | **delete** — nothing to maintain once the column is gone |
-| `User::grantSchoolAccess` `schools()->syncWithoutDetaching` | `school_user` | Yes — role + pivot written together | No | delete the pivot write at the column drop (role write stays) |
-| `User::revokeSchoolAccess` `schools()->detach` | `school_user` | removes role + pivot together | No | delete the pivot side at the column drop |
-| `createGuardianWithUser` / attach path → `grantSchoolAccess('guardian')` | `school_user` (+ role) | Yes (via grantSchoolAccess) | No | pivot side removed at drop |
-| backfill migration `2026_07_14_000002` | `school_user` | historical one-time | No | leave (history) |
-| `Api\AuthenticationController` `forceFill(['school_id'])` (×2) | **`personal_access_tokens.school_id`** — NOT `users.school_id` | n/a | No | **out of S7 scope** (token column, not the user column) |
+| Writer                                                                   | Source                                                         | Writes a role too?                                 | Divergence-capable?           | Disposition                                                     |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------------------------- | ----------------------------- | --------------------------------------------------------------- |
+| `TeacherService` `User::create` (×2)                                     | `users.school_id`                                              | Yes — `assignRole('teacher')`, now team-guaranteed | No                            | delete the `school_id` key (writer change, gated on prod count) |
+| `GuardianService::enableLogin` scenario-1 `User::create`                 | `users.school_id`                                              | Yes — `assignRole('guardian')` + a Guardian record | No                            | delete the `school_id` key at the writer change                 |
+| `SuperAdmin\AdminController:105` `forceFill(['school_id'])`              | `users.school_id`                                              | **No** — resets the column only                    | **Yes** (column without role) | **delete** — nothing to maintain once the column is gone        |
+| `User::grantSchoolAccess` `schools()->syncWithoutDetaching`              | `school_user`                                                  | Yes — role + pivot written together                | No                            | delete the pivot write at the column drop (role write stays)    |
+| `User::revokeSchoolAccess` `schools()->detach`                           | `school_user`                                                  | removes role + pivot together                      | No                            | delete the pivot side at the column drop                        |
+| `createGuardianWithUser` / attach path → `grantSchoolAccess('guardian')` | `school_user` (+ role)                                         | Yes (via grantSchoolAccess)                        | No                            | pivot side removed at drop                                      |
+| backfill migration `2026_07_14_000002`                                   | `school_user`                                                  | historical one-time                                | No                            | leave (history)                                                 |
+| `Api\AuthenticationController` `forceFill(['school_id'])` (×2)           | **`personal_access_tokens.school_id`** — NOT `users.school_id` | n/a                                                | No                            | **out of S7 scope** (token column, not the user column)         |
 
 **Guardians (explicitly checked, §2):** guardian access is written as a Guardian
 record **plus** a role — via `grantSchoolAccess('guardian')` (create/attach) or a
@@ -1464,7 +1491,7 @@ the production default)**, `accessibleSchoolIds()` does **not** read
   accessible-school set under the legacy path — proven in tinker: flag OFF → `[]`,
   flag ON → `[13]`. An empty set means `SchoolAwareLoginResponse` rejects the
   login. Deleting this write while the flag is off **strips new teachers' login.**
-- **`AdminController:105`:** it *resets* `users.school_id` when a home-School is
+- **`AdminController:105`:** it _resets_ `users.school_id` when a home-School is
   revoked, precisely so the legacy fallback (`if ($this->school_id) push`) stops
   granting the revoked School. Deleting it leaves a **revoked School still granted
   via the fallback** — a security regression under the legacy path.
@@ -1500,13 +1527,13 @@ real people), never a mechanical fix. Locked by `S7DivergenceSnapshotTest`.
   `school_user` pivot ∪ guardian records ∪ `users.school_id`, and **does not read
   roles**. The two paths are mutually exclusive. This is why a role-only user
   resolves to `[]` under the flag-off legacy path. Any earlier phrasing implying
-  the legacy branch *unions* `schoolIdsFromRoles()` is wrong; the model docblock
+  the legacy branch _unions_ `schoolIdsFromRoles()` is wrong; the model docblock
   is corrected to state the either/or explicitly.
 - **§2 — writer strategy is Option B (not A).** Leave ALL compatibility writers
   (`TeacherService` ×2, `AdminController:105`, `GuardianService::enableLogin`)
   untouched until the column-drop slice; delete them together there. Option A
   (flag-gated writes that self-disable at the flip) is **rejected**: a teacher
-  onboarded *after* the flip would have no column value, so a flip-back (soak
+  onboarded _after_ the flip would have no column value, so a flip-back (soak
   surprise / prod ≠ staging) drops them to `[]` and rejects login — Option A makes
   the flag one-way for everyone onboarded after it, destroying the reversibility
   that is the point of expand/contract. Option B keeps the column populated until
@@ -1526,8 +1553,8 @@ real people), never a mechanical fix. Locked by `S7DivergenceSnapshotTest`.
   `AuthenticationController@register` `assignRole('admin')` would throw under the
   invariant if ever wired — a latent bug the invariant surfaces, left as-is
   (registration is disabled).
-- **§4 — runtime-zero gate is now two sections.** *Section A* = application
-  references (must reach 0 before the drop) — baseline **12**. *Section B* =
+- **§4 — runtime-zero gate is now two sections.** _Section A_ = application
+  references (must reach 0 before the drop) — baseline **12**. _Section B_ =
   migration tooling that legitimately references the legacy schema
   (`S7DivergenceSnapshot`, `SchoolAccessParity`) — reported separately, **never**
   gates Section A, expires with the S7 teardown. Section B = 3.
@@ -1544,18 +1571,18 @@ real people), never a mechanical fix. Locked by `S7DivergenceSnapshotTest`.
 
 The gate is a grep; it cannot see everything. Each blind spot and its control:
 
-| Blind spot | Detected? | Compensating control |
-|---|---|---|
-| Explicit `school_user` string | **Yes** (pattern) | — |
-| Implicit `belongsToMany(School)` pivot + `->schools()` consumers | **Yes** (patterns added §2) | the gate now fails while any `->schools()` call remains — it cannot report 0 with the pivot still resolved |
-| `$user->school_id` / `->user()->school_id` reads, raw `users.school_id` | **Yes** (patterns) | — |
-| `$this->school_id` in User.php | **Yes** (file-scoped pattern) | — |
-| Column **writes** (`AdminController` forceFill, `TeacherService` `User::create`) | **No** (would over-match `'school_id' =>` everywhere) | **boundary-lint** (`school-id-fallback-context` + maintenance-write) + the writer disposition in the readiness matrix below |
-| Dynamic property access (`$model->{$attr}`, `getAttribute('school_id')`) | **No** | code review + the readiness matrix; `ActivitySchoolResolver::schoolIdOf` uses `getAttribute('school_id')` polymorphically and is intentionally model-agnostic (not a users.school_id reference) |
-| Dynamically-built SQL / raw `DB::statement` string interpolation | **No** | none automated — none exists today (grep for `DB::statement`/`DB::raw` with `school_user` is empty); a reviewer check at the writer/drop slice |
-| Reflection / container resolution | **No** | none exists; no `school_id`/`school_user` is resolved by string via the container |
-| Vendor callbacks (spatie relation naming) | Partially | the `belongsToMany(School)` + `->schools()` patterns catch the app-side wiring; spatie's internal pivot name derivation is covered by removing the relation |
-| Frontend (`auth.ts` `school_id`) | **No** (PHP-only lint) | tsc + the readiness matrix (delete at drop) |
+| Blind spot                                                                       | Detected?                                             | Compensating control                                                                                                                                                                            |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Explicit `school_user` string                                                    | **Yes** (pattern)                                     | —                                                                                                                                                                                               |
+| Implicit `belongsToMany(School)` pivot + `->schools()` consumers                 | **Yes** (patterns added §2)                           | the gate now fails while any `->schools()` call remains — it cannot report 0 with the pivot still resolved                                                                                      |
+| `$user->school_id` / `->user()->school_id` reads, raw `users.school_id`          | **Yes** (patterns)                                    | —                                                                                                                                                                                               |
+| `$this->school_id` in User.php                                                   | **Yes** (file-scoped pattern)                         | —                                                                                                                                                                                               |
+| Column **writes** (`AdminController` forceFill, `TeacherService` `User::create`) | **No** (would over-match `'school_id' =>` everywhere) | **boundary-lint** (`school-id-fallback-context` + maintenance-write) + the writer disposition in the readiness matrix below                                                                     |
+| Dynamic property access (`$model->{$attr}`, `getAttribute('school_id')`)         | **No**                                                | code review + the readiness matrix; `ActivitySchoolResolver::schoolIdOf` uses `getAttribute('school_id')` polymorphically and is intentionally model-agnostic (not a users.school_id reference) |
+| Dynamically-built SQL / raw `DB::statement` string interpolation                 | **No**                                                | none automated — none exists today (grep for `DB::statement`/`DB::raw` with `school_user` is empty); a reviewer check at the writer/drop slice                                                  |
+| Reflection / container resolution                                                | **No**                                                | none exists; no `school_id`/`school_user` is resolved by string via the container                                                                                                               |
+| Vendor callbacks (spatie relation naming)                                        | Partially                                             | the `belongsToMany(School)` + `->schools()` patterns catch the app-side wiring; spatie's internal pivot name derivation is covered by removing the relation                                     |
+| Frontend (`auth.ts` `school_id`)                                                 | **No** (PHP-only lint)                                | tsc + the readiness matrix (delete at drop)                                                                                                                                                     |
 
 ### S7 parity-soak exit criteria (§3) — required BEFORE `RBAC_SINGLE_SOURCE_ACCESS` in staging
 
@@ -1609,18 +1636,18 @@ Non-zero → a **backfill decision** (the single largest S7 risk), resolved befo
 The migration cannot begin until every row is `already removed` or has a landed
 disposition **and** `runtime-zero-lint` reports 0.
 
-| File / ref | Purpose | Owner slice | Disposition |
-|---|---|---|---|
-| `ActiveSchool::id()` source-3 (`$user->school_id` ×2) | single-School context fallback | S7 Step 3 | **delete** (redundant with session/token; §5 gates) |
-| `User.php` `computeAccessibleSchoolIds` legacy branch (`$this->school_id`, `->schools()`) | legacy access union | column-drop slice | **delete** (single-source is the path) |
-| `User.php` `belongsToMany(School)` + `schools()` (sync/detach/pluck) | pivot relation + grant writes | column-drop slice | **delete relation**; grant writes move to role-only (`grantSchoolAccess` already writes roles) |
-| `SchoolAccess` `from('school_user')` branch | flag-off reader path | column-drop slice | **delete** the else branch (flag-on model_has_roles path remains) |
-| `AdminController:104` read + `:105` forceFill write | home-School maintenance | writer slice | **delete** (nothing to maintain once the column is gone) |
-| `TeacherService` `User::create([...'school_id'])` ×2 | legacy home-School stamp | writer slice | **delete the `'school_id'` key** (role grant already present) |
-| `TeacherSchoolAccessController` `->schools()->get()` / `grantSchoolAccess` | extra-School grants | column-drop slice | repoint reads to roles; grant writes already role-based |
-| commented `users.school_id` ownership checks (StudentSubject/StudentCurriculum) | dead ownership guards | column-drop slice | **delete** (redundant with SchoolScope) |
-| `auth.ts` `school_id: string` | frontend user type | column-drop slice | **delete** + audit consumers |
-| the 4 nested parent-child integrity checks | route integrity | — | **retain** (not redundant with SchoolScope) |
+| File / ref                                                                                | Purpose                        | Owner slice       | Disposition                                                                                    |
+| ----------------------------------------------------------------------------------------- | ------------------------------ | ----------------- | ---------------------------------------------------------------------------------------------- |
+| `ActiveSchool::id()` source-3 (`$user->school_id` ×2)                                     | single-School context fallback | S7 Step 3         | **delete** (redundant with session/token; §5 gates)                                            |
+| `User.php` `computeAccessibleSchoolIds` legacy branch (`$this->school_id`, `->schools()`) | legacy access union            | column-drop slice | **delete** (single-source is the path)                                                         |
+| `User.php` `belongsToMany(School)` + `schools()` (sync/detach/pluck)                      | pivot relation + grant writes  | column-drop slice | **delete relation**; grant writes move to role-only (`grantSchoolAccess` already writes roles) |
+| `SchoolAccess` `from('school_user')` branch                                               | flag-off reader path           | column-drop slice | **delete** the else branch (flag-on model_has_roles path remains)                              |
+| `AdminController:104` read + `:105` forceFill write                                       | home-School maintenance        | writer slice      | **delete** (nothing to maintain once the column is gone)                                       |
+| `TeacherService` `User::create([...'school_id'])` ×2                                      | legacy home-School stamp       | writer slice      | **delete the `'school_id'` key** (role grant already present)                                  |
+| `TeacherSchoolAccessController` `->schools()->get()` / `grantSchoolAccess`                | extra-School grants            | column-drop slice | repoint reads to roles; grant writes already role-based                                        |
+| commented `users.school_id` ownership checks (StudentSubject/StudentCurriculum)           | dead ownership guards          | column-drop slice | **delete** (redundant with SchoolScope)                                                        |
+| `auth.ts` `school_id: string`                                                             | frontend user type             | column-drop slice | **delete** + audit consumers                                                                   |
+| the 4 nested parent-child integrity checks                                                | route integrity                | —                 | **retain** (not redundant with SchoolScope)                                                    |
 
 ### S7 ADR regression gates (§5) — assert when source-3 is removed
 
@@ -1658,7 +1685,7 @@ authoritative inventory; the permission model that replaces it is designed in
   none is a security decision):** `DashboardController@…` guardian/teacher landing
   branch, `CurriculumController` / `StudentController` "guardian viewing their own
   child" checks, `GuardianService` guardian-relationship branch. These choose what
-  to *show*, not whether to *permit*; the actual gate is the route `role:`
+  to _show_, not whether to _permit_; the actual gate is the route `role:`
   middleware + FormRequest authorize on those endpoints.
 - **Already correct (the convention to match):**
   `student_curriculum.unenroll` authorizes by permission

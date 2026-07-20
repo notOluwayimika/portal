@@ -405,11 +405,23 @@ class GuardianController extends Controller
         $guardian->load('user');
         $user = $guardian->user;
 
-        // abort_unless(
-        //     $user && $user->email && !str_ends_with($user->email, '@no-email.local'),
-        //     422,
-        //     'This guardian has no valid email address for a password reset.'
-        // );
+        // Restored 2026-07-20. Commented out by 883ff6c ("feat: phase 1 updates"), a
+        // 62-file sweep that blanket-disabled 47 guards at once. a27b0a3's S5 rollout
+        // put the AUTHORIZATION check above back as Authz::abilityCheck, but that sweep
+        // was scoped to authorization by design — this is a precondition check, so it
+        // was left orphaned and no lint covers it (ci-authz-lint reads authz only).
+        //
+        // Without it the endpoint dereferences $user->email with no null check and asks
+        // the broker to mail a synthetic `@no-email.local` address that cannot receive
+        // it — reporting success for a reset link nobody will ever get.
+        //
+        // 422 via abort(), not a ValidationException, so this is an HttpException and
+        // is NOT affected by the pending 422-vs-400 business-rule convention decision.
+        abort_unless(
+            $user && $user->email && ! str_ends_with($user->email, '@no-email.local'),
+            422,
+            'This guardian has no valid email address for a password reset.'
+        );
 
         Password::broker()->sendResetLink(['email' => $user->email]);
 

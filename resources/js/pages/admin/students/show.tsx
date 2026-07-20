@@ -40,6 +40,7 @@ import {
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
+import type { Auth } from '@/types';
 import type { Guardian, Student } from '@/types/models';
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -93,7 +94,7 @@ function isSyntheticEmail(email?: string | null): boolean {
 export default function StudentProfile() {
     const { student: studentWrapper } = usePage<ShowPageProps>()
         .props as unknown as ShowPageProps;
-    const { auth } = usePage().props;
+    const { auth } = usePage<{ auth: Auth }>().props;
     // Edit student / add guardian / edit subjects are admin-only; principals get
     // a read-only profile view.
     const isAdmin = auth.roles.includes('admin');

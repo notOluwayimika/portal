@@ -15,6 +15,7 @@ import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
+import type { Auth } from '@/types';
 import type { Student } from '@/types/models';
 
 interface StatusOption {
@@ -28,7 +29,7 @@ interface StudentListProps {
 
 export default function StudentList({ student_statuses }: StudentListProps) {
     const getInitials = useInitials();
-    const { auth } = usePage().props;
+    const { auth } = usePage<{ auth: Auth }>().props;
     // Write controls (import/bulk/export/add + row edit/delete/guardians + status
     // change) are admin-only. Principals get a read-only view of this page.
     const isAdmin = auth.roles.includes('admin');

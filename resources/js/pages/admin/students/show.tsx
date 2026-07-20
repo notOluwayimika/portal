@@ -21,11 +21,8 @@ import { AddGuardianModal } from '@/components/students/add-guardian-modal';
 import { EditPivotModal } from '@/components/students/edit-pivot-modal';
 import { GuardianCard } from '@/components/students/guardian-card';
 import { StudentForm } from '@/components/students/student-form';
-import {
-    DetachGuardianModal
-
-} from '@/components/students/student-guardians-panel';
-import type {StudentGuardian} from '@/components/students/student-guardians-panel';
+import { DetachGuardianModal } from '@/components/students/student-guardians-panel';
+import type { StudentGuardian } from '@/components/students/student-guardians-panel';
 import { StudentSubjectsSection } from '@/components/students/subjects/student-subjects-section';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -72,8 +69,8 @@ function statusColor(status: string | undefined) {
 
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
     if (!value) {
-return null;
-}
+        return null;
+    }
 
     return (
         <div className="space-y-1">
@@ -83,10 +80,6 @@ return null;
             <dd className="text-sm font-semibold text-slate-700">{value}</dd>
         </div>
     );
-}
-
-function isSyntheticEmail(email?: string | null): boolean {
-    return !!email && email.endsWith('@no-email.local');
 }
 
 /* ─── Page ─────────────────────────────────────────────────────────────────── */
@@ -107,8 +100,6 @@ export default function StudentProfile() {
     const [showAddGuardian, setShowAddGuardian] = useState(false);
     const [pivotGuardian, setPivotGuardian] = useState<Guardian | null>(null);
     const [detachTarget, setDetachTarget] = useState<Guardian | null>(null);
-
-
 
     // Refresh student data from the server (Inertia partial reload)
     const refreshStudent = () => {
@@ -303,7 +294,9 @@ export default function StudentProfile() {
                                         <Button
                                             size="sm"
                                             variant="ghost"
-                                            onClick={() => setShowEditModal(true)}
+                                            onClick={() =>
+                                                setShowEditModal(true)
+                                            }
                                             className="rounded-lg text-slate-500 hover:bg-white hover:text-indigo-600 hover:shadow-sm"
                                         >
                                             <Edit className="h-4 w-4" />
@@ -368,9 +361,7 @@ export default function StudentProfile() {
                                         />
                                         <DetailRow
                                             label="Other Nationality"
-                                            value={
-                                                student.other_nationality
-                                            }
+                                            value={student.other_nationality}
                                         />
                                         <DetailRow
                                             label="State of Origin"
@@ -404,7 +395,9 @@ export default function StudentProfile() {
                                     {isAdmin && (
                                         <Button
                                             size="sm"
-                                            onClick={() => setShowAddGuardian(true)}
+                                            onClick={() =>
+                                                setShowAddGuardian(true)
+                                            }
                                             className="rounded-lg bg-indigo-600 px-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-95"
                                         >
                                             <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -465,7 +458,10 @@ export default function StudentProfile() {
                             </Card>
 
                             {/* Subjects Section */}
-                            <StudentSubjectsSection student={student} canManage={isAdmin} />
+                            <StudentSubjectsSection
+                                student={student}
+                                canManage={isAdmin}
+                            />
                         </div>
 
                         {/* Right column (1/3 width on lg) */}
@@ -503,11 +499,24 @@ export default function StudentProfile() {
                 size="lg"
                 footer={
                     <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => setShowEditModal(false)} disabled={editProcessing}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowEditModal(false)}
+                            disabled={editProcessing}
+                        >
                             Cancel
                         </Button>
-                        <Button type="submit" form="student-form" disabled={editProcessing}>
-                            {editProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        <Button
+                            type="submit"
+                            form="student-form"
+                            disabled={editProcessing}
+                        >
+                            {editProcessing ? (
+                                <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                            )}
                             Save Changes
                         </Button>
                     </div>
@@ -570,7 +579,6 @@ export default function StudentProfile() {
                     }}
                 />
             )}
-
         </>
     );
 }

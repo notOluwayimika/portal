@@ -1,9 +1,7 @@
 <?php
 
-use App\Models\School;
-use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\Role;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
@@ -19,6 +17,7 @@ function dashboardAdmin(): array
     $user = al_makeUser($school->id);
     setPermissionsTeamId($school->id);
     $user->assignRole('admin');
+
     return [$school, $user];
 }
 
@@ -32,11 +31,10 @@ test('admin can access dashboard and receives analysis props', function () {
     $response = $this->actingAs($user)->get(route('dashboard'));
 
     $response->assertOk();
-    $response->assertInertia(fn ($page) =>
-        $page->component('dashboard')
-             ->has('analysis')
-             ->has('widgets')
-             ->has('onboarding')
+    $response->assertInertia(fn ($page) => $page->component('dashboard')
+        ->has('analysis')
+        ->has('widgets')
+        ->has('onboarding')
     );
 });
 
@@ -46,8 +44,7 @@ test('dashboard analysis is scoped to the logged-in user school', function () {
 
     $responseA = $this->actingAs($userA)->get(route('dashboard'));
     $responseA->assertOk();
-    $responseA->assertInertia(fn ($page) =>
-        $page->where('analysis.school_id', fn ($id) => $id !== (string) $schoolB->uuid)
+    $responseA->assertInertia(fn ($page) => $page->where('analysis.school_id', fn ($id) => $id !== (string) $schoolB->uuid)
     );
 });
 

@@ -2,18 +2,15 @@
 
 namespace App\Http\Controllers\ActivityLog;
 
-use App\Support\Authz;
-
 use App\Http\Controllers\Controller;
 use App\Models\SavedActivityFilter;
 use App\Services\ActivityLog\ActivityLogQueryService;
+use App\Support\Authz;
 use Illuminate\Http\Request;
 
 class SavedActivityFilterController extends Controller
 {
-    public function __construct(private readonly ActivityLogQueryService $queries)
-    {
-    }
+    public function __construct(private readonly ActivityLogQueryService $queries) {}
 
     /** Built-in presets surfaced to every user (not persisted). */
     private function quickPresets(int $userId): array

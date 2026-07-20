@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers\ActivityLog;
 
-use App\Support\Authz;
-
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ActivityDetailResource;
 use App\Http\Resources\ActivityResource;
@@ -13,6 +11,7 @@ use App\Models\User;
 use App\Services\ActivityLog\ActivityLogQueryService;
 use App\Services\ActivityLog\ActivitySeverityService;
 use App\Support\ActiveSchool;
+use App\Support\Authz;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;

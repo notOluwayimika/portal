@@ -29,6 +29,15 @@
 # generates its own PHPUnit config, because phpunit.xml PINS DB_DATABASE via <env>
 # and that pin beats a shell variable (verified empirically).
 #
+# REACH OF THE REVERSIBILITY CHECK (found while bite-proving this script): it is
+# exactly $STEPS migrations deep, and a defect can be MASKED by a deeper migration's
+# down(). The first planted defect — an index on `student_curricula.school_id` whose
+# down() forgot to drop it — did NOT fail this gate, because 130000's down() drops the
+# school_id column and took the orphaned index with it. Re-pointed at a column that
+# survives the rollback, the same defect failed the gate immediately. So: a green here
+# means "the last $STEPS migrations are reversible against data", not "all of them are".
+# Raise STEPS when a release adds more than three migrations.
+#
 # Usage: bin/quality-clean-db [rollback-steps]   (default 3)
 #        KEEP_CLEAN_DB=1 bin/quality-clean-db    (leave the DB for inspection)
 set -uo pipefail

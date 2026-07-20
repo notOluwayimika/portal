@@ -77,6 +77,21 @@ name must contain `test`, or `Tests\TestCase` fails closed) and generates its ow
 PHPUnit config, because `phpunit.xml` pins `DB_DATABASE` via `<env>` and that pin
 beats a shell variable.
 
+Both gates are **bite-proven in both directions** (2026-07-20): a migration whose
+`down()` left a state `up()` could not reapply was watched pass the ordinary suite
+(`migrate:fresh` never rolls back, so it is structurally blind) and fail
+`bin/quality-clean-db`; removing it returned the gate to green. The release gate was
+watched block a push to `main` with no stamp *and* with a stamp for a different
+commit, and allow one only on an exact SHA match.
+
+That exercise also fixed the reach of the reversibility check: it is exactly
+`--step` migrations deep, and a defect can be **masked by a deeper migration's
+`down()`**. The first planted defect — an index on `student_curricula.school_id` —
+did *not* fail the gate, because `130000`'s `down()` drops that column and took the
+orphaned index with it. Green here means "the last N migrations are reversible
+against data", not "all of them are"; raise `STEPS` when a release adds more than
+three migrations.
+
 ### Accepted permanent residuals
 
 The PHP version matrix (CI matrixed 8.3/8.4/8.5; only your local PHP runs), a true

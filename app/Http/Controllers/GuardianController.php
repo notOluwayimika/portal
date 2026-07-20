@@ -451,8 +451,19 @@ class GuardianController extends Controller
     {
         Authz::abilityCheck(request()->user(), 'guardian.view', 'GuardianController@activity');
 
+        // `latest()` alone orders by created_at only. Activity rows written in the
+        // same second share a timestamp, and MySQL's ordering among ties is
+        // UNSPECIFIED — so "the last 10, most recent first" was not actually
+        // guaranteed: which 10 came back, and in what order, varied run to run.
+        // activity_log is append-only, so id is a monotonic tie-break that makes the
+        // contract deterministic.
+        //
+        // This surfaced as a FLAKY GATE: the covering test sat in the ratchet baseline
+        // and flipped between pass and fail on tie ordering, so the shrink-lock
+        // randomly blocked pushes with "a baselined test now passes".
         $logs = $this->guardianAuditQuery($guardian)
-            ->latest()
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->limit(10)
             ->get()
             ->map(fn ($a) => $this->serializeActivity($a));

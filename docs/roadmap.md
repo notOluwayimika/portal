@@ -332,6 +332,38 @@ as predicted**; standing test `SuperAdminAuthorityTest` (survives the ADR 0043
 - **Open environment fact:** production's `AUTH_GATE_BEFORE_SUPERADMIN` state —
   deploy owner to confirm; not inferable from the tree.
 
+## C2 — role: → permission: middleware swap (2026-07-21, feat/rbac-permission-middleware)
+
+All 28 `role:` groups resolved: 27 swapped to `permission:` (spatie
+PermissionMiddleware via the Gate — probe-cleared), `/super-admin` stays
+`role:super_admin` (EnsureRole, the one remaining consumer). Mechanism change
+only, outcome-parity proven:
+
+- **Oracle first:** `rbac:derive-access` snapshotted every route's allowed-role
+  set to `tests/fixtures/route-access-map.json` BEFORE the swap (same
+  discipline as the probe's predictions). `RouteAccessParityTest` re-derives
+  the map live (permission holders from the seeded DB + the flag-gated
+  Gate::before bypass) and demands per-route, per-role equality — 299 routes,
+  plus per-role HTTP smokes for the parts a static derivation can't see.
+- **Route-access permission tier:** 19 new enum cases (enum 41 → 60), each
+  granted to exactly the role set of the group it replaced; guardian (0 → 6)
+  and principal (0 → 9) hold their first permissions. `finance.access` is
+  interim (I1 ⚑ — superseded by Ph2 `finance.<resource>.<action>`).
+  super_admin stays at exactly 15 (bypass covers it; probe invariant green).
+- **One declared deviation:** `POST /api/logout` left its
+  admin|head_of_school|form_teacher group → plain `auth:sanctum`. The endpoint
+  also 500'd for every caller since inception (`Auth::logout()` on Sanctum's
+  RequestGuard has no such method) — fixed alongside the deviation.
+- **The flag is now load-bearing:** pre-swap, EnsureRole bypassed super_admin
+  unconditionally; post-swap its passage on the 27 groups depends on
+  `auth.gate_before_superadmin`. Flag-off + swap = super_admin lockout
+  (SuperAdminAuthorityTest row 2) — the open prod-flag question above must be
+  answered before this slice deploys.
+- **Test-fixture consequence (the contract working):** roles are nothing
+  without grants now. 15 test files fabricating bare roles were switched to
+  seed the canonical RbacSeeder map; 2 Finance test files among them
+  (announce-listed per §4.1 — one mechanical line each, no semantic change).
+
 ## 1.4e — domain event bus + Academics facts: investigation STOP (2026-07)
 
 Investigation-first. **All four proposed published facts hit the STOP condition —

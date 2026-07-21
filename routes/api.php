@@ -32,12 +32,17 @@ Route::post('/login', [AuthenticationController::class, 'login']);
 // Switch active school (session + token); accessible to any authenticated user
 Route::middleware('auth:sanctum')->post('/switch-school', [AuthenticationController::class, 'switchSchool']);
 
+// Logout (any authenticated user — C2's one declared access deviation: this
+// previously sat inside the admin|head_of_school|form_teacher group, locking
+// every other role out of ending its own session).
+Route::middleware('auth:sanctum')->post('/logout', [AuthenticationController::class, 'logout']);
+
 // NOTE: the shared read endpoints (sessions, class-structure, exam-types,
 // subjects, grade-boundaries, curricula, sport-houses, scholarships, …) used to
 // be declared here without auth and re-declared inside the auth group below;
 // Laravel matched the first (unauthenticated) declaration, leaking them. They
 // now live only inside the authenticated groups.
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_teacher'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage'])->group(function () {
     Route::get('/user', [AuthenticationController::class, 'user']);
 
     // Dashboard analytics API
@@ -157,14 +162,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_tea
     // subject result status
     Route::get('/subject-result-statuses', [SubjectResultStatusController::class, 'index']);
 
-    Route::post('/logout', [AuthenticationController::class, 'logout']);
-
     require __DIR__.'/endpoints/student.php';
     require __DIR__.'/endpoints/teacher.php';
     require __DIR__.'/endpoints/guardian.php';
     require __DIR__.'/endpoints/head-of-school.php';
 });
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:admin_area.access'])->group(function () {
     // Head of Schools
     Route::get('/heads-of-schools', [HeadOfSchoolController::class, 'index']);
     Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store']);
@@ -189,7 +192,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin'])->group(function () {
     require __DIR__.'/endpoints/notice.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|principal'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:principal_approval.manage'])->group(function () {
     Route::patch('/class-levels/{classLevel:uuid}/principal-approval', [PrincipalApprovalController::class, 'classLevel']);
     Route::patch('/class-level-arms/{classLevelArm:uuid}/principal-approval', [PrincipalApprovalController::class, 'classLevelArm']);
 });
@@ -197,11 +200,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|principal'])->group(fun
 // Finance (walking skeleton) — manual invoice/payment entry points. Finance-
 // specific roles (accounts_officer, …) + maker-checker are Ph2/Ph3; gated on admin
 // for now.
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|super_admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:finance.access'])->group(function () {
     require __DIR__.'/endpoints/finance.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|super_admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_data.view'])->group(function () {
     // Shared read data (previously leaked as unauthenticated public routes).
     Route::get('/sessions', [SessionController::class, 'index']);
     Route::get('/sessions/{session:uuid}/terms', [TermController::class, 'index']);
@@ -219,7 +222,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
     require __DIR__.'/endpoints/activity-log.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|principal'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:report.view'])->group(function () {
     // Enrollments failing the result-readiness check (incomplete results)
     Route::get('/results/incomplete', [CurriculumController::class, 'incompleteResults']);
 
@@ -232,7 +235,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|principa
     require __DIR__.'/endpoints/outstanding-comments.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(function () {
     Route::get('/marking-components/overlapping/{curriculum:uuid}', [MarkingComponentController::class, 'getOverlapping']);
     // comment on student subject
     Route::post('/student-subjects/{studentSubject:uuid}/comment', [StudentSubjectController::class, 'storeComment']);
@@ -248,7 +251,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher'
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {
     // protected guardian routes
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
     Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
@@ -258,7 +261,7 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|teacher|
 // Read-only student data also available to principals (oversight role). The
 // matching write routes (store/update/delete, subject add/drop/restore) stay in
 // their admin-scoped groups above, so principals cannot mutate these records.
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_teacher|principal'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:student.view'])->group(function () {
     Route::get('/students', [StudentController::class, 'index']);
     Route::get('/students/{student:uuid}', [StudentController::class, 'show']);
 
@@ -268,24 +271,24 @@ Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|form_tea
         ->withoutScopedBindings();
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:admin|head_of_school|guardian|principal'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:result.view'])->group(function () {
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
     Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
     Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:guardian'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
     Route::get('/guardian/notices', [NoticeController::class, 'forGuardian']);
 });
 
 // Form teachers may record assessments when the school has no boarding
 // parents (enforced server-side in ResolvesAssessmentAccess).
-Route::middleware(['auth:sanctum', 'tenant', 'role:boarding_parent|form_teacher'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:assessment.record'])->group(function () {
     require __DIR__.'/endpoints/behavioral-assessment.php';
     require __DIR__.'/endpoints/psychomotor-skill.php';
 });
 
-Route::middleware(['auth:sanctum', 'tenant', 'role:form_teacher'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_form_teacher_comments'])->group(function () {
     require __DIR__.'/endpoints/form-teacher.php';
 });

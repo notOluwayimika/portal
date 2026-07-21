@@ -5,10 +5,16 @@ use App\Models\Role;
 use App\Models\Student;
 use App\Services\GuardianImportService;
 use App\Services\GuardianService;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 it('resolves a per-school Guardian for the same User when attaching an existing cross-school guardian', function () {
     $schoolA = al_makeSchool();

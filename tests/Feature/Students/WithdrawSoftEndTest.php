@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Services\CurriculumEnrollmentService;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,6 +21,11 @@ use Illuminate\Support\Str;
  * vocabulary follows docs/enrollment-option-b-design.md.
  */
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 function softEndSetup(): array
 {

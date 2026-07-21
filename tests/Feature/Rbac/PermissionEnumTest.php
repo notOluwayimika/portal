@@ -11,7 +11,10 @@ uses(RefreshDatabase::class);
 it('seeds exactly the permission set declared by the Permission enum', function () {
     $this->seed(DatabaseSeeder::class);
 
-    $seeded = Permission::orderBy('name')->pluck('name')->all();
+    // Sort BOTH sides in PHP: MySQL's collation orders '.' vs '_' differently
+    // from byte order, and the C2 names (result_review vs result.approve)
+    // exposed the mismatch an SQL ORDER BY would reintroduce.
+    $seeded = Permission::pluck('name')->sort()->values()->all();
     $enum = collect(PermissionEnum::values())->sort()->values()->all();
 
     expect($seeded)->toEqual($enum);

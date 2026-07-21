@@ -6,18 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\School;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthenticationController extends Controller
 {
     public function login(LoginRequest $request)
     {
-        if (!Auth::attempt($request->only('email', 'password'))) {
+        if (! Auth::attempt($request->only('email', 'password'))) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = Auth::user();
 
         setPermissionsTeamId(null);
@@ -26,24 +28,27 @@ class AuthenticationController extends Controller
         $schools = $user->accessibleSchools();
         $school = null;
 
-        if (!$isSuperAdmin && $schools->isEmpty()) {
+        if (! $isSuperAdmin && $schools->isEmpty()) {
             Auth::logout();
+
             return response()->json(['message' => 'You are not authorized to log in to any school.'], 403);
         }
 
         if ($schoolUuid = $request->input('school_uuid')) {
             $school = $schools->firstWhere('uuid', $schoolUuid);
 
-            if (!$school) {
+            if (! $school) {
                 Auth::logout();
+
                 return response()->json(['message' => 'You are not authorized to login to this school.'], 403);
             }
-        } elseif (!$isSuperAdmin) {
+        } elseif (! $isSuperAdmin) {
             if ($schools->count() === 1) {
                 $school = $schools->first();
             } else {
                 // Multiple schools: the client must retry with school_uuid.
                 Auth::logout();
+
                 return response()->json([
                     'message' => 'Select a school to continue.',
                     'requires_school_selection' => true,
@@ -80,12 +85,12 @@ class AuthenticationController extends Controller
     {
         $request->validate(['school_uuid' => 'required|uuid']);
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $request->user();
 
         $school = School::where('uuid', $request->school_uuid)->first();
 
-        if (!$school || !$user->canAccessSchool($school->id)) {
+        if (! $school || ! $user->canAccessSchool($school->id)) {
             return response()->json(['message' => 'You are not authorized to login to this school.'], 403);
         }
 
@@ -94,7 +99,7 @@ class AuthenticationController extends Controller
         }
 
         $token = $user->currentAccessToken();
-        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+        if ($token instanceof PersonalAccessToken) {
             $token->forceFill(['school_id' => $school->id])->save();
         }
 
@@ -112,10 +117,20 @@ class AuthenticationController extends Controller
         return new UserResource(Auth::user());
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
-        Auth::logout();
+        // Under auth:sanctum the default guard is Sanctum's RequestGuard,
+        // which has no logout() — the old Auth::logout() call 500'd for every
+        // caller this endpoint ever admitted. Revoke the bearer token when one
+        // was used (session logins carry a TransientToken, which has none),
+        // and end the session-based login explicitly on the web guard.
+        $token = $request->user()?->currentAccessToken();
+        if ($token instanceof PersonalAccessToken) {
+            $token->delete();
+        }
+
+        Auth::guard('web')->logout();
+
         return response()->json(['message' => 'Logged out successfully']);
     }
-
 }

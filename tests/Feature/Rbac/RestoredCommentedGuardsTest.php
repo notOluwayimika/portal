@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Curriculum;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -43,15 +45,18 @@ function guardFixture(): array
         'status' => 'active',
     ]));
 
-    // `form_teacher` is the discriminating role: the route group's
-    // `role:admin|head_of_school|form_teacher` middleware LETS IT THROUGH, so a 403
-    // here can only have come from the authorization layer under test.
+    // `form_teacher` is the discriminating role: the route group (C2:
+    // permission:academic_setup.manage, which form_teacher holds) LETS IT
+    // THROUGH, so a 403 here can only have come from the authorization layer
+    // under test.
     //
     // This matters — an earlier version used `teacher`, whose 403 came from the ROUTE
     // MIDDLEWARE and never reached the code under test. It passed while proving
     // nothing, and was caught only by probing for the observation record.
     $user = User::factory()->create(['school_id' => $school->id]);
     $user->grantSchoolAccess($school, 'form_teacher');
+    Permission::firstOrCreate(['name' => 'academic_setup.manage', 'guard_name' => 'web']);
+    Role::findByName('form_teacher', 'web')->givePermissionTo('academic_setup.manage');
     $user->flushSchoolAccessCache();
 
     return [$user, $episode, $school];
@@ -77,6 +82,7 @@ it('ANTI-INERT — a genuine reviewer is NOT denied', function () {
     [$user, $episode, $school] = guardFixture();
 
     $user->grantSchoolAccess($school, 'admin');
+    Role::findByName('admin', 'web')->givePermissionTo('academic_setup.manage');
     $user->flushSchoolAccessCache();
 
     $response = $this->actingAs($user)

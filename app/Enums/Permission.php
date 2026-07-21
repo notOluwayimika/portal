@@ -43,7 +43,21 @@ enum Permission: string
     case STUDENT_CURRICULUM_UNENROLL = 'student_curriculum.unenroll';
     case CURRICULUM_SUBJECT_ARCHIVE = 'curriculum_subject.archive';
     case CURRICULUM_SUBJECT_RESTORE = 'curriculum_subject.restore';
-    case CURRICULUM_SUBJECT_FORCE_DELETE = 'curriculum_subject.force_delete';
+    // CURRICULUM_SUBJECT_FORCE_DELETE was removed in C1: zero call sites ever
+    // checked it, and its only holder (super_admin) passes via Gate::before —
+    // dead in both directions. RbacSeeder prunes the orphaned row on sync.
+
+    // Result lifecycle — ADR 0044 (maker–checker: submit is the maker side,
+    // approve/reject the checker side; one role must never hold both).
+    case RESULT_SUBMIT = 'result.submit';
+    case RESULT_APPROVE = 'result.approve';
+    case RESULT_REJECT = 'result.reject';
+    case RESULT_VIEW_SCORES = 'result.view_scores';
+
+    // Enrollment lifecycle — ADR 0044.
+    case STUDENT_CURRICULUM_REGISTER = 'student_curriculum.register';
+    case STUDENT_CURRICULUM_PROMOTE = 'student_curriculum.promote';
+    case STUDENT_CURRICULUM_UPDATE_STATUS = 'student_curriculum.update_status';
 
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';

@@ -15,7 +15,10 @@ class InvoiceResource extends JsonResource
     {
         return [
             'id' => $this->uuid,
+            // The stored integer, unchanged — existing consumers keep working.
             'number' => $this->number,
+            // …and the human-facing form beside it. Additive: no field changed shape.
+            'display_number' => $this->displayNumber(),
             'status' => $this->status->value,
             'billed_to_name' => $this->billed_to_name,
             'academic_context' => $this->academic_context,

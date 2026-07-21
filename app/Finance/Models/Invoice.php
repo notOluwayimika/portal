@@ -69,6 +69,30 @@ class Invoice extends Model
         return $this->hasMany(InvoiceLine::class);
     }
 
+    /**
+     * The number as a human reads it: the School's configured prefix followed by the
+     * stored integer, e.g. `BSS-42`. Bare `42` when no prefix is configured.
+     *
+     * PRESENTATION-DERIVED, NEVER STORED. `finance_invoices.number` remains the
+     * integer that `UNIQUE(school_id, number)` and the Sequences kernel depend on;
+     * storing the prefixed form would have meant altering a deployed table, backfilling
+     * live invoices, and re-deciding the unique index — for a string that can simply be
+     * composed on the way out.
+     *
+     * The prefix is concatenated verbatim, with no separator injected and no
+     * zero-padding. The policy's own defaults already carry their separator (`BSS-`,
+     * `BSP-`, `BSI-LAG-`), and `BSI-LAG-` contains an internal hyphen — so "append a
+     * dash" would render `BSI-LAG--42`. The policy specifies no width, so none is
+     * invented here: padding would silently change format the day a School's numbering
+     * outgrows it.
+     */
+    public function displayNumber(): string
+    {
+        $prefix = SchoolFinanceSettings::invoiceNumberPrefixFor((int) $this->school_id);
+
+        return $prefix.$this->number;
+    }
+
     public function isVoid(): bool
     {
         return $this->status === InvoiceStatus::Void;

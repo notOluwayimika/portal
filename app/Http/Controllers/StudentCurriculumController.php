@@ -57,10 +57,11 @@ class StudentCurriculumController extends Controller
         // Nested-route integrity (the enrollment must belong to the student in the URL).
         Authz::ensure((int) $studentCurriculum->student_id === (int) $student->id, 'enrollment.belongs_to_student', 'ownership', 'StudentCurriculumController@unenroll', 404);
 
-        // Ownership-by-users.school_id is intentionally NOT restored: redundant under
-        // SchoolScope and reintroduces the users.school_id fallback (ADR 0042 debt).
-        // Awaiting §7 decision (see S5 classification report) — recommend deletion.
-        // abort_unless($student->school_id === $request->user()->school_id, 403);
+        // (A commented-out ownership-by-users.school_id guard lived here. DELETED per
+        // the §7 decision (2026-07-21, docs/rbac-implementation-plan.md slice A1):
+        // redundant under SchoolScope — both route bindings are School-scoped, so a
+        // cross-School id 404s before this method runs — and restoring it would
+        // re-couple authorization to the users.school_id fallback (ADR 0042).)
 
         try {
             $enrollment = $this->enrollmentService->unenroll(

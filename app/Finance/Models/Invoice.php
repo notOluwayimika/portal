@@ -70,27 +70,50 @@ class Invoice extends Model
     }
 
     /**
-     * The number as a human reads it: the School's configured prefix followed by the
-     * stored integer, e.g. `BSS-42`. Bare `42` when no prefix is configured.
+     * Minimum width of the numeric portion of a rendered invoice number.
+     *
+     * A MINIMUM, NOT A MAXIMUM — and a GLOBAL constant, not per-School. Padding is a
+     * formatting convention, so it lives here rather than as a column on
+     * `finance_school_settings`: the prefix is tenant data, the width is not.
+     */
+    public const NUMBER_PAD_WIDTH = 6;
+
+    /**
+     * The number as a human reads it: `BSS-000042`.
      *
      * PRESENTATION-DERIVED, NEVER STORED. `finance_invoices.number` remains the
      * integer that `UNIQUE(school_id, number)` and the Sequences kernel depend on;
-     * storing the prefixed form would have meant altering a deployed table, backfilling
+     * storing the rendered form would have meant altering a deployed table, backfilling
      * live invoices, and re-deciding the unique index — for a string that can simply be
      * composed on the way out.
      *
-     * The prefix is concatenated verbatim, with no separator injected and no
-     * zero-padding. The policy's own defaults already carry their separator (`BSS-`,
-     * `BSP-`, `BSI-LAG-`), and `BSI-LAG-` contains an internal hyphen — so "append a
-     * dash" would render `BSI-LAG--42`. The policy specifies no width, so none is
-     * invented here: padding would silently change format the day a School's numbering
-     * outgrows it.
+     * Three format rules, all from the signed policy §2:
+     *
+     * 1. The number is zero-padded to a MINIMUM of NUMBER_PAD_WIDTH digits. `str_pad`
+     *    is deliberate: it pads up to the width and otherwise returns the string
+     *    UNCHANGED, so 1_000_000 renders `1000000` in full rather than being truncated
+     *    or wrapped. A fixed-width formatter (`%06d` is fine, but a substr/wrap is not)
+     *    would silently change format the day a School's numbering outgrew six digits.
+     * 2. The separator is added HERE, not stored. Prefixes are stored separator-less
+     *    (`BSS`, `BSP`, `BSPH`, `BSA`) so all four are uniform and the `-` is defined in
+     *    one place, rather than depending on each registrar typing a trailing dash.
+     * 3. Only the NUMBER is padded — the prefix never is.
+     *
+     * Defensive: a prefix still carrying a trailing `-` from the earlier mixed model is
+     * normalised, so it renders `BSS-000042` and never `BSS--000042`.
      */
     public function displayNumber(): string
     {
+        $padded = str_pad((string) $this->number, self::NUMBER_PAD_WIDTH, '0', STR_PAD_LEFT);
+
         $prefix = SchoolFinanceSettings::invoiceNumberPrefixFor((int) $this->school_id);
 
-        return $prefix.$this->number;
+        // No prefix configured — the bare padded number, with no leading separator.
+        if ($prefix === null) {
+            return $padded;
+        }
+
+        return rtrim($prefix, '-').'-'.$padded;
     }
 
     public function isVoid(): bool

@@ -3,8 +3,10 @@
 namespace App\Finance\Http\Requests;
 
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceLineKind;
 use App\Support\Money;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Authorization is by route middleware (role:admin|super_admin) for the skeleton —
@@ -31,7 +33,12 @@ class GenerateInvoiceRequest extends FormRequest
             'enrollment_id' => ['required', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.description' => ['required', 'string', 'max:255'],
-            'lines.*.amount_minor' => ['required', 'integer', 'min:1'],
+            // No `min:1` any more: a reduction is legitimately negative. The SIGN rule
+            // is enforced per-kind in the Action (where the domain rule lives), so the
+            // edge only rejects the one value that is meaningless for either kind.
+            'lines.*.amount_minor' => ['required', 'integer', 'not_in:0'],
+            'lines.*.kind' => ['sometimes', Rule::enum(InvoiceLineKind::class)],
+            'lines.*.note' => ['sometimes', 'nullable', 'string', 'max:255'],
             'lines.*.currency' => ['sometimes', 'string', 'size:3'],
             'lines.*.fee_item_id' => ['sometimes', 'nullable', 'integer'],
         ];
@@ -56,6 +63,10 @@ class GenerateInvoiceRequest extends FormRequest
                     (string) ($line['currency'] ?? Money::DEFAULT_CURRENCY),
                 ),
                 isset($line['fee_item_id']) ? (int) $line['fee_item_id'] : null,
+                isset($line['kind'])
+                    ? InvoiceLineKind::from((string) $line['kind'])
+                    : InvoiceLineKind::Charge,
+                isset($line['note']) ? (string) $line['note'] : null,
             ),
             $lines,
         ));

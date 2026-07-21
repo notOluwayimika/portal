@@ -102,19 +102,49 @@ final class GenerateInvoice
             throw new BusinessRuleException('An invoice must have at least one line.');
         }
 
+        // The positivity rule is now SCOPED BY KIND, and each half is stricter than the
+        // single rule it replaces — a charge must still be strictly positive, and a
+        // reduction must be strictly negative. Neither may be zero: a zero line carries
+        // no arithmetic and no information, and silently accepting one would let a
+        // "waiver" that waives nothing look applied.
         foreach ($lines as $line) {
-            if ($line->amount->isZero() || $line->amount->isNegative()) {
-                throw new BusinessRuleException('Every invoice line amount must be positive.');
+            if ($line->amount->isZero()) {
+                throw new BusinessRuleException('An invoice line amount may not be zero.');
+            }
+
+            if ($line->isReduction()) {
+                if (! $line->amount->isNegative()) {
+                    throw new BusinessRuleException('A waiver or discount line must be negative.');
+                }
+
+                continue;
+            }
+
+            if ($line->amount->isNegative()) {
+                throw new BusinessRuleException('Every invoice charge line must be positive.');
             }
         }
 
-        // F6: the total is DERIVED, never supplied. Exact integer addition.
+        // F6: the total is DERIVED, never supplied. Exact integer addition, and a
+        // LITERAL SIGNED SUM — it does not branch on kind. Reductions carry a negative
+        // amount, so `plus` nets them without any special case: sign carries the
+        // arithmetic, kind carries the meaning. This is why F6's trigger needs no change
+        // — the equality is still established here and frozen there.
         $total = array_reduce(
             $lines,
             static fn (?Money $carry, InvoiceLineSpec $line) => $carry === null
                 ? $line->amount
                 : $carry->plus($line->amount),
         );
+
+        // Reductions may bring a total to zero, but never below it. A negative invoice
+        // would mean the School owes the student, which is a credit note or refund
+        // (§10, later) — never an invoice. Ratified in accounting-policy.md §5.
+        if ($total->isNegative()) {
+            throw new BusinessRuleException(
+                'Reductions may not exceed the charges on an invoice: the total would be negative.'
+            );
+        }
 
         try {
             return DB::transaction(function () use ($enrollment, $lines, $total) {
@@ -137,6 +167,8 @@ final class GenerateInvoice
                     $invoice->lines()->create([
                         'school_id' => $enrollment->schoolId,
                         'description' => $line->description,
+                        'kind' => $line->kind,
+                        'note' => $line->note,
                         'amount' => $line->amount,
                         'fee_item_id' => $line->feeItemId,
                     ]);

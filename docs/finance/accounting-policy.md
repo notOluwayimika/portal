@@ -32,14 +32,40 @@ amount is an exact integer minor-unit value.
 **Policy:** numbers must be **unique only — gaps are acceptable** (not gap-free).
 Per-School prefix, configurable with defaults:
 
-| School    | Default prefix |
-| --------- | -------------- |
-| Secondary | `BSS-`         |
-| Primary   | `BSP-`         |
-| IFY       | `BSI-LAG-`     |
+| School    | Prefix |
+| --------- | ------ |
+| Secondary | `BSS`  |
+| Primary   | `BSP`  |
+| Pre-Home  | `BSPH` |
+| Academy   | `BSA`  |
 
-(These are configurable _defaults_ for a pending feature — the authoritative list
-is set per-School when the config lands, §7.)
+**Corrected 2026-07-21.** An earlier revision of this table listed prefixes carrying a
+trailing separator (`BSS-`) and an `BSI-LAG-` entry that does not exist. The real
+prefixes are **single-segment and separator-less**: `BSS`, `BSP`, `BSPH`, `BSA`.
+
+**Rendered format — decided convention (2026-07-21):**
+
+`<prefix>` + `-` + `<number zero-padded to a minimum of 6 digits>` → **`BSS-000042`**.
+
+Three parts of that are load-bearing:
+
+- **The separator is added at RENDER, not stored.** The prefix is stored
+  separator-less, so all four are uniform and the `-` is defined in exactly one place
+  rather than depending on each registrar typing a trailing dash. (Defensively, a
+  stored prefix that still ends in `-` from the earlier mixed model must normalise to a
+  single separator — never `BSS--000042`.)
+- **6 is a MINIMUM WIDTH, NOT A MAXIMUM.** A number exceeding six digits renders **in
+  full** — invoice 1,000,000 is `BSS-1000000`, never truncated and never wrapped.
+  Padding sets a floor on width, not a ceiling. This is the explicit record of the
+  overflow behaviour: a fixed-width rule would silently change format the day a School's
+  numbering outgrew it, which is precisely the trap this clause exists to close.
+- **The width is a GLOBAL constant, not per-School.** It is a formatting convention, not
+  tenant data, so it lives in code (`Invoice::NUMBER_PAD_WIDTH`) and **not** as a column
+  on `finance_school_settings`. The prefix is per-School; the width is not.
+
+Padding applies to the **numeric portion only** — the prefix is never padded.
+
+(The prefixes are configured per-School via §7; this table is the authoritative list.)
 
 **Enforcement — split:**
 
@@ -57,15 +83,18 @@ is set per-School when the config lands, §7.)
   `unsignedBigInteger` under `UNIQUE(school_id, number)`, so no deployed table was
   altered and no live invoice was rewritten.
 
-    Two format facts, made explicit because they are easy to get wrong:
-    the prefix is the **literal string including its separator** (the defaults above are
-    `BSS-`, `BSP-`, `BSI-LAG-`) and is concatenated verbatim — `BSI-LAG-` carries an
-    internal hyphen, so any "append a dash" logic would render `BSI-LAG--42`. And **this
-    policy specifies no width**, so no zero-padding is applied; inventing one would
-    silently change the format the day a School's numbering outgrew it.
+    Format per the table above: the prefix is stored **separator-less**, the `-` and the
+    6-digit minimum pad are applied at render, and the width is the global
+    `Invoice::NUMBER_PAD_WIDTH` rather than a per-School column.
 
-    NULL/blank means no prefix — the bare number — which is every School's state until
-    one is configured.
+    **Superseded note, kept for the record:** when this clause first landed the policy
+    contained no width rule, so the render deliberately applied none — inventing a format
+    the signed document did not specify would have been the greater error. The rule was
+    then decided and written down, and the render followed it. That ordering is the
+    point: the format is a documented decision, not an implementation default.
+
+    NULL/blank means no prefix — the bare **padded** number (`000042`, no leading
+    separator) — which is every School's state until one is configured.
 
 - **Search by prefixed number: NOT BUILT, and deliberately not.** There is no
   invoice-number search anywhere today (no index route, no `where('number')` call, no

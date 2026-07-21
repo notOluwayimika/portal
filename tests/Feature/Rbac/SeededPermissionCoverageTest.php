@@ -81,6 +81,20 @@ it('never duplicates a (name, guard, team) role row', function () {
     );
 });
 
+it('never seeds maker and checker to the same role (ADR 0044 / ADR 0040 SoD)', function () {
+    $this->seed(DatabaseSeeder::class);
+
+    $offenders = Role::where('guard_name', 'web')
+        ->whereHas('permissions', fn ($q) => $q->where('name', 'result.submit'))
+        ->whereHas('permissions', fn ($q) => $q->whereIn('name', ['result.approve', 'result.reject']))
+        ->pluck('name');
+
+    expect($offenders)->toBeEmpty(
+        'Roles holding BOTH result.submit (maker) and approve/reject (checker) — defeats SoD: '
+            .$offenders->implode(', '),
+    );
+});
+
 it('is non-destructive on re-run: runtime grant and revoke edits survive rbac sync', function () {
     $this->seed(DatabaseSeeder::class);
 

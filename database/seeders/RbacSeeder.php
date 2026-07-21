@@ -111,6 +111,19 @@ class RbacSeeder extends Seeder
             PermissionEnum::STUDENT_CURRICULUM_UNENROLL->value,
             PermissionEnum::CURRICULUM_SUBJECT_ARCHIVE->value,
             PermissionEnum::CURRICULUM_SUBJECT_RESTORE->value,
+            // ADR 0044 enrollment lifecycle — admin + head_of_school.
+            PermissionEnum::STUDENT_CURRICULUM_REGISTER->value,
+            PermissionEnum::STUDENT_CURRICULUM_PROMOTE->value,
+            PermissionEnum::STUDENT_CURRICULUM_UPDATE_STATUS->value,
+        ];
+
+        // ADR 0044 result checker side. Admin follows the ADR's recommendation
+        // (a): approve/reject + view, and deliberately NOT result.submit — one
+        // actor holding maker AND checker for the same result defeats SoD.
+        $resultChecker = [
+            PermissionEnum::RESULT_APPROVE->value,
+            PermissionEnum::RESULT_REJECT->value,
+            PermissionEnum::RESULT_VIEW_SCORES->value,
         ];
 
         return [
@@ -120,6 +133,7 @@ class RbacSeeder extends Seeder
                 ...$enrollmentAdmin,
                 ...$assessments,
                 ...$activityAdmin,
+                ...$resultChecker,
                 PermissionEnum::MANAGE_TEACHER_ASSIGNMENTS->value,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
             ],
@@ -129,11 +143,15 @@ class RbacSeeder extends Seeder
                 ...$enrollmentAdmin,
                 ...$assessments,
                 ...$activityAdmin,
+                ...$resultChecker,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
             ],
             'teacher' => [
                 PermissionEnum::STUDENT_SUBJECT_VIEW->value,
                 ...$activityStaff,
+                // ADR 0044 maker side: submit + read, never approve/reject.
+                PermissionEnum::RESULT_SUBMIT->value,
+                PermissionEnum::RESULT_VIEW_SCORES->value,
             ],
             'registrar' => [
                 PermissionEnum::GUARDIAN_VIEW->value,
@@ -146,9 +164,15 @@ class RbacSeeder extends Seeder
                 PermissionEnum::MANAGE_FORM_TEACHER_COMMENTS->value,
                 ...$assessments,
             ],
+            // Exactly the legacy 15 — super_admin gains NONE of the ADR 0044
+            // permissions (bypass covers it; deliberate grants only). Listed
+            // explicitly, not via the shared arrays, so extending those arrays
+            // can never silently widen this role again.
             'super_admin' => [
                 ...$studentSubjectFull,
-                ...$enrollmentAdmin,
+                PermissionEnum::STUDENT_CURRICULUM_UNENROLL->value,
+                PermissionEnum::CURRICULUM_SUBJECT_ARCHIVE->value,
+                PermissionEnum::CURRICULUM_SUBJECT_RESTORE->value,
                 PermissionEnum::ACTIVITY_LOG_VIEW->value,
                 PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
                 PermissionEnum::ACTIVITY_LOG_VIEW_OWN->value,

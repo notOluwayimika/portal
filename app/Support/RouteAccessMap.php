@@ -64,7 +64,7 @@ class RouteAccessMap
             $methods = implode('|', array_values(array_diff($route->methods(), ['HEAD'])));
             $map[$methods.' /'.ltrim($route->uri(), '/')] = [
                 'auth' => collect($middleware)->contains(fn ($m) => str_starts_with($m, 'auth')),
-                'roles' => array_values($allowed),
+                'roles' => $allowed,
             ];
         }
 

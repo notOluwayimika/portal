@@ -89,7 +89,23 @@
         "guardian.update",
         "guardian.view"
     ],
-    "super_admin": [],
+    "super_admin": [
+        "activity_log.export",
+        "activity_log.view",
+        "activity_log.view_all",
+        "activity_log.view_cross_school",
+        "activity_log.view_own",
+        "activity_log.view_sensitive",
+        "activity_log.view_system",
+        "curriculum_subject.archive",
+        "curriculum_subject.restore",
+        "student_curriculum.unenroll",
+        "student_subject.add_optional",
+        "student_subject.drop_optional",
+        "student_subject.restore",
+        "student_subject.view",
+        "student_subject.view_history"
+    ],
     "teacher": [
         "activity_log.view",
         "activity_log.view_own",

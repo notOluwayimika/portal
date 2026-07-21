@@ -13,11 +13,9 @@ class ArmsDatabaseSeeder extends Seeder
         // Order matters — respect foreign key dependencies
         $this->call([
             // SchoolSeeder::class,
-            RoleSeeder::class,
-            StudentSubjectPermissionSeeder::class,
-            GuardianPermissionSeeder::class,
-            // ActivityLogPermissionSeeder is seeded directly by DatabaseSeeder.
-            TeacherAssignmentPermissionSeeder::class,
+            // RBAC (roles + permissions + grants) is one seeder — C1 replaced
+            // RoleSeeder + the four *PermissionSeeder classes with RbacSeeder.
+            RbacSeeder::class,
             // UserSeeder::class,
             // GradeBoundarySeeder::class,
 

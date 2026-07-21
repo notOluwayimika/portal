@@ -7,14 +7,14 @@ use App\Models\ClassLevelArmTeacher;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Models\User;
-use Database\Seeders\RoleSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    (new RoleSeeder())->run();
+    (new RbacSeeder)->run();
 });
 
 // -------------------------------------------------------------------------

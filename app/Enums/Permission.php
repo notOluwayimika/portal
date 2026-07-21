@@ -43,7 +43,9 @@ enum Permission: string
     case STUDENT_CURRICULUM_UNENROLL = 'student_curriculum.unenroll';
     case CURRICULUM_SUBJECT_ARCHIVE = 'curriculum_subject.archive';
     case CURRICULUM_SUBJECT_RESTORE = 'curriculum_subject.restore';
-    case CURRICULUM_SUBJECT_FORCE_DELETE = 'curriculum_subject.force_delete';
+    // CURRICULUM_SUBJECT_FORCE_DELETE was removed in C1: zero call sites ever
+    // checked it, and its only holder (super_admin) passes via Gate::before —
+    // dead in both directions. RbacSeeder prunes the orphaned row on sync.
 
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';

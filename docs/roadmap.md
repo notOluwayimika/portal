@@ -477,12 +477,28 @@ assignRole". Unmasked, classified (no fixes):
   and works — `resolveExistingGuardianForAttachment` looks the guardian up
   **globally** then `grantSchoolAccess(activeSchool)` grants access (proven:
   cross-school access granted). No isolation guard rejects it, correctly, because
-  §6 permits it. Secondary: (a) the `email required_if:can_login` rule is arguably
-  mis-scoped for `mode=existing` (an existing guardian already has an account) —
-  fix shape would be `required_if:mode,new`; (b) the test also asserts
-  `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
-  model a school-A record is attached, so that assertion is stale too. **No §6
-  gap.**
+  §6 permits it. **RESOLVED 2026-07-21.** Secondary (a): the `email required_if:can_login` rule was
+  not merely "arguably mis-scoped" — it was a **LIVE BUG**. On `mode=existing` the
+  submitted email is never read (`resolveExistingGuardianForAttachment` keys off
+  `guardian_id`/`identifier`, and a `can_login` upgrade re-issues credentials from the
+  guardian's OWN `user->email`), while `add-guardian-modal.tsx` sends only
+  `guardian_id` + `identifier` for existing mode — so "attach an existing guardian and
+  give them login" **422'd from the real UI** on a field the backend then ignored.
+  **The fix shape suggested here, `required_if:mode,new`, was WRONG**: it over-requires,
+  demanding an email for every new guardian even when `can_login` is false and no login
+  is provisioned. The condition is the CONJUNCTION (mode=new AND can_login=true), which
+  `required_if` cannot express, so the rule is built explicitly. Three branches
+  bite-proven, including the no-login case that fails if the over-requiring shape is
+  ever adopted.
+
+    Secondary (b) — ALREADY FIXED by `ea423a1`, before this slice opened: the test asserted
+    `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
+    model a school-A record is attached. The test now sends the `email` the old rule
+    demanded, asserts **201**, asserts the school-A per-School record, and asserts the
+    school-B row was **never** cross-linked. Verified passing; §6 re-confirmed from the
+    code (guardian resolved GLOBALLY, `grantSchoolAccess` granted, per-School record
+    created so the student link is never cross-School). **No §6 gap.**
+
 - **422-vs-400 cluster — RULED: 422, app-wide, DONE 2026-07-21.** Business-rule /
   validation errors standardise on 422: HTTP-correct for a well-formed but
   semantically invalid request, Laravel's own default, and what every test author in

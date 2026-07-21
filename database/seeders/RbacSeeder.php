@@ -193,6 +193,15 @@ class RbacSeeder extends Seeder
 
     public function sync(bool $fresh): void
     {
+        // Seed-time mutations are provenance-by-code-review, not audit events:
+        // without this, every fresh seed writes hundreds of 'rbac' activity
+        // rows through LogRbacChange + LogsActivity. Runtime mutations (the
+        // matrix UI, artisan tinkering) remain fully audited.
+        activity()->withoutLogs(fn () => $this->syncLogged($fresh));
+    }
+
+    private function syncLogged(bool $fresh): void
+    {
         // Roles are global; make the null-team context explicit.
         setPermissionsTeamId(null);
 

@@ -59,6 +59,35 @@ enum Permission: string
     case STUDENT_CURRICULUM_PROMOTE = 'student_curriculum.promote';
     case STUDENT_CURRICULUM_UPDATE_STATUS = 'student_curriculum.update_status';
 
+    // Route-access tier (C2): one coarse per-surface permission per pre-swap
+    // role: middleware group, granted to exactly the roles that group listed
+    // (parity-proven by RouteAccessParityTest). These gate route entry only;
+    // finer per-action redistribution is later slices' work (C3 policies,
+    // C6 matrix editing). super_admin holds none of them — its passage is
+    // the Gate::before bypass, per the authority probe.
+    case ADMIN_AREA_ACCESS = 'admin_area.access';
+    case STUDENT_DIRECTORY_VIEW = 'student_directory.view';
+    case RESULT_REVIEW_ACCESS = 'result_review.access';
+    case REPORT_VIEW = 'report.view';
+    case CURRICULUM_SUBJECT_VIEW = 'curriculum_subject.view';
+    case STUDENT_CURRICULUM_VIEW = 'student_curriculum.view';
+    case DASHBOARD_VIEW = 'dashboard.view';
+    case RESULT_SIGNATURE_MANAGE = 'result_signature.manage';
+    case RESULT_VIEW = 'result.view';
+    case PARENT_PORTAL_ACCESS = 'parent_portal.access';
+    case BOARDING_PORTAL_ACCESS = 'boarding_portal.access';
+    case ACADEMIC_SETUP_MANAGE = 'academic_setup.manage';
+    case PRINCIPAL_APPROVAL_MANAGE = 'principal_approval.manage';
+    // Interim gate for /api/v1/finance/* (was role:admin|super_admin).
+    // Superseded when Finance's Ph2 permission scheme (finance.<resource>.
+    // <action>, v10 §343) lands with the 4 Finance roles — I1/I6 coordination.
+    case FINANCE_ACCESS = 'finance.access';
+    case ACADEMIC_DATA_VIEW = 'academic_data.view';
+    case SCORE_MANAGE = 'score.manage';
+    case STUDENT_STATUS_VIEW = 'student_status.view';
+    case STUDENT_VIEW = 'student.view';
+    case ASSESSMENT_RECORD = 'assessment.record';
+
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';
     case MANAGE_FORM_TEACHER_COMMENTS = 'manage_form_teacher_comments';

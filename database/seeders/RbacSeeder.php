@@ -56,9 +56,10 @@ class RbacSeeder extends Seeder
      * grants the five legacy seeders produced — including the super_admin
      * grants the old fixture masked (guard-pair name collision, see C1 PR).
      *
-     * `guardian` and `principal` intentionally hold no permissions today:
-     * their routes are still role:-gated; their permissions arrive with the
-     * ADR 0044 / route-swap slices.
+     * The route-access tier (C2) gave `guardian` and `principal` their first
+     * permissions: each route_access grant below mirrors, exactly, the role
+     * list of the pre-swap role: middleware group it replaced —
+     * RouteAccessParityTest holds the equivalence.
      *
      * @return array<string, list<string>>
      */
@@ -126,6 +127,13 @@ class RbacSeeder extends Seeder
             PermissionEnum::RESULT_VIEW_SCORES->value,
         ];
 
+        // C2 route-access tier: each permission's holder set below reproduces
+        // the role list of the pre-swap role: middleware group it replaced —
+        // NOT a redesign of who should see what. RouteAccessParityTest diffs
+        // live route access against the pre-swap fixture, so any drift here
+        // (or in the route files) from the pre-swap sets is a red test.
+        // super_admin deliberately gets none: its passage is Gate::before.
+
         return [
             'admin' => [
                 ...$guardianFull,
@@ -136,6 +144,22 @@ class RbacSeeder extends Seeder
                 ...$resultChecker,
                 PermissionEnum::MANAGE_TEACHER_ASSIGNMENTS->value,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
+                // Route access (C2)
+                PermissionEnum::ADMIN_AREA_ACCESS->value,
+                PermissionEnum::STUDENT_DIRECTORY_VIEW->value,
+                PermissionEnum::RESULT_REVIEW_ACCESS->value,
+                PermissionEnum::REPORT_VIEW->value,
+                PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
+                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+                PermissionEnum::DASHBOARD_VIEW->value,
+                PermissionEnum::RESULT_VIEW->value,
+                PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
+                PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
+                PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::ACADEMIC_DATA_VIEW->value,
+                PermissionEnum::SCORE_MANAGE->value,
+                PermissionEnum::STUDENT_STATUS_VIEW->value,
+                PermissionEnum::STUDENT_VIEW->value,
             ],
             'head_of_school' => [
                 ...$guardianFull,
@@ -145,6 +169,19 @@ class RbacSeeder extends Seeder
                 ...$activityAdmin,
                 ...$resultChecker,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
+                // Route access (C2)
+                PermissionEnum::RESULT_REVIEW_ACCESS->value,
+                PermissionEnum::REPORT_VIEW->value,
+                PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
+                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+                PermissionEnum::DASHBOARD_VIEW->value,
+                PermissionEnum::RESULT_SIGNATURE_MANAGE->value,
+                PermissionEnum::RESULT_VIEW->value,
+                PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
+                PermissionEnum::ACADEMIC_DATA_VIEW->value,
+                PermissionEnum::SCORE_MANAGE->value,
+                PermissionEnum::STUDENT_STATUS_VIEW->value,
+                PermissionEnum::STUDENT_VIEW->value,
             ],
             'teacher' => [
                 PermissionEnum::STUDENT_SUBJECT_VIEW->value,
@@ -152,17 +189,58 @@ class RbacSeeder extends Seeder
                 // ADR 0044 maker side: submit + read, never approve/reject.
                 PermissionEnum::RESULT_SUBMIT->value,
                 PermissionEnum::RESULT_VIEW_SCORES->value,
+                // Route access (C2)
+                PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
+                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+                PermissionEnum::DASHBOARD_VIEW->value,
+                PermissionEnum::ACADEMIC_DATA_VIEW->value,
+                PermissionEnum::SCORE_MANAGE->value,
+                PermissionEnum::STUDENT_STATUS_VIEW->value,
             ],
             'registrar' => [
                 PermissionEnum::GUARDIAN_VIEW->value,
                 PermissionEnum::GUARDIAN_UPDATE->value,
                 PermissionEnum::GUARDIAN_DETACH->value,
                 PermissionEnum::GUARDIAN_CREATE->value,
+                // No route access: registrar appeared in no pre-swap role:
+                // group, so it reaches no role-gated route — unchanged.
             ],
-            'boarding_parent' => $assessments,
+            'guardian' => [
+                // Route access (C2) — guardian's first grants; exactly the
+                // groups that listed `guardian` pre-swap.
+                PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
+                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+                PermissionEnum::DASHBOARD_VIEW->value,
+                PermissionEnum::RESULT_VIEW->value,
+                PermissionEnum::PARENT_PORTAL_ACCESS->value,
+                PermissionEnum::STUDENT_STATUS_VIEW->value,
+            ],
+            'principal' => [
+                // Route access (C2) — principal's first grants; exactly the
+                // groups that listed `principal` pre-swap.
+                PermissionEnum::STUDENT_DIRECTORY_VIEW->value,
+                PermissionEnum::REPORT_VIEW->value,
+                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+                PermissionEnum::DASHBOARD_VIEW->value,
+                PermissionEnum::RESULT_SIGNATURE_MANAGE->value,
+                PermissionEnum::RESULT_VIEW->value,
+                PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
+                PermissionEnum::STUDENT_STATUS_VIEW->value,
+                PermissionEnum::STUDENT_VIEW->value,
+            ],
+            'boarding_parent' => [
+                ...$assessments,
+                // Route access (C2)
+                PermissionEnum::BOARDING_PORTAL_ACCESS->value,
+                PermissionEnum::ASSESSMENT_RECORD->value,
+            ],
             'form_teacher' => [
                 PermissionEnum::MANAGE_FORM_TEACHER_COMMENTS->value,
                 ...$assessments,
+                // Route access (C2)
+                PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
+                PermissionEnum::ASSESSMENT_RECORD->value,
+                PermissionEnum::STUDENT_VIEW->value,
             ],
             // Exactly the legacy 15 — super_admin gains NONE of the ADR 0044
             // permissions (bypass covers it; deliberate grants only). Listed
@@ -181,8 +259,6 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ACTIVITY_LOG_EXPORT->value,
                 PermissionEnum::ACTIVITY_LOG_VIEW_SENSITIVE->value,
             ],
-            'guardian' => [],
-            'principal' => [],
         ];
     }
 

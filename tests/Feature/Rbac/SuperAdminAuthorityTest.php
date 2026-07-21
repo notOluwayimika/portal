@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Requests\PromoteStudentRequest;
+use App\Http\Requests\RejectSubjectResultRequest;
 use App\Models\Export;
 use App\Models\Role;
 use App\Models\School;
@@ -134,9 +135,15 @@ it('row 3 — bypass OFF lets the policy run: the ownership rule denies super_ad
     expect(Gate::forUser($sa)->allows('download', $export))->toBeFalse();
 });
 
-// ── Row 4: FormRequest hasRole() path — the Gate is never consulted ────────
+// ── Row 4: the FormRequest path ────────────────────────────────────────────
+//
+// C3 RESOLVED THE LOCKOUT THIS ROW FOUND. The probe recorded these requests
+// denying super_admin in BOTH flag states, because hasRole() never consults the
+// Gate. ADR 0044 step 2 replaced hasRole with can(), so the path now reaches
+// the Gate like every other — and the cell becomes flag-dependent, which is the
+// same load-bearing dependency C2 introduced for routes.
 
-it('row 4 — the hasRole FormRequests deny super_admin in BOTH flag states: a live, pre-existing lockout the bypass cannot reach', function () {
+it('row 4 — a non-checker FormRequest now reaches the Gate: bypass ON passes super_admin (the probe lockout, resolved)', function () {
     $sa = superAdmin();
     $school = School::factory()->create();
     setPermissionsTeamId($school->id);
@@ -144,6 +151,27 @@ it('row 4 — the hasRole FormRequests deny super_admin in BOTH flag states: a l
     $request = new PromoteStudentRequest;
     $request->setUserResolver(fn () => $sa);
 
+    config(['auth.gate_before_superadmin' => true]);
+    expect($request->authorize())->toBeTrue();
+
+    // Flag off, the seeded absence decides — super_admin holds no enrollment
+    // permission, so it is denied. Not a lockout bug: the same declared
+    // flag dependency the C2 swap made load-bearing.
+    config(['auth.gate_before_superadmin' => false]);
+    expect($request->authorize())->toBeFalse();
+});
+
+it('row 4 — a CHECKER FormRequest denies super_admin in BOTH flag states (ADR 0040, and now by design)', function () {
+    $sa = superAdmin();
+    $school = School::factory()->create();
+    setPermissionsTeamId($school->id);
+
+    $request = new RejectSubjectResultRequest;
+    $request->setUserResolver(fn () => $sa);
+
+    // Same denial the probe observed, but for a different and now intended
+    // reason: result.reject is excluded from the bypass, so platform authority
+    // cannot reach a checker action regardless of the flag.
     config(['auth.gate_before_superadmin' => true]);
     expect($request->authorize())->toBeFalse();
 

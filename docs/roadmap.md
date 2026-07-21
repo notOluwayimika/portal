@@ -456,12 +456,19 @@ assignRole". Unmasked, classified (no fixes):
   S5 made `activity_log.view` **observe-mode** (records, does not block, until
   `AUTHZ_ENFORCE=true`; ADR 0043). The test asserts pre-observe enforcement.
 
-**AMBIGUOUS (need a decision, named):**
+**AMBIGUOUS — BOTH DECIDED 2026-07-21. Kept here for the reasoning; neither is open.**
 
-- Registrar email update (expects 200 with the email silently ignored, gets 403):
-  security-design — should a user with `guardian.update` but not
-  `guardian.update_credentials` be hard-403'd, or allowed to update non-credential
-  fields with the email change ignored? Test asserts partial-update; code hard-403s.
+- **Registrar email update — RULED: keep the hard 403.** A user with
+  `guardian.update` but not `guardian.update_credentials` is rejected outright, not
+  silently-succeeded. Silently discarding a submitted security-relevant field is the
+  worse failure mode — the registrar sees success and believes the email changed.
+  **No code change: the code was already right and the TEST encoded the unsafe
+  expectation** (it asserted 200-with-silent-ignore). The test now asserts 403 and
+  that _nothing_ was written, not even the allowed field.
+  _Possible future UX, not built and never a silent drop:_ 200 with an explicit
+  "email ignored, credential permission required" signal, so a registrar editing an
+  address is not blocked by an untouched email field. That needs a deliberate
+  response contract; until it exists, 403.
 - **Cross-school attach 201-vs-400 — ROOT-CAUSED: STALE TEST (no isolation bug).**
   The 400 is an **incidental validation** error, not an isolation check:
   `GuardianController@attach` validates `email` `required_if:can_login,true`, and
@@ -476,10 +483,30 @@ assignRole". Unmasked, classified (no fixes):
   `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
   model a school-A record is attached, so that assertion is stale too. **No §6
   gap.**
-- 422-vs-400 cluster (detach-only-guardian, detach-primary-no-replacement,
-  register rollback): HTTP status **convention** for business-rule violations
-  (test expects 422; code returns 400 — the app renders ValidationException as 400
-  app-wide via `response()->validation_error`). Likely convention/stale.
+- **422-vs-400 cluster — RULED: 422, app-wide, DONE 2026-07-21.** Business-rule /
+  validation errors standardise on 422: HTTP-correct for a well-formed but
+  semantically invalid request, Laravel's own default, and what every test author in
+  this repo reached for independently — the app was the outlier.
+
+    Changed at **one site**: the `validation_error` macro
+    (`app/Providers/ResponseMacroProvider.php`), whose only production caller is the
+    `ValidationException` renderer in `bootstrap/app.php`. **Scoped to
+    `ValidationException` only** — `abort()`-sourced statuses (409, 422, 403) are
+    untouched, proven by test. There is no `abort(400)` anywhere in `app/`, so no
+    legitimate 400 existed to preserve; after this change the app emits no 400 at all.
+
+    The macro now also returns the `errors` payload instead of only logging it. That
+    was not scope creep but a repair: the frontend already depended on it and was dead
+    code. `student-form.tsx` and `add-standalone-guardian-modal.tsx` branch on
+    `status === 422` (which never matched), and `score-entry-page`, `pending-reviews`
+    and `subject-result-status-panel` read `response.data.errors.<field>[0]` (which was
+    never sent).
+
+    **This unblocks the cross-school-attach cleanup queued behind it** (the item above:
+    its 201-vs-400 is an incidental `required_if:can_login` validation error, which is
+    now a 201-vs-**422** — the classification is unchanged, still a stale test, and it
+    can now be cleaned up against a settled convention).
+
 - ActivityLogApi 3 count mismatches + GuardianProfile counts/422/password-reset
   notification: permission-scoping + activity-count assertions likely shifted by the
   observe rollout + permission model; per-test triage, lower priority.

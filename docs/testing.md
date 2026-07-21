@@ -216,9 +216,9 @@ The general rule: **the ratchet does not measure your code, it measures your cod
 generated_.** Any change to how generation is invoked silently redefines what "green"
 means.
 
-#### The three ways the tsc count has lied here
+#### The four ways the tsc count has lied here
 
-All three are real incidents, not hypotheticals. **Regenerate, then compare the SET,
+All four are real incidents, not hypotheticals. **Regenerate, then compare the SET,
 not only the number.**
 
 1. **Stale generated tree** — a count taken without `wayfinder:generate` measures a
@@ -233,12 +233,21 @@ not only the number.**
    arrived, count unchanged. Wayfinder emits these from route ordering, so they churn
    without anything having changed.
 
-    The lesson generalises past wayfinder: **a matching count does not mean a matching
-    set.** Six fabricated errors could have replaced six fixed ones and the ratchet —
-    which counts — would have said OK. The tsc-150 diagnosis only resolved because the
-    _sets_ were diffed (normalised for line shifts and this swap), which is how the two
-    genuine `TS18046` regressions were isolated out of a 13-line raw delta. Diff the set
-    whenever the number moves, and whenever it suspiciously doesn't.
+The lesson generalises past wayfinder: **a matching count does not mean a matching
+set.** Six fabricated errors could have replaced six fixed ones and the ratchet —
+which counts — would have said OK. The tsc-150 diagnosis only resolved because the
+_sets_ were diffed (normalised for line shifts and this swap), which is how the two
+genuine `TS18046` regressions were isolated out of a 13-line raw delta. Diff the set
+whenever the number moves, and whenever it suspiciously doesn't.
+
+4. **Corrupt `node_modules` (count inflated, source untouched)** — a stale or
+   partially-corrupt install reported **145** where the lockfile's true count is
+   **122**, a phantom +23 that looks exactly like someone else's regression. The trap
+   is the obvious remedy: **`pnpm install --frozen-lockfile` did NOT fix it** — pnpm
+   considered the existing tree satisfied and left the corruption in place. Only
+   `rm -rf node_modules && pnpm install --frozen-lockfile` restored the true count.
+   Before believing a tsc gap you did not cause, **reinstall from scratch, not
+   incrementally**.
 
 Lint (Pint/Prettier/ESLint) runs in **check mode on changed files only**
 (`bin/lint-changed.sh`): new and modified code must be clean; the legacy drift is

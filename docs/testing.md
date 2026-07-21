@@ -92,6 +92,36 @@ orphaned index with it. Green here means "the last N migrations are reversible
 against data", not "all of them are"; raise `STEPS` when a release adds more than
 three migrations.
 
+#### ⚠️ `--step=N` is relative to the branch, not to YOUR migration (parallel-work trap)
+
+A step-based rollback counts back from the **latest** migrations on the branch. In
+parallel work the _other_ stream's migrations can sit on top of yours, so `--step=1`
+rolls back **their** migration and your four-path audit **passes while testing nothing
+of yours.**
+
+This is not hypothetical — it happened on 2026-07-21. A Finance four-path run at
+`--step=1` rolled back the RBAC stream's later
+`2026_07_21_210000_subject_result_maker_checker_separation`, not the Finance migration
+under test. It was caught **only because the probe asserted the specific column was
+actually gone** (it wasn't) — not because the rollback exited 0. Re-run at the correct
+depth (`--step=2`), it verified properly.
+
+Two rules, both mandatory for a `down()` audit:
+
+1. **Re-derive the depth per run.** Find _your_ migration in `php artisan
+   migrate:status` and roll back exactly to it. **Never assume "the last migration"
+   is yours** — the parallel stream may have moved staging under you since you branched.
+2. **Assert the RIGHT migration reverted.** After rollback, assert _your_ column/table
+   is actually gone — not merely that `migrate:rollback` exited 0. **"A rollback
+   happened" ≠ "my rollback happened."** That assertion is the only thing that caught
+   the false pass; make it standard, never optional.
+
+This is the migration-audit sibling of the **corrupt-`node_modules` tsc lie** (§ "the
+four ways the tsc count has lied"): both are a check silently testing the **wrong
+thing** because the parallel stream changed the ground under it. This one is the more
+dangerous of the two — a false-passing four-path audit gives false confidence on the
+**least-reversible** class of change there is.
+
 ### Gate audit — every gate bite-proven (2026-07-20)
 
 Three gates had already been caught reporting protection they were not providing

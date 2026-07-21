@@ -2,6 +2,7 @@
 
 namespace App\Finance\DTOs;
 
+use App\Finance\Enums\InvoiceLineKind;
 use App\Support\Money;
 
 /**
@@ -24,5 +25,18 @@ final readonly class InvoiceLineSpec
         public string $description,
         public Money $amount,
         public ?int $feeItemId = null,
+        /**
+         * What the line MEANS. The sign of $amount carries the arithmetic; this
+         * carries the reason. Defaults to Charge so every existing construction site
+         * keeps its exact behaviour.
+         */
+        public InvoiceLineKind $kind = InvoiceLineKind::Charge,
+        /** Optional human "why" for a reduction — free text, never parsed. */
+        public ?string $note = null,
     ) {}
+
+    public function isReduction(): bool
+    {
+        return $this->kind->isReduction();
+    }
 }

@@ -154,7 +154,42 @@ displayed **beneath** it — never a single netted figure. This is §7 statement
 integrity: snapshot lines, each captured at billing time, never a recomputed net.
 The approver is configurable in-system (Ph3 maker-checker).
 
-**Enforcement — PENDING (Ph2/Ph3).** No waiver/discount feature exists yet
+**Non-negative total — RATIFIED 2026-07-21.** Reductions may bring an invoice total to
+**zero, but never below it**. A negative invoice would mean the School owes the student,
+which is a credit note or refund (§10, later) — never an invoice. Previously this was an
+assumption the implementation would have carried silently; it is now a stated invariant,
+enforced at creation and rejected with a 422.
+
+**Enforcement — PARTIAL (2026-07-21): fixed-amount, billing-time reductions BUILT.**
+
+`finance_invoice_lines.kind` (`charge` | `waiver` | `discount`, default `charge`) plus an
+optional `note`. A reduction is a line with a **negative** amount: **the sign carries the
+arithmetic, the kind carries the meaning**, and the total fold is a literal signed
+`SUM(lines)` that does not branch on kind.
+
+§5's display contract is satisfied structurally rather than by convention: the full fee
+line and the reduction line are both persisted as immutable snapshots and both are
+returned, each tagged with its `kind`, so a client groups charges above and reductions
+beneath **without recomputing anything**. No netted figure is ever stored as a line or
+rendered as a single number.
+
+**F6 is untouched.** Reductions are supplied at creation, folded into the total inside
+`GenerateInvoice`'s transaction, and frozen by the same
+`finance_invoices_total_immutable` trigger as before — no trigger was added or altered.
+The append-only line triggers likewise still hold: a reduction is a **new line**, never a
+mutation of the fee line it offsets.
+
+**BILLING-TIME ONLY, and this is load-bearing.** There is no path to add a reduction to
+an already-issued invoice, and that is deliberate: such a path would insert a line after
+the total is frozen, converting F6's residual gap (b) from a tamper-only vector into a
+routine operational path and forcing the deferred seal. Post-issuance adjustment is
+void + reissue (§4) or a credit note (§10) — not a line.
+
+**Still PENDING:** percentage-based reductions (their split is where §1's banker's
+rounding gets its first real consumer — fixed amounts need no division), credit
+notes/write-offs (§10), and approver rules (Ph3 maker-checker, §7).
+
+Historical note: no waiver/discount feature existed at signing time
 (§3 discount / §10 credit-note-write-off are Ph2+). The frozen convention it will
 build on is real: invoice lines are immutable snapshots (`finance_invoice_lines`,
 append-only triggers), so a historical statement never re-renders with a new net.

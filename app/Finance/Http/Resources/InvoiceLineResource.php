@@ -16,7 +16,14 @@ class InvoiceLineResource extends JsonResource
         return [
             'id' => $this->uuid,
             'description' => $this->description,
-            'amount' => $this->amount, // Money → {amount_minor, currency}
+            // `kind` tells the client whether this line is a charge or a reduction, so
+            // §5's "full fee above, reduction beneath" grouping is a presentation
+            // decision the client can make WITHOUT recomputing anything.
+            'kind' => $this->kind->value,
+            'note' => $this->note,
+            // Money → {amount_minor, currency}. Negative for reductions: the sign IS
+            // the arithmetic, and it is never netted away into a single figure.
+            'amount' => $this->amount,
         ];
     }
 }

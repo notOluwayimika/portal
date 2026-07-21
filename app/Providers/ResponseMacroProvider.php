@@ -2,13 +2,12 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\Response;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\HttpFoundation\Response as StatusCode;
-use Illuminate\Support\Facades\Response;
 
 /**
  * Class ResponseMacroProvider
- * @package App\Providers
  */
 class ResponseMacroProvider extends ServiceProvider
 {
@@ -33,6 +32,7 @@ class ResponseMacroProvider extends ServiceProvider
 
         Response::macro('ok', function (mixed $data, $headers = []) {
             $data = is_string($data) ? ['message' => $data] : $data;
+
             return Response::json($data, StatusCode::HTTP_OK, $headers);
         });
 
@@ -42,6 +42,7 @@ class ResponseMacroProvider extends ServiceProvider
 
         Response::macro('created', function (mixed $data, $headers = []) {
             $data = is_string($data) ? ['message' => $data] : $data;
+
             return Response::json($data, StatusCode::HTTP_CREATED, $headers);
         });
 

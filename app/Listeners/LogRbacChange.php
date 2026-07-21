@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveSchool;
@@ -64,7 +65,7 @@ class LogRbacChange
     {
         return $this->names(
             $permissionsOrIds,
-            fn (array $ids) => \App\Models\Permission::whereIn('id', $ids)->pluck('name')->all(),
+            fn (array $ids) => Permission::whereIn('id', $ids)->pluck('name')->all(),
         );
     }
 

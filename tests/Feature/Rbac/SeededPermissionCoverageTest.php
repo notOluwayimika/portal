@@ -4,6 +4,7 @@ use App\Enums\Permission as PermissionEnum;
 use App\Models\Permission;
 use App\Models\Role;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -67,7 +68,7 @@ it('keeps the exception list honest — every listed exception is truly role-les
 it('never duplicates a (name, guard, team) role row', function () {
     $this->seed(DatabaseSeeder::class);
     // Re-run to prove idempotency at the row level too.
-    (new Database\Seeders\RbacSeeder)->run();
+    (new RbacSeeder)->run();
 
     $dupes = Role::query()
         ->selectRaw('name, guard_name, school_id, COUNT(*) as n')
@@ -104,7 +105,7 @@ it('is non-destructive on re-run: runtime grant and revoke edits survive rbac sy
     $teacher->givePermissionTo('guardian.view');          // grant not in the map
     $teacher->revokePermissionTo('student_subject.view'); // revoke of a mapped grant
 
-    (new Database\Seeders\RbacSeeder)->run();
+    (new RbacSeeder)->run();
 
     $names = $teacher->fresh()->permissions->pluck('name');
 

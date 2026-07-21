@@ -302,6 +302,36 @@ default, verified) · `rbac.single_source_access` (off; parity-gated) ·
 `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
 longer blocks any model; each enablement still needs its request-path audit).
 
+## super_admin authority probe — findings (2026-07-21, chore/superadmin-authority-probe)
+
+Predict-first matrix (predictions committed before observation —
+docs/handoff/superadmin-authority-probe-predictions.md); **all cells observed
+as predicted**; standing test `SuperAdminAuthorityTest` (survives the ADR 0043
+§5 teardown). Verdict: **mixed by path**, per-path record:
+
+- **Mode A is real on every Gate-routed path** while `auth.gate_before_superadmin`
+  is on (default): `can()`, `permission:` middleware, and policies all resolve
+  `true` for super_admin regardless of the seeded absence — C1's "super_admin
+  gets none of the seven" decides nothing at the Gate. ADR 0040's guarantee
+  therefore must NOT rest on the seed absence (the SoD-as-domain-invariant ADR
+  question stands, raised separately — probe brief §"what this does not settle").
+- **Mode B refuted for the installed version** (spatie 7.4.1): PermissionMiddleware
+  uses `canAny()` → the Gate → the bypass applies. **C2's swap does not lock
+  super_admin out while the flag is on**; flag-off + swap = lockout, now a
+  declared, tested dependency (SuperAdminAuthorityTest row 2).
+- **Live pre-existing lockout (new finding):** the four `hasRole()` FormRequests
+  (Promote/Register/UpdateStatus/RejectSubjectResult) deny super_admin TODAY in
+  both flag states — `hasRole` never consults the Gate. Resolved by C3's ADR
+  0044 implementation (swap to permissions); until then it is a known truth,
+  not a bug to hotfix.
+- **Dual `Gate::before` composition:** Spatie registers its own before
+  (PermissionRegistrar:116, package boots first) returning true-or-null; the
+  app's returns true-or-null. Safe ONLY by the null-on-miss convention —
+  either returning `false` would silently defeat the other. Pinned
+  behaviorally by the standing test's control rows.
+- **Open environment fact:** production's `AUTH_GATE_BEFORE_SUPERADMIN` state —
+  deploy owner to confirm; not inferable from the tree.
+
 ## 1.4e — domain event bus + Academics facts: investigation STOP (2026-07)
 
 Investigation-first. **All four proposed published facts hit the STOP condition —

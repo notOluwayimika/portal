@@ -277,8 +277,12 @@ slice).
 `auth()->setUser($causer)` eliminated; `SchoolScope`/`BelongsToSchool` now
 resolve off-request context from `ActiveSchool::runFor()`).
 
-**Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53),
-now rolling out **observe-first** via `App\Support\Authz` (S5 — see below) ·
+**Continuous — open:** 1.2c1–c3 (**commented-authz entries: 0 remain of 53** —
+the guard cluster was triaged in the commented-guard-cluster slice and the final
+two `users.school_id` ownership guards were deleted per the §7 decision, slice A1
+of docs/rbac-implementation-plan.md; authz-lint baseline is now empty; §24
+conditions 2–4 — enforcement + evidence — remain open), the restored checks run
+**observe-first** via `App\Support\Authz` (S5 — see below) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
 ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
 per-model request-path audit remains the gate) · 1.4d–e (

@@ -1,2 +1,0 @@
-app/Http/Controllers/StudentCurriculumController.php	// abort_unless($student->school_id === $request->user()->school_id, 403);
-app/Http/Controllers/StudentSubjectController.php	// abort_unless($student->school_id === auth()->user()->school_id, 403);

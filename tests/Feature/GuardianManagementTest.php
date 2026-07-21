@@ -234,16 +234,29 @@ it('registrar cannot change a login-enabled guardians email (credential permissi
     $registrar = actingAsRegistrar($school);
     [$guardian] = setupGuardianLinkedToTwoStudents($school);
 
+    // RULING 2026-07-21 — hard 403, not 200-with-silent-ignore.
+    //
+    // This test previously asserted 200 with the email quietly dropped, and the
+    // CODE was right while the TEST encoded the unsafe expectation. Silently
+    // discarding a submitted security-relevant field is the worse failure mode: the
+    // registrar sees success and believes the email changed. Rejecting the whole
+    // request tells them the truth.
+    //
+    // Possible future UX (NOT this slice, and never a silent drop): return 200 with
+    // an explicit "email ignored, credential permission required" signal in the
+    // response, so a registrar editing an address is not blocked by an untouched
+    // email field. That needs a deliberate response contract; until it exists, 403.
     $this->actingAs($registrar)
         ->putJson("/api/guardians/{$guardian->uuid}", [
             'email' => 'new.email@example.test',
-            'occupation' => 'Doctor', // allowed
+            'occupation' => 'Doctor',
         ])
-        ->assertOk();
+        ->assertForbidden();
 
+    // …and nothing was written — not the credential field, and not the allowed one.
     $guardian->refresh()->load('user');
-    expect($guardian->occupation)->toBe('Doctor');
-    expect($guardian->user->email)->toBe('shared.guardian@example.test'); // unchanged
+    expect($guardian->user->email)->toBe('shared.guardian@example.test')
+        ->and($guardian->occupation)->not->toBe('Doctor');
 });
 
 it('admin can change a login-enabled guardians email with credential permission', function () {

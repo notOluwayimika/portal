@@ -305,7 +305,7 @@ it('rejects a boarding parent assignment without a gender', function () {
         'teacher_id' => $teacher->uuid,
         'role' => 'boarding_parent',
         'class_level_arm_ids' => [$arm->uuid],
-    ])->assertStatus(400);
+    ])->assertStatus(422);
 
     expect(ClassLevelArmTeacher::count())->toBe(0);
 });
@@ -321,7 +321,7 @@ it('rejects a form teacher assignment to more than one class arm', function () {
         'teacher_id' => $teacher->uuid,
         'role' => 'form_teacher',
         'class_level_arm_ids' => [$armA->uuid, $armB->uuid],
-    ])->assertStatus(400);
+    ])->assertStatus(422);
 
     expect(ClassLevelArmTeacher::count())->toBe(0);
 });

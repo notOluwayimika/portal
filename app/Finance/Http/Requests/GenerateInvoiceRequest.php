@@ -33,10 +33,14 @@ class GenerateInvoiceRequest extends FormRequest
             'enrollment_id' => ['required', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.description' => ['required', 'string', 'max:255'],
-            // No `min:1` any more: a reduction is legitimately negative. The SIGN rule
-            // is enforced per-kind in the Action (where the domain rule lives), so the
-            // edge only rejects the one value that is meaningless for either kind.
-            'lines.*.amount_minor' => ['required', 'integer', 'not_in:0'],
+            // A line carries EITHER a concrete amount_minor OR a percent (reductions
+            // only). amount_minor is required unless a percent is given; no `min:1`,
+            // because a reduction is legitimately negative — the SIGN rule is enforced
+            // per-kind in the Action, so the edge only rejects the meaningless zero.
+            'lines.*.amount_minor' => ['required_without:lines.*.percent', 'integer', 'not_in:0'],
+            // 1..100: a percentage may not exceed the whole. The kind/positivity of the
+            // resulting line is the Action's job; this just bounds the input.
+            'lines.*.percent' => ['sometimes', 'integer', 'between:1,100', 'prohibits:lines.*.amount_minor'],
             'lines.*.kind' => ['sometimes', Rule::enum(InvoiceLineKind::class)],
             'lines.*.note' => ['sometimes', 'nullable', 'string', 'max:255'],
             'lines.*.currency' => ['sometimes', 'string', 'size:3'],
@@ -57,16 +61,20 @@ class GenerateInvoiceRequest extends FormRequest
 
         return array_values(array_map(
             static fn (array $line) => new InvoiceLineSpec(
-                (string) $line['description'],
-                Money::fromKobo(
-                    (int) $line['amount_minor'],
-                    (string) ($line['currency'] ?? Money::DEFAULT_CURRENCY),
-                ),
-                isset($line['fee_item_id']) ? (int) $line['fee_item_id'] : null,
-                isset($line['kind'])
+                description: (string) $line['description'],
+                // A percentage line has no amount yet — it is resolved in the Action.
+                amount: isset($line['percent'])
+                    ? null
+                    : Money::fromKobo(
+                        (int) $line['amount_minor'],
+                        (string) ($line['currency'] ?? Money::DEFAULT_CURRENCY),
+                    ),
+                feeItemId: isset($line['fee_item_id']) ? (int) $line['fee_item_id'] : null,
+                kind: isset($line['kind'])
                     ? InvoiceLineKind::from((string) $line['kind'])
                     : InvoiceLineKind::Charge,
-                isset($line['note']) ? (string) $line['note'] : null,
+                note: isset($line['note']) ? (string) $line['note'] : null,
+                percent: isset($line['percent']) ? (int) $line['percent'] : null,
             ),
             $lines,
         ));

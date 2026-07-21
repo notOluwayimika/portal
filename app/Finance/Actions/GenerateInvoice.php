@@ -102,25 +102,33 @@ final class GenerateInvoice
             throw new BusinessRuleException('An invoice must have at least one line.');
         }
 
+        // Resolve percentage reductions into concrete amounts FIRST, so everything below
+        // — the throw checks, the fold, the persisted rows — operates on a single,
+        // uniform shape: concrete signed lines. A stored line is never "10%"; it is the
+        // exact naira reduction that percentage produced, which is what §5 snapshot
+        // integrity requires (a historical statement must not recompute a percentage
+        // against numbers that may have moved).
+        $lines = $this->resolvePercentages($lines);
+
         // The positivity rule is now SCOPED BY KIND, and each half is stricter than the
         // single rule it replaces — a charge must still be strictly positive, and a
         // reduction must be strictly negative. Neither may be zero: a zero line carries
         // no arithmetic and no information, and silently accepting one would let a
         // "waiver" that waives nothing look applied.
         foreach ($lines as $line) {
-            if ($line->amount->isZero()) {
+            if ($line->resolvedAmount()->isZero()) {
                 throw new BusinessRuleException('An invoice line amount may not be zero.');
             }
 
             if ($line->isReduction()) {
-                if (! $line->amount->isNegative()) {
+                if (! $line->resolvedAmount()->isNegative()) {
                     throw new BusinessRuleException('A waiver or discount line must be negative.');
                 }
 
                 continue;
             }
 
-            if ($line->amount->isNegative()) {
+            if ($line->resolvedAmount()->isNegative()) {
                 throw new BusinessRuleException('Every invoice charge line must be positive.');
             }
         }
@@ -133,8 +141,8 @@ final class GenerateInvoice
         $total = array_reduce(
             $lines,
             static fn (?Money $carry, InvoiceLineSpec $line) => $carry === null
-                ? $line->amount
-                : $carry->plus($line->amount),
+                ? $line->resolvedAmount()
+                : $carry->plus($line->resolvedAmount()),
         );
 
         // Reductions may bring a total to zero, but never below it. A negative invoice
@@ -169,7 +177,7 @@ final class GenerateInvoice
                         'description' => $line->description,
                         'kind' => $line->kind,
                         'note' => $line->note,
-                        'amount' => $line->amount,
+                        'amount' => $line->resolvedAmount(),
                         'fee_item_id' => $line->feeItemId,
                     ]);
                 }
@@ -196,6 +204,63 @@ final class GenerateInvoice
 
             throw $e;
         }
+    }
+
+    /**
+     * Turn every percentage-reduction spec into a concrete-amount spec.
+     *
+     * SEMANTIC (stated because the brief's "10% off the tuition line" implies per-line
+     * targeting and this does NOT do that): a percentage reduction is computed against
+     * the invoice's GROSS CHARGES — the signed sum of every charge-kind line — not
+     * against one named line. "10% waiver" means 10% off the bill. Per-line targeting is
+     * a later refinement with its own design; it is deliberately not invented here on a
+     * fragile description/index reference.
+     *
+     * The magnitude is `grossCharges->percentage($p)` — the banker's-rounded op — and
+     * the resulting line stores that concrete negative naira figure, never the percent.
+     *
+     * @param  list<InvoiceLineSpec>  $lines
+     * @return list<InvoiceLineSpec>
+     */
+    private function resolvePercentages(array $lines): array
+    {
+        $hasPercentage = false;
+        foreach ($lines as $line) {
+            if ($line->isPercentage()) {
+                $hasPercentage = true;
+                if (! $line->isReduction()) {
+                    throw new BusinessRuleException('A percentage may only be applied to a waiver or discount line.');
+                }
+            }
+        }
+
+        if (! $hasPercentage) {
+            return $lines;
+        }
+
+        // Gross = the signed sum of the CHARGE lines only. Percentage reductions reduce
+        // the charges; folding other reductions into the base would let two reductions
+        // compound in an order-dependent way.
+        $grossCharges = null;
+        foreach ($lines as $line) {
+            if (! $line->isReduction() && ! $line->isPercentage()) {
+                $grossCharges = $grossCharges === null
+                    ? $line->resolvedAmount()
+                    : $grossCharges->plus($line->resolvedAmount());
+            }
+        }
+
+        if ($grossCharges === null) {
+            throw new BusinessRuleException('A percentage reduction needs at least one charge line to reduce.');
+        }
+
+        return array_map(
+            fn (InvoiceLineSpec $line) => $line->isPercentage()
+                // percentage() returns a positive magnitude; a reduction stores it negated.
+                ? $line->withAmount($grossCharges->percentage($line->percent)->times(-1))
+                : $line,
+            $lines,
+        );
     }
 
     /**

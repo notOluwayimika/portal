@@ -6,11 +6,12 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class RegisterStudentCurriculumRequest extends FormRequest
 {
+    /**
+     * ADR 0044: enrollment lifecycle, authorized by permission.
+     */
     public function authorize(): bool
     {
-        $user = $this->user();
-
-        return $user && ($user->hasRole('admin') || $user->hasRole('head_of_school'));
+        return $this->user()?->can('student_curriculum.register') ?? false;
     }
 
     public function rules(): array

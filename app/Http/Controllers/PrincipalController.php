@@ -49,6 +49,11 @@ class PrincipalController extends Controller
 
     public function destroy(User $principal)
     {
+        // NOT a §7.2 role-gate, and deliberately left as hasRole (C3 re-audit):
+        // this asks whether the TARGET is a principal, not whether the CALLER
+        // may act. Role identity is the actual subject of the question — the
+        // route's permission gate authorizes the caller. Rewriting it as a
+        // permission would change its meaning, not modernise it.
         abort_unless($principal->hasRole('principal'), 404);
         $principal->removeRole('principal');
 

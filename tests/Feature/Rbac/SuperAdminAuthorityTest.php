@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Requests\PromoteStudentRequest;
+use App\Http\Requests\RejectSubjectResultRequest;
 use App\Models\Export;
 use App\Models\Role;
 use App\Models\School;
@@ -59,11 +60,27 @@ it('seeds super_admin(web) exactly its 15 legacy grants and none of ADR 0044\'s 
 });
 
 // ── Row 1: $user->can() ────────────────────────────────────────────────────
+//
+// C3 CHANGED THIS ROW, DELIBERATELY. The probe observed (2026-07-21, bypass ON)
+// `can('result.approve') === true`. C3 implements ADR 0040's exclusion, so that
+// exact call is now false — and that is the slice's whole point, not a
+// regression. The probed MECHANISM (Mode A: the bypass really does decide at the
+// Gate, regardless of the seeded absence) is unchanged and is still pinned here,
+// now via a non-checker ability. See SuperAdminBypassExclusionTest.
 
-it('row 1 — with the bypass ON, can() allows super_admin an unseeded ADR 0044 ability (Mode A is real at the Gate)', function () {
+it('row 1 — with the bypass ON, can() allows super_admin an unseeded ability (Mode A is real at the Gate)', function () {
     config(['auth.gate_before_superadmin' => true]);
 
-    expect(superAdmin()->can('result.approve'))->toBeTrue();
+    // Unseeded for super_admin (precondition test above) and NOT a checker
+    // action, so a true here can only be the bypass — Mode A, still real.
+    expect(superAdmin()->can('student_curriculum.promote'))->toBeTrue();
+});
+
+it('row 1 — the bypass never reaches a checker action, flag ON (ADR 0040, implemented in C3)', function () {
+    config(['auth.gate_before_superadmin' => true]);
+
+    expect(superAdmin()->can('result.approve'))->toBeFalse()
+        ->and(superAdmin()->can('result.reject'))->toBeFalse();
 });
 
 it('row 1 — with the bypass OFF, the seeded absence is decisive: can() denies the seven, allows the 15', function () {
@@ -77,18 +94,26 @@ it('row 1 — with the bypass OFF, the seeded absence is decisive: can() denies 
 // ── Row 2: Spatie permission: middleware (decides Mode B / the C2 risk) ────
 
 it('row 2 — permission: middleware routes through the Gate in v7.4.1: bypass ON passes super_admin (Mode B refuted)', function () {
+    Route::get('/__probe/promote', fn () => response('ok'))
+        ->middleware(['web', 'auth', 'permission:student_curriculum.promote']);
+
+    config(['auth.gate_before_superadmin' => true]);
+    $this->actingAs(superAdmin())->get('/__probe/promote')->assertOk();
+});
+
+it('row 2 — with the bypass OFF the same route 403s super_admin: C2 swap + flag-off = lockout, a declared dependency', function () {
+    Route::get('/__probe/promote', fn () => response('ok'))
+        ->middleware(['web', 'auth', 'permission:student_curriculum.promote']);
+
+    config(['auth.gate_before_superadmin' => false]);
+    $this->actingAs(superAdmin())->get('/__probe/promote')->assertForbidden();
+});
+
+it('row 2 — a permission: route on a CHECKER ability 403s super_admin even with the bypass ON (C3)', function () {
     Route::get('/__probe/approve', fn () => response('ok'))
         ->middleware(['web', 'auth', 'permission:result.approve']);
 
     config(['auth.gate_before_superadmin' => true]);
-    $this->actingAs(superAdmin())->get('/__probe/approve')->assertOk();
-});
-
-it('row 2 — with the bypass OFF the same route 403s super_admin: C2 swap + flag-off = lockout, a declared dependency', function () {
-    Route::get('/__probe/approve', fn () => response('ok'))
-        ->middleware(['web', 'auth', 'permission:result.approve']);
-
-    config(['auth.gate_before_superadmin' => false]);
     $this->actingAs(superAdmin())->get('/__probe/approve')->assertForbidden();
 });
 
@@ -110,9 +135,15 @@ it('row 3 — bypass OFF lets the policy run: the ownership rule denies super_ad
     expect(Gate::forUser($sa)->allows('download', $export))->toBeFalse();
 });
 
-// ── Row 4: FormRequest hasRole() path — the Gate is never consulted ────────
+// ── Row 4: the FormRequest path ────────────────────────────────────────────
+//
+// C3 RESOLVED THE LOCKOUT THIS ROW FOUND. The probe recorded these requests
+// denying super_admin in BOTH flag states, because hasRole() never consults the
+// Gate. ADR 0044 step 2 replaced hasRole with can(), so the path now reaches
+// the Gate like every other — and the cell becomes flag-dependent, which is the
+// same load-bearing dependency C2 introduced for routes.
 
-it('row 4 — the hasRole FormRequests deny super_admin in BOTH flag states: a live, pre-existing lockout the bypass cannot reach', function () {
+it('row 4 — a non-checker FormRequest now reaches the Gate: bypass ON passes super_admin (the probe lockout, resolved)', function () {
     $sa = superAdmin();
     $school = School::factory()->create();
     setPermissionsTeamId($school->id);
@@ -120,6 +151,27 @@ it('row 4 — the hasRole FormRequests deny super_admin in BOTH flag states: a l
     $request = new PromoteStudentRequest;
     $request->setUserResolver(fn () => $sa);
 
+    config(['auth.gate_before_superadmin' => true]);
+    expect($request->authorize())->toBeTrue();
+
+    // Flag off, the seeded absence decides — super_admin holds no enrollment
+    // permission, so it is denied. Not a lockout bug: the same declared
+    // flag dependency the C2 swap made load-bearing.
+    config(['auth.gate_before_superadmin' => false]);
+    expect($request->authorize())->toBeFalse();
+});
+
+it('row 4 — a CHECKER FormRequest denies super_admin in BOTH flag states (ADR 0040, and now by design)', function () {
+    $sa = superAdmin();
+    $school = School::factory()->create();
+    setPermissionsTeamId($school->id);
+
+    $request = new RejectSubjectResultRequest;
+    $request->setUserResolver(fn () => $sa);
+
+    // Same denial the probe observed, but for a different and now intended
+    // reason: result.reject is excluded from the bypass, so platform authority
+    // cannot reach a checker action regardless of the flag.
     config(['auth.gate_before_superadmin' => true]);
     expect($request->authorize())->toBeFalse();
 

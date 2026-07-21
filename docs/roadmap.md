@@ -364,6 +364,44 @@ only, outcome-parity proven:
   seed the canonical RbacSeeder map; 2 Finance test files among them
   (announce-listed per §4.1 — one mechanical line each, no semantic change).
 
+## C3 — policies + ADR 0044/0040 implementation (2026-07-21, feat/rbac-policies)
+
+Retires the §7.2 role-gate debt for the result/enrollment workflow **and** makes
+ADR 0040 real for the first time. ADR 0040 was not a blocker to be amended: ADR
+0044 §"Maker–checker separation" binds this slice to implement it, so C3
+executes it.
+
+- **Bypass exclusion, as a convention.** Any ability whose terminal segment is
+  `approve`/`reject` is excluded from the super-admin `Gate::before`
+  (`App\Support\ApprovalAbility`). ADR 0040 words it as `finance.*.approve`,
+  which `result.approve`/`result.reject` do not match — a literal list would
+  have shipped denylist drift immediately. An enum-enumerating test asserts every
+  matching case is excluded, so Ph3's `finance.invoice.approve` is covered the
+  day it is created. Bare Policy ability names are covered too (`Gate::authorize`
+  passes `approve`, not `result.approve`).
+- **Structural maker ≠ checker.** `SubjectResultPolicy` + a DB CHECK
+  (`submitted_by <> decided_by`). Needed a schema change: the table held one
+  `updated_by`, overwritten per transition, so the approver's write **destroyed
+  the submitter's identity** — the rule was unrepresentable, not just unenforced.
+  Backfill is partial on purpose (approved rows recover only their decider; the
+  lost maker stays NULL rather than being inferred).
+- **ADR 0044 steps 2/3/5 done** (step 4 was C2). The four `hasRole` FormRequests
+  now authorize by permission — which **resolves the super_admin lockout the
+  authority probe found**, for the three non-checker requests. Reject stays
+  denied for super_admin, now by design rather than by accident.
+- **Probe cells deliberately changed:** `SuperAdminAuthorityTest` rows 1, 2 and 4
+  recorded pre-C3 truth. The mechanism findings (Mode A real at the Gate, Mode B
+  refuted) are re-pinned via a non-checker ability; new cells assert the
+  exclusion. Recorded as an intended change, not a regression.
+- **Role-gate re-audit closed:** the remaining `hasRole()` calls are target-identity
+  or view-shape branches, not authorization — enumerated in ADR 0044's
+  implementation record.
+- **Still open (Finance interface item):** ADR 0040's "configured limits" for
+  approval authority are undesigned — C3 implements separation, not limits — and
+  its third decision (super-admin Finance actions raise an audit signal) stays
+  Ph11, with its home now recorded in ADR 0040 (a severity rule in
+  `ActivitySeverityService`, not new plumbing in `app/Finance/**`).
+
 ## 1.4e — domain event bus + Academics facts: investigation STOP (2026-07)
 
 Investigation-first. **All four proposed published facts hit the STOP condition —

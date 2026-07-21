@@ -5,10 +5,13 @@ namespace App\Providers;
 use App\Academics\BillableEnrollmentAdapter;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
+use App\Models\SubjectResultStatus;
 use App\Models\User;
 use App\Observers\StudentCurriculumObserver;
+use App\Policies\SubjectResultPolicy;
 use App\Services\ActivityLog\ActivitySensitiveService;
 use App\Services\ActivityLog\ActivitySeverityService;
+use App\Support\ApprovalAbility;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->registerSuperAdminGate();
+        $this->registerPolicies();
 
         StudentCurriculum::observe(StudentCurriculumObserver::class);
     }
@@ -61,16 +65,42 @@ class AppServiceProvider extends ServiceProvider
      * hook. isSuperAdmin() resolves the role in a null-team context, so this
      * works regardless of the school/team currently active. Kept behind a flag
      * so the bypass can be disabled instantly if it misbehaves (auth.php).
+     *
+     * EXCEPT checker actions (ADR 0040): any ability whose terminal segment is
+     * `approve`/`reject` is never bypassed — approval authority comes only from
+     * an explicit grant, never from platform authority. See ApprovalAbility for
+     * why this is a convention rather than a list.
+     *
+     * Returns null (never false) on every miss: Spatie registers its own
+     * Gate::before ahead of this one and a `false` from either would silently
+     * defeat the other. Excluded abilities therefore fall through to the normal
+     * permission resolution rather than being denied here.
      */
     protected function registerSuperAdminGate(): void
     {
         Gate::before(function (User $user, string $ability) {
+            if (ApprovalAbility::isExcludedFromSuperAdminBypass($ability)) {
+                return null;
+            }
+
             if (config('auth.gate_before_superadmin') && $user->isSuperAdmin()) {
                 return true;
             }
 
             return null;
         });
+    }
+
+    /**
+     * Policies are registered EXPLICITLY rather than left to Laravel's
+     * name-convention discovery: SubjectResultPolicy does not map to
+     * SubjectResultStatusPolicy, so discovery would silently find nothing and
+     * every authorize() call would fall through to "no policy" — an
+     * authorization control that fails open by naming accident.
+     */
+    protected function registerPolicies(): void
+    {
+        Gate::policy(SubjectResultStatus::class, SubjectResultPolicy::class);
     }
 
     /**

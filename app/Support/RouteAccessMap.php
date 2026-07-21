@@ -52,9 +52,19 @@ class RouteAccessMap
                     $holders ??= self::holders();
                     $listed = explode('|', substr($entry, strlen('permission:')));
                     $admitted = collect($listed)->flatMap(fn ($p) => $holders[$p] ?? [])->unique()->all();
-                    if (config('auth.gate_before_superadmin')) {
+
+                    // The bypass admits super_admin only while the flag is on AND
+                    // no listed ability is a checker action — ADR 0040 exclusions
+                    // are never bypassed, so a `permission:*.approve` route admits
+                    // only genuine holders. (No route carries one today; deriving
+                    // it correctly is what keeps the C2 oracle true when one does.)
+                    $bypassable = collect($listed)
+                        ->every(fn ($p) => ! ApprovalAbility::isExcludedFromSuperAdminBypass($p));
+
+                    if (config('auth.gate_before_superadmin') && $bypassable) {
                         $admitted[] = 'super_admin';
                     }
+
                     $allowed = array_intersect($allowed, $admitted);
                 }
             }

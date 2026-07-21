@@ -83,6 +83,12 @@ it('ANTI-INERT — a genuine reviewer is NOT denied', function () {
 
     $user->grantSchoolAccess($school, 'admin');
     Role::findByName('admin', 'web')->givePermissionTo('academic_setup.manage');
+    // C3 (ADR 0044 step 2): the FormRequest under test authorizes by permission
+    // now, not by the `admin` role name — so the genuine-reviewer fixture has to
+    // hold the permission. That this test went red on the swap is the point:
+    // it is asserting the FormRequest is the live gate.
+    Permission::firstOrCreate(['name' => 'student_curriculum.update_status', 'guard_name' => 'web']);
+    Role::findByName('admin', 'web')->givePermissionTo('student_curriculum.update_status');
     $user->flushSchoolAccessCache();
 
     $response = $this->actingAs($user)

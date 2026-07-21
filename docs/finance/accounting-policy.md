@@ -2,8 +2,8 @@
 
 The accounting decisions the Finance module implements, confirmed by Brookstone.
 Each **enforcement** reference below is checked against the actual repo and marked
-**ENFORCED** (mechanism named) or **PENDING [slice]** — a confirmed *policy* does
-not imply the *guard* exists. Table/concept names read `finance_*`, matching the
+**ENFORCED** (mechanism named) or **PENDING [slice]** — a confirmed _policy_ does
+not imply the _guard_ exists. Table/concept names read `finance_*`, matching the
 frozen schema (`docs/finance/walking-skeleton-conventions.md`).
 
 ## 1. Rounding
@@ -13,10 +13,10 @@ split (e.g. a fee divided into installments that does not divide evenly), the
 remainder lands on the **final** installment, so the parts reconcile to the total
 exactly — no penny is created or lost.
 
-**Enforcement — PENDING (first *dividing* consumer; NOT slice 2).** Slice 2 shipped
+**Enforcement — PENDING (first _dividing_ consumer; NOT slice 2).** Slice 2 shipped
 multi-line invoicing without it, correctly: a multi-line total is `Money::plus` over
 exact integer minor units, so it never divides and therefore never rounds. Rounding
-is only reachable once something *splits* an amount (installments, %-discounts).
+is only reachable once something _splits_ an amount (installments, %-discounts).
 The split/allocate op is a self-contained addition to the VO when that consumer
 lands — building it earlier would be a rounding-bearing operation with nothing to
 round. Today `App\Support\Money`
@@ -32,25 +32,47 @@ amount is an exact integer minor-unit value.
 **Policy:** numbers must be **unique only — gaps are acceptable** (not gap-free).
 Per-School prefix, configurable with defaults:
 
-| School | Default prefix |
-|---|---|
-| Secondary | `BSS-` |
-| Primary | `BSP-` |
-| IFY | `BSI-LAG-` |
+| School    | Default prefix |
+| --------- | -------------- |
+| Secondary | `BSS-`         |
+| Primary   | `BSP-`         |
+| IFY       | `BSI-LAG-`     |
 
-(These are configurable *defaults* for a pending feature — the authoritative list
+(These are configurable _defaults_ for a pending feature — the authoritative list
 is set per-School when the config lands, §7.)
 
 **Enforcement — split:**
+
 - Gap-tolerant uniqueness: **ENFORCED.** The Shared-Kernel `App\Support\Sequences`
   is exactly this — "monotonic but not guaranteed contiguous" (ADR 0033 / slice
   1.4b), with a per-`(scope, key)` unique counter. Because gaps are acceptable,
   **no gap-free work and no signed gap-free policy are needed** — the kernel is
   correct as-is. `GenerateInvoice`/`RecordPayment` already draw their number from
   it (per-School scope key).
-- Per-School prefix + configurable defaults: **PENDING (slice 2).** The number is
-  an internal integer today; the prefix and its per-School configuration are not
-  built (see §7 configurability). No hardcoded prefix exists yet.
+- Per-School prefix + configurable defaults: **ENFORCED (2026-07-21),
+  PRESENTATION-DERIVED.** `finance_school_settings.invoice_number_prefix` holds one
+  prefix per School; `Invoice::displayNumber()` composes it with the stored integer and
+  `InvoiceResource` exposes it as `display_number` **beside** the unchanged `number`.
+  **Nothing is stored prefixed** — `finance_invoices.number` remains
+  `unsignedBigInteger` under `UNIQUE(school_id, number)`, so no deployed table was
+  altered and no live invoice was rewritten.
+
+    Two format facts, made explicit because they are easy to get wrong:
+    the prefix is the **literal string including its separator** (the defaults above are
+    `BSS-`, `BSP-`, `BSI-LAG-`) and is concatenated verbatim — `BSI-LAG-` carries an
+    internal hyphen, so any "append a dash" logic would render `BSI-LAG--42`. And **this
+    policy specifies no width**, so no zero-padding is applied; inventing one would
+    silently change the format the day a School's numbering outgrew it.
+
+    NULL/blank means no prefix — the bare number — which is every School's state until
+    one is configured.
+
+- **Search by prefixed number: NOT BUILT, and deliberately not.** There is no
+  invoice-number search anywhere today (no index route, no `where('number')` call, no
+  Finance search UI — invoices are addressed by `{invoice:uuid}`). A normalizer that
+  strips the active School's prefix is the right shape when a search surface exists;
+  building it now would be a primitive ahead of its consumer, the same reasoning that
+  defers the rounding op (§1). It belongs to the slice that adds invoice search.
 
 ## 3. Cancellation = VOID, never delete
 
@@ -61,11 +83,17 @@ Laravel `SoftDeletes`/`deleted_at` (soft-delete hides rows from default queries,
 the opposite of a paper trail).
 
 **Enforcement — split:**
+
 - Never hard-deleted: **ENFORCED.** The `finance_invoices_no_delete` trigger
   (1.4c pattern) denies DELETE at the database; the model has a `deleting` guard.
 - Not `SoftDeletes`: **ENFORCED by absence** — the `Invoice` model does not use
   the `SoftDeletes` trait and has no `deleted_at` column.
-- The **VOID status** itself: **PENDING (slice 2).** `InvoiceStatus` currently has
+- The **VOID status** itself: **ENFORCED** (mark corrected 2026-07-21 — it was left
+  reading PENDING after slice 2 shipped it). `InvoiceStatus::Void` exists alongside
+  `Issued`, with `Invoice::isVoid()` and the `scopeExcludingVoid()` reporting scope —
+  deliberately a NAMED scope, not a global one, so `{invoice:uuid}` binding still
+  resolves a voided invoice and the double-void guard keeps working. Historical note,
+  now inaccurate: `InvoiceStatus` currently has
   `Issued` and `Cancelled`; slice 2 renames/repurposes the terminal state to
   `Void` (a permanently-visible stamp) to match this policy's vocabulary.
 
@@ -76,7 +104,9 @@ counted in a total. Two mechanisms:
 
 - **(a) Default query scope excludes VOID** — seeing void invoices requires
   explicit intent (an audit/statement view), so no ordinary total includes them.
-  **PENDING (slice 2).**
+  **ENFORCED** (mark corrected 2026-07-21 — shipped in slice 2, left reading PENDING).
+  `Invoice::scopeExcludingVoid()`, applied by the read model, with `includeVoid` as the
+  explicit opt-in.
 - **(b) Voiding posts a reversing ledger entry** so the subledger nets a voided
   invoice to zero. **ENFORCED today (as "cancel").** `CancelInvoice` posts a
   `Reversal` ledger entry equal to the negated charge; `WalkingSkeletonTest`
@@ -99,7 +129,7 @@ The approver is configurable in-system (Ph3 maker-checker).
 (§3 discount / §10 credit-note-write-off are Ph2+). The frozen convention it will
 build on is real: invoice lines are immutable snapshots (`finance_invoice_lines`,
 append-only triggers), so a historical statement never re-renders with a new net.
-The approver *rules* are Ph3 (maker-checker).
+The approver _rules_ are Ph3 (maker-checker).
 
 ## 6. Repeat billing
 
@@ -110,7 +140,7 @@ adjustment. No repeat-specific billing logic.
 **Enforcement — ENFORCED by design (no special code).** The registrar ruling
 (terminal statuses are pure academic facts; every episode bills uniformly) means
 Finance has, and needs, **no** repeat branch — `GenerateInvoice` bills any
-enrollment identically. The absence of repeat-specific logic *is* the enforcement;
+enrollment identically. The absence of repeat-specific logic _is_ the enforcement;
 adjustments ride the ordinary waiver/discount path (§5, Ph2+).
 
 ## 7. Configurability
@@ -119,21 +149,35 @@ adjustments ride the ordinary waiver/discount path (§5, Ph2+).
 (§6) are **per-School configurable**. The schema should leave room for School-scoped
 Finance configuration; the config engine is **not** built now.
 
-**Enforcement — PENDING (Ph2).** No School-scoped Finance config table or service
-exists today, and nothing is hardcoded in its place (there is simply no prefix /
-approver / repeat-rule mechanism yet). Slice 2+ introduces School-scoped Finance
-config; this policy is the record that these three are configuration, not constants.
+**Enforcement — PARTIAL (2026-07-21).** The School-scoped store now exists:
+`finance_school_settings`, one row per School (`UNIQUE(school_id)`, durable RESTRICT FK
+— a top-level Finance table owning `school_id` directly, per the ownership template).
+
+- **Number prefix (§2): BUILT.** `invoice_number_prefix`, read via
+  `SchoolFinanceSettings::invoiceNumberPrefixFor()`.
+- **Waiver approver (§5) and repeat treatment (§6): NOT BUILT, deliberately.** Neither
+  has a consumer yet, and guessing their type and semantics now is the same
+  front-load-ahead-of-the-consumer mistake that defers the rounding op (§1). The table
+  is _shaped for_ them — adding a column later is additive — but it holds only what is
+  actually read today.
+
+The store was built together with its first consumer on purpose: a config table with no
+reader is a schema answering a question nobody asked, verifiable only against tests we
+would also have invented.
 
 ## 8. Deferred / open (not decided here)
 
-- **422-vs-400 validation convention** — app-wide, still pending; Finance controllers
-  return 422 in the interim (not frozen as an invariant).
+- ~~**422-vs-400 validation convention**~~ — **RESOLVED 2026-07-21.** Business-rule and
+  validation errors standardise on **422 app-wide**, changed at the single
+  `validation_error` macro whose only production caller is the `ValidationException`
+  renderer. Finance's interim 422 is now the app-wide rule rather than a local
+  divergence, so this is no longer deferred or a Finance-specific caveat.
 - **Waiver approver rules** — Ph3 maker-checker.
 - **GL / Sage mapping** — §13, a later phase (the subledger is the only ledger now).
 
 ---
 
-*Summary — what is real today vs policy-for-later:* gap-tolerant numbering,
+_Summary — what is real today vs policy-for-later:_ gap-tolerant numbering,
 never-hard-delete, not-soft-delete, the reversing-ledger-nets-to-zero mechanism,
 snapshot-line integrity, and no-repeat-logic are **enforced now**. Banker's
 rounding, the VOID status + default-exclude-void scope, per-School prefixes, the

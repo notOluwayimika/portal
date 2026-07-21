@@ -1,0 +1,1717 @@
+{
+    "DELETE /api/activity-logs/saved-filters/{savedActivityFilter}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "DELETE /api/class-structure/arms/{arm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/class-structure/levels/{classLevel}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/class-structure/streams/{stream}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/class-structure/{classLevelArm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/exam-types/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/heads-of-schools/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "DELETE /api/marking-components/{markingComponent}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/notices/categories/{noticeCategory}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "DELETE /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "DELETE /api/scholarships/{scholarship}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/sessions/{session}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/sessions/{session}/terms/{term}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/sport-houses/{sportHouse}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/subjects/{subject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/teacher-assignments/{classLevelArmTeacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "DELETE /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /api/teachers/{teacher}/subjects/{assignment}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "DELETE /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "role:principal|head_of_school"
+    ],
+    "DELETE /settings/profile": [
+        "web",
+        "auth",
+        "verified"
+    ],
+    "DELETE /setup/principals/{principal}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "DELETE /super-admin/schools/{school}/fallback-signature": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "DELETE /user/two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /": [
+        "web",
+        "guest"
+    ],
+    "GET /activity-logs": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /activity-logs/{id}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/activity-logs": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/exports/{export}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/filters/options": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/saved-filters": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/stats": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/activity-logs/{id}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/behavioral-assessments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:boarding_parent|form_teacher"
+    ],
+    "GET /api/broadsheets/groups": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/broadsheets/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/broadsheets/{curriculum}/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/class-level-arms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/class-structure": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/curricula/active": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/curricula/{curriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/curriculum-subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|guardian|principal"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/year-average": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|guardian|principal"
+    ],
+    "GET /api/dashboard/analysis": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/dashboard/onboarding": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/dashboard/widgets": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/dashboard/widgets/{widget}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/exam-types": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/form-teacher/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:form_teacher"
+    ],
+    "GET /api/grade-boundaries/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/grading-schemes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardian/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:guardian"
+    ],
+    "GET /api/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/import/template": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/import/{import}/report": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/import/{import}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/imports": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/lookup": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/{guardian}/activity": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/{guardian}/audit": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/guardians/{guardian}/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /api/head-of-school/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/head-of-school/students/{studentCurriculum}/result": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/heads-of-schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/marking-components/overlapping/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "GET /api/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/notices/categories": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/outstanding-comments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/results/incomplete": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /api/scholarships": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/sessions": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/sessions/{session}/terms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/setup-data": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/sport-houses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/student-curricula/{studentCurriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|guardian|principal"
+    ],
+    "GET /api/student-curricula/{studentCurriculum}/curriculum-subject/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|guardian|principal"
+    ],
+    "GET /api/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher|principal"
+    ],
+    "GET /api/students/bulk-update/template": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/bulk-update/{import}/report": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/bulk-update/{import}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/bulk-updates": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher|principal"
+    ],
+    "GET /api/students/{student}/curriculum/{curriculum}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher|principal"
+    ],
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects/history": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher|principal"
+    ],
+    "GET /api/students/{student}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /api/subject-result-statuses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "GET /api/teacher-assignments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/teacher-assignments/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /api/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/teachers/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/teachers/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "GET /api/teachers/{teacher}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "GET /api/user": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "GET /api/v1/finance/students/{student}/invoices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|super_admin"
+    ],
+    "GET /boarding-parent/behavioral-assessments": [
+        "web",
+        "auth",
+        "tenant",
+        "role:boarding_parent"
+    ],
+    "GET /class-level-arm/{classLevelArm}/results": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian|admin|head_of_school|principal"
+    ],
+    "GET /class-level/{classLevel}/results": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian|admin|head_of_school|principal"
+    ],
+    "GET /dashboard": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /dashboard/onboarding": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /forgot-password": [
+        "web",
+        "guest:web"
+    ],
+    "GET /form-teacher/comments": [
+        "web",
+        "auth",
+        "tenant",
+        "role:form_teacher"
+    ],
+    "GET /guardians": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /guardians/import": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /guardians/{guardian}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /guardians/{guardian}/audit": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /head-of-school/comments": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school"
+    ],
+    "GET /login": [
+        "web",
+        "guest:web"
+    ],
+    "GET /notices": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /outstanding-comments": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /parent/dashboard": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian"
+    ],
+    "GET /parent/wards": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian"
+    ],
+    "GET /reports/broadsheets": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /reports/results-per-class": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /reset-password/{token}": [
+        "web",
+        "guest:web"
+    ],
+    "GET /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "role:principal|head_of_school"
+    ],
+    "GET /results/incomplete": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /sanctum/csrf-cookie": [
+        "web"
+    ],
+    "GET /school-setup": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /select-school": [
+        "web",
+        "auth"
+    ],
+    "GET /settings/appearance": [
+        "web",
+        "auth",
+        "verified"
+    ],
+    "GET /settings/profile": [
+        "web",
+        "auth"
+    ],
+    "GET /settings/security": [
+        "web",
+        "auth",
+        "verified",
+        "password.confirm"
+    ],
+    "GET /setup": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/curricula-backfill": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/curricula-ccm": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/curricula/{curriculum}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/curriculum-subject/{curriculumSubject}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian"
+    ],
+    "GET /setup/head-of-schools": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/principals": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/review/pending": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|principal"
+    ],
+    "GET /setup/review/results": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school"
+    ],
+    "GET /setup/student-curricula/{studentCurriculum}/subjects": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian"
+    ],
+    "GET /setup/student-curricula/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal"
+    ],
+    "GET /setup/teacher-assignments": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /setup/teacher/{teacher}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian"
+    ],
+    "GET /storage/{path}": [],
+    "GET /students": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|principal"
+    ],
+    "GET /students/bulk-update": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /students/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|principal"
+    ],
+    "GET /students/{student}/results/active": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian|admin|head_of_school|principal"
+    ],
+    "GET /students/{student}/results/{studentCurriculum}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:guardian|admin|head_of_school|principal"
+    ],
+    "GET /super-admin/admins": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /super-admin/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /teachers": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "GET /two-factor-challenge": [
+        "web",
+        "guest:web"
+    ],
+    "GET /up": [],
+    "GET /user/confirm-password": [
+        "web",
+        "auth:web"
+    ],
+    "GET /user/confirmed-password-status": [
+        "web",
+        "auth:web"
+    ],
+    "GET /user/two-factor-qr-code": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /user/two-factor-recovery-codes": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /user/two-factor-secret-key": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /settings": [
+        "web",
+        "auth"
+    ],
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /super-admin": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PATCH /api/class-level-arms/{classLevelArm}/principal-approval": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|principal"
+    ],
+    "PATCH /api/class-levels/{classLevel}/principal-approval": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|principal"
+    ],
+    "PATCH /api/class-structure/{classLevelArm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/curricula/{curriculum}/subjects/reorder": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/archive": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/unarchive": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/form-teacher/students/{studentCurriculum}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:form_teacher"
+    ],
+    "PATCH /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/head-of-school/students/{studentCurriculum}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/student-curricula/{studentCurriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/end": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/drop": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/restore": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/students/{student}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /api/teachers/{teacher}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PATCH /settings/profile": [
+        "web",
+        "auth"
+    ],
+    "POST /api/activity-logs/saved-filters": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher|super_admin"
+    ],
+    "POST /api/behavioral-assessments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:boarding_parent|form_teacher"
+    ],
+    "POST /api/class-structure": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/class-structure/arms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/class-structure/levels": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/class-structure/streams": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/class-structure/toggle": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/curricula/{curriculum}/backfill-term": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/curricula/{curriculum}/move-from-ccm": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/curricula/{curriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/reject": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/scores": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/submit": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/dashboard/analysis/refresh": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher",
+        "throttle:1,1"
+    ],
+    "POST /api/exam-types": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/grade-boundaries": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/grading-schemes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/bulk-disable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/bulk-enable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/bulk-message": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/bulk-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/{guardian}/disable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/{guardian}/enable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/{guardian}/password": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/guardians/{guardian}/resend-invitation": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/guardians/{guardian}/reset-password": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/heads-of-schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/login": [
+        "api"
+    ],
+    "POST /api/logout": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/notices/categories": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/notices/{notice}/end": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/psychomotor-skills": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:boarding_parent|form_teacher"
+    ],
+    "POST /api/scholarships": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/sessions": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/sessions/{session}/current": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/sessions/{session}/terms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/sport-houses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/student-subjects/{studentSubject}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|teacher"
+    ],
+    "POST /api/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/bulk-update": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/{student}/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/{student}/curricula/promote": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/{student}/enrollments/{studentCurriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/students/{student}/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/switch-school": [
+        "api",
+        "auth:sanctum"
+    ],
+    "POST /api/teacher-assignments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /api/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/teachers/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/teachers/{teacher}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "POST /api/v1/finance/invoices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|super_admin"
+    ],
+    "POST /api/v1/finance/invoices/{invoice}/cancel": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|super_admin"
+    ],
+    "POST /api/v1/finance/invoices/{invoice}/payments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|super_admin"
+    ],
+    "POST /dashboard/refresh": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin|head_of_school|teacher|guardian|principal",
+        "throttle:1,1"
+    ],
+    "POST /forgot-password": [
+        "web",
+        "guest:web"
+    ],
+    "POST /login": [
+        "web",
+        "guest:web"
+    ],
+    "POST /logout": [
+        "web",
+        "auth:web"
+    ],
+    "POST /reset-password": [
+        "web",
+        "guest:web"
+    ],
+    "POST /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "role:principal|head_of_school"
+    ],
+    "POST /select-school": [
+        "web",
+        "auth"
+    ],
+    "POST /setup/principals": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /students": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "POST /super-admin/admins": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /super-admin/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /super-admin/schools/{school}/fallback-signature": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /two-factor-challenge": [
+        "web",
+        "guest:web"
+    ],
+    "POST /user/confirm-password": [
+        "web",
+        "auth:web"
+    ],
+    "POST /user/confirmed-two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "POST /user/two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "POST /user/two-factor-recovery-codes": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "PUT /api/class-structure/arms/{arm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/class-structure/levels/{classLevel}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/class-structure/streams/{stream}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/exam-types/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/grading-schemes/{gradingScheme}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/marking-components/{markingComponent}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "PUT /api/scholarships/{scholarship}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/sessions/{session}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/sessions/{session}/terms/{term}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/sport-houses/{sportHouse}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/subjects/{subject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin|head_of_school|form_teacher"
+    ],
+    "PUT /api/teachers/{teacher}/schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "role:admin"
+    ],
+    "PUT /settings/password": [
+        "web",
+        "auth",
+        "verified",
+        "throttle:6,1"
+    ],
+    "PUT /storage/{path}": [],
+    "PUT /students/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "role:admin"
+    ],
+    "PUT /super-admin/admins/{uuid}/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/schools/{school}": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /user/password": [
+        "web",
+        "auth:web"
+    ],
+    "PUT /user/profile-information": [
+        "web",
+        "auth:web"
+    ]
+}

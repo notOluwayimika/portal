@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Observers\StudentCurriculumObserver;
 use App\Services\ActivityLog\ActivitySensitiveService;
 use App\Services\ActivityLog\ActivitySeverityService;
+use App\Support\ApprovalAbility;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -61,10 +62,24 @@ class AppServiceProvider extends ServiceProvider
      * hook. isSuperAdmin() resolves the role in a null-team context, so this
      * works regardless of the school/team currently active. Kept behind a flag
      * so the bypass can be disabled instantly if it misbehaves (auth.php).
+     *
+     * EXCEPT checker actions (ADR 0040): any ability whose terminal segment is
+     * `approve`/`reject` is never bypassed — approval authority comes only from
+     * an explicit grant, never from platform authority. See ApprovalAbility for
+     * why this is a convention rather than a list.
+     *
+     * Returns null (never false) on every miss: Spatie registers its own
+     * Gate::before ahead of this one and a `false` from either would silently
+     * defeat the other. Excluded abilities therefore fall through to the normal
+     * permission resolution rather than being denied here.
      */
     protected function registerSuperAdminGate(): void
     {
         Gate::before(function (User $user, string $ability) {
+            if (ApprovalAbility::isExcludedFromSuperAdminBypass($ability)) {
+                return null;
+            }
+
             if (config('auth.gate_before_superadmin') && $user->isSuperAdmin()) {
                 return true;
             }

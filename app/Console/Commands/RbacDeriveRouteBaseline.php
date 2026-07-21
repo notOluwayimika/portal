@@ -35,7 +35,7 @@ class RbacDeriveRouteBaseline extends Command
     {
         $map = [];
 
-        foreach (Route::getRoutes() as $route) {
+        foreach (Route::getRoutes()->getRoutes() as $route) {
             $methods = implode('|', array_values(array_diff($route->methods(), ['HEAD'])));
             $map[$methods.' /'.ltrim($route->uri(), '/')] = array_values($route->gatherMiddleware());
         }

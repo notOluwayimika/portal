@@ -49,7 +49,7 @@ function tms_teacher(School $school, bool $withUser = true): Teacher
         'user_id' => $user?->id,
         'first_name' => 'Teach',
         'last_name' => Str::random(6),
-        'staff_number' => 'STF-' . Str::random(8),
+        'staff_number' => 'STF-'.Str::random(8),
     ]);
 }
 
@@ -57,13 +57,13 @@ function tms_classLevelArm(School $school): ClassLevelArm
 {
     $classLevel = ClassLevel::create([
         'school_id' => $school->id,
-        'name' => 'JSS1-' . Str::random(4),
+        'name' => 'JSS1-'.Str::random(4),
         'order' => 1,
     ]);
 
     $arm = Arm::create([
         'school_id' => $school->id,
-        'label' => 'Gold-' . Str::random(4),
+        'label' => 'Gold-'.Str::random(4),
     ]);
 
     return ClassLevelArm::forceCreate([
@@ -249,7 +249,7 @@ it('lets a multi-school teacher switch into a pivot school and reach their profi
     // The dashboard resolves the teacher record through the widened scope
     // and redirects to their profile page.
     $this->get('/dashboard')
-        ->assertRedirect('/setup/teacher/' . $teacher->uuid);
+        ->assertRedirect('/setup/teacher/'.$teacher->uuid);
 });
 
 it('logs a single-school teacher straight in via their school_id fallback', function () {

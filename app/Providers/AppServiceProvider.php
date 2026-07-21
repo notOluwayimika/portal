@@ -5,8 +5,10 @@ namespace App\Providers;
 use App\Academics\BillableEnrollmentAdapter;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
+use App\Models\SubjectResultStatus;
 use App\Models\User;
 use App\Observers\StudentCurriculumObserver;
+use App\Policies\SubjectResultPolicy;
 use App\Services\ActivityLog\ActivitySensitiveService;
 use App\Services\ActivityLog\ActivitySeverityService;
 use App\Support\ApprovalAbility;
@@ -53,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->registerSuperAdminGate();
+        $this->registerPolicies();
 
         StudentCurriculum::observe(StudentCurriculumObserver::class);
     }
@@ -86,6 +89,18 @@ class AppServiceProvider extends ServiceProvider
 
             return null;
         });
+    }
+
+    /**
+     * Policies are registered EXPLICITLY rather than left to Laravel's
+     * name-convention discovery: SubjectResultPolicy does not map to
+     * SubjectResultStatusPolicy, so discovery would silently find nothing and
+     * every authorize() call would fall through to "no policy" — an
+     * authorization control that fails open by naming accident.
+     */
+    protected function registerPolicies(): void
+    {
+        Gate::policy(SubjectResultStatus::class, SubjectResultPolicy::class);
     }
 
     /**

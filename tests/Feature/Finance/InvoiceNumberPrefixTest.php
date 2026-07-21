@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Enums\InvoiceStatus;
+use App\Finance\Http\Resources\InvoiceResource;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\SchoolFinanceSettings;
 use App\Models\Curriculum;
@@ -125,7 +126,7 @@ it('the API exposes both forms — `number` unchanged, `display_number` added', 
     SchoolFinanceSettings::create(['school_id' => $school->id, 'invoice_number_prefix' => 'BSS-']);
     $invoice = prefixInvoice($school, 42);
 
-    $payload = (new App\Finance\Http\Resources\InvoiceResource($invoice))->toArray(request());
+    $payload = (new InvoiceResource($invoice))->toArray(request());
 
     expect($payload['number'])->toEqual(42)
         ->and($payload['display_number'])->toBe('BSS-42');

@@ -116,6 +116,26 @@ hazard, undetectable by reading the data.
 
 ---
 
+## Step 4b — verify the production database default collation (**deploy-owner, on prod**)
+
+The trigger-based enforcement floor (F6, append-only, over-allocation, and every future
+Finance trigger) depends on the database default collation matching the column
+collation. Laravel creates columns as `utf8mb4_unicode_ci`, but a trigger's `DECLARE`
+variable inherits the **database default** — and if prod was created with the MySQL-8
+server default (`utf8mb4_0900_ai_ci`), every trigger that compares a variable to a
+string column raises `1267 "Illegal mix of collations"` on **every write**: a silent,
+total outage of the guard, invisible until a write is attempted. This is a prod-state
+unknown in the same class as `AUTH_GATE_BEFORE_SUPERADMIN` — the repo cannot see it.
+
+|                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Check**          | On **prod**: `SELECT @@collation_database;` and `SELECT DISTINCT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'finance_%' AND COLLATION_NAME IS NOT NULL;`                                                                                                                                                                                                                                      |
+| **Pass criterion** | Both report **`utf8mb4_unicode_ci`** (the canonical, = the app connection collation)                                                                                                                                                                                                                                                                                                                                                                  |
+| **Failure action** | If the **default** is not canonical: `ALTER DATABASE <db> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` **and then recreate the Finance triggers** — a trigger's variable collation is frozen at creation, so the `ALTER` alone does not fix triggers already created under the wrong default. If a **column** is non-canonical: normalise that column (`MODIFY … COLLATE utf8mb4_unicode_ci`), which rewrites it and its indexes — size the lock |
+| **Gate**           | **Human-gated** (prod DB state). The repo's `SchemaConventionsTest` asserts the same two facts on the test DB, so CI is green only on a canonical DB — but that proves the test box, not prod                                                                                                                                                                                                                                                         |
+
+---
+
 ## Step 5 — scheduler EXECUTION, before observe-mode traffic
 
 **Binding condition: observe mode must not receive production traffic until scheduler

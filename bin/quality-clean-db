@@ -67,8 +67,15 @@ trap cleanup EXIT
 printf '%sclean-DB verification — throwaway database [%s]%s\n\n' "$DIM" "$DB" "$OFF"
 
 # 1 ── provision a database nothing else has ever written to.
+#      CHARACTER SET/COLLATE are explicit, not left to the server default: on MySQL 8
+#      the server default is utf8mb4_0900_ai_ci, but Laravel creates columns as
+#      utf8mb4_unicode_ci, and a trigger's DECLARE variable inherits the DATABASE
+#      default — so a bare CREATE DATABASE produces a scratch DB whose triggers 1267
+#      against their own columns (found: the over-allocation guard was dead on exactly
+#      such a DB). Pinning the collation makes this gate exercise triggers on the same
+#      collation prod must run, so a green here means green on prod.
 say "provision throwaway database"
-if run php artisan tinker --execute="DB::statement('DROP DATABASE IF EXISTS \`$DB\`'); DB::statement('CREATE DATABASE \`$DB\`');"; then
+if run php artisan tinker --execute="DB::statement('DROP DATABASE IF EXISTS \`$DB\`'); DB::statement('CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');"; then
     ok "created $DB (dropped first if it existed)"
 else
     bad "could not create $DB"; exit 1

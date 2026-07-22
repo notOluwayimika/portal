@@ -127,3 +127,51 @@ it('composite child.school_id = parent.school_id FKs are present', function () {
         'finance_payment_allocations_payment_school_foreign',
     );
 });
+
+// ── Collation uniformity (the trigger-floor hardening, 2026-07) ──────────────
+//
+// A trigger's DECLARE variable inherits the DATABASE default collation, while a
+// Laravel-created column is always utf8mb4_unicode_ci (the connection collation). When
+// the two differ — a database created with the MySQL-8 server default
+// (utf8mb4_0900_ai_ci) rather than the app's — any trigger comparing a variable to a
+// string column raises 1267 "Illegal mix of collations" on EVERY write, a total outage
+// of the guard. The over-allocation guard was green on the dev DB and dead on a fresh
+// one for exactly this reason. These two assertions make that unrepresentable: a
+// mis-created DB or a divergent column becomes a red test, not a prod incident.
+//
+// Verified empirically that the variable collation is frozen at trigger CREATION, so the
+// database must carry the canonical default BEFORE migrations run — which is why the fix
+// lives in how databases are created (bin/quality-clean-db, docs/testing.md), not in a
+// migration.
+
+const CANONICAL_COLLATION = 'utf8mb4_unicode_ci';
+
+it('every finance_ string column uses the canonical collation (no divergence)', function () {
+    $offenders = collect(DB::select(
+        'SELECT TABLE_NAME, COLUMN_NAME, COLLATION_NAME
+           FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME LIKE ?
+            AND COLLATION_NAME IS NOT NULL
+            AND COLLATION_NAME <> ?',
+        ['finance_%', CANONICAL_COLLATION]
+    ))->map(fn ($r) => "{$r->TABLE_NAME}.{$r->COLUMN_NAME}={$r->COLLATION_NAME}")->all();
+
+    // Reads information_schema (real column state), not the migration source (intent).
+    expect($offenders)->toBe([], 'finance_* string columns must all be '.CANONICAL_COLLATION);
+});
+
+it('the test database default collation matches the canonical one (the trigger trap guard)', function () {
+    // THIS is the assertion that maps to the bug: if your DB default is not canonical,
+    // every trigger DECLARE variable is off-collation and the guards are silently dead.
+    // A green suite on a mis-collated DB proves nothing — so make the DB itself the
+    // thing under test.
+    $default = DB::selectOne('SELECT @@collation_database AS c')->c;
+
+    expect($default)->toBe(
+        CANONICAL_COLLATION,
+        "Database default collation is {$default}; triggers' DECLARE variables inherit it and will "
+        .'1267 against '.CANONICAL_COLLATION.' columns. Recreate the DB with '
+        .'CHARACTER SET utf8mb4 COLLATE '.CANONICAL_COLLATION.'.'
+    );
+});

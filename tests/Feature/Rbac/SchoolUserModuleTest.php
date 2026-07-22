@@ -228,7 +228,10 @@ it('keeps the original roles when the sync fails between detach and attach (atom
 });
 
 it('audits every human-driven sync, fully attributed (detach + attach pair)', function () {
-    $before = DB::table('activity_log')->where('log_name', 'rbac')->count();
+    // Scoped to role events: C7's enforcement-flag transition also logs to
+    // 'rbac' and would otherwise ride into this window.
+    $before = DB::table('activity_log')->where('log_name', 'rbac')
+        ->whereIn('event', ['role_attached', 'role_detached'])->count();
 
     // syncRoles is detach-all-then-attach (probed, not assumed), so ONE sync
     // yields exactly TWO rbac rows: the detach of the prior set and the attach
@@ -238,6 +241,7 @@ it('audits every human-driven sync, fully attributed (detach + attach pair)', fu
     sum_put($this, $this->admin, $this->target, ['guardian', 'teacher'])->assertStatus(302);
 
     $rows = DB::table('activity_log')->where('log_name', 'rbac')
+        ->whereIn('event', ['role_attached', 'role_detached'])
         ->offset($before)->limit(100)->get();
 
     expect($rows)->toHaveCount(2)

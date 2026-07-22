@@ -137,7 +137,10 @@ it('D3 — keeps the original grants when the edit fails between revoke and give
 // ── The audit consequence: removals must leave a trace ─────────────────────
 
 it('audits BOTH halves of a swap — the detach row syncPermissions would have silently skipped', function () {
-    $beforeCount = DB::table('activity_log')->where('log_name', 'rbac')->count();
+    // Scoped to permission events: C7's enforcement-flag transition also
+    // logs to 'rbac' and would otherwise ride into this window.
+    $beforeCount = DB::table('activity_log')->where('log_name', 'rbac')
+        ->whereIn('event', ['permission_attached', 'permission_detached'])->count();
 
     $before = sam_rolePermissions('registrar');
     $wanted = collect($before)->reject(fn ($p) => $p === 'guardian.view')
@@ -146,6 +149,7 @@ it('audits BOTH halves of a swap — the detach row syncPermissions would have s
     sam_put($this, $this->superAdmin, 'registrar', $wanted)->assertStatus(302);
 
     $rows = DB::table('activity_log')->where('log_name', 'rbac')
+        ->whereIn('event', ['permission_attached', 'permission_detached'])
         ->offset($beforeCount)->limit(100)->get();
 
     expect($rows)->toHaveCount(2)

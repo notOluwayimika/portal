@@ -9,7 +9,17 @@ one message under their headings.
 
 ---
 
-## Ask 1 — to whoever owns production environment config / the deploy
+## Ask 1 — RESOLVED 2026-07-22 (a code fact, not a question anyone owed us)
+
+`config/auth.php` defaults `gate_before_superadmin` to **true** when the env var
+is absent — so an unset prod var means the bypass is ON at deploy: no lockout.
+Locked down two ways: an explicit `AUTH_GATE_BEFORE_SUPERADMIN=true` line in the
+phase1-deploy runbook (intent visible, not implicit), and a guard test pinning
+the config default true until ADR 0045 retires the flag. The C2/C3 deploy is
+now gated only by the Finance deploy-window freeze (§4.5) — a scheduling
+question, not a decision. Original ask kept below for the record.
+
+## ~~Ask 1~~ — to whoever owns production environment config / the deploy
 
 **Subject: What is `AUTH_GATE_BEFORE_SUPERADMIN` set to in production right now?**
 

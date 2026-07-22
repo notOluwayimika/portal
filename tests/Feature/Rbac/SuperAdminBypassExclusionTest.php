@@ -108,3 +108,13 @@ it('leaves the exclusion in force even when the bypass flag is off (it is not a 
 
     expect(sbe_superAdmin()->can('result.approve'))->toBeFalse();
 });
+
+it('keeps the bypass-flag DEFAULT true — load-bearing for the C2/C3 deploy until ADR 0045 retires it', function () {
+    // Ask 1 resolved as a code fact: absent env var + true default = bypass on
+    // at deploy. That default is now what stands between super_admin and a
+    // silent 27-group lockout, so it is a GUARD, not a spot-check: this fails
+    // loudly if anyone flips the default before 0045 removes the flag.
+    // (Prod also sets AUTH_GATE_BEFORE_SUPERADMIN=true explicitly — I5 runbook
+    // line — belt and suspenders; this pins the belt.)
+    expect(config('auth.gate_before_superadmin'))->toBeTrue();
+});

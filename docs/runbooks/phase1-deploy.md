@@ -181,3 +181,11 @@ leg, the exact leg `migrate:fresh` cannot see. The audit paid for itself twice.
 here anyway — for a first deploy, recovery is restore-or-drop. The value of this audit
 is that the `down()` chain is no longer silently broken for the _incremental_ deploys
 that follow.
+
+> **RBAC env lockdown (Ask 1 resolution, 2026-07-22):** set
+> `AUTH_GATE_BEFORE_SUPERADMIN=true` **explicitly** in the production
+> environment before the C2/C3 stack deploys. The config default is already
+> true (verified in code; guarded by a test), so this is belt-and-suspenders —
+> an implicit default leaves super_admin's access to 27 of 28 route groups
+> hanging on a line nobody is looking at. The explicit value makes the intent
+> visible; the flag itself is retired by ADR 0045 when that lands.

@@ -11,8 +11,20 @@ the old in-memory SQLite config.
    can never be truncated by `RefreshDatabase`):
 
     ```sql
-    CREATE DATABASE portal_testing;
+    CREATE DATABASE portal_testing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     ```
+
+    **The `COLLATE` is load-bearing, not cosmetic.** Laravel creates columns as
+    `utf8mb4_unicode_ci` (the connection collation), but a trigger's `DECLARE` variable
+    inherits the _database_ default. Create the DB with the MySQL-8 server default
+    (`utf8mb4_0900_ai_ci`) and every trigger comparing a variable to a string column
+    raises `1267 "Illegal mix of collations"` on _every_ write — a silent, total outage
+    of the trigger-based enforcement floor, invisible to any test without triggers. The
+    variable's collation is **frozen at trigger creation**, so the DB default must be
+    canonical _before_ migrations run; recreating the DB is the fix, an `ALTER DATABASE`
+    afterwards is not (it leaves already-created triggers frozen wrong).
+    `SchemaConventionsTest` asserts both the canonical column collation and the DB
+    default, so a mis-created DB is a red test, not a prod incident.
 
 2. `.env.example` is the template for `.env` (`cp .env.example .env` then
    `php artisan key:generate`). It ships with **no secrets** — fill in your own
@@ -109,7 +121,7 @@ depth (`--step=2`), it verified properly.
 Two rules, both mandatory for a `down()` audit:
 
 1. **Re-derive the depth per run.** Find _your_ migration in `php artisan
-   migrate:status` and roll back exactly to it. **Never assume "the last migration"
+migrate:status` and roll back exactly to it. **Never assume "the last migration"
    is yours** — the parallel stream may have moved staging under you since you branched.
 2. **Assert the RIGHT migration reverted.** After rollback, assert _your_ column/table
    is actually gone — not merely that `migrate:rollback` exited 0. **"A rollback

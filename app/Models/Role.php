@@ -30,7 +30,7 @@ class Role extends SpatieRole
     {
         return LogOptions::defaults()
             ->useLogName('rbac')
-            ->logOnly(['name', 'guard_name', 'school_id'])
+            ->logOnly(['name', 'guard_name', 'school_id', 'two_factor_required'])
             ->logOnlyDirty();
     }
 }

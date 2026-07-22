@@ -38,6 +38,12 @@ class RbacSeeder extends Seeder
 {
     public const GUARD = 'web';
 
+    /**
+     * Roles that require two-factor enrolment (C7). super_admin + admin only:
+     * the 4 Finance roles are not seeded (step-0), their default is I6/Finance.
+     */
+    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin'];
+
     /** Global (null-team) roles. Assignment to users is per-School (teams). */
     public const ROLES = [
         'super_admin',
@@ -303,11 +309,22 @@ class RbacSeeder extends Seeder
             ->each(fn (Permission $p) => $p->delete());
 
         foreach (self::ROLES as $name) {
-            Role::firstOrCreate([
+            $role = Role::firstOrCreate([
                 'name' => $name,
                 'guard_name' => self::GUARD,
                 'school_id' => null,
+            ], [
+                // C7 defaults apply at creation; on re-runs the flag is a
+                // runtime-editable value (the matrix toggle) and is preserved
+                // unless --fresh resets it below.
+                'two_factor_required' => in_array($name, self::TWO_FACTOR_REQUIRED, true),
             ]);
+
+            if ($fresh) {
+                // forceFill, not update(): mass-assignment silently drops this
+                // key on existing Role instances (see RbacMatrixController).
+                $role->forceFill(['two_factor_required' => in_array($name, self::TWO_FACTOR_REQUIRED, true)])->save();
+            }
         }
 
         $newPermissions = array_diff($enumValues, $existingPermissions);

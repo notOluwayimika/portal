@@ -922,6 +922,12 @@
         "tenant",
         "permission:curriculum_subject.view"
     ],
+    "GET /setup/users": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:rbac.manage_users"
+    ],
     "GET /storage/{path}": [],
     "GET /students": [
         "web",
@@ -954,6 +960,11 @@
         "permission:result.view"
     ],
     "GET /super-admin/admins": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /super-admin/rbac": [
         "web",
         "auth",
         "role:super_admin"
@@ -1687,6 +1698,12 @@
         "verified",
         "throttle:6,1"
     ],
+    "PUT /setup/users/{user}/roles": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:rbac.manage_users"
+    ],
     "PUT /storage/{path}": [],
     "PUT /students/{student}": [
         "web",
@@ -1695,6 +1712,16 @@
         "permission:admin_area.access"
     ],
     "PUT /super-admin/admins/{uuid}/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/rbac/roles/{roleName}/permissions": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/rbac/roles/{roleName}/two-factor": [
         "web",
         "auth",
         "role:super_admin"

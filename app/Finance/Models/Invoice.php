@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $cancelled_at
  * @property int|null $cancelled_by_user_id
  * @property string|null $cancel_reason
+ * @property Carbon $created_at
  */
 class Invoice extends Model
 {

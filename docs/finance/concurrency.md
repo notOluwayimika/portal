@@ -30,31 +30,42 @@ backgrounded-process race proves nothing — the #94 lesson).
   read-modify-write to protect. Proven skew-free (and contrasted with a read-modify-
   write that loses an update) in `WalletConcurrencyTest` PROOF 4.
 
-## The convention W3 must adopt: **account row first, then invoice row**
+- **Carry-forward credit — account `lockForUpdate` (W3).** `GenerateInvoice` reads
+  credit and spends it (a real read-modify-write), so it holds the account row for the
+  transaction, account-before-invoice. See the section below for the ordering and its
+  two proofs.
+
+## The convention, now ENFORCED: **account row first, then invoice row**
 
 W3 (apply-credit-forward at invoice generation) is the first action that performs a
-genuine **read-modify-write of the account balance**: it reads available credit,
-decides how much to apply, and writes an allocation funded by it. That step needs a
-pessimistic `StudentAccount::lockForUpdate()` — an atomic increment cannot express
-"read the credit, then spend up to it".
+genuine **read-modify-write of the account balance**: it reads carry-forward credit
+(`max(0, −balance)` from the pre-charge balance), decides how much to apply, and
+writes the settling allocations. `GenerateInvoice` acquires
+`StudentAccount::lockForUpdate()` as its **first** statement in the transaction —
+before `assertNoActiveInvoice` — so the lock is held while the credit is read and
+spent, and (being a locking read) it does not fix the REPEATABLE READ snapshot early.
 
-Because `RecordPayment` already locks the **invoice** row, and W3 will lock **both**
-the account row and (via the allocation) the invoice, the two actions must acquire
-the locks in the **same order** or they deadlock (MySQL 1213). The order is:
+**Why there is no deadlock with #94.** `RecordPayment` locks the **invoice** row and
+touches the account only through `SubledgerPoster::post`'s atomic increment (a brief
+row lock, never a `lockForUpdate` it holds across other work). `GenerateInvoice` holds
+the **account** row and, for the new invoice, only INSERTs (a brand-new row nothing
+else can lock) — it never waits on an existing invoice row. So the two actions share
+exactly one contended resource, the account row, and there is no opposite-order pair
+to form a cycle. Account-before-invoice is the ordering both respect.
 
-> **account row first, then invoice row.**
+**Proven (WalletW3ConcurrencyTest):**
 
-W3 owns the proof burden this creates:
+1. **Read-modify-write skew** — two concurrent `GenerateInvoice` for the same student
+   with credit 2,000: total applied ≤ 2,000 (consumed once). Pull the account
+   `lockForUpdate` → both read the credit and both apply it (double-spend) — the red
+   step that makes the lock load-bearing.
+2. **Cross-action deadlock** — `RecordPayment(S, invoice X)` racing
+   `GenerateInvoice(S, new invoice Y)`: both complete, no 1213, final balance and
+   credit correct.
 
-1. the account `lockForUpdate` read-modify-write skew proof (pull the lock → the
-   double-spend of credit returns), and
-2. the cross-action deadlock proof — a payment (`RecordPayment`) racing an
-   apply-forward (`GenerateInvoice`) on the **same student**, asserting no 1213.
-
-Neither can be written in W2 (apply-forward does not exist yet), which is why the
-convention is *recorded* here and *proven* there. When W3 adds the account lock to
-`RecordPayment` as well (so both actions order account-before-invoice), update the
-"enforced today" section above.
+The credit itself is consumed by the **charge** (which moves the balance positive),
+not by the apply (a ledger-free settlement link); the lock’s job is to serialise the
+read-credit→charge→apply so a second generation sees the already-consumed balance.
 
 ### Snapshot-timing footnote (why order-of-reads matters)
 

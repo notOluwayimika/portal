@@ -8,6 +8,9 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\Payment;
+use App\Finance\Models\PaymentAllocation;
+use App\Finance\Models\StudentAccount;
 use App\Finance\Services\SubledgerPoster;
 use App\Support\ActiveSchool;
 use App\Support\Money;
@@ -156,6 +159,26 @@ final class GenerateInvoice
 
         try {
             return DB::transaction(function () use ($enrollment, $lines, $total) {
+                // W3 apply-forward — the FIRST statement, and a LOCKING read on purpose.
+                // A locking read does not establish InnoDB's REPEATABLE READ snapshot, so
+                // it forms at the first plain read AFTER this lock (assertNoActiveInvoice),
+                // and the credit we read is a CURRENT read of the committed balance rather
+                // than a stale snapshot (docs/finance/concurrency.md). ACCOUNT-BEFORE-INVOICE
+                // ordering: RecordPayment locks the invoice row and only touches this account
+                // through post()'s atomic increment, so there is no opposite-order shared pair
+                // — no deadlock (WalletW3ConcurrencyTest). A missing row (first-ever activity)
+                // means zero credit; the charge's upsert creates it.
+                $account = StudentAccount::query()
+                    ->where('student_id', $enrollment->studentId)
+                    ->lockForUpdate()
+                    ->first();
+
+                // Carry-forward credit = max(0, −balance) from the PRE-charge balance: the
+                // true net overpayment, NOT raw unallocated payments (which would wrongly
+                // auto-apply while an older invoice sits unpaid — proof 6). Read BEFORE the
+                // charge posts, or the charge flips the balance positive and credit reads 0.
+                $creditKobo = $account !== null ? max(0, -$account->balance->toKobo()) : 0;
+
                 $this->assertNoActiveInvoice($enrollment->schoolId, $enrollment->enrollmentId);
 
                 $number = Sequences::next('finance_invoice', (string) $enrollment->schoolId);
@@ -191,6 +214,20 @@ final class GenerateInvoice
                     $invoice->id,
                     "Invoice #{$number} — ".count($lines).' line(s)',
                 );
+
+                // Apply carry-forward credit to THIS invoice, capped at its own total,
+                // oldest payment first. A SETTLEMENT LINK ONLY — it writes allocation rows
+                // and does NOT post to the ledger (the money moved when the overpayment was
+                // banked in W2), so balance_minor is unchanged; the invoice's outstanding
+                // falls by the applied sum. The account lock above serialises this
+                // read-credit→apply against a concurrent generation (proof 4).
+                if ($creditKobo > 0) {
+                    $this->applyCreditForward(
+                        $invoice,
+                        $enrollment->studentId,
+                        min($creditKobo, $total->toKobo()),
+                    );
+                }
 
                 return $invoice->load('lines');
             });
@@ -266,6 +303,67 @@ final class GenerateInvoice
     /**
      * Friendly-path pre-check only — NOT the guarantee. See the class docblock.
      */
+    /**
+     * Settle $applyKobo of the just-created invoice from the student's carry-forward
+     * credit, sourcing the OLDEST unallocated payment(s) first as REAL
+     * payment-allocations — `payment_id` set to those payments, no credit-funded
+     * allocation and no touch to payment_id's NOT NULL (fork 6 is §10). Applying
+     * credit posts NOTHING to the ledger; it is a settlement link, so the balance is
+     * unchanged and only the invoice's outstanding falls.
+     *
+     * SOURCING INVARIANT: whenever net credit > 0, Σ(unallocated payments) ≥ net
+     * credit ≥ $applyKobo, because Σalloc ≤ Σcharges ⇒ Σpay − Σalloc ≥ Σpay − Σcharges
+     * = −balance = credit. So there is always enough unallocated payment to draw. The
+     * closing guard asserts that invariant held rather than silently under-applying.
+     */
+    private function applyCreditForward(Invoice $invoice, int $studentId, int $applyKobo): void
+    {
+        $currency = $invoice->total->currency;
+        $remaining = $applyKobo;
+
+        // Oldest first — id is monotonic with creation, so it is a deterministic
+        // creation order without depending on second-precision timestamps.
+        $payments = Payment::query()
+            ->where('student_id', $studentId)
+            ->orderBy('id')
+            ->get();
+
+        foreach ($payments as $payment) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $allocated = (int) PaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->sum('amount_minor');
+            $unallocated = $payment->amount->toKobo() - $allocated;
+
+            if ($unallocated <= 0) {
+                continue;
+            }
+
+            $draw = min($remaining, $unallocated);
+
+            // ≤ invoice total by construction (applyKobo was capped), so the #94
+            // over-allocation trigger is never approached.
+            $payment->allocations()->create([
+                'school_id' => $invoice->school_id,
+                'invoice_id' => $invoice->id,
+                'amount' => Money::fromKobo($draw, $currency),
+            ]);
+
+            $remaining -= $draw;
+        }
+
+        if ($remaining > 0) {
+            // The sourcing invariant was violated — should be impossible. Fail closed
+            // rather than silently applying less credit than the balance said existed.
+            throw new BusinessRuleException(
+                'Carry-forward credit could not be fully sourced from unallocated payments.'
+            );
+        }
+    }
+
     private function assertNoActiveInvoice(int $schoolId, int $enrollmentId): void
     {
         $exists = Invoice::query()

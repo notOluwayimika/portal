@@ -97,6 +97,29 @@ the client posts an arbitrary payload.
 - No new human items. None of the three carried items (prod
   `AUTH_GATE_BEFORE_SUPERADMIN`, ADR 0040 limits, #86 policy-timing) block C5.
 
+## Amendments from implementation (the floor taught three things)
+
+1. **The permission is `rbac.manage_users`, not `rbac.manage_school_users`.**
+   The runtime-zero lint greps `app/` for the literal `school_user` (the S7
+   removal-target pivot) — the original name contains it as a substring and
+   would have required growing a shrink-only baseline. Renamed before first
+   seed; nothing ever referenced the old name. School scoping comes from team
+   context, not the name.
+2. **The user list reads `model_has_roles` (the S7 single source), not the
+   `school_user` pivot.** The first draft added a `School::members()`
+   BelongsToMany and pivot reads — the lint caught the read in the FormRequest,
+   and the relation itself sat in a lint blind spot (`belongsToMany(User::class)`
+   is not matched). Both removed rather than slipped through: the module lists
+   exactly the users who hold a role in the active School — for a roles module,
+   the honest read — and the FormRequest's isolation check uses the sanctioned
+   flag-aware `canAccessSchool()`. Consequence: a pivot-only member with no role
+   is not listed (they are reachable the day they hold any role); that is the
+   S7 shape arriving early, not a gap.
+3. **The audit consequence is a detach+attach PAIR, not one row.** `syncRoles`
+   is detach-all-then-attach (probed, not assumed), so one human sync writes
+   two `rbac` rows. The test pins both, each attributed to the acting admin in
+   the active School's team.
+
 ## Coordination
 
 - New route `GET /setup/users` + its write endpoint, a sidebar item under the admin

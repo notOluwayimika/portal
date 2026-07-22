@@ -160,6 +160,8 @@ class RbacSeeder extends Seeder
                 PermissionEnum::SCORE_MANAGE->value,
                 PermissionEnum::STUDENT_STATUS_VIEW->value,
                 PermissionEnum::STUDENT_VIEW->value,
+                // RBAC administration (C5): the school-admin Users module.
+                PermissionEnum::RBAC_MANAGE_USERS->value,
             ],
             'head_of_school' => [
                 ...$guardianFull,

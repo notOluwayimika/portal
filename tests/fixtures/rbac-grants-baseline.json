@@ -30,6 +30,7 @@
         "manage_head_of_school_comments",
         "manage_teacher_assignments",
         "principal_approval.manage",
+        "rbac.manage_users",
         "report.view",
         "result.approve",
         "result.reject",

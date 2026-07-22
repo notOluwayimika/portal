@@ -359,6 +359,22 @@ export function AppSidebar() {
             groups.push(...adminNavGroups);
         }
 
+        // C5: the Users module carries its OWN permission, so its nav item
+        // gates on that permission — not on admin_area.access — the same
+        // compose-by-permission pattern Finance's nav additions follow (I7).
+        if (can('rbac.manage_users')) {
+            groups.push({
+                label: 'Administration',
+                items: [
+                    {
+                        title: 'Users',
+                        href: '/setup/users',
+                        icon: UserCog,
+                    },
+                ],
+            });
+        }
+
         if (roles.includes('guardian')) {
             groups.push(...guardianNavGroups);
         }

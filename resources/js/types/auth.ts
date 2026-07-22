@@ -1,4 +1,4 @@
-import type { Role, School } from './models';
+import type { School } from './models';
 
 export type User = {
     id: number;
@@ -29,7 +29,11 @@ export type Auth = {
     schools: SchoolOption[];
     isSuperAdmin: boolean;
     roles: string[];
-    rolesFull: Role[];
+    // Effective permission names (C4): what the backend Gate will actually allow
+    // this user in the active school — includes the super-admin bypass and
+    // ADR 0040's checker exclusion. Gate ACTIONS on these via <Can>; do not gate
+    // sidebar persona menus on them (see c4-brief D2).
+    permissions: string[];
 };
 
 export type TwoFactorSetupData = {

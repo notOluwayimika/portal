@@ -33,6 +33,7 @@ import {
     SidebarMenuItem,
     SidebarSeparator,
 } from '@/components/ui/sidebar';
+import { usePermissions } from '@/hooks/use-permissions';
 import { dashboard } from '@/routes';
 import type { NavGroup, NavItem, User } from '@/types';
 import type { Teacher } from '@/types/models';
@@ -330,6 +331,7 @@ export function AppSidebar() {
     const roles = auth.roles;
     const isSuperAdmin = !!auth.isSuperAdmin;
     const hasSchoolContext = !!auth.school;
+    const { can } = usePermissions();
 
     const navGroups = useMemo(() => {
         // Super admin without a school context only sees the management area.
@@ -339,9 +341,21 @@ export function AppSidebar() {
 
         const groups: NavGroup[] = [dashboardGroup];
 
+        // The /super-admin management area is the one deliberately role-gated
+        // surface (role:super_admin, kept by C2); no permission stands behind
+        // it, so it stays keyed on the role.
         if (isSuperAdmin) {
             groups.push(...superAdminNavGroups);
-            // Inside a school, a super admin has full admin visibility.
+        }
+
+        // The admin working area is an AUTHORIZATION statement, so it keys on the
+        // effective permission the write routes carry (C2: admin_area.access) —
+        // held by admin AND super_admin (bypass), not by principal. This folds
+        // the old isSuperAdmin/roles.includes('admin') special-cases into one
+        // check with no visibility change. Persona menus below stay role-driven:
+        // they are identity presentation, and super_admin's effective-everything
+        // would otherwise flood the sidebar with every persona (c4-brief D2).
+        if (can('admin_area.access')) {
             groups.push(...adminNavGroups);
         }
 
@@ -382,12 +396,8 @@ export function AppSidebar() {
             }
         }
 
-        if (roles.includes('admin') && !isSuperAdmin) {
-            groups.push(...adminNavGroups);
-        }
-
         return groups;
-    }, [roles, auth.user.teacher, isSuperAdmin, hasSchoolContext]);
+    }, [roles, auth.user.teacher, isSuperAdmin, hasSchoolContext, can]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

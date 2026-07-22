@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Models\School;
+use App\Models\User;
 use App\Support\ActiveSchool;
+use App\Support\EffectivePermissions;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,7 +39,7 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = $request->user();
         $activeSchoolId = $user ? ActiveSchool::id() : null;
 
@@ -52,9 +54,14 @@ class HandleInertiaRequests extends Middleware
                     : [],
                 'isSuperAdmin' => $user ? $user->isSuperAdmin() : false,
                 'roles' => $user ? $user->getRoleNames() : [],
-                'rolesFull' => $user ? $user->roles : [],
+                // Effective authority (c4-brief D1): what can() grants in the
+                // active School's team, so the UI reflects what the Gate will do
+                // — including the super-admin bypass and ADR 0040's checker
+                // exclusion — not the literal grant table. Replaces rolesFull
+                // (dropped: no frontend read; bite-proven).
+                'permissions' => $user ? EffectivePermissions::for($user) : [],
             ],
-            'sidebarOpen' => !$request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
 }

@@ -55,6 +55,39 @@ it('the 1.4c immutability triggers exist by name on the finance_ append-only tab
     );
 });
 
+it('finance_student_accounts is the ONE intentionally-mutable finance table (append-only exemption, pinned)', function () {
+    // HOW #95 asserts append-only (checked against HEAD): the immutability test above
+    // keys on a HARDCODED toContain(...) list of trigger NAMES on specific tables — it
+    // does NOT loop financeTables() demanding a no_update/no_delete trigger per table.
+    // So the account table lacking those triggers does NOT fail that assertion today;
+    // this test is the POSITIVE pin that records the exemption deliberately, so a future
+    // tightening to "every finance table must be append-only" is forced to confront this
+    // row rather than a green suite hiding that the account was never made immutable.
+    expect(financeTables())->toContain('finance_student_accounts');
+
+    $accountTriggers = collect(DB::select(
+        'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+         WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?', ['finance_student_accounts']
+    ))->pluck('TRIGGER_NAME')->all();
+
+    // No immutability trigger — mutation (the atomic balance increment) is the point.
+    expect($accountTriggers)->not->toContain(
+        'finance_student_accounts_no_update',
+        'finance_student_accounts_no_delete',
+    );
+
+    // It still obeys the conventions that DO apply: school_id (uniform tenanting), the
+    // signed balance column, and the grain UNIQUE(school_id, student_id). There is no
+    // `version` column — W2 has no optimistic read-modify-write to guard.
+    expect(Schema::hasColumn('finance_student_accounts', 'school_id'))->toBeTrue()
+        ->and(Schema::hasColumn('finance_student_accounts', 'balance_minor'))->toBeTrue()
+        ->and(Schema::hasColumn('finance_student_accounts', 'version'))->toBeFalse();
+
+    $indexes = collect(DB::select('SHOW INDEX FROM finance_student_accounts'))
+        ->pluck('Key_name')->unique()->all();
+    expect($indexes)->toContain('finance_student_accounts_school_id_student_id_unique');
+});
+
 it('slice-2 guards exist by NAME (F6 total immutability + the active-enrollment uniqueness)', function () {
     // Confirmed by name rather than by behaviour, so a migration that silently
     // drops one fails here even if some other mechanism happens to mask it.

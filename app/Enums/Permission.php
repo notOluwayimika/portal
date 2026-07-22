@@ -88,6 +88,13 @@ enum Permission: string
     case STUDENT_VIEW = 'student.view';
     case ASSESSMENT_RECORD = 'assessment.record';
 
+    // RBAC administration (C5). Gates the school-admin Users module
+    // (/setup/users) — listing a School's users and syncing their roles.
+    // Granted to `admin`; super_admin reaches the module through the
+    // Gate::before bypass and is deliberately NOT granted this explicitly
+    // (that would break its exactly-15 authority-probe precondition).
+    case RBAC_MANAGE_USERS = 'rbac.manage_users';
+
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';
     case MANAGE_FORM_TEACHER_COMMENTS = 'manage_form_teacher_comments';

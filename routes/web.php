@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PrincipalController;
 use App\Http\Controllers\ResultSignatureController;
 use App\Http\Controllers\SchoolSwitchController;
+use App\Http\Controllers\SchoolUserController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController;
 use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
@@ -98,6 +99,15 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(fu
 //     }
 
 // });
+
+// RBAC administration (C5): the school-admin Users module — list this School's
+// users and sync their roles. Gated on its own permission (D5), held by `admin`;
+// super_admin reaches it via the Gate::before bypass. Separate group so the page
+// and its write share one authorization boundary.
+Route::middleware(['auth', 'tenant', 'permission:rbac.manage_users'])->group(function () {
+    Route::get('/setup/users', [SchoolUserController::class, 'index'])->name('setup.users.index');
+    Route::put('/setup/users/{user:uuid}/roles', [SchoolUserController::class, 'syncRoles'])->name('setup.users.roles.sync');
+});
 
 Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {
     Route::get('/setup/principals', [PrincipalController::class, 'index'])->name('principals.index');

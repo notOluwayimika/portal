@@ -1,4 +1,4 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
 import {
     Download,
@@ -27,8 +27,8 @@ import { Input } from '@/components/ui/input';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
-import type { Auth } from '@/types';
 import type { Student } from '@/types/models';
 
 interface StatusOption {
@@ -42,10 +42,13 @@ interface StudentListProps {
 
 export default function StudentList({ student_statuses }: StudentListProps) {
     const getInitials = useInitials();
-    const { auth } = usePage<{ auth: Auth }>().props;
     // Write controls (import/bulk/export/add + row edit/delete/guardians + status
-    // change) are admin-only. Principals get a read-only view of this page.
-    const isAdmin = auth.roles.includes('admin');
+    // change) require the admin working area; principals get a read-only view.
+    // Gated on the EFFECTIVE permission (C4), not roles.includes('admin'): the
+    // latter hid every control from super_admin, whom the backend allows. This
+    // matches the permission the write routes carry (C2: admin_area.access).
+    const { can } = usePermissions();
+    const isAdmin = can('admin_area.access');
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');

@@ -238,6 +238,77 @@ would also have invented.
   divergence, so this is no longer deferred or a Finance-specific caveat.
 - **Waiver approver rules** — Ph3 maker-checker.
 - **GL / Sage mapping** — §13, a later phase (the subledger is the only ledger now).
+- **Credit notes / write-offs** — drafted as **proposed §10 below**, awaiting owner
+  sign-off (this doc's forward references already reserve the number §10).
+
+## 10. Credit notes and write-offs
+
+> **PROPOSED — UNSIGNED (drafted 2026-07-22).** This section is written in signed form
+> for the Finance owner to review, amend, and ratify. Nothing here is built, and one
+> rule (the over-credit ceiling) is an explicit **owner decision**, marked below. It is
+> not a confirmed policy until the owner signs it, and no build slice opens before then.
+
+**Policy:** an already-issued invoice is a permanently-visible, frozen fact — the same
+paper-trail principle as VOID (§3). When part of an invoice must be forgiven after
+issuance, the invoice is **not altered**. Instead a separate **credit note** is issued
+_against_ it: its own document, with its own number, recording the amount forgiven and
+why. The invoice keeps its original total and lines exactly as billed; the credit note
+sits beside it. This is the accounting norm — a credit note is a document, never an edit
+to the invoice.
+
+**The three terms, made unambiguous:**
+
+- **VOID** (§3) cancels a **whole** invoice — the entire charge is reversed and the
+  invoice is stamped void.
+- A **credit note** is a **partial**, post-issuance adjustment — it forgives some of an
+  invoice while the invoice itself stays _issued_ and fully visible.
+- A **write-off** is a credit note issued specifically for **uncollectability** (the
+  family cannot or will not pay). It is a **kind of credit note, not a separate
+  mechanism** — same document, same ledger effect, distinguished only by its reason,
+  exactly as a waiver and a discount are one reduction differing by reason (§5).
+
+**Paper-trail / statement integrity:** the original invoice and its full amount remain
+visible; the credit note appears as its **own document** beside it — never a silent
+netting and never an edit that makes the invoice re-render at a lower figure. This is the
+§5 rule ("the full fee with the reduction shown, never a single netted figure") applied
+after issuance rather than during billing.
+
+**Reconciliation:** a credit note posts a **compensating entry** into the student
+subledger — the same reversing-ledger mechanism VOID uses (§4b), made partial. After it,
+the student's balance reflects the forgiven amount, the compensating entry and the
+original charge both survive (append-only), and the balance still nets correctly. A
+credit note reuses this mechanism; it does not introduce a parallel one.
+
+**Over-credit ceiling — [OWNER DECISION: `≤ total` / `≤ outstanding`]:** the total
+credited against an invoice may not exceed a ceiling. The choice is a real
+accounting-workflow decision, framed as the question **"can you credit an already-paid
+invoice?"**:
+
+- **`≤ total`** — a credit note cannot exceed the invoice's original total. Simplest and
+  well-defined; covers adjusting/forgiving an invoice; does **not** create a refundable
+  balance. _(Recommended for the first slice.)_
+- **`≤ outstanding`** — allows crediting beyond the unpaid portion, i.e. **crediting a
+  paid invoice into a balance owed back to the family**. This pulls in refund mechanics —
+  materially larger scope, and a separate concept from a subledger adjustment.
+
+The recommendation is `≤ total` for the first slice, treating the paid-invoice/refund
+case as a **deliberate later decision** rather than one that rides in via
+`≤ outstanding`. The owner chooses; the section is not final until this bracket is
+resolved.
+
+**Approver:** issuing a credit note requires **approval** — it forgives money, the
+highest-authority Finance action. The approver is configurable in-system, **Ph3
+maker-checker**; the approval _rules_ (who may approve, thresholds, segregation of
+duties) are Ph3 and are **not specified here** — this section states only that approval
+is required and configurable, mirroring how §5 handles the waiver approver.
+
+**Enforcement — PENDING (credit-note slice).** None of the above is built. The mechanisms
+it will build on are real and proven — the reversing-ledger compensating entry (§4b,
+`SubledgerPoster`, append-only), snapshot-amount integrity (§5), gap-tolerant numbering
+(§2), and banker's rounding for a percentage credit (§1, `Money::percentage`, shipped) —
+so the credit-note slice composes existing, proven parts rather than inventing new money
+machinery. The one genuinely new correctness rule is the over-credit ceiling above, which
+needs the same decide-then-write concurrency guard VOID already carries.
 
 ---
 
@@ -247,3 +318,5 @@ snapshot-line integrity, and no-repeat-logic are **enforced now**. Banker's
 rounding, the VOID status + default-exclude-void scope, per-School prefixes, the
 waiver/discount presentation, and School-scoped config are **confirmed policy,
 enforcement pending slice 2 / Ph2-3**. The doc claims no guard that does not exist.
+Credit notes / write-offs (§10) are **proposed and unsigned** — a drafted section
+awaiting owner ratification, with the over-credit ceiling an open owner decision.

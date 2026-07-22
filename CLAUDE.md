@@ -35,6 +35,16 @@ operational facts an agent needs most often.
   `./vendor/bin/pest --group=arch`, `composer analyse`.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
+- **Spatie `sync*` is non-atomic and its events fire POST-write** (vendor-read
+  7.4.1; paid for twice — C5 roles, C6 permissions). Wrap every role/permission
+  sync in `DB::transaction`; the un-wrapped failure mode is detach-persisted,
+  attach-never-ran (a user/role stripped bare by the edit meant to adjust it).
+  For bite-proofs, the **detach-side event is the between-halves injection
+  point** (`RoleDetachedEvent`; `PermissionDetachedEvent` on a revoke-then-give
+  path) — the attach event fires after the write and produces a false green.
+  And `HasPermissions::syncPermissions` detaches RAW (no event): its removals
+  are invisible to the rbac audit listener — use diff-based revoke+give
+  instead. Full write-up: `docs/handoff/c6-brief.md`.
 - **Migration `down()` four-path audits in parallel work: re-derive the rollback
   depth per run and assert _your_ migration reverted.** `--step=N` counts from the
   branch's latest migrations, so the _other_ stream's migration can sit on top of

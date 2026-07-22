@@ -80,6 +80,8 @@ function al_makeUser(int|string $schoolId): User
         'email' => Str::uuid().'@example.test',
         'password' => bcrypt('password'),
         'school_id' => $schoolId,
+        'two_factor_confirmed_at' => now(), // pre-enrolled; C7 tests null it explicitly
+        'email_verified_at' => now(),       // settings routes sit behind 'verified'
     ]);
 }
 

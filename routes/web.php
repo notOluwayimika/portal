@@ -70,6 +70,7 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(fu
     // role travels by NAME (roles are global rows; names are the stable key).
     Route::get('/rbac', [SuperAdminRbacMatrixController::class, 'index'])->name('super-admin.rbac');
     Route::put('/rbac/roles/{roleName}/permissions', [SuperAdminRbacMatrixController::class, 'syncPermissions'])->name('super-admin.rbac.sync');
+    Route::put('/rbac/roles/{roleName}/two-factor', [SuperAdminRbacMatrixController::class, 'toggleTwoFactor'])->name('super-admin.rbac.two-factor');
 });
 
 // Route::get('/cleanup', function () {

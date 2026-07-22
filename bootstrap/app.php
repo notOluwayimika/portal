@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\EnsureTwoFactorEnrolled;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SetSchoolContext;
@@ -38,6 +39,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SetSchoolContext::class,
+            // C7: after SetSchoolContext per the planned slot (ADR 0043 §3);
+            // the requirement read is team-agnostic, so the ordering is not
+            // load-bearing for correctness (c7-brief D1).
+            EnsureTwoFactorEnrolled::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -45,6 +50,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(append: [
             SetSchoolContext::class,
+            EnsureTwoFactorEnrolled::class,
         ]);
 
         $middleware->alias([

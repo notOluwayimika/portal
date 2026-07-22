@@ -1,10 +1,10 @@
 <?php
 
-use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\StudentAccount;
 use App\Models\Curriculum;
 use App\Models\Role;
 use App\Models\School;
@@ -84,17 +84,28 @@ function rawAllocate(Invoice $invoice, int $kobo): void
     ]);
 }
 
-it('FRIENDLY PATH — over-allocating through the Action is a 422', function () {
+it('OVERPAYMENT IS BANKED, NOT REJECTED (wallet W2) — the Action caps the allocation and credits the account', function () {
+    // This USED to be a 422: the Action over-allocated the full payment and #94's
+    // pre-check rejected it. Wallet W2 changed the policy — the allocation is capped
+    // at outstanding and the excess banks as credit — so the reject no longer fires on
+    // a legitimate overpayment. The #94 ceiling (Σ allocations ≤ total) is untouched;
+    // it simply is never approached because the Action stops over-allocating.
     [$school, $admin, $invoice] = overAllocSetup(100000);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $invoice) {
-        expect(fn () => app(RecordPayment::class)->handle($invoice, Money::fromKobo(100001), 'Overpayer', $admin))
-            ->toThrow(BusinessRuleException::class);
-    });
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100001), 'Overpayer', $admin);
 
-    // Nothing was written — the reject happened before any insert.
-    expect(DB::table('finance_payment_allocations')->count())->toBe(0)
-        ->and(DB::table('finance_payments')->count())->toBe(0);
+        // Allocation capped at outstanding (100000); the payment records the full cash.
+        expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
+            ->toBe(100000)
+            ->and((int) DB::table('finance_payments')->sum('amount_minor'))->toBe(100001);
+
+        // The 1-kobo remainder is banked: account balance = charge 100000 − payment
+        // 100001 = −1, i.e. 1 minor unit of available credit.
+        $account = StudentAccount::query()->where('student_id', $invoice->student_id)->firstOrFail();
+        expect($account->balance->toKobo())->toBe(-1)
+            ->and($account->availableCredit()->toKobo())->toBe(1);
+    });
 });
 
 it('DB IS THE REAL GUARANTEE — a raw over-allocation insert is rejected by the trigger', function () {
@@ -122,21 +133,27 @@ it('EXACT-FILL BOUNDARY — an allocation exactly equal to the total is accepted
         ->toBe(100000);
 });
 
-it('CUMULATIVE — 60 then 40 both succeed (Σ=100); a further 1 is rejected', function () {
+it('CUMULATIVE — 60 then 40 fill the invoice (Σ=100); a further 1 banks as credit, allocations stay 100', function () {
     [$school, $admin, $invoice] = overAllocSetup(100);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $invoice) {
         app(RecordPayment::class)->handle($invoice, Money::fromKobo(60), 'A', $admin);
         app(RecordPayment::class)->handle($invoice, Money::fromKobo(40), 'B', $admin);
 
-        // Σ is now exactly 100. One more kobo must be rejected — proving the guard sums
-        // ALL prior allocations, not just the single incoming one against the total.
-        expect(fn () => app(RecordPayment::class)->handle($invoice, Money::fromKobo(1), 'C', $admin))
-            ->toThrow(BusinessRuleException::class);
-    });
+        // Σ is now exactly 100 — the invoice is fully allocated. A further payment finds
+        // outstanding = 0, so it banks ENTIRELY as credit: no allocation row is written
+        // (an unallocated advance), and Σ(allocations) stays 100 — proving the cap reads
+        // ALL prior allocations, not just the incoming one.
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(1), 'C', $admin);
 
-    expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
-        ->toBe(100);
+        expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
+            ->toBe(100)
+            ->and((int) DB::table('finance_payment_allocations')->count())->toBe(2); // C wrote none
+
+        // Ledger: charge +100, payments −(60+40+1) = −101 → balance −1 = 1 kobo credit.
+        $account = StudentAccount::query()->where('student_id', $invoice->student_id)->firstOrFail();
+        expect($account->balance->toKobo())->toBe(-1);
+    });
 });
 
 it('CURRENCY — a mismatched allocation currency is rejected at the DB', function () {

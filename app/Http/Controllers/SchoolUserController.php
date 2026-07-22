@@ -62,8 +62,19 @@ class SchoolUserController extends Controller
         // silently writing a global (null-team) role row.
         ActiveSchool::getOrFail();
 
-        $user->unsetRelation('roles');
-        $user->syncRoles($request->validated('roles'));
+        // TRANSACTIONAL, and load-bearing: spatie's syncRoles holds no
+        // transaction of its own (vendor-read, 7.4.1) — with events enabled it
+        // is removeRole(current) then assignRole(new), two separate writes.
+        // Unwrapped, any failure between them (attach error, listener
+        // exception, process death) persists the detach and never attaches:
+        // the edit LOCKS THE USER OUT by leaving them role-less. The
+        // transaction makes detach+attach one atomic sync; the audit rows
+        // (written by sync listeners inside this scope) roll back with it.
+        DB::transaction(function () use ($request, $user) {
+            $user->unsetRelation('roles');
+            $user->syncRoles($request->validated('roles'));
+        });
+
         $user->flushSchoolAccessCache();
 
         return back()->with('success', 'Roles updated.');

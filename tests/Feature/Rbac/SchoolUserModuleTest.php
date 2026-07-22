@@ -4,7 +4,9 @@ use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia;
+use Spatie\Permission\Events\RoleDetachedEvent;
 
 uses(RefreshDatabase::class);
 
@@ -192,6 +194,38 @@ it('offers `admin` in assignable_roles only to a super_admin actor (mirrors D2)'
 });
 
 // ── The audit consequence: first human-driven role write ───────────────────
+
+// ── Atomicity: an edit must never be able to LOCK A USER OUT ───────────────
+
+it('keeps the original roles when the sync fails between detach and attach (atomic sync)', function () {
+    // spatie's syncRoles holds no transaction (vendor-read, 7.4.1): with
+    // events enabled it is removeRole(current) then assignRole(new).
+    // RoleDetachedEvent fires AFTER the detach is written and BEFORE the
+    // attach begins — throwing there is a failure injected exactly BETWEEN
+    // the two halves. Unwrapped, the detach persists and the attach never
+    // runs: the user is left with ZERO roles — zero access — by the very
+    // edit meant to adjust them. (Verified: without the transaction this
+    // test fails showing roles = [], the lockout itself.)
+    Event::listen(
+        RoleDetachedEvent::class,
+        function (): void {
+            throw new RuntimeException('between-halves failure injected');
+        },
+    );
+
+    sum_put($this, $this->admin, $this->target, ['guardian', 'teacher'])
+        ->assertStatus(500);
+
+    // The transaction must have rolled the detach back with the failed
+    // attach: the target still holds their original role set.
+    setPermissionsTeamId($this->school->id);
+    expect($this->target->fresh()->getRoleNames()->all())->toEqual(['guardian']);
+
+    // …and no half-written audit rows survive the rollback either.
+    expect(DB::table('activity_log')->where('log_name', 'rbac')
+        ->where('subject_id', $this->target->id)
+        ->where('event', 'role_detached')->count())->toBe(0);
+});
 
 it('audits every human-driven sync, fully attributed (detach + attach pair)', function () {
     $before = DB::table('activity_log')->where('log_name', 'rbac')->count();

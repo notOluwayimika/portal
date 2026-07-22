@@ -278,3 +278,31 @@ WHERE s.school_id <> c.school_id
    OR s.school_id IS NULL
    OR c.school_id IS NULL
 ORDER BY sc.id, fi.id;
+
+
+-- ---------------------------------------------------------------------------
+-- D1 — OVER-ALLOCATION pre-flight (for the over-allocation guard slice).
+--
+--      The BEFORE INSERT trigger finance_allocation_not_over_invoice_total rejects
+--      FUTURE over-allocations; it does NOT retroactively fix rows already written
+--      before it existed. An already-over-allocated invoice would silently poison
+--      reconciliation later, so run this BEFORE the trigger migration lands.
+--
+-- Zero      = safe; every invoice's allocations already sum to ≤ its total.
+-- Non-zero  = STOP. Each listed invoice has Σ(allocations) > total_minor and needs a
+--             reversal decision (a reversing ledger entry / allocation correction),
+--             NOT a trigger that ignores it. Surface these; do not deploy over them.
+--
+-- Expected on first deploy: ZERO. The payment route existed but was never driven by a
+-- UI, and the overpayment bite-test that produced a −1 balance was test-DB only.
+-- ---------------------------------------------------------------------------
+SELECT i.id                                   AS invoice_id,
+       i.number                               AS invoice_number,
+       i.school_id,
+       i.total_minor,
+       SUM(a.amount_minor)                     AS allocated_minor,
+       SUM(a.amount_minor) - i.total_minor      AS over_by_minor
+  FROM finance_invoices i
+  JOIN finance_payment_allocations a ON a.invoice_id = i.id
+ GROUP BY i.id, i.number, i.school_id, i.total_minor
+HAVING SUM(a.amount_minor) > i.total_minor;

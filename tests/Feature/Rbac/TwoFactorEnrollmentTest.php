@@ -5,6 +5,7 @@ use App\Http\Middleware\SetSchoolContext;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,10 @@ uses(RefreshDatabase::class);
 /** C7 — role-driven 2FA enrolment enforcement (c7-brief D1–D4). */
 beforeEach(function () {
     $this->seed(DatabaseSeeder::class);
+    // D5: default is per-env (off outside production); these tests exercise
+    // the ENFORCING path explicitly — the same single code path prod runs.
+    config(['rbac.two_factor_enforced' => true]);
+    Cache::forget('rbac:2fa_enforced_state');
     $this->school = al_makeSchool();
 });
 
@@ -155,4 +160,45 @@ it('seeds super_admin and admin as 2FA-required; ordinary roles not (Finance rol
         ->and((bool) $flags['admin'])->toBeTrue()
         ->and((bool) $flags['teacher'])->toBeFalse()
         ->and((bool) $flags['guardian'])->toBeFalse();
+});
+
+// ── D5/D6: the platform flag is the master switch ──────────────────────────
+
+it('D6 — master-off means nobody is checked, whatever the role rows say', function () {
+    config(['rbac.two_factor_enforced' => false]);
+    $admin = tfa_unenrolled($this, 'admin');
+
+    $this->actingAs($admin)->withSession(['school_id' => $this->school->id])
+        ->get('/setup/users')->assertOk();
+});
+
+it('D7 — a flag transition writes exactly one audited rbac row, idempotently', function () {
+    $admin = tfa_unenrolled($this, 'admin');
+    $hit = fn () => $this->actingAs($admin)->withSession(['school_id' => $this->school->id])->get('/dashboard');
+
+    $count = fn () => DB::table('activity_log')->where('log_name', 'rbac')
+        ->where('event', 'two_factor_enforcement_changed')->count();
+
+    $hit();
+    $hit();
+    expect($count())->toBe(0); // baseline state is not an event — only a transition
+
+    // Seed the durable baseline so the flip below is a genuine TRANSITION.
+    DB::table('activity_log')->insert([
+        'log_name' => 'rbac', 'description' => 'two_factor_enforcement_changed: on',
+        'event' => 'two_factor_enforcement_changed',
+        'properties' => json_encode(['enforced' => true]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    config(['rbac.two_factor_enforced' => false]);
+    Cache::forget('rbac:2fa_enforced_state');
+    $hit();
+    $hit();
+    expect($count())->toBe(2); // the DISABLE is the row that matters
+
+    // cache flush alone cannot double-log: the durable row is the tiebreaker
+    Cache::forget('rbac:2fa_enforced_state');
+    $hit();
+    expect($count())->toBe(2);
 });

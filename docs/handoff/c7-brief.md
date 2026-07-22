@@ -105,6 +105,35 @@ holding such a role **cannot proceed** on protected surfaces until enrolled. Tod
   Prove both — an API client getting an HTML redirect instead of the JSON code is a
   broken contract for Finance's API consumers.
 
+## Amendment (2026-07-21) — platform enable flag, per-env default, NOT a prod check
+
+Decided after the brief was first written; it replaces any hard
+`environment('production')` gate.
+
+- **D5 — enforcement is gated by a config flag, not an environment check.** A
+  platform 2FA-enforcement flag (e.g. `rbac.two_factor_enforced`) governs whether
+  `EnsureTwoFactorEnrolled` enforces at all. Its **default is set per environment —
+  on in production, off in staging/dev** — so developers (Finance included) get no
+  2FA friction locally, **but the enforcement path stays one code path a test can
+  exercise and staging can soak.** A hard `app()->environment('production')` branch
+  is explicitly rejected: it would make the enforcement path run *only* in prod,
+  unverifiable anywhere prod-like — the "nothing in the gate renders a page /
+  production-only behaviour" failure class (roadmap Invariant 10; `testing.md`
+  blank-login incident). The flag also satisfies the "disable platform-wide if
+  necessary" requirement — one lever, both jobs.
+- **D6 — precedence is explicit: platform flag is the master switch above the
+  per-role toggle.** `rbac.two_factor_enforced = off` ⇒ nobody is checked,
+  regardless of any role's `two_factor_required`. Test both levels: master-off with
+  a required role → not enforced; master-on + required role + unenrolled → enforced.
+- **D7 — flipping the flag is audited.** Disabling platform 2FA is disabling a
+  security control; the change writes to `activity_log` (the C1 mutation path) —
+  who disabled it, when. A silent 2FA-disable is precisely what must be detectable
+  after the fact.
+- **Environment gate (Invariant 10):** the enforcement path must be **soaked in
+  staging with the flag ON** before production relies on it — registration/tests
+  are not runtime evidence. This closes the hole a prod-only check would have left
+  permanently open.
+
 ## Explicitly OUT of scope
 
 - **Enabling `AUTHZ_ENFORCE`, `rbac.fail_closed_models`, S7** — untouched.

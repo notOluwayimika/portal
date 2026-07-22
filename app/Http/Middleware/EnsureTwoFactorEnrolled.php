@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,6 +41,17 @@ class EnsureTwoFactorEnrolled
 
     public function handle(Request $request, Closure $next)
     {
+        // D6 — the platform flag is the master switch above the per-role
+        // toggle: off => nobody is checked, whatever the role rows say. D7 —
+        // a state transition of that switch is itself an audited event: a
+        // silent 2FA-disable is precisely what must be detectable afterwards.
+        $enforced = (bool) config('rbac.two_factor_enforced');
+        $this->auditFlagTransition($enforced);
+
+        if (! $enforced) {
+            return $next($request);
+        }
+
         $user = $request->user();
 
         if (! $user instanceof User
@@ -58,6 +70,37 @@ class EnsureTwoFactorEnrolled
 
         return redirect()->route('security.edit')
             ->with('warning', 'Your role requires two-factor authentication. Please enrol to continue.');
+    }
+
+    /**
+     * D7 — record enforcement-state transitions durably. The flag is env/
+     * deploy-shaped, so there is no authenticated "who" to attribute; the row
+     * records WHAT changed and WHEN (the deploy log owns who). Cached to keep
+     * the steady state at zero queries; on cache miss the durable last row is
+     * the tiebreaker, so a cache flush cannot double-log.
+     */
+    private function auditFlagTransition(bool $enforced): void
+    {
+        if (Cache::get('rbac:2fa_enforced_state') === $enforced) {
+            return;
+        }
+
+        $last = DB::table('activity_log')->where('log_name', 'rbac')
+            ->where('event', 'two_factor_enforcement_changed')
+            ->orderByDesc('id')->value('properties');
+        $lastState = $last === null ? null : (json_decode($last, true)['enforced'] ?? null);
+
+        // Only a TRANSITION is an event. The first-ever observed state is the
+        // baseline, not a change — recording it would write one noise row into
+        // every environment (and every test) that never flips the flag.
+        if ($lastState !== null && $lastState !== $enforced) {
+            activity('rbac')
+                ->event('two_factor_enforcement_changed')
+                ->withProperties(['enforced' => $enforced])
+                ->log('two_factor_enforcement_changed: '.($enforced ? 'on' : 'off'));
+        }
+
+        Cache::forever('rbac:2fa_enforced_state', $enforced);
     }
 
     /**

@@ -298,9 +298,28 @@ fixed by correcting test setup, **not** by touching authorization. They are
 **not** S5 observe-mode evidence and prove nothing about the commented checks.
 
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
-default, verified) · `rbac.single_source_access` (off; parity-gated) ·
-`rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
-longer blocks any model; each enablement still needs its request-path audit).
+default, verified — but see the ADR 0045 proposal: super_admin's ambient bypass is
+slated for removal, not permanence) · `rbac.single_source_access` (off;
+parity-gated) · `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job
+context no longer blocks any model; each enablement still needs its request-path
+audit) · `rbac.two_factor_enforced` (C7 platform master switch; **default on in
+prod, off in non-prod** — a config flag, deliberately NOT an `environment()` check,
+so the enforcement path stays testable and staging-soakable; audited when flipped).
+
+**Cross-stream coordination — resolved 2026-07-21 (recorded, not re-litigable):**
+
+- **ADR 0040 approval limits — Finance inherits the result-workflow separation as
+  the Ph3 default.** No bespoke limits shape; Ph3's `finance.*.approve` adopts the
+  same maker≠checker model, so this is not re-opened when the approvals engine lands.
+- **#86 Money rounding gate — the accounting policy was signed BEFORE the rounding
+  was written.** ADR 0002's gate held as intended; the safeguard was not hollow.
+  Closed.
+- **I6 Finance-role 2FA default — forward marker for the Finance stream.** The 4
+  Finance roles are not seeded yet. C7 built the `roles.two_factor_required` column
+  + mechanism and set the default for `super_admin`/`admin` only. **When Finance
+  seeds its 4 roles, their `two_factor_required` default is Finance's to set** (I6),
+  and it takes effect **subject to the `rbac.two_factor_enforced` platform flag**
+  above. Do not let it land 2FA-optional by omission.
 
 ## super_admin authority probe — findings (2026-07-21, chore/superadmin-authority-probe)
 

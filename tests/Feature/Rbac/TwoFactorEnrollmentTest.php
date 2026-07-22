@@ -197,6 +197,12 @@ it('D7 — a flag transition writes exactly one audited rbac row, idempotently',
     $hit();
     expect($count())->toBe(2); // the DISABLE is the row that matters
 
+    // The transition row is deliberately causer-less: it is detected on the
+    // first request after a deploy-time env flip, and stamping that bystander
+    // as the flipper would be misattribution (spatie auto-resolves causer).
+    expect(DB::table('activity_log')->where('event', 'two_factor_enforcement_changed')
+        ->orderByDesc('id')->value('causer_id'))->toBeNull();
+
     // cache flush alone cannot double-log: the durable row is the tiebreaker
     Cache::forget('rbac:2fa_enforced_state');
     $hit();

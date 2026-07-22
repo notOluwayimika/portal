@@ -95,6 +95,13 @@ class EnsureTwoFactorEnrolled
         // every environment (and every test) that never flips the flag.
         if ($lastState !== null && $lastState !== $enforced) {
             activity('rbac')
+                // EXPLICITLY anonymous: spatie auto-resolves causer from the
+                // authenticated user, which here is whoever happens to make
+                // the first request after deploy — misattributing a deploy-
+                // time env flip to a bystander. The row records WHAT/WHEN;
+                // the deploy log owns WHO. (A runtime toggle for this flag,
+                // if ever built, must causedBy its actor instead.)
+                ->causedByAnonymous()
                 ->event('two_factor_enforcement_changed')
                 ->withProperties(['enforced' => $enforced])
                 ->log('two_factor_enforcement_changed: '.($enforced ? 'on' : 'off'));

@@ -106,8 +106,8 @@ that the enrolment flow's exemptions cover them, before #92 merges?**
 
 ---
 
-**Why both are worth sending today, not at the next sync:** everything RBAC can
-build without them is lower-value (fail-closed waves on low-fan-in models) or
-blocked. These two answers are what let the stream reach production and close §24 —
-the reason the workstream exists. The pile of undeployed, merged slices only grows
-until Ask 1 is answered.
+**Why Ask 2 is worth sending today, not at the next sync** (Ask 1: resolved
+above): the pile of undeployed, merged slices now waits only on the **Finance
+deploy window** (§4.5 freeze — scheduling, not decision) and on Ask 2's items.
+Those answers are what let the stream reach production and close §24 — the
+reason the workstream exists.

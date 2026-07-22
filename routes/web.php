@@ -11,6 +11,7 @@ use App\Http\Controllers\SchoolSwitchController;
 use App\Http\Controllers\SchoolUserController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController;
+use App\Http\Controllers\SuperAdmin\RbacMatrixController as SuperAdminRbacMatrixController;
 use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
 use App\Http\Resources\ClassLevelResource;
 use App\Http\Resources\CurriculumResource;
@@ -63,6 +64,12 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(fu
     Route::get('/admins', [SuperAdminAdminController::class, 'index'])->name('super-admin.admins');
     Route::post('/admins', [SuperAdminAdminController::class, 'store'])->name('super-admin.admins.store');
     Route::put('/admins/{uuid}/schools', [SuperAdminAdminController::class, 'syncSchools'])->name('super-admin.admins.schools');
+
+    // RBAC matrix (C6): site-wide role→permission grants. Edits GRANTS only —
+    // the enum is code; roles/permissions are not creatable at runtime. The
+    // role travels by NAME (roles are global rows; names are the stable key).
+    Route::get('/rbac', [SuperAdminRbacMatrixController::class, 'index'])->name('super-admin.rbac');
+    Route::put('/rbac/roles/{roleName}/permissions', [SuperAdminRbacMatrixController::class, 'syncPermissions'])->name('super-admin.rbac.sync');
 });
 
 // Route::get('/cleanup', function () {

@@ -305,6 +305,11 @@ const superAdminNavGroups: NavGroup[] = [
                 icon: Building2,
             },
             {
+                title: 'Role Permissions',
+                href: '/super-admin/rbac',
+                icon: Shield,
+            },
+            {
                 title: 'Admins',
                 href: '/super-admin/admins',
                 icon: Shield,

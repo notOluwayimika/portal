@@ -57,4 +57,28 @@ class ApprovalAbility
 
         return $position === false ? $ability : substr($ability, $position + 1);
     }
+
+    /**
+     * The maker ability matching a checker ability — same prefix, terminal
+     * `submit`: `result.approve` → `result.submit`,
+     * `finance.invoice.reject` → `finance.invoice.submit`. Null when the
+     * given ability is not a checker action.
+     *
+     * Used by the C6 matrix's grant-time SoD guard (no role may end up
+     * holding a checker together with its matching maker) — convention, not
+     * a pair list, so a future finance.invoice.submit/approve pair is
+     * covered the day it exists.
+     */
+    public static function matchingMakerFor(string $ability): ?string
+    {
+        if (! self::isExcludedFromSuperAdminBypass($ability)) {
+            return null;
+        }
+
+        $position = strrpos($ability, '.');
+
+        return $position === false
+            ? 'submit'
+            : substr($ability, 0, $position + 1).'submit';
+    }
 }

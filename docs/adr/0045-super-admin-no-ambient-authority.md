@@ -1,6 +1,14 @@
 # 0045 — `super_admin` has no ambient authority; domain action is via impersonation
 
-**Status:** Proposed (2026-07-21). Supersedes the super-admin behaviour of ADR 0005
+**Status:** **Accepted (2026-07-22), then AMENDED (2026-07-23) — see the Amendment
+at the foot of this ADR.** The direction is unchanged and binding; the amendment
+records that a load-bearing premise (impersonation exists) was false, discovered by
+slice 0045-A's investigation, and revises scope accordingly. Read the amendment
+before acting on the original Decision/Teardown sections — where they conflict, the
+amendment governs.
+
+_(Original status line, kept for the record:)_ Proposed (2026-07-21). Supersedes
+the super-admin behaviour of ADR 0005
 (`Gate::before` bypass) and makes ADR 0040 structural rather than grant-dependent.
 Design only — no code changes until reviewed, and it does **not** alter the merged
 C2/C3 stack, which deploys under the current (bypass-on) model while this is
@@ -126,3 +134,101 @@ proven correct and audited would strand super-admin operations with no sound pat
 - ADR 0044 (structural maker≠checker, which this leaves intact and relies on).
 - roadmap Invariant 3 (impersonation masking scope — the precondition risk).
 - Authority probe #75 (`SuperAdminAuthorityTest`, Mode A) — the invariant rewritten.
+
+---
+
+## Amendment (2026-07-23) — impersonation does not exist; scope revised
+
+Slice 0045-A (investigation, #100, `docs/handoff/0045-a-findings.md`) was written to
+**audit** impersonation's correctness against the four claims in §4. It found a third
+outcome the brief did not anticipate: **there is no impersonation mechanism to
+audit.** Every `impersonat*` reference in the tree is the `auth()->setUser($causer)`
+job hack that slice 1.3b eradicated and §5.6 bans; the "masking scope" production
+defect (roadmap Invariant 3) was *that* hack, not a session feature. The premise
+under which this ADR's §4 and Teardown §2 were written — "impersonation exists,
+re-derive its correctness" — was false.
+
+**The direction is unchanged.** No ambient authority; domain action via
+impersonation; SoD as detection-not-prevention backed by operator attribution. What
+changes is that impersonation must be **built**, and the four claims convert from
+*audit targets* into *build acceptance criteria* landing red-first at the feature's
+birth. This is recorded here per the governance rule that an invalidated premise is
+amended by ADR, not quietly worked around.
+
+### A1 — the mechanism: session wrapper, never identity swap (binding design constraint)
+
+The only impersonation this codebase ever had is the anti-pattern it deliberately
+killed, so the new feature is defined **against** it. The hard problem is that
+authorization and audit must resolve against **different** subjects:
+
+- **Authorization + team/School context** resolve as the **impersonated user** (a
+  `runFor`-analogue scoped session — the `ActiveSchool::runFor` pattern), so
+  permissions and scope behave as that user for the session's duration.
+- **Audit causer** is the **operator** (`super_admin`), attributed **explicitly**
+  (`causedBy($operator)`, the #97 discipline — never auto-resolved from
+  `auth()->user()`).
+
+An **identity swap** (`auth()->setUser($impersonated)`) is forbidden: it gets authz
+right but makes the audit record the impersonated user and lose the operator —
+reintroducing the exact misattribution class #97 fixed. The two in-tree precedents
+(`ActiveSchool::runFor` for scoped context; the audit resolver + #97's explicit
+attribution) are the spine. **Build on them; do not invent, and do not swap identity.**
+
+### A2 — the track is re-sliced
+
+- **0045-B1 — build the impersonation session mechanism** (per A1). The four §4
+  claims are its birth acceptance, red-first (planted failure watched red *before*
+  the feature makes them green): context set as impersonated user; every action
+  audit-attributed to the operator; session bounded (no leak — `NoTeamLeakBetweenJobs`
+  class); clean exit to baseline. Security-critical; its own adversarial pass.
+- **0045-B2 — additive foundation.** Seed super_admin's explicit platform-admin set
+  (self-healing, see A3) and rewrite `SuperAdminAuthorityTest` to the new invariant.
+  Inert while the bypass is on.
+- **0045-C — subtractive, gated** (unchanged from Teardown §5, plus A3's prod gate).
+
+### A3 — self-healing seed for super_admin (from finding #2)
+
+Dev's super_admin row has drifted to **7 of 15** grants, and the seeder's
+non-destructive contract (C6 — runtime matrix edits survive `rbac:sync`) never heals
+a drifted super_admin row. After the de-bypass, super_admin's access *is* its explicit
+grant set, so silent prod drift would strand it.
+
+**Resolution — super_admin is exactly the role for which a self-healing seed is safe,
+because C6 (D1) made its row immutable at runtime.** There are no legitimate runtime
+grants to preserve, so healing to canonical cannot clobber anything the
+non-destructive contract exists to protect. B2 seeds super_admin's platform-admin set
+**self-healingly** (re-asserted to canonical every run), documented as the deliberate,
+immutability-justified exception to the non-destructive contract.
+
+**New gate on 0045-C:** super_admin's **production** grant set must equal canonical
+(the heal must have run and been verified in prod) **before** the bypass is removed —
+an environment gate, same class as the others; a drifted prod row + de-bypass =
+super_admin stranded.
+
+### A4 — break-glass ruling
+
+**No standing permission.** A persistent bulk-repair grant is ambient latent power
+that exists 100% of the time for an operation used ~0% of the time — the exact
+anti-pattern this ADR removes. The one in-tree precedent (the commented `/cleanup`
+bulk-repair route) is retired in favour of **per-incident, named, reviewed artisan
+commands run under `runFor`, fully audited**. Honest scope: such a command's
+*authorization* is **operational** (who holds production shell access), not
+application-enforced — the app makes it auditable, not gated. That is acceptable for
+a deliberate break-glass escape hatch, and is stated rather than implied.
+
+### A5 — open operational question (shapes B1↔C sequencing)
+
+Does any real workflow today depend on `super_admin` performing **domain** (not
+platform-admin) actions? It *can* via the bypass — but if it does not in practice,
+then C (remove bypass) and B1 (build impersonation) **decouple**: super_admin could
+ship platform-admin-only first with no capability gap, and impersonation follows. If
+it does, B1 must precede C. This is an operational question for whoever runs
+super_admin in practice — answer it before committing to "B1 blocks C."
+
+### A6 — Finance
+
+Finance accepted this ADR on its SoD/attribution posture. That posture is now a
+**from-scratch build** (B1), and operator-attribution — the thing Finance cared about
+— is B1's core, not a later wiring step. Keep Finance in the loop when B1 opens
+(announce, not re-approval — the direction they accepted is unchanged). No
+`app/Finance/**` access at any point in the track.

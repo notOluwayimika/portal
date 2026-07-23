@@ -69,8 +69,11 @@ it('D5 — super_admin reaches the page through the bypass, holding no explicit 
     $superAdmin = sum_superAdmin();
     $superAdmin->schools()->syncWithoutDetaching([$this->school->id]);
 
+    // B2 changed this precondition BY DESIGN: rbac.manage_users is now in
+    // super_admin's explicit platform set (ADR 0045 A2), so access survives
+    // the de-bypass. The page is reachable via grant, no longer via bypass.
     expect($superAdmin->getAllPermissions()->pluck('name'))
-        ->not->toContain('rbac.manage_users'); // precondition: bypass, not grant
+        ->toContain('rbac.manage_users');
 
     $this->actingAs($superAdmin)->withSession(['school_id' => $this->school->id])
         ->get('/setup/users')->assertOk();

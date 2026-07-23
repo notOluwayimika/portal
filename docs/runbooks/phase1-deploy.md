@@ -201,3 +201,22 @@ leg, the exact leg `migrate:fresh` cannot see. The audit paid for itself twice.
 here anyway — for a first deploy, recovery is restore-or-drop. The value of this audit
 is that the `down()` chain is no longer silently broken for the _incremental_ deploys
 that follow.
+
+
+## Fail-closed enablement (B-waves, #98+) — staging soaks BEFORE prod, always
+
+`RBAC_FAIL_CLOSED_MODELS` is per-environment, which means we CHOOSE where the
+throw first fires on real traffic — never prod. The audit finds unscoped paths
+by targeted grep, which is strong evidence but cannot see what a grep cannot
+see (dynamic property access, string-built model classes, vendor callbacks).
+Sequence per model, no exceptions:
+
+1. List the model in **staging**; let real traffic run against it.
+2. A quiet soak = prod is safe **on runtime evidence**, not on the grep
+   (Invariant 10). A throw in staging = the audit missed a path, found cheap.
+3. Prod enablement only after the soak — and outside any deploy freeze window,
+   whoever owns the model: flipping prod behavior mid-freeze is what the
+   freeze counsels against.
+
+Current wave: `App\Models\Notice`, `App\Models\Export` (#98) — staging now;
+prod after the Finance deploy window clears.

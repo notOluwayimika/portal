@@ -179,6 +179,7 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
                 PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
                 PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::FINANCE_CREDIT_NOTE_ISSUE->value,
                 PermissionEnum::ACADEMIC_DATA_VIEW->value,
                 PermissionEnum::SCORE_MANAGE->value,
                 PermissionEnum::STUDENT_STATUS_VIEW->value,

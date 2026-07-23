@@ -304,17 +304,23 @@ final class GenerateInvoice
      * Friendly-path pre-check only — NOT the guarantee. See the class docblock.
      */
     /**
-     * Settle $applyKobo of the just-created invoice from the student's carry-forward
-     * credit, sourcing the OLDEST unallocated payment(s) first as REAL
-     * payment-allocations — `payment_id` set to those payments, no credit-funded
-     * allocation and no touch to payment_id's NOT NULL (fork 6 is §10). Applying
-     * credit posts NOTHING to the ledger; it is a settlement link, so the balance is
-     * unchanged and only the invoice's outstanding falls.
+     * Settle the just-created invoice from the student's carry-forward credit, up to
+     * $applyKobo (= min(credit, invoice total)), sourcing the OLDEST unallocated
+     * payment(s) first as REAL payment-allocations — `payment_id` set to those payments,
+     * no credit-funded allocation and no touch to payment_id's NOT NULL (fork 6 is §10).
+     * Applying credit posts NOTHING to the ledger; it is a settlement link, so the
+     * balance is unchanged and only the invoice's outstanding falls.
      *
-     * SOURCING INVARIANT: whenever net credit > 0, Σ(unallocated payments) ≥ net
-     * credit ≥ $applyKobo, because Σalloc ≤ Σcharges ⇒ Σpay − Σalloc ≥ Σpay − Σcharges
-     * = −balance = credit. So there is always enough unallocated payment to draw. The
-     * closing guard asserts that invariant held rather than silently under-applying.
+     * APPLIES min(credit, total, Σunallocated-payments) — the §10 C1 relax. Only credit
+     * BACKED BY A PAYMENT can become a per-invoice allocation (a credit note has no
+     * payment to source). Any remainder — credit-note credit with nothing to draw from —
+     * is NOT under-applied silently: it is already in the negative account balance (the
+     * credit note posted its own ledger credit), and the new charge above has already
+     * netted against it, so the account owes the correct amount. It carries at the
+     * ACCOUNT level, which is the right home for a credit note's effect; it is not a
+     * settlement of this one future invoice. (Before credit notes existed, Σunallocated ≥
+     * credit always held, so this cap equalled min(credit, total) and W3's overpayment
+     * behaviour is unchanged — proven in WalletApplyForwardTest.)
      */
     private function applyCreditForward(Invoice $invoice, int $studentId, int $applyKobo): void
     {
@@ -355,13 +361,10 @@ final class GenerateInvoice
             $remaining -= $draw;
         }
 
-        if ($remaining > 0) {
-            // The sourcing invariant was violated — should be impossible. Fail closed
-            // rather than silently applying less credit than the balance said existed.
-            throw new BusinessRuleException(
-                'Carry-forward credit could not be fully sourced from unallocated payments.'
-            );
-        }
+        // A leftover $remaining is EXPECTED when credit-note credit exceeds what payments
+        // can source (§10 C1): it is already in the negative account balance and the new
+        // charge has netted against it, so there is nothing to fail on. The balance is the
+        // universal carry-forward; the allocation is only the payment-sourced visibility.
     }
 
     private function assertNoActiveInvoice(int $schoolId, int $enrollmentId): void

@@ -7,6 +7,7 @@ use App\Finance\Actions\CancelInvoice;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Http\Requests\CancelInvoiceRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
+use App\Finance\Http\Resources\CreditNoteResource;
 use App\Finance\Http\Resources\InvoiceResource;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\InvoiceReadModel;
@@ -63,6 +64,15 @@ class InvoiceController extends Controller
             'invoices' => InvoiceResource::collection(
                 $invoices->forStudent($student->id, $includeVoid)
             ),
+            // Credit notes ride BESIDE the invoices as their own documents (§5/§7): the
+            // invoice keeps its full amount; the statement never shows a netted figure.
+            'credit_notes' => CreditNoteResource::collection(
+                $invoices->creditNotesForStudent($student->id)
+            ),
+            // The account-level position — where credit-note credit is visible (it carries
+            // on the balance, not as a per-invoice line, §10 C1). balance + available_credit
+            // each serialise to the Money wire shape.
+            'account' => $invoices->accountPositionForStudent($student->id),
         ]);
     }
 }

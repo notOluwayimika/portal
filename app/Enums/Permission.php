@@ -82,6 +82,10 @@ enum Permission: string
     // Superseded when Finance's Ph2 permission scheme (finance.<resource>.
     // <action>, v10 §343) lands with the 4 Finance roles — I1/I6 coordination.
     case FINANCE_ACCESS = 'finance.access';
+    // Issuing a credit note / write-off forgives money, so it is gated on its OWN
+    // permission beyond finance.access (the group gate). The first of the Ph2
+    // finance.<resource>.<action> scheme; maker-checker (an approver) is Ph3.
+    case FINANCE_CREDIT_NOTE_ISSUE = 'finance.credit-note.issue';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

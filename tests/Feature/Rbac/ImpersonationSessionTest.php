@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Impersonation;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -122,4 +124,41 @@ it('audits entry AND exit as attributed security events', function () {
         expect($row)->not->toBeNull()
             ->and((int) $row->causer_id)->toBe($this->operator->id);
     }
+});
+
+// ── B2: rbac.impersonate is the MASTER KEY — lockout proven, heal proven ───
+
+it('MASTER KEY — without the grant super_admin is stranded; the self-heal is what un-bricks it', function () {
+    config(['auth.gate_before_superadmin' => true]); // flag CANNOT save a missing grant
+
+    setPermissionsTeamId(null);
+    Role::where('name', 'super_admin')->where('guard_name', 'web')->whereNull('school_id')
+        ->firstOrFail()->revokePermissionTo('rbac.impersonate'); // planted drift
+    $this->operator->flushSchoolAccessCache();
+
+    // Stranded: bypass ON, isSuperAdmin true — and entry still refused,
+    // because the gate reads the explicit grant flag-independently.
+    expect(fn () => Impersonation::actAs($this->operator, $this->target, $this->school->id, fn () => null))
+        ->toThrow(AuthorizationException::class);
+
+    (new RbacSeeder)->run(); // the heal
+
+    expect(Impersonation::actAs($this->operator, $this->target, $this->school->id, fn () => auth()->id()))
+        ->toBe($this->target->id); // un-bricked by the heal, nothing else changed
+});
+
+it('self-heal restores the FULL platform set by name, and strips ambient domain grants', function () {
+    setPermissionsTeamId(null);
+    $role = Role::where('name', 'super_admin')->where('guard_name', 'web')->whereNull('school_id')->firstOrFail();
+    $role->givePermissionTo('student_subject.view'); // planted ambient domain grant
+
+    (new RbacSeeder)->run();
+
+    $set = $role->fresh()->permissions->pluck('name')->sort()->values()->all();
+    $expected = collect(RbacSeeder::SUPER_ADMIN_PLATFORM)->sort()->values()->all();
+
+    // The SET, member-by-name — a count check would pass a drifted row that
+    // totals right but misses the master key (the A3 prod-gate lesson).
+    expect($set)->toEqual($expected)
+        ->and($set)->toContain('rbac.impersonate');
 });

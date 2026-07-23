@@ -62,7 +62,8 @@ it('D1 — the super_admin row cannot be edited, even by a super_admin with the 
         ->assertForbidden();
 
     expect(sam_rolePermissions('super_admin'))->toEqual($before)
-        ->and($before)->toHaveCount(15); // the probe precondition survives
+        // B2: the precondition is now the PLATFORM set, member-by-name.
+        ->and($before)->toEqual(collect(RbacSeeder::SUPER_ADMIN_PLATFORM)->sort()->values()->all());
 });
 
 // ── D2: grant-time SoD by convention ───────────────────────────────────────

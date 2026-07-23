@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\EffectivePermissions;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 
@@ -53,9 +54,9 @@ it('shares super_admin its EFFECTIVE authority (the bypass), far beyond its 15 g
     $granted = Role::where('name', 'super_admin')->where('guard_name', 'web')
         ->firstOrFail()->permissions->pluck('name');
 
-    // Granted is exactly 15 (C1); effective is nearly the whole enum. A granted
-    // payload would render super_admin unable to do what the bypass allows.
-    expect($granted)->toHaveCount(15)
+    // Granted is the platform set (B2); effective is nearly the whole enum. A
+    // granted payload would render super_admin unable to do what the bypass allows.
+    expect($granted)->toHaveCount(count(RbacSeeder::SUPER_ADMIN_PLATFORM))
         ->and(count($shared))->toBeGreaterThan(40)
         ->and(count($shared))->toBeGreaterThan($granted->count());
 });

@@ -33,6 +33,25 @@ class Impersonation
     private static bool $active = false;
 
     /**
+     * The explicit grant, resolved in the NULL team (super_admin's role row
+     * is global) regardless of whatever team the caller's context has set —
+     * and restored, so the check itself cannot leak context.
+     */
+    private static function holdsImpersonateGrant(User $operator): bool
+    {
+        $previousTeam = getPermissionsTeamId();
+        setPermissionsTeamId(null);
+        $operator->unsetRelation('roles')->unsetRelation('permissions');
+
+        try {
+            return $operator->hasPermissionTo('rbac.impersonate');
+        } finally {
+            setPermissionsTeamId($previousTeam);
+            $operator->unsetRelation('roles')->unsetRelation('permissions');
+        }
+    }
+
+    /**
      * @template T
      *
      * @param  Closure(): T  $cb
@@ -44,13 +63,15 @@ class Impersonation
             throw new LogicException('Impersonation sessions do not nest.');
         }
 
-        // Entry gate: STRUCTURAL (isSuperAdmin), deliberately not
-        // can('rbac.impersonate') yet — before B2 seeds the explicit grant,
-        // a can() gate resolves through the Gate::before bypass and couples
-        // session entry to AUTH_GATE_BEFORE_SUPERADMIN (flag-off would lock
-        // even super_admin out of a capability the flag does not govern).
-        // B2 tightens this to the explicit, flag-independent grant.
-        if (! $operator->isSuperAdmin()) {
+        // Entry gate (B2): structural isSuperAdmin PLUS the explicit
+        // rbac.impersonate grant, checked FLAG-INDEPENDENTLY via spatie's
+        // hasPermissionTo — which never consults Gate::before. A can() gate
+        // would stay green under bypass-on with the grant missing and flip
+        // super_admin to stranded the moment 0045-C removes the bypass: the
+        // C1 flag-coupling failure, one layer down. The grant is the MASTER
+        // KEY (ADR 0045 A3); its seeded presence is self-healed and its
+        // absence is a dedicated lockout bite-proof.
+        if (! $operator->isSuperAdmin() || ! self::holdsImpersonateGrant($operator)) {
             throw new AuthorizationException('Impersonation is a platform-admin capability.');
         }
 

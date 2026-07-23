@@ -6,6 +6,7 @@ use App\Enums\Permission as PermissionEnum;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -43,6 +44,22 @@ class RbacSeeder extends Seeder
      * the 4 Finance roles are not seeded (step-0), their default is I6/Finance.
      */
     public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin'];
+
+    /**
+     * super_admin's explicit PLATFORM-ADMIN set (ADR 0045 A2/A3, slice B2).
+     * rbac.impersonate is the MASTER KEY: post-de-bypass its absence strands
+     * every super_admin domain capability, which is why super_admin is
+     * SELF-HEALED to exactly this set every run — the deliberate,
+     * C6-immutability-justified exception to the non-destructive contract
+     * (the matrix cannot edit this row, so there are no runtime grants to
+     * preserve, and drift here is catastrophic rather than degrading).
+     */
+    public const SUPER_ADMIN_PLATFORM = [
+        'rbac.impersonate',
+        'rbac.manage_users',
+        'activity_log.view_system',
+        'activity_log.view_cross_school',
+    ];
 
     /** Global (null-team) roles. Assignment to users is per-School (teams). */
     public const ROLES = [
@@ -250,23 +267,9 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ASSESSMENT_RECORD->value,
                 PermissionEnum::STUDENT_VIEW->value,
             ],
-            // Exactly the legacy 15 — super_admin gains NONE of the ADR 0044
-            // permissions (bypass covers it; deliberate grants only). Listed
-            // explicitly, not via the shared arrays, so extending those arrays
-            // can never silently widen this role again.
-            'super_admin' => [
-                ...$studentSubjectFull,
-                PermissionEnum::STUDENT_CURRICULUM_UNENROLL->value,
-                PermissionEnum::CURRICULUM_SUBJECT_ARCHIVE->value,
-                PermissionEnum::CURRICULUM_SUBJECT_RESTORE->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_OWN->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_SYSTEM->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_CROSS_SCHOOL->value,
-                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_SENSITIVE->value,
-            ],
+            // ADR 0045 (B2): the explicit set IS the platform-admin set — no
+            // ambient domain grants. Self-healed every run (see const).
+            'super_admin' => self::SUPER_ADMIN_PLATFORM,
         ];
     }
 
@@ -351,6 +354,17 @@ class RbacSeeder extends Seeder
                 $role->givePermissionTo($toGrant);
             }
         }
+
+        // Self-heal super_admin to canonical (ADR 0045 A3): syncPermissions in
+        // a transaction (the C6 vendor lesson — the trait holds none), inside
+        // withoutLogs like all seed-time mutations.
+        DB::transaction(function () {
+            Role::where('name', 'super_admin')
+                ->where('guard_name', self::GUARD)
+                ->whereNull('school_id')
+                ->firstOrFail()
+                ->syncPermissions(self::SUPER_ADMIN_PLATFORM);
+        });
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }

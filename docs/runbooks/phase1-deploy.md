@@ -209,3 +209,13 @@ that follow.
 > an implicit default leaves super_admin's access to 27 of 28 route groups
 > hanging on a line nobody is looking at. The explicit value makes the intent
 > visible; the flag itself is retired by ADR 0045 when that lands.
+
+## 0045-C prod-parity gate (A3, B2): verify the SET by name, never a count
+
+Before the bypass is removed in production: super_admin(web)'s grant set must
+EQUAL `RbacSeeder::SUPER_ADMIN_PLATFORM` member-by-name, and specifically
+contain `rbac.impersonate` — the master key whose absence strands every
+super_admin domain capability post-de-bypass. A count check passes a drifted
+row that totals right but misses this one grant. The heal is `php artisan
+rbac:sync` (self-heals super_admin every run); if the seeder cannot run, the
+A4 break-glass command is the un-brick of last resort.

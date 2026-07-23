@@ -6,6 +6,7 @@ use App\Models\Export;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
+use App\Support\Impersonation;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
@@ -45,18 +46,39 @@ beforeEach(function () {
 
 // ── Precondition re-derived live (C1's claim, independent of the fixture) ──
 
-it('seeds super_admin(web) exactly its 15 legacy grants and none of ADR 0044\'s seven', function () {
+it('seeds super_admin(web) exactly the PLATFORM set — rbac.impersonate present BY NAME (the master key)', function () {
     $granted = Role::where('name', 'super_admin')->where('guard_name', 'web')
         ->firstOrFail()->permissions->pluck('name')->sort()->values();
 
-    $seven = collect(['result.submit', 'result.approve', 'result.reject', 'result.view_scores',
-        'student_curriculum.register', 'student_curriculum.promote', 'student_curriculum.update_status']);
+    // The SET member-by-name, never a count: a drifted row totalling right
+    // but missing rbac.impersonate would pass a count and strand super_admin
+    // on de-bypass (ADR 0045 A3 — the same check the prod gate runs).
+    expect($granted->all())->toEqual(collect(RbacSeeder::SUPER_ADMIN_PLATFORM)->sort()->values()->all())
+        ->and($granted)->toContain('rbac.impersonate');
+});
 
-    $held = $seven->intersect($granted);
+it('POST-DE-BYPASS INVARIANT (flag OFF, the 0045-C state proven early): platform as itself, domain only as someone', function () {
+    config(['auth.gate_before_superadmin' => false]);
+    $sa = superAdmin();
+    $school = School::factory()->create();
+    $teacher = User::factory()->create();
+    setPermissionsTeamId($school->id);
+    $teacher->assignRole('teacher');
+    setPermissionsTeamId(null);
+    $teacher->flushSchoolAccessCache();
 
-    expect($held->all())->toBeEmpty(
-        'super_admin holds ADR 0044 abilities it must not be SEEDED: '.$held->implode(', '),
-    )->and($granted)->toHaveCount(15);
+    // As ITSELF: platform yes, school-scoped domain no.
+    expect($sa->can('activity_log.view_system'))->toBeTrue()
+        ->and($sa->can('rbac.manage_users'))->toBeTrue()
+        ->and($sa->can('result.view_scores'))->toBeFalse()
+        ->and($sa->can('student_subject.view'))->toBeFalse()
+        ->and($sa->can('activity_log.view'))->toBeFalse();
+
+    // Domain capability is NOT stranded: impersonation enters flag-off (the
+    // explicit grant is flag-independent) and resolves domain as the target.
+    $can = Impersonation::actAs($sa, $teacher, $school->id,
+        fn () => auth()->user()->can('result.submit'));
+    expect($can)->toBeTrue();
 });
 
 // ── Row 1: $user->can() ────────────────────────────────────────────────────
@@ -83,12 +105,12 @@ it('row 1 — the bypass never reaches a checker action, flag ON (ADR 0040, impl
         ->and(superAdmin()->can('result.reject'))->toBeFalse();
 });
 
-it('row 1 — with the bypass OFF, the seeded absence is decisive: can() denies the seven, allows the 15', function () {
+it('row 1 — with the bypass OFF, the seeded absence is decisive: denies domain, allows platform', function () {
     config(['auth.gate_before_superadmin' => false]);
     $sa = superAdmin();
 
     expect($sa->can('result.approve'))->toBeFalse()
-        ->and($sa->can('activity_log.view'))->toBeTrue(); // the fallback layer works
+        ->and($sa->can('activity_log.view_system'))->toBeTrue(); // the explicit platform layer works
 });
 
 // ── Row 2: Spatie permission: middleware (decides Mode B / the C2 risk) ────

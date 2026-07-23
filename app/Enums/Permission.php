@@ -94,6 +94,11 @@ enum Permission: string
     // Gate::before bypass and is deliberately NOT granted this explicitly
     // (that would break its exactly-15 authority-probe precondition).
     case RBAC_MANAGE_USERS = 'rbac.manage_users';
+    // Platform-admin: start an impersonation session (ADR 0045 A1). Seeded to
+    // no role until 0045-B2 seeds super_admin's explicit platform set — the
+    // bypass covers super_admin meanwhile (inert), and the coverage test
+    // carries it as a justified exception until B2.
+    case RBAC_IMPERSONATE = 'rbac.impersonate';
 
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';

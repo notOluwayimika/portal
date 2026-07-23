@@ -2,7 +2,9 @@
 
 namespace App\Finance\Services;
 
+use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\StudentAccount;
 use App\Support\Money;
 use Illuminate\Support\Collection;
 
@@ -52,5 +54,45 @@ final class InvoiceReadModel
                     ? $invoice->total
                     : $carry->plus($invoice->total),
             ) ?? Money::fromKobo(0);
+    }
+
+    /**
+     * A student's credit notes, for the statement (§5/§7 integrity). Returned as their
+     * OWN documents to sit BESIDE the invoices — the caller renders each separately and
+     * never nets a credit into an invoice's displayed amount. School isolation is
+     * automatic (CreditNote uses BelongsToSchool). Append-only, so ordering by id is
+     * stable issue-order.
+     *
+     * @return Collection<int, CreditNote>
+     */
+    public function creditNotesForStudent(int $studentId): Collection
+    {
+        return CreditNote::query()
+            ->where('student_id', $studentId)
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * The student's ACCOUNT-level position for the statement. This is where credit-note
+     * credit is visible: it carries on the balance, not as a per-invoice line (§10 C1),
+     * so a statement that only listed invoices and payments would hide it. Returns the
+     * signed balance (positive = owed, negative = the school owes the student) and the
+     * derived available credit (max(0, −balance)). A student with no ledger activity has
+     * no account row yet — that reads as a zero balance, not an error.
+     *
+     * @return array{balance: Money, available_credit: Money}
+     */
+    public function accountPositionForStudent(int $studentId): array
+    {
+        $account = StudentAccount::query()->where('student_id', $studentId)->first();
+
+        if ($account === null) {
+            $zero = Money::fromKobo(0);
+
+            return ['balance' => $zero, 'available_credit' => $zero];
+        }
+
+        return ['balance' => $account->balance, 'available_credit' => $account->availableCredit()];
     }
 }

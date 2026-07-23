@@ -17,6 +17,7 @@
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
         "finance.access",
+        "finance.credit-note.issue",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",

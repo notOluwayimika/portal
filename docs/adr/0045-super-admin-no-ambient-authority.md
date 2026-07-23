@@ -155,24 +155,43 @@ changes is that impersonation must be **built**, and the four claims convert fro
 birth. This is recorded here per the governance rule that an invalidated premise is
 amended by ADR, not quietly worked around.
 
-### A1 — the mechanism: session wrapper, never identity swap (binding design constraint)
+### A1 (corrected by step 0, 2026-07-23) — operator attribution is the invariant; the mechanism is a bounded acting-as session
 
-The only impersonation this codebase ever had is the anti-pattern it deliberately
-killed, so the new feature is defined **against** it. The hard problem is that
-authorization and audit must resolve against **different** subjects:
+Step 0 corrected this section's original wording. "Session wrapper, never identity
+swap" is infeasible: `PermissionMiddleware` reads `$authGuard->user()` directly and
+calls `$user->canAny(...)` — no injection point, and the swappable `Gate`
+`$userResolver` is never consulted. Resolving C2's 28 groups + policies +
+FormRequests as the impersonated user therefore requires setting the acting user
+**on the guard** for the bounded session; anything else is the per-check-site
+rewrite. The original wording failed contact with the framework — recorded here,
+the same premise-fails-reality pattern this amendment exists to document.
 
-- **Authorization + team/School context** resolve as the **impersonated user** (a
-  `runFor`-analogue scoped session — the `ActiveSchool::runFor` pattern), so
-  permissions and scope behave as that user for the session's duration.
-- **Audit causer** is the **operator** (`super_admin`), attributed **explicitly**
-  (`causedBy($operator)`, the #97 discipline — never auto-resolved from
-  `auth()->user()`).
+**Binding constraint:** Operator attribution is the invariant. The acting-as
+session sets the impersonated principal on the guard — bounded, entry/exit
+audited, `(user, school)` explicit, all context finally-restored — with the audit
+causer pinned to the operator for the session's duration. What remains forbidden
+is the ADR 0026 shape: an unbounded, unaudited identity swap whose attribution
+follows the swapped identity.
 
-An **identity swap** (`auth()->setUser($impersonated)`) is forbidden: it gets authz
-right but makes the audit record the impersonated user and lose the operator —
-reintroducing the exact misattribution class #97 fixed. The two in-tree precedents
-(`ActiveSchool::runFor` for scoped context; the audit resolver + #97's explicit
-attribution) are the spine. **Build on them; do not invent, and do not swap identity.**
+**Mechanism (tree-derived):** the session takes `(user, school)`, sets **three**
+things and restores **all three** in a `finally` (built on `runFor`'s
+captured-prior-state + finally-restore shape — restore to the CAPTURED values,
+never a hardcoded baseline, so a mid-session throw or nested context set cannot
+strand the wrong context): guard user → impersonated user; `ActiveSchool`
+override → target school; permissions-team (`setPermissionsTeamId`) → target
+school. Attribution is enforced mechanically: spatie's `CauserResolver`
+resolver-level override pins the operator once per session, not per write-site.
+The exit bite-proof asserts the three restores INDEPENDENTLY (a finally that
+restores two of three is a silent team leak, the `NoTeamLeakBetweenJobs` family).
+
+**§5.6 / ADR 0026 carve-out** (operative text amended in CONTRIBUTING.md): the
+ban targets the off-request context hack — swap identity so context resolves,
+attribution silently lands on the faked causer, unbounded, unaudited. A
+sanctioned impersonation session is distinct on every axis and permitted:
+on-request; context set **explicitly** from `(user, school)` — it does not set
+the user *to obtain* context; attribution pinned to the operator; entry/exit
+audited. Outside the ban's letter; the carve-out is recorded because mechanical
+adjacency is when governance should name the distinction.
 
 ### A2 — the track is re-sliced
 

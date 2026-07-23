@@ -22,7 +22,13 @@ uses(RefreshDatabase::class);
  * dead in both directions and deleted. An exception that stops being true
  * fails from the other direction, so the list cannot go stale silently.
  */
-const INTENTIONALLY_UNMAPPED = [];
+const INTENTIONALLY_UNMAPPED = [
+    // 0045-B1: platform-admin impersonation. Deliberately role-less until
+    // 0045-B2 seeds super_admin's explicit platform set (adding it to
+    // super_admin now would break the exactly-15 probe precondition); the
+    // Gate::before bypass covers super_admin meanwhile. B2 removes this entry.
+    'rbac.impersonate',
+];
 
 it('grants every seeded permission to at least one web-guard role', function () {
     $this->seed(DatabaseSeeder::class);

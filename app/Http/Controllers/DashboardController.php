@@ -5,16 +5,14 @@ namespace App\Http\Controllers;
 use App\Exceptions\Dashboard\PiiDetectedException;
 use App\Models\School;
 use App\Services\Dashboard\DashboardAnalysisService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __construct(private readonly DashboardAnalysisService $analysisService)
-    {
-    }
+    public function __construct(private readonly DashboardAnalysisService $analysisService) {}
 
     public function show(Request $request)
     {
@@ -27,10 +25,18 @@ class DashboardController extends Controller
         $widgets = $school ? $this->selectWidgets($analysis) : [];
         $onboarding = $this->buildOnboardingState($analysis);
 
-        if (auth()->user()->hasRole('guardian')) {
-            return redirect('/parent/wards');
-        } else if (auth()->user()->hasRole('teacher') && auth()->user()->teacher) {
-            return redirect('/setup/teacher/' . auth()->user()->teacher->uuid);
+        // A user who also holds an oversight role (e.g. an admin who is also a
+        // teacher) belongs on the dashboard — the teacher/guardian landing
+        // redirects are only for users whose sole persona is teacher or guardian.
+        $user = auth()->user();
+        $hasDashboardRole = $user->hasAnyRole(['super_admin', 'admin', 'head_of_school', 'principal']);
+
+        if (! $hasDashboardRole) {
+            if ($user->hasRole('guardian')) {
+                return redirect('/parent/wards');
+            } elseif ($user->hasRole('teacher') && $user->teacher) {
+                return redirect('/setup/teacher/'.$user->teacher->uuid);
+            }
         }
 
         return Inertia::render('dashboard', [
@@ -45,12 +51,13 @@ class DashboardController extends Controller
     {
         $school = $this->resolveSchool($request);
 
-        if (!$school) {
+        if (! $school) {
             return response()->json(['error' => 'No school context'], 422);
         }
 
         try {
             $analysis = $this->analysisService->generate($school);
+
             return response()->json([
                 'success' => true,
                 'analyzed_at' => $analysis['analyzed_at'],
@@ -64,11 +71,12 @@ class DashboardController extends Controller
     {
         $school = $this->resolveSchool($request);
 
-        if (!$school) {
+        if (! $school) {
             return response()->json(['error' => 'No school context'], 422);
         }
 
         $analysis = $this->analysisService->load($school);
+
         return response()->json($this->buildOnboardingState($analysis));
     }
 
@@ -93,23 +101,24 @@ class DashboardController extends Controller
                     'priority' => $config['priority'],
                     'dataKey' => $config['data_key'],
                 ];
+
                 continue;
             }
 
             $requiredModule = $config['requires_module'] ?? null;
-            if (!$requiredModule) {
+            if (! $requiredModule) {
                 continue;
             }
 
             $moduleData = $modules[$requiredModule] ?? null;
-            if (!$moduleData) {
+            if (! $moduleData) {
                 continue;
             }
 
             $moduleStatus = $moduleData['status'] ?? 'empty';
             $requiredStatuses = $config['requires_status'] ?? [];
 
-            if (!in_array($moduleStatus, $requiredStatuses, true)) {
+            if (! in_array($moduleStatus, $requiredStatuses, true)) {
                 continue;
             }
 
@@ -127,7 +136,7 @@ class DashboardController extends Controller
             ];
         }
 
-        usort($selected, fn($a, $b) => $b['priority'] <=> $a['priority']);
+        usort($selected, fn ($a, $b) => $b['priority'] <=> $a['priority']);
 
         return $selected;
     }
@@ -174,7 +183,7 @@ class DashboardController extends Controller
             ],
         ];
 
-        $completed = collect($steps)->filter(fn($s) => $s['is_complete'])->count();
+        $completed = collect($steps)->filter(fn ($s) => $s['is_complete'])->count();
 
         return [
             'is_onboarding' => $analysis['is_onboarding_state'] ?? true,
@@ -187,12 +196,12 @@ class DashboardController extends Controller
     private function resolveSchool(Request $request): ?School
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return null;
         }
 
-        $schoolId = \App\Support\ActiveSchool::id();
-        if (!$schoolId) {
+        $schoolId = ActiveSchool::id();
+        if (! $schoolId) {
             return null;
         }
 

@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
@@ -12,7 +12,12 @@ import { ScoreEntryProgress } from '@/components/dashboard/score-entry-progress'
 import { TrendChart } from '@/components/dashboard/trend-chart';
 import { WidgetErrorBoundary } from '@/components/dashboard/widget-error-boundary';
 import { dashboard } from '@/routes';
-import type { DashboardAnalysis, DailyCount, OnboardingState, SelectedWidget } from '@/types/dashboard';
+import type {
+    DashboardAnalysis,
+    DailyCount,
+    OnboardingState,
+    SelectedWidget,
+} from '@/types/dashboard';
 
 interface DashboardProps {
     analysis: DashboardAnalysis;
@@ -22,47 +27,119 @@ interface DashboardProps {
 }
 
 function timeAgoLabel(dateStr: string | null): string {
-    if (!dateStr) return '';
+    if (!dateStr) {
+        return '';
+    }
+
     const diff = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+
+    if (mins < 1) {
+        return 'just now';
+    }
+
+    if (mins < 60) {
+        return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    }
+
     const hrs = Math.floor(mins / 60);
+
     return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
 }
 
-const KPI_META: Record<string, { label: string; entityKey: string; href: string }> = {
-    students_kpi: { label: 'Total students', entityKey: 'students', href: '/students' },
-    guardians_kpi: { label: 'Total guardians', entityKey: 'guardians', href: '/guardians' },
-    enrollments_kpi: { label: 'Active enrollments', entityKey: 'student_curricula', href: '/setup' },
-    assessments_kpi: { label: 'Scores entered', entityKey: 'scores', href: '/setup' },
+const KPI_META: Record<
+    string,
+    { label: string; entityKey: string; href: string }
+> = {
+    students_kpi: {
+        label: 'Total students',
+        entityKey: 'students',
+        href: '/students',
+    },
+    guardians_kpi: {
+        label: 'Total guardians',
+        entityKey: 'guardians',
+        href: '/guardians',
+    },
+    enrollments_kpi: {
+        label: 'Active enrollments',
+        entityKey: 'student_curricula',
+        href: '/setup',
+    },
+    assessments_kpi: {
+        label: 'Scores entered',
+        entityKey: 'scores',
+        href: '/setup',
+    },
 };
 
-function getModuleDailyCounts(analysis: DashboardAnalysis, dataKey: string): DailyCount[] {
+function getModuleDailyCounts(
+    analysis: DashboardAnalysis,
+    dataKey: string,
+): DailyCount[] {
     const parts = dataKey.split('.');
+
     // dataKey format: "modules.{moduleName}.daily_counts_30d"
     if (parts[0] === 'modules' && parts[2] === 'daily_counts_30d') {
         return analysis.modules[parts[1]]?.daily_counts_30d ?? [];
     }
+
     return [];
 }
 
-export default function Dashboard({ analysis, widgets, onboarding, lastRefreshedAt }: DashboardProps) {
+export default function Dashboard({
+    analysis,
+    widgets,
+    onboarding,
+    lastRefreshedAt,
+}: DashboardProps) {
     const [refreshing, setRefreshing] = useState(false);
 
-    const kpiWidgets = widgets.filter((w) => w.component === 'KpiCard').slice(0, 4);
+    const { auth } = usePage<{
+        auth: { roles: string[]; isSuperAdmin?: boolean };
+    }>().props;
+    const roles = auth?.roles ?? [];
+    // Principals get an oversight view without the operational panels. An admin who
+    // is also a principal keeps them — only a principal without an operational role
+    // has Data Health and Quick Actions hidden.
+    const hasOperationalRole =
+        roles.includes('admin') ||
+        roles.includes('head_of_school') ||
+        !!auth?.isSuperAdmin;
+    const hideOperationalPanels =
+        roles.includes('principal') && !hasOperationalRole;
+
+    const kpiWidgets = widgets
+        .filter((w) => w.component === 'KpiCard')
+        .slice(0, 4);
     const trendWidget = widgets.find((w) => w.component === 'TrendChart');
     const distWidget = widgets.find((w) => w.component === 'DistributionChart');
-    const activityWidget = widgets.find((w) => w.component === 'ActivityFeedWidget');
+    const activityWidget = widgets.find(
+        (w) => w.component === 'ActivityFeedWidget',
+    );
     const dataGapsWidget = widgets.find((w) => w.component === 'DataGapsPanel');
-    const scoreEntryWidget = widgets.find((w) => w.component === 'ScoreEntryProgress');
+    const scoreEntryWidget = widgets.find(
+        (w) => w.component === 'ScoreEntryProgress',
+    );
 
     function handleRefresh() {
-        if (refreshing) return;
+        if (refreshing) {
+            return;
+        }
+
         setRefreshing(true);
         axios
             .post('/dashboard/refresh')
-            .then(() => router.reload({ only: ['analysis', 'widgets', 'onboarding', 'lastRefreshedAt'] }))
+            .then(() =>
+                router.reload({
+                    only: [
+                        'analysis',
+                        'widgets',
+                        'onboarding',
+                        'lastRefreshedAt',
+                    ],
+                }),
+            )
             .catch(() => {})
             .finally(() => setRefreshing(false));
     }
@@ -72,25 +149,45 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
             <Head title="Dashboard" />
 
             {analysis.is_onboarding_state ? (
-                <div className="p-5 bg-slate-50 min-h-full">
-                    <DashboardOnboarding onboarding={onboarding} schoolName={analysis.school_name} />
+                <div className="min-h-full bg-slate-50 p-5">
+                    <DashboardOnboarding
+                        onboarding={onboarding}
+                        schoolName={analysis.school_name}
+                    />
 
                     {/* Hybrid preview: show available KPI widgets even during onboarding */}
                     {kpiWidgets.length > 0 && (
-                        <div className="max-w-2xl mx-auto mt-6 px-4">
-                            <p className="text-xs text-slate-400 mb-3">Early preview — data available so far:</p>
+                        <div className="mx-auto mt-6 max-w-2xl px-4">
+                            <p className="mb-3 text-xs text-slate-400">
+                                Early preview — data available so far:
+                            </p>
                             <div className="grid grid-cols-2 gap-3">
                                 {kpiWidgets.map((w) => {
                                     const meta = KPI_META[w.id];
-                                    const entity = meta ? analysis.entities[meta.entityKey] : null;
-                                    const last30 = entity?.created_last_30d ?? 0;
+                                    const entity = meta
+                                        ? analysis.entities[meta.entityKey]
+                                        : null;
+                                    const last30 =
+                                        entity?.created_last_30d ?? 0;
+
                                     return (
-                                        <WidgetErrorBoundary key={w.id} widgetId={w.id}>
+                                        <WidgetErrorBoundary
+                                            key={w.id}
+                                            widgetId={w.id}
+                                        >
                                             <KpiCard
                                                 label={meta?.label ?? w.id}
                                                 value={entity?.active ?? 0}
-                                                subText={last30 > 0 ? `+${last30} in last 30 days` : undefined}
-                                                tone={last30 > 0 ? 'up' : 'neutral'}
+                                                subText={
+                                                    last30 > 0
+                                                        ? `+${last30} in last 30 days`
+                                                        : undefined
+                                                }
+                                                tone={
+                                                    last30 > 0
+                                                        ? 'up'
+                                                        : 'neutral'
+                                                }
                                                 href={meta?.href}
                                             />
                                         </WidgetErrorBoundary>
@@ -101,26 +198,41 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                     )}
                 </div>
             ) : (
-                <div className="p-5 bg-slate-50 min-h-full">
+                <div className="min-h-full bg-slate-50 p-5">
                     {/* Row 1: KPI strip */}
                     {kpiWidgets.length > 0 && (
                         <div
-                            className="grid gap-3 mb-5"
-                            style={{ gridTemplateColumns: `repeat(${Math.min(kpiWidgets.length, 4)}, minmax(0, 1fr))` }}
+                            className="mb-5 grid gap-3"
+                            style={{
+                                gridTemplateColumns: `repeat(${Math.min(kpiWidgets.length, 4)}, minmax(0, 1fr))`,
+                            }}
                         >
                             {kpiWidgets.map((w) => {
                                 const meta = KPI_META[w.id];
-                                const entity = meta ? analysis.entities[meta.entityKey] : null;
+                                const entity = meta
+                                    ? analysis.entities[meta.entityKey]
+                                    : null;
                                 const last30 = entity?.created_last_30d ?? 0;
                                 const sparkline = trendWidget
-                                    ? getModuleDailyCounts(analysis, trendWidget.dataKey)
+                                    ? getModuleDailyCounts(
+                                          analysis,
+                                          trendWidget.dataKey,
+                                      )
                                     : [];
+
                                 return (
-                                    <WidgetErrorBoundary key={w.id} widgetId={w.id}>
+                                    <WidgetErrorBoundary
+                                        key={w.id}
+                                        widgetId={w.id}
+                                    >
                                         <KpiCard
                                             label={meta?.label ?? w.id}
                                             value={entity?.active ?? 0}
-                                            subText={last30 > 0 ? `+${last30} in last 30 days` : undefined}
+                                            subText={
+                                                last30 > 0
+                                                    ? `+${last30} in last 30 days`
+                                                    : undefined
+                                            }
                                             tone={last30 > 0 ? 'up' : 'neutral'}
                                             sparklineData={sparkline}
                                             href={meta?.href}
@@ -133,13 +245,17 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
 
                     {/* Row 2: Primary visualizations */}
                     {(trendWidget || distWidget) && (
-                        <div className="grid grid-cols-2 gap-3.5 mb-5">
+                        <div className="mb-5 grid grid-cols-2 gap-3.5">
                             {trendWidget && (
                                 <WidgetErrorBoundary widgetId={trendWidget.id}>
                                     <TrendChart
-                                        data={getModuleDailyCounts(analysis, trendWidget.dataKey)}
+                                        data={getModuleDailyCounts(
+                                            analysis,
+                                            trendWidget.dataKey,
+                                        )}
                                         label={
-                                            trendWidget.id === 'assessments_trend'
+                                            trendWidget.id ===
+                                            'assessments_trend'
                                                 ? 'Score entries — last 30 days'
                                                 : 'Student activity — last 30 days'
                                         }
@@ -150,7 +266,10 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                             {distWidget && (
                                 <WidgetErrorBoundary widgetId={distWidget.id}>
                                     <DistributionChart
-                                        data={analysis.distributions.students_by_class_level ?? []}
+                                        data={
+                                            analysis.distributions
+                                                .students_by_class_level ?? []
+                                        }
                                     />
                                 </WidgetErrorBoundary>
                             )}
@@ -158,35 +277,46 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                     )}
 
                     {/* Row 3: Operational widgets */}
-                    <div className="grid grid-cols-3 gap-3.5 mb-5">
+                    <div className="mb-5 grid grid-cols-3 gap-3.5">
                         {activityWidget && (
                             <WidgetErrorBoundary widgetId={activityWidget.id}>
-                                <ActivityFeedWidget activities={analysis.recent_activities} />
+                                <ActivityFeedWidget
+                                    activities={analysis.recent_activities}
+                                />
                             </WidgetErrorBoundary>
                         )}
-                        {dataGapsWidget && analysis.data_gaps.length > 0 && (
-                            <WidgetErrorBoundary widgetId={dataGapsWidget.id}>
-                                <DataGapsPanel gaps={analysis.data_gaps} />
+                        {!hideOperationalPanels &&
+                            dataGapsWidget &&
+                            analysis.data_gaps.length > 0 && (
+                                <WidgetErrorBoundary
+                                    widgetId={dataGapsWidget.id}
+                                >
+                                    <DataGapsPanel gaps={analysis.data_gaps} />
+                                </WidgetErrorBoundary>
+                            )}
+                        {!hideOperationalPanels && (
+                            <WidgetErrorBoundary widgetId="quick-actions">
+                                <QuickActionsPanel gaps={analysis.data_gaps} />
                             </WidgetErrorBoundary>
                         )}
-                        <WidgetErrorBoundary widgetId="quick-actions">
-                            <QuickActionsPanel gaps={analysis.data_gaps} />
-                        </WidgetErrorBoundary>
                     </div>
 
                     {/* Row 4: Score entry progress */}
                     {scoreEntryWidget && (
-                        <div className="grid grid-cols-3 gap-3.5 mb-5">
+                        <div className="mb-5 grid grid-cols-3 gap-3.5">
                             <WidgetErrorBoundary widgetId={scoreEntryWidget.id}>
                                 <ScoreEntryProgress
-                                    data={analysis.distributions.score_entry_by_section ?? []}
+                                    data={
+                                        analysis.distributions
+                                            .score_entry_by_section ?? []
+                                    }
                                 />
                             </WidgetErrorBoundary>
                         </div>
                     )}
 
                     {/* Row 5: Footer / meta */}
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-200 mt-2">
+                    <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-4">
                         <p className="text-xs text-slate-400">
                             {lastRefreshedAt
                                 ? `Dashboard data refreshed ${timeAgoLabel(lastRefreshedAt)}`
@@ -195,9 +325,12 @@ export default function Dashboard({ analysis, widgets, onboarding, lastRefreshed
                         <button
                             onClick={handleRefresh}
                             disabled={refreshing}
-                            className="inline-flex items-center gap-1.5 text-xs text-[#185FA5] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1.5 text-xs text-[#185FA5] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                            <RefreshCw
+                                size={12}
+                                className={refreshing ? 'animate-spin' : ''}
+                            />
                             {refreshing ? 'Refreshing…' : 'Refresh dashboard'}
                         </button>
                     </div>

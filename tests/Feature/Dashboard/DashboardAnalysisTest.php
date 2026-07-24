@@ -154,6 +154,51 @@ test('pii sanitization service allows school_name', function () {
     expect(true)->toBeTrue();
 });
 
+test('pii sanitization service allows distribution bucket labels that look like names', function () {
+    $pii = new PiiSanitizationService;
+
+    // Distribution `name` fields are aggregate class-level labels, not person names.
+    // The person-name heuristic matches any two-token capitalised value, so these
+    // ordinary class levels must be exempted or the whole dashboard write aborts.
+    $pii->scan([
+        'distributions' => [
+            'students_by_class_level' => [
+                ['name' => 'Pre-Kinderfun', 'count' => 12],
+                ['name' => 'Junior Secondary', 'count' => 40],
+                ['name' => 'Primary One', 'count' => 33],
+            ],
+        ],
+    ]);
+
+    expect(true)->toBeTrue();
+});
+
+test('pii sanitization service still rejects person names outside distributions', function () {
+    $pii = new PiiSanitizationService;
+
+    // The distribution exemption must not weaken the guard elsewhere: a real name
+    // in an entity/recent-activity name field still aborts the write.
+    expect(fn () => $pii->scan([
+        'recent_activities' => [
+            ['first_name' => 'John Smith'],
+        ],
+    ]))->toThrow(PiiDetectedException::class);
+});
+
+test('pii sanitization service still flags emails inside distributions', function () {
+    $pii = new PiiSanitizationService;
+
+    // Only the person-name check is relaxed for distribution labels — email/phone
+    // leakage is still caught wherever it appears.
+    expect(fn () => $pii->scan([
+        'distributions' => [
+            'students_by_class_level' => [
+                ['name' => 'parent@example.com', 'count' => 1],
+            ],
+        ],
+    ]))->toThrow(PiiDetectedException::class);
+});
+
 test('analysis file is written to storage', function () {
     $school = al_makeSchool();
     $service = app(DashboardAnalysisService::class);

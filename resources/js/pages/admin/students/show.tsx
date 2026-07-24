@@ -223,36 +223,39 @@ export default function StudentProfile() {
                                 </div>
                             </div>
 
-                            {/* Action buttons */}
-                            <div className="flex shrink-0 items-center gap-2">
-                                {isAdmin && (
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setShowEditModal(true)}
-                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                    >
-                                        <Edit className="mr-1.5 h-4 w-4" />
-                                        Edit Student
-                                    </Button>
-                                )}
-                                <Link
-                                    href={`/setup/student-curricula/${student.id}`}
-                                    className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"
+                            {/* Action buttons — wrap instead of overflowing the card on
+                                narrow widths (full-width row on mobile, right-aligned on lg). */}
+                            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:justify-end">
+                                {/* Edit lives in the More dropdown ("Edit Details"); no
+                                    standalone Edit button here to keep the action row lean. */}
+                                <Button
+                                    asChild
+                                    size="sm"
+                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
                                 >
-                                    View Academic Records
-                                </Link>
+                                    <Link
+                                        href={`/setup/student-curricula/${student.id}`}
+                                    >
+                                        View Academic Records
+                                    </Link>
+                                </Button>
                                 {/* Academic → Finance is a HYPERLINK, never a code
                                     dependency: a plain URL to the Finance route (no import
                                     of any Finance component). Gated on finance.access so it
                                     only shows for finance-permitted users; the route
                                     enforces the same permission server-side. */}
                                 <Can permission="finance.access">
-                                    <Link
-                                        href={`/finance/students/${student.id}/statement`}
-                                        className="rounded-xl bg-emerald-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg"
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        className="rounded-lg bg-emerald-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg active:scale-95"
                                     >
-                                        Finance Statement
-                                    </Link>
+                                        <Link
+                                            href={`/finance/students/${student.id}/statement`}
+                                        >
+                                            Finance Statement
+                                        </Link>
+                                    </Button>
                                 </Can>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

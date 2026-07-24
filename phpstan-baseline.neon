@@ -1021,12 +1021,6 @@ parameters:
 			path: app/Http/Controllers/StudentController.php
 
 		-
-			message: '#^Anonymous function has an unused use \$request\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: app/Http/Controllers/StudentController.php
-
-		-
 			message: '#^Parameter \#1 \$id of method App\\Services\\FileUploadService\:\:deleteFileUpload\(\) expects string, int\<min, \-1\>\|int\<1, max\> given\.$#'
 			identifier: argument.type
 			count: 1

@@ -7,7 +7,6 @@ use App\Enums\GenderTypeEnum;
 use App\Models\Curriculum;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -16,17 +15,28 @@ class StudentService
 {
     public function __construct(
         private CurriculumEnrollmentService $enrollmentService
-    ) {
-    }
+    ) {}
 
     public function paginate(Request $request): LengthAwarePaginator
     {
         return Student::query()
             ->when($request->search, function ($q) use ($request) {
-                $searchTerm = '%' . $request->search . '%';
+                $searchTerm = '%'.$request->search.'%';
                 $q->where('first_name', 'LIKE', $searchTerm)
                     ->orWhere('last_name', 'LIKE', $searchTerm)
                     ->orWhere('admission_number', 'LIKE', $searchTerm);
+            })
+            // Filter by the student's ACTIVE enrolment's class level and/or arm.
+            // Applying both narrows to a single class-level-arm, because a student
+            // has one active curriculum bound to one class_level_arm — the two
+            // filters compose to "this class level AND this arm".
+            ->when($request->filled('class_level'), function ($q) use ($request) {
+                $q->whereHas('currentCurriculum.curriculum.classLevelArm.classLevel',
+                    fn ($cl) => $cl->where('uuid', $request->string('class_level')));
+            })
+            ->when($request->filled('arm'), function ($q) use ($request) {
+                $q->whereHas('currentCurriculum.curriculum.classLevelArm.arm',
+                    fn ($a) => $a->where('uuid', $request->string('arm')));
             })
             ->with([
                 'photoFile',
@@ -111,7 +121,7 @@ class StudentService
                 'previous_school' => $attributes['previous_school'] ?? null,
                 'sport_house_id' => $attributes['sport_house_id'] ?? null,
                 'scholarship_id' => $attributes['scholarship_id'] ?? null,
-            ], fn($v) => !is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
+            ], fn ($v) => ! is_null($v)) + ['photo_id' => $attributes['photo_id'] ?? null]);
 
             if (
                 isset($attributes['curriculum_id']) &&
@@ -175,8 +185,9 @@ class StudentService
         foreach ($rows as $index => $row) {
             $rowErrors = $this->validateImportRow($row, $index, $schoolId);
 
-            if (!empty($rowErrors)) {
+            if (! empty($rowErrors)) {
                 $errors[$index] = $rowErrors;
+
                 continue;
             }
 
@@ -207,13 +218,13 @@ class StudentService
         }
 
         $gender = GenderTypeEnum::normalizeGender($row['gender'] ?? null);
-        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+        if (! in_array($gender, ['male', 'female', 'other'], true)) {
             $errors[] = "Gender '{$row['gender']}' is not valid. Expected: male, female, or other.";
         }
 
         $dob = $row['date_of_birth'] ?? null;
         if ($dob !== null && $dob !== '') {
-            if (!isValidDate($dob)) {
+            if (! isValidDate($dob)) {
                 $errors[] = "Date of birth '{$dob}' could not be parsed into a valid date.";
             }
         }

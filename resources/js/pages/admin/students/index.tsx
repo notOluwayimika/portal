@@ -52,6 +52,12 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const [students, setStudents] = useState<Student[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [classLevel, setClassLevel] = useState('');
+    const [arm, setArm] = useState('');
+    const [classLevels, setClassLevels] = useState<
+        { id: string; name: string }[]
+    >([]);
+    const [arms, setArms] = useState<{ id: string; label: string }[]>([]);
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(25);
     const [pagination, setPagination] = useState({
@@ -75,6 +81,8 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             const response = await axios.get('/api/students', {
                 params: {
                     search,
+                    class_level: classLevel || undefined,
+                    arm: arm || undefined,
                     page,
                     per_page: limit,
                 },
@@ -97,7 +105,23 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         fetchStudents();
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, page, limit]);
+    }, [search, classLevel, arm, page, limit]);
+
+    useEffect(() => {
+        let isMounted = true;
+        axios.get('/api/students/resources').then((res) => {
+            if (!isMounted) {
+                return;
+            }
+
+            setClassLevels(res.data.data.class_levels || []);
+            setArms(res.data.data.arms || []);
+        });
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const { confirmAndExecute } = useApiSweetAlertConfirmation();
 
@@ -269,6 +293,47 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     />
                                 </div>
 
+                                <div className="w-full sm:w-40">
+                                    <Select
+                                        value={classLevel}
+                                        onChange={(val) => {
+                                            setClassLevel(
+                                                val ? String(val) : '',
+                                            );
+                                            setPage(1);
+                                        }}
+                                        placeholder="All class levels"
+                                        options={[
+                                            {
+                                                label: 'All class levels',
+                                                value: '',
+                                            },
+                                            ...classLevels.map((c) => ({
+                                                label: c.name,
+                                                value: c.id,
+                                            })),
+                                        ]}
+                                    />
+                                </div>
+
+                                <div className="w-full sm:w-32">
+                                    <Select
+                                        value={arm}
+                                        onChange={(val) => {
+                                            setArm(val ? String(val) : '');
+                                            setPage(1);
+                                        }}
+                                        placeholder="All arms"
+                                        options={[
+                                            { label: 'All arms', value: '' },
+                                            ...arms.map((a) => ({
+                                                label: a.label,
+                                                value: a.id,
+                                            })),
+                                        ]}
+                                    />
+                                </div>
+
                                 <div className="flex items-center gap-2 sm:ml-auto">
                                     <span className="hidden text-xs font-medium text-slate-500 sm:inline">
                                         Showing{' '}
@@ -280,12 +345,17 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                             {pagination.total}
                                         </span>
                                     </span>
-                                    {search && (
+                                    {(search || classLevel || arm) && (
                                         <Button
                                             type="button"
                                             size="sm"
                                             variant="ghost"
-                                            onClick={() => setSearch('')}
+                                            onClick={() => {
+                                                setSearch('');
+                                                setClassLevel('');
+                                                setArm('');
+                                                setPage(1);
+                                            }}
                                             className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                                         >
                                             <X className="mr-1 h-3.5 w-3.5" />

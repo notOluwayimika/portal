@@ -11,9 +11,7 @@ use App\Enums\TermStatusEnum;
 use App\Exports\StudentsExport;
 use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
-use App\Http\Resources\ClassLevelArmOptionsResource;
 use App\Http\Resources\CurriculumOptionResource;
-use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\ScholarshipResource;
 use App\Http\Resources\SportHouseResource;
 use App\Http\Resources\StudentCurriculumResource;
@@ -25,10 +23,10 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentResult;
 use App\Repositories\ClassLevelArmRepository;
-use App\Repositories\CurriculumRepository;
 use App\Services\FileUploadService;
 use App\Services\GuardianService;
 use App\Services\StudentService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -42,8 +40,7 @@ class StudentController extends Controller
         protected ClassLevelArmRepository $classLevelArmRepository,
         protected FileUploadService $fileUploadService,
         protected GuardianService $guardianService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request)
     {
@@ -65,7 +62,7 @@ class StudentController extends Controller
     public function store(StudentRequest $request)
     {
         $data = $request->validated();
-        $data['school_id'] = \App\Support\ActiveSchool::id();
+        $data['school_id'] = ActiveSchool::id();
         $data['photo_id'] = $this->uploadPhoto($request);
         unset($data['photo']);
 
@@ -78,9 +75,9 @@ class StudentController extends Controller
         // If any guardian processing fails, the student is rolled back too — no orphans.
         $deferredNotifications = [];
 
-        $student = DB::transaction(function () use ($studentDto, $guardianEntries, &$deferredNotifications, $request) {
+        $student = DB::transaction(function () use ($studentDto, $guardianEntries, &$deferredNotifications) {
             $student = $this->studentService->store($studentDto->toArray());
-            $schoolId = (int) \App\Support\ActiveSchool::id();
+            $schoolId = (int) ActiveSchool::id();
 
             foreach ($guardianEntries as $entry) {
                 $this->processGuardianEntry($student, $entry, $schoolId, $deferredNotifications);
@@ -113,7 +110,7 @@ class StudentController extends Controller
     public function update(StudentRequest $request, Student $student)
     {
         $data = $request->validated();
-        $data['school_id'] = \App\Support\ActiveSchool::id();
+        $data['school_id'] = ActiveSchool::id();
         $data['photo_id'] = $this->replacePhoto($request, $student->photo_id);
         unset($data['photo'], $data['guardians']);
 
@@ -144,7 +141,7 @@ class StudentController extends Controller
 
     public function export(Request $request)
     {
-        $filename = 'students-' . now()->format('Y-m-d') . '.xlsx';
+        $filename = 'students-'.now()->format('Y-m-d').'.xlsx';
 
         return Excel::download(new StudentsExport($request), $filename);
     }
@@ -152,7 +149,7 @@ class StudentController extends Controller
     public function import(ImportStudentRequest $request)
     {
         $data = $request->validated();
-        $schoolId = \App\Support\ActiveSchool::id();
+        $schoolId = ActiveSchool::id();
 
         $result = $this->studentService->import(
             $data['students'],
@@ -160,9 +157,9 @@ class StudentController extends Controller
             $schoolId,
         );
 
-        if (!empty($result['errors'])) {
+        if (! empty($result['errors'])) {
             return response()->json([
-                'message' => "{$result['saved']} student(s) imported. " . count($result['errors']) . " row(s) had errors and were skipped.",
+                'message' => "{$result['saved']} student(s) imported. ".count($result['errors']).' row(s) had errors and were skipped.',
                 'saved' => $result['saved'],
                 'errors' => $result['errors'],
             ], 422);
@@ -174,6 +171,7 @@ class StudentController extends Controller
     public function destroy(Student $student)
     {
         $this->studentService->delete($student);
+
         return response()->noContent();
     }
 
@@ -183,13 +181,13 @@ class StudentController extends Controller
             'term',
             'classLevelArm.classLevel',
             'classLevelArm.arm',
-            'classLevelArm.stream'
+            'classLevelArm.stream',
         ])
-            ->whereHas('term', fn($query) => $query->where('status', TermStatusEnum::ACTIVE))
+            ->whereHas('term', fn ($query) => $query->where('status', TermStatusEnum::ACTIVE))
             ->where('status', CurriculaStatusEnum::ACTIVE->value)->get();
 
         $genders = GenderTypeEnum::options();
-        $school = \App\Support\ActiveSchool::getOrFail();
+        $school = ActiveSchool::getOrFail();
 
         return Response::success([
             'curricula' => CurriculumOptionResource::collection($curricula),
@@ -197,6 +195,12 @@ class StudentController extends Controller
             'guardian_relationships' => GuardianRelationshipEnum::options(),
             'sport_houses' => SportHouseResource::collection($school->sportHouses),
             'scholarships' => ScholarshipResource::collection($school->scholarships),
+            // Distinct class levels and arms for the student-index filters. The
+            // uuid is the value the /api/students filter matches against.
+            'class_levels' => $school->classLevels()->orderBy('order')->get()
+                ->map(fn ($cl) => ['id' => $cl['uuid'], 'name' => $cl['name']])->values(),
+            'arms' => $school->arms()->get()
+                ->map(fn ($arm) => ['id' => $arm['uuid'], 'label' => $arm['label']])->values(),
         ]);
     }
 
@@ -221,9 +225,9 @@ class StudentController extends Controller
             );
 
             // If can_login is being raised from false→true and guardian has a real email, queue a re-notify.
-            if ($entry['can_login'] && (!$existingPivot || !$existingPivot->can_login)) {
+            if ($entry['can_login'] && (! $existingPivot || ! $existingPivot->can_login)) {
                 $user = $guardian->user;
-                if ($user && $user->email && !str_ends_with($user->email, '@no-email.local')) {
+                if ($user && $user->email && ! str_ends_with($user->email, '@no-email.local')) {
                     // The service handles credential reissue inside attachToStudent for existing pivots;
                     // for first-time can_login=true on a brand-new link we don't have a fresh password,
                     // so the guardian uses their existing credentials. No-op here.
@@ -280,7 +284,7 @@ class StudentController extends Controller
      */
     private function uploadPhoto(Request $request): ?int
     {
-        if (!$request->hasFile('photo')) {
+        if (! $request->hasFile('photo')) {
             return null;
         }
 
@@ -293,14 +297,14 @@ class StudentController extends Controller
      */
     private function replacePhoto(Request $request, ?int $existingPhotoId): ?int
     {
-        if (!$request->hasFile('photo')) {
+        if (! $request->hasFile('photo')) {
             return $existingPhotoId;
         }
 
         if ($existingPhotoId) {
             $old = FileUpload::find($existingPhotoId);
             if ($old) {
-                $this->fileUploadService->unlinkFileUpload($old->folder_path . '/' . $old->name, null);
+                $this->fileUploadService->unlinkFileUpload($old->folder_path.'/'.$old->name, null);
                 $this->fileUploadService->deleteFileUpload($existingPhotoId);
             }
         }
@@ -315,7 +319,7 @@ class StudentController extends Controller
         $subjectsOffered = $activeCurriculum->activeSubjects;
         foreach ($subjectsOffered as $subject) {
             $result = StudentResult::where('student_id', $student->id)->where('curriculum_subject_id', $subject->curriculum_subject_id)->first();
-            if (!$result) {
+            if (! $result) {
                 $isAvailable = false;
                 break;
             }
@@ -331,12 +335,12 @@ class StudentController extends Controller
             }
 
             $deadline = $activeCurriculum->curriculum?->term?->result_visible_at;
-            if ($isAvailable && $deadline && !now()->greaterThan($deadline)) {
+            if ($isAvailable && $deadline && ! now()->greaterThan($deadline)) {
                 $isAvailable = false;
             }
         }
 
-        if (!$isAvailable) {
+        if (! $isAvailable) {
             // Fall back to the chronologically latest past enrollment (by its
             // term's end date, not created_at — backdated enrollments created
             // by BackfillPastTermJob are newer rows for older terms).
@@ -344,15 +348,14 @@ class StudentController extends Controller
                 ->where('status', 'promoted')
                 ->with('curriculum.term')
                 ->get()
-                ->sortByDesc(fn($sc) => $sc->curriculum?->term?->end_date)
+                ->sortByDesc(fn ($sc) => $sc->curriculum?->term?->end_date)
                 ->first();
         }
 
         return response()->json([
             'available' => $isAvailable,
-            'latest_available_result' => $activeCurriculum ? new StudentCurriculumResource($activeCurriculum) : null
+            'latest_available_result' => $activeCurriculum ? new StudentCurriculumResource($activeCurriculum) : null,
         ]);
-
 
     }
 }

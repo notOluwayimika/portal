@@ -89,58 +89,60 @@ export function ImportStudentForm({
         setCurriculumError('');
         setRowErrors({});
 
-        try {
-            const result = await confirmAndExecute({
-                sweetAlertTitle: `Import ${previewData.length} Student(s)?`,
-                sweetAlertText:
-                    'Valid rows will be saved. Rows with errors will be reported back.',
-                sweetAlertIcon: 'question',
-                confirmButtonText: 'Import',
-                showSuccessAlert: false,
-                showErrorAlert: false,
-                onConfirm: async () => {
+        const result = await confirmAndExecute({
+            sweetAlertTitle: `Import ${previewData.length} Student(s)?`,
+            sweetAlertText:
+                'Valid rows will be saved. Rows with errors will be reported back.',
+            sweetAlertIcon: 'question',
+            confirmButtonText: 'Import',
+            showSuccessAlert: false,
+            showErrorAlert: true,
+            onConfirm: async () => {
+                try {
                     const res = await axios.post('/api/students/import', {
                         curriculum_id: curriculumId,
                         students: previewData,
                     });
 
                     return { ok: true, message: res.data?.message };
-                },
-            });
+                } catch (err: any) {
+                    const body = err.response?.data;
 
-            if (result === false) {
-                return;
-            }
+                    // A 422 with per-row errors is expected feedback, not a
+                    // failure — return it so the failed rows render instead of
+                    // being swallowed by the confirmation hook's catch.
+                    if (body?.errors) {
+                        return {
+                            ok: false,
+                            saved: body.saved ?? 0,
+                            errors: body.errors as Record<number, string[]>,
+                        };
+                    }
 
-            if (result.ok) {
+                    throw new Error('Something went wrong. Please try again.');
+                }
+            },
+        });
+
+        // Cancelled, or an unexpected error already toasted by the hook.
+        if (result === false) {
+            return;
+        }
+
+        if (result.ok) {
+            toast.success(
+                result.message ??
+                    `${previewData.length} student(s) imported successfully.`,
+            );
+            onSuccess();
+        } else {
+            if (result.saved > 0) {
                 toast.success(
-                    result.message ??
-                        `${previewData.length} student(s) imported successfully.`,
+                    `${result.saved} student(s) imported successfully.`,
                 );
-                onSuccess();
-            } else {
-                if (result.saved > 0) {
-                    toast.success(
-                        `${result.saved} student(s) imported successfully.`,
-                    );
-                }
-
-                setRowErrors(result.errors);
             }
-        } catch (err: any) {
-            const body = err.response?.data;
 
-            if (body?.errors) {
-                if ((body.saved ?? 0) > 0) {
-                    toast.success(
-                        `${body.saved} student(s) imported successfully.`,
-                    );
-                }
-
-                setRowErrors(body.errors);
-            } else {
-                toast.error('Something went wrong. Please try again.');
-            }
+            setRowErrors(result.errors);
         }
     };
 

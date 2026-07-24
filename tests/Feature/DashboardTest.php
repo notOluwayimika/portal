@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\Role;
+use App\Models\Teacher;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -30,4 +32,41 @@ test('authenticated admin can visit the dashboard', function () {
     $this->actingAs($user)
         ->get(route('dashboard'))
         ->assertOk();
+});
+
+test('an admin who is also a teacher reaches the dashboard, not the teacher redirect', function () {
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    setPermissionsTeamId($school->id);
+    $user->assignRole('admin');
+    $user->assignRole('teacher');
+    Teacher::create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'first_name' => 'Both',
+        'last_name' => Str::random(6),
+        'staff_number' => 'STF-'.Str::random(6),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk();
+});
+
+test('a teacher-only user is redirected to their teacher page', function () {
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    setPermissionsTeamId($school->id);
+    $user->assignRole('teacher');
+    $teacher = Teacher::create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'first_name' => 'Teach',
+        'last_name' => Str::random(6),
+        'staff_number' => 'STF-'.Str::random(6),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertRedirect('/setup/teacher/'.$teacher->uuid);
 });

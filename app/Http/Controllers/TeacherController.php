@@ -2,37 +2,33 @@
 
 namespace App\Http\Controllers;
 
-use App\DTOs\TeacherDto;
-use App\Exports\TeachersExport;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Enums\CurriculaStatusEnum;
 use App\Enums\GenderTypeEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Enums\TermStatusEnum;
+use App\Exports\TeachersExport;
 use App\Http\Requests\ImportTeacherRequest;
 use App\Http\Requests\TeacherRequest;
 use App\Http\Resources\TeacherCurriculumSubjectResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
-use App\Models\FileUpload;
 use App\Models\Teacher;
 use App\Models\TeacherCurriculumSubject;
-use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\TeacherService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
 
 class TeacherController extends Controller
 {
     public function __construct(
         protected TeacherService $teacherService,
         protected FileUploadService $fileUploadService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request)
     {
@@ -54,30 +50,54 @@ class TeacherController extends Controller
     public function store(TeacherRequest $request)
     {
         $this->teacherService->processTeacherAccount($request);
+
         return Response::created('Teacher created successfully.');
     }
 
     public function export(Request $request)
     {
-        $filename = 'teachers-' . now()->format('Y-m-d') . '.xlsx';
+        $filename = 'teachers-'.now()->format('Y-m-d').'.xlsx';
+
         return Excel::download(new TeachersExport($request), $filename);
     }
 
     public function import(ImportTeacherRequest $request)
     {
         $data = $request->validated();
-        $schoolId = \App\Support\ActiveSchool::id();
+        $schoolId = ActiveSchool::id();
         $result = $this->teacherService->import($data['teachers'], $schoolId);
 
-        if (!empty($result['errors'])) {
+        $summary = $this->importSummary($result);
+
+        if (! empty($result['errors'])) {
             return response()->json([
-                'message' => "{$result['saved']} teacher(s) imported. " . count($result['errors']) . ' row(s) had errors and were skipped.',
+                'message' => $summary.' '.count($result['errors']).' row(s) had errors and were skipped.',
                 'saved' => $result['saved'],
+                'linked' => $result['linked'],
+                'skipped' => $result['skipped'],
                 'errors' => $result['errors'],
             ], 422);
         }
 
-        return Response::success("{$result['saved']} teacher(s) imported successfully.");
+        return Response::success($summary);
+    }
+
+    /**
+     * @param  array{saved: int, linked: int, skipped: int}  $result
+     */
+    private function importSummary(array $result): string
+    {
+        $parts = ["{$result['saved']} teacher(s) imported"];
+
+        if ($result['linked'] > 0) {
+            $parts[] = "{$result['linked']} existing user(s) given teacher access";
+        }
+
+        if ($result['skipped'] > 0) {
+            $parts[] = "{$result['skipped']} already a teacher here";
+        }
+
+        return implode(', ', $parts).'.';
     }
 
     public function show(Teacher $teacher)
@@ -109,6 +129,7 @@ class TeacherController extends Controller
         abort_unless($teacher->isHomeSchool(), 403, 'This teacher belongs to another school. Remove their school access instead.');
 
         $this->teacherService->delete($teacher);
+
         return response()->noContent();
     }
 
@@ -120,11 +141,11 @@ class TeacherController extends Controller
             'classLevelArm.arm',
             'classLevelArm.stream',
         ])
-            ->whereHas('term', fn($q) => $q->where('status', TermStatusEnum::ACTIVE))
+            ->whereHas('term', fn ($q) => $q->where('status', TermStatusEnum::ACTIVE))
             ->where('status', CurriculaStatusEnum::ACTIVE->value)
             ->get();
 
-        $curriculaOptions = $curricula->map(fn($curriculum) => [
+        $curriculaOptions = $curricula->map(fn ($curriculum) => [
             'id' => $curriculum->id,
             'uuid' => $curriculum->uuid,
             'term' => $curriculum->term?->order,
@@ -152,7 +173,7 @@ class TeacherController extends Controller
                 'curriculumSubject.curriculum.classLevelArm.stream',
                 'curriculumSubject.curriculum.term',
                 'curriculumSubject.studentAssignments',
-                'curriculumSubject.markingComponents'
+                'curriculumSubject.markingComponents',
             ])
             ->get();
 
@@ -195,6 +216,7 @@ class TeacherController extends Controller
     {
         abort_if($assignment->teacher_id !== $teacher->id, 403, 'Assignment does not belong to this teacher.');
         $assignment->delete();
+
         return response()->noContent();
     }
 
@@ -205,7 +227,7 @@ class TeacherController extends Controller
             ->orderBy('display_order')
             ->get();
 
-        return Response::success($subjects->map(fn($cs) => [
+        return Response::success($subjects->map(fn ($cs) => [
             'id' => $cs->uuid,
             'subject_name' => $cs->subject?->name,
             'subject_code' => $cs->subject?->code,

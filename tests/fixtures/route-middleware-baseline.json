@@ -1731,10 +1731,6 @@
         "auth",
         "role:super_admin"
     ],
-    "PUT /user/password": [
-        "web",
-        "auth:web"
-    ],
     "PUT /user/profile-information": [
         "web",
         "auth:web"

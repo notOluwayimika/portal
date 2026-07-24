@@ -69,7 +69,15 @@ return [
         // behaviour are retained (see UpdateUserProfileInformation /
         // Settings\ProfileController) for future self-onboarding work.
         Features::updateProfileInformation(),
-        Features::updatePasswords(),
+        // updatePasswords is NOT enabled: Settings\SecurityController owns password
+        // updates (own PasswordUpdateRequest + throttle:6,1) and deliberately claims
+        // Fortify's canonical `user-password.update` name. Enabling the feature
+        // registers a SECOND route under that same name, which (a) makes
+        // `route:cache` throw — so it fails only in production, never in tests — and
+        // (b) exposes an UNTHROTTLED PUT /user/password that wayfinder actually bound
+        // to. `route()` resolves to the last registration, so removing this preserves
+        // today's behaviour rather than changing it.
+        // Features::updatePasswords(),
         // confirm: users must prove a working authenticator before enrolment
         // completes. confirmPassword: a hijacked session cannot disable 2FA
         // without re-entering the password.

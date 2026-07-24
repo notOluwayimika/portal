@@ -228,24 +228,34 @@ export default function StudentProfile() {
                             <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:justify-end">
                                 {/* Edit lives in the More dropdown ("Edit Details"); no
                                     standalone Edit button here to keep the action row lean. */}
-                                <Link
-                                    href={`/setup/student-curricula/${student.id}`}
-                                    className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"
+                                <Button
+                                    asChild
+                                    size="sm"
+                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
                                 >
-                                    View Academic Records
-                                </Link>
+                                    <Link
+                                        href={`/setup/student-curricula/${student.id}`}
+                                    >
+                                        View Academic Records
+                                    </Link>
+                                </Button>
                                 {/* Academic → Finance is a HYPERLINK, never a code
                                     dependency: a plain URL to the Finance route (no import
                                     of any Finance component). Gated on finance.access so it
                                     only shows for finance-permitted users; the route
                                     enforces the same permission server-side. */}
                                 <Can permission="finance.access">
-                                    <Link
-                                        href={`/finance/students/${student.id}/statement`}
-                                        className="rounded-xl bg-emerald-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg"
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        className="rounded-lg bg-emerald-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg active:scale-95"
                                     >
-                                        Finance Statement
-                                    </Link>
+                                        <Link
+                                            href={`/finance/students/${student.id}/statement`}
+                                        >
+                                            Finance Statement
+                                        </Link>
+                                    </Button>
                                 </Can>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

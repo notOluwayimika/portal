@@ -223,8 +223,9 @@ export default function StudentProfile() {
                                 </div>
                             </div>
 
-                            {/* Action buttons */}
-                            <div className="flex shrink-0 items-center gap-2">
+                            {/* Action buttons — wrap instead of overflowing the card on
+                                narrow widths (full-width row on mobile, right-aligned on lg). */}
+                            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:justify-end">
                                 {isAdmin && (
                                     <Button
                                         size="sm"

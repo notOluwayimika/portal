@@ -221,10 +221,11 @@ class StudentSubjectController extends Controller
         // URL). Object-ownership guard — observed via Authz until enforcement.
         Authz::ensure((int) $enrollment->student_id === (int) $student->id, 'enrollment.belongs_to_student', 'ownership', 'StudentSubjectController@enrollmentGuard', 404);
 
-        // Ownership-by-users.school_id is intentionally NOT restored: it is redundant
-        // under SchoolScope (the student/enrollment are already School-scoped) and would
-        // reintroduce the users.school_id fallback (ADR 0042 debt). Awaiting §7 decision
-        // (see S5 classification report) — recommend deletion, not restoration.
-        // abort_unless($student->school_id === auth()->user()->school_id, 403);
+        // (A commented-out ownership-by-users.school_id guard lived here. DELETED per
+        // the §7 decision (2026-07-21, docs/rbac-implementation-plan.md slice A1):
+        // redundant under SchoolScope — Student carries BelongsToSchool and the
+        // enrollment registers SchoolScope, so a cross-School binding 404s before this
+        // method runs — and restoring it would re-couple authorization to the
+        // users.school_id fallback scheduled for removal (ADR 0042).)
     }
 }

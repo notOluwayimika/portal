@@ -16,16 +16,14 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Teacher;
 use App\Models\Term;
-use Database\Seeders\RoleSeeder;
-use Database\Seeders\TeacherAssignmentPermissionSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    (new RoleSeeder)->run();
-    (new TeacherAssignmentPermissionSeeder)->run();
+    (new RbacSeeder)->run();
 });
 
 // ---------------------------------------------------------------------------

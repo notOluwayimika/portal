@@ -8,6 +8,9 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\Payment;
+use App\Finance\Models\PaymentAllocation;
+use App\Finance\Models\StudentAccount;
 use App\Finance\Services\SubledgerPoster;
 use App\Support\ActiveSchool;
 use App\Support\Money;
@@ -102,22 +105,80 @@ final class GenerateInvoice
             throw new BusinessRuleException('An invoice must have at least one line.');
         }
 
+        // Resolve percentage reductions into concrete amounts FIRST, so everything below
+        // — the throw checks, the fold, the persisted rows — operates on a single,
+        // uniform shape: concrete signed lines. A stored line is never "10%"; it is the
+        // exact naira reduction that percentage produced, which is what §5 snapshot
+        // integrity requires (a historical statement must not recompute a percentage
+        // against numbers that may have moved).
+        $lines = $this->resolvePercentages($lines);
+
+        // The positivity rule is now SCOPED BY KIND, and each half is stricter than the
+        // single rule it replaces — a charge must still be strictly positive, and a
+        // reduction must be strictly negative. Neither may be zero: a zero line carries
+        // no arithmetic and no information, and silently accepting one would let a
+        // "waiver" that waives nothing look applied.
         foreach ($lines as $line) {
-            if ($line->amount->isZero() || $line->amount->isNegative()) {
-                throw new BusinessRuleException('Every invoice line amount must be positive.');
+            if ($line->resolvedAmount()->isZero()) {
+                throw new BusinessRuleException('An invoice line amount may not be zero.');
+            }
+
+            if ($line->isReduction()) {
+                if (! $line->resolvedAmount()->isNegative()) {
+                    throw new BusinessRuleException('A waiver or discount line must be negative.');
+                }
+
+                continue;
+            }
+
+            if ($line->resolvedAmount()->isNegative()) {
+                throw new BusinessRuleException('Every invoice charge line must be positive.');
             }
         }
 
-        // F6: the total is DERIVED, never supplied. Exact integer addition.
+        // F6: the total is DERIVED, never supplied. Exact integer addition, and a
+        // LITERAL SIGNED SUM — it does not branch on kind. Reductions carry a negative
+        // amount, so `plus` nets them without any special case: sign carries the
+        // arithmetic, kind carries the meaning. This is why F6's trigger needs no change
+        // — the equality is still established here and frozen there.
         $total = array_reduce(
             $lines,
             static fn (?Money $carry, InvoiceLineSpec $line) => $carry === null
-                ? $line->amount
-                : $carry->plus($line->amount),
+                ? $line->resolvedAmount()
+                : $carry->plus($line->resolvedAmount()),
         );
+
+        // Reductions may bring a total to zero, but never below it. A negative invoice
+        // would mean the School owes the student, which is a credit note or refund
+        // (§10, later) — never an invoice. Ratified in accounting-policy.md §5.
+        if ($total->isNegative()) {
+            throw new BusinessRuleException(
+                'Reductions may not exceed the charges on an invoice: the total would be negative.'
+            );
+        }
 
         try {
             return DB::transaction(function () use ($enrollment, $lines, $total) {
+                // W3 apply-forward — the FIRST statement, and a LOCKING read on purpose.
+                // A locking read does not establish InnoDB's REPEATABLE READ snapshot, so
+                // it forms at the first plain read AFTER this lock (assertNoActiveInvoice),
+                // and the credit we read is a CURRENT read of the committed balance rather
+                // than a stale snapshot (docs/finance/concurrency.md). ACCOUNT-BEFORE-INVOICE
+                // ordering: RecordPayment locks the invoice row and only touches this account
+                // through post()'s atomic increment, so there is no opposite-order shared pair
+                // — no deadlock (WalletW3ConcurrencyTest). A missing row (first-ever activity)
+                // means zero credit; the charge's upsert creates it.
+                $account = StudentAccount::query()
+                    ->where('student_id', $enrollment->studentId)
+                    ->lockForUpdate()
+                    ->first();
+
+                // Carry-forward credit = max(0, −balance) from the PRE-charge balance: the
+                // true net overpayment, NOT raw unallocated payments (which would wrongly
+                // auto-apply while an older invoice sits unpaid — proof 6). Read BEFORE the
+                // charge posts, or the charge flips the balance positive and credit reads 0.
+                $creditKobo = $account !== null ? max(0, -$account->balance->toKobo()) : 0;
+
                 $this->assertNoActiveInvoice($enrollment->schoolId, $enrollment->enrollmentId);
 
                 $number = Sequences::next('finance_invoice', (string) $enrollment->schoolId);
@@ -137,7 +198,9 @@ final class GenerateInvoice
                     $invoice->lines()->create([
                         'school_id' => $enrollment->schoolId,
                         'description' => $line->description,
-                        'amount' => $line->amount,
+                        'kind' => $line->kind,
+                        'note' => $line->note,
+                        'amount' => $line->resolvedAmount(),
                         'fee_item_id' => $line->feeItemId,
                     ]);
                 }
@@ -151,6 +214,20 @@ final class GenerateInvoice
                     $invoice->id,
                     "Invoice #{$number} — ".count($lines).' line(s)',
                 );
+
+                // Apply carry-forward credit to THIS invoice, capped at its own total,
+                // oldest payment first. A SETTLEMENT LINK ONLY — it writes allocation rows
+                // and does NOT post to the ledger (the money moved when the overpayment was
+                // banked in W2), so balance_minor is unchanged; the invoice's outstanding
+                // falls by the applied sum. The account lock above serialises this
+                // read-credit→apply against a concurrent generation (proof 4).
+                if ($creditKobo > 0) {
+                    $this->applyCreditForward(
+                        $invoice,
+                        $enrollment->studentId,
+                        min($creditKobo, $total->toKobo()),
+                    );
+                }
 
                 return $invoice->load('lines');
             });
@@ -167,8 +244,129 @@ final class GenerateInvoice
     }
 
     /**
+     * Turn every percentage-reduction spec into a concrete-amount spec.
+     *
+     * SEMANTIC (stated because the brief's "10% off the tuition line" implies per-line
+     * targeting and this does NOT do that): a percentage reduction is computed against
+     * the invoice's GROSS CHARGES — the signed sum of every charge-kind line — not
+     * against one named line. "10% waiver" means 10% off the bill. Per-line targeting is
+     * a later refinement with its own design; it is deliberately not invented here on a
+     * fragile description/index reference.
+     *
+     * The magnitude is `grossCharges->percentage($p)` — the banker's-rounded op — and
+     * the resulting line stores that concrete negative naira figure, never the percent.
+     *
+     * @param  list<InvoiceLineSpec>  $lines
+     * @return list<InvoiceLineSpec>
+     */
+    private function resolvePercentages(array $lines): array
+    {
+        $hasPercentage = false;
+        foreach ($lines as $line) {
+            if ($line->isPercentage()) {
+                $hasPercentage = true;
+                if (! $line->isReduction()) {
+                    throw new BusinessRuleException('A percentage may only be applied to a waiver or discount line.');
+                }
+            }
+        }
+
+        if (! $hasPercentage) {
+            return $lines;
+        }
+
+        // Gross = the signed sum of the CHARGE lines only. Percentage reductions reduce
+        // the charges; folding other reductions into the base would let two reductions
+        // compound in an order-dependent way.
+        $grossCharges = null;
+        foreach ($lines as $line) {
+            if (! $line->isReduction() && ! $line->isPercentage()) {
+                $grossCharges = $grossCharges === null
+                    ? $line->resolvedAmount()
+                    : $grossCharges->plus($line->resolvedAmount());
+            }
+        }
+
+        if ($grossCharges === null) {
+            throw new BusinessRuleException('A percentage reduction needs at least one charge line to reduce.');
+        }
+
+        return array_map(
+            fn (InvoiceLineSpec $line) => $line->isPercentage()
+                // percentage() returns a positive magnitude; a reduction stores it negated.
+                ? $line->withAmount($grossCharges->percentage($line->percent)->times(-1))
+                : $line,
+            $lines,
+        );
+    }
+
+    /**
      * Friendly-path pre-check only — NOT the guarantee. See the class docblock.
      */
+    /**
+     * Settle the just-created invoice from the student's carry-forward credit, up to
+     * $applyKobo (= min(credit, invoice total)), sourcing the OLDEST unallocated
+     * payment(s) first as REAL payment-allocations — `payment_id` set to those payments,
+     * no credit-funded allocation and no touch to payment_id's NOT NULL (fork 6 is §10).
+     * Applying credit posts NOTHING to the ledger; it is a settlement link, so the
+     * balance is unchanged and only the invoice's outstanding falls.
+     *
+     * APPLIES min(credit, total, Σunallocated-payments) — the §10 C1 relax. Only credit
+     * BACKED BY A PAYMENT can become a per-invoice allocation (a credit note has no
+     * payment to source). Any remainder — credit-note credit with nothing to draw from —
+     * is NOT under-applied silently: it is already in the negative account balance (the
+     * credit note posted its own ledger credit), and the new charge above has already
+     * netted against it, so the account owes the correct amount. It carries at the
+     * ACCOUNT level, which is the right home for a credit note's effect; it is not a
+     * settlement of this one future invoice. (Before credit notes existed, Σunallocated ≥
+     * credit always held, so this cap equalled min(credit, total) and W3's overpayment
+     * behaviour is unchanged — proven in WalletApplyForwardTest.)
+     */
+    private function applyCreditForward(Invoice $invoice, int $studentId, int $applyKobo): void
+    {
+        $currency = $invoice->total->currency;
+        $remaining = $applyKobo;
+
+        // Oldest first — id is monotonic with creation, so it is a deterministic
+        // creation order without depending on second-precision timestamps.
+        $payments = Payment::query()
+            ->where('student_id', $studentId)
+            ->orderBy('id')
+            ->get();
+
+        foreach ($payments as $payment) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $allocated = (int) PaymentAllocation::query()
+                ->where('payment_id', $payment->id)
+                ->sum('amount_minor');
+            $unallocated = $payment->amount->toKobo() - $allocated;
+
+            if ($unallocated <= 0) {
+                continue;
+            }
+
+            $draw = min($remaining, $unallocated);
+
+            // ≤ invoice total by construction (applyKobo was capped), so the #94
+            // over-allocation trigger is never approached.
+            $payment->allocations()->create([
+                'school_id' => $invoice->school_id,
+                'invoice_id' => $invoice->id,
+                'amount' => Money::fromKobo($draw, $currency),
+            ]);
+
+            $remaining -= $draw;
+        }
+
+        // A leftover $remaining is EXPECTED when credit-note credit exceeds what payments
+        // can source (§10 C1): it is already in the negative account balance and the new
+        // charge has netted against it, so there is nothing to fail on. The balance is the
+        // universal carry-forward; the allocation is only the payment-sourced visibility.
+    }
+
     private function assertNoActiveInvoice(int $schoolId, int $enrollmentId): void
     {
         $exists = Invoice::query()

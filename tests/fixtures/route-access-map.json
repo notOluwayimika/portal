@@ -1,0 +1,2750 @@
+{
+    "DELETE /api/activity-logs/saved-filters/{savedActivityFilter}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "DELETE /api/class-structure/arms/{arm}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/class-structure/levels/{classLevel}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/class-structure/streams/{stream}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/class-structure/{classLevelArm}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/curricula/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/curriculum-subjects/{curriculumSubject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/exam-types/{examType}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/grade-boundaries/{gradeBoundary}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/heads-of-schools/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/marking-components/{markingComponent}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/notices/categories/{noticeCategory}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/notices/{notice}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/scholarships/{scholarship}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/sessions/{session}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/sessions/{session}/terms/{term}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/sport-houses/{sportHouse}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/students/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/students/{student}/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/subjects/{subject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/teacher-assignments/{classLevelArmTeacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/teachers/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/teachers/{teacher}/subjects/{assignment}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /result-signature": {
+        "auth": true,
+        "roles": [
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "DELETE /settings/profile": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "DELETE /setup/principals/{principal}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "DELETE /super-admin/schools/{school}/fallback-signature": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "DELETE /user/two-factor-authentication": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /activity-logs": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /activity-logs/{id}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/activity-logs": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/export": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/exports/{export}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/filters/options": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/saved-filters": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/stats": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/activity-logs/{id}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/behavioral-assessments": {
+        "auth": true,
+        "roles": [
+            "boarding_parent",
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "GET /api/broadsheets/groups": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/broadsheets/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/broadsheets/{curriculum}/export": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/class-level-arms": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/class-structure": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/curricula": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/curricula/active": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/curricula/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/curricula/{curriculum}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/curriculum-subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/curriculum-subjects/{curriculumSubject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/curriculum-subjects/{curriculumSubject}/result-status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/curriculum-subjects/{curriculumSubject}/teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/curriculum-subjects/{curriculumSubject}/year-average": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/dashboard/analysis": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/dashboard/onboarding": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/dashboard/widgets": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/dashboard/widgets/{widget}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/exam-types": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/form-teacher/students": {
+        "auth": true,
+        "roles": [
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "GET /api/grade-boundaries/{examType}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/grading-schemes": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardian/notices": {
+        "auth": true,
+        "roles": [
+            "guardian",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/export": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/import/template": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/import/{import}/report": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/import/{import}/status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/imports": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/lookup": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/resources": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/{guardian}/activity": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/{guardian}/audit": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/guardians/{guardian}/students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/head-of-school/students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/head-of-school/students/{studentCurriculum}/result": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/heads-of-schools": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/marking-components": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/marking-components/overlapping/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/notices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/notices/categories": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/notices/{notice}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/outstanding-comments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/results/incomplete": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/scholarships": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/sessions": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/sessions/{session}/terms": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/setup-data": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/sport-houses": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/student-curricula/{studentCurriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/student-curricula/{studentCurriculum}/curriculum-subject/{curriculumSubject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/bulk-update/template": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/bulk-update/{import}/report": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/bulk-update/{import}/status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/bulk-updates": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/export": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/resources": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/{student}/curriculum/{curriculum}/result-status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects/history": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/students/{student}/result-status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/subject-result-statuses": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/teacher-assignments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/teacher-assignments/teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /api/teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/teachers/export": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/teachers/resources": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/teachers/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/teachers/{teacher}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/user": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/v1/finance/students/{student}/invoices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /boarding-parent/behavioral-assessments": {
+        "auth": true,
+        "roles": [
+            "boarding_parent",
+            "super_admin"
+        ]
+    },
+    "GET /class-level-arm/{classLevelArm}/results": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /class-level/{classLevel}/results": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /dashboard": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /dashboard/onboarding": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /forgot-password": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /form-teacher/comments": {
+        "auth": true,
+        "roles": [
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "GET /guardians": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /guardians/import": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /guardians/{guardian}/audit": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /head-of-school/comments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /login": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /notices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /outstanding-comments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /parent/dashboard": {
+        "auth": true,
+        "roles": [
+            "guardian",
+            "super_admin"
+        ]
+    },
+    "GET /parent/wards": {
+        "auth": true,
+        "roles": [
+            "guardian",
+            "super_admin"
+        ]
+    },
+    "GET /reports/broadsheets": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /reports/results-per-class": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /reset-password/{token}": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /result-signature": {
+        "auth": true,
+        "roles": [
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /results/incomplete": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /sanctum/csrf-cookie": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /school-setup": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /select-school": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /settings/appearance": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /settings/profile": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /settings/security": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /setup": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/curricula-backfill": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/curricula-ccm": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/curricula/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/curriculum-subject/{curriculumSubject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /setup/head-of-schools": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/principals": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/review/pending": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /setup/review/results": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /setup/student-curricula/{studentCurriculum}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /setup/student-curricula/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /setup/teacher-assignments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /setup/teacher/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /storage/{path}": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /students/bulk-update": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /students/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /students/{student}/results/active": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /students/{student}/results/{studentCurriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /super-admin/admins": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "GET /super-admin/schools": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "GET /teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /two-factor-challenge": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /up": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /user/confirm-password": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /user/confirmed-password-status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /user/two-factor-qr-code": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /user/two-factor-recovery-codes": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /user/two-factor-secret-key": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /settings": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /super-admin": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "PATCH /api/class-level-arms/{classLevelArm}/principal-approval": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/class-levels/{classLevel}/principal-approval": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/class-structure/{classLevelArm}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/curricula/{curriculum}/subjects/reorder": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/curriculum-subjects/{curriculumSubject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/archive": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/unarchive": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/form-teacher/students/{studentCurriculum}/comment": {
+        "auth": true,
+        "roles": [
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/head-of-school/students/{studentCurriculum}/comment": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/student-curricula/{studentCurriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/end": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/drop": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/restore": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/students/{student}/status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/teachers/{teacher}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/teachers/{teacher}/status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /settings/profile": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/activity-logs/saved-filters": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/behavioral-assessments": {
+        "auth": true,
+        "roles": [
+            "boarding_parent",
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "POST /api/class-structure": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/class-structure/arms": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/class-structure/levels": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/class-structure/streams": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/class-structure/toggle": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/curricula": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/curricula/{curriculum}/backfill-term": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/curricula/{curriculum}/move-from-ccm": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/curricula/{curriculum}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/approve": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/marking-components": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/reject": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/scores": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/submit": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/curriculum-subjects/{curriculumSubject}/teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/dashboard/analysis/refresh": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/exam-types": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/grade-boundaries": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/grading-schemes": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/bulk-disable-login": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/bulk-enable-login": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/bulk-message": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/bulk-status": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/import": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/{guardian}/disable-login": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/{guardian}/enable-login": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/{guardian}/password": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/{guardian}/resend-invitation": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/guardians/{guardian}/reset-password": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/heads-of-schools": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/login": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/logout": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/marking-components": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/notices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/notices/categories": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/notices/{notice}/end": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/psychomotor-skills": {
+        "auth": true,
+        "roles": [
+            "boarding_parent",
+            "form_teacher",
+            "super_admin"
+        ]
+    },
+    "POST /api/scholarships": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/sessions": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/sessions/{session}/current": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/sessions/{session}/terms": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/sport-houses": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/student-subjects/{studentSubject}/comment": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/bulk-update": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/import": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/{student}/curricula": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/{student}/curricula/promote": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/{student}/enrollments/{studentCurriculum}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/students/{student}/guardians": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/switch-school": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/teacher-assignments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/teachers": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/teachers/import": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/teachers/{teacher}/subjects": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/invoices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/invoices/{invoice}/cancel": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/invoices/{invoice}/payments": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /dashboard/refresh": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /forgot-password": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /login": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /logout": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /reset-password": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /result-signature": {
+        "auth": true,
+        "roles": [
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "POST /select-school": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /setup/principals": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /students": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "POST /super-admin/admins": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "POST /super-admin/schools": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "POST /super-admin/schools/{school}/fallback-signature": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "POST /two-factor-challenge": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /user/confirm-password": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /user/confirmed-two-factor-authentication": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /user/two-factor-authentication": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /user/two-factor-recovery-codes": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "PUT /api/class-structure/arms/{arm}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/class-structure/levels/{classLevel}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/class-structure/streams/{stream}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/curricula/{curriculum}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/exam-types/{examType}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/grade-boundaries/{gradeBoundary}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/grading-schemes/{gradingScheme}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/marking-components/{markingComponent}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/notices/{notice}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "PUT /api/scholarships/{scholarship}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/sessions/{session}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/sessions/{session}/terms/{term}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/sport-houses/{sportHouse}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/students/{student}/guardians/{guardian}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/subjects/{subject}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/teachers/{teacher}/schools": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "PUT /settings/password": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "PUT /storage/{path}": {
+        "auth": false,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "PUT /students/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "PUT /super-admin/admins/{uuid}/schools": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "PUT /super-admin/schools/{school}": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "PUT /user/profile-information": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "boarding_parent",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    }
+}

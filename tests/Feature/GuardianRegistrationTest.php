@@ -7,11 +7,17 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\GuardianAccountCreatedNotification;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
@@ -365,4 +371,79 @@ it('rolls back the student when a guardian processing failure occurs', function 
 
     expect(Student::where('first_name', 'Test')->exists())->toBeFalse();
     expect(Guardian::where('first_name', 'Good')->exists())->toBeFalse();
+});
+
+// ─── attach: `email` rule scope (the required_if mis-scope, fixed 2026-07-21) ──
+//
+// `email` used to be `required_if:can_login,true` for BOTH modes. On mode=existing
+// the submitted email is never read — resolveExistingGuardianForAttachment keys off
+// guardian_id/identifier, and a can_login upgrade re-issues credentials from the
+// guardian's OWN user->email. add-guardian-modal.tsx sends only guardian_id +
+// identifier for existing mode, so this was a LIVE BUG: "attach an existing guardian
+// and give them login" 422'd from the real UI on a field the backend then ignored.
+
+it('EXISTING + can_login: succeeds WITHOUT an email (the field is never used here)', function () {
+    [$school, $admin] = makeAdmin();
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'existing.attach@example.test']);
+    $guardian = Guardian::factory()->create(['school_id' => $school->id, 'user_id' => $user->id]);
+
+    $this->actingAs($admin)
+        ->withSession(['school_id' => $school->id])
+        ->postJson("/api/students/{$student->uuid}/guardians", [
+            'mode' => 'existing',
+            'guardian_id' => $guardian->uuid,
+            'identifier' => $user->email,
+            'relationship' => 'guardian',
+            'is_primary' => true,
+            'can_login' => true,
+            // NO email — previously a 422.
+        ])
+        ->assertCreated();
+
+    expect(DB::table('guardian_student')
+        ->where('guardian_id', $guardian->id)
+        ->where('student_id', $student->id)
+        ->value('can_login'))->toEqual(1);
+});
+
+it('NEW + can_login: still REQUIRES an email (the branch that consumes it)', function () {
+    [$school, $admin] = makeAdmin();
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    $this->actingAs($admin)
+        ->withSession(['school_id' => $school->id])
+        ->postJson("/api/students/{$student->uuid}/guardians", [
+            'mode' => 'new',
+            'first_name' => 'New',
+            'last_name' => 'Guardian',
+            'phone' => '08011122233',
+            'relationship' => 'guardian',
+            'is_primary' => true,
+            'can_login' => true,
+            // NO email — a login cannot be provisioned without one.
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+});
+
+it('NEW without can_login: does NOT require an email (not over-required)', function () {
+    // The discriminating half. `required_if:mode,new` — the shape the roadmap
+    // suggested — would demand an email here, where no login is provisioned. This
+    // test fails if that over-requiring shape is ever adopted.
+    [$school, $admin] = makeAdmin();
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    $this->actingAs($admin)
+        ->withSession(['school_id' => $school->id])
+        ->postJson("/api/students/{$student->uuid}/guardians", [
+            'mode' => 'new',
+            'first_name' => 'NoLogin',
+            'last_name' => 'Guardian',
+            'phone' => '08044455566',
+            'relationship' => 'guardian',
+            'is_primary' => true,
+            'can_login' => false,
+        ])
+        ->assertCreated();
 });

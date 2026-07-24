@@ -24,6 +24,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class CurriculumSubjectController extends Controller
 {
@@ -118,14 +119,33 @@ class CurriculumSubjectController extends Controller
         }
     }
 
-    protected function isTeacher($user): bool
+    /**
+     * Authorize a checker decision against the CURRENT status row, so the
+     * maker ≠ checker comparison sees the recorded submitter (ADR 0040/0044).
+     *
+     * When no row exists yet the subject was never submitted, so there is no
+     * maker to conflict with; an unsaved instance carries a NULL submitted_by
+     * and the Policy's permission half decides alone. This mirrors the DB
+     * constraint's NULL guard — Policy and schema speak about the same rows.
+     *
+     * Gate::authorize (not Authz::ensure) because this rule is enforced, not
+     * observed, and because 'approve'/'reject' are excluded from the
+     * super-admin bypass — the Policy actually runs for every identity.
+     */
+    protected function authorizeDecision(string $ability, CurriculumSubject $curriculumSubject): void
     {
-        return $user && $user->hasRole('teacher');
+        $status = SubjectResultStatus::where('curriculum_subject_id', $curriculumSubject->id)->first()
+            ?? new SubjectResultStatus(['curriculum_subject_id' => $curriculumSubject->id]);
+
+        Gate::authorize($ability, $status);
     }
 
-    protected function isReviewer($user): bool
+    protected function isTeacher($user): bool
     {
-        return $user && ($user->hasRole('admin') || $user->hasRole('head_of_school'));
+        // C3 (ADR 0044): the maker side is a PERMISSION, not the `teacher` role.
+        // Name kept so the call sites and their restored-guard comments stay
+        // readable; the condition is what §7.2 cares about.
+        return $user && $user->can('result.submit');
     }
 
     protected function present(SubjectResultStatus $s): array
@@ -376,7 +396,10 @@ class CurriculumSubjectController extends Controller
         // Restored 2026-07-20 (observe mode, ADR 0043) — these were commented out by
         // 883ff6c's 47-guard sweep, leaving POST /curriculum-subjects/{uuid}/submit
         // open to ANY authenticated user, teacher or not, for ANY subject.
-        Authz::ensure($this->isTeacher($user), 'curriculum_subject.submit', 'role', 'CurriculumSubjectController@submit');
+        // C3 (ADR 0044 step 3): the ability recorded is now the permission the
+        // gate actually tests. The observation stream carries no rows yet (prod
+        // accrues post-deploy, dev is empty), so renaming costs no evidence.
+        Authz::ensure($this->isTeacher($user), 'result.submit', 'permission', 'CurriculumSubjectController@submit');
 
         // …and the teacher must actually own this curriculum_subject. Resolved via an
         // explicit Teacher lookup rather than the original `optional($user->teacher)`:
@@ -403,6 +426,12 @@ class CurriculumSubjectController extends Controller
                     'status' => 'submitted',
                     'rejection_reason' => null,
                     'updated_by' => $user->id,
+                    // The maker, recorded durably: this is what the checker is
+                    // later compared against (ADR 0040/0044). decided_by is
+                    // cleared so a re-submission after rejection is decided
+                    // afresh rather than inheriting the previous decider.
+                    'submitted_by' => $user->id,
+                    'decided_by' => null,
                 ],
             )->fresh(['updatedBy']);
         });
@@ -415,7 +444,16 @@ class CurriculumSubjectController extends Controller
         $user = $request->user();
         // Restored 2026-07-20 (observe mode, ADR 0043): approving results is a
         // reviewer action; uncommented, any authenticated user could approve.
-        Authz::ensure($this->isReviewer($user), 'curriculum_subject.approve', 'role', 'CurriculumSubjectController@approve');
+        // C3: the CONDITION is now the permission, not the role (ADR 0044 §7.2);
+        // the observe-mode wrapper is unchanged and still owned by A6.
+        Authz::ensure($user?->can('result.approve') ?? false, 'result.approve', 'permission', 'CurriculumSubjectController@approve');
+
+        // Maker ≠ checker, ENFORCED (never observe-mode): this is a new domain
+        // invariant rather than a restored guard, and ADR 0040 puts it outside
+        // every bypass — observing it would ship a control that does not
+        // control. It cannot regress existing traffic: no role holds both sides
+        // (SeededPermissionCoverageTest), and pre-C3 rows carry a NULL maker.
+        $this->authorizeDecision('approve', $curriculumSubject);
 
         $status = DB::transaction(function () use ($curriculumSubject, $user) {
             $this->handleStudentResults($curriculumSubject, 'approved');
@@ -426,6 +464,7 @@ class CurriculumSubjectController extends Controller
                     'status' => 'approved',
                     'rejection_reason' => null,
                     'updated_by' => $user->id,
+                    'decided_by' => $user->id,
                 ],
             )->fresh(['updatedBy']);
         });
@@ -445,6 +484,12 @@ class CurriculumSubjectController extends Controller
         // worse than nothing: it could never fire, so it would record no evidence
         // while reading like a live gate. Contrast approve() above, which takes a
         // plain Request and genuinely had no check.
+        //
+        // The FormRequest owns the PERMISSION half only. Maker ≠ checker is a
+        // record-level rule it cannot express (it never loads the status row),
+        // so the structural half is enforced here for reject exactly as for
+        // approve.
+        $this->authorizeDecision('reject', $curriculumSubject);
 
         $status = DB::transaction(function () use ($curriculumSubject, $user, $request) {
             $this->handleStudentResults($curriculumSubject, 'rejected');
@@ -455,6 +500,7 @@ class CurriculumSubjectController extends Controller
                     'status' => 'rejected',
                     'rejection_reason' => $request->validated('rejection_reason'),
                     'updated_by' => $user->id,
+                    'decided_by' => $user->id,
                 ],
             )->fresh(['updatedBy']);
         });

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Permission;
+use App\Models\Role;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -29,6 +30,12 @@ beforeEach(function () {
     $this->user = al_makeUser($this->schoolA->id);
     $this->user->grantSchoolAccess($this->schoolA, 'admin');
     $this->user->grantSchoolAccess($this->schoolB, 'admin');
+
+    // C2: the route carries permission:student_status.view — grant the ROUTE
+    // tier to the ad-hoc admin role so the request reaches the controller
+    // check whose ordering this file pins.
+    Permission::firstOrCreate(['name' => 'student_status.view', 'guard_name' => 'web']);
+    Role::findByName('admin', 'web')->givePermissionTo('student_status.view');
 
     // Grant guardian.view to this user in School A's team ONLY.
     Permission::firstOrCreate(['name' => 'guardian.view', 'guard_name' => 'web']);

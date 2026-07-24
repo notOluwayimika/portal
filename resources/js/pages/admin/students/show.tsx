@@ -37,7 +37,7 @@ import {
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
-import type { Auth } from '@/types';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { Guardian, Student } from '@/types/models';
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -87,10 +87,12 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
 export default function StudentProfile() {
     const { student: studentWrapper } = usePage<ShowPageProps>()
         .props as unknown as ShowPageProps;
-    const { auth } = usePage<{ auth: Auth }>().props;
-    // Edit student / add guardian / edit subjects are admin-only; principals get
-    // a read-only profile view.
-    const isAdmin = auth.roles.includes('admin');
+    // Edit student / add guardian / edit subjects require the admin working area;
+    // principals get a read-only profile view. Gated on the EFFECTIVE permission
+    // (C4) not roles.includes('admin') — the latter hid these from super_admin,
+    // whom the backend allows (matches the write routes' C2 permission).
+    const { can } = usePermissions();
+    const isAdmin = can('admin_area.access');
     const student = studentWrapper.data;
     const getInitials = useInitials();
 

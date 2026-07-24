@@ -43,7 +43,66 @@ enum Permission: string
     case STUDENT_CURRICULUM_UNENROLL = 'student_curriculum.unenroll';
     case CURRICULUM_SUBJECT_ARCHIVE = 'curriculum_subject.archive';
     case CURRICULUM_SUBJECT_RESTORE = 'curriculum_subject.restore';
-    case CURRICULUM_SUBJECT_FORCE_DELETE = 'curriculum_subject.force_delete';
+    // CURRICULUM_SUBJECT_FORCE_DELETE was removed in C1: zero call sites ever
+    // checked it, and its only holder (super_admin) passes via Gate::before —
+    // dead in both directions. RbacSeeder prunes the orphaned row on sync.
+
+    // Result lifecycle — ADR 0044 (maker–checker: submit is the maker side,
+    // approve/reject the checker side; one role must never hold both).
+    case RESULT_SUBMIT = 'result.submit';
+    case RESULT_APPROVE = 'result.approve';
+    case RESULT_REJECT = 'result.reject';
+    case RESULT_VIEW_SCORES = 'result.view_scores';
+
+    // Enrollment lifecycle — ADR 0044.
+    case STUDENT_CURRICULUM_REGISTER = 'student_curriculum.register';
+    case STUDENT_CURRICULUM_PROMOTE = 'student_curriculum.promote';
+    case STUDENT_CURRICULUM_UPDATE_STATUS = 'student_curriculum.update_status';
+
+    // Route-access tier (C2): one coarse per-surface permission per pre-swap
+    // role: middleware group, granted to exactly the roles that group listed
+    // (parity-proven by RouteAccessParityTest). These gate route entry only;
+    // finer per-action redistribution is later slices' work (C3 policies,
+    // C6 matrix editing). super_admin holds none of them — its passage is
+    // the Gate::before bypass, per the authority probe.
+    case ADMIN_AREA_ACCESS = 'admin_area.access';
+    case STUDENT_DIRECTORY_VIEW = 'student_directory.view';
+    case RESULT_REVIEW_ACCESS = 'result_review.access';
+    case REPORT_VIEW = 'report.view';
+    case CURRICULUM_SUBJECT_VIEW = 'curriculum_subject.view';
+    case STUDENT_CURRICULUM_VIEW = 'student_curriculum.view';
+    case DASHBOARD_VIEW = 'dashboard.view';
+    case RESULT_SIGNATURE_MANAGE = 'result_signature.manage';
+    case RESULT_VIEW = 'result.view';
+    case PARENT_PORTAL_ACCESS = 'parent_portal.access';
+    case BOARDING_PORTAL_ACCESS = 'boarding_portal.access';
+    case ACADEMIC_SETUP_MANAGE = 'academic_setup.manage';
+    case PRINCIPAL_APPROVAL_MANAGE = 'principal_approval.manage';
+    // Interim gate for /api/v1/finance/* (was role:admin|super_admin).
+    // Superseded when Finance's Ph2 permission scheme (finance.<resource>.
+    // <action>, v10 §343) lands with the 4 Finance roles — I1/I6 coordination.
+    case FINANCE_ACCESS = 'finance.access';
+    // Issuing a credit note / write-off forgives money, so it is gated on its OWN
+    // permission beyond finance.access (the group gate). The first of the Ph2
+    // finance.<resource>.<action> scheme; maker-checker (an approver) is Ph3.
+    case FINANCE_CREDIT_NOTE_ISSUE = 'finance.credit-note.issue';
+    case ACADEMIC_DATA_VIEW = 'academic_data.view';
+    case SCORE_MANAGE = 'score.manage';
+    case STUDENT_STATUS_VIEW = 'student_status.view';
+    case STUDENT_VIEW = 'student.view';
+    case ASSESSMENT_RECORD = 'assessment.record';
+
+    // RBAC administration (C5). Gates the school-admin Users module
+    // (/setup/users) — listing a School's users and syncing their roles.
+    // Granted to `admin`; super_admin reaches the module through the
+    // Gate::before bypass and is deliberately NOT granted this explicitly
+    // (that would break its exactly-15 authority-probe precondition).
+    case RBAC_MANAGE_USERS = 'rbac.manage_users';
+    // Platform-admin: start an impersonation session (ADR 0045 A1). Seeded to
+    // no role until 0045-B2 seeds super_admin's explicit platform set — the
+    // bypass covers super_admin meanwhile (inert), and the coverage test
+    // carries it as a justified exception until B2.
+    case RBAC_IMPERSONATE = 'rbac.impersonate';
 
     // Teacher assignment / assessments (legacy non-dotted names, preserved)
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';

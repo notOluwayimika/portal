@@ -85,6 +85,17 @@ class ActiveSchool
      * @param  Closure(): T  $cb
      * @return T
      */
+    /** Read/set the raw override — Impersonation restores CAPTURED values. */
+    public static function override(): ?int
+    {
+        return self::$override;
+    }
+
+    public static function overrideWith(?int $schoolId): void
+    {
+        self::$override = $schoolId;
+    }
+
     public static function runFor(int $schoolId, Closure $cb): mixed
     {
         $previousOverride = static::$override;

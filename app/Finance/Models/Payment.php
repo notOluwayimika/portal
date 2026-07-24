@@ -10,6 +10,7 @@ use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * A payment against the student ACCOUNT (school + student), not an invoice — the
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $payer_name
  * @property string $method
  * @property int|null $received_by_user_id
+ * @property Carbon $created_at
  * @property-read Collection<int, PaymentAllocation> $allocations
  */
 class Payment extends Model

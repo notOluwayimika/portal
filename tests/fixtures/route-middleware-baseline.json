@@ -1,0 +1,1738 @@
+{
+    "DELETE /api/activity-logs/saved-filters/{savedActivityFilter}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "DELETE /api/class-structure/arms/{arm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/class-structure/levels/{classLevel}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/class-structure/streams/{stream}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/class-structure/{classLevelArm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/exam-types/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/heads-of-schools/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "DELETE /api/marking-components/{markingComponent}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/notices/categories/{noticeCategory}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "DELETE /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "DELETE /api/scholarships/{scholarship}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/sessions/{session}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/sessions/{session}/terms/{term}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/sport-houses/{sportHouse}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/subjects/{subject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/teacher-assignments/{classLevelArmTeacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "DELETE /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/teachers/{teacher}/subjects/{assignment}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result_signature.manage"
+    ],
+    "DELETE /settings/profile": [
+        "web",
+        "auth",
+        "verified"
+    ],
+    "DELETE /setup/principals/{principal}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "DELETE /super-admin/schools/{school}/fallback-signature": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "DELETE /user/two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /": [
+        "web",
+        "guest"
+    ],
+    "GET /activity-logs": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /activity-logs/{id}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/activity-logs": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/exports/{export}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/filters/options": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/saved-filters": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/stats": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/activity-logs/{id}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/behavioral-assessments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:assessment.record"
+    ],
+    "GET /api/broadsheets/groups": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/broadsheets/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/broadsheets/{curriculum}/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/class-level-arms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/class-structure": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/curricula/active": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/curricula/{curriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/curriculum-subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /api/curriculum-subjects/{curriculumSubject}/year-average": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /api/dashboard/analysis": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/dashboard/onboarding": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/dashboard/widgets": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/dashboard/widgets/{widget}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/exam-types": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/form-teacher/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:manage_form_teacher_comments"
+    ],
+    "GET /api/grade-boundaries/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/grading-schemes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardian/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:parent_portal.access"
+    ],
+    "GET /api/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/import/template": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/import/{import}/report": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/import/{import}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/imports": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/lookup": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/{guardian}/activity": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/{guardian}/audit": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/guardians/{guardian}/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student_status.view"
+    ],
+    "GET /api/head-of-school/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/head-of-school/students/{studentCurriculum}/result": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/heads-of-schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/marking-components/overlapping/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "GET /api/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/notices/categories": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/outstanding-comments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/results/incomplete": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /api/scholarships": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/sessions": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/sessions/{session}/terms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/setup-data": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/sport-houses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/student-curricula/{studentCurriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /api/student-curricula/{studentCurriculum}/curriculum-subject/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /api/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student.view"
+    ],
+    "GET /api/students/bulk-update/template": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/bulk-update/{import}/report": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/bulk-update/{import}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/bulk-updates": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student.view"
+    ],
+    "GET /api/students/{student}/curriculum/{curriculum}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student_status.view"
+    ],
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student.view"
+    ],
+    "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects/history": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student.view"
+    ],
+    "GET /api/students/{student}/result-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:student_status.view"
+    ],
+    "GET /api/subject-result-statuses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "GET /api/teacher-assignments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/teacher-assignments/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /api/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/teachers/export": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/teachers/resources": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "GET /api/teachers/{teacher}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "GET /api/user": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/v1/finance/students/{student}/invoices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "GET /boarding-parent/behavioral-assessments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:boarding_portal.access"
+    ],
+    "GET /class-level-arm/{classLevelArm}/results": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /class-level/{classLevel}/results": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /dashboard": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:dashboard.view"
+    ],
+    "GET /dashboard/onboarding": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:dashboard.view"
+    ],
+    "GET /forgot-password": [
+        "web",
+        "guest:web"
+    ],
+    "GET /form-teacher/comments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:manage_form_teacher_comments"
+    ],
+    "GET /guardians": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /guardians/import": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /guardians/{guardian}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /guardians/{guardian}/audit": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /head-of-school/comments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:manage_head_of_school_comments"
+    ],
+    "GET /login": [
+        "web",
+        "guest:web"
+    ],
+    "GET /notices": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /outstanding-comments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /parent/dashboard": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:parent_portal.access"
+    ],
+    "GET /parent/wards": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:parent_portal.access"
+    ],
+    "GET /reports/broadsheets": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /reports/results-per-class": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /reset-password/{token}": [
+        "web",
+        "guest:web"
+    ],
+    "GET /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result_signature.manage"
+    ],
+    "GET /results/incomplete": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /sanctum/csrf-cookie": [
+        "web"
+    ],
+    "GET /school-setup": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /select-school": [
+        "web",
+        "auth"
+    ],
+    "GET /settings/appearance": [
+        "web",
+        "auth",
+        "verified"
+    ],
+    "GET /settings/profile": [
+        "web",
+        "auth"
+    ],
+    "GET /settings/security": [
+        "web",
+        "auth",
+        "verified",
+        "password.confirm"
+    ],
+    "GET /setup": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/curricula-backfill": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/curricula-ccm": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/curricula/{curriculum}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/curriculum-subject/{curriculumSubject}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:curriculum_subject.view"
+    ],
+    "GET /setup/head-of-schools": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/principals": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/review/pending": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:report.view"
+    ],
+    "GET /setup/review/results": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result_review.access"
+    ],
+    "GET /setup/student-curricula/{studentCurriculum}/subjects": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:curriculum_subject.view"
+    ],
+    "GET /setup/student-curricula/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:student_curriculum.view"
+    ],
+    "GET /setup/teacher-assignments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /setup/teacher/{teacher}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:curriculum_subject.view"
+    ],
+    "GET /setup/users": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:rbac.manage_users"
+    ],
+    "GET /storage/{path}": [],
+    "GET /students": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:student_directory.view"
+    ],
+    "GET /students/bulk-update": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /students/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:student_directory.view"
+    ],
+    "GET /students/{student}/results/active": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /students/{student}/results/{studentCurriculum}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result.view"
+    ],
+    "GET /super-admin/admins": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /super-admin/rbac": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /super-admin/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "GET /teachers": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "GET /two-factor-challenge": [
+        "web",
+        "guest:web"
+    ],
+    "GET /up": [],
+    "GET /user/confirm-password": [
+        "web",
+        "auth:web"
+    ],
+    "GET /user/confirmed-password-status": [
+        "web",
+        "auth:web"
+    ],
+    "GET /user/two-factor-qr-code": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /user/two-factor-recovery-codes": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET /user/two-factor-secret-key": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /settings": [
+        "web",
+        "auth"
+    ],
+    "GET|POST|PUT|PATCH|DELETE|OPTIONS /super-admin": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PATCH /api/class-level-arms/{classLevelArm}/principal-approval": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:principal_approval.manage"
+    ],
+    "PATCH /api/class-levels/{classLevel}/principal-approval": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:principal_approval.manage"
+    ],
+    "PATCH /api/class-structure/{classLevelArm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/curricula/{curriculum}/subjects/reorder": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/archive": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/unarchive": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/form-teacher/students/{studentCurriculum}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:manage_form_teacher_comments"
+    ],
+    "PATCH /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/head-of-school/students/{studentCurriculum}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/student-curricula/{studentCurriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/end": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/drop": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}/enrollments/{studentCurriculum}/subjects/{studentSubject}/restore": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/students/{student}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/teachers/{teacher}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /api/teachers/{teacher}/status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PATCH /settings/profile": [
+        "web",
+        "auth"
+    ],
+    "POST /api/activity-logs/saved-filters": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_data.view"
+    ],
+    "POST /api/behavioral-assessments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:assessment.record"
+    ],
+    "POST /api/class-structure": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/class-structure/arms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/class-structure/levels": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/class-structure/streams": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/class-structure/toggle": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/curricula/{curriculum}/backfill-term": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/curricula/{curriculum}/move-from-ccm": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/curricula/{curriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/reject": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/scores": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/submit": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "POST /api/curriculum-subjects/{curriculumSubject}/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/dashboard/analysis/refresh": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage",
+        "throttle:1,1"
+    ],
+    "POST /api/exam-types": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/grade-boundaries": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/grading-schemes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/bulk-disable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/bulk-enable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/bulk-message": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/bulk-status": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/{guardian}/disable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/{guardian}/enable-login": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/{guardian}/password": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/guardians/{guardian}/resend-invitation": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/guardians/{guardian}/reset-password": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/heads-of-schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/login": [
+        "api"
+    ],
+    "POST /api/logout": [
+        "api",
+        "auth:sanctum"
+    ],
+    "POST /api/marking-components": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/notices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/notices/categories": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/notices/{notice}/end": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/psychomotor-skills": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:assessment.record"
+    ],
+    "POST /api/scholarships": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/sessions": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/sessions/{session}/current": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/sessions/{session}/terms": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/sport-houses": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/student-subjects/{studentSubject}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
+    "POST /api/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/bulk-update": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/{student}/curricula": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/{student}/curricula/promote": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/{student}/enrollments/{studentCurriculum}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/students/{student}/guardians": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/switch-school": [
+        "api",
+        "auth:sanctum"
+    ],
+    "POST /api/teacher-assignments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /api/teachers": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/teachers/import": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/teachers/{teacher}/subjects": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/v1/finance/invoices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "POST /api/v1/finance/invoices/{invoice}/cancel": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "POST /api/v1/finance/invoices/{invoice}/payments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "POST /dashboard/refresh": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:dashboard.view",
+        "throttle:1,1"
+    ],
+    "POST /forgot-password": [
+        "web",
+        "guest:web"
+    ],
+    "POST /login": [
+        "web",
+        "guest:web"
+    ],
+    "POST /logout": [
+        "web",
+        "auth:web"
+    ],
+    "POST /reset-password": [
+        "web",
+        "guest:web"
+    ],
+    "POST /result-signature": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:result_signature.manage"
+    ],
+    "POST /select-school": [
+        "web",
+        "auth"
+    ],
+    "POST /setup/principals": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /students": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "POST /super-admin/admins": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /super-admin/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /super-admin/schools/{school}/fallback-signature": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "POST /two-factor-challenge": [
+        "web",
+        "guest:web"
+    ],
+    "POST /user/confirm-password": [
+        "web",
+        "auth:web"
+    ],
+    "POST /user/confirmed-two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "POST /user/two-factor-authentication": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "POST /user/two-factor-recovery-codes": [
+        "web",
+        "auth:web",
+        "password.confirm"
+    ],
+    "PUT /api/class-structure/arms/{arm}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/class-structure/levels/{classLevel}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/class-structure/streams/{stream}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/curricula/{curriculum}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/exam-types/{examType}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/grading-schemes/{gradingScheme}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/marking-components/{markingComponent}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/notices/{notice}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "PUT /api/scholarships/{scholarship}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/sessions/{session}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/sessions/{session}/terms/{term}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/sport-houses/{sportHouse}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/students/{student}/guardians/{guardian}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/subjects/{subject}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/teachers/{teacher}/schools": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "PUT /settings/password": [
+        "web",
+        "auth",
+        "verified",
+        "throttle:6,1"
+    ],
+    "PUT /setup/users/{user}/roles": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:rbac.manage_users"
+    ],
+    "PUT /storage/{path}": [],
+    "PUT /students/{student}": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
+    "PUT /super-admin/admins/{uuid}/schools": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/rbac/roles/{roleName}/permissions": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/rbac/roles/{roleName}/two-factor": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /super-admin/schools/{school}": [
+        "web",
+        "auth",
+        "role:super_admin"
+    ],
+    "PUT /user/profile-information": [
+        "web",
+        "auth:web"
+    ]
+}

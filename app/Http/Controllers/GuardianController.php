@@ -215,7 +215,25 @@ class GuardianController extends Controller
             'first_name' => ['required_if:mode,new', 'string', 'max:255'],
             'last_name' => ['required_if:mode,new', 'string', 'max:255'],
             'phone' => ['required_if:mode,new', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'required_if:can_login,true'],
+            // `email` is required only for mode=new AND can_login=true — the one case
+            // that actually consumes it (createGuardianWithUser provisions the login).
+            //
+            // It used to be `required_if:can_login,true` regardless of mode, which was
+            // a LIVE BUG, not just a mis-scope: on mode=existing the submitted email is
+            // never read — resolveExistingGuardianForAttachment keys off
+            // guardian_id/identifier, and a can_login upgrade re-issues credentials from
+            // the guardian's OWN user->email via reissueCredentialsIfPossible. Meanwhile
+            // add-guardian-modal.tsx sends only guardian_id + identifier for existing
+            // mode, so "attach an existing guardian and give them login" 422'd from the
+            // real UI on a field the backend then ignores.
+            //
+            // NOT `required_if:mode,new` (the shape the roadmap suggested): that would
+            // over-require, demanding an email for every new guardian even when
+            // can_login is false and no login is provisioned. The condition is the
+            // CONJUNCTION, which required_if cannot express — hence the explicit build.
+            'email' => $request->input('mode') === 'new'
+                ? ['nullable', 'email', 'required_if:can_login,true']
+                : ['nullable', 'email'],
         ]);
 
         $schoolId = (int) ActiveSchool::id();

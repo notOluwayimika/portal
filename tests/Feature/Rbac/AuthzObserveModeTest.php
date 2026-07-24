@@ -14,6 +14,18 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  */
 uses(RefreshDatabase::class);
 
+/**
+ * C2: the route under test is now permission:student_status.view. Grant the
+ * ROUTE-tier permission to the ad-hoc admin role so requests reach the
+ * observe-mode layer under test — the fine-grained guardian.view stays
+ * ungranted, which is the condition these tests exercise.
+ */
+function om_grantRouteAccess(): void
+{
+    Permission::firstOrCreate(['name' => 'student_status.view', 'guard_name' => 'web']);
+    Role::findByName('admin', 'web')->givePermissionTo('student_status.view');
+}
+
 it('records a would-be denial and lets the request continue (observe mode)', function () {
     config(['authz.enforce' => false]);
 
@@ -22,6 +34,7 @@ it('records a would-be denial and lets the request continue (observe mode)', fun
     // holds NO guardian.view permission — exactly the S5 target.
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'admin'); // 'admin' role holds no seeded permissions here
+    om_grantRouteAccess();
     $user->flushSchoolAccessCache();
 
     $guardianUser = al_makeUser($school->id);
@@ -59,6 +72,7 @@ it('records the path only — never the query string (data minimization)', funct
     $school = al_makeSchool();
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'admin');
+    om_grantRouteAccess();
     $user->flushSchoolAccessCache();
     $guardian = al_makeGuardian($school->id, al_makeUser($school->id)->id);
 
@@ -81,6 +95,7 @@ it('does NOT record when the user holds the permission', function () {
     Permission::firstOrCreate(['name' => 'guardian.view', 'guard_name' => 'web']);
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'admin');           // creates + assigns the admin role
+    om_grantRouteAccess();
     Role::findByName('admin', 'web')->givePermissionTo('guardian.view');
     $user->flushSchoolAccessCache();
 
@@ -128,6 +143,7 @@ it('enforces (403) when the enforce flag is on — proving the same gate can blo
     $school = al_makeSchool();
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'admin');
+    om_grantRouteAccess();
     $user->flushSchoolAccessCache();
     $guardian = al_makeGuardian($school->id, al_makeUser($school->id)->id);
 

@@ -1,16 +1,22 @@
 <?php
 
+use App\Jobs\ExportActivityLogJob;
 use App\Models\Activity;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use App\Services\ActivityLog\ActivitySensitiveService;
 use App\Services\ActivityLog\ActivitySeverityService;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
-use App\Jobs\ExportActivityLogJob;
-use App\Models\Permission;
-use App\Models\Role;
 
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 beforeEach(function () {
     foreach ([
@@ -28,12 +34,12 @@ beforeEach(function () {
 function logRow(int|string $schoolId, ?User $causer = null, array $attrs = []): Activity
 {
     return Activity::create(array_merge([
-        'log_name'    => 'guardian',
+        'log_name' => 'guardian',
         'description' => 'did a thing',
-        'event'       => 'updated',
-        'school_id'   => $schoolId,
+        'event' => 'updated',
+        'school_id' => $schoolId,
         'causer_type' => $causer ? User::class : null,
-        'causer_id'   => $causer?->id,
+        'causer_id' => $causer?->id,
     ], $attrs));
 }
 
@@ -45,6 +51,7 @@ function adminFor($school): User
     Role::findByName('admin')->givePermissionTo([
         'activity_log.view', 'activity_log.view_all', 'activity_log.export', 'activity_log.view_sensitive',
     ]);
+
     return $u;
 }
 

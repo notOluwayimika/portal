@@ -52,7 +52,56 @@ it('the 1.4c immutability triggers exist by name on the finance_ append-only tab
         'finance_payments_no_delete',
         'finance_payment_allocations_no_update',
         'finance_payment_allocations_no_delete',
+        // §10 C1 — credit notes are append-only too (a mis-issue is corrected by an
+        // opposing entry, never an edit).
+        'finance_credit_notes_no_update',
+        'finance_credit_notes_no_delete',
     );
+});
+
+it('the over-credit ceiling trigger exists by NAME (§10 C1, independent of #94)', function () {
+    // Asserted by name — a migration that silently drops it fails here even if some
+    // other mechanism happens to mask it. Independent of the over-ALLOCATION guard:
+    // both may hold at once and their sum may exceed the invoice total (wallet case).
+    $triggers = collect(DB::select(
+        'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+         WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?', ['finance_credit_notes']
+    ))->pluck('TRIGGER_NAME')->all();
+
+    expect($triggers)->toContain('finance_credit_note_not_over_invoice_total');
+});
+
+it('finance_student_accounts is the ONE intentionally-mutable finance table (append-only exemption, pinned)', function () {
+    // HOW #95 asserts append-only (checked against HEAD): the immutability test above
+    // keys on a HARDCODED toContain(...) list of trigger NAMES on specific tables — it
+    // does NOT loop financeTables() demanding a no_update/no_delete trigger per table.
+    // So the account table lacking those triggers does NOT fail that assertion today;
+    // this test is the POSITIVE pin that records the exemption deliberately, so a future
+    // tightening to "every finance table must be append-only" is forced to confront this
+    // row rather than a green suite hiding that the account was never made immutable.
+    expect(financeTables())->toContain('finance_student_accounts');
+
+    $accountTriggers = collect(DB::select(
+        'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+         WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?', ['finance_student_accounts']
+    ))->pluck('TRIGGER_NAME')->all();
+
+    // No immutability trigger — mutation (the atomic balance increment) is the point.
+    expect($accountTriggers)->not->toContain(
+        'finance_student_accounts_no_update',
+        'finance_student_accounts_no_delete',
+    );
+
+    // It still obeys the conventions that DO apply: school_id (uniform tenanting), the
+    // signed balance column, and the grain UNIQUE(school_id, student_id). There is no
+    // `version` column — W2 has no optimistic read-modify-write to guard.
+    expect(Schema::hasColumn('finance_student_accounts', 'school_id'))->toBeTrue()
+        ->and(Schema::hasColumn('finance_student_accounts', 'balance_minor'))->toBeTrue()
+        ->and(Schema::hasColumn('finance_student_accounts', 'version'))->toBeFalse();
+
+    $indexes = collect(DB::select('SHOW INDEX FROM finance_student_accounts'))
+        ->pluck('Key_name')->unique()->all();
+    expect($indexes)->toContain('finance_student_accounts_school_id_student_id_unique');
 });
 
 it('slice-2 guards exist by NAME (F6 total immutability + the active-enrollment uniqueness)', function () {
@@ -125,5 +174,53 @@ it('composite child.school_id = parent.school_id FKs are present', function () {
         'finance_invoice_lines_invoice_school_foreign',
         'finance_payment_allocations_invoice_school_foreign',
         'finance_payment_allocations_payment_school_foreign',
+    );
+});
+
+// ── Collation uniformity (the trigger-floor hardening, 2026-07) ──────────────
+//
+// A trigger's DECLARE variable inherits the DATABASE default collation, while a
+// Laravel-created column is always utf8mb4_unicode_ci (the connection collation). When
+// the two differ — a database created with the MySQL-8 server default
+// (utf8mb4_0900_ai_ci) rather than the app's — any trigger comparing a variable to a
+// string column raises 1267 "Illegal mix of collations" on EVERY write, a total outage
+// of the guard. The over-allocation guard was green on the dev DB and dead on a fresh
+// one for exactly this reason. These two assertions make that unrepresentable: a
+// mis-created DB or a divergent column becomes a red test, not a prod incident.
+//
+// Verified empirically that the variable collation is frozen at trigger CREATION, so the
+// database must carry the canonical default BEFORE migrations run — which is why the fix
+// lives in how databases are created (bin/quality-clean-db, docs/testing.md), not in a
+// migration.
+
+const CANONICAL_COLLATION = 'utf8mb4_unicode_ci';
+
+it('every finance_ string column uses the canonical collation (no divergence)', function () {
+    $offenders = collect(DB::select(
+        'SELECT TABLE_NAME, COLUMN_NAME, COLLATION_NAME
+           FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME LIKE ?
+            AND COLLATION_NAME IS NOT NULL
+            AND COLLATION_NAME <> ?',
+        ['finance_%', CANONICAL_COLLATION]
+    ))->map(fn ($r) => "{$r->TABLE_NAME}.{$r->COLUMN_NAME}={$r->COLLATION_NAME}")->all();
+
+    // Reads information_schema (real column state), not the migration source (intent).
+    expect($offenders)->toBe([], 'finance_* string columns must all be '.CANONICAL_COLLATION);
+});
+
+it('the test database default collation matches the canonical one (the trigger trap guard)', function () {
+    // THIS is the assertion that maps to the bug: if your DB default is not canonical,
+    // every trigger DECLARE variable is off-collation and the guards are silently dead.
+    // A green suite on a mis-collated DB proves nothing — so make the DB itself the
+    // thing under test.
+    $default = DB::selectOne('SELECT @@collation_database AS c')->c;
+
+    expect($default)->toBe(
+        CANONICAL_COLLATION,
+        "Database default collation is {$default}; triggers' DECLARE variables inherit it and will "
+        .'1267 against '.CANONICAL_COLLATION.' columns. Recreate the DB with '
+        .'CHARACTER SET utf8mb4 COLLATE '.CANONICAL_COLLATION.'.'
     );
 });

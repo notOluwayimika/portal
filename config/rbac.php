@@ -21,6 +21,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Platform 2FA enforcement (C7 D5/D6)
+    |--------------------------------------------------------------------------
+    | Master switch above the per-role two_factor_required toggle: off => nobody
+    | is checked. Default is per-ENVIRONMENT (on in production, off elsewhere) —
+    | deliberately NOT a hard environment() branch in the middleware, so the
+    | enforcement path stays one code path staging can soak (Invariant 10).
+    | Flips are audited (activity_log 'rbac') — D7.
+    */
+    'two_factor_enforced' => (bool) env('RBAC_TWO_FACTOR_ENFORCED', env('APP_ENV') === 'production'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Parity soak (S7) — dual-compute divergence detection
     |--------------------------------------------------------------------------
     |

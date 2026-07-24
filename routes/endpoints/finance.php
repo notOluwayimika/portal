@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Http\Controllers\CreditNoteController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
@@ -15,6 +16,14 @@ use Illuminate\Support\Facades\Route;
 Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate']);
 Route::post('/v1/finance/invoices/{invoice:uuid}/cancel', [InvoiceController::class, 'cancel']);
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
+
+/*
+ * Issuing a credit note / write-off forgives money, so beyond the group's
+ * finance.access it requires a DISTINCT permission. Layered middleware: this route
+ * needs BOTH finance.access (the group) AND finance.credit-note.issue.
+ */
+Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteController::class, 'store'])
+    ->middleware('permission:finance.credit-note.issue');
 
 /*
  * Read side. Voided invoices are excluded by default; ?include_void=1 is the

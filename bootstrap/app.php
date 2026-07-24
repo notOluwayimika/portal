@@ -1,6 +1,8 @@
 <?php
 
+use App\Finance\Console\ReconcileAccounts;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\EnsureTwoFactorEnrolled;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SetSchoolContext;
@@ -29,6 +31,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Finance module commands live in App\Finance\Console (the arch boundary keeps
+    // Finance models private, so a command touching them cannot sit in
+    // app/Console/Commands). Auto-discovery only scans app/Console/Commands, so the
+    // module's commands are registered explicitly here.
+    ->withCommands([
+        ReconcileAccounts::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
@@ -38,6 +47,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SetSchoolContext::class,
+            // C7: after SetSchoolContext per the planned slot (ADR 0043 §3);
+            // the requirement read is team-agnostic, so the ordering is not
+            // load-bearing for correctness (c7-brief D1).
+            EnsureTwoFactorEnrolled::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -45,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(append: [
             SetSchoolContext::class,
+            EnsureTwoFactorEnrolled::class,
         ]);
 
         $middleware->alias([

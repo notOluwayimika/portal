@@ -277,8 +277,12 @@ slice).
 `auth()->setUser($causer)` eliminated; `SchoolScope`/`BelongsToSchool` now
 resolve off-request context from `ActiveSchool::runFor()`).
 
-**Continuous — open:** 1.2c1–c3 (34 commented-authz entries remain of 53),
-now rolling out **observe-first** via `App\Support\Authz` (S5 — see below) ·
+**Continuous — open:** 1.2c1–c3 (**commented-authz entries: 0 remain of 53** —
+the guard cluster was triaged in the commented-guard-cluster slice and the final
+two `users.school_id` ownership guards were deleted per the §7 decision, slice A1
+of docs/rbac-implementation-plan.md; authz-lint baseline is now empty; §24
+conditions 2–4 — enforcement + evidence — remain open), the restored checks run
+**observe-first** via `App\Support\Authz` (S5 — see below) ·
 1.2f remainder (drop `users.school_id` + `school_user` after parity; expires
 ADR 0042's debt) · fail-closed per-model enablement (jobs no longer block it;
 per-model request-path audit remains the gate) · 1.4d–e (
@@ -294,9 +298,128 @@ fixed by correcting test setup, **not** by touching authorization. They are
 **not** S5 observe-mode evidence and prove nothing about the commented checks.
 
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
-default, verified) · `rbac.single_source_access` (off; parity-gated) ·
-`rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job context no
-longer blocks any model; each enablement still needs its request-path audit).
+default, verified — but see the ADR 0045 proposal: super_admin's ambient bypass is
+slated for removal, not permanence) · `rbac.single_source_access` (off;
+parity-gated) · `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job
+context no longer blocks any model; each enablement still needs its request-path
+audit) · `rbac.two_factor_enforced` (C7 platform master switch; **default on in
+prod, off in non-prod** — a config flag, deliberately NOT an `environment()` check,
+so the enforcement path stays testable and staging-soakable; audited when flipped).
+
+**Cross-stream coordination — resolved 2026-07-21 (recorded, not re-litigable):**
+
+- **ADR 0040 approval limits — Finance inherits the result-workflow separation as
+  the Ph3 default.** No bespoke limits shape; Ph3's `finance.*.approve` adopts the
+  same maker≠checker model, so this is not re-opened when the approvals engine lands.
+- **#86 Money rounding gate — the accounting policy was signed BEFORE the rounding
+  was written.** ADR 0002's gate held as intended; the safeguard was not hollow.
+  Closed.
+- **I6 Finance-role 2FA default — forward marker for the Finance stream.** The 4
+  Finance roles are not seeded yet. C7 built the `roles.two_factor_required` column
+  + mechanism and set the default for `super_admin`/`admin` only. **When Finance
+  seeds its 4 roles, their `two_factor_required` default is Finance's to set** (I6),
+  and it takes effect **subject to the `rbac.two_factor_enforced` platform flag**
+  above. Do not let it land 2FA-optional by omission.
+
+## super_admin authority probe — findings (2026-07-21, chore/superadmin-authority-probe)
+
+Predict-first matrix (predictions committed before observation —
+docs/handoff/superadmin-authority-probe-predictions.md); **all cells observed
+as predicted**; standing test `SuperAdminAuthorityTest` (survives the ADR 0043
+§5 teardown). Verdict: **mixed by path**, per-path record:
+
+- **Mode A is real on every Gate-routed path** while `auth.gate_before_superadmin`
+  is on (default): `can()`, `permission:` middleware, and policies all resolve
+  `true` for super_admin regardless of the seeded absence — C1's "super_admin
+  gets none of the seven" decides nothing at the Gate. ADR 0040's guarantee
+  therefore must NOT rest on the seed absence (the SoD-as-domain-invariant ADR
+  question stands, raised separately — probe brief §"what this does not settle").
+- **Mode B refuted for the installed version** (spatie 7.4.1): PermissionMiddleware
+  uses `canAny()` → the Gate → the bypass applies. **C2's swap does not lock
+  super_admin out while the flag is on**; flag-off + swap = lockout, now a
+  declared, tested dependency (SuperAdminAuthorityTest row 2).
+- **Live pre-existing lockout (new finding):** the four `hasRole()` FormRequests
+  (Promote/Register/UpdateStatus/RejectSubjectResult) deny super_admin TODAY in
+  both flag states — `hasRole` never consults the Gate. Resolved by C3's ADR
+  0044 implementation (swap to permissions); until then it is a known truth,
+  not a bug to hotfix.
+- **Dual `Gate::before` composition:** Spatie registers its own before
+  (PermissionRegistrar:116, package boots first) returning true-or-null; the
+  app's returns true-or-null. Safe ONLY by the null-on-miss convention —
+  either returning `false` would silently defeat the other. Pinned
+  behaviorally by the standing test's control rows.
+- **Open environment fact:** production's `AUTH_GATE_BEFORE_SUPERADMIN` state —
+  deploy owner to confirm; not inferable from the tree.
+
+## C2 — role: → permission: middleware swap (2026-07-21, feat/rbac-permission-middleware)
+
+All 28 `role:` groups resolved: 27 swapped to `permission:` (spatie
+PermissionMiddleware via the Gate — probe-cleared), `/super-admin` stays
+`role:super_admin` (EnsureRole, the one remaining consumer). Mechanism change
+only, outcome-parity proven:
+
+- **Oracle first:** `rbac:derive-access` snapshotted every route's allowed-role
+  set to `tests/fixtures/route-access-map.json` BEFORE the swap (same
+  discipline as the probe's predictions). `RouteAccessParityTest` re-derives
+  the map live (permission holders from the seeded DB + the flag-gated
+  Gate::before bypass) and demands per-route, per-role equality — 299 routes,
+  plus per-role HTTP smokes for the parts a static derivation can't see.
+- **Route-access permission tier:** 19 new enum cases (enum 41 → 60), each
+  granted to exactly the role set of the group it replaced; guardian (0 → 6)
+  and principal (0 → 9) hold their first permissions. `finance.access` is
+  interim (I1 ⚑ — superseded by Ph2 `finance.<resource>.<action>`).
+  super_admin stays at exactly 15 (bypass covers it; probe invariant green).
+- **One declared deviation:** `POST /api/logout` left its
+  admin|head_of_school|form_teacher group → plain `auth:sanctum`. The endpoint
+  also 500'd for every caller since inception (`Auth::logout()` on Sanctum's
+  RequestGuard has no such method) — fixed alongside the deviation.
+- **The flag is now load-bearing:** pre-swap, EnsureRole bypassed super_admin
+  unconditionally; post-swap its passage on the 27 groups depends on
+  `auth.gate_before_superadmin`. Flag-off + swap = super_admin lockout
+  (SuperAdminAuthorityTest row 2) — the open prod-flag question above must be
+  answered before this slice deploys.
+- **Test-fixture consequence (the contract working):** roles are nothing
+  without grants now. 15 test files fabricating bare roles were switched to
+  seed the canonical RbacSeeder map; 2 Finance test files among them
+  (announce-listed per §4.1 — one mechanical line each, no semantic change).
+
+## C3 — policies + ADR 0044/0040 implementation (2026-07-21, feat/rbac-policies)
+
+Retires the §7.2 role-gate debt for the result/enrollment workflow **and** makes
+ADR 0040 real for the first time. ADR 0040 was not a blocker to be amended: ADR
+0044 §"Maker–checker separation" binds this slice to implement it, so C3
+executes it.
+
+- **Bypass exclusion, as a convention.** Any ability whose terminal segment is
+  `approve`/`reject` is excluded from the super-admin `Gate::before`
+  (`App\Support\ApprovalAbility`). ADR 0040 words it as `finance.*.approve`,
+  which `result.approve`/`result.reject` do not match — a literal list would
+  have shipped denylist drift immediately. An enum-enumerating test asserts every
+  matching case is excluded, so Ph3's `finance.invoice.approve` is covered the
+  day it is created. Bare Policy ability names are covered too (`Gate::authorize`
+  passes `approve`, not `result.approve`).
+- **Structural maker ≠ checker.** `SubjectResultPolicy` + a DB CHECK
+  (`submitted_by <> decided_by`). Needed a schema change: the table held one
+  `updated_by`, overwritten per transition, so the approver's write **destroyed
+  the submitter's identity** — the rule was unrepresentable, not just unenforced.
+  Backfill is partial on purpose (approved rows recover only their decider; the
+  lost maker stays NULL rather than being inferred).
+- **ADR 0044 steps 2/3/5 done** (step 4 was C2). The four `hasRole` FormRequests
+  now authorize by permission — which **resolves the super_admin lockout the
+  authority probe found**, for the three non-checker requests. Reject stays
+  denied for super_admin, now by design rather than by accident.
+- **Probe cells deliberately changed:** `SuperAdminAuthorityTest` rows 1, 2 and 4
+  recorded pre-C3 truth. The mechanism findings (Mode A real at the Gate, Mode B
+  refuted) are re-pinned via a non-checker ability; new cells assert the
+  exclusion. Recorded as an intended change, not a regression.
+- **Role-gate re-audit closed:** the remaining `hasRole()` calls are target-identity
+  or view-shape branches, not authorization — enumerated in ADR 0044's
+  implementation record.
+- **Still open (Finance interface item):** ADR 0040's "configured limits" for
+  approval authority are undesigned — C3 implements separation, not limits — and
+  its third decision (super-admin Finance actions raise an audit signal) stays
+  Ph11, with its home now recorded in ADR 0040 (a severity rule in
+  `ActivitySeverityService`, not new plumbing in `app/Finance/**`).
 
 ## 1.4e — domain event bus + Academics facts: investigation STOP (2026-07)
 
@@ -390,12 +513,19 @@ assignRole". Unmasked, classified (no fixes):
   S5 made `activity_log.view` **observe-mode** (records, does not block, until
   `AUTHZ_ENFORCE=true`; ADR 0043). The test asserts pre-observe enforcement.
 
-**AMBIGUOUS (need a decision, named):**
+**AMBIGUOUS — BOTH DECIDED 2026-07-21. Kept here for the reasoning; neither is open.**
 
-- Registrar email update (expects 200 with the email silently ignored, gets 403):
-  security-design — should a user with `guardian.update` but not
-  `guardian.update_credentials` be hard-403'd, or allowed to update non-credential
-  fields with the email change ignored? Test asserts partial-update; code hard-403s.
+- **Registrar email update — RULED: keep the hard 403.** A user with
+  `guardian.update` but not `guardian.update_credentials` is rejected outright, not
+  silently-succeeded. Silently discarding a submitted security-relevant field is the
+  worse failure mode — the registrar sees success and believes the email changed.
+  **No code change: the code was already right and the TEST encoded the unsafe
+  expectation** (it asserted 200-with-silent-ignore). The test now asserts 403 and
+  that _nothing_ was written, not even the allowed field.
+  _Possible future UX, not built and never a silent drop:_ 200 with an explicit
+  "email ignored, credential permission required" signal, so a registrar editing an
+  address is not blocked by an untouched email field. That needs a deliberate
+  response contract; until it exists, 403.
 - **Cross-school attach 201-vs-400 — ROOT-CAUSED: STALE TEST (no isolation bug).**
   The 400 is an **incidental validation** error, not an isolation check:
   `GuardianController@attach` validates `email` `required_if:can_login,true`, and
@@ -404,16 +534,52 @@ assignRole". Unmasked, classified (no fixes):
   and works — `resolveExistingGuardianForAttachment` looks the guardian up
   **globally** then `grantSchoolAccess(activeSchool)` grants access (proven:
   cross-school access granted). No isolation guard rejects it, correctly, because
-  §6 permits it. Secondary: (a) the `email required_if:can_login` rule is arguably
-  mis-scoped for `mode=existing` (an existing guardian already has an account) —
-  fix shape would be `required_if:mode,new`; (b) the test also asserts
-  `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
-  model a school-A record is attached, so that assertion is stale too. **No §6
-  gap.**
-- 422-vs-400 cluster (detach-only-guardian, detach-primary-no-replacement,
-  register rollback): HTTP status **convention** for business-rule violations
-  (test expects 422; code returns 400 — the app renders ValidationException as 400
-  app-wide via `response()->validation_error`). Likely convention/stale.
+  §6 permits it. **RESOLVED 2026-07-21.** Secondary (a): the `email required_if:can_login` rule was
+  not merely "arguably mis-scoped" — it was a **LIVE BUG**. On `mode=existing` the
+  submitted email is never read (`resolveExistingGuardianForAttachment` keys off
+  `guardian_id`/`identifier`, and a `can_login` upgrade re-issues credentials from the
+  guardian's OWN `user->email`), while `add-guardian-modal.tsx` sends only
+  `guardian_id` + `identifier` for existing mode — so "attach an existing guardian and
+  give them login" **422'd from the real UI** on a field the backend then ignored.
+  **The fix shape suggested here, `required_if:mode,new`, was WRONG**: it over-requires,
+  demanding an email for every new guardian even when `can_login` is false and no login
+  is provisioned. The condition is the CONJUNCTION (mode=new AND can_login=true), which
+  `required_if` cannot express, so the rule is built explicitly. Three branches
+  bite-proven, including the no-login case that fails if the over-requiring shape is
+  ever adopted.
+
+    Secondary (b) — ALREADY FIXED by `ea423a1`, before this slice opened: the test asserted
+    `guardian_student.guardian_id = guardianB->id`, but under the per-School Guardian
+    model a school-A record is attached. The test now sends the `email` the old rule
+    demanded, asserts **201**, asserts the school-A per-School record, and asserts the
+    school-B row was **never** cross-linked. Verified passing; §6 re-confirmed from the
+    code (guardian resolved GLOBALLY, `grantSchoolAccess` granted, per-School record
+    created so the student link is never cross-School). **No §6 gap.**
+
+- **422-vs-400 cluster — RULED: 422, app-wide, DONE 2026-07-21.** Business-rule /
+  validation errors standardise on 422: HTTP-correct for a well-formed but
+  semantically invalid request, Laravel's own default, and what every test author in
+  this repo reached for independently — the app was the outlier.
+
+    Changed at **one site**: the `validation_error` macro
+    (`app/Providers/ResponseMacroProvider.php`), whose only production caller is the
+    `ValidationException` renderer in `bootstrap/app.php`. **Scoped to
+    `ValidationException` only** — `abort()`-sourced statuses (409, 422, 403) are
+    untouched, proven by test. There is no `abort(400)` anywhere in `app/`, so no
+    legitimate 400 existed to preserve; after this change the app emits no 400 at all.
+
+    The macro now also returns the `errors` payload instead of only logging it. That
+    was not scope creep but a repair: the frontend already depended on it and was dead
+    code. `student-form.tsx` and `add-standalone-guardian-modal.tsx` branch on
+    `status === 422` (which never matched), and `score-entry-page`, `pending-reviews`
+    and `subject-result-status-panel` read `response.data.errors.<field>[0]` (which was
+    never sent).
+
+    **This unblocks the cross-school-attach cleanup queued behind it** (the item above:
+    its 201-vs-400 is an incidental `required_if:can_login` validation error, which is
+    now a 201-vs-**422** — the classification is unchanged, still a stale test, and it
+    can now be cleaned up against a settled convention).
+
 - ActivityLogApi 3 count mismatches + GuardianProfile counts/422/password-reset
   notification: permission-scoping + activity-count assertions likely shifted by the
   observe rollout + permission model; per-test triage, lower priority.

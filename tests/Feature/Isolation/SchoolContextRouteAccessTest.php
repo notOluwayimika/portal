@@ -3,6 +3,7 @@
 use App\Models\Notice;
 use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -20,6 +21,11 @@ use Illuminate\Support\Str;
  *     active School even for a super admin — 409, never a silent unscoped read.
  */
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 beforeEach(function () {
     // Opt the School-owned model behind the scoped route into fail-closed.

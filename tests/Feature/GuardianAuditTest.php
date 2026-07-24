@@ -1,11 +1,18 @@
 <?php
 
 use App\Models\Role;
+use App\Models\User;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-function ga_makeAdmin(int $schoolId): \App\Models\User
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
+
+function ga_makeAdmin(int $schoolId): User
 {
     setPermissionsTeamId(null);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);

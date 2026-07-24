@@ -28,3 +28,11 @@ Artisan::command('inspire', function () {
 Schedule::command('authz:prune --older-than=30')
     ->daily()
     ->description('Prune authz_observations older than the 30-day rollout retention window (ADR 0043 §4)');
+
+// Wallet drift detector (§15F). UNLIKE authz:prune, this reads School-owned data
+// (finance_student_accounts + the ledger), so the command iterates Schools
+// explicitly via ActiveSchool::runFor — the §5.4 rule the prune above is exempt
+// from. Detect-only by default; a drifted account exits non-zero.
+Schedule::command('finance:reconcile-accounts')
+    ->daily()
+    ->description('Reconcile finance_student_accounts.balance_minor against SUM(signed ledger); report drift (§15F)');

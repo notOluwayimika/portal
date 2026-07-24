@@ -116,6 +116,26 @@ hazard, undetectable by reading the data.
 
 ---
 
+## Step 4b — verify the production database default collation (**deploy-owner, on prod**)
+
+The trigger-based enforcement floor (F6, append-only, over-allocation, and every future
+Finance trigger) depends on the database default collation matching the column
+collation. Laravel creates columns as `utf8mb4_unicode_ci`, but a trigger's `DECLARE`
+variable inherits the **database default** — and if prod was created with the MySQL-8
+server default (`utf8mb4_0900_ai_ci`), every trigger that compares a variable to a
+string column raises `1267 "Illegal mix of collations"` on **every write**: a silent,
+total outage of the guard, invisible until a write is attempted. This is a prod-state
+unknown in the same class as `AUTH_GATE_BEFORE_SUPERADMIN` — the repo cannot see it.
+
+|                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Check**          | On **prod**: `SELECT @@collation_database;` and `SELECT DISTINCT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'finance_%' AND COLLATION_NAME IS NOT NULL;`                                                                                                                                                                                                                                      |
+| **Pass criterion** | Both report **`utf8mb4_unicode_ci`** (the canonical, = the app connection collation)                                                                                                                                                                                                                                                                                                                                                                  |
+| **Failure action** | If the **default** is not canonical: `ALTER DATABASE <db> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` **and then recreate the Finance triggers** — a trigger's variable collation is frozen at creation, so the `ALTER` alone does not fix triggers already created under the wrong default. If a **column** is non-canonical: normalise that column (`MODIFY … COLLATE utf8mb4_unicode_ci`), which rewrites it and its indexes — size the lock |
+| **Gate**           | **Human-gated** (prod DB state). The repo's `SchemaConventionsTest` asserts the same two facts on the test DB, so CI is green only on a canonical DB — but that proves the test box, not prod                                                                                                                                                                                                                                                         |
+
+---
+
 ## Step 5 — scheduler EXECUTION, before observe-mode traffic
 
 **Binding condition: observe mode must not receive production traffic until scheduler
@@ -181,3 +201,21 @@ leg, the exact leg `migrate:fresh` cannot see. The audit paid for itself twice.
 here anyway — for a first deploy, recovery is restore-or-drop. The value of this audit
 is that the `down()` chain is no longer silently broken for the _incremental_ deploys
 that follow.
+
+> **RBAC env lockdown (Ask 1 resolution, 2026-07-22):** set
+> `AUTH_GATE_BEFORE_SUPERADMIN=true` **explicitly** in the production
+> environment before the C2/C3 stack deploys. The config default is already
+> true (verified in code; guarded by a test), so this is belt-and-suspenders —
+> an implicit default leaves super_admin's access to 27 of 28 route groups
+> hanging on a line nobody is looking at. The explicit value makes the intent
+> visible; the flag itself is retired by ADR 0045 when that lands.
+
+## 0045-C prod-parity gate (A3, B2): verify the SET by name, never a count
+
+Before the bypass is removed in production: super_admin(web)'s grant set must
+EQUAL `RbacSeeder::SUPER_ADMIN_PLATFORM` member-by-name, and specifically
+contain `rbac.impersonate` — the master key whose absence strands every
+super_admin domain capability post-de-bypass. A count check passes a drifted
+row that totals right but misses this one grant. The heal is `php artisan
+rbac:sync` (self-heals super_admin every run); if the seeder cannot run, the
+A4 break-glass command is the un-brick of last resort.

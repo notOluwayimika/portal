@@ -8,8 +8,10 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PrincipalController;
 use App\Http\Controllers\ResultSignatureController;
 use App\Http\Controllers\SchoolSwitchController;
+use App\Http\Controllers\SchoolUserController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController;
+use App\Http\Controllers\SuperAdmin\RbacMatrixController as SuperAdminRbacMatrixController;
 use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
 use App\Http\Resources\ClassLevelResource;
 use App\Http\Resources\CurriculumResource;
@@ -62,6 +64,13 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(fu
     Route::get('/admins', [SuperAdminAdminController::class, 'index'])->name('super-admin.admins');
     Route::post('/admins', [SuperAdminAdminController::class, 'store'])->name('super-admin.admins.store');
     Route::put('/admins/{uuid}/schools', [SuperAdminAdminController::class, 'syncSchools'])->name('super-admin.admins.schools');
+
+    // RBAC matrix (C6): site-wide role→permission grants. Edits GRANTS only —
+    // the enum is code; roles/permissions are not creatable at runtime. The
+    // role travels by NAME (roles are global rows; names are the stable key).
+    Route::get('/rbac', [SuperAdminRbacMatrixController::class, 'index'])->name('super-admin.rbac');
+    Route::put('/rbac/roles/{roleName}/permissions', [SuperAdminRbacMatrixController::class, 'syncPermissions'])->name('super-admin.rbac.sync');
+    Route::put('/rbac/roles/{roleName}/two-factor', [SuperAdminRbacMatrixController::class, 'toggleTwoFactor'])->name('super-admin.rbac.two-factor');
 });
 
 // Route::get('/cleanup', function () {
@@ -99,14 +108,23 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(fu
 
 // });
 
-Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
+// RBAC administration (C5): the school-admin Users module — list this School's
+// users and sync their roles. Gated on its own permission (D5), held by `admin`;
+// super_admin reaches it via the Gate::before bypass. Separate group so the page
+// and its write share one authorization boundary.
+Route::middleware(['auth', 'tenant', 'permission:rbac.manage_users'])->group(function () {
+    Route::get('/setup/users', [SchoolUserController::class, 'index'])->name('setup.users.index');
+    Route::put('/setup/users/{user:uuid}/roles', [SchoolUserController::class, 'syncRoles'])->name('setup.users.roles.sync');
+});
+
+Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {
     Route::get('/setup/principals', [PrincipalController::class, 'index'])->name('principals.index');
     Route::post('/setup/principals', [PrincipalController::class, 'store'])->name('principals.store');
     Route::delete('/setup/principals/{principal:uuid}', [PrincipalController::class, 'destroy'])->name('principals.destroy');
 
     Route::get('/setup/head-of-schools', function () {
         return Inertia::render('admin/head-of-schools/index');
-    })->name('admin.dashboard');
+    })->name('headOfSchools.index');
 
     Route::get('/setup/teacher-assignments', function () {
         return Inertia::render('admin/teacher-assignments/index');
@@ -201,7 +219,7 @@ Route::middleware(['auth', 'tenant', 'role:admin'])->group(function () {
 
 // Read-only student index + profile. Principals (oversight role) share this with
 // admins; write controls are hidden in the UI and their API routes exclude principal.
-Route::middleware(['auth', 'tenant', 'role:admin|principal'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:student_directory.view'])->group(function () {
     Route::get('students', function () {
         return Inertia::render('admin/students/index', [
             'student_statuses' => StudentStatusEnum::options(),
@@ -229,7 +247,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|principal'])->group(function ()
     })->name('students.show');
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:result_review.access'])->group(function () {
 
     // Review results
     Route::get('setup/review/results', function () {
@@ -237,7 +255,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(functi
     })->name('setup.review.results');
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|principal'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:report.view'])->group(function () {
     Route::get('setup/review/pending', function () {
         return Inertia::render('admin/review/pending');
     })->name('setup.review.pending');
@@ -260,7 +278,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|principal'])->gr
     })->name('reports.broadsheets');
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|principal'])->get('reports/results-per-class', function () {
+Route::middleware(['auth', 'tenant', 'permission:report.view'])->get('reports/results-per-class', function () {
     $schoolId = ActiveSchool::id();
     $classLevels = ClassLevel::where('school_id', $schoolId)
         ->with(['classLevelArms.classLevel.arms', 'classLevelArms.arm', 'classLevelArms.stream'])
@@ -271,7 +289,7 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|principal'])->ge
     ]);
 })->name('reports.result-per-class');
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->group(function () {
     Route::get('setup/teacher/{teacher:uuid}', function (Teacher $teacher) {
         return Inertia::render('teacher/show', [
             'teacher' => new TeacherResource($teacher),
@@ -313,12 +331,12 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
             'student' => new StudentResource($studentCurriculum->student),
             'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
         ]);
-    })->name('setup.studentCurricula.index');
+    })->name('setup.studentCurricula.show');
 
 });
 
 // Student curricula (academic records) index — read-only view shared with principals.
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:student_curriculum.view'])->group(function () {
     Route::get('setup/student-curricula/{student:uuid}', function (Student $student) {
         $student->load(['studentCurricula.curriculum.examType', 'studentCurricula.curriculum.classLevelArm.classLevel', 'studentCurricula.curriculum.academicSession', 'studentCurricula.promotedTo', 'studentCurricula.curriculum.term']);
 
@@ -328,19 +346,19 @@ Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian
     })->name('setup.studentCurricula.index');
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school|teacher|guardian|principal'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:dashboard.view'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'show'])->name('dashboard');
     Route::post('dashboard/refresh', [DashboardController::class, 'refresh'])->middleware('throttle:1,1')->name('dashboard.refresh');
     Route::get('dashboard/onboarding', [DashboardController::class, 'onboardingState'])->name('dashboard.onboarding');
 });
 
-Route::middleware(['auth', 'tenant', 'role:principal|head_of_school'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:result_signature.manage'])->group(function () {
     Route::get('/result-signature', [ResultSignatureController::class, 'edit'])->name('result-signature.edit');
     Route::post('/result-signature', [ResultSignatureController::class, 'update'])->name('result-signature.update');
     Route::delete('/result-signature', [ResultSignatureController::class, 'destroy'])->name('result-signature.destroy');
 });
 
-Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school|principal'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function () {
 
     Route::get('class-level/{classLevel:uuid}/results', [ClassResultsController::class, 'classLevel'])
         ->name('setup.classLevels.show');
@@ -398,7 +416,7 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school|princip
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('admin.dashboard');
+    })->name('students.results.active');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
         $studentCurricula = StudentCurriculum::with([
             'student',
@@ -447,10 +465,10 @@ Route::middleware(['auth', 'tenant', 'role:guardian|admin|head_of_school|princip
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('admin.dashboard')->withoutScopedBindings();
+    })->name('students.results.show')->withoutScopedBindings();
 });
 
-Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(function () {
     Route::get('parent/dashboard', function () {
         return redirect()->route('parent.wards');
 
@@ -461,19 +479,19 @@ Route::middleware(['auth', 'tenant', 'role:guardian'])->group(function () {
     })->name('parent.wards');
 });
 
-Route::middleware(['auth', 'tenant', 'role:boarding_parent'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:boarding_portal.access'])->group(function () {
     Route::get('boarding-parent/behavioral-assessments', function () {
         return Inertia::render('boarding-parent/behavioral-assessments/index');
     })->name('boarding-parent.behavioral-assessments');
 });
 
-Route::middleware(['auth', 'tenant', 'role:form_teacher'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:manage_form_teacher_comments'])->group(function () {
     Route::get('form-teacher/comments', function () {
         return Inertia::render('form-teacher/comments/index');
     })->name('form-teacher.comments');
 });
 
-Route::middleware(['auth', 'tenant', 'role:admin|head_of_school'])->group(function () {
+Route::middleware(['auth', 'tenant', 'permission:manage_head_of_school_comments'])->group(function () {
     Route::get('head-of-school/comments', function () {
         return Inertia::render('head-of-school/comments/index');
     })->name('head-of-school.comments');

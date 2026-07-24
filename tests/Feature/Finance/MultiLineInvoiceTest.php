@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\Money;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,11 @@ use Illuminate\Support\Str;
  * that hides exactly the defect this test exists to catch.
  */
 uses(RefreshDatabase::class);
+
+// C2 (role:->permission: swap): routes now authorize by GRANTS, not role
+// names, so the locally-fabricated roles need the canonical grant map to
+// reach the code under test.
+beforeEach(fn () => (new RbacSeeder)->run());
 
 /** @return array{0: School, 1: User, 2: Student} */
 function slice2Setup(): array
@@ -142,21 +148,21 @@ it('rejects an invoice with no lines, and a line with a non-positive amount (For
     [$school, $admin, $student] = slice2Setup();
     $enrollment = slice2Enrollment($school, $student);
 
-    // NOTE the status: FormRequest validation failures return 400 app-wide (the
-    // `validation_error` macro), NOT 422. That 422-vs-400 inconsistency is a known
-    // parked app-wide decision (walking-skeleton-conventions.md: "Validation error
-    // shape — DEFERRED"), deliberately NOT resolved in this slice. Asserting the
-    // real number rather than the aspirational one means this test goes red — and
-    // prompts an update — the day that convention actually lands.
+    // NOTE the status: 422, app-wide, DECIDED 2026-07-21. This test previously
+    // asserted 400 and said so deliberately — "asserting the real number rather than
+    // the aspirational one means this test goes red, and prompts an update, the day
+    // that convention actually lands". It did exactly that. Nothing in Finance's
+    // contract needs 400 specifically: these are ordinary FormRequest validation
+    // failures, the same class as everywhere else.
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => []])
-        ->assertStatus(400);
+        ->assertStatus(422);
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
             'lines' => [['description' => 'Bad', 'amount_minor' => 0]],
-        ])->assertStatus(400);
+        ])->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });

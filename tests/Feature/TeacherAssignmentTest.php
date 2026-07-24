@@ -16,16 +16,14 @@ use App\Models\StudentCurriculum;
 use App\Models\Teacher;
 use App\Models\Term;
 use App\Models\User;
-use Database\Seeders\RoleSeeder;
-use Database\Seeders\TeacherAssignmentPermissionSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    (new RoleSeeder)->run();
-    (new TeacherAssignmentPermissionSeeder)->run();
+    (new RbacSeeder)->run();
 });
 
 // ---------------------------------------------------------------------------
@@ -307,7 +305,7 @@ it('rejects a boarding parent assignment without a gender', function () {
         'teacher_id' => $teacher->uuid,
         'role' => 'boarding_parent',
         'class_level_arm_ids' => [$arm->uuid],
-    ])->assertStatus(400);
+    ])->assertStatus(422);
 
     expect(ClassLevelArmTeacher::count())->toBe(0);
 });
@@ -323,7 +321,7 @@ it('rejects a form teacher assignment to more than one class arm', function () {
         'teacher_id' => $teacher->uuid,
         'role' => 'form_teacher',
         'class_level_arm_ids' => [$armA->uuid, $armB->uuid],
-    ])->assertStatus(400);
+    ])->assertStatus(422);
 
     expect(ClassLevelArmTeacher::count())->toBe(0);
 });

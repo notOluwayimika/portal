@@ -36,7 +36,10 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
-            'two_factor_confirmed_at' => null,
+            // Enrolled by default so the suite is not flooded red by C7's
+            // enforcement; C7's own tests create explicitly-UNENROLLED users
+            // (the coverage the enforcement exists for).
+            'two_factor_confirmed_at' => now(),
         ];
     }
 

@@ -11,8 +11,20 @@ the old in-memory SQLite config.
    can never be truncated by `RefreshDatabase`):
 
     ```sql
-    CREATE DATABASE portal_testing;
+    CREATE DATABASE portal_testing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     ```
+
+    **The `COLLATE` is load-bearing, not cosmetic.** Laravel creates columns as
+    `utf8mb4_unicode_ci` (the connection collation), but a trigger's `DECLARE` variable
+    inherits the _database_ default. Create the DB with the MySQL-8 server default
+    (`utf8mb4_0900_ai_ci`) and every trigger comparing a variable to a string column
+    raises `1267 "Illegal mix of collations"` on _every_ write — a silent, total outage
+    of the trigger-based enforcement floor, invisible to any test without triggers. The
+    variable's collation is **frozen at trigger creation**, so the DB default must be
+    canonical _before_ migrations run; recreating the DB is the fix, an `ALTER DATABASE`
+    afterwards is not (it leaves already-created triggers frozen wrong).
+    `SchemaConventionsTest` asserts both the canonical column collation and the DB
+    default, so a mis-created DB is a red test, not a prod incident.
 
 2. `.env.example` is the template for `.env` (`cp .env.example .env` then
    `php artisan key:generate`). It ships with **no secrets** — fill in your own
@@ -91,6 +103,36 @@ did _not_ fail the gate, because `130000`'s `down()` drops that column and took 
 orphaned index with it. Green here means "the last N migrations are reversible
 against data", not "all of them are"; raise `STEPS` when a release adds more than
 three migrations.
+
+#### ⚠️ `--step=N` is relative to the branch, not to YOUR migration (parallel-work trap)
+
+A step-based rollback counts back from the **latest** migrations on the branch. In
+parallel work the _other_ stream's migrations can sit on top of yours, so `--step=1`
+rolls back **their** migration and your four-path audit **passes while testing nothing
+of yours.**
+
+This is not hypothetical — it happened on 2026-07-21. A Finance four-path run at
+`--step=1` rolled back the RBAC stream's later
+`2026_07_21_210000_subject_result_maker_checker_separation`, not the Finance migration
+under test. It was caught **only because the probe asserted the specific column was
+actually gone** (it wasn't) — not because the rollback exited 0. Re-run at the correct
+depth (`--step=2`), it verified properly.
+
+Two rules, both mandatory for a `down()` audit:
+
+1. **Re-derive the depth per run.** Find _your_ migration in `php artisan
+migrate:status` and roll back exactly to it. **Never assume "the last migration"
+   is yours** — the parallel stream may have moved staging under you since you branched.
+2. **Assert the RIGHT migration reverted.** After rollback, assert _your_ column/table
+   is actually gone — not merely that `migrate:rollback` exited 0. **"A rollback
+   happened" ≠ "my rollback happened."** That assertion is the only thing that caught
+   the false pass; make it standard, never optional.
+
+This is the migration-audit sibling of the **corrupt-`node_modules` tsc lie** (§ "the
+four ways the tsc count has lied"): both are a check silently testing the **wrong
+thing** because the parallel stream changed the ground under it. This one is the more
+dangerous of the two — a false-passing four-path audit gives false confidence on the
+**least-reversible** class of change there is.
 
 ### Gate audit — every gate bite-proven (2026-07-20)
 
@@ -216,9 +258,9 @@ The general rule: **the ratchet does not measure your code, it measures your cod
 generated_.** Any change to how generation is invoked silently redefines what "green"
 means.
 
-#### The three ways the tsc count has lied here
+#### The four ways the tsc count has lied here
 
-All three are real incidents, not hypotheticals. **Regenerate, then compare the SET,
+All four are real incidents, not hypotheticals. **Regenerate, then compare the SET,
 not only the number.**
 
 1. **Stale generated tree** — a count taken without `wayfinder:generate` measures a
@@ -233,12 +275,21 @@ not only the number.**
    arrived, count unchanged. Wayfinder emits these from route ordering, so they churn
    without anything having changed.
 
-    The lesson generalises past wayfinder: **a matching count does not mean a matching
-    set.** Six fabricated errors could have replaced six fixed ones and the ratchet —
-    which counts — would have said OK. The tsc-150 diagnosis only resolved because the
-    _sets_ were diffed (normalised for line shifts and this swap), which is how the two
-    genuine `TS18046` regressions were isolated out of a 13-line raw delta. Diff the set
-    whenever the number moves, and whenever it suspiciously doesn't.
+The lesson generalises past wayfinder: **a matching count does not mean a matching
+set.** Six fabricated errors could have replaced six fixed ones and the ratchet —
+which counts — would have said OK. The tsc-150 diagnosis only resolved because the
+_sets_ were diffed (normalised for line shifts and this swap), which is how the two
+genuine `TS18046` regressions were isolated out of a 13-line raw delta. Diff the set
+whenever the number moves, and whenever it suspiciously doesn't.
+
+4. **Corrupt `node_modules` (count inflated, source untouched)** — a stale or
+   partially-corrupt install reported **145** where the lockfile's true count is
+   **122**, a phantom +23 that looks exactly like someone else's regression. The trap
+   is the obvious remedy: **`pnpm install --frozen-lockfile` did NOT fix it** — pnpm
+   considered the existing tree satisfied and left the corruption in place. Only
+   `rm -rf node_modules && pnpm install --frozen-lockfile` restored the true count.
+   Before believing a tsc gap you did not cause, **reinstall from scratch, not
+   incrementally**.
 
 Lint (Pint/Prettier/ESLint) runs in **check mode on changed files only**
 (`bin/lint-changed.sh`): new and modified code must be clean; the legacy drift is

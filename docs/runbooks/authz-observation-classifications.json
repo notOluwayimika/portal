@@ -1,0 +1,4 @@
+{
+    "_readme": "Reviewed classifications of observe-mode denial classes (§24 condition 3). One entry per (ability, controller_action) class surfaced by `php artisan authz:observations --summarize`. classification: 'expected' (denial is correct — caller genuinely lacks the ability) or 'regression' (legitimate access enforcement would break; must be fixed before AUTHZ_ENFORCE flips). Every entry lands via a reviewed PR — the git history IS the review evidence, and this file survives the authz_observations prune/teardown (ADR 0043 §4/§5). Workflow: docs/runbooks/authz-observation-review.md.",
+    "classes": []
+}

@@ -8,7 +8,7 @@ operational facts an agent needs most often.
 
 - **Isolation:** `school_id` is the only boundary. School-owned models use
   `BelongsToSchool` (global `SchoolScope`). `super_admin` bypasses
-  *authorization*, never *isolation* (ADR 0036).
+  _authorization_, never _isolation_ (ADR 0036).
 - **Context:** on request, `App\Support\ActiveSchool::id()` / `getOrFail()`;
   off-request (jobs/commands), **only** `ActiveSchool::runFor()` — jobs carry
   `public readonly int $schoolId` + the `SchoolAware` middleware. Never
@@ -35,6 +35,24 @@ operational facts an agent needs most often.
   `./vendor/bin/pest --group=arch`, `composer analyse`.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
+- **Spatie `sync*` is non-atomic and its events fire POST-write** (vendor-read
+  7.4.1; paid for twice — C5 roles, C6 permissions). Wrap every role/permission
+  sync in `DB::transaction`; the un-wrapped failure mode is detach-persisted,
+  attach-never-ran (a user/role stripped bare by the edit meant to adjust it).
+  For bite-proofs, the **detach-side event is the between-halves injection
+  point** (`RoleDetachedEvent`; `PermissionDetachedEvent` on a revoke-then-give
+  path) — the attach event fires after the write and produces a false green.
+  And `HasPermissions::syncPermissions` detaches RAW (no event): its removals
+  are invisible to the rbac audit listener — use diff-based revoke+give
+  instead. Full write-up: `docs/handoff/c6-brief.md`.
+- **Migration `down()` four-path audits in parallel work: re-derive the rollback
+  depth per run and assert _your_ migration reverted.** `--step=N` counts from the
+  branch's latest migrations, so the _other_ stream's migration can sit on top of
+  yours — `--step=1` then rolls back theirs and the audit passes testing nothing of
+  yours (bit once, 2026-07-21). Find your migration in `migrate:status`, roll back to
+  it, and assert your column/table is gone — never trust a bare exit-0. Same class as
+  the corrupt-`node_modules` tsc lie. Full write-up: `docs/testing.md` §
+  "`--step=N` is relative to the branch".
 
 ## Workflow
 
@@ -51,7 +69,7 @@ feat/slice-2-multi-line-invoicing      ci/enforcement-floor
 fix/promoted-to-wrong-entity           docs/branch-naming-convention
 ```
 
-Use the type of the branch's *primary* change; a slice that ships a feature plus
+Use the type of the branch's _primary_ change; a slice that ships a feature plus
 its docs is `feat/`. Prefer `feat/` over the older `feature/` for new branches.
 
 This is the established pattern, not a new rule: essentially every branch in the
@@ -63,8 +81,8 @@ repo already carries a prefix. The unprefixed exceptions
 
 **GitHub Actions is intentionally disabled** — the account is billing-locked and
 billing is not being pursued. Actions has never executed a single job here (every
-run: *"The job was not started because your account is locked due to a billing
-issue"*, `steps=0`), so CI has neither passed nor failed. This is a **decision, not
+run: _"The job was not started because your account is locked due to a billing
+issue"_, `steps=0`), so CI has neither passed nor failed. This is a **decision, not
 a pending fix**: `bin/quality` is the intended, permanent enforcement floor. Do not
 read this as something to "restore CI" to solve. If Actions is ever revisited that
 is a fresh decision, not a trigger waiting to fire.
@@ -83,15 +101,15 @@ stamp matching that exact commit.
 
 **What this floor CANNOT prove — accepted, permanent residuals:**
 
-| Gap | Why it stays |
-|---|---|
+| Gap                    | Why it stays                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **PHP version matrix** | CI matrixed 8.3/8.4/8.5; only your local PHP is exercised. Reproducing that locally is real infrastructure, deliberately out of scope. |
-| **Clean-room OS/env** | Runs on your machine, your extensions, your MySQL. A dependency or extension you have and a teammate lacks is invisible. |
-| **Remote enforcement** | No required status checks. `--no-verify` bypasses, and a push from a clone without `composer install` has no hook at all. |
-| **Intent** | The hook stops forgetting, not deliberate bypass. |
+| **Clean-room OS/env**  | Runs on your machine, your extensions, your MySQL. A dependency or extension you have and a teammate lacks is invisible.               |
+| **Remote enforcement** | No required status checks. `--no-verify` bypasses, and a push from a clone without `composer install` has no hook at all.              |
+| **Intent**             | The hook stops forgetting, not deliberate bypass.                                                                                      |
 
 Everything else CI would have checked is covered locally, including the database
-dimension CI itself never covered (CI migrated an *empty* service DB, so incremental
+dimension CI itself never covered (CI migrated an _empty_ service DB, so incremental
 migration against real data was never exercised anywhere until `bin/quality-clean-db`).
 
 ## Where things live

@@ -20,8 +20,9 @@ class DatabaseSeeder extends Seeder
         //     'email' => 'test@example.com',
         // ]);
         $this->call([
+            // RbacSeeder (inside Arms) now owns all roles/permissions/grants —
+            // the separate ActivityLogPermissionSeeder call is gone with it.
             ArmsDatabaseSeeder::class,
-            ActivityLogPermissionSeeder::class,
         ]);
     }
 }

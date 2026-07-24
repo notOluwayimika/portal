@@ -8,11 +8,16 @@ use Illuminate\Validation\Rule;
 
 class PromoteStudentRequest extends FormRequest
 {
+    /**
+     * ADR 0044: enrollment lifecycle, authorized by permission.
+     *
+     * Not a checker ability, so the super-admin bypass still applies — this is
+     * the call that the authority probe recorded as a live super_admin lockout
+     * (hasRole never consults the Gate); moving to can() resolves it.
+     */
     public function authorize(): bool
     {
-        $user = $this->user();
-
-        return $user && ($user->hasRole('admin') || $user->hasRole('head_of_school'));
+        return $this->user()?->can('student_curriculum.promote') ?? false;
     }
 
     public function rules(): array

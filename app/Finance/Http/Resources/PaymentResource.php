@@ -17,7 +17,9 @@ class PaymentResource extends JsonResource
             'id' => $this->uuid,
             'reference' => $this->reference,
             'payer_name' => $this->payer_name,
+            'method' => $this->method,
             'amount' => $this->amount, // Money → {amount_minor, currency}
+            'created_at' => $this->created_at->toIso8601String(),
             'allocations' => $this->whenLoaded('allocations', fn () => $this->allocations->map(fn ($a) => [
                 'id' => $a->uuid,
                 'invoice_id' => $a->invoice_id,

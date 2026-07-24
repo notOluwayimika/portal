@@ -32,3 +32,12 @@ Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteContr
  * invoice and turn the double-void 422 into a 404.
  */
 Route::get('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'forStudent']);
+
+/*
+ * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the
+ * ACL port, so the frontend never handles an enrollment id. The read powers the "New
+ * invoice" modal's episode-confirm + F7 preview; the write generates and delegates to the
+ * same GenerateInvoice (unchanged). The old enrollment-id POST above stays for the harness.
+ */
+Route::get('/v1/finance/students/{student:uuid}/billable-enrollment', [InvoiceController::class, 'billableEnrollment']);
+Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'generateForStudent']);

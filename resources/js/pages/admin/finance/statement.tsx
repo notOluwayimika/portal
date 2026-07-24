@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { forStudent } from '@/actions/App/Finance/Http/Controllers/InvoiceController';
 import { Can } from '@/components/can';
 import { IssueCreditNoteModal } from '@/components/finance/issue-credit-note-modal';
+import { NewInvoiceModal } from '@/components/finance/new-invoice-modal';
 import { RecordPaymentModal } from '@/components/finance/record-payment-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,15 +25,15 @@ type Props = {
  * via formatNaira; there is no client-side money arithmetic (the API returns every figure
  * already computed).
  *
- * NOTE: the statement endpoint exposes invoices + credit notes + the account position, but
- * NOT a payments list (there is no such read endpoint). The account position reflects
- * payments' net effect; a per-payment history would need a new API — reported, not added.
+ * The statement exposes invoices, credit notes (each its own document), the account
+ * position, and the payment history — all straight from the API, never netted.
  */
 export default function FinanceStatement({ student }: Props) {
     const [statement, setStatement] = useState<Statement | null>(null);
     const [loading, setLoading] = useState(true);
     const [payFor, setPayFor] = useState<Invoice | null>(null);
     const [creditFor, setCreditFor] = useState<Invoice | null>(null);
+    const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -61,11 +62,18 @@ export default function FinanceStatement({ student }: Props) {
             <Head title={`Statement — ${student.name}`} />
 
             <div className="space-y-6 p-4">
-                <div>
-                    <h1 className="text-xl font-semibold">Finance statement</h1>
-                    <p className="text-sm text-muted-foreground">
-                        {student.name}
-                    </p>
+                <div className="flex items-start justify-between">
+                    <div>
+                        <h1 className="text-xl font-semibold">
+                            Finance statement
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            {student.name}
+                        </p>
+                    </div>
+                    <Button onClick={() => setNewInvoiceOpen(true)}>
+                        New invoice
+                    </Button>
                 </div>
 
                 {/* Account position — where credit-note credit is visible. Straight from the
@@ -199,8 +207,44 @@ export default function FinanceStatement({ student }: Props) {
                         ))}
                     </section>
                 )}
+
+                {/* Payments — their own history (date, method, reference), never netted into
+                    invoices; the account position already reflects their effect. */}
+                {statement && statement.payments.length > 0 && (
+                    <section className="space-y-2">
+                        <h2 className="text-sm font-medium">Payments</h2>
+                        {statement.payments.map((payment) => (
+                            <Card
+                                key={payment.id}
+                                className="flex flex-wrap items-center justify-between gap-3 p-3"
+                            >
+                                <div>
+                                    <p className="font-medium">
+                                        {payment.payer_name}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Ref {payment.reference} ·{' '}
+                                        {payment.method} ·{' '}
+                                        {new Date(
+                                            payment.created_at,
+                                        ).toLocaleDateString()}
+                                    </p>
+                                </div>
+                                <span className="font-semibold">
+                                    {formatNaira(payment.amount)}
+                                </span>
+                            </Card>
+                        ))}
+                    </section>
+                )}
             </div>
 
+            <NewInvoiceModal
+                isOpen={newInvoiceOpen}
+                onClose={() => setNewInvoiceOpen(false)}
+                student={student}
+                onCreated={() => void load()}
+            />
             <RecordPaymentModal
                 isOpen={payFor !== null}
                 onClose={() => setPayFor(null)}

@@ -17,7 +17,10 @@
  *     Monetary arithmetic in JavaScript — summing amounts, computing balances/outstanding/
  *     totals client-side. The API returns every figure already computed; the UI only displays.
  *     Best-effort heuristic (money-identifier adjacent to an operator, or a reduce() in the
- *     Finance UI), but standing.
+ *     Finance UI), but standing. The ONLY sanctioned money arithmetic is the integer helpers
+ *     in resources/js/lib/format.ts (formatNaira display, nairaToMinor input, sumMinor total —
+ *     all exact integer minor-unit ops); that file is exempt from BOTH rules and is the single
+ *     reviewed money boundary. Callers use the named helper; ad-hoc +/reduce stays banned.
  *
  * Like the sibling lints, the baseline may only shrink: CI fails on any NEW occurrence;
  * removing a baselined line is reported as progress.
@@ -98,9 +101,10 @@ foreach ($lines as [$rel, $line]) {
 
     // money-arithmetic-in-ui. A money identifier adjacent to an arithmetic operator, or a
     // reduce() inside the Finance UI (almost always a client-side sum). Skip type/interface
-    // lines (`amount_minor: number`) — those declare shape, they do not compute.
+    // lines (`amount_minor: number`) — those declare shape, they do not compute — and the
+    // money-boundary file itself, where the sanctioned integer helpers (sumMinor et al.) live.
     $isTypeDecl = (bool) preg_match('/:\s*(number|Money|string)\b/', $line);
-    if (! $isTypeDecl) {
+    if (! $isTypeDecl && $rel !== FORMATNAIRA_HOME) {
         $moneyMath = preg_match('/amount_minor\s*[+\-*\/]/', $line)
             || preg_match('/[+\-*]\s*[\w.$\[\]]*amount_minor/', $line)
             || preg_match('/(available_credit|balance_minor)\s*[+\-*\/]/', $line);

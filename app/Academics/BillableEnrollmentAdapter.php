@@ -2,6 +2,7 @@
 
 namespace App\Academics;
 
+use App\Enums\StudentStatusEnum;
 use App\Finance\Contracts\BillableEnrollment;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
@@ -23,6 +24,9 @@ use App\Models\StudentCurriculum;
  */
 final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
 {
+    /** Relations needed to build a BillableEnrollment's snapshot labels. */
+    private const SNAPSHOT_RELATIONS = ['student', 'curriculum.classLevelArm.classLevel', 'curriculum.classLevelArm.arm', 'curriculum.academicSession', 'curriculum.term'];
+
     public function findByUuid(string $enrollmentUuid): ?BillableEnrollment
     {
         // NOTE (corrected slice 2): StudentCurriculum is deliberately UNSCOPED —
@@ -34,27 +38,45 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
         // cross-School regression test in tests/Feature/Finance.
         $enrollment = StudentCurriculum::query()
             ->where('uuid', $enrollmentUuid)
-            ->with(['student', 'curriculum.classLevelArm.classLevel', 'curriculum.classLevelArm.arm', 'curriculum.academicSession', 'curriculum.term'])
+            ->with(self::SNAPSHOT_RELATIONS)
             ->first();
 
-        if ($enrollment === null) {
-            return null;
-        }
+        return $enrollment === null ? null : $this->toBillableEnrollment($enrollment);
+    }
 
-        // getAttribute()/getKey() (returning mixed) keep this adapter clean without
-        // annotating the academic models — the translation boundary owns the casts.
+    /**
+     * The student's CURRENT billable episode — the ACTIVE enrollment. "Current" is an
+     * Academics concept (Student::currentCurriculum is exactly this: hasOne where status
+     * ACTIVE), and it lives HERE, not in Finance, so the frontend never juggles an
+     * enrollment id. Returns null when the student has no active enrollment to bill.
+     */
+    public function currentForStudent(int $studentId): ?BillableEnrollment
+    {
+        $enrollment = StudentCurriculum::query()
+            ->where('student_id', $studentId)
+            ->where('status', StudentStatusEnum::ACTIVE)
+            ->with(self::SNAPSHOT_RELATIONS)
+            ->latest('id')
+            ->first();
+
+        return $enrollment === null ? null : $this->toBillableEnrollment($enrollment);
+    }
+
+    /**
+     * Translate one academic enrollment into the Finance-facing snapshot value. The ONE
+     * place StudentCurriculum becomes a BillableEnrollment. getAttribute()/getKey()
+     * (returning mixed) keep this clean without annotating the academic models.
+     */
+    private function toBillableEnrollment(StudentCurriculum $enrollment): BillableEnrollment
+    {
         return new BillableEnrollment(
             enrollmentId: (int) $enrollment->getKey(),
             enrollmentUuid: (string) $enrollment->getAttribute('uuid'),
             studentId: (int) $enrollment->getAttribute('student_id'),
-            // The enrollment row carries NO school_id (see above), so reading one
-            // here silently produced 0 — and the invoice then got its School from
-            // whatever ActiveSchool context happened to be set, via
-            // BelongsToSchool::creating. That made an invoice's School a function
-            // of WHO WAS LOGGED IN rather than of the episode being billed, and it
-            // made any school_id-keyed Finance query against this value dead code.
-            // The episode's School is the STUDENT's School (the account holder);
-            // the curriculum is the fallback when the student is unreadable.
+            // The enrollment row carries NO school_id (see above), so the episode's School
+            // is the STUDENT's School (the account holder); the curriculum is the fallback
+            // when the student is unreadable. This keeps an invoice's School a function of
+            // the episode being billed, not of who is logged in.
             schoolId: $this->schoolId($enrollment),
             studentName: $this->studentName($enrollment),
             academicContext: $this->academicContext($enrollment),

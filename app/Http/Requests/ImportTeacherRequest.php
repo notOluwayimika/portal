@@ -2,29 +2,37 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\NormalizesImportRows;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ImportTeacherRequest extends FormRequest
 {
+    use NormalizesImportRows;
+
     public function authorize(): bool
     {
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->stringifyNumericRowCells('teachers');
+    }
+
     public function rules(): array
     {
         return [
-            'teachers'                    => ['required', 'array', 'min:1'],
-            'teachers.*'                  => ['array'],
-            'teachers.*.first_name'       => ['required', 'string', 'max:255'],
-            'teachers.*.last_name'        => ['required', 'string', 'max:255'],
-            'teachers.*.email'            => ['nullable', 'string', 'max:255'],
-            'teachers.*.staff_number'     => ['nullable', 'string', 'max:255'],
-            'teachers.*.gender'           => ['nullable', 'string', 'max:50'],
-            'teachers.*.date_of_birth'    => ['nullable'],
-            'teachers.*.address'          => ['nullable', 'string', 'max:500'],
-            'teachers.*.qualification'    => ['nullable', 'string', 'max:255'],
-            'teachers.*.hire_date'        => ['nullable'],
+            'teachers' => ['required', 'array', 'min:1'],
+            'teachers.*' => ['array'],
+            'teachers.*.first_name' => ['required', 'string', 'max:255'],
+            'teachers.*.last_name' => ['required', 'string', 'max:255'],
+            'teachers.*.email' => ['nullable', 'string', 'max:255'],
+            'teachers.*.staff_number' => ['nullable', 'string', 'max:255'],
+            'teachers.*.gender' => ['nullable', 'string', 'max:50'],
+            'teachers.*.date_of_birth' => ['nullable'],
+            'teachers.*.address' => ['nullable', 'string', 'max:500'],
+            'teachers.*.qualification' => ['nullable', 'string', 'max:255'],
+            'teachers.*.hire_date' => ['nullable'],
         ];
     }
 
@@ -32,7 +40,7 @@ class ImportTeacherRequest extends FormRequest
     {
         return [
             'teachers.required' => 'No teacher rows were provided.',
-            'teachers.min'      => 'At least one teacher row is required.',
+            'teachers.min' => 'At least one teacher row is required.',
         ];
     }
 }

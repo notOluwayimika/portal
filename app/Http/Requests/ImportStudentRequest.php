@@ -2,15 +2,23 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\NormalizesImportRows;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class ImportStudentRequest extends FormRequest
 {
+    use NormalizesImportRows;
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->stringifyNumericRowCells('students');
     }
 
     public function rules(): array

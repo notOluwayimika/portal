@@ -117,6 +117,19 @@ Route::middleware(['auth', 'tenant', 'permission:rbac.manage_users'])->group(fun
     Route::put('/setup/users/{user:uuid}/roles', [SchoolUserController::class, 'syncRoles'])->name('setup.users.roles.sync');
 });
 
+// Finance bursar/admin UI — the page shell only; all data is fetched client-side from
+// /api/v1/finance/*. Gated on finance.access (the same permission the API group requires),
+// so a user who cannot read the API never lands on a page that would 403 on load. Issuing
+// a credit note needs finance.credit-note.issue too — enforced by the API (the <Can> gate
+// on the button is convenience, not the guard).
+Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(function () {
+    Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
+        return Inertia::render('admin/finance/statement', [
+            'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],
+        ]);
+    })->name('admin.finance.statement');
+});
+
 Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {
     Route::get('/setup/principals', [PrincipalController::class, 'index'])->name('principals.index');
     Route::post('/setup/principals', [PrincipalController::class, 'store'])->name('principals.store');

@@ -12,8 +12,8 @@
 # this too — a fork between the two re-creates the bug that started the tsc saga,
 # where CI and a developer measured different trees and both reported green.
 #
-#   lint.yml (job: quality)          -> steps 1..9 below
-#   tests.yml (job: ci)              -> step 10 below
+#   lint.yml (job: quality)          -> steps 1..10 below
+#   tests.yml (job: ci)              -> step 11 below
 #
 # DELIBERATELY OMITTED, and why — these are environment PROVISIONING, not gates:
 #   composer install / pnpm install  - your working copy already has them; this
@@ -24,7 +24,7 @@
 #                                      existing encrypted data unreadable. Never here.
 #   php artisan migrate --force      - CI migrates a fresh service DB; locally the
 #                                      suite's RefreshDatabase migrates per run, so
-#                                      a broken migration still fails step 10.
+#                                      a broken migration still fails step 11.
 #   pnpm run build                   - asset compilation, not a quality signal. The
 #                                      wayfinder generation it would perform IS
 #                                      needed, and is done explicitly in step 1.
@@ -43,7 +43,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/10]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/11]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -112,6 +112,9 @@ check "authz-lint" php bin/ci-authz-lint.php
 step "boundary lint (§17.2)"
 check "boundary-lint" php bin/ci-boundary-lint.php
 
+step "money lint (UI: money via formatNaira, no JS money math)"
+check "money-lint" php bin/ci-money-lint.php
+
 step "runtime-zero lint (S7 legacy access sources)"
 check "runtime-zero-lint" php bin/ci-runtime-zero-lint.php
 
@@ -124,7 +127,7 @@ check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
 step "static analysis (Larastan level 5 vs baseline)"
 check "larastan" composer analyse
 
-# 10. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
+# 11. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
 step "tests (failure ratchet vs tests/ratchet-baseline.txt)"
 env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit /tmp/quality-junit.xml >/tmp/quality-pest.log 2>&1 || true

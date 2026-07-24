@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'react-toastify';
+import { Can } from '@/components/can';
 import { AddGuardianModal } from '@/components/students/add-guardian-modal';
 import { EditPivotModal } from '@/components/students/edit-pivot-modal';
 import { GuardianCard } from '@/components/students/guardian-card';
@@ -240,6 +241,19 @@ export default function StudentProfile() {
                                 >
                                     View Academic Records
                                 </Link>
+                                {/* Academic → Finance is a HYPERLINK, never a code
+                                    dependency: a plain URL to the Finance route (no import
+                                    of any Finance component). Gated on finance.access so it
+                                    only shows for finance-permitted users; the route
+                                    enforces the same permission server-side. */}
+                                <Can permission="finance.access">
+                                    <Link
+                                        href={`/finance/students/${student.id}/statement`}
+                                        className="rounded-xl bg-emerald-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg"
+                                    >
+                                        Finance Statement
+                                    </Link>
+                                </Can>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button

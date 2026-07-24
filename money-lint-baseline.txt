@@ -1,0 +1,6 @@
+# money-lint baseline — intentional exceptions to the UI money rules. May only shrink.
+#
+# Ideally EMPTY: the Finance UI is new and routes all money through formatNaira(), and no
+# pre-existing code renders a money identifier via toLocaleString/Intl. An entry here is a
+# deliberate, reviewed exception (e.g. a genuine non-money reduce() that happens to sit in
+# a Finance UI file) — never a money render or a money sum.

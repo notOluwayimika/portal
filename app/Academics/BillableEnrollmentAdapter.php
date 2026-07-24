@@ -5,6 +5,7 @@ namespace App\Academics;
 use App\Enums\StudentStatusEnum;
 use App\Finance\Contracts\BillableEnrollment;
 use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Models\Student;
 use App\Models\StudentCurriculum;
 
 /**
@@ -60,6 +61,68 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
             ->first();
 
         return $enrollment === null ? null : $this->toBillableEnrollment($enrollment);
+    }
+
+    /**
+     * Batch student directory for a Finance list. LIVE display (name + admission #) for a
+     * page of ids — not a snapshot: the accounts index shows the student as they are now.
+     * The Student model is School-scoped (BelongsToSchool), so ids outside the active
+     * School never resolve and simply drop out of the map. Soft-deleted students are
+     * excluded by the model's default scope — their account may still carry a balance in
+     * the KPIs, but they get no display row link (the statement route can't bind a trashed
+     * student anyway); the caller falls back to a non-linked "Student #id" label.
+     *
+     * @param  list<int>  $studentIds
+     * @return array<int, array{uuid: string, name: string, admission_number: ?string}>
+     */
+    public function displayFor(array $studentIds): array
+    {
+        if ($studentIds === []) {
+            return [];
+        }
+
+        return Student::query()
+            ->whereIn('id', $studentIds)
+            ->get(['id', 'uuid', 'first_name', 'last_name', 'admission_number'])
+            ->keyBy('id')
+            ->map(fn (Student $student) => [
+                'uuid' => (string) $student->getAttribute('uuid'),
+                'name' => $this->displayName($student),
+                'admission_number' => $student->getAttribute('admission_number'),
+            ])
+            ->all();
+    }
+
+    /**
+     * Which student_ids match a free-text term over name / admission number, School-scoped.
+     * CONCAT covers a full-name query ("Ada Lovelace") that neither column matches alone;
+     * LIKE wildcards in the term are escaped so a user's `%` searches literally. This is the
+     * Academics half of the accounts-index search — Finance filters its accounts to these ids.
+     *
+     * @return list<int>
+     */
+    public function matchingStudentIds(string $term): array
+    {
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term).'%';
+
+        return Student::query()
+            ->where(function ($query) use ($like) {
+                $query->where('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhere('admission_number', 'like', $like)
+                    ->orWhereRaw("CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) like ?", [$like]);
+            })
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function displayName(Student $student): string
+    {
+        $name = trim(($student->getAttribute('first_name') ?? '').' '.($student->getAttribute('last_name') ?? ''));
+
+        return $name !== '' ? $name : 'Student #'.$student->getAttribute('id');
     }
 
     /**

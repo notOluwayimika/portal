@@ -80,6 +80,35 @@ export type BillableEnrollmentInfo = {
     already_invoiced: boolean;
 };
 
+// GET /api/v1/finance/accounts — the bursar accounts index (front door).
+// A row's student display is LIVE (resolved via the ACL port at read time), and uuid is
+// null only for a soft-deleted student (whose balance still counts in the KPIs but has no
+// linkable statement). Every money field is the wire shape, displayed via formatNaira.
+export type AccountStatus = 'outstanding' | 'in_credit' | 'settled';
+
+export type AccountRow = {
+    student: {
+        uuid: string | null;
+        name: string;
+        admission_number: string | null;
+    };
+    balance: Money; // signed: positive = the student owes
+    available_credit: Money; // max(0, -balance)
+    last_activity: string | null;
+};
+
+export type AccountsPage = {
+    data: AccountRow[];
+    pagination: {
+        total: number;
+        per_page: number;
+        current_page: number;
+        last_page: number;
+    };
+    // School-wide totals over ALL accounts — independent of search/filter/page.
+    kpis: { total_receivables: Money; total_credit: Money };
+};
+
 // One draft invoice line in the New-invoice form (charge or reduction).
 export type DraftLine = {
     description: string;

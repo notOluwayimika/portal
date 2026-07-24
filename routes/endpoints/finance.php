@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Http\Controllers\CreditNoteController;
+use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
@@ -32,6 +33,13 @@ Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteContr
  * invoice and turn the double-void 422 into a 404.
  */
 Route::get('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'forStudent']);
+
+/*
+ * The accounts index — the bursar's front door. A School-scoped, paginated read over
+ * finance_student_accounts (per-row balance + live student display via the ACL port) plus
+ * the School-wide KPI totals. Read-only; ?search=, ?status=, ?sort= drive the view.
+ */
+Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
 
 /*
  * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the

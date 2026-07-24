@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Models\Invoice;
+use App\Finance\Models\StudentAccount;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -72,6 +73,31 @@ function acceptanceEnrollment(School $school): string
         'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
         'status' => 'active',
     ]))->uuid;
+}
+
+/**
+ * A student in $school whose account carries an EXACT signed balance (positive = owes,
+ * negative = in credit, zero = settled). Plants the projection row directly so the
+ * accounts-index reconciliation asserts against a known ledger position without threading
+ * a full generate→pay→credit-note flow per student. Returns the Student for uuid/name asserts.
+ */
+function accountWithBalance(School $school, int $balanceMinor, ?string $firstName = null, ?string $lastName = null): Student
+{
+    $student = Student::factory()->create(array_filter([
+        'school_id' => $school->id,
+        'first_name' => $firstName,
+        'last_name' => $lastName,
+    ], fn ($v) => $v !== null));
+
+    // BelongsToSchool stamps school_id from the active School; the raw *_minor/*_currency
+    // columns are set directly (bypassing the Money cast) to pin an exact balance.
+    ActiveSchool::runFor($school->id, fn () => StudentAccount::create([
+        'student_id' => $student->id,
+        'balance_minor' => $balanceMinor,
+        'balance_currency' => 'NGN',
+    ]));
+
+    return $student;
 }
 
 /** A fresh student in $school with an active enrollment; returns the STUDENT uuid. */
@@ -245,6 +271,119 @@ it('GATE — issuing a credit note without finance.credit-note.issue is 403, eve
     $this->withToken($token)
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/credit-notes", ['amount_minor' => 1000])
         ->assertForbidden();
+});
+
+it('ACCOUNTS INDEX — lists the School\'s accounts with LIVE student display, and every row carries the statement link', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $student = accountWithBalance($school, 45000, 'Ada', 'Lovelace'); // owes ₦450.00
+
+    $body = $this->withToken($token)
+        ->getJson('/api/v1/finance/accounts')
+        ->assertOk()
+        ->assertJsonStructure([
+            'data' => [[
+                'student' => ['uuid', 'name', 'admission_number'],
+                'balance' => ['amount_minor', 'currency'],
+                'available_credit' => ['amount_minor', 'currency'],
+                'last_activity',
+            ]],
+            'pagination' => ['total', 'per_page', 'current_page', 'last_page'],
+            'kpis' => ['total_receivables' => ['amount_minor', 'currency'], 'total_credit' => ['amount_minor', 'currency']],
+        ])
+        ->assertJsonPath('pagination.total', 1)
+        ->assertJsonPath('data.0.student.uuid', $student->uuid)   // the row → THIS student's statement
+        ->assertJsonPath('data.0.student.name', 'Ada Lovelace')   // LIVE, resolved via the ACL port
+        ->assertJsonPath('data.0.balance.amount_minor', 45000)
+        ->json();
+
+    // A rename surfaces immediately (live display, not a billing-time snapshot).
+    $student->update(['first_name' => 'Augusta']);
+    $this->withToken($token)->getJson('/api/v1/finance/accounts')
+        ->assertJsonPath('data.0.student.name', 'Augusta Lovelace');
+});
+
+it('ACCOUNTS INDEX — paginates at 20 rows a page', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    foreach (range(1, 21) as $i) {
+        accountWithBalance($school, $i * 1000);
+    }
+
+    $this->withToken($token)->getJson('/api/v1/finance/accounts')
+        ->assertJsonPath('pagination.total', 21)
+        ->assertJsonPath('pagination.per_page', 20)
+        ->assertJsonPath('pagination.last_page', 2)
+        ->assertJsonCount(20, 'data');
+
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?page=2')
+        ->assertJsonPath('pagination.current_page', 2)
+        ->assertJsonCount(1, 'data');
+});
+
+it('ACCOUNTS KPIs — receivables = Σ positive, credit = Σ |negative|, over ALL accounts and UNCHANGED by search/filter', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    accountWithBalance($school, 30000);   // owes
+    accountWithBalance($school, 20000);   // owes
+    accountWithBalance($school, -5000);   // in credit
+    accountWithBalance($school, 0);       // settled
+
+    // receivables = 50000, credit = 5000 — independent of the endpoint's own arithmetic.
+    $this->withToken($token)->getJson('/api/v1/finance/accounts')
+        ->assertJsonPath('kpis.total_receivables.amount_minor', 50000)
+        ->assertJsonPath('kpis.total_credit.amount_minor', 5000);
+
+    // A status filter narrows the LIST, but the KPIs are the School-wide denominator the
+    // filtered view is read against — they must NOT move with the filter.
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?status=in_credit')
+        ->assertJsonPath('pagination.total', 1)                        // only the one in-credit row
+        ->assertJsonPath('kpis.total_receivables.amount_minor', 50000) // unchanged
+        ->assertJsonPath('kpis.total_credit.amount_minor', 5000);      // unchanged
+});
+
+it('ACCOUNTS ISOLATION — another School\'s accounts never appear in the list OR the KPIs', function () {
+    $schoolA = School::factory()->create();
+    $schoolB = School::factory()->create();
+    [, $tokenA] = bursarWithToken($schoolA, ['finance.access']);
+    accountWithBalance($schoolA, 10000);
+    accountWithBalance($schoolB, 99999);  // B's receivable — must be invisible to A
+    accountWithBalance($schoolB, -12345); // B's credit — must be invisible to A
+
+    $this->withToken($tokenA)->getJson('/api/v1/finance/accounts')
+        ->assertJsonPath('pagination.total', 1)                        // only A's row
+        ->assertJsonPath('kpis.total_receivables.amount_minor', 10000) // B's 99999 absent
+        ->assertJsonPath('kpis.total_credit.amount_minor', 0);         // B's credit absent
+});
+
+it('ACCOUNTS STATUS FILTER — outstanding / in_credit / settled partition the accounts exactly', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    accountWithBalance($school, 15000);  // outstanding
+    accountWithBalance($school, -8000);  // in credit
+    accountWithBalance($school, 0);      // settled
+
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?status=outstanding')
+        ->assertJsonPath('pagination.total', 1)->assertJsonPath('data.0.balance.amount_minor', 15000);
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?status=in_credit')
+        ->assertJsonPath('pagination.total', 1)->assertJsonPath('data.0.balance.amount_minor', -8000);
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?status=settled')
+        ->assertJsonPath('pagination.total', 1)->assertJsonPath('data.0.balance.amount_minor', 0);
+});
+
+it('ACCOUNTS SEARCH — a name term resolves through the ACL port to filter the list; no match is an empty page', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $ada = accountWithBalance($school, 11000, 'Ada', 'Lovelace');
+    accountWithBalance($school, 22000, 'Grace', 'Hopper');
+
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?search=Lovelace')
+        ->assertJsonPath('pagination.total', 1)
+        ->assertJsonPath('data.0.student.uuid', $ada->uuid);
+
+    // Search matching nobody is an EMPTY page — never a silent fallback to "all".
+    $this->withToken($token)->getJson('/api/v1/finance/accounts?search=Nonexistent')
+        ->assertJsonPath('pagination.total', 0);
 });
 
 it('ISOLATION — a bursar cannot bill an enrollment in another School (cross-school guard composes through the API)', function () {

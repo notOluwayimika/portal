@@ -123,6 +123,11 @@ Route::middleware(['auth', 'tenant', 'permission:rbac.manage_users'])->group(fun
 // a credit note needs finance.credit-note.issue too — enforced by the API (the <Can> gate
 // on the button is convenience, not the guard).
 Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(function () {
+    // The bursar landing page — the accounts index. Data (accounts + KPIs) is fetched
+    // client-side from /api/v1/finance/accounts; this is only the page shell.
+    Route::get('/finance', fn () => Inertia::render('admin/finance/index'))
+        ->name('admin.finance.index');
+
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],

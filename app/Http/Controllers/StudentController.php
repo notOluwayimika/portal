@@ -201,6 +201,17 @@ class StudentController extends Controller
                 ->map(fn ($cl) => ['id' => $cl['uuid'], 'name' => $cl['name']])->values(),
             'arms' => $school->arms()->get()
                 ->map(fn ($arm) => ['id' => $arm['uuid'], 'label' => $arm['label']])->values(),
+            // Which arms exist for each class level, so the arm filter can narrow
+            // to the selected class level. Query-builder join (School predicate is
+            // EXPLICIT since this bypasses the model scope); distinct because a
+            // class-level/arm pair repeats once per stream.
+            'class_level_arms' => DB::table('class_level_arms as cla')
+                ->join('class_levels as cl', 'cl.id', '=', 'cla.class_level_id')
+                ->join('arms as a', 'a.id', '=', 'cla.arm_id')
+                ->where('cla.school_id', $school->id)
+                ->orderBy('a.label')
+                ->distinct()
+                ->get(['cl.uuid as class_level', 'a.uuid as arm', 'a.label as label']),
         ]);
     }
 

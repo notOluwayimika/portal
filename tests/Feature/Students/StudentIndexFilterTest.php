@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\StudentController;
 use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
@@ -61,6 +62,32 @@ it('filters students by class level, arm, and both combined', function () {
             ->and($total(['class_level' => $jss1->uuid]))->toBe(2)   // JSS1-A + JSS1-B
             ->and($total(['arm' => $armA->uuid]))->toBe(2)           // JSS1-A + JSS2-A
             ->and($total(['class_level' => $jss1->uuid, 'arm' => $armA->uuid]))->toBe(1); // JSS1-A only
+    });
+});
+
+it('exposes arms grouped by class level for the dependent filter', function () {
+    $school = al_makeSchool();
+
+    ActiveSchool::runFor($school->id, function () use ($school) {
+        $jss1 = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS1', 'order' => 1]);
+        $jss2 = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS2', 'order' => 2]);
+        $armA = Arm::create(['school_id' => $school->id, 'label' => 'A']);
+        $armB = Arm::create(['school_id' => $school->id, 'label' => 'B']);
+
+        // JSS1 has A and B; JSS2 has only A.
+        ClassLevelArm::create(['school_id' => $school->id, 'class_level_id' => $jss1->id, 'arm_id' => $armA->id]);
+        ClassLevelArm::create(['school_id' => $school->id, 'class_level_id' => $jss1->id, 'arm_id' => $armB->id]);
+        ClassLevelArm::create(['school_id' => $school->id, 'class_level_id' => $jss2->id, 'arm_id' => $armA->id]);
+
+        $data = json_decode(app(StudentController::class)->resources()->getContent(), true)['data'];
+        $map = collect($data['class_level_arms']);
+
+        $armsFor = fn (ClassLevel $cl): array => $map
+            ->where('class_level', $cl->uuid)
+            ->pluck('label')->sort()->values()->all();
+
+        expect($armsFor($jss1))->toBe(['A', 'B'])
+            ->and($armsFor($jss2))->toBe(['A']);
     });
 });
 

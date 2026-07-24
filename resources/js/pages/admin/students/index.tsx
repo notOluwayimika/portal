@@ -58,6 +58,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         { id: string; name: string }[]
     >([]);
     const [arms, setArms] = useState<{ id: string; label: string }[]>([]);
+    const [classLevelArms, setClassLevelArms] = useState<
+        { class_level: string; arm: string; label: string }[]
+    >([]);
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(25);
     const [pagination, setPagination] = useState({
@@ -116,6 +119,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
 
             setClassLevels(res.data.data.class_levels || []);
             setArms(res.data.data.arms || []);
+            setClassLevelArms(res.data.data.class_level_arms || []);
         });
 
         return () => {
@@ -209,6 +213,31 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         fetchStudents();
     };
 
+    // When a class level is chosen, offer only the arms that exist for it;
+    // otherwise offer every arm so an arm-only filter still works.
+    const availableArms = classLevel
+        ? classLevelArms
+              .filter((cla) => cla.class_level === classLevel)
+              .map((cla) => ({ id: cla.arm, label: cla.label }))
+        : arms;
+
+    const handleClassLevelChange = (next: string) => {
+        setClassLevel(next);
+
+        // Drop the selected arm if it isn't offered for the new class level.
+        if (
+            next &&
+            arm &&
+            !classLevelArms.some(
+                (cla) => cla.class_level === next && cla.arm === arm,
+            )
+        ) {
+            setArm('');
+        }
+
+        setPage(1);
+    };
+
     return (
         <>
             <Head title="Students" />
@@ -296,12 +325,11 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                 <div className="w-full sm:w-40">
                                     <Select
                                         value={classLevel}
-                                        onChange={(val) => {
-                                            setClassLevel(
+                                        onChange={(val) =>
+                                            handleClassLevelChange(
                                                 val ? String(val) : '',
-                                            );
-                                            setPage(1);
-                                        }}
+                                            )
+                                        }
                                         placeholder="All class levels"
                                         options={[
                                             {
@@ -326,7 +354,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                         placeholder="All arms"
                                         options={[
                                             { label: 'All arms', value: '' },
-                                            ...arms.map((a) => ({
+                                            ...availableArms.map((a) => ({
                                                 label: a.label,
                                                 value: a.id,
                                             })),

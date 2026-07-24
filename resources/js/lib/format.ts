@@ -49,3 +49,18 @@ export function nairaToMinor(input: string): number | null {
 
     return negative ? -minor : minor;
 }
+
+/**
+ * Sum integer minor-unit amounts (e.g. a live invoice-line running total). The third and
+ * last sanctioned money op — display→formatNaira, input→nairaToMinor, total→sumMinor — so
+ * the create form never does ad-hoc `+`/`reduce` on amounts (banned by the money-lint).
+ *
+ * Float-SAFE precisely because it is INTEGER addition: minor units are whole numbers and
+ * their sum is exact for any realistic total (far below 2^53). The danger the money rule
+ * guards against is float — `0.1 + 0.2` — which cannot arise here since nothing has a
+ * fractional part. Reductions carry a NEGATIVE amount, so this signed sum equals the
+ * server's F6 total (charges − reductions); the preview only mirrors the authoritative total.
+ */
+export function sumMinor(amounts: number[]): number {
+    return amounts.reduce((total, amount) => total + amount, 0);
+}

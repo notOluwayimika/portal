@@ -4,6 +4,7 @@ namespace App\Finance\Services;
 
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\Payment;
 use App\Finance\Models\StudentAccount;
 use App\Support\Money;
 use Illuminate\Support\Collection;
@@ -94,5 +95,36 @@ final class InvoiceReadModel
         }
 
         return ['balance' => $account->balance, 'available_credit' => $account->availableCredit()];
+    }
+
+    /**
+     * A student's payments for the statement — each with its date, amount, method,
+     * reference (the per-School receipt sequence) and allocations. Newest first. School
+     * isolation is automatic (Payment uses BelongsToSchool); append-only, so id order is
+     * stable receipt order.
+     *
+     * @return Collection<int, Payment>
+     */
+    public function paymentsForStudent(int $studentId): Collection
+    {
+        return Payment::query()
+            ->where('student_id', $studentId)
+            ->with('allocations')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * Does this enrollment episode already have an ACTIVE (issued, non-void) invoice? The
+     * F7 "one active invoice per episode" preview — the modal reads it to warn "void first"
+     * BEFORE the bursar enters lines. It is only a preview: the authoritative guard is the
+     * DB unique index + assertNoActiveInvoice at generation time (surfaced as the 422).
+     */
+    public function hasActiveInvoiceForEnrollment(int $enrollmentId): bool
+    {
+        return Invoice::query()
+            ->where('student_curriculum_id', $enrollmentId)
+            ->excludingVoid()
+            ->exists();
     }
 }

@@ -74,6 +74,99 @@ function acceptanceEnrollment(School $school): string
     ]))->uuid;
 }
 
+/** A fresh student in $school with an active enrollment; returns the STUDENT uuid. */
+function acceptanceStudent(School $school): string
+{
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    ActiveSchool::runFor($school->id, fn () => StudentCurriculum::create([
+        'student_id' => $student->id,
+        'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
+        'status' => 'active',
+    ]));
+
+    return $student->uuid;
+}
+
+it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the invoice composes onto the statement, second is F7-rejected', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $studentUuid = acceptanceStudent($school);
+
+    // The modal's read: resolves the episode server-side + the F7 preview (not yet invoiced).
+    $this->withToken($token)
+        ->getJson("/api/v1/finance/students/{$studentUuid}/billable-enrollment")
+        ->assertOk()
+        ->assertJsonPath('already_invoiced', false)
+        ->assertJsonStructure(['academic_context', 'already_invoiced']);
+
+    // Generate by STUDENT — NO enrollment_id on the wire. A charge + a discount reduction;
+    // the total is DERIVED server-side (F6): 50000 − 5000 = 45000.
+    $this->withToken($token)
+        ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
+            'lines' => [
+                ['description' => 'Tuition', 'amount_minor' => 50000, 'kind' => 'charge'],
+                ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount'],
+            ],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('total.amount_minor', 45000);
+
+    // It appears on the statement at its full derived total.
+    $this->withToken($token)
+        ->getJson("/api/v1/finance/students/{$studentUuid}/invoices")
+        ->assertOk()
+        ->assertJsonPath('invoices.0.total.amount_minor', 45000);
+
+    // F7 preview now true; a second generate for the SAME episode is rejected (422).
+    $this->withToken($token)
+        ->getJson("/api/v1/finance/students/{$studentUuid}/billable-enrollment")
+        ->assertJsonPath('already_invoiced', true);
+    $this->withToken($token)
+        ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+        ])
+        ->assertStatus(422);
+});
+
+it('NO ENROLLMENT — a student with no active enrollment cannot be billed (422 on read and write)', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $student = Student::factory()->create(['school_id' => $school->id]); // no enrollment
+
+    $this->withToken($token)
+        ->getJson("/api/v1/finance/students/{$student->uuid}/billable-enrollment")
+        ->assertStatus(422);
+    $this->withToken($token)
+        ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 1000]],
+        ])
+        ->assertStatus(422);
+});
+
+it('PAYMENTS — appear on the statement read as their own history (Piece B)', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $studentUuid = acceptanceStudent($school);
+
+    $invoiceUuid = $this->withToken($token)
+        ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+        ])->assertCreated()->json('id');
+
+    $this->withToken($token)
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", [
+            'amount_minor' => 4000,
+            'payer_name' => 'A Parent',
+        ])->assertCreated();
+
+    $this->withToken($token)
+        ->getJson("/api/v1/finance/students/{$studentUuid}/invoices")
+        ->assertOk()
+        ->assertJsonPath('payments.0.amount.amount_minor', 4000)
+        ->assertJsonPath('payments.0.payer_name', 'A Parent')
+        ->assertJsonStructure(['payments' => [['id', 'reference', 'method', 'amount', 'created_at']]]);
+});
+
 it('COMPOSES — the full bursar lifecycle through the real API: generate → pay → credit-note → statement', function () {
     $school = School::factory()->create();
     [, $token] = bursarWithToken($school, ['finance.access', 'finance.credit-note.issue']);

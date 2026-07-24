@@ -18,4 +18,14 @@ namespace App\Finance\Contracts;
 interface BillableEnrollmentProvider
 {
     public function findByUuid(string $enrollmentUuid): ?BillableEnrollment;
+
+    /**
+     * The student's CURRENT billable episode — their active enrollment — or null when
+     * they have none to bill. This is how a bursar bills a *student* without the
+     * frontend ever handling an enrollment id: Finance asks its own port to resolve the
+     * episode, and the Academics adapter owns "which enrollment is current" (the active
+     * one). Isolation is the same as findByUuid: the episode's School is derived from the
+     * student, and the cross-School guard in the Action rejects a mismatch.
+     */
+    public function currentForStudent(int $studentId): ?BillableEnrollment;
 }

@@ -59,13 +59,30 @@ export type Statement = {
     invoices: Invoice[];
     credit_notes: CreditNote[];
     account: AccountPosition;
+    payments: Payment[];
 };
 
-// PaymentResource (returned by POST payments)
+// PaymentResource
 export type Payment = {
     id: string;
     reference: number;
     payer_name: string;
+    method: string;
     amount: Money;
+    created_at: string;
     allocations?: { id: string; invoice_id: number; amount: Money }[];
+};
+
+// GET .../students/{student}/billable-enrollment — the "New invoice" modal's episode
+// confirm + F7 preview (422 when the student has no active enrollment).
+export type BillableEnrollmentInfo = {
+    academic_context: string;
+    already_invoiced: boolean;
+};
+
+// One draft invoice line in the New-invoice form (charge or reduction).
+export type DraftLine = {
+    description: string;
+    amount: string; // naira, converted via nairaToMinor on submit
+    kind: 'charge' | 'waiver' | 'discount';
 };

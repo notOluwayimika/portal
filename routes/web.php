@@ -124,7 +124,7 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
 
     Route::get('/setup/head-of-schools', function () {
         return Inertia::render('admin/head-of-schools/index');
-    })->name('admin.dashboard');
+    })->name('headOfSchools.index');
 
     Route::get('/setup/teacher-assignments', function () {
         return Inertia::render('admin/teacher-assignments/index');
@@ -331,7 +331,7 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'student' => new StudentResource($studentCurriculum->student),
             'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
         ]);
-    })->name('setup.studentCurricula.index');
+    })->name('setup.studentCurricula.show');
 
 });
 
@@ -416,7 +416,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('admin.dashboard');
+    })->name('students.results.active');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
         $studentCurricula = StudentCurriculum::with([
             'student',
@@ -465,7 +465,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('admin.dashboard')->withoutScopedBindings();
+    })->name('students.results.show')->withoutScopedBindings();
 });
 
 Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(function () {

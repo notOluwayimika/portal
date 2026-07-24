@@ -2733,20 +2733,6 @@
             "super_admin"
         ]
     },
-    "PUT /user/password": {
-        "auth": true,
-        "roles": [
-            "admin",
-            "boarding_parent",
-            "form_teacher",
-            "guardian",
-            "head_of_school",
-            "principal",
-            "registrar",
-            "super_admin",
-            "teacher"
-        ]
-    },
     "PUT /user/profile-information": {
         "auth": true,
         "roles": [

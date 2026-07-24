@@ -226,16 +226,8 @@ export default function StudentProfile() {
                             {/* Action buttons — wrap instead of overflowing the card on
                                 narrow widths (full-width row on mobile, right-aligned on lg). */}
                             <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:justify-end">
-                                {isAdmin && (
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setShowEditModal(true)}
-                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                    >
-                                        <Edit className="mr-1.5 h-4 w-4" />
-                                        Edit Student
-                                    </Button>
-                                )}
+                                {/* Edit lives in the More dropdown ("Edit Details"); no
+                                    standalone Edit button here to keep the action row lean. */}
                                 <Link
                                     href={`/setup/student-curricula/${student.id}`}
                                     className="rounded-xl bg-indigo-600 px-6 py-1.5 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg"

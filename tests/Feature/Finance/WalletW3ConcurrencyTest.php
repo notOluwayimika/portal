@@ -4,6 +4,7 @@ use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\PaymentAllocation;
 use App\Finance\Models\StudentAccount;
 use App\Models\Curriculum;
 use App\Models\Role;
@@ -95,6 +96,50 @@ function w3ConcInvoice(School $school, Student $student, int $kobo): Invoice
         [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
     );
 }
+
+it('PROOF 4 (CLOSED, end-to-end) — the REAL GenerateInvoice does not double-spend credit: its account lockForUpdate is a current read that sees the winner’s consumption', function () {
+    // The genuine read-modify-write money guard, closed against the REAL action (the
+    // primitive-level companion below proves the lock blocks; this proves GenerateInvoice
+    // USES it). Shape = InvoiceConcurrencyTest's double-void: the LOSER runs the real
+    // action inside a stale-snapshot transaction; the WINNER is a raw committed write on a
+    // second connection. app(GenerateInvoice) runs on the default connection, so the two
+    // racers cannot both be the real action in one process — hence the winner is simulated,
+    // exactly as the void proof simulates its winner.
+    [$school, $admin, $student] = w3ConcurrentActors();
+
+    // Overpayment credit 5000 (a 5000 unallocated payment, balance −5000).
+    ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
+        $paid = w3ConcInvoice($school, $student, 10000);
+        app(RecordPayment::class)->handle($paid, Money::fromKobo(15000), 'Over', $admin);
+    });
+    $accountId = StudentAccount::query()->where('student_id', $student->id)->value('id');
+    expect((int) DB::table('finance_student_accounts')->where('id', $accountId)->value('balance_minor'))->toBe(-5000);
+
+    $second = w3SecondConn();
+
+    // The LOSER's transaction takes its snapshot NOW, showing credit 5000 — before the
+    // winner commits. Running the real GenerateInvoice inside it inherits this stale snapshot.
+    DB::beginTransaction();
+    try {
+        expect((int) DB::table('finance_student_accounts')->where('id', $accountId)->value('balance_minor'))->toBe(-5000);
+
+        // THE WINNER consumes the credit and commits on its own connection: a 5000 charge
+        // would raise the balance from −5000 to 0, so the raw flip mirrors exactly what the
+        // loser's lockForUpdate must observe.
+        $second->table('finance_student_accounts')->where('id', $accountId)->update(['balance_minor' => 0]);
+
+        // THE LOSER runs the REAL GenerateInvoice for a new enrollment. Its FIRST statement
+        // is StudentAccount::lockForUpdate() — a CURRENT read that bypasses the stale
+        // snapshot and sees the winner's committed balance 0 → credit 0 → it applies NO
+        // allocation. The 5000 is not double-spent. (Swap that lockForUpdate for a plain
+        // read and the loser reads the stale −5000, re-sources the same payment, and writes
+        // a 5000 allocation — the double-spend; shown red out of band.)
+        $b = ActiveSchool::runFor($school->id, fn () => w3ConcInvoice($school, $student, 12000));
+        expect((int) PaymentAllocation::query()->where('invoice_id', $b->id)->sum('amount_minor'))->toBe(0);
+    } finally {
+        DB::rollBack();
+    }
+});
 
 it('PROOF 4 — the account lockForUpdate serialises read-credit→spend; a plain read sees the same credit (double-spend if unlocked)', function () {
     [$school, $admin, $student] = w3ConcurrentActors();

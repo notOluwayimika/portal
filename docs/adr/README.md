@@ -54,3 +54,5 @@ implementing phase starts.
 | [0042](0042-activeschool-transport-coupling.md) | `ActiveSchool::id()` transport coupling — known debt + expiry | 1 | **Issued** |
 | [0043](0043-authz-rollout-scaffolding.md) | `App\Support\Authz` is temporary authorization-rollout scaffolding | 1→Continuous | **Issued** |
 | [0044](0044-result-enrollment-permissions.md) | Result & enrollment authorization moves from roles to permissions | 1→Continuous | **Issued (design)** |
+| [0045](0045-super-admin-no-ambient-authority.md) | `super_admin` has no ambient authority; domain action via impersonation | 1 | **Proposed (design)** |
+| [0046](0046-finance-delivery-thin-vertical-slices.md) | Finance delivery shape: thin vertical slices (UI + e2e with domain) | 1→Continuous | **Accepted** |

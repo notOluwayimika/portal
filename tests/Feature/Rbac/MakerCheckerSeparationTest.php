@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Policies\SubjectResultPolicy;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
+use App\Support\DutySeparation;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -244,4 +245,88 @@ it('keeps the Policy and the DB constraint agreeing on the NULL case', function 
 
     expect(DB::table('subject_result_statuses')->count())->toBe(1)
         ->and((new SubjectResultPolicy)->approve(mc_actingContext($actor), mc_status(['submitted_by' => null])))->toBeTrue();
+});
+
+// ── USER-LEVEL segregation of duties (detection, not enforcement) ──────────────
+//
+// The role-level SoD test above proves no ONE role holds both sides. Nothing there stops a USER
+// from accumulating both by holding two roles (the exact dev-data finding: a user with
+// accounts_officer + finance_director). The DB CHECK still makes self-approval impossible; what a
+// both-sides user creates is a CONFIGURATION hole (approve a colleague's work in both directions),
+// which these DETECT — they never refuse a grant.
+
+/**
+ * Every (user, school) pair that effectively holds both sides of some maker-checker pair. The
+ * tripwire the invariant test guards; scoped per school, evaluated on effective ability.
+ *
+ * @return list<array{0:int,1:int}>
+ */
+function allBothSidesUsers(): array
+{
+    $out = [];
+    $rows = DB::table('model_has_roles')->where('model_type', User::class)
+        ->select('model_id', 'school_id')->distinct()->get();
+
+    foreach ($rows as $row) {
+        if ($row->school_id === null) {
+            continue;
+        }
+        $user = User::find($row->model_id);
+        if ($user !== null && DutySeparation::violations($user, (int) $row->school_id) !== []) {
+            $out[] = [(int) $row->model_id, (int) $row->school_id];
+        }
+    }
+    setPermissionsTeamId(null);
+
+    return $out;
+}
+
+it('DETECTS a user who accumulates both sides across two roles (the dev-data shape)', function () {
+    // The role guard forbids one role holding both; this user holds two roles that together do —
+    // exactly user#2 (admin + accounts_officer + finance_director) in the dev audit.
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'accounts_officer'); // maker
+    $user->grantSchoolAccess($school, 'finance_director'); // checker
+    $user->flushSchoolAccessCache();
+
+    $violations = DutySeparation::violations($user, $school->id);
+    expect($violations)->not->toBeEmpty()
+        ->and(collect($violations)->pluck('checker')->all())->toContain('finance.credit-note.approve');
+});
+
+it('a user holding only ONE side (accounts_officer, maker) is NOT a violation', function () {
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'accounts_officer');
+    $user->flushSchoolAccessCache();
+
+    expect(DutySeparation::violations($user, $school->id))->toBe([]);
+});
+
+it('super_admin is NEVER a both-sides violation — effective ability, checker abilities never bypassed', function () {
+    config(['auth.gate_before_superadmin' => true]);
+    $school = al_makeSchool();
+    setPermissionsTeamId(null);
+    $super = User::factory()->create(['school_id' => $school->id]);
+    $super->assignRole('super_admin');
+    $super->flushSchoolAccessCache();
+
+    // Holds every maker EFFECTIVELY (bypass) but no checker (excluded) → can never be both-sides.
+    expect(DutySeparation::violations($super, $school->id))->toBe([]);
+});
+
+it('INVARIANT — no seeded user is a both-sides violator (tripwire), bite-proven by a planted user', function () {
+    // The seeder creates no users, so the live scan is clean today — its value is as a TRIPWIRE: a
+    // seeder/fixture that later assigns one user both a maker and a checker role fails here.
+    expect(allBothSidesUsers())->toBe([]);
+
+    // BITE-PROOF: plant exactly such a user; the SAME scan must now turn red.
+    $school = al_makeSchool();
+    $planted = al_makeUser($school->id);
+    $planted->grantSchoolAccess($school, 'accounts_officer');
+    $planted->grantSchoolAccess($school, 'finance_director');
+    $planted->flushSchoolAccessCache();
+
+    expect(allBothSidesUsers())->not->toBe([]);
 });

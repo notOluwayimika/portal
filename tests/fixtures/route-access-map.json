@@ -231,6 +231,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -260,6 +261,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -276,6 +278,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1040,6 +1043,7 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -1055,6 +1059,7 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -1064,13 +1069,15 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
     "GET /api/v1/finance/void-requests/pending": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "finance_director",
+            "finance_void_approver"
         ]
     },
     "GET /boarding-parent/behavioral-assessments": {
@@ -1128,13 +1135,15 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
     "GET /finance/approvals": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "finance_director",
+            "finance_void_approver"
         ]
     },
     "GET /finance/students/{student}/statement": {
@@ -1143,6 +1152,7 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -1153,6 +1163,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1212,6 +1223,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1276,6 +1288,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1309,6 +1322,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1332,6 +1346,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1348,6 +1363,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1364,6 +1380,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1380,6 +1397,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1510,6 +1528,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1594,6 +1613,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1610,6 +1630,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1626,6 +1647,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1642,6 +1664,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1658,6 +1681,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1674,6 +1698,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1690,6 +1715,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1706,6 +1732,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1895,6 +1922,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2199,6 +2227,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2215,6 +2244,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2395,6 +2425,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2456,6 +2487,7 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -2472,6 +2504,7 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -2488,19 +2521,22 @@
             "accounts_officer",
             "admin",
             "finance_director",
+            "finance_void_approver",
             "super_admin"
         ]
     },
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "finance_director",
+            "finance_void_approver"
         ]
     },
     "POST /api/v1/finance/void-requests/{voidRequest}/reject": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "finance_director",
+            "finance_void_approver"
         ]
     },
     "POST /dashboard/refresh": {
@@ -2521,6 +2557,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2537,6 +2574,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2553,6 +2591,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2569,6 +2608,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2593,6 +2633,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2641,6 +2682,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2657,6 +2699,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2673,6 +2716,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2689,6 +2733,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2705,6 +2750,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2879,6 +2925,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2902,6 +2949,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2949,6 +2997,7 @@
             "admin",
             "boarding_parent",
             "finance_director",
+            "finance_void_approver",
             "form_teacher",
             "guardian",
             "head_of_school",

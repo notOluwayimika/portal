@@ -330,3 +330,41 @@ it('the test database default collation matches the canonical one (the trigger t
         .'CHARACTER SET utf8mb4 COLLATE '.CANONICAL_COLLATION.'.'
     );
 });
+
+it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a maker≠checker CHECK', function () {
+    // Decision 4: the maker≠checker guarantee must be true for the THIRD approval table (refunds)
+    // and every one after, by construction — not because a brief remembered to add it. A migration
+    // that ships an approval document without the CHECK leaves every layer above it looking correct
+    // (Policy refuses, Action refuses, tests pass) while the guarantee is silently absent. This
+    // reads information_schema, so it sees the REAL schema, and it is general (finance_* AND
+    // subject_result_statuses). Bite-proven by a planted constraint-less table in a migration.
+    $tables = collect(DB::select(
+        "SELECT DISTINCT c1.TABLE_NAME AS t
+           FROM information_schema.COLUMNS c1
+           JOIN information_schema.COLUMNS c2
+             ON c1.TABLE_SCHEMA = c2.TABLE_SCHEMA AND c1.TABLE_NAME = c2.TABLE_NAME
+          WHERE c1.TABLE_SCHEMA = DATABASE()
+            AND c1.COLUMN_NAME = 'submitted_by' AND c2.COLUMN_NAME = 'decided_by'"
+    ))->pluck('t');
+
+    expect($tables)->not->toBeEmpty(); // there ARE approval tables, or this test is vacuous
+
+    foreach ($tables as $table) {
+        $clauses = collect(DB::select(
+            'SELECT cc.CHECK_CLAUSE AS clause
+               FROM information_schema.CHECK_CONSTRAINTS cc
+               JOIN information_schema.TABLE_CONSTRAINTS tc
+                 ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+              WHERE tc.TABLE_SCHEMA = DATABASE() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = ?',
+            [$table, 'CHECK']
+        ))->pluck('clause');
+
+        $hasMakerNeChecker = $clauses->contains(
+            fn ($clause) => str_contains((string) $clause, 'submitted_by') && str_contains((string) $clause, 'decided_by')
+        );
+
+        expect($hasMakerNeChecker)->toBeTrue(
+            "table [{$table}] has submitted_by + decided_by but NO maker≠checker CHECK — the act-level guarantee is silently absent there."
+        );
+    }
+});

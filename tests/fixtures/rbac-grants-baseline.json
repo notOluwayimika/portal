@@ -76,6 +76,11 @@
         "finance.invoice.void-request.approve",
         "finance.invoice.void-request.reject"
     ],
+    "finance_void_approver": [
+        "finance.access",
+        "finance.invoice.void-request.approve",
+        "finance.invoice.void-request.reject"
+    ],
     "form_teacher": [
         "academic_setup.manage",
         "assessment.record",

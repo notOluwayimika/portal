@@ -77,6 +77,12 @@ class RbacSeeder extends Seeder
         // grant guard makes any single role holding both sides impossible.
         'accounts_officer',   // maker  — may submit credit notes for approval
         'finance_director',   // checker — may approve / reject (never submit)
+        // A NARROW checker: void-approve/reject only, NOT credit-note approve. The
+        // school-configurable single-side checker the SoD strategy implies (e.g. a Head who may
+        // approve voids). Seeded into the REAL role set so the access oracle exercises the D1 case
+        // — a role holding only one checker ability reaching the approvals page via the derived
+        // gate — which finance_director (holds all four) could not exercise.
+        'finance_void_approver',
     ];
 
     /**
@@ -292,6 +298,16 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_CREDIT_NOTE_APPROVE->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_REJECT->value,
                 // Ph3b — checker side of the void instance.
+                PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
+                PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_REJECT->value,
+            ],
+            // The NARROW checker (SoD strategy / D1 rider): void approve+reject ONLY, no
+            // credit-note approve — the exact one-sided checker the derived approvals-page gate was
+            // built for. Legal under the grant guard (two checkers of one instance, never a maker +
+            // its matching checker). Seeded so route-access-map exercises a role that reaches the
+            // approvals page while holding only one checker ability.
+            'finance_void_approver' => [
+                PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_REJECT->value,
             ],

@@ -3,10 +3,8 @@ import axios from 'axios';
 import {
     AlertCircle,
     ArrowLeft,
-    FileText,
     Landmark,
     Plus,
-    ReceiptText,
     RefreshCw,
     Scale,
     Wallet,
@@ -74,6 +72,11 @@ export default function FinanceStatement({ student }: Props) {
     const [creditFor, setCreditFor] = useState<Invoice | null>(null);
     const [voidFor, setVoidFor] = useState<Invoice | null>(null);
     const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
+    // Which transaction table is shown — the three peer tables (invoices / credit notes /
+    // payments) now share one tabbed card instead of stacking down the page.
+    const [activeTab, setActiveTab] = useState<
+        'invoices' | 'credit_notes' | 'payments'
+    >('invoices');
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -115,6 +118,27 @@ export default function FinanceStatement({ student }: Props) {
     // allocates. (A dedicated account-scoped payment endpoint is the proper follow-up.)
     const advancePaymentTarget =
         statement?.invoices.filter((i) => i.status !== 'void').at(-1) ?? null;
+
+    // Tab metadata (label + live count) for the transaction-table tabs.
+    const txnTabs = statement
+        ? ([
+              {
+                  key: 'invoices',
+                  label: 'Invoices',
+                  count: statement.invoices.length,
+              },
+              {
+                  key: 'credit_notes',
+                  label: 'Credit notes',
+                  count: statement.credit_notes.length,
+              },
+              {
+                  key: 'payments',
+                  label: 'Payments',
+                  count: statement.payments.length,
+              },
+          ] as const)
+        : [];
 
     // Client-side datatables (search + pagination) over each already-loaded section.
     // Hooks run unconditionally; empty arrays until the statement loads.
@@ -282,18 +306,40 @@ export default function FinanceStatement({ student }: Props) {
                         </div>
                     )}
 
-                    {/* ── Invoices ─────────────────────────────────────────────── */}
+                    {/* ── Transaction tabs (Invoices / Credit notes / Payments) ── */}
                     {statement && (
+                        <div className="flex flex-wrap gap-1 rounded-xl border-none bg-white p-1 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
+                            {txnTabs.map((t) => (
+                                <button
+                                    key={t.key}
+                                    type="button"
+                                    onClick={() => setActiveTab(t.key)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition-colors',
+                                        activeTab === t.key
+                                            ? 'bg-indigo-600 text-white shadow-sm'
+                                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800',
+                                    )}
+                                >
+                                    {t.label}
+                                    <span
+                                        className={cn(
+                                            'rounded-full px-1.5 py-0.5 text-[10px] font-bold',
+                                            activeTab === t.key
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                                        )}
+                                    >
+                                        {t.count}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* ── Invoices ─────────────────────────────────────────────── */}
+                    {statement && activeTab === 'invoices' && (
                         <div className={SECTION_CARD}>
-                            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-                                <FileText className="h-4 w-4 text-slate-400" />
-                                <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                                    Invoices
-                                </h2>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    {statement.invoices.length}
-                                </span>
-                            </div>
                             {statement.invoices.length > 0 && (
                                 <TableToolbar
                                     value={invoicesTable.search}
@@ -515,17 +561,8 @@ export default function FinanceStatement({ student }: Props) {
                     )}
 
                     {/* ── Credit notes ─────────────────────────────────────────── */}
-                    {statement && statement.credit_notes.length > 0 && (
+                    {statement && activeTab === 'credit_notes' && (
                         <div className={SECTION_CARD}>
-                            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-                                <ReceiptText className="h-4 w-4 text-slate-400" />
-                                <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                                    Credit notes
-                                </h2>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    {statement.credit_notes.length}
-                                </span>
-                            </div>
                             <TableToolbar
                                 value={creditsTable.search}
                                 onChange={creditsTable.setSearch}
@@ -555,8 +592,10 @@ export default function FinanceStatement({ student }: Props) {
                                                     colSpan={5}
                                                     className="py-10 text-center text-xs text-slate-400"
                                                 >
-                                                    No credit notes match your
-                                                    search.
+                                                    {statement.credit_notes
+                                                        .length === 0
+                                                        ? 'No credit notes yet.'
+                                                        : 'No credit notes match your search.'}
                                                 </td>
                                             </tr>
                                         ) : (
@@ -641,17 +680,8 @@ export default function FinanceStatement({ student }: Props) {
                     )}
 
                     {/* ── Payments ─────────────────────────────────────────────── */}
-                    {statement && statement.payments.length > 0 && (
+                    {statement && activeTab === 'payments' && (
                         <div className={SECTION_CARD}>
-                            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-                                <Wallet className="h-4 w-4 text-slate-400" />
-                                <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                                    Payments
-                                </h2>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                    {statement.payments.length}
-                                </span>
-                            </div>
                             <TableToolbar
                                 value={paymentsTable.search}
                                 onChange={paymentsTable.setSearch}
@@ -681,8 +711,10 @@ export default function FinanceStatement({ student }: Props) {
                                                     colSpan={5}
                                                     className="py-10 text-center text-xs text-slate-400"
                                                 >
-                                                    No payments match your
-                                                    search.
+                                                    {statement.payments
+                                                        .length === 0
+                                                        ? 'No payments yet.'
+                                                        : 'No payments match your search.'}
                                                 </td>
                                             </tr>
                                         ) : (

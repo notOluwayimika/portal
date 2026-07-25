@@ -16,12 +16,14 @@ import {
     pending as pendingAction,
     reject as rejectAction,
 } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import { TableToolbar } from '@/components/finance/table-toolbar';
 import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
+import { useClientTable } from '@/hooks/use-client-table';
 import { formatNaira } from '@/lib/format';
 import type { CreditNote } from '@/types/finance';
 
@@ -46,10 +48,6 @@ export default function FinanceApprovalsQueue() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [rejectFor, setRejectFor] = useState<CreditNote | null>(null);
     const [reason, setReason] = useState('');
-
-    const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
-    const [limit, setLimit] = useState(10);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -116,32 +114,14 @@ export default function FinanceApprovalsQueue() {
         }
     };
 
-    // Client-side filter + page over the loaded pending set.
-    const query = search.trim().toLowerCase();
-    const filtered =
-        query === ''
-            ? rows
-            : rows.filter((r) =>
-                  [
-                      r.display_number,
-                      r.invoice_display_number,
-                      r.submitted_by_name,
-                      r.note,
-                  ].some((f) => (f ?? '').toLowerCase().includes(query)),
-              );
-
-    const lastPage = Math.max(1, Math.ceil(filtered.length / limit));
-    const currentPage = Math.min(page, lastPage);
-    const paged = filtered.slice(
-        (currentPage - 1) * limit,
-        currentPage * limit,
-    );
-    const meta = {
-        current_page: currentPage,
-        last_page: lastPage,
-        per_page: limit,
-        total: filtered.length,
-    };
+    // Client-side filter + page over the loaded pending set (the shared datatable behaviour).
+    const { search, setSearch, filtered, paged, meta, setPage, setLimit } =
+        useClientTable(rows, (r) => [
+            r.display_number,
+            r.invoice_display_number,
+            r.submitted_by_name,
+            r.note,
+        ]);
 
     return (
         <>
@@ -192,51 +172,13 @@ export default function FinanceApprovalsQueue() {
 
                     {/* ── Filters + Table Card ─────────────────────────────────── */}
                     <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
-                        {/* Search row */}
-                        <div className="border-b border-slate-100 dark:border-slate-800">
-                            <div className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center">
-                                <div className="relative w-full sm:max-w-md sm:flex-1">
-                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                    <Input
-                                        placeholder="Search by credit note, invoice or submitter…"
-                                        className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
-                                        value={search}
-                                        onChange={(e) => {
-                                            setSearch(e.target.value);
-                                            setPage(1);
-                                        }}
-                                    />
-                                </div>
-
-                                <div className="flex items-center gap-2 sm:ml-auto">
-                                    <span className="hidden text-xs font-medium text-slate-500 sm:inline">
-                                        Showing{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {paged.length}
-                                        </span>{' '}
-                                        of{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {filtered.length}
-                                        </span>
-                                    </span>
-                                    {search !== '' && (
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => {
-                                                setSearch('');
-                                                setPage(1);
-                                            }}
-                                            className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                                        >
-                                            <X className="mr-1 h-3.5 w-3.5" />
-                                            Clear
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                        <TableToolbar
+                            value={search}
+                            onChange={setSearch}
+                            shown={paged.length}
+                            total={filtered.length}
+                            placeholder="Search by credit note, invoice or submitter…"
+                        />
 
                         {/* Table */}
                         <div className="custom-scrollbar overflow-x-auto">
@@ -411,15 +353,12 @@ export default function FinanceApprovalsQueue() {
                             </table>
                         </div>
 
-                        {meta.last_page > 1 && (
+                        {filtered.length > 0 && (
                             <div className="border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30">
                                 <Pagination
                                     meta={meta}
                                     setPage={setPage}
-                                    setLimit={(newLimit) => {
-                                        setPage(1);
-                                        setLimit(newLimit);
-                                    }}
+                                    setLimit={setLimit}
                                 />
                             </div>
                         )}

@@ -18,13 +18,19 @@ import { FinanceStatCard } from '@/components/finance/finance-stat-card';
 import { IssueCreditNoteModal } from '@/components/finance/issue-credit-note-modal';
 import { NewInvoiceModal } from '@/components/finance/new-invoice-modal';
 import { RecordPaymentModal } from '@/components/finance/record-payment-modal';
+import { TableToolbar } from '@/components/finance/table-toolbar';
+import { Pagination } from '@/components/pagination';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useClientTable } from '@/hooks/use-client-table';
 import { useInitials } from '@/hooks/use-initials';
 import { formatNaira } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Invoice, Statement } from '@/types/finance';
+
+const PAGINATION_FOOTER =
+    'border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30';
 
 type Props = {
     student: { uuid: string; name: string };
@@ -75,6 +81,26 @@ export default function FinanceStatement({ student }: Props) {
     }, [load]);
 
     const account = statement?.account;
+
+    // Client-side datatables (search + pagination) over each already-loaded section.
+    // Hooks run unconditionally; empty arrays until the statement loads.
+    const invoicesTable = useClientTable(statement?.invoices ?? [], (i) => [
+        i.display_number,
+        i.academic_context,
+        i.status,
+    ]);
+    const creditsTable = useClientTable(statement?.credit_notes ?? [], (c) => [
+        c.display_number,
+        c.kind,
+        c.status,
+        c.note,
+        c.rejection_reason,
+    ]);
+    const paymentsTable = useClientTable(statement?.payments ?? [], (p) => [
+        p.payer_name,
+        String(p.reference),
+        p.method,
+    ]);
 
     return (
         <>
@@ -221,6 +247,15 @@ export default function FinanceStatement({ student }: Props) {
                                     {statement.invoices.length}
                                 </span>
                             </div>
+                            {statement.invoices.length > 0 && (
+                                <TableToolbar
+                                    value={invoicesTable.search}
+                                    onChange={invoicesTable.setSearch}
+                                    shown={invoicesTable.paged.length}
+                                    total={invoicesTable.filtered.length}
+                                    placeholder="Search invoices…"
+                                />
+                            )}
                             <div className="custom-scrollbar overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead>
@@ -250,8 +285,19 @@ export default function FinanceStatement({ student }: Props) {
                                                     No invoices yet.
                                                 </td>
                                             </tr>
+                                        ) : invoicesTable.filtered.length ===
+                                          0 ? (
+                                            <tr>
+                                                <td
+                                                    colSpan={5}
+                                                    className="py-10 text-center text-xs text-slate-400"
+                                                >
+                                                    No invoices match your
+                                                    search.
+                                                </td>
+                                            </tr>
                                         ) : (
-                                            statement.invoices.map(
+                                            invoicesTable.paged.map(
                                                 (invoice) => (
                                                     <tr
                                                         key={invoice.id}
@@ -328,6 +374,15 @@ export default function FinanceStatement({ student }: Props) {
                                     </tbody>
                                 </table>
                             </div>
+                            {invoicesTable.filtered.length > 0 && (
+                                <div className={PAGINATION_FOOTER}>
+                                    <Pagination
+                                        meta={invoicesTable.meta}
+                                        setPage={invoicesTable.setPage}
+                                        setLimit={invoicesTable.setLimit}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -343,6 +398,13 @@ export default function FinanceStatement({ student }: Props) {
                                     {statement.credit_notes.length}
                                 </span>
                             </div>
+                            <TableToolbar
+                                value={creditsTable.search}
+                                onChange={creditsTable.setSearch}
+                                shown={creditsTable.paged.length}
+                                total={creditsTable.filtered.length}
+                                placeholder="Search credit notes…"
+                            />
                             <div className="custom-scrollbar overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead>
@@ -359,8 +421,18 @@ export default function FinanceStatement({ student }: Props) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {statement.credit_notes.map(
-                                            (credit) => (
+                                        {creditsTable.filtered.length === 0 ? (
+                                            <tr>
+                                                <td
+                                                    colSpan={5}
+                                                    className="py-10 text-center text-xs text-slate-400"
+                                                >
+                                                    No credit notes match your
+                                                    search.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            creditsTable.paged.map((credit) => (
                                                 <tr
                                                     key={credit.id}
                                                     className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
@@ -423,11 +495,20 @@ export default function FinanceStatement({ student }: Props) {
                                                         )}
                                                     </td>
                                                 </tr>
-                                            ),
+                                            ))
                                         )}
                                     </tbody>
                                 </table>
                             </div>
+                            {creditsTable.filtered.length > 0 && (
+                                <div className={PAGINATION_FOOTER}>
+                                    <Pagination
+                                        meta={creditsTable.meta}
+                                        setPage={creditsTable.setPage}
+                                        setLimit={creditsTable.setLimit}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -443,6 +524,13 @@ export default function FinanceStatement({ student }: Props) {
                                     {statement.payments.length}
                                 </span>
                             </div>
+                            <TableToolbar
+                                value={paymentsTable.search}
+                                onChange={paymentsTable.setSearch}
+                                shown={paymentsTable.paged.length}
+                                total={paymentsTable.filtered.length}
+                                placeholder="Search payments…"
+                            />
                             <div className="custom-scrollbar overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead>
@@ -459,35 +547,58 @@ export default function FinanceStatement({ student }: Props) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {statement.payments.map((payment) => (
-                                            <tr
-                                                key={payment.id}
-                                                className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
-                                            >
-                                                <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
-                                                    {payment.payer_name}
-                                                </td>
-                                                <td className="px-4 py-2.5 text-slate-500">
-                                                    #{payment.reference}
-                                                </td>
-                                                <td className="px-4 py-2.5 text-slate-500 capitalize">
-                                                    {payment.method}
-                                                </td>
-                                                <td className="px-4 py-2.5 text-slate-500">
-                                                    {new Date(
-                                                        payment.created_at,
-                                                    ).toLocaleDateString()}
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-semibold text-emerald-600 tabular-nums dark:text-emerald-400">
-                                                    {formatNaira(
-                                                        payment.amount,
-                                                    )}
+                                        {paymentsTable.filtered.length === 0 ? (
+                                            <tr>
+                                                <td
+                                                    colSpan={5}
+                                                    className="py-10 text-center text-xs text-slate-400"
+                                                >
+                                                    No payments match your
+                                                    search.
                                                 </td>
                                             </tr>
-                                        ))}
+                                        ) : (
+                                            paymentsTable.paged.map(
+                                                (payment) => (
+                                                    <tr
+                                                        key={payment.id}
+                                                        className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
+                                                    >
+                                                        <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
+                                                            {payment.payer_name}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-500">
+                                                            #{payment.reference}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-500 capitalize">
+                                                            {payment.method}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-500">
+                                                            {new Date(
+                                                                payment.created_at,
+                                                            ).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-right font-semibold text-emerald-600 tabular-nums dark:text-emerald-400">
+                                                            {formatNaira(
+                                                                payment.amount,
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ),
+                                            )
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
+                            {paymentsTable.filtered.length > 0 && (
+                                <div className={PAGINATION_FOOTER}>
+                                    <Pagination
+                                        meta={paymentsTable.meta}
+                                        setPage={paymentsTable.setPage}
+                                        setLimit={paymentsTable.setLimit}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\DutySeparationViolationException;
+use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\ReconcileAccounts;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactorEnrolled;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // module's commands are registered explicitly here.
     ->withCommands([
         ReconcileAccounts::class,
+        AuditLedgerCoherence::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);

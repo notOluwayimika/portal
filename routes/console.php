@@ -36,3 +36,21 @@ Schedule::command('authz:prune --older-than=30')
 Schedule::command('finance:reconcile-accounts')
     ->daily()
     ->description('Reconcile finance_student_accounts.balance_minor against SUM(signed ledger); report drift (§15F)');
+
+// Document↔ledger coherence detector (ADR 0047). reconcile-accounts trusts the ledger and
+// checks the projection against it; THIS checks the ledger against the documents that
+// produced it — the boundary nothing else guards. Also School-scoped (runFor). Detect-only:
+// there is no --fix (append-only ledger, unknowable right side — see the command docblock).
+Schedule::command('finance:audit-ledger-coherence')
+    ->daily()
+    ->description('Verify the subledger is coherent with its source documents; exit non-zero on incoherence (ADR 0047)');
+
+// Segregation-of-duties detector (shipped in 73f47f7, never scheduled until now). The
+// grant-time enforcement slice relies on this as its backstop for the paths enforcement
+// cannot reach (raw model_has_roles inserts, role_has_permissions edits outside the matrix),
+// so it must actually run somewhere. Read-only; exits non-zero on any both-sides user. It is
+// School-agnostic in its own iteration (it scans model_has_roles across schools internally),
+// so no runFor wrapper here — like authz:prune, and unlike the two finance commands above.
+Schedule::command('finance:audit-duty-separation')
+    ->daily()
+    ->description('Per school, list users holding BOTH sides of any maker-checker pair; exit non-zero on findings');

@@ -56,3 +56,4 @@ implementing phase starts.
 | [0044](0044-result-enrollment-permissions.md) | Result & enrollment authorization moves from roles to permissions | 1→Continuous | **Issued (design)** |
 | [0045](0045-super-admin-no-ambient-authority.md) | `super_admin` has no ambient authority; domain action via impersonation | 1 | **Proposed (design)** |
 | [0046](0046-finance-delivery-thin-vertical-slices.md) | Finance delivery shape: thin vertical slices (UI + e2e with domain) | 1→Continuous | **Accepted** |
+| [0047](0047-ledger-coherence-detector.md) | Document↔ledger coherence: a detect-only sibling to reconcile-accounts | 1 | **Accepted** |

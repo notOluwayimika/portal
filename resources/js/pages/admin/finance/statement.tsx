@@ -18,6 +18,7 @@ import { FinanceStatCard } from '@/components/finance/finance-stat-card';
 import { IssueCreditNoteModal } from '@/components/finance/issue-credit-note-modal';
 import { NewInvoiceModal } from '@/components/finance/new-invoice-modal';
 import { RecordPaymentModal } from '@/components/finance/record-payment-modal';
+import { RequestVoidModal } from '@/components/finance/request-void-modal';
 import { TableToolbar } from '@/components/finance/table-toolbar';
 import { Pagination } from '@/components/pagination';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -57,6 +58,7 @@ export default function FinanceStatement({ student }: Props) {
     const [error, setError] = useState(false);
     const [payFor, setPayFor] = useState<Invoice | null>(null);
     const [creditFor, setCreditFor] = useState<Invoice | null>(null);
+    const [voidFor, setVoidFor] = useState<Invoice | null>(null);
     const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
 
     const load = useCallback(async () => {
@@ -81,6 +83,16 @@ export default function FinanceStatement({ student }: Props) {
     }, [load]);
 
     const account = statement?.account;
+
+    // The set of invoice DISPLAY NUMBERS with a PENDING void request — the invoice is still active
+    // but a void is awaiting a checker. Matched on display_number because the statement invoice
+    // carries a uuid, not the numeric PK the void request references. Used to swap the "Request
+    // void" action for an "awaiting approval" badge, so a maker cannot stack two open requests.
+    const pendingVoidDisplayNumbers = new Set(
+        (statement?.void_requests ?? [])
+            .filter((v) => v.status === 'submitted' && v.invoice_display_number)
+            .map((v) => v.invoice_display_number),
+    );
 
     // Client-side datatables (search + pagination) over each already-loaded section.
     // Hooks run unconditionally; empty arrays until the statement loads.
@@ -334,7 +346,7 @@ export default function FinanceStatement({ student }: Props) {
                                                         <td className="px-4 py-2.5 text-right">
                                                             {invoice.status !==
                                                                 'void' && (
-                                                                <div className="flex justify-end gap-1.5">
+                                                                <div className="flex flex-wrap justify-end gap-1.5">
                                                                     <Button
                                                                         size="sm"
                                                                         variant="outline"
@@ -364,6 +376,30 @@ export default function FinanceStatement({ student }: Props) {
                                                                             note
                                                                         </Button>
                                                                     </Can>
+                                                                    {pendingVoidDisplayNumbers.has(
+                                                                        invoice.display_number,
+                                                                    ) ? (
+                                                                        <span className="inline-flex h-7 items-center rounded-lg bg-amber-50 px-2 text-xs font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                                                                            Void
+                                                                            requested
+                                                                        </span>
+                                                                    ) : (
+                                                                        <Can permission="finance.invoice.void-request.submit">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                onClick={() =>
+                                                                                    setVoidFor(
+                                                                                        invoice,
+                                                                                    )
+                                                                                }
+                                                                                className="h-7 rounded-lg text-xs"
+                                                                            >
+                                                                                Request
+                                                                                void
+                                                                            </Button>
+                                                                        </Can>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </td>
@@ -621,6 +657,12 @@ export default function FinanceStatement({ student }: Props) {
                 onClose={() => setCreditFor(null)}
                 invoice={creditFor}
                 onIssued={() => void load()}
+            />
+            <RequestVoidModal
+                isOpen={voidFor !== null}
+                onClose={() => setVoidFor(null)}
+                invoice={voidFor}
+                onRequested={() => void load()}
             />
         </>
     );

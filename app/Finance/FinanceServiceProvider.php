@@ -3,7 +3,9 @@
 namespace App\Finance;
 
 use App\Finance\Models\CreditNote;
+use App\Finance\Models\VoidRequest;
 use App\Finance\Policies\CreditNotePolicy;
+use App\Finance\Policies\VoidRequestPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,5 +24,8 @@ class FinanceServiceProvider extends ServiceProvider
         // approve/reject run for super_admin too (ApprovalAbility excludes them from the
         // Gate::before bypass), so this Policy actually decides maker ≠ checker.
         Gate::policy(CreditNote::class, CreditNotePolicy::class);
+
+        // Ph3b — the second maker-checker instance, same rationale as above.
+        Gate::policy(VoidRequest::class, VoidRequestPolicy::class);
     }
 }

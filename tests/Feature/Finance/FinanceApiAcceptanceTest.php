@@ -1,9 +1,14 @@
 <?php
 
+use App\Finance\Actions\ApproveCreditNote;
+use App\Finance\Actions\SubmitCreditNote;
+use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\StudentAccount;
+use App\Finance\Models\VoidRequest;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -13,10 +18,12 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
+use App\Support\Money;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -665,3 +672,355 @@ it('ISOLATION — a bursar cannot bill an enrollment in another School (cross-sc
     // And School B has no invoice as a result.
     expect(Invoice::withoutGlobalScopes()->where('school_id', $schoolB->id)->count())->toBe(0);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Ph3b — INVOICE VOID maker-checker (the second instance of the template)
+|--------------------------------------------------------------------------
+|
+| Void is now a two-person lifecycle, not a one-step cancel: a maker SUBMITS a
+| void request (the invoice is untouched — still issued, in the balance, holding
+| its F7 slot; no money moves), and a checker ≠ maker APPROVES (which flips the
+| invoice to void and posts the reversing ledger entry) or REJECTS (charge stands).
+|
+| These reuse the acceptance helpers (bursarWithToken / mcApi / mcInvoice / mcBalance)
+| and prove the void surface end to end through the real HTTP stack, plus the nine
+| numbered void proofs and the inherited maker-checker guarantees.
+*/
+
+/** @return array{0: string, 1: string} [voidMakerToken, voidCheckerToken] — distinct users, one side each. */
+function voidTokens(School $school): array
+{
+    [, $maker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.submit']);
+    [, $checker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.approve', 'finance.invoice.void-request.reject']);
+
+    return [$maker, $checker];
+}
+
+/** Submit a void request (maker) over HTTP and return its uuid. */
+function vrSubmit(string $token, string $invoiceUuid, string $reason = 'entered in error'): string
+{
+    return mcApi($token)
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => $reason])
+        ->assertCreated()->assertJsonPath('status', 'submitted')->json('id');
+}
+
+function vrRow(string $uuid): VoidRequest
+{
+    return VoidRequest::withoutGlobalScopes()->where('uuid', $uuid)->firstOrFail();
+}
+
+/** The number of REVERSAL ledger rows sourced to this invoice — the double-reverse detector. */
+function vrReversalCount(string $invoiceUuid): int
+{
+    $invoiceId = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->value('id');
+
+    return (int) DB::table('finance_ledger_transactions')
+        ->where('source_type', 'invoice')->where('source_id', $invoiceId)->where('type', 'reversal')->count();
+}
+
+// GATE — submitting a void request needs the MAKER permission; finance.access alone is 403.
+it('VOID GATE — submitting a void request without the submit permission is 403 (has finance.access)', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']); // NOT the void submit permission
+    $invoiceUuid = mcInvoice($token, acceptanceEnrollment($school));
+
+    mcApi($token)
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => 'x'])
+        ->assertForbidden();
+});
+
+// PROOF 1 (of 9) — a PENDING void does NOT free the F7 slot: the episode is still one-active-invoice.
+it('VOID PROOF 1 — a pending void request leaves the invoice ACTIVE, so the episode is still F7-locked', function () {
+    $school = School::factory()->create();
+    [$maker] = voidTokens($school);
+    $enrollment = acceptanceEnrollment($school);
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+
+    vrSubmit($maker, $invoiceUuid); // pending — invoice untouched
+
+    // The invoice is still 'issued', so a SECOND invoice for the same episode is F7-rejected.
+    mcApi($maker)->postJson('/api/v1/finance/invoices', [
+        'enrollment_id' => $enrollment,
+        'lines' => [['description' => 'Tuition', 'amount_minor' => 5000]],
+    ])->assertStatus(422);
+
+    $episodeId = DB::table('student_curricula')->where('uuid', $enrollment)->value('id');
+    expect(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued')
+        ->and((int) DB::table('finance_invoices')->where('student_curriculum_id', $episodeId)->count())
+        ->toBe(1); // still exactly one invoice for the episode
+});
+
+// PROOF 2 (of 9) — a PENDING void moves no money: zero reversal, balance unchanged.
+it('VOID PROOF 2 — a pending void posts NO ledger entry and leaves the balance unchanged', function () {
+    $school = School::factory()->create();
+    [$maker] = voidTokens($school);
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+
+    vrSubmit($maker, $invoiceUuid);
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0)
+        ->and(mcBalance($school, $studentUuid))->toBe(10000); // still fully owed
+});
+
+// PROOF 3 (of 9) — APPROVAL returns the balance EXACTLY to its pre-invoice value.
+it('VOID PROOF 3 — approval reverses the full total, returning the balance to its pre-invoice value', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+
+    expect(mcBalance($school, $studentUuid))->toBe(0); // pre-invoice
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+    expect(mcBalance($school, $studentUuid))->toBe(10000);
+
+    $vr = vrSubmit($maker, $invoiceUuid);
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")
+        ->assertOk()->assertJsonPath('status', 'approved');
+
+    expect(mcBalance($school, $studentUuid))->toBe(0)         // exactly back to pre-invoice
+        ->and(vrReversalCount($invoiceUuid))->toBe(1)         // exactly one reversal
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('void');
+});
+
+// PROOF 4 (of 9) — DOUBLE-APPROVAL cannot double-reverse. Three independent guards.
+it('VOID PROOF 4 — a second approval is refused and posts no second reversal (terminal + one-way + DB CHECK)', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+    $vr = vrSubmit($maker, $invoiceUuid);
+
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertOk();
+
+    // Guard A — the request is TERMINAL (approved): a second approve is refused (422), and the
+    //           TRANSITIONS map has no approved→approved edge.
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertStatus(422);
+
+    // Guard B — the invoice is ONE-WAY void: even a brand-new request cannot be submitted (already void).
+    mcApi($maker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => 'again'])
+        ->assertStatus(422);
+
+    // Guard C — the DB CHECK: a raw write setting decided_by = submitted_by is refused structurally.
+    $row = vrRow($vr);
+    expect(fn () => DB::table('finance_void_requests')->where('id', $row->id)->update([
+        'decided_by' => $row->submitted_by,
+    ]))->toThrow(QueryException::class);
+
+    // The money is intact: EXACTLY one reversal, balance back to pre-invoice (0), one reversal row only.
+    expect(vrReversalCount($invoiceUuid))->toBe(1)
+        ->and(mcBalance($school, $studentUuid))->toBe(0);
+});
+
+// PROOF 5 (of 9) — the precondition is RE-CHECKED authoritatively at approval: a payment that
+//                  lands AFTER submit blocks the approval (the submit-time check is only advisory).
+it('VOID PROOF 5 — a payment landing after submit blocks approval (authoritative re-check)', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    // The maker also holds finance.access, so it can record the payment (group permission only).
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+
+    $vr = vrSubmit($maker, $invoiceUuid); // eligible at submit — no payment yet
+
+    // …then a payment is allocated (the "race": state changes between submit and approve).
+    mcApi($maker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments",
+        ['amount_minor' => 10000, 'payer_name' => 'Mr Obi'])->assertCreated();
+
+    // Approval re-checks and REFUSES — the invoice is now settled, not cleanly voidable.
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertStatus(422);
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0)                                   // no reversal
+        ->and(vrRow($vr)->status)->toBe(VoidRequestStatus::Submitted)                 // still pending, not decided
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued');
+});
+
+// PROOF 6 (of 9) — an invoice with an APPROVED credit note cannot be voided — refused at BOTH submit and approve.
+it('VOID PROOF 6 — an approved credit note against the invoice blocks the void at submit AND at approve', function () {
+    $school = School::factory()->create();
+    [$cnMaker] = bursarWithToken($school, ['finance.access', 'finance.credit-note.submit']);
+    [$cnChecker] = bursarWithToken($school, ['finance.access', 'finance.credit-note.approve']);
+    [$maker, $checker] = voidTokens($school);
+    $enrollment = acceptanceEnrollment($school);
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+
+    // Submit a void FIRST (eligible now), then land an approved credit note before it is decided.
+    $vr = vrSubmit($maker, $invoiceUuid);
+
+    ActiveSchool::runFor($school->id, function () use ($invoiceUuid, $cnMaker, $cnChecker) {
+        $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->firstOrFail();
+        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(3000), CreditNoteKind::CreditNote, null, $cnMaker);
+        app(ApproveCreditNote::class)->handle($note, $cnChecker);
+    });
+
+    // Approval of the pending void now RE-CHECKS and refuses (approved credit note present).
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertStatus(422);
+
+    // And a FRESH submit is also refused up front (advisory guard at submit).
+    mcApi($maker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => 'x'])
+        ->assertStatus(422);
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0)
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued');
+});
+
+// PROOF 7 (of 9) — the episode frees ONLY after approval: a fresh bill succeeds post-void, not before.
+it('VOID PROOF 7 — the F7 slot frees only after approval, letting the episode be billed fresh', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    $enrollment = acceptanceEnrollment($school);
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+    $vr = vrSubmit($maker, $invoiceUuid);
+
+    // Still locked while pending (proven in PROOF 1) — approve, then the same episode bills fresh.
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertOk();
+
+    mcApi($maker)->postJson('/api/v1/finance/invoices', [
+        'enrollment_id' => $enrollment,
+        'lines' => [['description' => 'Re-bill', 'amount_minor' => 5000]],
+    ])->assertCreated();
+
+    // Two invoice rows for the episode (append-only), exactly one ACTIVE (non-void).
+    $episodeId = DB::table('student_curricula')->where('uuid', $enrollment)->value('id');
+    expect((int) DB::table('finance_invoices')->where('student_curriculum_id', $episodeId)->count())->toBe(2)
+        ->and((int) DB::table('finance_invoices')->where('student_curriculum_id', $episodeId)->whereNotNull('active_enrollment_key')->count())->toBe(1);
+});
+
+// PROOF 8 (of 9) — ONE OPEN REQUEST per invoice: a second pending void is refused (app + DB UNIQUE).
+it('VOID PROOF 8 — a second open void request for the same invoice is rejected (one-open-request)', function () {
+    $school = School::factory()->create();
+    [$maker] = voidTokens($school);
+    $invoiceUuid = mcInvoice($maker, acceptanceEnrollment($school));
+
+    vrSubmit($maker, $invoiceUuid); // first pending
+
+    // App-level friendly refusal.
+    mcApi($maker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => 'second'])
+        ->assertStatus(422);
+
+    // DB-level backstop: a raw INSERT of a second SUBMITTED row for the same invoice hits the
+    // generated-column UNIQUE (school_id, open_key). Proves the guarantee is structural, not app-only.
+    $invoiceId = DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('id');
+    $row = VoidRequest::withoutGlobalScopes()->where('invoice_id', $invoiceId)->firstOrFail();
+
+    expect(fn () => DB::table('finance_void_requests')->insert([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $row->school_id,
+        'invoice_id' => $row->invoice_id,
+        'reason' => 'raw second',
+        'status' => 'submitted',
+        'submitted_by' => $row->submitted_by,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))->toThrow(QueryException::class);
+
+    expect((int) DB::table('finance_void_requests')->where('invoice_id', $row->invoice_id)->count())->toBe(1);
+});
+
+// BITE-PROOF — the update guard actually BITES: identity/reason are frozen and DELETE is denied
+// on a raw write, but the decision columns still move (SchemaConventionsTest only proves the
+// trigger EXISTS by name; this proves it does the right thing).
+it('VOID BITE-PROOF — the request update guard freezes identity/reason and denies delete, but permits the decision', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    $invoiceUuid = mcInvoice($maker, acceptanceEnrollment($school));
+    $row = vrRow(vrSubmit($maker, $invoiceUuid));
+
+    // Frozen columns → a raw UPDATE is refused by the trigger; the row is un-deletable.
+    expect(fn () => DB::table('finance_void_requests')->where('id', $row->id)->update(['reason' => 'tampered']))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_void_requests')->where('id', $row->id)->update(['submitted_by' => null]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_void_requests')->where('id', $row->id)->delete())
+        ->toThrow(QueryException::class);
+
+    // …but the DECISION columns DO move — a legitimate approval through the Action succeeds, so
+    // the guard is a money/identity freeze, not a blanket lock (that would break the whole flow).
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$row->uuid}/approve")->assertOk();
+    expect(vrRow($row->uuid)->status->value)->toBe('approved');
+});
+
+// PROOF 9 (of 9) — the one-step cancel path is GONE: no route, no enum case, no live grant.
+it('VOID PROOF 9 — the one-step invoice cancel is fully retired (route + permission both absent)', function () {
+    // The route no longer exists → 405/404 (never a 2xx). We assert it is not routable.
+    $registered = collect(app('router')->getRoutes()->getRoutes())
+        ->map(fn ($r) => $r->uri())
+        ->filter(fn ($uri) => str_contains($uri, 'finance/invoices') && str_ends_with($uri, 'cancel'));
+    expect($registered)->toBeEmpty();
+
+    // No enum case named for a one-step cancel.
+    $names = array_map(fn ($c) => $c->value, App\Enums\Permission::cases());
+    expect($names)->not->toContain('finance.invoice.cancel');
+
+    // The void maker/checker permissions DO exist and are wired by the convention.
+    expect($names)->toContain('finance.invoice.void-request.submit')
+        ->and($names)->toContain('finance.invoice.void-request.approve')
+        ->and(ApprovalAbility::matchingMakerFor('finance.invoice.void-request.approve'))
+        ->toBe('finance.invoice.void-request.submit');
+});
+
+// INHERITED — the MAKER cannot approve their OWN void (Policy 403), even holding approve.
+it('VOID INHERITED — a maker who also holds approve is FORBIDDEN from approving their own void request', function () {
+    $school = School::factory()->create();
+    [, $both] = bursarWithToken($school, [
+        'finance.access', 'finance.invoice.void-request.submit', 'finance.invoice.void-request.approve',
+    ]);
+    $invoiceUuid = mcInvoice($both, acceptanceEnrollment($school));
+    $vr = vrSubmit($both, $invoiceUuid);
+
+    mcApi($both)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertForbidden();
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0)
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued');
+});
+
+// INHERITED — a super_admin cannot approve/reject (the checker bypass-exclusion holds for void too).
+it('VOID INHERITED — a super_admin cannot approve a void request (bypass-exclusion holds)', function () {
+    $school = School::factory()->create();
+    [$maker] = voidTokens($school);
+    $invoiceUuid = mcInvoice($maker, acceptanceEnrollment($school));
+    $vr = vrSubmit($maker, $invoiceUuid);
+
+    $super = User::factory()->create(['school_id' => $school->id]);
+    setPermissionsTeamId(null);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $super->assignRole('super_admin');
+    $super->flushSchoolAccessCache();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    $superToken = $super->createToken('acceptance');
+    $superToken->accessToken->forceFill(['school_id' => $school->id])->save();
+
+    mcApi($superToken->plainTextToken)
+        ->postJson("/api/v1/finance/void-requests/{$vr}/approve")
+        ->assertForbidden();
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0);
+});
+
+// INHERITED — REJECT leaves the invoice standing, posts no money, and requires a reason.
+it('VOID INHERITED — reject leaves the invoice issued with no money moved; empty reason is refused', function () {
+    $school = School::factory()->create();
+    [$maker, $checker] = voidTokens($school);
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+    $invoiceUuid = mcInvoice($maker, $enrollment);
+    $vr = vrSubmit($maker, $invoiceUuid);
+
+    // Empty reason → 422 (request validation).
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/reject", ['reason' => ''])
+        ->assertStatus(422);
+
+    mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/reject", ['reason' => 'Charge is valid'])
+        ->assertOk()->assertJsonPath('status', 'rejected')->assertJsonPath('rejection_reason', 'Charge is valid');
+
+    expect(vrReversalCount($invoiceUuid))->toBe(0)
+        ->and(mcBalance($school, $studentUuid))->toBe(10000)  // fully owed still
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued');
+});
+
+/** The student uuid behind an enrollment uuid — for balance assertions. */
+function acceptanceStudentUuidFor(School $school, string $enrollmentUuid): string
+{
+    $studentId = DB::table('student_curricula')->where('uuid', $enrollmentUuid)->value('student_id');
+
+    return (string) Student::query()->where('school_id', $school->id)->where('id', $studentId)->value('uuid');
+}

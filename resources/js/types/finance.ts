@@ -55,6 +55,37 @@ export type CreditNote = {
     created_at: string;
 };
 
+// Ph3b maker-checker: a void request is `submitted` (invoice untouched, no money moved)
+// until a checker ≠ maker `approved`s it (invoice voided, reversal posted) or `rejected`s
+// it (charge stands). Terminal states mirror the credit-note lifecycle.
+export type VoidRequestStatus = 'submitted' | 'approved' | 'rejected';
+
+// VoidRequestResource — carries `type: 'void'` so the unified approvals queue can render it
+// beside credit notes. `amount` is the invoice total (the reversal at stake).
+export type VoidRequest = {
+    type: 'void';
+    id: string; // uuid
+    invoice_id: number;
+    invoice_display_number?: string | null;
+    amount?: Money | null;
+    reason: string;
+    note?: string | null; // = reason, so the unified queue reads one field
+    status: VoidRequestStatus;
+    submitted_by_name?: string | null;
+    decided_at?: string | null;
+    rejection_reason?: string | null;
+    can_approve: boolean;
+    can_reject: boolean;
+    created_at: string;
+};
+
+// The two documents that flow through the maker-checker approvals queue. Both resources
+// carry a `type` discriminator; the queue merges the two pending feeds and routes the
+// approve/reject call to the right controller by `type`.
+export type PendingApproval =
+    | (CreditNote & { type: 'credit_note' })
+    | VoidRequest;
+
 // The account-level position (where credit-note credit is visible — it carries on the
 // balance, not as a per-invoice line). balance is signed (positive = owed).
 export type AccountPosition = {
@@ -70,6 +101,9 @@ export type Statement = {
     billed_total: Money;
     invoices: Invoice[];
     credit_notes: CreditNote[];
+    // Ph3b: void requests ride beside the invoices — a pending one is "void requested,
+    // awaiting approval" (invoice still active); a decided one is the audit trail.
+    void_requests: VoidRequest[];
     account: AccountPosition;
     payments: Payment[];
 };

@@ -2,10 +2,11 @@
 
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\ApproveCreditNote;
-use App\Finance\Actions\CancelInvoice;
+use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\Actions\SubmitCreditNote;
+use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
@@ -226,11 +227,14 @@ it('PROOF 8 — money-immutable, un-deletable, but STATUS-mutable: raw money UPD
 });
 
 it('PROOF 9 — submitting a credit note against a VOID invoice is rejected; nothing is created', function () {
-    [$school, $maker, $student] = cnSetup();
+    [$school, $maker, $student, $checker] = cnSetup();
 
-    ActiveSchool::runFor($school->id, function () use ($school, $maker, $student) {
+    ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $inv = cnInvoice($school, $student, 10000);
-        app(CancelInvoice::class)->handle($inv, 'mistake', $maker); // void
+        // Void via the Ph3b maker-checker path (the one-step CancelInvoice is retired):
+        // maker submits, checker ≠ maker approves — approval is what voids + reverses.
+        $vr = app(SubmitVoidRequest::class)->handle($inv, 'mistake', $maker);
+        app(ApproveVoidRequest::class)->handle($vr, $checker);
 
         expect(fn () => app(SubmitCreditNote::class)->handle(
             Invoice::withoutGlobalScopes()->findOrFail($inv->id), Money::fromKobo(1000), CreditNoteKind::CreditNote, null, $maker

@@ -12,10 +12,15 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import {
-    approve as approveAction,
-    pending as pendingAction,
-    reject as rejectAction,
+    approve as approveCredit,
+    pending as pendingCredit,
+    reject as rejectCredit,
 } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import {
+    approve as approveVoid,
+    pending as pendingVoid,
+    reject as rejectVoid,
+} from '@/actions/App/Finance/Http/Controllers/VoidRequestController';
 import { TableToolbar } from '@/components/finance/table-toolbar';
 import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
@@ -25,44 +30,70 @@ import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useClientTable } from '@/hooks/use-client-table';
 import { formatNaira } from '@/lib/format';
-import type { CreditNote } from '@/types/finance';
+import type { PendingApproval } from '@/types/finance';
 
 const TH =
     'px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase';
 
+/** The human label for a queue row — a credit note shows its own number; a void names its invoice. */
+function rowLabel(row: PendingApproval): string {
+    return row.type === 'credit_note'
+        ? row.display_number
+        : `Void · ${row.invoice_display_number ?? '—'}`;
+}
+
 /**
- * The checker's pending-approvals queue — a PURE CONSUMER of GET /api/v1/finance/credit-notes/
- * pending, presented as a datatable in the finance-module style (filter/search row + count +
- * pagination). Approving a credit note forgives money (posts the compensating ledger credit);
- * it is the checker side of maker-checker. Approve / Reject are driven by the server-computed
+ * The checker's UNIFIED pending-approvals queue (Ph3 + Ph3b) — a PURE CONSUMER of the two
+ * pending feeds (GET /credit-notes/pending and /void-requests/pending), merged into one
+ * datatable in the finance-module style with a TYPE column. Both are maker-checker documents:
+ * approving a credit note forgives money (posts a compensating credit); approving a void
+ * reverses a whole invoice charge. Approve / Reject are driven by the server-computed
  * `can_approve` / `can_reject` (a checker cannot act on their OWN submission — maker ≠ checker);
  * the Policy is the real guard, these flags just shape the UI. All money via formatNaira.
  *
- * Search + pagination are CLIENT-side: the endpoint returns the full pending set (a decision
- * queue is small), so the table filters and pages the rows it already holds.
+ * Each feed is gated by its own permission, so a checker holding only one side sees only that
+ * queue: a 403 (or any error) on one feed degrades to an empty contribution, never a broken page.
+ * Search + pagination are CLIENT-side (a decision queue is small).
  */
 export default function FinanceApprovalsQueue() {
-    const [rows, setRows] = useState<CreditNote[]>([]);
+    const [rows, setRows] = useState<PendingApproval[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [busyId, setBusyId] = useState<string | null>(null);
-    const [rejectFor, setRejectFor] = useState<CreditNote | null>(null);
+    const [rejectFor, setRejectFor] = useState<PendingApproval | null>(null);
     const [reason, setReason] = useState('');
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(false);
 
-        try {
-            const { data } = await axios.get<{ data: CreditNote[] }>(
-                pendingAction.url(),
-            );
-            setRows(data.data);
-        } catch {
+        // Fetch both feeds independently: a checker who only holds one side 403s on the other,
+        // which must not blank the whole queue. allSettled → each rejection contributes nothing.
+        const [credit, voids] = await Promise.allSettled([
+            axios.get<{ data: PendingApproval[] }>(pendingCredit.url()),
+            axios.get<{ data: PendingApproval[] }>(pendingVoid.url()),
+        ]);
+
+        // A hard failure is only when BOTH feeds error (e.g. the network is down) — a single
+        // permission 403 is expected and simply yields no rows from that side.
+        if (credit.status === 'rejected' && voids.status === 'rejected') {
             setError(true);
-        } finally {
             setLoading(false);
+
+            return;
         }
+
+        const merged: PendingApproval[] = [
+            ...(credit.status === 'fulfilled' ? credit.value.data.data : []),
+            ...(voids.status === 'fulfilled' ? voids.value.data.data : []),
+        ].sort(
+            (a, b) =>
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime(),
+        );
+
+        setRows(merged);
+        setLoading(false);
     }, []);
 
     useEffect(() => {
@@ -70,18 +101,26 @@ export default function FinanceApprovalsQueue() {
         void load();
     }, [load]);
 
-    const approve = async (row: CreditNote) => {
+    const approve = async (row: PendingApproval) => {
         setBusyId(row.id);
 
         try {
-            await axios.post(approveAction.url(row.id));
-            toast.success(`${row.display_number} approved — credit applied.`);
+            const url =
+                row.type === 'void'
+                    ? approveVoid.url(row.id)
+                    : approveCredit.url(row.id);
+            await axios.post(url);
+            toast.success(
+                row.type === 'void'
+                    ? `${rowLabel(row)} approved — invoice voided.`
+                    : `${rowLabel(row)} approved — credit applied.`,
+            );
             await load();
         } catch (err: unknown) {
             const message =
                 axios.isAxiosError(err) && err.response?.data?.message
                     ? err.response.data.message
-                    : 'Could not approve this credit note.';
+                    : 'Could not approve this request.';
             toast.error(message);
         } finally {
             setBusyId(null);
@@ -96,10 +135,12 @@ export default function FinanceApprovalsQueue() {
         setBusyId(rejectFor.id);
 
         try {
-            await axios.post(rejectAction.url(rejectFor.id), {
-                reason: reason.trim(),
-            });
-            toast.success(`${rejectFor.display_number} rejected.`);
+            const url =
+                rejectFor.type === 'void'
+                    ? rejectVoid.url(rejectFor.id)
+                    : rejectCredit.url(rejectFor.id);
+            await axios.post(url, { reason: reason.trim() });
+            toast.success(`${rowLabel(rejectFor)} rejected.`);
             setRejectFor(null);
             setReason('');
             await load();
@@ -107,17 +148,17 @@ export default function FinanceApprovalsQueue() {
             const message =
                 axios.isAxiosError(err) && err.response?.data?.message
                     ? err.response.data.message
-                    : 'Could not reject this credit note.';
+                    : 'Could not reject this request.';
             toast.error(message);
         } finally {
             setBusyId(null);
         }
     };
 
-    // Client-side filter + page over the loaded pending set (the shared datatable behaviour).
+    // Client-side filter + page over the merged pending set (the shared datatable behaviour).
     const { search, setSearch, filtered, paged, meta, setPage, setLimit } =
         useClientTable(rows, (r) => [
-            r.display_number,
+            rowLabel(r),
             r.invoice_display_number,
             r.submitted_by_name,
             r.note,
@@ -150,8 +191,9 @@ export default function FinanceApprovalsQueue() {
                                         </h1>
                                     </div>
                                     <p className="text-xs text-slate-500">
-                                        Credit notes awaiting a second person's
-                                        sign-off. Money moves only on approval.
+                                        Credit notes and invoice voids awaiting
+                                        a second person's sign-off. Money moves
+                                        only on approval.
                                     </p>
                                 </div>
                             </div>
@@ -177,7 +219,7 @@ export default function FinanceApprovalsQueue() {
                             onChange={setSearch}
                             shown={paged.length}
                             total={filtered.length}
-                            placeholder="Search by credit note, invoice or submitter…"
+                            placeholder="Search by request, invoice or submitter…"
                         />
 
                         {/* Table */}
@@ -185,10 +227,11 @@ export default function FinanceApprovalsQueue() {
                             <table className="w-full text-xs">
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
-                                        <th className={TH}>Credit note</th>
+                                        <th className={TH}>Type</th>
+                                        <th className={TH}>Request</th>
                                         <th className={TH}>Invoice</th>
                                         <th className={TH}>Submitted by</th>
-                                        <th className={TH}>Note</th>
+                                        <th className={TH}>Reason / note</th>
                                         <th className={TH}>Date</th>
                                         <th className="px-4 py-2.5 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                                             Amount
@@ -202,7 +245,7 @@ export default function FinanceApprovalsQueue() {
                                     {loading ? (
                                         <tr>
                                             <td
-                                                colSpan={7}
+                                                colSpan={8}
                                                 className="py-12 text-center"
                                             >
                                                 <Spinner className="mx-auto" />
@@ -210,7 +253,7 @@ export default function FinanceApprovalsQueue() {
                                         </tr>
                                     ) : error ? (
                                         <tr>
-                                            <td colSpan={7} className="py-12">
+                                            <td colSpan={8} className="py-12">
                                                 <div className="flex flex-col items-center gap-3 text-center">
                                                     <div className="flex size-12 items-center justify-center rounded-full bg-red-50 text-red-500 dark:bg-red-900/20">
                                                         <AlertCircle className="h-6 w-6" />
@@ -234,7 +277,7 @@ export default function FinanceApprovalsQueue() {
                                         </tr>
                                     ) : rows.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="py-12">
+                                            <td colSpan={8} className="py-12">
                                                 <div className="flex flex-col items-center gap-3 text-center">
                                                     <div className="flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-500 dark:bg-emerald-900/20">
                                                         <Check className="h-6 w-6" />
@@ -245,15 +288,16 @@ export default function FinanceApprovalsQueue() {
                                                     </p>
                                                     <p className="text-xs text-slate-500">
                                                         Submitted credit notes
-                                                        appear here for a
-                                                        checker to decide.
+                                                        and void requests appear
+                                                        here for a checker to
+                                                        decide.
                                                     </p>
                                                 </div>
                                             </td>
                                         </tr>
                                     ) : filtered.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="py-12">
+                                            <td colSpan={8} className="py-12">
                                                 <div className="flex flex-col items-center gap-3 text-center">
                                                     <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
                                                         <Search className="h-6 w-6" />
@@ -262,7 +306,7 @@ export default function FinanceApprovalsQueue() {
                                                         No results
                                                     </p>
                                                     <p className="text-xs text-slate-500">
-                                                        No pending credit notes
+                                                        No pending requests
                                                         match your search.
                                                     </p>
                                                 </div>
@@ -271,11 +315,22 @@ export default function FinanceApprovalsQueue() {
                                     ) : (
                                         paged.map((row) => (
                                             <tr
-                                                key={row.id}
+                                                key={`${row.type}:${row.id}`}
                                                 className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
                                             >
+                                                <td className="px-4 py-2.5">
+                                                    {row.type === 'void' ? (
+                                                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 uppercase dark:bg-amber-900/20 dark:text-amber-400">
+                                                            Void
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-indigo-700 uppercase dark:bg-indigo-900/20 dark:text-indigo-400">
+                                                            Credit note
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
-                                                    {row.display_number}
+                                                    {rowLabel(row)}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-slate-500">
                                                     {row.invoice_display_number ??
@@ -294,7 +349,11 @@ export default function FinanceApprovalsQueue() {
                                                     ).toLocaleDateString()}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-semibold text-slate-800 tabular-nums dark:text-slate-100">
-                                                    {formatNaira(row.amount)}
+                                                    {row.amount
+                                                        ? formatNaira(
+                                                              row.amount,
+                                                          )
+                                                        : '—'}
                                                 </td>
                                                 <td className="px-4 py-2.5">
                                                     <div className="flex justify-end gap-1.5">
@@ -371,8 +430,8 @@ export default function FinanceApprovalsQueue() {
                 onClose={() => setRejectFor(null)}
                 title={
                     rejectFor
-                        ? `Reject ${rejectFor.display_number}`
-                        : 'Reject credit note'
+                        ? `Reject ${rowLabel(rejectFor)}`
+                        : 'Reject request'
                 }
                 size="md"
             >
@@ -381,12 +440,12 @@ export default function FinanceApprovalsQueue() {
                         <Label htmlFor="reject-reason">Reason (required)</Label>
                         <Input
                             id="reject-reason"
-                            placeholder="Why is this credit note rejected?"
+                            placeholder="Why is this request rejected?"
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
-                            Rejecting never moves money; the note stays for
+                            Rejecting never moves money; the request stays for
                             audit.
                         </p>
                     </div>

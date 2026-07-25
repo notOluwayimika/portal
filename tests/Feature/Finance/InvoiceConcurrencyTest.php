@@ -1,8 +1,9 @@
 <?php
 
 use App\Exceptions\BusinessRuleException;
-use App\Finance\Actions\CancelInvoice;
+use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
@@ -168,22 +169,28 @@ it('CONCURRENCY — two racing GenerateInvoice for one enrollment yield exactly 
         ->and((int) DB::table('finance_ledger_transactions')->where('type', 'charge')->count())->toBe(1);
 });
 
-it('CONCURRENCY — a void racing another void is REFUSED, so no second reversal is posted', function () {
-    [$school, $admin, $student] = concurrentSetup();
+it('CONCURRENCY — approving a void racing another void is REFUSED, so no second reversal is posted', function () {
+    [$school, $maker, $student] = concurrentSetup();
+    $checker = User::factory()->create(['school_id' => $school->id]);
     $enrollment = concurrentEnrollment($school, $student);
 
-    $invoice = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
-        $enrollment->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
-    ));
+    [$invoice, $request] = ActiveSchool::runFor($school->id, function () use ($enrollment, $maker) {
+        $inv = app(GenerateInvoice::class)->handle(
+            $enrollment->uuid,
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
+        );
+
+        // A pending void request exists (maker submitted). Approval — the only money path —
+        // is what we race below; the losing approver must find the invoice already void.
+        return [$inv, app(SubmitVoidRequest::class)->handle($inv, 'ours', $maker)];
+    });
 
     $second = secondConnection();
 
     // OUR transaction opens and takes its snapshot, showing the invoice as ISSUED.
-    // Running the Action inside this transaction is what makes this a real
-    // bite-proof of CancelInvoice: its own DB::transaction nests as a savepoint,
-    // so it inherits THIS stale snapshot — exactly the position the losing racer
-    // is in.
+    // Running the Action inside this transaction is what makes this a real bite-proof of
+    // ApproveVoidRequest: its own DB::transaction nests as a savepoint, so it inherits THIS
+    // stale snapshot — exactly the position the losing racer is in.
     DB::beginTransaction();
 
     try {
@@ -196,17 +203,16 @@ it('CONCURRENCY — a void racing another void is REFUSED, so no second reversal
             'cancel_reason' => 'the other racer',
         ]);
 
-        // ── THE DANGER, demonstrated: our snapshot is now stale — a plain read
-        //    inside our transaction STILL reports 'issued'. A guard written as a
-        //    plain read-then-write passes here and posts a SECOND reversing entry,
-        //    double-crediting the student.
+        // ── THE DANGER, demonstrated: our snapshot is now stale — a plain read inside our
+        //    transaction STILL reports 'issued'. A guard written as a plain read-then-write
+        //    passes here and posts a SECOND reversing entry, double-crediting the student.
         expect(DB::table('finance_invoices')->where('id', $invoice->id)->value('status'))->toBe('issued');
 
-        // ── THE GUARD, holding: CancelInvoice re-reads with lockForUpdate(), a
-        //    CURRENT read that bypasses the snapshot, sees the committed VOID and
-        //    refuses. Swap that lockForUpdate() for a plain read and this fails.
-        expect(fn () => ActiveSchool::runFor($school->id, fn () => app(CancelInvoice::class)->handle(
-            Invoice::withoutGlobalScopes()->find($invoice->id), 'ours', $admin,
+        // ── THE GUARD, holding: ApproveVoidRequest locks the invoice row FIRST with
+        //    lockForUpdate(), a CURRENT read that bypasses the snapshot, sees the committed
+        //    VOID and refuses. Swap that lockForUpdate() for a plain read and this fails.
+        expect(fn () => ActiveSchool::runFor($school->id, fn () => app(ApproveVoidRequest::class)->handle(
+            $request->fresh(), $checker,
         )))->toThrow(BusinessRuleException::class);
     } finally {
         DB::rollBack();

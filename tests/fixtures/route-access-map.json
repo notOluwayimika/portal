@@ -1067,6 +1067,12 @@
             "super_admin"
         ]
     },
+    "GET /api/v1/finance/void-requests/pending": {
+        "auth": true,
+        "roles": [
+            "finance_director"
+        ]
+    },
     "GET /boarding-parent/behavioral-assessments": {
         "auth": true,
         "roles": [
@@ -1123,6 +1129,12 @@
             "admin",
             "finance_director",
             "super_admin"
+        ]
+    },
+    "GET /finance/approvals": {
+        "auth": true,
+        "roles": [
+            "finance_director"
         ]
     },
     "GET /finance/students/{student}/statement": {
@@ -2447,15 +2459,6 @@
             "super_admin"
         ]
     },
-    "POST /api/v1/finance/invoices/{invoice}/cancel": {
-        "auth": true,
-        "roles": [
-            "accounts_officer",
-            "admin",
-            "finance_director",
-            "super_admin"
-        ]
-    },
     "POST /api/v1/finance/invoices/{invoice}/credit-notes": {
         "auth": true,
         "roles": [
@@ -2472,6 +2475,13 @@
             "super_admin"
         ]
     },
+    "POST /api/v1/finance/invoices/{invoice}/void-requests": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "super_admin"
+        ]
+    },
     "POST /api/v1/finance/students/{student}/invoices": {
         "auth": true,
         "roles": [
@@ -2479,6 +2489,18 @@
             "admin",
             "finance_director",
             "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/void-requests/{voidRequest}/approve": {
+        "auth": true,
+        "roles": [
+            "finance_director"
+        ]
+    },
+    "POST /api/v1/finance/void-requests/{voidRequest}/reject": {
+        "auth": true,
+        "roles": [
+            "finance_director"
         ]
     },
     "POST /dashboard/refresh": {

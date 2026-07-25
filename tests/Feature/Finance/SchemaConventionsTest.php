@@ -56,7 +56,27 @@ it('the 1.4c immutability triggers exist by name on the finance_ append-only tab
         // money-immutable but STATUS-mutable, not fully append-only. DELETE stays denied;
         // UPDATE is guarded to permit ONLY the decision columns (see the update_guard test).
         'finance_credit_notes_no_delete',
+        // Ph3b — a void request is a lifecycle DOCUMENT, same shape: DELETE denied, UPDATE
+        // guarded to permit only the decision columns (see the void update_guard test).
+        'finance_void_requests_no_delete',
     );
+});
+
+it('the void-request guards enforce request-immutability + decision-mutability by NAME (Ph3b)', function () {
+    // Ph3b mirrors the credit-note lifecycle: an UPDATE guard (invoice/reason/maker/identity
+    // immutable, only the decision columns move) plus a DELETE deny. There is deliberately NO
+    // insert guard — a void request carries no money of its own (only ApproveVoidRequest posts
+    // the reversal), so a raw insert forges an audit row but moves nothing.
+    $triggers = collect(DB::select(
+        'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+         WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?', ['finance_void_requests']
+    ))->pluck('TRIGGER_NAME')->all();
+
+    expect($triggers)->toContain('finance_void_requests_update_guard')
+        ->and($triggers)->toContain('finance_void_requests_no_delete')
+        // No insert guard by design, and no bare no_update (relocated into the update guard).
+        ->and($triggers)->not->toContain('finance_void_requests_insert_guard')
+        ->and($triggers)->not->toContain('finance_void_requests_no_update');
 });
 
 it('the credit-note guards enforce money-immutability + status-mutability + the ceiling by NAME (Ph3)', function () {

@@ -1,9 +1,13 @@
 <?php
 
+use App\Finance\Actions\ApproveVoidRequest;
+use App\Finance\Actions\SubmitVoidRequest;
+use App\Finance\Models\Invoice;
 use App\Models\Guardian;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -146,4 +150,29 @@ function superAdminUser(array $attributes = []): User
 function userWithNoAccessibleSchools(array $attributes = []): User
 {
     return User::factory()->create(array_merge(['school_id' => null], $attributes));
+}
+
+/**
+ * Void an invoice through the Ph3b maker-checker path — the one-step cancel route is RETIRED,
+ * so pre-existing tests that used to `POST …/cancel` now drive submit→approve at the domain
+ * layer instead: a fresh maker submits a void request, a distinct checker approves it (approval
+ * is what flips the invoice to void + posts the reversal). Returns the CHECKER — the user the
+ * invoice records as cancelled_by_user_id — so callers can assert on it.
+ *
+ * This deliberately uses the Actions, not HTTP: a single test actor can never hold both the
+ * maker and the checker permission (the grant guard forbids it), so a two-person void cannot be
+ * driven from one acting-as session. The HTTP surface is proven in FinanceApiAcceptanceTest.
+ */
+function voidInvoiceViaApproval(int $schoolId, string $invoiceUuid, string $reason = 'entered in error'): User
+{
+    $maker = User::factory()->create(['school_id' => $schoolId]);
+    $checker = User::factory()->create(['school_id' => $schoolId]);
+
+    ActiveSchool::runFor($schoolId, function () use ($invoiceUuid, $reason, $maker, $checker) {
+        $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->firstOrFail();
+        $request = app(SubmitVoidRequest::class)->handle($invoice, $reason, $maker);
+        app(ApproveVoidRequest::class)->handle($request, $checker);
+    });
+
+    return $checker;
 }

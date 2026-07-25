@@ -1,4 +1,8 @@
 {
+    "accounts_officer": [
+        "finance.access",
+        "finance.credit-note.submit"
+    ],
     "admin": [
         "academic_data.view",
         "academic_setup.manage",
@@ -17,7 +21,6 @@
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
         "finance.access",
-        "finance.credit-note.issue",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",
@@ -64,6 +67,11 @@
         "edit_psychomotor_skills",
         "view_behavioral_assessments",
         "view_psychomotor_skills"
+    ],
+    "finance_director": [
+        "finance.access",
+        "finance.credit-note.approve",
+        "finance.credit-note.reject"
     ],
     "form_teacher": [
         "academic_setup.manage",

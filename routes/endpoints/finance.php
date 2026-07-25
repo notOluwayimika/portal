@@ -19,12 +19,23 @@ Route::post('/v1/finance/invoices/{invoice:uuid}/cancel', [InvoiceController::cl
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
 
 /*
- * Issuing a credit note / write-off forgives money, so beyond the group's
- * finance.access it requires a DISTINCT permission. Layered middleware: this route
- * needs BOTH finance.access (the group) AND finance.credit-note.issue.
+ * Credit-note issuance is MAKER-CHECKER (Ph3). Forgiving money takes two people, so it is
+ * a lifecycle, not one call:
+ *   • SUBMIT (maker) proposes a pending credit note — no money moves.
+ *   • APPROVE (checker ≠ maker) posts the compensating ledger credit + moves the balance.
+ *   • REJECT (checker ≠ maker) closes it with a reason — never any money.
+ * Each route needs finance.access (the group) AND its own maker/checker permission; the
+ * record-level maker ≠ checker rule is the CreditNotePolicy (Gate::authorize in approve/
+ * reject), with the DB CHECK as the backstop. The pending queue is the checker's screen.
  */
-Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteController::class, 'store'])
-    ->middleware('permission:finance.credit-note.issue');
+Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteController::class, 'submit'])
+    ->middleware('permission:finance.credit-note.submit');
+Route::get('/v1/finance/credit-notes/pending', [CreditNoteController::class, 'pending'])
+    ->middleware('permission:finance.credit-note.approve');
+Route::post('/v1/finance/credit-notes/{creditNote:uuid}/approve', [CreditNoteController::class, 'approve'])
+    ->middleware('permission:finance.credit-note.approve');
+Route::post('/v1/finance/credit-notes/{creditNote:uuid}/reject', [CreditNoteController::class, 'reject'])
+    ->middleware('permission:finance.credit-note.reject');
 
 /*
  * Read side. Voided invoices are excluded by default; ?include_void=1 is the

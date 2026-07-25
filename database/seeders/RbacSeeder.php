@@ -72,6 +72,11 @@ class RbacSeeder extends Seeder
         'boarding_parent',
         'form_teacher',
         'registrar',
+        // Finance credit-note maker-checker (Ph3, ADR 0040/0044). Segregation of duties:
+        // the maker proposes, the checker (≠ maker) decides. The SyncRolePermissionsRequest
+        // grant guard makes any single role holding both sides impossible.
+        'accounts_officer',   // maker  — may submit credit notes for approval
+        'finance_director',   // checker — may approve / reject (never submit)
     ];
 
     /**
@@ -179,7 +184,10 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
                 PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
                 PermissionEnum::FINANCE_ACCESS->value,
-                PermissionEnum::FINANCE_CREDIT_NOTE_ISSUE->value,
+                // Credit-note issuance is now maker-checker (Ph3): admin keeps finance
+                // read access but holds NEITHER the maker nor the checker permission —
+                // even admin cannot forgive money alone. The dedicated accounts_officer /
+                // finance_director roles own the two-person flow.
                 PermissionEnum::ACADEMIC_DATA_VIEW->value,
                 PermissionEnum::SCORE_MANAGE->value,
                 PermissionEnum::STUDENT_STATUS_VIEW->value,
@@ -267,6 +275,19 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
                 PermissionEnum::ASSESSMENT_RECORD->value,
                 PermissionEnum::STUDENT_VIEW->value,
+            ],
+            // Finance credit-note maker-checker (Ph3). Each holds finance.access (the
+            // group gate for the finance pages) plus EXACTLY one side of the split — never
+            // both (the grant guard enforces it). super_admin is absent by design: ADR 0040
+            // — a platform authority never holds a maker-checker permission.
+            'accounts_officer' => [
+                PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::FINANCE_CREDIT_NOTE_SUBMIT->value,
+            ],
+            'finance_director' => [
+                PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::FINANCE_CREDIT_NOTE_APPROVE->value,
+                PermissionEnum::FINANCE_CREDIT_NOTE_REJECT->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

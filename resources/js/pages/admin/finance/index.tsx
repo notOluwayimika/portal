@@ -8,12 +8,14 @@ import {
     Landmark,
     RefreshCw,
     Search,
+    ShieldCheck,
     TrendingUp,
     Wallet,
     X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { index as accountsIndex } from '@/actions/App/Finance/Http/Controllers/FinanceAccountController';
+import { Can } from '@/components/can';
 import { AccountStatusBadge } from '@/components/finance/account-status-badge';
 import { FinanceStatCard } from '@/components/finance/finance-stat-card';
 import { Pagination } from '@/components/pagination';
@@ -135,7 +137,20 @@ export default function FinanceAccountsIndex() {
                                 </div>
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                <Can permission="finance.credit-note.approve">
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        variant="outline"
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Link href="/finance/approvals">
+                                            <ShieldCheck className="mr-1.5 h-4 w-4" />
+                                            Pending approvals
+                                        </Link>
+                                    </Button>
+                                </Can>
                                 <Button
                                     size="sm"
                                     variant="outline"

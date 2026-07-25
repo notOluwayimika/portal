@@ -77,3 +77,29 @@ it. This is exactly why `RecordPayment` opens with `Invoice::lockForUpdate()` be
 summing allocations, and it is a trap W3 must respect when it adds the account lock:
 the account `lockForUpdate` must precede any plain read whose result feeds the
 credit-apply decision.
+
+## The invariant that now lives in three call sites: **the invoice row is the serialization point for money actions on that invoice**
+
+Every money action whose legality depends on an invoice's current state takes
+`Invoice::lockForUpdate()` **first** — before any read the decision depends on — so
+concurrent actions on the same invoice serialise at that one row and each sees the
+others' committed effects rather than a stale snapshot:
+
+- **`RecordPayment`** (#94) — locks the invoice, then sums allocations for the
+  outstanding cap (`Σ(allocations) ≤ total`).
+- **`ApproveCreditNote`** (Ph3) — locks the invoice, then re-checks the ceiling
+  (`Σ(approved credits) ≤ total`) **and** that the invoice is still `issued` (Ph3b
+  remediation — a credit note cannot be approved against a since-voided invoice).
+- **`ApproveVoidRequest`** (Ph3b) — locks the invoice, then refuses if it is already
+  void (one-way) and re-checks `VoidEligibility` (no payment / no approved credit note)
+  before flipping it to void and posting the reversal.
+
+This is one invariant, not three coincidences, and it is easy to lose in a refactor
+because nothing names it in a single place — so it is named here. The general rule it
+serves (**every approval re-checks its subject's legality under the lock**) is written
+up for the maker-checker template in
+[`docs/handoff/maker-checker-two-instance-diff.md`](../handoff/maker-checker-two-instance-diff.md).
+
+A future money action that reads or mutates an invoice must join this convention:
+invoice-row lock first, then the reads its decision depends on. (The retired one-step
+`CancelInvoice` also followed it; its successor `ApproveVoidRequest` inherits it.)

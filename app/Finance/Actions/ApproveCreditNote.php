@@ -4,6 +4,7 @@ namespace App\Finance\Actions;
 
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
@@ -46,6 +47,19 @@ final class ApproveCreditNote
             // proposals against the same invoice serialise here, so the loser reads the
             // winner's committed sum and is rejected by the ceiling.
             $invoice = Invoice::query()->whereKey($creditNote->invoice_id)->lockForUpdate()->firstOrFail();
+
+            // Re-check the SUBJECT is still in the state that made the action legal — the general
+            // maker-checker rule (docs/handoff/maker-checker-two-instance-diff.md). A credit note
+            // approves against an ISSUED invoice; if the invoice was VOIDED after this note was
+            // submitted, its charge is already reversed and forgiving more would conjure credit
+            // from a dead document. The submit-time state is stale by approval — only this read,
+            // under the lock the void's approval also takes, is authoritative. The note stays
+            // `submitted` (a human rejects it with "invoice voided"); we never auto-decide it.
+            if ($invoice->status !== InvoiceStatus::Issued) {
+                throw new BusinessRuleException(
+                    'This invoice is no longer issued (it was voided); its credit note cannot be approved.'
+                );
+            }
 
             // Σ of ALREADY-approved credits for this invoice (pending proposals do not count).
             // The row being approved is still `submitted` at this point, so it is excluded and

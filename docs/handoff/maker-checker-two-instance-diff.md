@@ -59,6 +59,39 @@ this is its surface:
 8. **The controller skeleton.** `submit` (permission-gated route) → `approve` /
    `reject` (`Gate::authorize` + delegate). Same four methods, same shape.
 
+## The rule instance #3 needs first — re-check the subject at approval
+
+**Every approval must re-check, at approval time and under the lock, that its subject is still in
+the state that made the action legal.** Submit-time validity is stale by approval; a maker-checker
+gap between submit and decide is where the subject can change underneath a pending request.
+
+This is not a new rule — it is the generalization of three checks already in the code, discovered
+the hard way by a money hole that sat *between* the two instances (Ph3b remediation, 2026-07-25):
+
+| Instance | Subject state re-checked at approval | Where |
+|---|---|---|
+| Credit-note ceiling | Σ(approved credits) ≤ invoice total | `ApproveCreditNote` + update/insert trigger |
+| Void eligibility | no payment / no approved credit note settled | `ApproveVoidRequest` + `VoidEligibility` |
+| **Credit-note subject status** | **the invoice is still `issued`** | `ApproveCreditNote` + the trigger (this remediation) |
+
+**The hole that forced the third row.** A credit note submitted while the invoice was live sits
+`submitted` — no money moved, so `VoidEligibility` (which only sees *approved* credits) does not see
+it. The invoice is then voided and its whole charge reversed. The stale credit note still points at
+the dead invoice; approving it passes the ceiling (the void did not touch Σ approved) and posts a
+compensating credit — money conjured from a voided invoice, fully signed and audited. The reverse
+ordering was already safe (void's approval-time re-check catches an *approved* credit note); only
+this direction was open, because `ApproveCreditNote` predated the re-check-the-subject rule Ph3b
+established.
+
+The fix lives in `ApproveCreditNote` (under the invoice-row lock it already takes) and its DB
+trigger — **not** on the void side. Fixing it on the void side would only cover today's two
+instruments; a future third that also voids or supersedes an invoice would reopen it. The check
+belongs where the money moves, keyed to the subject's own legality precondition.
+
+**For instance #3:** whatever your approval does, enumerate what must be true of its *subject* for
+the action to be legal, and re-assert every one of those under the lock — not just the invariant
+your own document owns (the ceiling), but the state of anything your action reads or depends on.
+
 ## What DIVERGED (why extraction is not obviously free)
 
 The differences are **all in the money semantics of approval** — the one place

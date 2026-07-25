@@ -1,5 +1,16 @@
 <?php
 
+use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\RecordPayment;
+use App\Finance\DTOs\InvoiceLineSpec;
+use App\Models\Curriculum;
+use App\Models\School;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
+use App\Models\User;
+use App\Support\ActiveSchool;
+use App\Support\Money;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -34,6 +45,75 @@ it('every finance_ table carries a school_id column (uniform tenanting)', functi
 
 it('no stray fee_ Finance table remains after the rename', function () {
     expect(collect(DB::select("SHOW TABLES LIKE 'fee_%'"))->count())->toBe(0);
+});
+
+/**
+ * Real money rows to bite-test against — a FOR EACH ROW trigger never fires when no row
+ * matches (the F4 comment below), so exist-by-name proofs need an actual row to bite.
+ * Generates an invoice (invoice + line + ledger charge) and a partial payment (payment +
+ * allocation + ledger payment) through the domain actions.
+ *
+ * @return array{invoice:int, line:int, payment:int, allocation:int}
+ */
+function schemaMoneyRows(): array
+{
+    $school = School::factory()->create();
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    return ActiveSchool::runFor($school->id, function () use ($school, $student) {
+        $enrollment = StudentCurriculum::create([
+            'student_id' => $student->id,
+            'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
+            'status' => 'active',
+        ]);
+        $invoice = app(GenerateInvoice::class)->handle(
+            $enrollment->uuid,
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(50000))],
+        );
+        app(RecordPayment::class)->handle(
+            $invoice, Money::fromKobo(20000), 'Payer', User::factory()->create(['school_id' => $school->id])
+        );
+
+        return [
+            'invoice' => (int) $invoice->id,
+            'line' => (int) DB::table('finance_invoice_lines')->where('invoice_id', $invoice->id)->value('id'),
+            'payment' => (int) DB::table('finance_payments')->where('student_id', $student->id)->value('id'),
+            'allocation' => (int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->value('id'),
+        ];
+    });
+}
+
+it('BITE-PROOF — the append-only triggers on the money tables actually BITE (raw UPDATE/DELETE denied)', function () {
+    // The tests below assert these triggers EXIST by name; this proves they BITE. Before this,
+    // the append-only guards on finance_invoices (DELETE), finance_invoice_lines,
+    // finance_payments and finance_payment_allocations were exist-only — a dropped trigger
+    // would have left the name-check red only if someone remembered to also assert behaviour.
+    // (finance_ledger_transactions is already bite-proven in WalkingSkeletonTest; credit
+    // notes / void requests in CreditNoteTest / the acceptance harness.)
+    $ids = schemaMoneyRows();
+
+    // finance_invoices — DELETE denied. (status is intentionally MUTABLE, so only DELETE is
+    // guarded here; total-immutability on UPDATE is bite-proven in MultiLineInvoiceTest.)
+    expect(fn () => DB::table('finance_invoices')->where('id', $ids['invoice'])->delete())
+        ->toThrow(QueryException::class);
+
+    // finance_invoice_lines — fully append-only: UPDATE and DELETE both denied.
+    expect(fn () => DB::table('finance_invoice_lines')->where('id', $ids['line'])->update(['amount_minor' => 1]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_invoice_lines')->where('id', $ids['line'])->delete())
+        ->toThrow(QueryException::class);
+
+    // finance_payments — append-only.
+    expect(fn () => DB::table('finance_payments')->where('id', $ids['payment'])->update(['amount_minor' => 1]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_payments')->where('id', $ids['payment'])->delete())
+        ->toThrow(QueryException::class);
+
+    // finance_payment_allocations — append-only.
+    expect(fn () => DB::table('finance_payment_allocations')->where('id', $ids['allocation'])->update(['amount_minor' => 1]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_payment_allocations')->where('id', $ids['allocation'])->delete())
+        ->toThrow(QueryException::class);
 });
 
 it('the 1.4c immutability triggers exist by name on the finance_ append-only tables', function () {

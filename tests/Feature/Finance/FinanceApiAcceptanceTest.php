@@ -1024,3 +1024,130 @@ function acceptanceStudentUuidFor(School $school, string $enrollmentUuid): strin
 
     return (string) Student::query()->where('school_id', $school->id)->where('id', $studentId)->value('uuid');
 }
+
+/*
+|--------------------------------------------------------------------------
+| Ph3b REMEDIATION — the credit-note-over-void HOLE (between the two instances)
+|--------------------------------------------------------------------------
+|
+| A credit note submitted while the invoice was live sits `submitted` — invisible to
+| VoidEligibility (only APPROVED credits count). If the invoice is then voided (its whole
+| charge reversed), approving that stale note would conjure money from a dead document.
+| ApproveCreditNote now re-checks, under the invoice-row lock, that the invoice is still
+| `issued`; the credit-note trigger is the DB backstop for raw UPDATE and raw approved-INSERT.
+*/
+
+it('HOLE — a credit note pending on a since-voided invoice cannot be approved (app 422 + DB trigger); no money conjured', function () {
+    $school = School::factory()->create();
+    [$cnMaker, $cnChecker] = makerCheckerTokens($school);
+    [$vMaker, $vChecker] = voidTokens($school);
+    $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
+    $invoiceUuid = mcInvoice($cnMaker, $enrollment, 300000); // charge +300000
+
+    // Maker submits a 50000 credit note — pending, no money, invisible to VoidEligibility.
+    $creditUuid = mcSubmit($cnMaker, $invoiceUuid, 50000);
+
+    // A void is submitted + approved: eligibility passes, invoice voids, −300000 reversal posts,
+    // balance returns EXACTLY to pre-invoice (0).
+    $vr = vrSubmit($vMaker, $invoiceUuid);
+    mcApi($vChecker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertOk();
+    expect(mcBalance($school, $studentUuid))->toBe(0);
+
+    $ledgerBefore = (int) DB::table('finance_ledger_transactions')->count();
+
+    // THE HOLE, closed at the APP layer — approving the stale note is refused (422).
+    mcApi($cnChecker)->postJson("/api/v1/finance/credit-notes/{$creditUuid}/approve")->assertStatus(422);
+
+    // …and at the DB layer — a raw status flip to approved is refused by the trigger. decided_by
+    // is a DISTINCT user so the maker≠checker CHECK passes and it is the INVOICE-STATUS trigger
+    // (not the CHECK, and not the ceiling — 50000 ≤ 300000) that bites.
+    $note = mcCreditRow($creditUuid);
+    $other = User::factory()->create(['school_id' => $school->id]);
+    expect(fn () => DB::table('finance_credit_notes')->where('id', $note->id)->update([
+        'status' => 'approved', 'decided_by' => $other->id, 'decided_at' => now(),
+    ]))->toThrow(QueryException::class);
+
+    // No money conjured: ledger unchanged, balance still exactly pre-invoice, note still pending.
+    expect((int) DB::table('finance_ledger_transactions')->count())->toBe($ledgerBefore)
+        ->and(mcBalance($school, $studentUuid))->toBe(0)
+        ->and(mcCreditRow($creditUuid)->status->value)->toBe('submitted');
+});
+
+it('HOLE — a raw INSERT of an APPROVED credit note against a voided invoice is refused (insert guard)', function () {
+    $school = School::factory()->create();
+    [$cnMaker] = makerCheckerTokens($school);
+    [$vMaker, $vChecker] = voidTokens($school);
+    $enrollment = acceptanceEnrollment($school);
+    $invoiceUuid = mcInvoice($cnMaker, $enrollment, 300000);
+
+    // A valid submitted row to clone, then void the invoice.
+    $seed = mcCreditRow(mcSubmit($cnMaker, $invoiceUuid, 10000));
+    $vr = vrSubmit($vMaker, $invoiceUuid);
+    mcApi($vChecker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertOk();
+
+    // A raw INSERT already claiming approved, against the now-void invoice → the insert guard SIGNALs
+    // (10000 is within the ceiling, so only the invoice-issued check can refuse it).
+    expect(fn () => DB::table('finance_credit_notes')->insert([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $seed->school_id,
+        'student_id' => $seed->student_id,
+        'invoice_id' => $seed->invoice_id,
+        'number' => $seed->number + 1,
+        'amount_minor' => 10000,
+        'amount_currency' => 'NGN',
+        'kind' => 'credit_note',
+        'status' => 'approved',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))->toThrow(QueryException::class);
+
+    expect((int) DB::table('finance_credit_notes')->where('status', 'approved')->count())->toBe(0);
+});
+
+it('HOLE (safe direction still holds) — an approved credit note blocks the void, unchanged by the fix', function () {
+    $school = School::factory()->create();
+    [$cnMaker, $cnChecker] = makerCheckerTokens($school);
+    [$vMaker] = voidTokens($school);
+    $enrollment = acceptanceEnrollment($school);
+    $invoiceUuid = mcInvoice($cnMaker, $enrollment, 300000);
+
+    // Approve a credit note FIRST — the reverse ordering, already guarded by VoidEligibility.
+    $creditUuid = mcSubmit($cnMaker, $invoiceUuid, 50000);
+    mcApi($cnChecker)->postJson("/api/v1/finance/credit-notes/{$creditUuid}/approve")->assertOk();
+
+    // A void is now refused up front (an approved credit note has settled against the invoice).
+    mcApi($vMaker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/void-requests", ['reason' => 'x'])
+        ->assertStatus(422);
+});
+
+// UNIFIED QUEUE — the one-permission checker the "per-feed 403-tolerant" UI was written for, and
+// which no other test embodied: holds void-request.approve but NOT credit-note.approve.
+it('UNIFIED QUEUE — a void-only checker gets their void feed (200) and is 403 on the credit feed; can_approve is viewer-relative', function () {
+    $school = School::factory()->create();
+    // The checker holds ONLY the void checker permission (+ the group). No credit-note.approve.
+    [, $voidOnlyChecker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.approve', 'finance.invoice.void-request.reject']);
+    [$vMaker] = voidTokens($school);
+    $invoiceUuid = mcInvoice($vMaker, acceptanceEnrollment($school));
+    $vr = vrSubmit($vMaker, $invoiceUuid);
+
+    // The void feed renders for them, with the maker's request approvable (they are ≠ the maker).
+    mcApi($voidOnlyChecker)->getJson('/api/v1/finance/void-requests/pending')
+        ->assertOk()
+        ->assertJsonPath('data.0.type', 'void')
+        ->assertJsonPath('data.0.can_approve', true);
+
+    // The credit feed is 403 — the exact rejection the UI's Promise.allSettled degrades to "no
+    // rows from that side" instead of a broken page. (A credit-note checker would be the mirror.)
+    mcApi($voidOnlyChecker)->getJson('/api/v1/finance/credit-notes/pending')
+        ->assertForbidden();
+
+    // Viewer-relative: a user holding BOTH void submit + approve (minted directly — the grant
+    // guard forbids this per-ROLE, so this proves the record-level rule alone, as MC PROOF 3a
+    // does) sees can_approve FALSE on their OWN submission and the queue disables the button.
+    [, $both] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.submit', 'finance.invoice.void-request.approve']);
+    $ownInvoice = mcInvoice($vMaker, acceptanceEnrollment($school)); // vMaker generates; $both requests
+    vrSubmit($both, $ownInvoice);
+    mcApi($both)->getJson('/api/v1/finance/void-requests/pending')
+        ->assertOk()
+        ->assertJsonPath('data.0.can_approve', false); // their own submission — never self-approvable
+});

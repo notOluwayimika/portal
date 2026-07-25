@@ -126,6 +126,35 @@ the opposite of a paper trail).
   `Issued` and `Cancelled`; slice 2 renames/repurposes the terminal state to
   `Void` (a permanently-visible stamp) to match this policy's vocabulary.
 
+### 3a. Void precondition and the correct instrument once money has moved
+
+> **PROPOSED — UNSIGNED (drafted 2026-07-25, Ph3b remediation).** Written in signed form
+> for the project lead to accept; the code below already enforces it. §3 as signed
+> describes VOID as a status without a precondition — a gate now exists in the code with
+> no written rule, so this names it.
+
+**Policy (proposed):** an invoice may be voided **only while nothing has settled against
+it** — no payment has been allocated to it, and no approved credit note reduces it. Void
+reverses the invoice's **whole** charge, so it is clean only when the charge is the entire
+outstanding position. Once money has moved, the correct instrument is **not** void:
+
+- a payment has been allocated → reverse or **refund** the payment (refund is §10-adjacent,
+  not yet built), then void if appropriate;
+- an approved credit note reduces the invoice → the credit note is already the reduction;
+  a further void would double-count.
+
+**Two-person control.** Void is maker-checker (Ph3b): a maker submits a void request (the
+invoice is untouched, no money moves), a checker ≠ maker approves (the invoice flips to
+void and the reversing ledger entry posts) or rejects. One signature can no longer erase
+an obligation.
+
+**Enforcement — BUILT (Ph3b).** `VoidEligibility` refuses a settled invoice — advisory at
+submit, **authoritative at approval under the invoice-row lock** (a payment can land
+between submit and approve). The maker ≠ checker split is enforced at the Policy, a DB
+`CHECK`, and the `finance.invoice.void-request.*` permission convention. This **removes**
+the pre-Ph3b behaviour in which the one-step cancel could void a **paid** invoice, leaving
+the payment stranded as credit — see the promotion note.
+
 ## 4. Void must not leak into calculations
 
 The one real risk of choosing void over soft-delete: a void invoice silently

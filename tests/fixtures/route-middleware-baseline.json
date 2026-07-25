@@ -757,7 +757,7 @@
         "auth",
         "tenant",
         "permission:finance.access",
-        "permission:finance.credit-note.approve"
+        "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject"
     ],
     "GET /finance/students/{student}/statement": [
         "web",

@@ -24,6 +24,12 @@ use Illuminate\Support\Facades\DB;
  * approval re-checks under the lock only to catch a payment that lands in the submit→approve
  * window (the same monotonic condition, observed later). (Decision 5, settlement-state slice.)
  *
+ * ⚠ REFUNDS (instance #3) WILL BREAK THIS. "Has an allocated payment" is monotonic ONLY because
+ * nothing can currently undo a payment — a refund can. Once refunds exist, an invoice can lose
+ * its payment and become voidable again, so this HARD refusal becomes wrong (it must revert to
+ * advisory, with the authoritative decision left to the approval-time re-check in
+ * {@see ApproveVoidRequest}). Whoever builds refunds: revisit this branch, not just the ledger.
+ *
  * One open request per invoice: the friendly pre-check below covers the common case; the DB
  * generated-column UNIQUE (open_key) is the real guarantee against a concurrent double submit.
  */

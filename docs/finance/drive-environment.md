@@ -13,9 +13,10 @@ committed command — `php artisan finance:seed-drive-fixture` — that produces
 executing the real Actions**, never by writing rows. Every state you see is therefore a state the
 system can actually reach, and `finance:reconcile-accounts` runs clean on the result.
 
-It never touches your dev database: the command **refuses** unless `APP_ENV` is exactly `drive`, and
-refuses again if the connected database name looks like a real one (`brookstone`, `staging`, `prod`,
-`portal_testing`).
+It never touches your dev database: the command **refuses** unless `APP_ENV` is exactly `drive`, **and**
+requires the database name to be an explicit drive DB — it must contain a `drive` token (e.g.
+`portal_drive`). This is an **allowlist**, not a denylist: a name nobody anticipated (`finance_demo`,
+`school_uat`, `brookstone_pilot`) is refused by default rather than slipping through.
 
 ## 2FA is satisfied honestly, not bypassed
 

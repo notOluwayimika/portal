@@ -81,3 +81,12 @@ committed `.env.drive.example`), or the SPA's `/api/v1/finance/*` calls 401 and 
 "Could not load the statement" — the first thing this drive hit. Also note: under `php artisan serve`
 (single-threaded) the SPA can lose the CSRF race on the very first paint; the drive script reloads once
 on the error state.
+
+## Update — D1 fixed and re-driven (fix/finance-approvals-page-gate)
+
+`10-D1-void-only-checker-reaches-queue.png`: the same void-only checker now **reaches**
+`/finance/approvals` (no 403) and sees **only the VOID feed** — the credit-note feed is cleanly
+omitted (403-tolerated by `Promise.allSettled`), not a blank and not an error. The nav "Pending
+approvals" link is also visible again on `/finance`. The page route is now gated on holding **any**
+finance checker ability (derived from the `ApprovalAbility` convention), and the nav link mirrors it.
+super_admin stays excluded (checker abilities are never bypassed — ADR 0040/0045).

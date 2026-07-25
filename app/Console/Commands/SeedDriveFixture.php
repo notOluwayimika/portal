@@ -23,10 +23,10 @@ use Illuminate\Support\Facades\DB;
  * `rbac.two_factor_enforced` off by design (non-production default) — plain login reaches the page.
  * No auth path is touched.
  *
- * GUARDED (structural refusals, proven not asserted): refuses unless APP_ENV=drive, and again if
- * the connected database name looks like the dev/staging/test DB — it migrate:fresh-es, so it must
- * be incapable of touching a real DB. IDEMPOTENT: migrate:fresh first, so a re-run reproduces the
- * same fixture with no duplication.
+ * GUARDED (structural refusals, proven not asserted): refuses unless APP_ENV=drive, AND requires
+ * the database name to be an explicit drive DB (an ALLOWLIST, not a denylist — Rider A: a denylist
+ * only refuses the names someone remembered). It migrate:fresh-es, so it must be incapable of
+ * touching a real DB. IDEMPOTENT: migrate:fresh first, so a re-run reproduces the same fixture.
  */
 class SeedDriveFixture extends Command
 {
@@ -34,8 +34,14 @@ class SeedDriveFixture extends Command
 
     protected $description = 'Seed the Finance visual-drive fixture (drive env ONLY) — every state via the real Actions';
 
-    /** Databases this command must NEVER touch, whatever the env says. */
-    private const FORBIDDEN_DB_MARKERS = ['brookstone', 'staging', 'prod', 'portal_testing'];
+    /**
+     * The database name MUST look like a drive DB (ALLOWLIST, Rider A). A denylist only refuses the
+     * names someone thought of — the first `finance_demo`, `school_uat` or `brookstone_pilot` walks
+     * straight through. Requiring an explicit `drive` token and refusing everything else by default
+     * makes an accidental hit on a real database unrepresentable rather than merely unlisted.
+     * Matches e.g. `portal_drive`, `drive`, `my_drive_db`; refuses `finance_demo`, `school_uat`.
+     */
+    private const DRIVE_DB_PATTERN = '/(^|_)drive(_|$)/';
 
     public function handle(): int
     {
@@ -47,14 +53,13 @@ class SeedDriveFixture extends Command
             return self::FAILURE;
         }
 
-        // Guard 2 — the database name itself must not look like a real one (belt to Guard 1's braces).
+        // Guard 2 — the database name must EXPLICITLY be a drive DB (allowlist, not a denylist).
         $db = (string) DB::connection()->getDatabaseName();
-        foreach (self::FORBIDDEN_DB_MARKERS as $marker) {
-            if (str_contains(strtolower($db), $marker)) {
-                $this->error("REFUSED: database [{$db}] matches a forbidden marker [{$marker}]. Point the drive env at a throwaway database.");
+        if (! preg_match(self::DRIVE_DB_PATTERN, strtolower($db))) {
+            $this->error("REFUSED: database [{$db}] is not a recognised drive database — its name must contain a `drive` token (e.g. portal_drive). "
+                .'This is an ALLOWLIST: everything that is not explicitly a drive DB is refused, so a name a denylist never anticipated (finance_demo, school_uat, brookstone_pilot) cannot slip through.');
 
-                return self::FAILURE;
-            }
+            return self::FAILURE;
         }
 
         $this->warn("Drive fixture → database [{$db}]. Wiping and reseeding from zero…");

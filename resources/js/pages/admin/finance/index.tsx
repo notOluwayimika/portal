@@ -138,7 +138,17 @@ export default function FinanceAccountsIndex() {
                             </div>
 
                             <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                <Can permission="finance.credit-note.approve">
+                                {/* Visibility ≠ authority (D1): the link shows to a holder of ANY
+                                    finance checker ability, mirroring the page route's derived gate
+                                    — a void-only checker must be able to find the queue, not only
+                                    reach it by URL. super_admin is excluded (checker abilities are
+                                    never bypassed), matching the route. */}
+                                <Can
+                                    permissionAny={[
+                                        'finance.credit-note.approve',
+                                        'finance.invoice.void-request.approve',
+                                    ]}
+                                >
                                     <Button
                                         asChild
                                         size="sm"

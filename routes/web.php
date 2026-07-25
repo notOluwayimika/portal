@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\GuardianStatusEnum;
+use App\Enums\Permission;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Http\Controllers\ClassResultsController;
@@ -33,6 +34,7 @@ use App\Models\StudentResult;
 use App\Models\Teacher;
 use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
+use App\Support\ApprovalAbility;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -134,10 +136,24 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ]);
     })->name('admin.finance.statement');
 
-    // The checker's pending-approvals queue (Ph3 maker-checker). Gated on the CHECKER
-    // permission so only approvers reach it; the page fetches the queue client-side.
+    // The checker's pending-approvals queue (Ph3 + Ph3b). VISIBILITY (who may open the queue) is
+    // separated from AUTHORITY (who may approve a given ROW — the per-row can_approve): the page
+    // is gated on holding ANY finance CHECKER ability, not the credit-note one specifically. The
+    // set is DERIVED from the ApprovalAbility convention over the Permission catalog, so a future
+    // instance (refunds' finance.refund.approve) auto-joins the moment its permission exists — no
+    // edit here. Before this (D1, found by the drive) a void-only checker got a full-page 403 and
+    // the Ph3b per-feed 403-tolerance never ran. super_admin stays excluded exactly as on every
+    // other checker surface (ADR 0040 bypass-exclusion / ADR 0045 no ambient domain grants) — the
+    // route's pre-fix behaviour for them is preserved; the derived gate below carries the same
+    // exclusion because each listed ability is a checker action.
+    $financeCheckerAbilities = implode('|', array_values(array_filter(
+        array_map(fn (Permission $case) => $case->value, Permission::cases()),
+        fn (string $ability) => str_starts_with($ability, 'finance.')
+            && ApprovalAbility::isExcludedFromSuperAdminBypass($ability),
+    )));
+
     Route::get('/finance/approvals', fn () => Inertia::render('admin/finance/approvals'))
-        ->middleware('permission:finance.credit-note.approve')
+        ->middleware('permission:'.$financeCheckerAbilities)
         ->name('admin.finance.approvals');
 });
 

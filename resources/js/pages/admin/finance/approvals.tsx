@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     Check,
     RefreshCw,
+    Search,
     ShieldCheck,
     X,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
     pending as pendingAction,
     reject as rejectAction,
 } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,10 +30,14 @@ const TH =
 
 /**
  * The checker's pending-approvals queue — a PURE CONSUMER of GET /api/v1/finance/credit-notes/
- * pending. Approving a credit note forgives money (posts the compensating ledger credit); it is
- * the checker side of maker-checker. Approve / Reject are driven by the server-computed
+ * pending, presented as a datatable in the finance-module style (filter/search row + count +
+ * pagination). Approving a credit note forgives money (posts the compensating ledger credit);
+ * it is the checker side of maker-checker. Approve / Reject are driven by the server-computed
  * `can_approve` / `can_reject` (a checker cannot act on their OWN submission — maker ≠ checker);
  * the Policy is the real guard, these flags just shape the UI. All money via formatNaira.
+ *
+ * Search + pagination are CLIENT-side: the endpoint returns the full pending set (a decision
+ * queue is small), so the table filters and pages the rows it already holds.
  */
 export default function FinanceApprovalsQueue() {
     const [rows, setRows] = useState<CreditNote[]>([]);
@@ -40,6 +46,10 @@ export default function FinanceApprovalsQueue() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [rejectFor, setRejectFor] = useState<CreditNote | null>(null);
     const [reason, setReason] = useState('');
+
+    const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(10);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -106,6 +116,33 @@ export default function FinanceApprovalsQueue() {
         }
     };
 
+    // Client-side filter + page over the loaded pending set.
+    const query = search.trim().toLowerCase();
+    const filtered =
+        query === ''
+            ? rows
+            : rows.filter((r) =>
+                  [
+                      r.display_number,
+                      r.invoice_display_number,
+                      r.submitted_by_name,
+                      r.note,
+                  ].some((f) => (f ?? '').toLowerCase().includes(query)),
+              );
+
+    const lastPage = Math.max(1, Math.ceil(filtered.length / limit));
+    const currentPage = Math.min(page, lastPage);
+    const paged = filtered.slice(
+        (currentPage - 1) * limit,
+        currentPage * limit,
+    );
+    const meta = {
+        current_page: currentPage,
+        last_page: lastPage,
+        per_page: limit,
+        total: filtered.length,
+    };
+
     return (
         <>
             <Head title="Finance — pending approvals" />
@@ -153,8 +190,55 @@ export default function FinanceApprovalsQueue() {
                         </div>
                     </div>
 
-                    {/* ── Queue table ──────────────────────────────────────────── */}
+                    {/* ── Filters + Table Card ─────────────────────────────────── */}
                     <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
+                        {/* Search row */}
+                        <div className="border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center">
+                                <div className="relative w-full sm:max-w-md sm:flex-1">
+                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                    <Input
+                                        placeholder="Search by credit note, invoice or submitter…"
+                                        className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
+                                        value={search}
+                                        onChange={(e) => {
+                                            setSearch(e.target.value);
+                                            setPage(1);
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2 sm:ml-auto">
+                                    <span className="hidden text-xs font-medium text-slate-500 sm:inline">
+                                        Showing{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {paged.length}
+                                        </span>{' '}
+                                        of{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {filtered.length}
+                                        </span>
+                                    </span>
+                                    {search !== '' && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setSearch('');
+                                                setPage(1);
+                                            }}
+                                            className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                                        >
+                                            <X className="mr-1 h-3.5 w-3.5" />
+                                            Clear
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Table */}
                         <div className="custom-scrollbar overflow-x-auto">
                             <table className="w-full text-xs">
                                 <thead>
@@ -225,8 +309,25 @@ export default function FinanceApprovalsQueue() {
                                                 </div>
                                             </td>
                                         </tr>
+                                    ) : filtered.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="py-12">
+                                                <div className="flex flex-col items-center gap-3 text-center">
+                                                    <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                                                        <Search className="h-6 w-6" />
+                                                    </div>
+                                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                        No results
+                                                    </p>
+                                                    <p className="text-xs text-slate-500">
+                                                        No pending credit notes
+                                                        match your search.
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     ) : (
-                                        rows.map((row) => (
+                                        paged.map((row) => (
                                             <tr
                                                 key={row.id}
                                                 className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
@@ -309,6 +410,19 @@ export default function FinanceApprovalsQueue() {
                                 </tbody>
                             </table>
                         </div>
+
+                        {meta.last_page > 1 && (
+                            <div className="border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30">
+                                <Pagination
+                                    meta={meta}
+                                    setPage={setPage}
+                                    setLimit={(newLimit) => {
+                                        setPage(1);
+                                        setLimit(newLimit);
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

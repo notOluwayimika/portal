@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     Check,
     RefreshCw,
+    Search,
     ShieldCheck,
     X,
 } from 'lucide-react';
@@ -15,11 +16,14 @@ import {
     pending as pendingAction,
     reject as rejectAction,
 } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import { TableToolbar } from '@/components/finance/table-toolbar';
+import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
+import { useClientTable } from '@/hooks/use-client-table';
 import { formatNaira } from '@/lib/format';
 import type { CreditNote } from '@/types/finance';
 
@@ -28,10 +32,14 @@ const TH =
 
 /**
  * The checker's pending-approvals queue — a PURE CONSUMER of GET /api/v1/finance/credit-notes/
- * pending. Approving a credit note forgives money (posts the compensating ledger credit); it is
- * the checker side of maker-checker. Approve / Reject are driven by the server-computed
+ * pending, presented as a datatable in the finance-module style (filter/search row + count +
+ * pagination). Approving a credit note forgives money (posts the compensating ledger credit);
+ * it is the checker side of maker-checker. Approve / Reject are driven by the server-computed
  * `can_approve` / `can_reject` (a checker cannot act on their OWN submission — maker ≠ checker);
  * the Policy is the real guard, these flags just shape the UI. All money via formatNaira.
+ *
+ * Search + pagination are CLIENT-side: the endpoint returns the full pending set (a decision
+ * queue is small), so the table filters and pages the rows it already holds.
  */
 export default function FinanceApprovalsQueue() {
     const [rows, setRows] = useState<CreditNote[]>([]);
@@ -106,6 +114,15 @@ export default function FinanceApprovalsQueue() {
         }
     };
 
+    // Client-side filter + page over the loaded pending set (the shared datatable behaviour).
+    const { search, setSearch, filtered, paged, meta, setPage, setLimit } =
+        useClientTable(rows, (r) => [
+            r.display_number,
+            r.invoice_display_number,
+            r.submitted_by_name,
+            r.note,
+        ]);
+
     return (
         <>
             <Head title="Finance — pending approvals" />
@@ -153,8 +170,17 @@ export default function FinanceApprovalsQueue() {
                         </div>
                     </div>
 
-                    {/* ── Queue table ──────────────────────────────────────────── */}
+                    {/* ── Filters + Table Card ─────────────────────────────────── */}
                     <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
+                        <TableToolbar
+                            value={search}
+                            onChange={setSearch}
+                            shown={paged.length}
+                            total={filtered.length}
+                            placeholder="Search by credit note, invoice or submitter…"
+                        />
+
+                        {/* Table */}
                         <div className="custom-scrollbar overflow-x-auto">
                             <table className="w-full text-xs">
                                 <thead>
@@ -225,8 +251,25 @@ export default function FinanceApprovalsQueue() {
                                                 </div>
                                             </td>
                                         </tr>
+                                    ) : filtered.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="py-12">
+                                                <div className="flex flex-col items-center gap-3 text-center">
+                                                    <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                                                        <Search className="h-6 w-6" />
+                                                    </div>
+                                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                        No results
+                                                    </p>
+                                                    <p className="text-xs text-slate-500">
+                                                        No pending credit notes
+                                                        match your search.
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     ) : (
-                                        rows.map((row) => (
+                                        paged.map((row) => (
                                             <tr
                                                 key={row.id}
                                                 className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
@@ -309,6 +352,16 @@ export default function FinanceApprovalsQueue() {
                                 </tbody>
                             </table>
                         </div>
+
+                        {filtered.length > 0 && (
+                            <div className="border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30">
+                                <Pagination
+                                    meta={meta}
+                                    setPage={setPage}
+                                    setLimit={setLimit}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

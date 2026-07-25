@@ -71,6 +71,29 @@ class Invoice extends Model
     }
 
     /**
+     * Payment allocations against this invoice (read-only, for the settlement derivation).
+     * Append-only; includes both ordinary payments and carry-forward credit applied at
+     * generation — both reduce the outstanding, and neither is ever un-linked (a void
+     * reverses the CHARGE in the ledger, never the allocation). Σ(amount_minor) is one half
+     * of `outstanding = total − Σ(allocations) − Σ(approved credit notes)`.
+     */
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class);
+    }
+
+    /**
+     * Credit notes against this invoice (read-only, for the settlement derivation). Only the
+     * APPROVED ones reduce the outstanding — a `submitted` proposal moves no money — so the
+     * settlement sum filters on status. Kept as the full relation so both the pending badge
+     * and the approved sum can read from one load.
+     */
+    public function creditNotes(): HasMany
+    {
+        return $this->hasMany(CreditNote::class);
+    }
+
+    /**
      * Minimum width of the numeric portion of a rendered invoice number.
      *
      * A MINIMUM, NOT A MAXIMUM — and a GLOBAL constant, not per-School. Padding is a

@@ -38,6 +38,12 @@ final class InvoiceReadModel
             ->where('student_id', $studentId)
             ->when(! $includeVoid, fn ($q) => $q->excludingVoid())
             ->with('lines')
+            // Per-invoice settlement sums (Decision 1: derived, never stored). SQL aggregates,
+            // one query for the set — no N+1. `allocated_minor` covers ordinary payments AND
+            // applied carry-forward credit; `approved_credit_minor` counts only APPROVED credit
+            // notes (a pending proposal moves no money). InvoiceSettlement reads both.
+            ->withSum('allocations as allocated_minor', 'amount_minor')
+            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor')
             ->orderBy('id')
             ->get();
     }

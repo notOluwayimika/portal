@@ -1151,3 +1151,29 @@ it('UNIFIED QUEUE — a void-only checker gets their void feed (200) and is 403 
         ->assertOk()
         ->assertJsonPath('data.0.can_approve', false); // their own submission — never self-approvable
 });
+
+// SETTLEMENT WIRE — the statement read exposes per-invoice outstanding + settlement + eligibility
+// (the read-model gap this slice closed), proven through the real HTTP stack.
+it('SETTLEMENT WIRE — the statement returns outstanding, settlement_state and eligibility flags per invoice', function () {
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+    $studentUuid = acceptanceStudent($school);
+    $enrollment = DB::table('student_curricula')->where('student_id', function ($q) use ($school, $studentUuid) {
+        $q->from('students')->where('school_id', $school->id)->where('uuid', $studentUuid)->select('id');
+    })->value('uuid');
+
+    // Bill 300000, then pay 100000 → part_paid, outstanding 200000, void blocked by the payment.
+    $invoiceUuid = mcInvoice($token, $enrollment, 300000);
+    mcApi($token)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments",
+        ['amount_minor' => 100000, 'payer_name' => 'Payer'])->assertCreated();
+
+    mcApi($token)->getJson("/api/v1/finance/students/{$studentUuid}/invoices")
+        ->assertOk()
+        ->assertJsonPath('invoices.0.total.amount_minor', 300000)
+        ->assertJsonPath('invoices.0.outstanding.amount_minor', 200000)
+        ->assertJsonPath('invoices.0.settlement_state', 'part_paid')
+        ->assertJsonPath('invoices.0.can_record_payment', true)
+        ->assertJsonPath('invoices.0.can_submit_credit_note', true)
+        ->assertJsonPath('invoices.0.can_request_void', false)
+        ->assertJsonPath('invoices.0.void_blocked_reason', 'This invoice has a payment allocated to it and cannot be voided — reverse or refund the payment instead.');
+});

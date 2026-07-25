@@ -7,6 +7,10 @@ export type Money = { amount_minor: number; currency: string };
 
 export type InvoiceStatus = 'issued' | 'void';
 
+// Two ORTHOGONAL axes (never one badge): `status` above is the DOCUMENT state; this is the
+// derived SETTLEMENT state. `null` on a voided invoice — a void has no meaningful settlement.
+export type SettlementState = 'unpaid' | 'part_paid' | 'settled' | null;
+
 export type InvoiceLine = {
     id: string;
     description: string;
@@ -24,6 +28,16 @@ export type Invoice = {
     billed_to_name: string;
     academic_context: string;
     total: Money;
+    // Settlement axis (server-derived; the UI renders, never re-derives). `outstanding` is
+    // floored at zero for display — the account balance carries a paid-then-credited invoice's
+    // true credit position.
+    outstanding: Money;
+    settlement_state: SettlementState;
+    // Per-invoice eligibility — the UI gates buttons on these flags, never on JS arithmetic.
+    can_record_payment: boolean;
+    can_submit_credit_note: boolean;
+    can_request_void: boolean;
+    void_blocked_reason: string | null;
     lines?: InvoiceLine[];
     cancelled_at: string | null;
     cancel_reason: string | null;

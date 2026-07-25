@@ -3,6 +3,7 @@
 namespace App\Finance\Http\Resources;
 
 use App\Finance\Models\Invoice;
+use App\Finance\Services\InvoiceSettlement;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,6 +14,11 @@ class InvoiceResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        // Per-invoice settlement + eligibility — DERIVED server-side (the server owns the rule,
+        // the UI renders it; Decisions 1/2/3/4). Two orthogonal axes: `status` is the DOCUMENT
+        // state (issued/void); `settlement_state` + `outstanding` are the SETTLEMENT state.
+        $settlement = (new InvoiceSettlement)->for($this->resource);
+
         return [
             'id' => $this->uuid,
             // The stored integer, unchanged — existing consumers keep working.
@@ -25,6 +31,15 @@ class InvoiceResource extends JsonResource
             // Money serialises to {amount_minor, currency} via the VO — the only
             // sanctioned wire shape (ADR 0037/0039; never a decimal, never raw).
             'total' => $this->total,
+            // Settlement axis (displayed outstanding floors at zero; the account balance carries
+            // the true credit position when a paid invoice is later credit-noted).
+            'outstanding' => $settlement['outstanding'],
+            'settlement_state' => $settlement['settlement_state'],
+            // Eligibility flags — the UI gates buttons on these, never on client-side arithmetic.
+            'can_record_payment' => $settlement['can_record_payment'],
+            'can_submit_credit_note' => $settlement['can_submit_credit_note'],
+            'can_request_void' => $settlement['can_request_void'],
+            'void_blocked_reason' => $settlement['void_blocked_reason'],
             'lines' => InvoiceLineResource::collection($this->whenLoaded('lines')),
             'cancelled_at' => optional($this->cancelled_at)->toIso8601String(),
             'cancel_reason' => $this->cancel_reason,

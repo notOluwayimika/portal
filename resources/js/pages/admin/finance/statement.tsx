@@ -39,6 +39,20 @@ type Props = {
 
 const SECTION_CARD =
     'overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card';
+
+// Settlement axis presentation (the DERIVED state, distinct from the issued/void document badge).
+const SETTLEMENT_LABEL: Record<'unpaid' | 'part_paid' | 'settled', string> = {
+    unpaid: 'Unpaid',
+    part_paid: 'Part-paid',
+    settled: 'Settled',
+};
+const SETTLEMENT_BADGE: Record<'unpaid' | 'part_paid' | 'settled', string> = {
+    unpaid: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400',
+    part_paid:
+        'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
+    settled:
+        'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400',
+};
 const TH =
     'px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase';
 const HEAD_ROW =
@@ -93,6 +107,14 @@ export default function FinanceStatement({ student }: Props) {
             .filter((v) => v.status === 'submitted' && v.invoice_display_number)
             .map((v) => v.invoice_display_number),
     );
+
+    // Account-level Record Payment target (Decision 3): per-invoice Record Payment is suppressed
+    // once an invoice is settled, but a general/advance payment must still be possible — so the
+    // header offers it against the most recent ISSUED invoice. The payment belongs to the account;
+    // if that invoice is settled the whole amount banks to the wallet (advance), otherwise it
+    // allocates. (A dedicated account-scoped payment endpoint is the proper follow-up.)
+    const advancePaymentTarget =
+        statement?.invoices.filter((i) => i.status !== 'void').at(-1) ?? null;
 
     // Client-side datatables (search + pagination) over each already-loaded section.
     // Hooks run unconditionally; empty arrays until the statement loads.
@@ -162,6 +184,19 @@ export default function FinanceStatement({ student }: Props) {
                                     />
                                     Refresh
                                 </Button>
+                                {advancePaymentTarget && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() =>
+                                            setPayFor(advancePaymentTarget)
+                                        }
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Wallet className="mr-1.5 h-4 w-4" />
+                                        Record payment
+                                    </Button>
+                                )}
                                 <Button
                                     size="sm"
                                     onClick={() => setNewInvoiceOpen(true)}
@@ -326,56 +361,103 @@ export default function FinanceStatement({ student }: Props) {
                                                             }
                                                         </td>
                                                         <td className="px-4 py-2.5">
-                                                            <span
-                                                                className={cn(
-                                                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
-                                                                    invoice.status ===
-                                                                        'void'
-                                                                        ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                                            {/* Two ORTHOGONAL axes: the document
+                                                                state (issued/void) and, beneath it,
+                                                                the derived settlement state. Never
+                                                                collapsed into one badge. */}
+                                                            <div className="flex flex-col items-start gap-1">
+                                                                <span
+                                                                    className={cn(
+                                                                        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
+                                                                        invoice.status ===
+                                                                            'void'
+                                                                            ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                                                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                                                    )}
+                                                                >
+                                                                    {
+                                                                        invoice.status
+                                                                    }
+                                                                </span>
+                                                                {invoice.settlement_state && (
+                                                                    <span
+                                                                        className={cn(
+                                                                            'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                                                            SETTLEMENT_BADGE[
+                                                                                invoice
+                                                                                    .settlement_state
+                                                                            ],
+                                                                        )}
+                                                                    >
+                                                                        {
+                                                                            SETTLEMENT_LABEL[
+                                                                                invoice
+                                                                                    .settlement_state
+                                                                            ]
+                                                                        }
+                                                                    </span>
                                                                 )}
-                                                            >
-                                                                {invoice.status}
-                                                            </span>
+                                                            </div>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-right font-semibold text-slate-800 tabular-nums dark:text-slate-100">
                                                             {formatNaira(
                                                                 invoice.total,
                                                             )}
+                                                            {invoice.settlement_state &&
+                                                                invoice.settlement_state !==
+                                                                    'settled' && (
+                                                                    <div className="text-[10px] font-medium text-slate-400 tabular-nums">
+                                                                        {formatNaira(
+                                                                            invoice.outstanding,
+                                                                        )}{' '}
+                                                                        outstanding
+                                                                    </div>
+                                                                )}
                                                         </td>
                                                         <td className="px-4 py-2.5 text-right">
+                                                            {/* Per-button treatment (server owns
+                                                                the rule): HIDE what is meaningless
+                                                                (record payment once settled),
+                                                                keep AVAILABLE what is a real
+                                                                operation (credit note on a paid
+                                                                invoice), DISABLE-WITH-REASON what a
+                                                                rule forbids (void once settled). */}
                                                             {invoice.status !==
                                                                 'void' && (
                                                                 <div className="flex flex-wrap justify-end gap-1.5">
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="outline"
-                                                                        onClick={() =>
-                                                                            setPayFor(
-                                                                                invoice,
-                                                                            )
-                                                                        }
-                                                                        className="h-7 rounded-lg text-xs"
-                                                                    >
-                                                                        Record
-                                                                        payment
-                                                                    </Button>
-                                                                    <Can permission="finance.credit-note.submit">
+                                                                    {invoice.can_record_payment && (
                                                                         <Button
                                                                             size="sm"
                                                                             variant="outline"
                                                                             onClick={() =>
-                                                                                setCreditFor(
+                                                                                setPayFor(
                                                                                     invoice,
                                                                                 )
                                                                             }
                                                                             className="h-7 rounded-lg text-xs"
                                                                         >
-                                                                            Submit
-                                                                            credit
-                                                                            note
+                                                                            Record
+                                                                            payment
                                                                         </Button>
-                                                                    </Can>
+                                                                    )}
+                                                                    {invoice.can_submit_credit_note && (
+                                                                        <Can permission="finance.credit-note.submit">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                onClick={() =>
+                                                                                    setCreditFor(
+                                                                                        invoice,
+                                                                                    )
+                                                                                }
+                                                                                className="h-7 rounded-lg text-xs"
+                                                                            >
+                                                                                Submit
+                                                                                credit
+                                                                                note
+                                                                            </Button>
+                                                                        </Can>
+                                                                    )}
                                                                     {pendingVoidDisplayNumbers.has(
                                                                         invoice.display_number,
                                                                     ) ? (
@@ -388,7 +470,17 @@ export default function FinanceStatement({ student }: Props) {
                                                                             <Button
                                                                                 size="sm"
                                                                                 variant="outline"
+                                                                                disabled={
+                                                                                    !invoice.can_request_void
+                                                                                }
+                                                                                title={
+                                                                                    invoice.can_request_void
+                                                                                        ? undefined
+                                                                                        : (invoice.void_blocked_reason ??
+                                                                                          undefined)
+                                                                                }
                                                                                 onClick={() =>
+                                                                                    invoice.can_request_void &&
                                                                                     setVoidFor(
                                                                                         invoice,
                                                                                     )

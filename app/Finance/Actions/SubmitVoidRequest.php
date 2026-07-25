@@ -15,9 +15,14 @@ use Illuminate\Support\Facades\DB;
  * is NOT touched: it stays 'issued', stays in the balance, and keeps occupying its F7 slot.
  * No money moves. Approval is what voids it ({@see ApproveVoidRequest}).
  *
- * The eligibility check here (no allocated payment, no approved credit note) is ADVISORY — a
- * friendly early message. The AUTHORITATIVE check is re-run at approval under the invoice-row
- * lock, because a payment can land between submit and approve.
+ * The eligibility check here (no allocated payment, no approved credit note) is a HARD REFUSAL,
+ * not advisory — and that is correct because BOTH conditions are MONOTONIC: an allocation and an
+ * approved credit note are append-only/terminal, so once either lands the invoice can never
+ * become voidable again. A monotonic precondition that only warns at submit would let a maker
+ * persist a request guaranteed to fail — noise in the checker's queue that also burns the
+ * invoice's single open-request slot (open_key) for nothing. So it refuses here, and the
+ * approval re-checks under the lock only to catch a payment that lands in the submit→approve
+ * window (the same monotonic condition, observed later). (Decision 5, settlement-state slice.)
  *
  * One open request per invoice: the friendly pre-check below covers the common case; the DB
  * generated-column UNIQUE (open_key) is the real guarantee against a concurrent double submit.

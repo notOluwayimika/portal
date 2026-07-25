@@ -42,3 +42,6 @@ tsc-output.txt
 # agents/, skills/, commands/) stays tracked — only these two are ignored.
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Local drive-fixture environment (secrets copied from .env — never commit)
+.env.drive

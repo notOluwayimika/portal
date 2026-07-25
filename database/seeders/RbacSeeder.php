@@ -283,11 +283,17 @@ class RbacSeeder extends Seeder
             'accounts_officer' => [
                 PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_SUBMIT->value,
+                // Ph3b — maker side of the void instance too. Holding two MAKER permissions is
+                // fine; the grant guard only forbids a maker + its MATCHING checker in one role.
+                PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_SUBMIT->value,
             ],
             'finance_director' => [
                 PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_APPROVE->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_REJECT->value,
+                // Ph3b — checker side of the void instance.
+                PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
+                PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_REJECT->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

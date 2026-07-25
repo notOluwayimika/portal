@@ -1,7 +1,8 @@
 {
     "accounts_officer": [
         "finance.access",
-        "finance.credit-note.submit"
+        "finance.credit-note.submit",
+        "finance.invoice.void-request.submit"
     ],
     "admin": [
         "academic_data.view",
@@ -71,7 +72,9 @@
     "finance_director": [
         "finance.access",
         "finance.credit-note.approve",
-        "finance.credit-note.reject"
+        "finance.credit-note.reject",
+        "finance.invoice.void-request.approve",
+        "finance.invoice.void-request.reject"
     ],
     "form_teacher": [
         "academic_setup.manage",

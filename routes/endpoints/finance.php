@@ -4,6 +4,7 @@ use App\Finance\Http\Controllers\CreditNoteController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\PaymentController;
+use App\Finance\Http\Controllers\VoidRequestController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,8 +16,26 @@ use Illuminate\Support\Facades\Route;
  * aggregate hangs off /api/v1/finance from here on.
  */
 Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate']);
-Route::post('/v1/finance/invoices/{invoice:uuid}/cancel', [InvoiceController::class, 'cancel']);
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
+
+/*
+ * Invoice VOID is MAKER-CHECKER (Ph3b) — the second instance of the credit-note template. The
+ * one-step cancel is RETIRED: reversing a whole charge takes two people, so it is a lifecycle:
+ *   • SUBMIT (maker) proposes a void — the invoice stays issued, in the balance, no money moves.
+ *   • APPROVE (checker ≠ maker) voids the invoice + posts the reversing ledger entry (−total).
+ *   • REJECT (checker ≠ maker) closes it with a reason — the charge stands, no money.
+ * Each route needs finance.access (the group) AND its own maker/checker permission; the
+ * record-level maker ≠ checker rule is the VoidRequestPolicy (Gate::authorize in approve/reject),
+ * with the DB CHECK as the backstop. The queue is unified with credit notes in the checker's screen.
+ */
+Route::post('/v1/finance/invoices/{invoice:uuid}/void-requests', [VoidRequestController::class, 'submit'])
+    ->middleware('permission:finance.invoice.void-request.submit');
+Route::get('/v1/finance/void-requests/pending', [VoidRequestController::class, 'pending'])
+    ->middleware('permission:finance.invoice.void-request.approve');
+Route::post('/v1/finance/void-requests/{voidRequest:uuid}/approve', [VoidRequestController::class, 'approve'])
+    ->middleware('permission:finance.invoice.void-request.approve');
+Route::post('/v1/finance/void-requests/{voidRequest:uuid}/reject', [VoidRequestController::class, 'reject'])
+    ->middleware('permission:finance.invoice.void-request.reject');
 
 /*
  * Credit-note issuance is MAKER-CHECKER (Ph3). Forgiving money takes two people, so it is

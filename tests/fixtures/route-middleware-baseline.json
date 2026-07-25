@@ -684,11 +684,37 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "GET /api/v1/finance/accounts": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "GET /api/v1/finance/credit-notes/pending": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.credit-note.approve"
+    ],
+    "GET /api/v1/finance/students/{student}/billable-enrollment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
     "GET /api/v1/finance/students/{student}/invoices": [
         "api",
         "auth:sanctum",
         "tenant",
         "permission:finance.access"
+    ],
+    "GET /api/v1/finance/void-requests/pending": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.void-request.approve"
     ],
     "GET /boarding-parent/behavioral-assessments": [
         "web",
@@ -719,6 +745,25 @@
         "auth",
         "tenant",
         "permission:dashboard.view"
+    ],
+    "GET /finance": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "GET /finance/approvals": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.credit-note.approve"
+    ],
+    "GET /finance/students/{student}/statement": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:finance.access"
     ],
     "GET /forgot-password": [
         "web",
@@ -1483,23 +1528,65 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "POST /api/v1/finance/credit-notes/{creditNote}/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.credit-note.approve"
+    ],
+    "POST /api/v1/finance/credit-notes/{creditNote}/reject": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.credit-note.reject"
+    ],
     "POST /api/v1/finance/invoices": [
         "api",
         "auth:sanctum",
         "tenant",
         "permission:finance.access"
     ],
-    "POST /api/v1/finance/invoices/{invoice}/cancel": [
+    "POST /api/v1/finance/invoices/{invoice}/credit-notes": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:finance.access"
+        "permission:finance.access",
+        "permission:finance.credit-note.submit"
     ],
     "POST /api/v1/finance/invoices/{invoice}/payments": [
         "api",
         "auth:sanctum",
         "tenant",
         "permission:finance.access"
+    ],
+    "POST /api/v1/finance/invoices/{invoice}/void-requests": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.void-request.submit"
+    ],
+    "POST /api/v1/finance/students/{student}/invoices": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "POST /api/v1/finance/void-requests/{voidRequest}/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.void-request.approve"
+    ],
+    "POST /api/v1/finance/void-requests/{voidRequest}/reject": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.void-request.reject"
     ],
     "POST /dashboard/refresh": [
         "web",

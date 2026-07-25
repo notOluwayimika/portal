@@ -2,11 +2,13 @@
 
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\Role;
 use App\Models\Subject;
 use App\Models\SubjectResultStatus;
 use App\Models\User;
 use App\Policies\SubjectResultPolicy;
 use App\Support\ActiveSchool;
+use App\Support\ApprovalAbility;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -187,6 +189,41 @@ it('BITE-PROOF — the DB also rejects an UPDATE that makes the checker the make
     expect(fn () => DB::table('subject_result_statuses')
         ->update(['decided_by' => $maker->id]))
         ->toThrow(QueryException::class, 'subject_result_statuses_maker_ne_checker');
+});
+
+// ── The seeded grant map itself is SoD-disjoint (generic, convention-driven) ──
+
+it('SoD — no seeded role holds a checker ability together with its matching maker', function () {
+    // The SyncRolePermissionsRequest grant guard forbids this at runtime; this proves the
+    // SEEDED map (written directly, bypassing that request) is already disjoint. It is generic
+    // over App\Support\ApprovalAbility — a convention, not a pair list — so it covers
+    // result.*, finance.credit-note.*, finance.invoice.void-request.*, and any future
+    // maker/checker pair the day it is seeded, with nobody remembering to extend this test.
+    setPermissionsTeamId(null);
+
+    $roles = Role::with('permissions')->get();
+    expect($roles)->not->toBeEmpty();
+
+    $checkerAbilitiesSeen = 0;
+    foreach ($roles as $role) {
+        $held = $role->permissions->pluck('name')->all();
+
+        foreach ($held as $ability) {
+            $matchingMaker = ApprovalAbility::matchingMakerFor($ability);
+            if ($matchingMaker === null) {
+                continue; // not a checker action
+            }
+
+            $checkerAbilitiesSeen++;
+            expect(in_array($matchingMaker, $held, true))->toBeFalse(
+                "Role [{$role->name}] holds checker [{$ability}] AND its matching maker [{$matchingMaker}] — separation of duties violated."
+            );
+        }
+    }
+
+    // Guard the guard: a seeder with zero checker abilities would make the loop vacuously green.
+    // Assert we actually exercised the known checker abilities (result + credit-note + void).
+    expect($checkerAbilitiesSeen)->toBeGreaterThanOrEqual(4);
 });
 
 it('keeps the Policy and the DB constraint agreeing on the NULL case', function () {

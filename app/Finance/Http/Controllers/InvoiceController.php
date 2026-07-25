@@ -3,15 +3,14 @@
 namespace App\Finance\Http\Controllers;
 
 use App\Exceptions\BusinessRuleException;
-use App\Finance\Actions\CancelInvoice;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Contracts\BillableEnrollmentProvider;
-use App\Finance\Http\Requests\CancelInvoiceRequest;
 use App\Finance\Http\Requests\GenerateInvoiceForStudentRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
 use App\Finance\Http\Resources\CreditNoteResource;
 use App\Finance\Http\Resources\InvoiceResource;
 use App\Finance\Http\Resources\PaymentResource;
+use App\Finance\Http\Resources\VoidRequestResource;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\InvoiceReadModel;
 use App\Models\Student;
@@ -93,17 +92,6 @@ class InvoiceController extends Controller
         ]);
     }
 
-    public function cancel(CancelInvoiceRequest $request, Invoice $invoice, CancelInvoice $action): JsonResponse
-    {
-        try {
-            $invoice = $action->handle($invoice, (string) $request->input('reason'), $request->user());
-        } catch (BusinessRuleException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-
-        return response()->json(new InvoiceResource($invoice));
-    }
-
     /**
      * Invoices for a student. Voided invoices are excluded by DEFAULT — they were
      * never really billed. `?include_void=1` is the explicit audit view, which is
@@ -122,6 +110,12 @@ class InvoiceController extends Controller
             // invoice keeps its full amount; the statement never shows a netted figure.
             'credit_notes' => CreditNoteResource::collection(
                 $invoices->creditNotesForStudent($student->id)
+            ),
+            // Void requests ride beside the invoices too (Ph3b): a PENDING one shows "void
+            // requested, awaiting approval" while the invoice is still active and in the balance;
+            // a decided one is the audit trail. The invoice's own status/amount is untouched here.
+            'void_requests' => VoidRequestResource::collection(
+                $invoices->voidRequestsForStudent($student->id)
             ),
             // The account-level position — where credit-note credit is visible (it carries
             // on the balance, not as a per-invoice line, §10 C1). balance + available_credit

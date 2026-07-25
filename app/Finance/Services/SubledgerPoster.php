@@ -23,7 +23,7 @@ use Illuminate\Support\Str;
  * to keep that true CONTINUOUSLY is to move the balance by the SAME delta on the
  * SAME movements the ledger records — which is precisely every call here. Doing it
  * at the single writer (rather than in one Action) is what makes a CHARGE maintain
- * the balance as faithfully as a payment: GenerateInvoice/CancelInvoice/RecordPayment
+ * the balance as faithfully as a payment: GenerateInvoice/ApproveVoidRequest/RecordPayment
  * are untouched; they call post() as before and the projection follows for free.
  *
  * The maintenance is an atomic upsert-increment (`balance = balance + :delta`), NOT

@@ -3,10 +3,12 @@
 namespace App\Finance\Services;
 
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Finance\Models\StudentAccount;
+use App\Finance\Models\VoidRequest;
 use App\Support\Money;
 use Illuminate\Support\Collection;
 
@@ -89,6 +91,39 @@ final class InvoiceReadModel
     {
         return CreditNote::query()
             ->where('status', CreditNoteStatus::Submitted->value)
+            ->with(['invoice', 'submittedBy'])
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * The checker's pending VOID requests — Ph3b twin of pendingCreditNotes(). Every void request
+     * awaiting a decision in the active School (isolation automatic via BelongsToSchool), newest
+     * first, invoice + maker eager-loaded for display. A pending request has NOT touched its
+     * invoice: nothing here has moved money or freed an F7 slot — that happens only on approval.
+     *
+     * @return Collection<int, VoidRequest>
+     */
+    public function pendingVoidRequests(): Collection
+    {
+        return VoidRequest::query()
+            ->where('status', VoidRequestStatus::Submitted->value)
+            ->with(['invoice', 'submittedBy'])
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * A student's void requests, for the statement — so a pending request is visible ("void
+     * requested, awaiting approval") while the invoice is still active, and the decision trail
+     * survives after. Newest first; invoice + maker eager-loaded. School isolation automatic.
+     *
+     * @return Collection<int, VoidRequest>
+     */
+    public function voidRequestsForStudent(int $studentId): Collection
+    {
+        return VoidRequest::query()
+            ->whereHas('invoice', fn ($q) => $q->where('student_id', $studentId))
             ->with(['invoice', 'submittedBy'])
             ->orderByDesc('id')
             ->get();

@@ -138,10 +138,10 @@ it('F6 — the status transition is still allowed (the trigger freezes money, no
         ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
         ->assertCreated()->json('id');
 
-    // If the immutability trigger were too broad it would block voiding entirely.
-    $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$uuid}/cancel", ['reason' => 'error'])
-        ->assertOk()->assertJsonPath('status', 'void');
+    // If the immutability trigger were too broad it would block voiding entirely. Void is now
+    // the two-person maker-checker path (the one-step cancel is retired); approval flips status.
+    voidInvoiceViaApproval($school->id, $uuid, 'error');
+    expect(DB::table('finance_invoices')->where('uuid', $uuid)->value('status'))->toBe('void');
 });
 
 it('rejects an invoice with no lines, and a line with a non-positive amount (FormRequest layer)', function () {
@@ -223,7 +223,7 @@ it('VOID GATE — a voided invoice leaves the balance unchanged, drops out of de
     $balanceBefore = (int) DB::table('finance_ledger_transactions')->where('student_id', $student->id)->sum('amount_minor');
     expect($balanceBefore)->toBe(225000);
 
-    $act()->postJson("/api/v1/finance/invoices/{$voidedUuid}/cancel", ['reason' => 'entered in error'])->assertOk();
+    voidInvoiceViaApproval($school->id, $voidedUuid, 'entered in error');
 
     // 1 — the ledger balance moved by exactly the reversal, and the void's own
     //     charge+reversal net to zero, so only the live invoice remains owed.
@@ -299,7 +299,7 @@ it('DUPLICATE GUARD — after voiding, the enrollment can be billed fresh (polic
     $first = $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
         ->assertCreated()->json('id');
 
-    $act()->postJson("/api/v1/finance/invoices/{$first}/cancel", ['reason' => 'wrong fees'])->assertOk();
+    voidInvoiceViaApproval($school->id, $first, 'wrong fees');
 
     // The voided row still exists (append-only) — a naive UNIQUE(school_id,
     // student_curriculum_id) would forbid this re-bill. The NULL-ing generated

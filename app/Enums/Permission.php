@@ -93,6 +93,15 @@ enum Permission: string
     case FINANCE_CREDIT_NOTE_SUBMIT = 'finance.credit-note.submit';
     case FINANCE_CREDIT_NOTE_APPROVE = 'finance.credit-note.approve';
     case FINANCE_CREDIT_NOTE_REJECT = 'finance.credit-note.reject';
+    // Invoice VOID is the SECOND maker-checker instance (Ph3b): reversing a whole charge takes
+    // two people, same template as credit-note. `submit` proposes (no money moves, invoice stays
+    // issued); `approve` voids the invoice + posts the reversal; `reject` leaves the charge
+    // standing. The terminal `approve`/`reject` names drive the same Kernel conventions
+    // (ApprovalAbility maker-derivation + super-admin bypass-exclusion) and the same
+    // no-role-holds-both grant guard. Supersedes the one-step `finance.invoice.cancel`, retired.
+    case FINANCE_INVOICE_VOID_REQUEST_SUBMIT = 'finance.invoice.void-request.submit';
+    case FINANCE_INVOICE_VOID_REQUEST_APPROVE = 'finance.invoice.void-request.approve';
+    case FINANCE_INVOICE_VOID_REQUEST_REJECT = 'finance.invoice.void-request.reject';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

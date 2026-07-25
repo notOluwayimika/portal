@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\BusinessRuleException;
+use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
@@ -8,6 +10,7 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
+use App\Support\ActiveSchool;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,16 +95,15 @@ it('voids by REVERSAL: invoice row persists, status flips, ledger nets to zero',
         ->assertCreated();
     $invoiceUuid = $create->json('id');
 
-    $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'entered in error'])
-        ->assertOk()
-        ->assertJsonPath('status', 'void');
+    // Ph3b: void is now the two-person maker-checker path (the one-step cancel is retired).
+    // Approval is what flips the invoice + posts the reversal; the CHECKER is recorded.
+    $checker = voidInvoiceViaApproval($school->id, $invoiceUuid, 'entered in error');
 
     $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->first();
     expect($invoice)->not->toBeNull()                                  // never deleted
         ->and($invoice->status)->toBe(InvoiceStatus::Void)
         ->and($invoice->cancelled_at)->not->toBeNull()
-        ->and($invoice->cancelled_by_user_id)->toBe($admin->id)
+        ->and($invoice->cancelled_by_user_id)->toBe($checker->id)     // the approver, not the maker
         ->and(ledgerBalance($enrollment->student_id))->toBe(0)        // charge + reversal net to zero
         ->and(DB::table('finance_ledger_transactions')->count())->toBe(2); // both entries survive (append-only)
 });
@@ -123,7 +125,7 @@ it('records a payment allocated to the invoice, crediting the ledger to zero', f
         ->and(ledgerBalance($enrollment->student_id))->toBe(0); // charge +150000, payment -150000
 });
 
-it('GUARD — a payment allocation survives invoice void, leaving a credit balance', function () {
+it('GUARD — an invoice with an allocated payment cannot be voided (Ph3b: reverse/refund the payment instead)', function () {
     [$school, $admin, $enrollment] = financeSetup();
     $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(150000)])->assertCreated();
@@ -131,25 +133,41 @@ it('GUARD — a payment allocation survives invoice void, leaving a credit balan
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'payer_name' => 'Mr Obi'])->assertCreated();
 
-    $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'error'])->assertOk();
+    // The old one-step cancel let you void a PAID invoice, stranding the payment as a credit.
+    // Ph3b VoidEligibility forbids that: a settled invoice is not voidable, so even SUBMITTING a
+    // void request is refused outright — the money must be reversed/refunded through its own path.
+    ActiveSchool::runFor($school->id, function () use ($invoiceUuid, $school) {
+        $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->firstOrFail();
+        $maker = User::factory()->create(['school_id' => $school->id]);
+        expect(fn () => app(SubmitVoidRequest::class)->handle($invoice, 'error', $maker))
+            ->toThrow(BusinessRuleException::class);
+    });
 
-    // Allocation untouched; charge+payment+reversal = -150000 (a credit owed the student).
+    // Nothing moved: allocation intact, no reversal posted (charge + payment net to zero, not
+    // -150000), and the invoice is still issued.
     expect(DB::table('finance_payment_allocations')->count())->toBe(1)
-        ->and(ledgerBalance($enrollment->student_id))->toBe(-150000);
+        ->and(ledgerBalance($enrollment->student_id))->toBe(0)
+        ->and(DB::table('finance_invoices')->where('uuid', $invoiceUuid)->value('status'))->toBe('issued');
 });
 
-it('GUARD — voiding an already-voided invoice is rejected', function () {
+it('GUARD — an already-voided invoice cannot be voided again', function () {
     [$school, $admin, $enrollment] = financeSetup();
-    $create = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(5000, 'x')])->assertCreated();
-    $invoiceUuid = $create->json('id');
-    $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'a'])->assertOk();
+    $invoiceUuid = $this->actingAs($admin)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(5000, 'x')])
+        ->assertCreated()->json('id');
 
-    $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/cancel", ['reason' => 'b'])
-        ->assertStatus(422);
+    voidInvoiceViaApproval($school->id, $invoiceUuid, 'a');
+
+    // A second void is refused at SUBMIT — the invoice is already void, so no new request is
+    // even created (the one-open-request UNIQUE never comes into play for a decided invoice).
+    ActiveSchool::runFor($school->id, function () use ($invoiceUuid, $school) {
+        $invoice = Invoice::withoutGlobalScopes()->where('uuid', $invoiceUuid)->firstOrFail();
+        $maker = User::factory()->create(['school_id' => $school->id]);
+        expect(fn () => app(SubmitVoidRequest::class)->handle($invoice, 'b', $maker))
+            ->toThrow(BusinessRuleException::class);
+    });
+
+    expect((int) DB::table('finance_void_requests')->count())->toBe(1); // only the approved one
 });
 
 it('GUARD — ON DELETE RESTRICT: once an invoice references it, the enrollment/curriculum cannot be cascaded away', function () {

@@ -30,6 +30,8 @@ class CreditNoteResource extends JsonResource
         $user = $request->user();
 
         return [
+            // Discriminator for the unified approvals queue (credit note vs void request).
+            'type' => 'credit_note',
             'id' => $this->uuid,
             'number' => $this->number,
             'display_number' => $this->displayNumber(),

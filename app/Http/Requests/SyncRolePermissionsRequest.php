@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\Permission as PermissionEnum;
 use App\Support\ApprovalAbility;
+use App\Support\DutySeparation;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -68,6 +69,25 @@ class SyncRolePermissionsRequest extends FormRequest
                         "A role may not hold both [{$maker}] (maker) and [{$ability}] (checker) — segregation of duties (ADR 0040/0044).",
                     );
                 }
+            }
+
+            // USER-level SoD (Finance pairs only, Decision 0): the check above stops one ROLE holding
+            // both sides; this stops the edit from making a MEMBER of this role hold the opposite side
+            // via ANOTHER role in some school — a cross-role both-sides user the single-role check
+            // cannot see. Surfaced as a validation error, so the whole sync is refused before any
+            // write (wholesale). Shares DutySeparation's enforced-pair definition (Decision 1).
+            $roleName = (string) $this->route('roleName');
+            foreach (DutySeparation::violationsFromRolePermissionSync($roleName, $requested) as $violation) {
+                $v->errors()->add(
+                    'permissions',
+                    sprintf(
+                        'This set would leave [%s] holding BOTH the checker [%s] and the maker [%s] in school #%d — via another role they already hold — segregation of duties (ADR 0040/0044). Give one of the two grants to a different user.',
+                        $violation['userLabel'],
+                        $violation['pair']['checker'],
+                        $violation['pair']['maker'],
+                        $violation['schoolId'],
+                    ),
+                );
             }
         });
     }

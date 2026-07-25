@@ -58,6 +58,19 @@ fixture with no duplication.
 | Super admin | `super@drive.test` | the bypass exclusion (cannot approve) |
 | School B bursar | `school-b@drive.test` | cross-School isolation |
 
+## Two accounts for the maker-checker walkthrough
+
+The maker and the checker above are **separate accounts on purpose, and now mandatorily so.**
+Grant-time segregation-of-duties enforcement (Finance pairs only — see
+[segregation-of-duties.md](segregation-of-duties.md) § "Grant level") refuses to give one user both
+`accounts_officer` and `finance_director` in the same school: `User::assignRole` throws before the
+write. There is **no bypass** — no flag, no `--force`, no super-admin shortcut — because the guard
+lives in the model, below every path. So you cannot "just add both roles to my dev login" to click
+through the whole flow yourself; the fixture hands you `maker@drive.test` and `checker@drive.test`
+precisely because the platform will not let them be one person. Sign in as each in turn (a second
+browser profile or a private window keeps both sessions live). This is the enforced rule showing
+through the dev workflow, not an inconvenience to route around.
+
 ## The states waiting for you (Drive School A)
 
 Open `/finance` and click a student, or go straight to `/finance/students/{uuid}/statement`:

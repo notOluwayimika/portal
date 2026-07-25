@@ -3,6 +3,7 @@
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\Role;
+use App\Models\School;
 use App\Models\Subject;
 use App\Models\SubjectResultStatus;
 use App\Models\User;
@@ -281,14 +282,36 @@ function allBothSidesUsers(): array
     return $out;
 }
 
+/**
+ * Plant a both-sides FINANCE user via a RAW write. Grant-time enforcement now REFUSES this through
+ * spatie's API (User::assignRole → DutySeparation), so a both-sides user can only arise OUTSIDE
+ * that API — a raw insert, a migration backfill — which is exactly the residual detection must
+ * still catch. Maker via the normal (allowed) path; the checker role inserted straight into
+ * model_has_roles, bypassing the guard.
+ */
+function plantBothSidesFinanceUser(School $school): User
+{
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'accounts_officer'); // maker — allowed
+
+    $director = Role::where('name', 'finance_director')->where('guard_name', 'web')->firstOrFail();
+    DB::table('model_has_roles')->insert([
+        'role_id' => $director->id,
+        'model_type' => User::class,
+        'model_id' => $user->id,
+        'school_id' => $school->id,
+    ]);
+    $user->flushSchoolAccessCache();
+
+    return $user;
+}
+
 it('DETECTS a user who accumulates both sides across two roles (the dev-data shape)', function () {
     // The role guard forbids one role holding both; this user holds two roles that together do —
-    // exactly user#2 (admin + accounts_officer + finance_director) in the dev audit.
+    // exactly user#2 (admin + accounts_officer + finance_director) in the dev audit. Planted raw
+    // because grant-time enforcement now refuses this via the spatie API.
     $school = al_makeSchool();
-    $user = al_makeUser($school->id);
-    $user->grantSchoolAccess($school, 'accounts_officer'); // maker
-    $user->grantSchoolAccess($school, 'finance_director'); // checker
-    $user->flushSchoolAccessCache();
+    $user = plantBothSidesFinanceUser($school);
 
     $violations = DutySeparation::violations($user, $school->id);
     expect($violations)->not->toBeEmpty()
@@ -321,12 +344,10 @@ it('INVARIANT — no seeded user is a both-sides violator (tripwire), bite-prove
     // seeder/fixture that later assigns one user both a maker and a checker role fails here.
     expect(allBothSidesUsers())->toBe([]);
 
-    // BITE-PROOF: plant exactly such a user; the SAME scan must now turn red.
+    // BITE-PROOF: plant exactly such a user (raw — enforcement now refuses this via the spatie API);
+    // the SAME scan must now turn red.
     $school = al_makeSchool();
-    $planted = al_makeUser($school->id);
-    $planted->grantSchoolAccess($school, 'accounts_officer');
-    $planted->grantSchoolAccess($school, 'finance_director');
-    $planted->flushSchoolAccessCache();
+    plantBothSidesFinanceUser($school);
 
     expect(allBothSidesUsers())->not->toBe([]);
 });

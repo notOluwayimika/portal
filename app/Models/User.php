@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToSchool;
 use App\Exceptions\NullTeamRoleAssignmentException;
+use App\Support\DutySeparation;
 use App\Support\SchoolAccessParity;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -236,7 +237,9 @@ class User extends Authenticatable
      */
     public function assignRole(...$roles): static
     {
-        if (getPermissionsTeamId() === null) {
+        $teamId = getPermissionsTeamId();
+
+        if ($teamId === null) {
             $schoolScoped = collect($roles)->flatten()
                 ->map(fn ($r) => is_string($r) ? $r : ($r->name ?? null))
                 ->filter()
@@ -245,6 +248,16 @@ class User extends Authenticatable
             if ($schoolScoped->isNotEmpty()) {
                 throw new NullTeamRoleAssignmentException($schoolScoped->values()->all());
             }
+        }
+
+        // User-level segregation-of-duties enforcement (Finance pairs only — Decision 0). This
+        // override is the one place EVERY role assignment crosses, so guarding here covers HTTP,
+        // programmatic and seeder paths and cannot be bypassed at a call site — the same reason the
+        // null-team guard above lives here. It refuses BEFORE spatieAssignRole, so a violating grant
+        // lands nothing (wholesale). Finance is per-school, so a team-less assignment (super_admin,
+        // exempt above) is not enforced.
+        if ($teamId !== null) {
+            DutySeparation::assertAssignmentAllowed($this, (int) $teamId, $roles);
         }
 
         return $this->spatieAssignRole(...$roles);

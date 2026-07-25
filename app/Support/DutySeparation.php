@@ -3,7 +3,10 @@
 namespace App\Support;
 
 use App\Enums\Permission;
+use App\Exceptions\DutySeparationViolationException;
+use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Segregation-of-duties DETECTION (never enforcement). The act-level guarantee — no one approves a
@@ -63,6 +66,176 @@ final class DutySeparation
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
         return $user->can($ability);
+    }
+
+    /**
+     * The pairs that are ENFORCED at grant time (Decision 0). Everything else in `pairs()` is
+     * detection-only. THE SCOPE BOUNDARY IS THIS ONE LINE:
+     *
+     *     Finance pairs only — widen to `pairs()` (all, incl. result) ONLY when the result
+     *     workstream's own audit is clean AND they have agreed to enforcement on the record.
+     *
+     * Kept as one obvious, commented line so widening the blast radius later is a one-line change
+     * and is visibly a one-line change — not a condition scattered through the guards.
+     *
+     * @return list<array{checker: string, maker: string}>
+     */
+    public static function enforcedPairs(): array
+    {
+        return array_values(array_filter(
+            self::pairs(),
+            fn (array $pair) => str_starts_with($pair['checker'], 'finance.'),
+        ));
+    }
+
+    /**
+     * GRANT-TIME ENFORCEMENT (throws before the write). If assigning $newRoles to $user in $schoolId
+     * would leave them holding BOTH sides of an ENFORCED (Finance) pair — counting the roles they
+     * already hold there PLUS the new ones — throw {@see DutySeparationViolationException}. The check
+     * is on the RESULTING role set, so it catches both directions (grant a checker to a maker-holder
+     * and the mirror) and, because callers invoke it BEFORE the spatie write, refuses WHOLESALE:
+     * nothing lands. Result (and any non-Finance) pairs are never refused here — detection only.
+     *
+     * @param  array<int, mixed>  $newRoles  role names or Role objects being assigned
+     */
+    public static function assertAssignmentAllowed(User $user, int $schoolId, array $newRoles): void
+    {
+        setPermissionsTeamId($schoolId);
+        $user->unsetRelation('roles')->unsetRelation('permissions');
+
+        $newNames = collect($newRoles)->flatten()
+            ->map(fn ($r) => is_string($r) ? $r : ($r->name ?? null))
+            ->filter()->values();
+
+        $currentNames = $user->roles()->pluck('name');
+        self::assertRoleSetAllowed(
+            $user->email ?? ('user#'.$user->id),
+            $schoolId,
+            $currentNames->merge($newNames)->unique()->all(),
+        );
+    }
+
+    /**
+     * The core enforcement primitive, shared by the assignment guard and the role-permission-sync
+     * guard (Decision 1: one rule, one implementation, invoked by each path). Given a LABEL, a
+     * school, and the FULL set of role names a user would end up holding there, throw if that set
+     * grants both sides of an enforced pair. Naming both roles per side keeps the error actionable.
+     *
+     * @param  list<string>  $roleNames
+     */
+    public static function assertRoleSetAllowed(string $userLabel, int $schoolId, array $roleNames): void
+    {
+        $roleAbilities = self::abilitiesByRole($roleNames);
+        $all = collect($roleAbilities)->flatten()->unique();
+
+        foreach (self::enforcedPairs() as $pair) {
+            if ($all->contains($pair['checker']) && $all->contains($pair['maker'])) {
+                throw new DutySeparationViolationException(
+                    $userLabel,
+                    $schoolId,
+                    $pair,
+                    self::rolesCarrying($roleAbilities, $pair['checker']),
+                    self::rolesCarrying($roleAbilities, $pair['maker']),
+                );
+            }
+        }
+    }
+
+    /**
+     * ENFORCEMENT for the RBAC matrix (role→permission SYNC path). Editing $roleName's permission set
+     * to $requestedAbilities must not leave any MEMBER of that role holding both sides of an enforced
+     * pair — counting, per school, the member's OTHER roles PLUS the role's requested abilities. Only
+     * pairs whose OPPOSITE side arrives from another role are reported (the requested set carries
+     * exactly one side): the same-role both-sides case is the role-level guard's, and a member already
+     * both-sides via two OTHER roles is the audit's finding, not this edit's to block. Returns the
+     * violations as DATA (not throwing) so the FormRequest surfaces them as validation errors — the
+     * same wholesale, pre-write refuse as the role-level guard. Finance pairs only (Decision 0).
+     *
+     * @param  array<array-key, mixed>  $requestedAbilities  raw request input — filtered to strings here
+     * @return list<array{userLabel: string, schoolId: int, pair: array{checker: string, maker: string}}>
+     */
+    public static function violationsFromRolePermissionSync(string $roleName, array $requestedAbilities): array
+    {
+        $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
+        if ($role === null) {
+            return [];
+        }
+
+        $requested = collect($requestedAbilities)->filter(fn ($a) => is_string($a))->unique();
+
+        // Only pairs the edit could newly cause: the requested set carries EXACTLY ONE side, so a
+        // violation needs the OTHER side from another role. Pairs where requested carries both sides
+        // belong to the role-level guard; pairs it carries neither of it cannot introduce.
+        $relevant = array_values(array_filter(
+            self::enforcedPairs(),
+            fn (array $pair) => $requested->contains($pair['checker']) !== $requested->contains($pair['maker']),
+        ));
+        if ($relevant === []) {
+            return [];
+        }
+
+        $teamKey = config('permission.column_names.team_foreign_key');
+        $table = config('permission.table_names.model_has_roles');
+        $morphKey = config('permission.column_names.model_morph_key');
+
+        $members = DB::table($table)
+            ->where('model_type', User::class)
+            ->where('role_id', $role->id)
+            ->whereNotNull($teamKey)
+            ->get([$morphKey.' as model_id', $teamKey.' as school_id']);
+
+        $labels = User::whereIn('id', $members->pluck('model_id')->unique())->pluck('email', 'id');
+
+        $out = [];
+        foreach ($members as $m) {
+            // The member's OTHER roles in this school — the edited role is replaced by $requested.
+            $otherRoleIds = DB::table($table)
+                ->where('model_type', User::class)
+                ->where($morphKey, $m->model_id)
+                ->where($teamKey, $m->school_id)
+                ->where('role_id', '!=', $role->id)
+                ->pluck('role_id');
+            $otherNames = Role::whereIn('id', $otherRoleIds)->pluck('name')->all();
+
+            $resulting = collect(self::abilitiesByRole($otherNames))->flatten()->merge($requested)->unique();
+
+            foreach ($relevant as $pair) {
+                if ($resulting->contains($pair['checker']) && $resulting->contains($pair['maker'])) {
+                    $out[] = [
+                        'userLabel' => $labels[$m->model_id] ?? ('user#'.$m->model_id),
+                        'schoolId' => (int) $m->school_id,
+                        'pair' => $pair,
+                    ];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** @param list<string> $roleNames @return array<string, list<string>> roleName => permission names */
+    private static function abilitiesByRole(array $roleNames): array
+    {
+        $roles = Role::query()->whereIn('name', $roleNames)->where('guard_name', 'web')->with('permissions')->get();
+
+        $out = [];
+        foreach ($roles as $role) {
+            $out[$role->name] = $role->permissions->pluck('name')->all();
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, list<string>>  $roleAbilities
+     * @return list<string>
+     */
+    private static function rolesCarrying(array $roleAbilities, string $ability): array
+    {
+        return array_keys(array_filter(
+            $roleAbilities,
+            fn (array $abilities) => in_array($ability, $abilities, true),
+        ));
     }
 
     /**

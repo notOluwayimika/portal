@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\ReconcileAccounts;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactorEnrolled;
@@ -91,6 +92,20 @@ return Application::configure(basePath: dirname(__DIR__))
             return redirect()->back()
                 ->withErrors($e->errors())
                 ->withInput();
+        });
+
+        // User-level segregation-of-duties refusal (User::assignRole guard, Finance pairs only). A
+        // well-formed request that the domain forbids — the same 422 shape as a validation failure,
+        // carrying the exception's own actionable message (names user, pair, roles; Decision 2). The
+        // 'roles' key matches the role-sync form field so the message renders inline there.
+        $exceptions->renderable(function (DutySeparationViolationException $e, $request) {
+            $errors = ['roles' => [$e->getMessage()]];
+
+            if ($request->is('api/*')) {
+                return response()->validation_error($errors);
+            }
+
+            return redirect()->back()->withErrors($errors)->withInput();
         });
 
         /*

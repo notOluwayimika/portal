@@ -97,6 +97,44 @@ it('D2 — a checker-free edit to the same role passes (the rule is the pair, no
     expect(sam_rolePermissions('teacher'))->toContain('guardian.view');
 });
 
+// ── User-level SoD on the sync path: a MEMBER holds the opposite side via another role ──
+
+it('D2 (user level) — refuses granting a checker to a role whose MEMBER holds the maker via another role', function () {
+    // A user who holds BOTH `registrar` (innocuous) and `accounts_officer` (the credit-note MAKER) in
+    // one school. Neither role carries a checker, so the single-role guard sees nothing. Now grant the
+    // credit-note CHECKER to `registrar`: that member would hold both sides — the cross-role hole the
+    // role-level check cannot see. Finance pairs only (Decision 0), refused wholesale before the write.
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'registrar');
+    $user->grantSchoolAccess($school, 'accounts_officer');
+    $user->flushSchoolAccessCache();
+
+    $wanted = [...sam_rolePermissions('registrar'), 'finance.credit-note.approve'];
+
+    sam_put($this, $this->superAdmin, 'registrar', $wanted)
+        ->assertRedirect()
+        ->assertSessionHasErrors('permissions');
+
+    expect(sam_rolePermissions('registrar'))->not->toContain('finance.credit-note.approve');
+});
+
+it('D2 (user level) — the SAME checker grant is allowed when no member holds the opposite side', function () {
+    // Identical edit, but the only registrar member holds no Finance maker — so granting the checker
+    // creates no both-sides user and the sync succeeds. Proves the refusal above is the member rule,
+    // not a blanket ban on Finance abilities reaching `registrar`.
+    $school = al_makeSchool();
+    $user = al_makeUser($school->id);
+    $user->grantSchoolAccess($school, 'registrar');
+    $user->flushSchoolAccessCache();
+
+    $wanted = [...sam_rolePermissions('registrar'), 'finance.credit-note.approve'];
+
+    sam_put($this, $this->superAdmin, 'registrar', $wanted)->assertStatus(302);
+
+    expect(sam_rolePermissions('registrar'))->toContain('finance.credit-note.approve');
+});
+
 // ── D4: the enum is code ───────────────────────────────────────────────────
 
 it('D4 — an unknown permission name is a validation failure, never a creation', function () {

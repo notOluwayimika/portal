@@ -67,7 +67,20 @@ function bursarWithToken(School $school, array $permissions): array
     $role->syncPermissions($permissions);
 
     $user = User::factory()->create(['school_id' => $school->id]);
-    $user->grantSchoolAccess($school, $roleName);
+    // Assign the dedicated role via a RAW model_has_roles insert, NOT grantSchoolAccess/assignRole.
+    // Several acceptance tests deliberately mint a role holding BOTH sides of a maker-checker pair to
+    // prove the RECORD-level rule (Policy isNotTheMaker + the DB CHECK) in isolation — the exact state
+    // grant-time SoD enforcement now refuses to CONSTRUCT through the spatie API (its own tests, and
+    // MakerCheckerSeparationTest, cover the grant path). This harness is about the token's permission
+    // SET, not the grant path, so it plants membership directly — the raw/legacy shape detection is
+    // the net beneath, and the record-level rule must hold for it regardless.
+    $user->schools()->syncWithoutDetaching([$school->id]);
+    DB::table('model_has_roles')->insert([
+        'role_id' => $role->id,
+        'model_type' => User::class,
+        'model_id' => $user->id,
+        'school_id' => $school->id,
+    ]);
     $user->flushSchoolAccessCache();
     // Runtime grants must invalidate Spatie's permission cache, or the request-time
     // PermissionMiddleware resolves a stale role→permission map and 403s a genuinely

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
-import { store as issueCreditNote } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import { submit as submitCreditNote } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,11 +24,11 @@ type Props = {
 };
 
 /**
- * Issue a credit note / write-off against an invoice. The OPEN control is gated by
- * <Can permission="finance.credit-note.issue"> on the statement — but that is convenience,
- * not security: the real guard is the backend 403 (proven in the acceptance harness). The
- * over-credit ceiling and crediting a void invoice come back as a 422 { message }, rendered
- * inline here rather than thrown.
+ * Ph3 MAKER side — SUBMIT a credit note / write-off for approval. This creates a PENDING
+ * proposal; no money moves until a checker (≠ the maker) approves it in the pending queue.
+ * The OPEN control is gated by <Can permission="finance.credit-note.submit"> on the statement
+ * — convenience, not security: the real guard is the backend 403 (proven in the harness).
+ * Submitting against a void invoice comes back as a 422 { message }, rendered inline.
  */
 export function IssueCreditNoteModal({
     isOpen,
@@ -78,19 +78,19 @@ export function IssueCreditNoteModal({
         setSubmitting(true);
 
         try {
-            await axios.post(issueCreditNote.url(invoice.id), {
+            await axios.post(submitCreditNote.url(invoice.id), {
                 amount_minor: amountMinor,
                 kind,
                 note: note.trim() === '' ? null : note.trim(),
             });
             toast.success(
-                `Credit note issued against ${invoice.display_number}.`,
+                `Credit note submitted for approval against ${invoice.display_number}.`,
             );
             onIssued();
             onClose();
         } catch (err: unknown) {
             if (axios.isAxiosError(err) && err.response?.status === 422) {
-                // Over-credit / void invoice → { message }; validation → { errors }.
+                // Void invoice → { message }; validation → { errors }.
                 setErrors(err.response.data?.errors ?? {});
                 setFormError(err.response.data?.message ?? null);
             } else if (
@@ -98,10 +98,12 @@ export function IssueCreditNoteModal({
                 err.response?.status === 403
             ) {
                 setFormError(
-                    'You do not have permission to issue a credit note.',
+                    'You do not have permission to submit a credit note.',
                 );
             } else {
-                setFormError('Something went wrong issuing the credit note.');
+                setFormError(
+                    'Something went wrong submitting the credit note.',
+                );
             }
         } finally {
             setSubmitting(false);
@@ -112,7 +114,7 @@ export function IssueCreditNoteModal({
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={`Issue credit note — ${invoice.display_number}`}
+            title={`Submit credit note for approval — ${invoice.display_number}`}
             size="md"
         >
             <div className="space-y-4">
@@ -137,8 +139,9 @@ export function IssueCreditNoteModal({
                         </p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground">
-                        Total credit notes on an invoice cannot exceed its full
-                        amount.
+                        This is a proposal — a second person must approve it
+                        before any credit is applied. Approved credit notes
+                        cannot exceed the invoice's full amount.
                     </p>
                 </div>
 
@@ -183,7 +186,7 @@ export function IssueCreditNoteModal({
                         Cancel
                     </Button>
                     <Button onClick={submit} disabled={submitting}>
-                        {submitting ? 'Issuing…' : 'Issue credit note'}
+                        {submitting ? 'Submitting…' : 'Submit for approval'}
                     </Button>
                 </div>
             </div>

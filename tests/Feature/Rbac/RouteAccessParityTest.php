@@ -25,12 +25,10 @@ uses(RefreshDatabase::class);
 // C2's single declared access deviation. Every other route's role set is
 // asserted identical to the pre-swap fixture.
 const ACCESS_DEVIATIONS = [
-    // Was inside the admin|head_of_school|form_teacher group, locking every
-    // other role out of ending its own session; now plain auth:sanctum.
-    'POST /api/logout' => [
-        'admin', 'boarding_parent', 'form_teacher', 'guardian', 'head_of_school',
-        'principal', 'registrar', 'super_admin', 'teacher',
-    ],
+    // (Empty.) The former POST /api/logout deviation is gone: the regenerated
+    // route-access-map fixture now derives the correct plain-auth:sanctum role set
+    // (every authenticated role, including the Ph3 accounts_officer / finance_director)
+    // directly, so no hand-override is needed — fixture == live.
 ];
 
 it('preserves the pre-swap allowed-role set for every baselined route', function () {

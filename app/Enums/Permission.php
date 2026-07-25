@@ -82,10 +82,17 @@ enum Permission: string
     // Superseded when Finance's Ph2 permission scheme (finance.<resource>.
     // <action>, v10 §343) lands with the 4 Finance roles — I1/I6 coordination.
     case FINANCE_ACCESS = 'finance.access';
-    // Issuing a credit note / write-off forgives money, so it is gated on its OWN
-    // permission beyond finance.access (the group gate). The first of the Ph2
-    // finance.<resource>.<action> scheme; maker-checker (an approver) is Ph3.
-    case FINANCE_CREDIT_NOTE_ISSUE = 'finance.credit-note.issue';
+    // Credit-note issuance is MAKER-CHECKER (Ph3): forgiving money takes two people.
+    // `submit` is the maker side (propose, no money moves); `approve`/`reject` are the
+    // checker side. The terminal `approve`/`reject` names are load-bearing — the Kernel's
+    // ApprovalAbility convention derives the matching maker (`...submit`) and the
+    // super-admin bypass-exclusion recognises the checker actions from those names alone
+    // (ADR 0040/0044). One role must never hold both a maker and its matching checker
+    // (SyncRolePermissionsRequest grant guard). Supersedes the C1 one-step
+    // `finance.credit-note.issue`, which is retired.
+    case FINANCE_CREDIT_NOTE_SUBMIT = 'finance.credit-note.submit';
+    case FINANCE_CREDIT_NOTE_APPROVE = 'finance.credit-note.approve';
+    case FINANCE_CREDIT_NOTE_REJECT = 'finance.credit-note.reject';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

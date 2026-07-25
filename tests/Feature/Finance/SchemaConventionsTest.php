@@ -52,23 +52,29 @@ it('the 1.4c immutability triggers exist by name on the finance_ append-only tab
         'finance_payments_no_delete',
         'finance_payment_allocations_no_update',
         'finance_payment_allocations_no_delete',
-        // §10 C1 — credit notes are append-only too (a mis-issue is corrected by an
-        // opposing entry, never an edit).
-        'finance_credit_notes_no_update',
+        // Ph3 — a credit note is a money DOCUMENT, so (like finance_invoices) it is
+        // money-immutable but STATUS-mutable, not fully append-only. DELETE stays denied;
+        // UPDATE is guarded to permit ONLY the decision columns (see the update_guard test).
         'finance_credit_notes_no_delete',
     );
 });
 
-it('the over-credit ceiling trigger exists by NAME (§10 C1, independent of #94)', function () {
-    // Asserted by name — a migration that silently drops it fails here even if some
-    // other mechanism happens to mask it. Independent of the over-ALLOCATION guard:
-    // both may hold at once and their sum may exceed the invoice total (wallet case).
+it('the credit-note guards enforce money-immutability + status-mutability + the ceiling by NAME (Ph3)', function () {
+    // Asserted by name — a migration that silently drops one fails here. Ph3 relocated the
+    // C1 append-only no_update / BEFORE-INSERT ceiling to two guards: an UPDATE guard
+    // (money/identity immutable, only decision columns move, ceiling at the approval
+    // transition) and an INSERT guard (currency integrity + ceiling for a raw approved insert).
     $triggers = collect(DB::select(
         'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
          WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?', ['finance_credit_notes']
     ))->pluck('TRIGGER_NAME')->all();
 
-    expect($triggers)->toContain('finance_credit_note_not_over_invoice_total');
+    expect($triggers)->toContain('finance_credit_notes_update_guard')
+        ->and($triggers)->toContain('finance_credit_notes_insert_guard')
+        ->and($triggers)->toContain('finance_credit_notes_no_delete')
+        // The C1 one-step guards are GONE (relocated), not lingering.
+        ->and($triggers)->not->toContain('finance_credit_notes_no_update')
+        ->and($triggers)->not->toContain('finance_credit_note_not_over_invoice_total');
 });
 
 it('finance_student_accounts is the ONE intentionally-mutable finance table (append-only exemption, pinned)', function () {

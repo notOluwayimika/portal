@@ -7,14 +7,15 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Authorization is by route middleware (permission:finance.credit-note.issue) — issuing
- * forgives money, so it is gated on a DISTINCT permission beyond finance.access. Inline
- * ->can()/->hasRole() is banned inside app/Finance by the boundary lint, which is why
- * authz stays at the edge. Maker-checker (an approver) is Ph3, deliberately absent here.
+ * Ph3 maker side — SUBMIT a credit note for approval. Authorization is by route middleware
+ * (permission:finance.credit-note.submit) — proposing a credit is the maker gate, distinct
+ * from finance.access. No record-level rule here: the note does not exist yet, and maker ≠
+ * checker only bites at the DECISION (the CreditNotePolicy + DB CHECK). ->hasRole() is
+ * banned inside app/Finance by the boundary lint, which is why authz stays at the edge.
  *
  * The wire carries amount_minor (integer, ADR 0037) — never a decimal.
  */
-class IssueCreditNoteRequest extends FormRequest
+class SubmitCreditNoteRequest extends FormRequest
 {
     public function authorize(): bool
     {

@@ -1,0 +1,58 @@
+<?php
+
+namespace App\Finance\Actions;
+
+use App\Exceptions\BusinessRuleException;
+use App\Finance\Enums\CreditNoteKind;
+use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Models\CreditNote;
+use App\Finance\Models\Invoice;
+use App\Models\User;
+use App\Support\Money;
+use App\Support\Sequences\Sequences;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Ph3 maker side — SUBMIT a credit note for approval. Creates the note in `submitted`
+ * with `submitted_by = maker` and NOTHING else: no ledger entry, no balance change, no
+ * ceiling consumed. It is a PROPOSAL. The money is forgiven only when a checker ≠ maker
+ * approves it ({@see ApproveCreditNote}).
+ *
+ * The amount-positive and not-against-a-void-invoice guards stay here (fail fast at
+ * submit). The over-credit ceiling deliberately does NOT run at submit — a pending
+ * proposal consumes no ceiling; two proposals that individually fit but jointly exceed
+ * the total both submit, and the SECOND to be approved is the one blocked (at approval).
+ */
+final class SubmitCreditNote
+{
+    public function handle(Invoice $invoice, Money $amount, CreditNoteKind $kind, ?string $note, User $maker): CreditNote
+    {
+        if ($amount->isZero() || $amount->isNegative()) {
+            throw new BusinessRuleException('A credit note amount must be positive.');
+        }
+
+        if ($invoice->isVoid()) {
+            throw new BusinessRuleException('Cannot submit a credit note against a void invoice.');
+        }
+
+        return DB::transaction(function () use ($invoice, $amount, $kind, $note, $maker) {
+            $number = Sequences::next('finance_credit_note', (string) $invoice->school_id);
+
+            // Created directly in `submitted` — no ledger post. The DB insert_guard still
+            // asserts the currency matches the invoice; the ceiling does not fire for a
+            // `submitted` row.
+            return CreditNote::create([
+                'school_id' => $invoice->school_id,
+                'student_id' => $invoice->student_id,
+                'invoice_id' => $invoice->id,
+                'number' => $number,
+                'amount' => $amount,
+                'kind' => $kind,
+                'note' => $note,
+                'status' => CreditNoteStatus::Submitted,
+                'submitted_by' => $maker->id,
+                'created_by_user_id' => $maker->id,
+            ]);
+        });
+    }
+}

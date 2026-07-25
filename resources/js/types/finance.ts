@@ -31,15 +31,27 @@ export type Invoice = {
 
 export type CreditNoteKind = 'credit_note' | 'write_off';
 
+// Ph3 maker-checker lifecycle: a proposal is `submitted` (no money moved) until a checker
+// ≠ maker `approved`s it (money moves) or `rejected`s it (never any money).
+export type CreditNoteStatus = 'submitted' | 'approved' | 'rejected';
+
 // CreditNoteResource
 export type CreditNote = {
     id: string; // uuid
     number: number;
     display_number: string;
     invoice_id: number;
+    invoice_display_number?: string; // present in the pending queue (invoice eager-loaded)
     kind: CreditNoteKind;
     amount: Money;
     note: string | null;
+    status: CreditNoteStatus;
+    submitted_by_name?: string | null;
+    decided_at?: string | null;
+    rejection_reason?: string | null;
+    // Policy-computed, viewer-relative: disabled on one's own submission (maker ≠ checker).
+    can_approve: boolean;
+    can_reject: boolean;
     created_at: string;
 };
 

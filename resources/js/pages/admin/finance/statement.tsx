@@ -302,7 +302,7 @@ export default function FinanceStatement({ student }: Props) {
                                                                         Record
                                                                         payment
                                                                     </Button>
-                                                                    <Can permission="finance.credit-note.issue">
+                                                                    <Can permission="finance.credit-note.submit">
                                                                         <Button
                                                                             size="sm"
                                                                             variant="outline"
@@ -313,7 +313,8 @@ export default function FinanceStatement({ student }: Props) {
                                                                             }
                                                                             className="h-7 rounded-lg text-xs"
                                                                         >
-                                                                            Credit
+                                                                            Submit
+                                                                            credit
                                                                             note
                                                                         </Button>
                                                                     </Can>
@@ -348,6 +349,7 @@ export default function FinanceStatement({ student }: Props) {
                                         <tr className={HEAD_ROW}>
                                             <th className={TH}>Document</th>
                                             <th className={TH}>Kind</th>
+                                            <th className={TH}>Status</th>
                                             <th className={TH}>Note</th>
                                             <th
                                                 className={cn(TH, 'text-right')}
@@ -374,10 +376,48 @@ export default function FinanceStatement({ student }: Props) {
                                                                 : 'credit note'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-slate-500">
-                                                        {credit.note ?? '—'}
+                                                    <td className="px-4 py-2.5">
+                                                        <span
+                                                            className={cn(
+                                                                'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize',
+                                                                credit.status ===
+                                                                    'approved'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : credit.status ===
+                                                                        'rejected'
+                                                                      ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                                                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                                                            )}
+                                                        >
+                                                            {credit.status ===
+                                                            'submitted'
+                                                                ? 'Pending'
+                                                                : credit.status}
+                                                        </span>
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-right font-semibold text-slate-800 tabular-nums dark:text-slate-100">
+                                                    <td className="px-4 py-2.5 text-slate-500">
+                                                        {credit.status ===
+                                                            'rejected' &&
+                                                        credit.rejection_reason
+                                                            ? credit.rejection_reason
+                                                            : (credit.note ??
+                                                              '—')}
+                                                    </td>
+                                                    <td
+                                                        className={cn(
+                                                            'px-4 py-2.5 text-right font-semibold tabular-nums',
+                                                            credit.status ===
+                                                                'approved'
+                                                                ? 'text-slate-800 dark:text-slate-100'
+                                                                : 'text-slate-400 line-through',
+                                                        )}
+                                                        title={
+                                                            credit.status !==
+                                                            'approved'
+                                                                ? 'Not in the balance — only approved credit notes affect the account'
+                                                                : undefined
+                                                        }
+                                                    >
                                                         {formatNaira(
                                                             credit.amount,
                                                         )}

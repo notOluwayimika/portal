@@ -227,8 +227,10 @@
     "DELETE /settings/profile": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -254,8 +256,10 @@
     "DELETE /user/two-factor-authentication": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -268,8 +272,10 @@
     "GET /": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1028,10 +1034,36 @@
             "super_admin"
         ]
     },
+    "GET /api/v1/finance/accounts": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
+    "GET /api/v1/finance/credit-notes/pending": {
+        "auth": true,
+        "roles": [
+            "finance_director"
+        ]
+    },
+    "GET /api/v1/finance/students/{student}/billable-enrollment": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
     "GET /api/v1/finance/students/{student}/invoices": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
+            "finance_director",
             "super_admin"
         ]
     },
@@ -1084,11 +1116,31 @@
             "teacher"
         ]
     },
+    "GET /finance": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
+    "GET /finance/students/{student}/statement": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
     "GET /forgot-password": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1144,8 +1196,10 @@
     "GET /login": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1206,8 +1260,10 @@
     "GET /reset-password/{token}": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1237,8 +1293,10 @@
     "GET /sanctum/csrf-cookie": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1258,8 +1316,10 @@
     "GET /select-school": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1272,8 +1332,10 @@
     "GET /settings/appearance": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1286,8 +1348,10 @@
     "GET /settings/profile": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1300,8 +1364,10 @@
     "GET /settings/security": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1418,11 +1484,20 @@
             "teacher"
         ]
     },
+    "GET /setup/users": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
     "GET /storage/{path}": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1481,6 +1556,12 @@
             "super_admin"
         ]
     },
+    "GET /super-admin/rbac": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
     "GET /super-admin/schools": {
         "auth": true,
         "roles": [
@@ -1497,8 +1578,10 @@
     "GET /two-factor-challenge": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1511,8 +1594,10 @@
     "GET /up": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1525,8 +1610,10 @@
     "GET /user/confirm-password": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1539,8 +1626,10 @@
     "GET /user/confirmed-password-status": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1553,8 +1642,10 @@
     "GET /user/two-factor-qr-code": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1567,8 +1658,10 @@
     "GET /user/two-factor-recovery-codes": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1581,8 +1674,10 @@
     "GET /user/two-factor-secret-key": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1595,8 +1690,10 @@
     "GET|POST|PUT|PATCH|DELETE|OPTIONS /settings": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -1782,8 +1879,10 @@
     "PATCH /settings/profile": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2084,8 +2183,10 @@
     "POST /api/login": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2098,10 +2199,17 @@
     "POST /api/logout": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
+            "boarding_parent",
+            "finance_director",
             "form_teacher",
+            "guardian",
             "head_of_school",
-            "super_admin"
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
         ]
     },
     "POST /api/marking-components": {
@@ -2271,8 +2379,10 @@
     "POST /api/switch-school": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2316,24 +2426,58 @@
             "super_admin"
         ]
     },
+    "POST /api/v1/finance/credit-notes/{creditNote}/approve": {
+        "auth": true,
+        "roles": [
+            "finance_director"
+        ]
+    },
+    "POST /api/v1/finance/credit-notes/{creditNote}/reject": {
+        "auth": true,
+        "roles": [
+            "finance_director"
+        ]
+    },
     "POST /api/v1/finance/invoices": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
+            "finance_director",
             "super_admin"
         ]
     },
     "POST /api/v1/finance/invoices/{invoice}/cancel": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/invoices/{invoice}/credit-notes": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
             "super_admin"
         ]
     },
     "POST /api/v1/finance/invoices/{invoice}/payments": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
+            "finance_director",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/students/{student}/invoices": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
             "super_admin"
         ]
     },
@@ -2351,8 +2495,10 @@
     "POST /forgot-password": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2365,8 +2511,10 @@
     "POST /login": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2379,8 +2527,10 @@
     "POST /logout": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2393,8 +2543,10 @@
     "POST /reset-password": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2415,8 +2567,10 @@
     "POST /select-school": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2461,8 +2615,10 @@
     "POST /two-factor-challenge": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2475,8 +2631,10 @@
     "POST /user/confirm-password": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2489,8 +2647,10 @@
     "POST /user/confirmed-two-factor-authentication": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2503,8 +2663,10 @@
     "POST /user/two-factor-authentication": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2517,8 +2679,10 @@
     "POST /user/two-factor-recovery-codes": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2689,8 +2853,10 @@
     "PUT /settings/password": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2700,11 +2866,20 @@
             "teacher"
         ]
     },
+    "PUT /setup/users/{user}/roles": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
     "PUT /storage/{path}": {
         "auth": false,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",
@@ -2727,6 +2902,18 @@
             "super_admin"
         ]
     },
+    "PUT /super-admin/rbac/roles/{roleName}/permissions": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "PUT /super-admin/rbac/roles/{roleName}/two-factor": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
     "PUT /super-admin/schools/{school}": {
         "auth": true,
         "roles": [
@@ -2736,8 +2923,10 @@
     "PUT /user/profile-information": {
         "auth": true,
         "roles": [
+            "accounts_officer",
             "admin",
             "boarding_parent",
+            "finance_director",
             "form_teacher",
             "guardian",
             "head_of_school",

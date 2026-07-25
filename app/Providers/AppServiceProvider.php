@@ -101,6 +101,8 @@ class AppServiceProvider extends ServiceProvider
     protected function registerPolicies(): void
     {
         Gate::policy(SubjectResultStatus::class, SubjectResultPolicy::class);
+        // The Ph3 CreditNote policy is registered by App\Finance\FinanceServiceProvider —
+        // inside the module, so no non-Finance file names a Finance model (arch boundary).
     }
 
     /**

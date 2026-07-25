@@ -2,6 +2,7 @@
 
 namespace App\Finance\Services;
 
+use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
@@ -70,7 +71,26 @@ final class InvoiceReadModel
     {
         return CreditNote::query()
             ->where('student_id', $studentId)
+            ->with('submittedBy')
             ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * The checker's pending-approvals queue — every credit note awaiting a decision in the
+     * active School (School isolation is automatic via BelongsToSchool), newest first, with
+     * its invoice and maker eager-loaded for display. Approved / rejected notes are NOT
+     * here: a decided note leaves the queue. A pending note has posted no ledger entry, so
+     * nothing in this list affects any balance.
+     *
+     * @return Collection<int, CreditNote>
+     */
+    public function pendingCreditNotes(): Collection
+    {
+        return CreditNote::query()
+            ->where('status', CreditNoteStatus::Submitted->value)
+            ->with(['invoice', 'submittedBy'])
+            ->orderByDesc('id')
             ->get();
     }
 

@@ -1,0 +1,85 @@
+<?php
+
+namespace App\Finance\Actions;
+
+use App\Exceptions\BusinessRuleException;
+use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\LedgerEntryType;
+use App\Finance\Models\CreditNote;
+use App\Finance\Models\Invoice;
+use App\Finance\Services\SubledgerPoster;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Ph3 checker side — APPROVE a pending credit note. This is where C1's issuance logic
+ * now lives: the compensating ledger credit is posted, the balance moves, and the
+ * over-credit ceiling is enforced — all in ONE transaction under the invoice-row lock,
+ * so money and the `approved` status flip commit together or not at all.
+ *
+ * Maker ≠ checker is enforced in THREE places: the Policy (HTTP edge, 403), the friendly
+ * guard below (for non-HTTP callers), and — the real guarantee — the DB CHECK constraint
+ * `submitted_by <> decided_by`, which fires when transitionTo writes decided_by. The
+ * Policy alone is not the control; the CHECK holds for raw writes, jobs and tinker.
+ *
+ * Money moves ONLY here. Submit posted nothing; a pending credit was never in the ledger,
+ * the balance, or the ceiling, so approval is the first and only time the credit is real.
+ */
+final class ApproveCreditNote
+{
+    public function __construct(private readonly SubledgerPoster $ledger) {}
+
+    public function handle(CreditNote $creditNote, User $checker): CreditNote
+    {
+        if (! $creditNote->isPending()) {
+            throw new BusinessRuleException('Only a pending credit note can be approved.');
+        }
+
+        // Friendly maker ≠ checker (string-compared, fail-safe on type mismatch — the same
+        // shape as the Policy). The DB CHECK is the authoritative backstop.
+        if ((string) $creditNote->submitted_by === (string) $checker->id) {
+            throw new BusinessRuleException('A credit note cannot be approved by its submitter (maker ≠ checker).');
+        }
+
+        return DB::transaction(function () use ($creditNote, $checker) {
+            // Lock the INVOICE row first (C1's #94 convention): concurrent approvals of two
+            // proposals against the same invoice serialise here, so the loser reads the
+            // winner's committed sum and is rejected by the ceiling.
+            $invoice = Invoice::query()->whereKey($creditNote->invoice_id)->lockForUpdate()->firstOrFail();
+
+            // Σ of ALREADY-approved credits for this invoice (pending proposals do not count).
+            // The row being approved is still `submitted` at this point, so it is excluded and
+            // added explicitly. The DB UPDATE-ceiling trigger is the real guarantee; this is
+            // the friendly 422.
+            $approved = (int) CreditNote::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('status', CreditNoteStatus::Approved->value)
+                ->sum('amount_minor');
+
+            if ($approved + $creditNote->amount->toKobo() > $invoice->total->toKobo()) {
+                throw new BusinessRuleException(
+                    'Approving this credit note would exceed the invoice total. At most '
+                    .($invoice->total->toKobo() - $approved).' minor units can still be approved.'
+                );
+            }
+
+            // Status flip (records decided_by = checker; the DB CHECK enforces ≠ maker).
+            $creditNote->transitionTo(CreditNoteStatus::Approved, (int) $checker->id);
+
+            // The compensating credit — negative amount, sourced to the credit note itself
+            // (no allocation). SubledgerPoster's atomic increment (W1+W2) moves the balance;
+            // any resulting negative balance is the wallet credit W3 carries forward.
+            $this->ledger->post(
+                $invoice->school_id,
+                $invoice->student_id,
+                LedgerEntryType::CreditNote,
+                $creditNote->amount->times(-1),
+                'credit_note',
+                (int) $creditNote->getKey(),
+                "Credit note #{$creditNote->displayNumber()} against invoice #{$invoice->number}",
+            );
+
+            return $creditNote->refresh();
+        });
+    }
+}

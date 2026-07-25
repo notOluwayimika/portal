@@ -18,7 +18,7 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 
 /**
- * §10 C1 credit notes under REAL concurrency (deterministic two-connection interleave;
+ * §10 C1/Ph3 credit-note ceiling under REAL concurrency (the ceiling now fires at APPROVAL) (deterministic two-connection interleave;
  * a backgrounded-process race proves nothing — the #94 lesson).
  *
  *   PROOF 11a — the ceiling's concurrency anchor is the INVOICE-ROW lock (same footprint
@@ -87,7 +87,7 @@ it('PROOF 11a — the ceiling anchor: a second lockForUpdate on the same invoice
 
     $second = cnSecondConn();
 
-    // A issuer holds the invoice row (the lock IssueCreditNote takes first).
+    // A issuer holds the invoice row (the lock ApproveCreditNote takes first (Ph3: the ceiling moved to approval-time)).
     DB::beginTransaction();
     try {
         DB::table('finance_invoices')->where('id', $invoice->id)->lockForUpdate()->first();
@@ -110,7 +110,7 @@ it('PROOF 11b — credit-note vs payment on one invoice share the invoice-row lo
 
     $second = cnSecondConn();
 
-    // Both IssueCreditNote and RecordPayment lock the INVOICE ROW first. With A holding it,
+    // Both ApproveCreditNote and RecordPayment lock the INVOICE ROW first. With A holding it,
     // a second actor's identical lock simply waits (serialises) — there is no second
     // resource acquired in the opposite order, so no cycle can form. Demonstrated: the
     // second lock blocks (waits) rather than erroring with a deadlock (1213).

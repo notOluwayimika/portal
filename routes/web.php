@@ -133,6 +133,12 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],
         ]);
     })->name('admin.finance.statement');
+
+    // The checker's pending-approvals queue (Ph3 maker-checker). Gated on the CHECKER
+    // permission so only approvers reach it; the page fetches the queue client-side.
+    Route::get('/finance/approvals', fn () => Inertia::render('admin/finance/approvals'))
+        ->middleware('permission:finance.credit-note.approve')
+        ->name('admin.finance.approvals');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {

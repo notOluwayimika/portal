@@ -79,3 +79,12 @@ Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
  */
 Route::get('/v1/finance/students/{student:uuid}/billable-enrollment', [InvoiceController::class, 'billableEnrollment']);
 Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'generateForStudent']);
+
+/*
+ * Record a payment ON THE ACCOUNT — no invoice named (the "money at the window" door). Banks as
+ * account credit and settles oldest-first at the next generation (ADR 0048). Ships under the
+ * finance.access group with NO ability of its own: the dedicated finance.payment.record permission
+ * (D1) is decided-and-scheduled as its own seeder-owned slice, sequenced before any pilot takes a
+ * payment — recorded in ADR 0048, not omitted. Mirrors the student-addressed invoice POST above.
+ */
+Route::post('/v1/finance/students/{student:uuid}/payments', [PaymentController::class, 'storeForStudent']);

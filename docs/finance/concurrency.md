@@ -35,6 +35,23 @@ backgrounded-process race proves nothing — the #94 lesson).
   transaction, account-before-invoice. See the section below for the ordering and its
   two proofs.
 
+- **Account-scoped payment — no lock, deliberately (the fourth money action, ADR 0048).**
+  `RecordAccountPayment` records a payment with **no invoice and no allocation**. The #94
+  invoice-row lock exists to bound `Σ(allocations) ≤ total` for one invoice; with no
+  allocation written that invariant is **vacuous here, not unprotected** — there is no
+  per-invoice sum to serialise. The only shared state it moves is the account balance, via
+  `SubledgerPoster::post`'s atomic increment (skew-free without an application lock, PROOF 4
+  above), and nothing in the path is a read-modify-write: the amount comes from the request,
+  never from a prior read. So it joins **neither** lock. This is stated explicitly because a
+  reader who knows the three-call-site lock discipline would otherwise read a fourth money
+  action with no lock as a missing guard. Its concurrency is bite-proven two ways in
+  `AccountPaymentConcurrencyTest`: two account payments interleaved (both land, balance = sum, no 1213),
+  and — the case no existing proof covered — an account payment racing `GenerateInvoice` for a
+  student with **no account row yet**, where `GenerateInvoice`'s first-statement
+  `StudentAccount::lockForUpdate()` on a non-existent row is a gap lock and the payment's
+  `INSERT … ON DUPLICATE KEY` is an insert-intention wait — the shape insert-intention
+  deadlocks are built from. It commits without deadlock; if that ever changes, the test says so.
+
 ## The convention, now ENFORCED: **account row first, then invoice row**
 
 W3 (apply-credit-forward at invoice generation) is the first action that performs a

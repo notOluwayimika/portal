@@ -270,6 +270,22 @@ would also have invented.
 - **Credit notes / write-offs** — drafted as **proposed §10 below**, awaiting owner
   sign-off (this doc's forward references already reserve the number §10).
 
+## 9. Payment settlement order
+
+**Policy (D2, ADR 0048):** a payment recorded **on the account** (no invoice named) banks as credit
+and settles **oldest invoice first** at the next generation. A payment recorded **against a named
+invoice** (the per-invoice-row action) allocates to that invoice and nothing else. There is exactly
+one general-payment settlement order, and it is oldest-first.
+
+**Enforcement — ENFORCED, by structure not constraint.** `GenerateInvoice::applyCreditForward` walks
+payments **oldest-first** (`orderBy('id')`) and is, after ADR 0048, the **sole allocator of unnamed
+money** — the account-scoped payment (`RecordAccountPayment`) writes no allocation, and the statement's
+former `advancePaymentTarget` workaround (which routed a general payment through the newest invoice,
+settling newest-first) was **deleted**, not fixed. So the ordering holds because only one code path
+allocates carry-forward credit, not because a DB constraint enforces it — the honest mechanism. A
+second allocator introduced later must adopt the same order or this policy silently regresses; that is
+the risk the single-allocator structure is chosen to minimise.
+
 ## 10. Credit notes and write-offs
 
 > **PROPOSED — UNSIGNED (drafted 2026-07-22).** This section is written in signed form

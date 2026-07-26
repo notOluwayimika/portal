@@ -69,6 +69,9 @@ export default function FinanceStatement({ student }: Props) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [payFor, setPayFor] = useState<Invoice | null>(null);
+    // Account-scoped payment (ADR 0048): the header "Record payment" opens the modal with no
+    // invoice — the money banks to the account and settles oldest-first at the next billing.
+    const [accountPay, setAccountPay] = useState(false);
     const [creditFor, setCreditFor] = useState<Invoice | null>(null);
     const [voidFor, setVoidFor] = useState<Invoice | null>(null);
     const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
@@ -110,14 +113,6 @@ export default function FinanceStatement({ student }: Props) {
             .filter((v) => v.status === 'submitted' && v.invoice_display_number)
             .map((v) => v.invoice_display_number),
     );
-
-    // Account-level Record Payment target (Decision 3): per-invoice Record Payment is suppressed
-    // once an invoice is settled, but a general/advance payment must still be possible — so the
-    // header offers it against the most recent ISSUED invoice. The payment belongs to the account;
-    // if that invoice is settled the whole amount banks to the wallet (advance), otherwise it
-    // allocates. (A dedicated account-scoped payment endpoint is the proper follow-up.)
-    const advancePaymentTarget =
-        statement?.invoices.filter((i) => i.status !== 'void').at(-1) ?? null;
 
     // Tab metadata (label + live count) for the transaction-table tabs.
     const txnTabs = statement
@@ -208,19 +203,15 @@ export default function FinanceStatement({ student }: Props) {
                                     />
                                     Refresh
                                 </Button>
-                                {advancePaymentTarget && (
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() =>
-                                            setPayFor(advancePaymentTarget)
-                                        }
-                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                    >
-                                        <Wallet className="mr-1.5 h-4 w-4" />
-                                        Record payment
-                                    </Button>
-                                )}
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setAccountPay(true)}
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                >
+                                    <Wallet className="mr-1.5 h-4 w-4" />
+                                    Record payment
+                                </Button>
                                 <Button
                                     size="sm"
                                     onClick={() => setNewInvoiceOpen(true)}
@@ -771,9 +762,13 @@ export default function FinanceStatement({ student }: Props) {
                 onCreated={() => void load()}
             />
             <RecordPaymentModal
-                isOpen={payFor !== null}
-                onClose={() => setPayFor(null)}
+                isOpen={payFor !== null || accountPay}
+                onClose={() => {
+                    setPayFor(null);
+                    setAccountPay(false);
+                }}
                 invoice={payFor}
+                student={accountPay ? student : null}
                 onRecorded={() => void load()}
             />
             <IssueCreditNoteModal

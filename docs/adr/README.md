@@ -57,3 +57,4 @@ implementing phase starts.
 | [0045](0045-super-admin-no-ambient-authority.md) | `super_admin` has no ambient authority; domain action via impersonation | 1 | **Proposed (design)** |
 | [0046](0046-finance-delivery-thin-vertical-slices.md) | Finance delivery shape: thin vertical slices (UI + e2e with domain) | 1→Continuous | **Accepted** |
 | [0047](0047-ledger-coherence-detector.md) | Document↔ledger coherence: a detect-only sibling to reconcile-accounts | 1 | **Accepted** |
+| [0048](0048-account-scoped-payment.md) | Account-scoped payment endpoint (no invoice); D1 permission scheduled, oldest-first sole allocator | 1 | **Accepted** |

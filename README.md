@@ -39,9 +39,9 @@ See [docs/testing.md](docs/testing.md).
 | [docs/roadmap.md](docs/roadmap.md) | Source-of-truth map: what governs architecture vs delivery, current status, approved deferrals |
 | [docs/testing.md](docs/testing.md) | Test database setup and conventions |
 
-The approved architecture specification (v10) and execution plan live outside
-the repository (`plan_docs/`, untracked); [docs/roadmap.md](docs/roadmap.md)
-records how they relate and what has landed.
+The approved architecture specification (v10) and execution plan now live in the
+repository under [`docs/`](docs/); [docs/roadmap.md](docs/roadmap.md) records how
+they relate and what has landed.
 
 ## CI
 

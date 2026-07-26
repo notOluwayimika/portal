@@ -6,7 +6,7 @@ single authoritative roadmap.
 
 | Question                                                                                                                                      | Authority                                                                                                               |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **What the architecture is** (Constitution, isolation/identity/RBAC models, financial architecture, Module Blueprint, ADR register 0001–0035) | **Finance Implementation Specification v10** (`plan_docs/`, untracked)                                                  |
+| **What the architecture is** (Constitution, isolation/identity/RBAC models, financial architecture, Module Blueprint, ADR register 0001–0035) | **Finance Implementation Specification v10** (`docs/Finance Module — Implementation Master Plan - v10.md`)                                                  |
 | **When and in what order it is delivered** (milestones 1.0–1.5, slice contents, Core vs Continuous, rollout flags, deferrals)                 | **Phase 1 Execution Plan** (approved after v10; explicitly preserves v10's architecture and re-sequences only delivery) |
 
 Where the two describe delivery differently, **the Execution Plan governs** —
@@ -1920,5 +1920,9 @@ change what is in the code).
   on GitHub; merges are performed by the maintainer after review. Enabling
   protection is an outstanding GitHub-settings action (v10 §17.3), not a repo
   change.
-- `plan_docs/` is untracked by design; this page and the ADRs are the
-  in-repo record.
+- **v10 is now tracked in `docs/`** (previously `plan_docs/`, untracked). Decision:
+  a spec that governs the build should be reviewable in the same diff as the build,
+  so the Finance Implementation Specification v10 was moved into `docs/` alongside
+  this page and the ADRs. `plan_docs/` now retains only
+  `Brookstone_Portal_Requirements_Draft.pdf` (the §1–§19 requirements source). This
+  page and the ADRs remain the in-repo record.

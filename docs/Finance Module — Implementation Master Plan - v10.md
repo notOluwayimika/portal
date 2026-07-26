@@ -467,7 +467,7 @@ docs/<module>/domain-model.md + runbooks/
 **Coupling flows one way: the reactor depends on the published fact, never the reverse.** An event lets Academics stay ignorant of Finance; a contract gives Dashboard a typed, null-implementable dependency.
 
 **Reference cases:**
-- `ModuleClassificationService` currently reads `fee_invoices`/`fee_payments`/`fee_structures` via `DB::table()`. It will depend on a **`FinanceModuleStatus` contract** with a null implementation when Finance is disabled.
+- `ModuleClassificationService` currently reads `finance_invoices`/`finance_payments`/`finance_fee_structures` via `DB::table()`. **The `return` sits inside the probe loop, so it returns on the first table that exists — `finance_invoices` — and `finance_fee_structures` is never reached.** It will depend on a **`FinanceModuleStatus` contract** with a null implementation when Finance is disabled. **Do not repair the loop; the contract removes the read.**
 - Enrollment reaches Finance via **`StudentEnrolled`**, never by wiring `FinanceService` into `CurriculumEnrollmentService`.
 
 ---
@@ -610,7 +610,7 @@ finance_bank_accounts
   unique(school_id, account_number)
 
 fee_components.bank_account_id   ← nullable; which account this fee is banked into
-fee_payments.bank_account_id     ← required; where the money landed
+finance_payments.bank_account_id ← required; where the money landed
 ```
 
 **Each bank account is a distinct asset account in the chart** — `Dr Bank:Tuition`, never a generic `Dr Bank`. Reconciliation (§8) and Daily Collections (§12) are per bank account. Paystack maps a subaccount / dedicated virtual account per bank account. Sage 50 maps bank codes per bank account.
@@ -743,7 +743,7 @@ tests/Feature/Finance/  tests/Unit/Finance/  tests/Arch/FinanceTest.php
 
 **Money, Sequences, Approvals, Idempotency, FeatureFlags and the Pdf engine are Shared Kernel — see §8.**
 
-**Table naming:** `fee_invoices`, `fee_payments`, `fee_structures` (the three `ModuleClassificationService` already probes — naming them so lights up the admin dashboard for free); `finance_*` for the rest; Kernel tables unprefixed. Every table: `school_id` as **`foreignId`** (bigint — *not* `foreignUuid`; the hybrid ID conversion means the original migrations do not describe the live schema) + its own `uuid` route key.
+**Table naming:** `finance_*` for **every** Finance-owned table without exception — `finance_invoices`, `finance_payments`, `finance_fee_structures`, and the rest. Kernel tables unprefixed. The `finance_` prefix is what Constitution 3 and the §17.2 boundary lint key on, and it is what `ModuleClassificationService` probes. *(Superseded: this document previously specified unprefixed `fee_*` names for the first three tables. The shipped schema uses `finance_*`; the prefix rule is now uniform. `docs/roadmap.md` governs.)* Every table: `school_id` as **`foreignId`** (bigint — *not* `foreignUuid`; the hybrid ID conversion means the original migrations do not describe the live schema) + its own `uuid` route key.
 
 ---
 

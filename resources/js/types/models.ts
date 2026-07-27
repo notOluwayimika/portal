@@ -349,6 +349,14 @@ export interface Curriculum {
     grading_scheme?: GradingScheme | null;
     curriculum_subjects?: CurriculumSubject;
     student_curricula?: StudentCurriculum[];
+    /**
+     * Students whose enrolment on this curriculum is ACTIVE — promoted enrolments are the record
+     * of a student who has moved on and are not counted.
+     *
+     * Optional because the server only counts on request (the curricula listing); every other
+     * endpoint rendering a curriculum omits the key rather than paying for the subquery.
+     */
+    active_students_count?: number;
     created_at?: string;
     updated_at?: string;
 }

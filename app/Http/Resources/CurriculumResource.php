@@ -31,6 +31,13 @@ class CurriculumResource extends JsonResource
             'grading_scheme' => $this->gradingScheme ? new GradingSchemeResource($this->gradingScheme) : null,
             'full_name' => $this->fullName(),
 
+            // Students currently registered on this curriculum.
+            //
+            // whenCounted, so the key is simply ABSENT unless the caller asked for the count —
+            // this resource is rendered from a dozen places and a default of 0 would be a lie in
+            // every one of them, while counting here would put an N+1 on all of them.
+            'active_students_count' => $this->whenCounted('activeStudents'),
+
             'curriculum_subjects' => $this->when(
                 $this->includeSubjects,
                 CurriculumSubjectResource::collection($this->curriculumSubjects)

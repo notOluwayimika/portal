@@ -123,6 +123,8 @@
         "dashboard.view",
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
+        "finance.access",
+        "finance.discount-policy.change.submit",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",
@@ -159,6 +161,9 @@
     ],
     "principal": [
         "dashboard.view",
+        "finance.access",
+        "finance.discount-policy.change.approve",
+        "finance.discount-policy.change.reject",
         "principal_approval.manage",
         "report.view",
         "result.view",

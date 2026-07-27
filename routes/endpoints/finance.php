@@ -1,6 +1,8 @@
 <?php
 
 use App\Finance\Http\Controllers\CreditNoteController;
+use App\Finance\Http\Controllers\DiscountPolicyChangeController;
+use App\Finance\Http\Controllers\DiscountPolicyController;
 use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
@@ -86,6 +88,23 @@ Route::post('/v1/finance/fee-schedules', [FeeScheduleController::class, 'store']
     ->middleware('permission:finance.fee-schedule.manage');
 Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleController::class, 'update'])
     ->middleware('permission:finance.fee-schedule.manage');
+
+/*
+ * Discount policies (S1 commit 3, axis A). The catalog is read-only here — editing and removing are
+ * `amend` and `retire` change requests, never a direct PUT/DELETE. Governance is maker-checker: the
+ * Head submits create/amend/retire (finance.discount-policy.change.submit), the ED approves/rejects
+ * (…approve / …reject). The catalog changes ONLY when ApproveDiscountPolicyChange approves; the pending
+ * queue joins the unified approvals screen by the ApprovalAbility convention (no route edit).
+ */
+Route::get('/v1/finance/discount-policies', [DiscountPolicyController::class, 'index']);
+Route::post('/v1/finance/discount-policy-changes', [DiscountPolicyChangeController::class, 'submit'])
+    ->middleware('permission:finance.discount-policy.change.submit');
+Route::get('/v1/finance/discount-policy-changes/pending', [DiscountPolicyChangeController::class, 'pending'])
+    ->middleware('permission:finance.discount-policy.change.approve');
+Route::post('/v1/finance/discount-policy-changes/{change:uuid}/approve', [DiscountPolicyChangeController::class, 'approve'])
+    ->middleware('permission:finance.discount-policy.change.approve');
+Route::post('/v1/finance/discount-policy-changes/{change:uuid}/reject', [DiscountPolicyChangeController::class, 'reject'])
+    ->middleware('permission:finance.discount-policy.change.reject');
 
 /*
  * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the

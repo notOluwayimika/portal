@@ -721,6 +721,19 @@
         "permission:finance.access",
         "permission:finance.credit-note.approve"
     ],
+    "GET /api/v1/finance/discount-policies": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "GET /api/v1/finance/discount-policy-changes/pending": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.discount-policy.change.approve"
+    ],
     "GET /api/v1/finance/fee-schedules": [
         "api",
         "auth:sanctum",
@@ -793,7 +806,7 @@
         "auth",
         "tenant",
         "permission:finance.access",
-        "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject"
+        "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject|finance.discount-policy.change.approve|finance.discount-policy.change.reject"
     ],
     "GET /finance/students/{student}/statement": [
         "web",
@@ -1595,6 +1608,27 @@
         "tenant",
         "permission:finance.access",
         "permission:finance.credit-note.reject"
+    ],
+    "POST /api/v1/finance/discount-policy-changes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.discount-policy.change.submit"
+    ],
+    "POST /api/v1/finance/discount-policy-changes/{change}/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.discount-policy.change.approve"
+    ],
+    "POST /api/v1/finance/discount-policy-changes/{change}/reject": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.discount-policy.change.reject"
     ],
     "POST /api/v1/finance/fee-schedules": [
         "api",

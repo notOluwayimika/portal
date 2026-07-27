@@ -115,6 +115,13 @@ enum Permission: string
     // the direct-publish path too; commit 4 narrows it to DRAFT authorship, with a separate
     // finance.fee-schedule.change.submit for proposing the draft for ED approval.
     case FINANCE_FEE_SCHEDULE_MANAGE = 'finance.fee-schedule.manage';
+    // Discount-policy governance (S1 commit 3, axis A): the Head proposes create/amend/retire; the ED
+    // approves/rejects. Four-segment names so the terminal verb (submit/approve/reject) drives the
+    // ApprovalAbility maker-derivation and the super-admin bypass exclusion by CONVENTION — nothing is
+    // registered in a list. `…change.approve`'s maker is `…change.submit` for free.
+    case FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT = 'finance.discount-policy.change.submit';
+    case FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE = 'finance.discount-policy.change.approve';
+    case FINANCE_DISCOUNT_POLICY_CHANGE_REJECT = 'finance.discount-policy.change.reject';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

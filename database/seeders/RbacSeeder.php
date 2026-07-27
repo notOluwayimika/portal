@@ -214,6 +214,10 @@ class RbacSeeder extends Seeder
                 ...$activityAdmin,
                 ...$resultChecker,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
+                // Discount-policy governance (S1 commit 3): the Head is the MAKER — proposes
+                // create/amend/retire. Approval is a different seat (principal), so no role holds both.
+                PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
                 // Route access (C2)
                 PermissionEnum::RESULT_REVIEW_ACCESS->value,
                 PermissionEnum::REPORT_VIEW->value,
@@ -261,6 +265,11 @@ class RbacSeeder extends Seeder
                 PermissionEnum::STUDENT_STATUS_VIEW->value,
             ],
             'principal' => [
+                // Discount-policy governance (S1 commit 3): the principal is the ED-equivalent CHECKER —
+                // approves/rejects the Head's proposals. Holds neither side's maker, so maker ≠ checker.
+                PermissionEnum::FINANCE_ACCESS->value,
+                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
+                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT->value,
                 // Route access (C2) — principal's first grants; exactly the
                 // groups that listed `principal` pre-swap.
                 PermissionEnum::STUDENT_DIRECTORY_VIEW->value,

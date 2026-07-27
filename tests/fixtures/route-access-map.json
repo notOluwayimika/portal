@@ -1080,6 +1080,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1089,6 +1091,24 @@
             "finance_director"
         ]
     },
+    "GET /api/v1/finance/discount-policies": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "finance_void_approver",
+            "head_of_school",
+            "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/v1/finance/discount-policy-changes/pending": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
     "GET /api/v1/finance/fee-schedules": {
         "auth": true,
         "roles": [
@@ -1096,6 +1116,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1106,6 +1128,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1116,6 +1140,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1126,6 +1152,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1192,6 +1220,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -1199,7 +1229,8 @@
         "auth": true,
         "roles": [
             "finance_director",
-            "finance_void_approver"
+            "finance_void_approver",
+            "principal"
         ]
     },
     "GET /finance/students/{student}/statement": {
@@ -1209,6 +1240,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -2564,6 +2597,25 @@
             "finance_director"
         ]
     },
+    "POST /api/v1/finance/discount-policy-changes": {
+        "auth": true,
+        "roles": [
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/discount-policy-changes/{change}/approve": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
+    "POST /api/v1/finance/discount-policy-changes/{change}/reject": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
     "POST /api/v1/finance/fee-schedules": {
         "auth": true,
         "roles": [
@@ -2594,6 +2646,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },
@@ -2619,6 +2673,8 @@
             "admin",
             "finance_director",
             "finance_void_approver",
+            "head_of_school",
+            "principal",
             "super_admin"
         ]
     },

@@ -1,0 +1,55 @@
+<?php
+
+namespace App\Finance\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+/**
+ * Propose a discount-policy change (S1 commit 3). The route gates on
+ * finance.discount-policy.change.submit; this validates the wire shape loosely — the DB CHECKs
+ * (target_shape, terms_shape, basis exclusivity) are the authoritative guard. `target` is the target
+ * policy's uuid (amend/retire); the controller resolves it under SchoolScope.
+ */
+class SubmitDiscountPolicyChangeRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        return [
+            'kind' => ['required', 'in:create,amend,retire'],
+            'target' => ['required_unless:kind,create', 'string'],
+            'reason' => ['required', 'string', 'max:255'],
+
+            'name' => ['required_unless:kind,retire', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'basis' => ['required_unless:kind,retire', 'in:amount,percent'],
+            'value_minor' => ['required_if:basis,amount', 'integer', 'min:1'],
+            'value_currency' => ['required_if:basis,amount', 'string', 'size:3'],
+            'percent' => ['required_if:basis,percent', 'integer', 'between:1,100'],
+            'requires_approval' => ['sometimes', 'boolean'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function terms(): array
+    {
+        return [
+            'name' => $this->input('name'),
+            'description' => $this->input('description'),
+            'basis' => $this->input('basis'),
+            'value_minor' => $this->has('value_minor') ? (int) $this->input('value_minor') : null,
+            'value_currency' => $this->input('value_currency'),
+            'percent' => $this->has('percent') ? (int) $this->input('percent') : null,
+            'requires_approval' => $this->boolean('requires_approval'),
+        ];
+    }
+}

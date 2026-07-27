@@ -151,6 +151,21 @@ class CurriculumController extends Controller
         if (! $request->has('status')) {
             $curricula->where('status', 'active');
         }
+
+        // How many students are currently registered on each curriculum, for the setup table.
+        //
+        // ACTIVE enrolments only — `promoted` rows are the historical record of a student who has
+        // since moved on, so counting them would report a class as fuller than it is, and the
+        // number would only ever grow. This matches how the rest of the module reads "enrolled":
+        // cf. the compulsory-subject backfill in `assignSubject` below.
+        //
+        // withCount, not a relation load: one subquery for the whole page rather than an N+1 per
+        // curriculum, and no StudentCurriculum rows are hydrated just to be counted. The relation
+        // carries StudentCurriculum's SchoolScope, so the count stays inside the active school.
+        // The alias IS the attribute name — `withCount` only appends `_count` when none is given —
+        // and it must match what CurriculumResource::whenCounted('activeStudents') looks for.
+        $curricula->withCount(['studentCurricula as active_students_count' => fn ($query) => $query->where('status', StudentStatusEnum::ACTIVE)]);
+
         $curricula = $curricula->paginate($request->integer('per_page', $limit));
 
         return response()->json([

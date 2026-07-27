@@ -8,12 +8,12 @@ import { Pencil, Settings, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
+import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
 import { convertToSelectOptions, fmtDate } from '@/helpers';
 import { show } from '@/routes/setup/curricula';
 import type { Curriculum } from '@/types/models';
-import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 
 // ─── StatusPill ────────────────────────────────────────────────────────────
 
@@ -354,6 +354,9 @@ export function CurriculaTab() {
                                 <th style={{ textAlign: 'center' }}>
                                     Min. subj.
                                 </th>
+                                <th style={{ textAlign: 'center' }}>
+                                    Students
+                                </th>
                                 <th>Reg. deadline</th>
                                 <th>Results visible</th>
                                 <th>Status</th>
@@ -363,7 +366,7 @@ export function CurriculaTab() {
                         <tbody>
                             {curricula.length === 0 && (
                                 <tr>
-                                    <td colSpan={9}>
+                                    <td colSpan={10}>
                                         <Empty
                                             icon="📋"
                                             title="No curricula yet"
@@ -409,6 +412,16 @@ export function CurriculaTab() {
                                         className="mono"
                                     >
                                         {c.min_subjects}
+                                    </td>
+                                    <td
+                                        style={{ textAlign: 'center' }}
+                                        className="mono"
+                                        title="Students currently registered on this curriculum"
+                                    >
+                                        {/* Absent, not zero, when the server did not count —
+                                            "—" says "not known here", which 0 would misreport
+                                            as "nobody is registered". */}
+                                        {c.active_students_count ?? '—'}
                                     </td>
                                     <td
                                         className="muted"

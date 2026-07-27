@@ -5,14 +5,18 @@ import ScoreEntryPage from '@/components/score-entry-page';
 import SubjectResultStatusPanel from '@/components/subject-result-status-panel';
 import { handleBack } from '@/helpers';
 import type { Auth } from '@/types';
-import type { GradeBoundary } from '@/types/models';
+import type { CommentBand, GradeBoundary } from '@/types/models';
 
 export default function Show() {
-    const { curriculumSubject, defaultGradeBoundaries, auth } = usePage<{
-        curriculumSubject: any;
-        defaultGradeBoundaries: { data: GradeBoundary[] };
-        auth: Auth;
-    }>().props;
+    const { curriculumSubject, defaultGradeBoundaries, commentBands, auth } =
+        usePage<{
+            curriculumSubject: any;
+            defaultGradeBoundaries: { data: GradeBoundary[] };
+            // Already resolved server-side for this subject's exam type, so the grid never
+            // fetches suggestions per student.
+            commentBands: { data: CommentBand[] };
+            auth: Auth;
+        }>().props;
     const resultStatus = curriculumSubject.data.result_status;
     const roles = auth.roles;
 
@@ -57,6 +61,7 @@ export default function Show() {
                 cs={curriculumSubject.data}
                 status={status}
                 defaultGradeBoundaries={defaultGradeBoundaries.data}
+                commentBands={commentBands?.data ?? []}
             />
         </div>
     );

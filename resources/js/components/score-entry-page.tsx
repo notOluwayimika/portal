@@ -1,7 +1,9 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
+import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+    CommentBand,
     CurriculumSubject,
     GradeBoundary,
     GradingSchemeItem,
@@ -19,61 +21,46 @@ interface CellState {
     status: CellStatus;
     error?: string;
 }
-const OUTSTANDING_COMMENTS = [
-    'Outstanding performance. Keep it up',
-    'Outstanding performance. Keep soaring',
-];
-
-const EXCELLENT_COMMENTS = [
-    'Excellent result. Keep it up',
-    'Excellent result. Do not relent',
-    'Excellent performance. Keep soaring',
-];
-
-const VERY_GOOD_COMMENTS = [
-    'Very good result. Do not relent',
-    'Very good result. Keep working hard',
-    'Very good result. Aim higher',
-];
-
-const GOOD_COMMENTS = [
-    'Good result; you can do better',
-    'Good result. Do not relent in your effort',
-    'Good result. Aim higher',
-    'Good result. You can make it better',
-    'Good result. Work harder',
-];
-
-const FAIR_COMMENTS = [
-    'You are encouraged to work harder',
-    'You have the potential to improve on this grade',
-    'There is room for improvement if you work hard',
-    'You are capable of better academic performance',
-    'There is potential for growth if you do not relent',
-];
-
-const NEEDS_IMPROVEMENT_COMMENTS = [
-    'You are encouraged to work harder next term',
-    'You are encouraged to improve on this performance',
-    'There is room for improvement if you work hard',
-    'You need to put more effort in your academics',
-    'With determination, you can improve on this result',
-    'You can improve on this result; please work harder',
-];
-
-const POOR_COMMENTS = [
-    'This result is below expectation. Put in more effort',
-    'You need to put more effort in your academics',
-    'With determination, you can improve on this result',
-    'You are encouraged to put in more effort',
-    'You are encouraged to study more',
-    'Work harder for a better result next term',
-    'You are encouraged to focus more',
-];
+/**
+ * Longest comment the server will accept, matching `student_subjects.comment` and
+ * `CommentEntry::MAX_LENGTH`. This used to read 100 while the column and the server rule both
+ * said 50, so a teacher who picked the first suggestion in the lowest band (52 characters) passed
+ * this check and got a 422. All three now agree; the server pins the pairing with a test.
+ */
+const COMMENT_MAX_LENGTH = 100;
 
 // ---------- Helpers ----------
 
 const cellKey = (studentId: string, mcId: string) => `${studentId}:${mcId}`;
+
+/**
+ * The comments this school offers for `score`.
+ *
+ * Bands arrive from the server highest-first, and a score belongs to the highest band whose
+ * minimum it reaches — the same shape as the hardcoded ladder this replaced, except the ranges and
+ * the wording are now the school's own. An empty result is the legitimate day-one state for a
+ * school that has not configured any: the datalist renders empty and free text still saves.
+ */
+const commentsForScore = (bands: CommentBand[], score: number): string[] =>
+    bands
+        .find((band) => score >= band.min_score)
+        ?.comments.map((entry) => entry.body) ?? [];
+
+/**
+ * The comments this school offers for a categorical RATING.
+ *
+ * Ratings are not mapped onto a 0-100 scale to reuse the numeric bands: a grading scheme carries
+ * only code/label/display_order and typically includes entries like "Not Applicable", so ordinal
+ * position is not a quality ranking. The comments hang off the rating itself.
+ */
+const commentsForRating = (
+    items: GradingSchemeItem[],
+    itemId: string | undefined,
+): string[] =>
+    (itemId
+        ? items.find((item) => item.id === itemId)?.comments
+        : undefined
+    )?.map((entry) => entry.body) ?? [];
 
 const maxForComponent = (mc: MarkingComponent) => Math.round(mc.weight * 100);
 
@@ -86,10 +73,14 @@ export default function ScoreEntryPage({
     cs,
     status,
     defaultGradeBoundaries = [],
+    commentBands = [],
 }: {
     cs: CurriculumSubject;
     status: SubjectResultStatus;
     defaultGradeBoundaries?: GradeBoundary[];
+    // Already resolved server-side for this subject's exam type, highest band first. Categorical
+    // curricula band on a RATING instead, so their comments arrive on the grading scheme items.
+    commentBands?: CommentBand[];
 }) {
     if (cs.curriculum?.grading_mode === 'categorical') {
         return <CategoricalEntryPage cs={cs} status={status} />;
@@ -100,6 +91,7 @@ export default function ScoreEntryPage({
             cs={cs}
             status={status}
             defaultGradeBoundaries={defaultGradeBoundaries}
+            commentBands={commentBands}
         />
     );
 }
@@ -108,10 +100,12 @@ function NumericScoreEntryPage({
     cs,
     status,
     defaultGradeBoundaries,
+    commentBands,
 }: {
     cs: CurriculumSubject;
     status: SubjectResultStatus;
     defaultGradeBoundaries: GradeBoundary[];
+    commentBands: CommentBand[];
 }) {
     const gradeBoundaries = cs.curriculum?.exam_type?.grade_boundaries?.length
         ? cs.curriculum.exam_type.grade_boundaries
@@ -127,6 +121,13 @@ function NumericScoreEntryPage({
         const map: Record<string, CellState> = {};
 
         for (const s of scores) {
+            // Same null-student guard as the categorical grid: `student` is school-scoped, so a
+            // score whose student the viewer cannot see serializes as null and reading `.id` here
+            // took the whole page down. Skipping the row degrades one cell instead.
+            if (!s.student || !s.marking_component) {
+                continue;
+            }
+
             map[cellKey(s.student.id, s.marking_component.id)] = {
                 value: String(s.score / s.marking_component.weight),
                 status: 'idle',
@@ -512,11 +513,14 @@ function NumericScoreEntryPage({
                                             <td>
                                                 <CommentCell
                                                     studentSubject={s}
-                                                    total={total}
                                                     locked={
                                                         status.status ===
                                                         'approved'
                                                     }
+                                                    commentOptions={commentsForScore(
+                                                        commentBands,
+                                                        Number(total ?? 0),
+                                                    )}
                                                 />
                                             </td>
                                         )}
@@ -541,10 +545,17 @@ function CategoricalEntryPage({
     const items = cs.curriculum?.grading_scheme?.items ?? [];
     const students = cs.students ?? [];
     const initial = Object.fromEntries(
-        (cs.student_results ?? []).map((result) => [
-            result.student.id,
-            result.grading_item?.id ?? '',
-        ]),
+        (cs.student_results ?? [])
+            // `student` can be null: it is school-scoped, so a result whose student the viewer
+            // cannot see serializes as null. That is meant to be unreachable now the page 404s on
+            // a foreign curriculum subject, but this used to crash the whole grid with
+            // "can't access property id, student is null" — so the grid skips such rows instead
+            // of trusting the guard upstream to be the only thing standing.
+            .filter((result) => result.student != null)
+            .map((result) => [
+                result.student.id,
+                result.grading_item?.id ?? '',
+            ]),
     );
     const [ratings, setRatings] = useState<Record<string, string>>(initial);
     const [saving, setSaving] = useState<Set<string>>(new Set());
@@ -552,8 +563,13 @@ function CategoricalEntryPage({
     const locked = ['submitted', 'approved'].includes(status.status);
     const filtered = students.filter((assignment) => {
         const student = assignment.student_curriculum?.student;
+
+        if (!student) {
+            return false;
+        }
+
         const haystack =
-            `${student?.first_name ?? ''} ${student?.last_name ?? ''} ${student?.admission_number ?? ''}`.toLowerCase();
+            `${student.first_name ?? ''} ${student.last_name ?? ''} ${student.admission_number ?? ''}`.toLowerCase();
 
         return haystack.includes(query.toLowerCase());
     });
@@ -562,6 +578,7 @@ function CategoricalEntryPage({
         const previous = ratings[studentId] ?? '';
         setRatings((current) => ({ ...current, [studentId]: itemId }));
         setSaving((current) => new Set(current).add(studentId));
+
         try {
             await axios.put(
                 `/api/curriculum-subjects/${cs.id}/categorical-results/${studentId}`,
@@ -616,6 +633,11 @@ function CategoricalEntryPage({
                                 <th className="px-4 py-3 text-left font-medium text-gray-700">
                                     Description
                                 </th>
+                                {!cs.curriculum?.is_ccm && (
+                                    <th className="px-4 py-3 text-left font-medium text-gray-700">
+                                        Comment
+                                    </th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -674,6 +696,22 @@ function CategoricalEntryPage({
                                         <td className="px-4 py-3 text-gray-600">
                                             {selected?.label ?? '—'}
                                         </td>
+                                        {!cs.curriculum?.is_ccm && (
+                                            <td className="px-4 py-3">
+                                                {/* Suggestions follow the RATING, so they change
+                                                    as soon as one is picked — the categorical
+                                                    equivalent of the numeric grid re-banding when
+                                                    a total changes. */}
+                                                <CommentCell
+                                                    studentSubject={assignment}
+                                                    locked={locked}
+                                                    commentOptions={commentsForRating(
+                                                        items,
+                                                        ratings[student.id],
+                                                    )}
+                                                />
+                                            </td>
+                                        )}
                                     </tr>
                                 );
                             })}
@@ -782,57 +820,44 @@ function CategoricalGradingReference({
 
 // ---------- Sub-components ----------
 
+/**
+ * The comment box for one student, in either grid.
+ *
+ * It takes the suggestion list ALREADY RESOLVED rather than resolving it itself, which is what
+ * lets the numeric and categorical pages share it: numeric resolves by score, categorical by
+ * rating, and neither difference reaches this component. Suggestions ship with the page, so this
+ * stays a pure function of its props — no fetch per row and no N+1 on a grid of hundreds.
+ */
 function CommentCell({
     studentSubject,
-    total,
     locked,
+    commentOptions,
 }: {
     studentSubject: StudentSubject;
-    total?: number;
     locked: boolean;
+    commentOptions: string[];
 }) {
     const [value, setValue] = useState(studentSubject.comment ?? '');
     const [status, setStatus] = useState<CellStatus>('idle');
     const [error, setError] = useState('');
+    const [open, setOpen] = useState(false);
+    const [highlight, setHighlight] = useState(-1);
+    // The menu is positioned FIXED, not absolute: both grids sit inside a wrapper with
+    // `overflow-x-auto` / `overflow-hidden`, which clips an absolutely positioned child. Anchoring
+    // to the input's viewport rect is what lets the list escape the scrolling table.
+    const [menuRect, setMenuRect] = useState<{
+        top: number;
+        left: number;
+        width: number;
+    } | null>(null);
 
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    function getCommentsForScore(score: number) {
-        if (score >= 91) {
-            return OUTSTANDING_COMMENTS;
-        }
-
-        if (score >= 80) {
-            return EXCELLENT_COMMENTS;
-        }
-
-        if (score >= 70) {
-            return VERY_GOOD_COMMENTS;
-        }
-
-        if (score >= 60) {
-            return GOOD_COMMENTS;
-        }
-
-        if (score >= 50) {
-            return FAIR_COMMENTS;
-        }
-
-        if (score >= 40) {
-            return NEEDS_IMPROVEMENT_COMMENTS;
-        }
-
-        return POOR_COMMENTS;
-    }
-
-    // Adjust this to match your model
-    const score = Number(total ?? 0);
-
-    const commentOptions = useMemo(() => getCommentsForScore(score), [score]);
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const menuRef = useRef<HTMLUListElement | null>(null);
 
     const isValid = (val: string) => {
-        if (val.length > 100) {
-            setError('Maximum 100 characters allowed');
+        if (val.length > COMMENT_MAX_LENGTH) {
+            setError(`Maximum ${COMMENT_MAX_LENGTH} characters allowed`);
             setStatus('error');
 
             return false;
@@ -902,6 +927,7 @@ function CommentCell({
             clearTimeout(timerRef.current);
         }
 
+        closeMenu();
         triggerSave(value);
     };
 
@@ -920,6 +946,135 @@ function CommentCell({
         }
     }, [locked]);
 
+    // ── Suggestion menu ────────────────────────────────────────────────────
+
+    // Substring match, so "keep" finds "Outstanding performance. Keep it up". A value that already
+    // equals a suggestion shows the whole list rather than just itself — otherwise picking one
+    // suggestion would hide every alternative the moment it was chosen.
+    const query = value.trim().toLowerCase();
+    const filtered =
+        query === '' || commentOptions.includes(value)
+            ? commentOptions
+            : commentOptions.filter((option) =>
+                  option.toLowerCase().includes(query),
+              );
+
+    const canSuggest = !locked && commentOptions.length > 0;
+
+    const positionMenu = useCallback(() => {
+        const rect = inputRef.current?.getBoundingClientRect();
+
+        if (rect) {
+            setMenuRect({
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: rect.width,
+            });
+        }
+    }, []);
+
+    const openMenu = () => {
+        if (!canSuggest) {
+            return;
+        }
+
+        positionMenu();
+        setOpen(true);
+    };
+
+    const closeMenu = () => {
+        setOpen(false);
+        setHighlight(-1);
+    };
+
+    // A fixed-position menu does not travel with its anchor, so it has to be re-measured while the
+    // page or the table scrolls. `capture: true` catches the table's own scroll container, not
+    // just the window.
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        const reposition = () => positionMenu();
+        window.addEventListener('scroll', reposition, true);
+        window.addEventListener('resize', reposition);
+
+        return () => {
+            window.removeEventListener('scroll', reposition, true);
+            window.removeEventListener('resize', reposition);
+        };
+    }, [open, positionMenu]);
+
+    // Keep the highlighted row visible when arrowing past the edge of the list.
+    useEffect(() => {
+        if (!open || highlight < 0) {
+            return;
+        }
+
+        menuRef.current?.children[highlight]?.scrollIntoView({
+            block: 'nearest',
+        });
+    }, [open, highlight]);
+
+    /**
+     * Commit a suggestion. Saves IMMEDIATELY rather than waiting out the debounce: picking from a
+     * list is a deliberate act, and the 3s wait exists for typing, not for clicking.
+     */
+    const choose = (option: string) => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+        }
+
+        setValue(option);
+        closeMenu();
+        triggerSave(option);
+        inputRef.current?.focus();
+    };
+
+    const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!canSuggest) {
+            return;
+        }
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+
+            if (!open) {
+                openMenu();
+                setHighlight(0);
+
+                return;
+            }
+
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            setHighlight((current) => {
+                const next = current + step;
+
+                if (next < 0) {
+                    return filtered.length - 1;
+                }
+
+                return next >= filtered.length ? 0 : next;
+            });
+
+            return;
+        }
+
+        if (event.key === 'Enter' && open && highlight >= 0) {
+            // Only swallow Enter when a row is actually highlighted; otherwise it stays a plain
+            // "I'm done typing" and the normal save path handles it.
+            event.preventDefault();
+            choose(filtered[highlight]);
+
+            return;
+        }
+
+        if (event.key === 'Escape' && open) {
+            event.preventDefault();
+            closeMenu();
+        }
+    };
+
     const borderClass =
         status === 'error'
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
@@ -929,30 +1084,116 @@ function CommentCell({
                 ? 'border-green-400 focus:border-green-500 focus:ring-green-500'
                 : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500';
 
-    const datalistId = `comment-options-${studentSubject.id}`;
+    const menuId = `comment-options-${studentSubject.id}`;
 
     return (
         <div className="relative min-w-[350px]">
             <input
+                ref={inputRef}
                 type="text"
-                list={datalistId}
+                role="combobox"
+                aria-expanded={open}
+                aria-controls={menuId}
+                aria-autocomplete="list"
+                aria-activedescendant={
+                    open && highlight >= 0
+                        ? `${menuId}-${highlight}`
+                        : undefined
+                }
                 value={value}
                 disabled={locked}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(e) => {
+                    onChange(e.target.value);
+
+                    // Typing filters the list, so show it — but never force it open on a value
+                    // that matches nothing, which would flash an empty box mid-keystroke.
+                    if (canSuggest) {
+                        setHighlight(-1);
+                        openMenu();
+                    }
+                }}
+                onKeyDown={onKeyDown}
                 onBlur={onBlur}
                 placeholder={
                     locked
                         ? 'Comment locked after approval'
-                        : 'Select or type comment...'
+                        : canSuggest
+                          ? 'Select or type comment…'
+                          : 'Type a comment…'
                 }
-                className={`w-full rounded-md border px-2 py-1 text-sm shadow-sm focus:ring-1 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${borderClass}`}
+                className={`w-full rounded-md border py-1 pl-2 text-sm shadow-sm focus:ring-1 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${
+                    canSuggest ? 'pr-8' : 'pr-2'
+                } ${borderClass}`}
             />
 
-            <datalist id={datalistId}>
-                {commentOptions.map((comment) => (
-                    <option key={comment} value={comment} />
-                ))}
-            </datalist>
+            {/* The affordance. Without it nothing on screen says suggestions exist — the
+                placeholder is the only hint and it disappears as soon as a comment is saved,
+                which is most of the time. Hidden entirely when the school has configured no
+                comments, so an empty bank leaves a plain text box rather than a dead control. */}
+            {canSuggest && (
+                <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Show comment suggestions"
+                    title="Show comment suggestions"
+                    // mousedown, not click: `click` fires after the input's blur, which would
+                    // close the menu we just opened (and fire a save mid-interaction).
+                    onMouseDown={(event) => {
+                        event.preventDefault();
+
+                        if (open) {
+                            closeMenu();
+                        } else {
+                            openMenu();
+                            inputRef.current?.focus();
+                        }
+                    }}
+                    className="absolute inset-y-0 right-0 flex w-7 items-center justify-center text-gray-400 hover:text-gray-600"
+                >
+                    <ChevronDown
+                        className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`}
+                        aria-hidden
+                    />
+                </button>
+            )}
+
+            {open && menuRect && filtered.length > 0 && (
+                <ul
+                    ref={menuRef}
+                    id={menuId}
+                    role="listbox"
+                    style={{
+                        position: 'fixed',
+                        top: menuRect.top,
+                        left: menuRect.left,
+                        width: menuRect.width,
+                    }}
+                    className="z-50 max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg"
+                >
+                    {filtered.map((option, index) => (
+                        <li
+                            key={option}
+                            id={`${menuId}-${index}`}
+                            role="option"
+                            aria-selected={option === value}
+                            // mousedown so the input never blurs — a blur here would save the
+                            // half-typed value and close the menu before the click landed.
+                            onMouseDown={(event) => {
+                                event.preventDefault();
+                                choose(option);
+                            }}
+                            onMouseEnter={() => setHighlight(index)}
+                            className={`cursor-pointer px-3 py-1.5 ${
+                                index === highlight
+                                    ? 'bg-indigo-50 text-indigo-900'
+                                    : 'text-gray-700'
+                            }`}
+                        >
+                            {option}
+                        </li>
+                    ))}
+                </ul>
+            )}
 
             <StatusDot status={status} />
 

@@ -10,6 +10,7 @@ import {
     GitBranch,
     LayoutDashboard,
     Layers,
+    MessageSquare,
     Clipboard,
     Shield,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import { OverviewTab } from '@/components/setup/overview-tab';
 import { SessionsTab } from '@/components/setup/sessions-tab';
 import type { SetupData } from '@/types/models';
 import ClassStreamTab from './class-stream-tab';
+import { CommentBandsTab } from './comment-bands-tab';
 import { CurriculaTab } from './curricula-tab';
 import { ExamTypesTab } from './exam-types-tab';
 import { GradeBoundariesTab } from './grade-boundaries-tab';
@@ -331,6 +333,7 @@ type TabId =
     | 'exam-types'
     | 'subjects'
     | 'grades'
+    | 'score-comments'
     | 'curricula'
     | 'marking-components'
     | 'categorical-grading'
@@ -384,6 +387,12 @@ const TABS: TabConfig[] = [
         id: 'grades',
         label: 'Grade Boundaries',
         icon: <BarChart2 className="h-[14px] w-[14px]" />,
+        count: null,
+    },
+    {
+        id: 'score-comments',
+        label: 'Score Comments',
+        icon: <MessageSquare className="h-[14px] w-[14px]" />,
         count: null,
     },
     {
@@ -444,6 +453,8 @@ export default function SchoolSetup() {
                 return <SubjectsTab />;
             case 'grades':
                 return <GradeBoundariesTab />;
+            case 'score-comments':
+                return <CommentBandsTab />;
             case 'categorical-grading':
                 return <GradingSchemesTab />;
             case 'curricula':

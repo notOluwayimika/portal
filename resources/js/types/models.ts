@@ -61,6 +61,11 @@ export interface GradingSchemeItem {
     code: string;
     label: string;
     display_order: number;
+    /**
+     * Comment suggestions for this rating — the categorical counterpart of CommentBand.comments.
+     * Empty unless the server eager-loaded them (the score entry page does; report cards do not).
+     */
+    comments?: CommentEntry[];
 }
 
 export interface GradingScheme {
@@ -113,6 +118,32 @@ export interface Subject {
     code: string;
     created_at?: string;
     updated_at?: string;
+}
+
+/**
+ * A score range a school owns, holding the comments teachers are offered for scores in it.
+ *
+ * These replaced seven hardcoded arrays in score-entry-page.tsx. They are deliberately NOT the
+ * same ranges as GradeBoundary: comment bands are finer than grades at the top (one grade A can
+ * span "Outstanding", "Excellent" and "Very good") and coarser at the bottom, so the two ladders
+ * are configured separately in school setup.
+ *
+ * `min_score` is authoritative — a score belongs to the highest band whose minimum it reaches.
+ * `max_score` is derived server-side and is for display only.
+ */
+export interface CommentBand {
+    id: string;
+    min_score: number;
+    max_score: number;
+    label: string;
+    comments: CommentEntry[];
+}
+
+export interface CommentEntry {
+    id: string;
+    body: string;
+    sort_order: number;
+    is_active: boolean;
 }
 
 export interface GradeBoundary {

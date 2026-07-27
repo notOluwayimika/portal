@@ -29,6 +29,12 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "DELETE /api/comment-bands/{commentBand}/entries/{entry}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
     "DELETE /api/curricula/{curriculum}": [
         "api",
         "auth:sanctum",
@@ -54,6 +60,12 @@
         "permission:academic_setup.manage"
     ],
     "DELETE /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "DELETE /api/grading-scheme-items/{gradingSchemeItem}/comments/{entry}": [
         "api",
         "auth:sanctum",
         "tenant",
@@ -270,6 +282,12 @@
         "tenant",
         "permission:academic_data.view"
     ],
+    "GET /api/comment-bands": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
     "GET /api/curricula": [
         "api",
         "auth:sanctum",
@@ -367,6 +385,12 @@
         "permission:academic_data.view"
     ],
     "GET /api/grading-schemes": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "GET /api/grading-schemes/{gradingScheme}/rating-comments": [
         "api",
         "auth:sanctum",
         "tenant",
@@ -1222,6 +1246,18 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "POST /api/comment-bands/load-defaults": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/comment-bands/{commentBand}/entries": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
     "POST /api/curricula": [
         "api",
         "auth:sanctum",
@@ -1296,6 +1332,12 @@
         "permission:academic_setup.manage"
     ],
     "POST /api/grade-boundaries": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "POST /api/grading-scheme-items/{gradingSchemeItem}/comments": [
         "api",
         "auth:sanctum",
         "tenant",
@@ -1574,6 +1616,12 @@
         "tenant",
         "permission:finance.access"
     ],
+    "POST /api/v1/finance/students/{student}/payments": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": [
         "api",
         "auth:sanctum",
@@ -1689,6 +1737,24 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "PUT /api/comment-bands": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/comment-bands/{commentBand}/entries/reorder": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/comment-bands/{commentBand}/entries/{entry}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
     "PUT /api/curricula/{curriculum}": [
         "api",
         "auth:sanctum",
@@ -1699,7 +1765,7 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_setup.manage"
+        "permission:score.manage"
     ],
     "PUT /api/exam-types/{examType}": [
         "api",
@@ -1708,6 +1774,18 @@
         "permission:academic_setup.manage"
     ],
     "PUT /api/grade-boundaries/{gradeBoundary}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/grading-scheme-items/{gradingSchemeItem}/comments/reorder": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
+    "PUT /api/grading-scheme-items/{gradingSchemeItem}/comments/{entry}": [
         "api",
         "auth:sanctum",
         "tenant",

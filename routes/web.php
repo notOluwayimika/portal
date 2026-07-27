@@ -15,6 +15,7 @@ use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController
 use App\Http\Controllers\SuperAdmin\RbacMatrixController as SuperAdminRbacMatrixController;
 use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
 use App\Http\Resources\ClassLevelResource;
+use App\Http\Resources\CommentBandResource;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\GradeBoundaryResource;
@@ -23,6 +24,7 @@ use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\ClassLevel;
+use App\Models\CommentBand;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\GradeBoundary;
@@ -337,11 +339,27 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
     })->name('setup.teachers.show');
 
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
+        // ISOLATION. `curriculum_subjects` carries no `school_id` and no SchoolScope — it is owned
+        // through its curriculum — so route-model binding alone will happily resolve ANOTHER
+        // school's uuid here. That was not merely a leak: `Student` IS school-scoped, so the page
+        // then rendered with every `studentResults.student` and `scores.student` serialized as
+        // null, and the score grid crashed on `result.student.id`. The 404 is the fix; the
+        // null-tolerance in score-entry-page.tsx is the belt to this braces.
+        //
+        // getOrFail(), not id(): with no active school BOTH sides would be null and a bare
+        // `===` would pass, which is the fail-OPEN direction on an isolation check.
+        abort_unless(
+            $curriculumSubject->curriculum?->school_id === ActiveSchool::getOrFail()->id,
+            404
+        );
+
         $curriculumSubject->load([
             'curriculum',
             'curriculum.examType.gradeBoundaries',
             'curriculum.markingScheme.components',
-            'curriculum.gradingScheme.items',
+            // `.activeComments` so a CATEGORICAL grid gets its suggestions the same way the
+            // numeric one gets `commentBands` — with the page, never per student.
+            'curriculum.gradingScheme.items.activeComments',
             'subject',
             'markingComponents',
             'scores.student',
@@ -359,6 +377,13 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
             'defaultGradeBoundaries' => GradeBoundaryResource::collection(
                 GradeBoundary::whereNull('exam_type_id')->get()
+            ),
+            // Comment suggestions for the score grid, RESOLVED HERE for this subject's exam type
+            // (its own set if it has one, the school default otherwise) and shipped with the page.
+            // A handful of rows, so the grid never fetches per student — CommentCell stays a pure
+            // function of its props even on a table of hundreds.
+            'commentBands' => CommentBandResource::collection(
+                CommentBand::setFor($curriculumSubject->curriculum?->exam_type_id)
             ),
         ]);
     })->name('setup.curriculumSubjects.show');

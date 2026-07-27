@@ -7,6 +7,7 @@ use App\Http\Requests\StudentSubject\DropSubjectRequest;
 use App\Http\Requests\StudentSubject\RestoreSubjectRequest;
 use App\Http\Resources\ActivityResource;
 use App\Http\Resources\StudentSubjectResource;
+use App\Models\CommentEntry;
 use App\Models\CurriculumSubject;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -205,7 +206,10 @@ class StudentSubjectController extends Controller
         }
 
         $request->validate([
-            'comment' => 'required|string|max:50',
+            // 100 matches the column (widened from 50) and CommentEntry::MAX_LENGTH. All three
+            // used to disagree — column 50, this rule 50, the client 100 — and a shipped default
+            // suggestion was 52 characters, so picking it passed here and 422'd on the way in.
+            'comment' => 'required|string|max:'.CommentEntry::MAX_LENGTH,
         ]);
         Authz::abilityCheck(request()->user(), 'student_subject.view', 'StudentSubjectController@storeComment');
         $this->service->storeComment($studentSubject, $request->user(), $request->comment);

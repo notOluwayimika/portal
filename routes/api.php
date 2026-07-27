@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
+use App\Http\Controllers\CommentBandController;
+use App\Http\Controllers\CommentEntryController;
 use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\CurriculumSubjectController;
 use App\Http\Controllers\ExamTypeController;
@@ -95,6 +97,28 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/grade-boundaries', [GradeBoundaryController::class, 'store']);
     Route::put('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'update']);
     Route::delete('/grade-boundaries/{gradeBoundary:uuid}', [GradeBoundaryController::class, 'destroy']);
+
+    // protected comment routes (score-entry comment suggestions, per school)
+    //
+    // Entry routes are nested under their PARENT on purpose: CommentEntry has no school_id and no
+    // SchoolScope, so the parent is what proves ownership before an entry is touched at all. The
+    // controller re-checks that pairing rather than trusting the binding — {gradingSchemeItem} in
+    // particular has no SchoolScope to fail closed on.
+    Route::get('/comment-bands', [CommentBandController::class, 'index']);
+    Route::put('/comment-bands', [CommentBandController::class, 'save']);
+    Route::post('/comment-bands/load-defaults', [CommentBandController::class, 'loadDefaults']);
+    Route::put('/comment-bands/{commentBand:uuid}/entries/reorder', [CommentEntryController::class, 'reorderOnBand']);
+    Route::post('/comment-bands/{commentBand:uuid}/entries', [CommentEntryController::class, 'storeOnBand']);
+    Route::put('/comment-bands/{commentBand:uuid}/entries/{entry:uuid}', [CommentEntryController::class, 'updateOnBand'])->withoutScopedBindings();
+    Route::delete('/comment-bands/{commentBand:uuid}/entries/{entry:uuid}', [CommentEntryController::class, 'destroyOnBand'])->withoutScopedBindings();
+
+    // Categorical curricula band on a RATING, not a score range, so their comments hang off the
+    // grading scheme item. Same controller, same limits, same behaviour — see CommentEntry.
+    Route::get('/grading-schemes/{gradingScheme:uuid}/rating-comments', [CommentBandController::class, 'ratingComments']);
+    Route::put('/grading-scheme-items/{gradingSchemeItem:uuid}/comments/reorder', [CommentEntryController::class, 'reorderOnRating']);
+    Route::post('/grading-scheme-items/{gradingSchemeItem:uuid}/comments', [CommentEntryController::class, 'storeOnRating']);
+    Route::put('/grading-scheme-items/{gradingSchemeItem:uuid}/comments/{entry:uuid}', [CommentEntryController::class, 'updateOnRating'])->withoutScopedBindings();
+    Route::delete('/grading-scheme-items/{gradingSchemeItem:uuid}/comments/{entry:uuid}', [CommentEntryController::class, 'destroyOnRating'])->withoutScopedBindings();
     Route::get('/grading-schemes', [GradingSchemeController::class, 'index']);
     Route::post('/grading-schemes', [GradingSchemeController::class, 'store']);
     Route::put('/grading-schemes/{gradingScheme:uuid}', [GradingSchemeController::class, 'update']);
@@ -111,8 +135,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
-    Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
-        ->withoutScopedBindings();
 
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
@@ -249,6 +271,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
+
+    // Categorical grading is SCORE ENTRY, not setup — the teacher-facing act of recording a
+    // result, exactly like `assignScore` two lines up. It sat under `academic_setup.manage`
+    // (alongside approve/reject and the curriculum matrix), which meant a teacher who could enter
+    // numeric scores could not record a categorical rating for the same class, while anyone who
+    // could edit the academic structure could. `score.manage` is the ability that matches the act.
+    Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
+        ->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {

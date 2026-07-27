@@ -2,6 +2,7 @@
     "accounts_officer": [
         "finance.access",
         "finance.credit-note.submit",
+        "finance.fee-schedule.manage",
         "finance.invoice.generate",
         "finance.invoice.reduction.apply",
         "finance.invoice.void-request.submit"
@@ -24,6 +25,7 @@
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
         "finance.access",
+        "finance.fee-schedule.manage",
         "finance.invoice.generate",
         "finance.invoice.reduction.apply",
         "guardian.create",

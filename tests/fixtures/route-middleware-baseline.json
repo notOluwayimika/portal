@@ -721,6 +721,18 @@
         "permission:finance.access",
         "permission:finance.credit-note.approve"
     ],
+    "GET /api/v1/finance/fee-schedules": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
+    "GET /api/v1/finance/fee-schedules/prefill": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access"
+    ],
     "GET /api/v1/finance/students/{student}/billable-enrollment": [
         "api",
         "auth:sanctum",
@@ -1584,6 +1596,13 @@
         "permission:finance.access",
         "permission:finance.credit-note.reject"
     ],
+    "POST /api/v1/finance/fee-schedules": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.fee-schedule.manage"
+    ],
     "POST /api/v1/finance/invoices": [
         "api",
         "auth:sanctum",
@@ -1858,6 +1877,13 @@
         "auth:sanctum",
         "tenant",
         "permission:admin_area.access"
+    ],
+    "PUT /api/v1/finance/fee-schedules/{feeSchedule}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.fee-schedule.manage"
     ],
     "PUT /settings/password": [
         "web",

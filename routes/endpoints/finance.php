@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Http\Controllers\CreditNoteController;
+use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\PaymentController;
@@ -71,6 +72,20 @@ Route::get('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::c
  * the School-wide KPI totals. Read-only; ?search=, ?status=, ?sort= drive the view.
  */
 Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
+
+/*
+ * Fee schedules (S1 commit 2) — the per-School pricing catalog per (term × class level). Reads carry
+ * only the group's finance.access; authoring (store/update) needs finance.fee-schedule.manage. `store`
+ * and `update` are the DIRECT-PUBLISH path (draft→items→active in one Action); commit 4 removes the
+ * activation from them and routes it through an approved change request. `prefill` resolves the ACTIVE
+ * schedule's items into prefilled charge lines for the bursar's generate form (draft never prices).
+ */
+Route::get('/v1/finance/fee-schedules', [FeeScheduleController::class, 'index']);
+Route::get('/v1/finance/fee-schedules/prefill', [FeeScheduleController::class, 'prefill']);
+Route::post('/v1/finance/fee-schedules', [FeeScheduleController::class, 'store'])
+    ->middleware('permission:finance.fee-schedule.manage');
+Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleController::class, 'update'])
+    ->middleware('permission:finance.fee-schedule.manage');
 
 /*
  * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the

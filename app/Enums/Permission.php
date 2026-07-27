@@ -111,6 +111,10 @@ enum Permission: string
     // 100%-discount line raised by anyone with `finance.access`, naming no one. Not a maker-checker
     // pair (no terminal approve/reject verb) — the second axis is enforced at the DB reduction guard.
     case FINANCE_INVOICE_REDUCTION_APPLY = 'finance.invoice.reduction.apply';
+    // Author a fee schedule (S1 commit 2): create a draft and edit its items. In commit 2 this covers
+    // the direct-publish path too; commit 4 narrows it to DRAFT authorship, with a separate
+    // finance.fee-schedule.change.submit for proposing the draft for ED approval.
+    case FINANCE_FEE_SCHEDULE_MANAGE = 'finance.fee-schedule.manage';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

@@ -13,6 +13,57 @@ Where the two describe delivery differently, **the Execution Plan governs** —
 it was approved later, for exactly that purpose. No technical decision from v10
 was changed by it.
 
+## Pilot delivery decision (2026-07-27 / 28, decided by the project lead)
+
+The pilot's shape and slice order, settled by the lead. This is a **delivery**
+decision — the Execution Plan's territory (above); no v10 architecture, contract
+or schema is altered by any of it. Recorded here because in six weeks someone
+will ask why S4 is not built, why the discount guard shipped a commit later than
+the discount policies, and why commit 4 jumped ahead of 3b — each needs a dated,
+findable answer with a named decider, and a chat log is not that.
+
+**Settled 2026-07-27:**
+
+- **Launch in two months** (~2026-09).
+- **Full WCBS migration**, as specified in v10 §14 — outstanding balances,
+  advance payments, credit balances and historical references, **reconciled to
+  the kobo per school** with Brookstone Finance sign-off. Not a partial or
+  balances-only import.
+- **Two to three schools live on day one.**
+- **S4 (auto-bill on admission) is DEFERRED out of the pilot** and becomes the
+  first post-pilot slice. The pilot bills by hand; auto-billing follows.
+- **S3 splits.** S3a (opening-balance schema + provenance markers + the
+  per-school reconciliation query) is **pulled forward** and built on a second
+  track; S3b (the operator-facing import/correction UI) **stays in its original
+  position**.
+
+**Settled 2026-07-28:**
+
+- **Commit 3 SPLIT** (advisor ruling). **3a** = the discount-policy governance
+  domain (`finance_discount_policies` + `finance_discount_policy_changes`,
+  submit/approve/reject, [ADR 0049](adr/0049-governing-the-pricing-catalog.md)) —
+  **MERGED at `7370e89`**. **3b** = axis-B line-level enforcement: migration
+  `140002` carrying the `discount_policy_id` columns **and** the reduction guard
+  trigger **together** (the columns must not exist ahead of the guard that gives
+  them meaning), the `is_discountable` percentage-scope change, the generate-flow
+  threading, and the twelve-test ripple. **Not started.**
+- **Commit 4 runs BEFORE 3b.** A school prices a term before it invoices one, so
+  commit 4's deadline falls first; and an unapproved fee schedule mis-prices a
+  whole class level, whereas an unbacked reduction line affects one invoice and
+  is already actor-attributed since commit 1.
+- **Deadlines are operational, not calendar:**
+  - **Commit 4 must merge before any pilot school types real fee prices into
+    production.** Until it does, `finance.fee-schedule.manage` is the ability to
+    publish prices with nobody's approval.
+  - **3b must merge before any pilot school generates a real invoice**, and its
+    **merge date is the PERMANENT provenance boundary** for reduction lines:
+    every pre-3b reduction line is `discount_policy_id = NULL` **forever**,
+    because the reduction guard is BEFORE INSERT only and `finance_invoice_lines`
+    is append-only (no_update + no_delete triggers). It can never be backfilled.
+- **Revised slice order:**
+  `S1 (2a ✓, 3a ✓, 4, 3b) ∥ S3a → S2 → S3b → migration dry runs → go-live`.
+  S4 deferred. **Commit 5** (promotion record) blocks nothing and fits anywhere.
+
 ## Engineering Invariants (Permanent, ADR-amendable)
 
 Architectural rules stable across sessions — kept separate from status, progress,

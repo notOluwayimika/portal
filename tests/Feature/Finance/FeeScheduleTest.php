@@ -78,6 +78,51 @@ it('proof 24 — at most one ACTIVE schedule per slot; supersession lets a re-pr
     expect(fsRawSchedule($school, $term, $level, 'active'))->toBeInt();
 });
 
+// ── Proof 24b — the uniqueness is STATE-SCOPED (index-shape guard; stands forever) ──
+//
+// Better than a one-off plant: this asserts the SHAPE of the two unique indexes directly from
+// information_schema. Anyone who swaps in a plain composite unique(school_id, term_id, class_level_id)
+// — or drops the generated columns — goes red in CI, which is the regression the plant would only ever
+// have demonstrated once. (A migration ALTER inside a RefreshDatabase test causes an implicit COMMIT
+// that destroys the wrapping transaction, so the plant fights the harness, not the index — see the PR
+// body for the one-off manual confirmation.)
+
+it('proof 24b — the lifecycle uniqueness indexes are state-scoped (school_id + the status-gated keys)', function () {
+    $shape = fn (string $index): array => collect(DB::select(
+        'SELECT COLUMN_NAME FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+         ORDER BY SEQ_IN_INDEX',
+        ['finance_fee_schedules', $index],
+    ))->pluck('COLUMN_NAME')->all();
+
+    expect($shape('finance_fee_schedules_active_unique'))->toBe(['school_id', 'active_term_key', 'active_class_level_key'])
+        ->and($shape('finance_fee_schedules_draft_unique'))->toBe(['school_id', 'draft_term_key', 'draft_class_level_key']);
+});
+
+// ── Proof 24c — a SECOND publish supersedes the first and links back (the REAL Action) ──
+//
+// This is proof 29b's substance, exercised in commit 2 against CreateFeeSchedule (in commit 4 it moves
+// with steps 3+4 into ApproveFeeScheduleChange and becomes 29b). Watched red three ways, each failing
+// differently: (a) activate-before-supersede → the SECOND publish reds on active_unique (the
+// first-run-passes bug); (b) drop the supersedes_schedule_id assignment → only the LINK assertion reds
+// (the commit-4 trap: a minimal "delete step 4" drops the link while every status stays green); (c)
+// drop the supersede step → the second publish reds on the unique index.
+
+it('proof 24c — a SECOND publish supersedes the first and links back', function () {
+    [$school, $term, $level] = fsContext();
+
+    ActiveSchool::runFor($school->id, function () use ($term, $level) {
+        $first = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v1',
+            [['description' => 'Tuition', 'amount_minor' => 10000000]]);
+        $second = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v2',
+            [['description' => 'Tuition', 'amount_minor' => 12000000]]);
+
+        expect($first->fresh()->status->value)->toBe('superseded')
+            ->and($second->fresh()->status->value)->toBe('active')
+            ->and($second->fresh()->supersedes_schedule_id)->toBe($first->id);
+    });
+});
+
 // ── Proof 25 — a draft and an active coexist; two drafts do not ──
 
 it('proof 25 — a draft and an active schedule coexist for one slot; two drafts do not', function () {

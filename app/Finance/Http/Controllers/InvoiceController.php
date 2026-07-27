@@ -2,6 +2,7 @@
 
 namespace App\Finance\Http\Controllers;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Contracts\BillableEnrollmentProvider;
@@ -29,16 +30,32 @@ class InvoiceController extends Controller
 {
     public function generate(GenerateInvoiceRequest $request, GenerateInvoice $action): JsonResponse
     {
+        $this->assertMayReduce($request);
+
         try {
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
                 $request->lineSpecs(),
+                $request->user()?->id,
             );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return response()->json(new InvoiceResource($invoice), 201);
+    }
+
+    /**
+     * Applying a reduction (waiver/discount) needs `finance.invoice.reduction.apply` ON TOP of the
+     * route's `finance.invoice.generate` (S1 Part 0). Checked here, not in the route, because it
+     * depends on the request body — a charge-only invoice needs only the generate grant. Refused
+     * BEFORE the Action's transaction, so a forbidden reduction writes nothing.
+     */
+    private function assertMayReduce(GenerateInvoiceRequest $request): void
+    {
+        if ($request->hasReductionLine() && ! $request->user()->can(Permission::FINANCE_INVOICE_REDUCTION_APPLY->value)) {
+            abort(403, 'You may not apply a reduction to an invoice.');
+        }
     }
 
     /**
@@ -56,12 +73,14 @@ class InvoiceController extends Controller
     ): JsonResponse {
         $enrollment = $enrollments->currentForStudent($student->id);
 
+        $this->assertMayReduce($request);
+
         if ($enrollment === null) {
             return response()->json(['message' => 'This student has no active enrollment to bill.'], 422);
         }
 
         try {
-            $invoice = $action->handle($enrollment->enrollmentUuid, $request->lineSpecs());
+            $invoice = $action->handle($enrollment->enrollmentUuid, $request->lineSpecs(), $request->user()?->id);
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

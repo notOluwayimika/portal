@@ -100,10 +100,15 @@ Track D rides alongside; its terminal steps are outside this plan.
    `config/rbac.php`, seeders, or the authz/RBAC test suites. Shared surfaces (§3-I7) are
    announce-before-merge, never silent.
 2. **Baselines — the highest-frequency collision.** `tests/ratchet-baseline.txt`, `tsc-baseline`,
-   `authz-lint-baseline.txt`, `boundary-lint-baseline.txt` will move on both streams (RBAC especially).
-   **Rule: every baseline conflict is resolved by REGENERATING against the merged HEAD** (re-run the gate,
-   commit its output) — never by hand-picking lines. Two different "N"s are not the same N; this bit once
-   already (#65). Baselines only shrink.
+   `authz-lint-baseline.txt`, `boundary-lint-baseline.txt` — **and the three derived RBAC oracles
+   `tests/fixtures/rbac-grants-baseline.json`, `route-access-map.json`, `route-middleware-baseline.json`**
+   — will move on both streams (RBAC especially). **Rule: every baseline conflict is resolved by
+   REGENERATING against the merged HEAD** (re-run the gate or the derive command — `rbac:derive-access`,
+   `rbac:derive-map`, and the seed-and-dump for the grants map — and commit its output) — never by
+   hand-picking lines. Two different "N"s are not the same N; this bit once already (#65). **Note the
+   asymmetry: the ratchet/lint baselines only shrink; the grants catalog (`rbac-grants-baseline.json`)
+   legitimately GROWS when a new permission is added — "only shrink" governs failure ratchets, not the
+   grant catalog.**
 3. **Migrations.** Coordinate timestamps (RBAC prefixes its migrations after Finance's pending set);
    deterministic ordering; **no RBAC migration may reference `finance_*` tables or assume the
    post-migrate schema** — those tables do not exist in prod until the paused deploy completes.

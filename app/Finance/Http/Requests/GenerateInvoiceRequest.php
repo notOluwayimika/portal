@@ -54,6 +54,17 @@ class GenerateInvoiceRequest extends FormRequest
      *
      * @return list<InvoiceLineSpec>
      */
+    /**
+     * Does this request carry any REDUCTION line (waiver/discount)? Drives the
+     * `finance.invoice.reduction.apply` guard (S1 Part 0). A reduction is any line whose kind is not
+     * `charge`; a bare `percent` line or a negative charge is malformed and the Action 422s it, so
+     * reading the resolved specs' `isReduction()` is the exact question the permission gates.
+     */
+    public function hasReductionLine(): bool
+    {
+        return collect($this->lineSpecs())->contains(fn (InvoiceLineSpec $spec) => $spec->isReduction());
+    }
+
     public function lineSpecs(): array
     {
         /** @var array<int, array<string, mixed>> $lines */

@@ -1588,7 +1588,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:finance.access"
+        "permission:finance.access",
+        "permission:finance.invoice.generate"
     ],
     "POST /api/v1/finance/invoices/{invoice}/credit-notes": [
         "api",
@@ -1614,7 +1615,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:finance.access"
+        "permission:finance.access",
+        "permission:finance.invoice.generate"
     ],
     "POST /api/v1/finance/students/{student}/payments": [
         "api",

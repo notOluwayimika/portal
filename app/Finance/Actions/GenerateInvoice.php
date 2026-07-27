@@ -58,7 +58,12 @@ final class GenerateInvoice
     /**
      * @param  list<InvoiceLineSpec>  $lines
      */
-    public function handle(string $enrollmentUuid, array $lines): Invoice
+    /**
+     * @param  ?int  $actorId  the user raising the invoice, recorded on every line (S1 Part 0). Passed
+     *                         in from the controller edge — the Action never calls auth() (boundary lint).
+     *                         Nullable so seeders/console callers with no acting user still work.
+     */
+    public function handle(string $enrollmentUuid, array $lines, ?int $actorId = null): Invoice
     {
         $enrollment = $this->enrollments->findByUuid($enrollmentUuid);
 
@@ -158,7 +163,7 @@ final class GenerateInvoice
         }
 
         try {
-            return DB::transaction(function () use ($enrollment, $lines, $total) {
+            return DB::transaction(function () use ($enrollment, $lines, $total, $actorId) {
                 // W3 apply-forward — the FIRST statement, and a LOCKING read on purpose.
                 // A locking read does not establish InnoDB's REPEATABLE READ snapshot, so
                 // it forms at the first plain read AFTER this lock (assertNoActiveInvoice),
@@ -202,6 +207,7 @@ final class GenerateInvoice
                         'note' => $line->note,
                         'amount' => $line->resolvedAmount(),
                         'fee_item_id' => $line->feeItemId,
+                        'created_by_user_id' => $actorId,
                     ]);
                 }
 

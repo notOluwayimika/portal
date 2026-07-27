@@ -2549,8 +2549,6 @@
         "roles": [
             "accounts_officer",
             "admin",
-            "finance_director",
-            "finance_void_approver",
             "super_admin"
         ]
     },
@@ -2583,8 +2581,6 @@
         "roles": [
             "accounts_officer",
             "admin",
-            "finance_director",
-            "finance_void_approver",
             "super_admin"
         ]
     },

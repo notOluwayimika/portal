@@ -55,6 +55,13 @@ beforeEach(fn () => (new RbacSeeder)->run());
  */
 function bursarWithToken(School $school, array $permissions): array
 {
+    // Every acceptance bursar bills, so `finance.invoice.generate` (S1 Part 0) is baseline setup,
+    // minted for all of them — it is NOT the gate under test in any of these cases, so including it
+    // cannot false-green a 403 probe (a test that specifically probes the generate gate builds its
+    // token without this helper). `finance.invoice.reduction.apply` is deliberately NOT baseline —
+    // it is the sensitive one, added only by the test that posts a reduction line.
+    $permissions = array_values(array_unique([...$permissions, 'finance.invoice.generate']));
+
     // A DEDICATED role holding EXACTLY $permissions — not `admin`, whose seeded grants
     // already include finance.credit-note.issue (which would make the 403 gate test a
     // false green). The role name is keyed to the permission set so distinct sets get
@@ -145,7 +152,8 @@ function acceptanceStudent(School $school): string
 
 it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the invoice composes onto the statement, second is F7-rejected', function () {
     $school = School::factory()->create();
-    [, $token] = bursarWithToken($school, ['finance.access']);
+    // This one posts a discount line, so the token needs reduction.apply on top of generate (S1 Part 0).
+    [, $token] = bursarWithToken($school, ['finance.access', 'finance.invoice.reduction.apply']);
     $studentUuid = acceptanceStudent($school);
 
     // The modal's read: resolves the episode server-side + the F7 preview (not yet invoiced).

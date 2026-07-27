@@ -190,6 +190,9 @@ class RbacSeeder extends Seeder
                 PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
                 PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
                 PermissionEnum::FINANCE_ACCESS->value,
+                // Billing (S1 Part 0): admin may raise invoices and apply policy-backed reductions.
+                PermissionEnum::FINANCE_INVOICE_GENERATE->value,
+                PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
                 // Credit-note issuance is now maker-checker (Ph3): admin keeps finance
                 // read access but holds NEITHER the maker nor the checker permission —
                 // even admin cannot forgive money alone. The dedicated accounts_officer /
@@ -288,6 +291,9 @@ class RbacSeeder extends Seeder
             // — a platform authority never holds a maker-checker permission.
             'accounts_officer' => [
                 PermissionEnum::FINANCE_ACCESS->value,
+                // Billing (S1 Part 0): the bursar raises invoices and applies policy-backed reductions.
+                PermissionEnum::FINANCE_INVOICE_GENERATE->value,
+                PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_SUBMIT->value,
                 // Ph3b — maker side of the void instance too. Holding two MAKER permissions is
                 // fine; the grant guard only forbids a maker + its MATCHING checker in one role.

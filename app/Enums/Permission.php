@@ -102,6 +102,15 @@ enum Permission: string
     case FINANCE_INVOICE_VOID_REQUEST_SUBMIT = 'finance.invoice.void-request.submit';
     case FINANCE_INVOICE_VOID_REQUEST_APPROVE = 'finance.invoice.void-request.approve';
     case FINANCE_INVOICE_VOID_REQUEST_REJECT = 'finance.invoice.void-request.reject';
+    // Raising an invoice at all (S1 Part 0). Until now the ONLY gate on invoice generation was the
+    // group's `finance.access` — the same permission that lets someone look at the finance page —
+    // so anyone who could view finance could bill. This narrows generation to an explicit grant.
+    case FINANCE_INVOICE_GENERATE = 'finance.invoice.generate';
+    // Applying ANY reduction (waiver/discount) line on an invoice (S1 Part 0). Checked in the
+    // controller, not the route, because it depends on the request body. Closes the audit hole: a
+    // 100%-discount line raised by anyone with `finance.access`, naming no one. Not a maker-checker
+    // pair (no terminal approve/reject verb) — the second axis is enforced at the DB reduction guard.
+    case FINANCE_INVOICE_REDUCTION_APPLY = 'finance.invoice.reduction.apply';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

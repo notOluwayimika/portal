@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\Route;
  * Path is /api/v1/finance/* — the frozen Finance API prefix (§16); every Finance
  * aggregate hangs off /api/v1/finance from here on.
  */
-Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate']);
+Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate'])
+    ->middleware('permission:finance.invoice.generate');
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
 
 /*
@@ -78,7 +79,8 @@ Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
  * same GenerateInvoice (unchanged). The old enrollment-id POST above stays for the harness.
  */
 Route::get('/v1/finance/students/{student:uuid}/billable-enrollment', [InvoiceController::class, 'billableEnrollment']);
-Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'generateForStudent']);
+Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::class, 'generateForStudent'])
+    ->middleware('permission:finance.invoice.generate');
 
 /*
  * Record a payment ON THE ACCOUNT — no invoice named (the "money at the window" door). Banks as

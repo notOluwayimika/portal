@@ -108,7 +108,12 @@ Track D rides alongside; its terminal steps are outside this plan.
    hand-picking lines. Two different "N"s are not the same N; this bit once already (#65). **Note the
    asymmetry: the ratchet/lint baselines only shrink; the grants catalog (`rbac-grants-baseline.json`)
    legitimately GROWS when a new permission is added — "only shrink" governs failure ratchets, not the
-   grant catalog.**
+   grant catalog.** The three RBAC oracles are marked `-merge` in `.gitattributes`, so git REFUSES to
+   auto-merge them and raises a conflict instead — because a textual auto-merge of two independently
+   regenerated snapshots succeeds silently and produces a file that is wrong AND green (it happened
+   once: a duplicated `route-access-map.json` entry via a rebase). The only correct resolution to that
+   conflict is regeneration against the merged HEAD, exactly as this rule requires; the guard is the
+   mechanism that makes the rule bite instead of being wallpaper.
 3. **Migrations.** Coordinate timestamps (RBAC prefixes its migrations after Finance's pending set);
    deterministic ordering; **no RBAC migration may reference `finance_*` tables or assume the
    post-migrate schema** — those tables do not exist in prod until the paused deploy completes.

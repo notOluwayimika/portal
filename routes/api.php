@@ -111,9 +111,6 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/approve', [CurriculumSubjectController::class, 'approve']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/reject', [CurriculumSubjectController::class, 'reject']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'update']);
-    Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
-        ->withoutScopedBindings();
-
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'assignTeacher']);
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/teachers/{teacher:uuid}', [CurriculumSubjectController::class, 'unassignTeacher'])->withoutScopedBindings();
     Route::delete('/curriculum-subjects/{curriculumSubject:uuid}', [CurriculumSubjectController::class, 'destroy']);
@@ -249,6 +246,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
+
+    // Categorical grading is SCORE ENTRY, not setup — the teacher-facing act of recording a
+    // result, exactly like `assignScore` two lines up. It sat under `academic_setup.manage`
+    // (alongside approve/reject and the curriculum matrix), which meant a teacher who could enter
+    // numeric scores could not record a categorical rating for the same class, while anyone who
+    // could edit the academic structure could. `score.manage` is the ability that matches the act.
+    Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
+        ->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {

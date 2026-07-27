@@ -337,6 +337,20 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
     })->name('setup.teachers.show');
 
     Route::get('setup/curriculum-subject/{curriculumSubject:uuid}', function (CurriculumSubject $curriculumSubject) {
+        // ISOLATION. `curriculum_subjects` carries no `school_id` and no SchoolScope — it is owned
+        // through its curriculum — so route-model binding alone will happily resolve ANOTHER
+        // school's uuid here. That was not merely a leak: `Student` IS school-scoped, so the page
+        // then rendered with every `studentResults.student` and `scores.student` serialized as
+        // null, and the score grid crashed on `result.student.id`. The 404 is the fix; the
+        // null-tolerance in score-entry-page.tsx is the belt to this braces.
+        //
+        // getOrFail(), not id(): with no active school BOTH sides would be null and a bare
+        // `===` would pass, which is the fail-OPEN direction on an isolation check.
+        abort_unless(
+            $curriculumSubject->curriculum?->school_id === ActiveSchool::getOrFail()->id,
+            404
+        );
+
         $curriculumSubject->load([
             'curriculum',
             'curriculum.examType.gradeBoundaries',

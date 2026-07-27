@@ -127,6 +127,13 @@ function NumericScoreEntryPage({
         const map: Record<string, CellState> = {};
 
         for (const s of scores) {
+            // `student` is school-scoped, so a score whose student the viewer cannot see
+            // serializes as null and reading `.id` here took the whole page down. Skipping the
+            // row degrades one cell instead.
+            if (!s.student || !s.marking_component) {
+                continue;
+            }
+
             map[cellKey(s.student.id, s.marking_component.id)] = {
                 value: String(s.score / s.marking_component.weight),
                 status: 'idle',
@@ -541,10 +548,11 @@ function CategoricalEntryPage({
     const items = cs.curriculum?.grading_scheme?.items ?? [];
     const students = cs.students ?? [];
     const initial = Object.fromEntries(
-        (cs.student_results ?? []).map((result) => [
-            result.student.id,
-            result.grading_item?.id ?? '',
-        ]),
+        (cs.student_results ?? [])
+            // Same null-student guard as the numeric grid — this is the read that produced
+            // "can't access property id, student is null" on a cross-school page.
+            .filter((result) => result.student != null)
+            .map((result) => [result.student.id, result.grading_item?.id ?? '']),
     );
     const [ratings, setRatings] = useState<Record<string, string>>(initial);
     const [saving, setSaving] = useState<Set<string>>(new Set());
@@ -552,6 +560,11 @@ function CategoricalEntryPage({
     const locked = ['submitted', 'approved'].includes(status.status);
     const filtered = students.filter((assignment) => {
         const student = assignment.student_curriculum?.student;
+
+        if (!student) {
+            return false;
+        }
+
         const haystack =
             `${student?.first_name ?? ''} ${student?.last_name ?? ''} ${student?.admission_number ?? ''}`.toLowerCase();
 

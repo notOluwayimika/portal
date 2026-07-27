@@ -94,7 +94,7 @@ class StudentSubjectService
             return $this->restoreDroppedSubject($existing, $performedBy);
         }
 
-        return DB::transaction(fn() => StudentSubject::create([
+        return DB::transaction(fn () => StudentSubject::create([
             'student_curriculum_id' => $enrollment->id,
             'curriculum_subject_id' => $curriculumSubject->id,
             'status' => StudentSubjectStatus::Active,
@@ -109,7 +109,7 @@ class StudentSubjectService
         User $performedBy,
         ?string $reason = null
     ): StudentSubject {
-        if (!$studentSubject->canBeDropped()) {
+        if (! $studentSubject->canBeDropped()) {
             $message = $studentSubject->isCompulsory()
                 ? 'Compulsory subjects cannot be dropped.'
                 : 'Subject is not currently active.';
@@ -137,7 +137,7 @@ class StudentSubjectService
         StudentSubject $studentSubject,
         User $performedBy
     ): StudentSubject {
-        if (!$studentSubject->canBeRestored()) {
+        if (! $studentSubject->canBeRestored()) {
             throw new BusinessRuleException('Subject is not currently dropped.');
         }
 
@@ -181,14 +181,37 @@ class StudentSubjectService
 
     /**
      * Store a comment for a student subject.
+     *
+     * `commented_by` is a foreign key to **teachers.id** — the relation is
+     * `belongsTo(Teacher::class, 'commented_by')` and StudentSubjectResource renders
+     * `commentedBy?->full_name`. This wrote `$performedBy->id`, a **users.id**, which broke in two
+     * different ways depending on nothing more than how the ids happened to line up:
+     *
+     *   - users.id with no matching teachers.id → FK violation, surfaced to the teacher as the
+     *     opaque "Database error" (MySQL 1452 falls through bootstrap/app.php's QueryException
+     *     map, which only names 23000 and 547).
+     *   - users.id that happens to match some OTHER teacher's id → row saves, and the comment is
+     *     silently attributed to a teacher who never wrote it.
+     *
+     * The second is the worse one: it is invisible, and it is what the migration alongside this
+     * change repairs for rows already written.
+     *
+     * The lookup goes through the SCOPED relation deliberately. Teacher::applySchoolScope already
+     * admits a teacher in their home school OR any school their user has access to, so a teacher
+     * commenting in a school they teach at resolves correctly without bypassing isolation.
+     *
+     * A commenter with no teacher record — an admin or head of school — stores NULL rather than
+     * failing: the comment is theirs to make, and this column simply cannot express a non-teacher
+     * author. Recording that would need a schema change, not a wider write here.
      */
     public function storeComment(StudentSubject $studentSubject, User $performedBy, string $comment): StudentSubject
     {
         return DB::transaction(function () use ($studentSubject, $performedBy, $comment) {
             $studentSubject->update([
                 'comment' => $comment,
-                'commented_by' => $performedBy->id
+                'commented_by' => $performedBy->teacher()->value('id'),
             ]);
+
             return $studentSubject;
         });
     }

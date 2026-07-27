@@ -44,6 +44,15 @@
             "super_admin"
         ]
     },
+    "DELETE /api/comment-bands/{commentBand}/entries/{entry}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
     "DELETE /api/curricula/{curriculum}": {
         "auth": true,
         "roles": [
@@ -81,6 +90,15 @@
         ]
     },
     "DELETE /api/grade-boundaries/{gradeBoundary}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "DELETE /api/grading-scheme-items/{gradingSchemeItem}/comments/{entry}": {
         "auth": true,
         "roles": [
             "admin",
@@ -418,6 +436,15 @@
             "teacher"
         ]
     },
+    "GET /api/comment-bands": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
     "GET /api/curricula": {
         "auth": true,
         "roles": [
@@ -563,6 +590,15 @@
         ]
     },
     "GET /api/grading-schemes": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "GET /api/grading-schemes/{gradingScheme}/rating-comments": {
         "auth": true,
         "roles": [
             "admin",
@@ -1994,6 +2030,24 @@
             "super_admin"
         ]
     },
+    "POST /api/comment-bands/load-defaults": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/comment-bands/{commentBand}/entries": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
     "POST /api/curricula": {
         "auth": true,
         "roles": [
@@ -2099,6 +2153,15 @@
         ]
     },
     "POST /api/grade-boundaries": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/grading-scheme-items/{gradingSchemeItem}/comments": {
         "auth": true,
         "roles": [
             "admin",
@@ -2525,6 +2588,16 @@
             "super_admin"
         ]
     },
+    "POST /api/v1/finance/students/{student}/payments": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "finance_director",
+            "finance_void_approver",
+            "super_admin"
+        ]
+    },
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": {
         "auth": true,
         "roles": [
@@ -2787,6 +2860,33 @@
             "super_admin"
         ]
     },
+    "PUT /api/comment-bands": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/comment-bands/{commentBand}/entries/reorder": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/comment-bands/{commentBand}/entries/{entry}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
     "PUT /api/curricula/{curriculum}": {
         "auth": true,
         "roles": [
@@ -2800,9 +2900,9 @@
         "auth": true,
         "roles": [
             "admin",
-            "form_teacher",
             "head_of_school",
-            "super_admin"
+            "super_admin",
+            "teacher"
         ]
     },
     "PUT /api/exam-types/{examType}": {
@@ -2815,6 +2915,24 @@
         ]
     },
     "PUT /api/grade-boundaries/{gradeBoundary}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/grading-scheme-items/{gradingSchemeItem}/comments/reorder": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PUT /api/grading-scheme-items/{gradingSchemeItem}/comments/{entry}": {
         "auth": true,
         "roles": [
             "admin",

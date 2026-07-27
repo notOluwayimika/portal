@@ -15,6 +15,7 @@ use App\Http\Controllers\SuperAdmin\AdminController as SuperAdminAdminController
 use App\Http\Controllers\SuperAdmin\RbacMatrixController as SuperAdminRbacMatrixController;
 use App\Http\Controllers\SuperAdmin\SchoolController as SuperAdminSchoolController;
 use App\Http\Resources\ClassLevelResource;
+use App\Http\Resources\CommentBandResource;
 use App\Http\Resources\CurriculumResource;
 use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\GradeBoundaryResource;
@@ -23,6 +24,7 @@ use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\TeacherResource;
 use App\Models\ClassLevel;
+use App\Models\CommentBand;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\GradeBoundary;
@@ -355,7 +357,9 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'curriculum',
             'curriculum.examType.gradeBoundaries',
             'curriculum.markingScheme.components',
-            'curriculum.gradingScheme.items',
+            // `.activeComments` so a CATEGORICAL grid gets its suggestions the same way the
+            // numeric one gets `commentBands` — with the page, never per student.
+            'curriculum.gradingScheme.items.activeComments',
             'subject',
             'markingComponents',
             'scores.student',
@@ -373,6 +377,13 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'curriculumSubject' => new CurriculumSubjectResource($curriculumSubject),
             'defaultGradeBoundaries' => GradeBoundaryResource::collection(
                 GradeBoundary::whereNull('exam_type_id')->get()
+            ),
+            // Comment suggestions for the score grid, RESOLVED HERE for this subject's exam type
+            // (its own set if it has one, the school default otherwise) and shipped with the page.
+            // A handful of rows, so the grid never fetches per student — CommentCell stays a pure
+            // function of its props even on a table of hundreds.
+            'commentBands' => CommentBandResource::collection(
+                CommentBand::setFor($curriculumSubject->curriculum?->exam_type_id)
             ),
         ]);
     })->name('setup.curriculumSubjects.show');

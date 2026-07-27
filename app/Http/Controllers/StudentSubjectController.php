@@ -205,7 +205,10 @@ class StudentSubjectController extends Controller
         }
 
         $request->validate([
-            'comment' => 'required|string|max:50',
+            // 100 matches the column, widened in the same commit. The two used to agree on 50
+            // while the client checked 100, and a shipped suggestion was 52 characters — so
+            // picking the first entry of the lowest band passed the client and 422'd here.
+            'comment' => 'required|string|max:100',
         ]);
         Authz::abilityCheck(request()->user(), 'student_subject.view', 'StudentSubjectController@storeComment');
         $this->service->storeComment($studentSubject, $request->user(), $request->comment);

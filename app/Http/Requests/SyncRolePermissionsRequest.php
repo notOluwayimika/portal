@@ -26,9 +26,10 @@ class SyncRolePermissionsRequest extends FormRequest
         // STRUCTURAL rule on the target, deliberately not a permission check:
         // the only actors here are super admins, whom the Gate::before bypass
         // passes every permission — a permission-shaped guard would constrain
-        // nobody. super_admin's authority is the bypass; its explicit 15
-        // grants are the frozen probe precondition; edits here could only
-        // break invariants, never grant authority.
+        // nobody. super_admin's authority is the bypass; its explicit platform
+        // grants (RbacSeeder::SUPER_ADMIN_PLATFORM) are the frozen probe
+        // precondition; edits here could only break invariants, never grant
+        // authority.
         return $this->route('roleName') !== 'super_admin';
     }
 
@@ -56,7 +57,7 @@ class SyncRolePermissionsRequest extends FormRequest
             // produce.
             $requested = (array) $this->input('permissions', []);
 
-            foreach ($requested as $ability) {
+            foreach ($requested as $index => $ability) {
                 if (! is_string($ability)) {
                     continue;
                 }
@@ -64,10 +65,15 @@ class SyncRolePermissionsRequest extends FormRequest
                 $maker = ApprovalAbility::matchingMakerFor($ability);
 
                 if ($maker !== null && in_array($maker, $requested, true)) {
-                    $v->errors()->add(
-                        'permissions',
-                        "A role may not hold both [{$maker}] (maker) and [{$ability}] (checker) — segregation of duties (ADR 0040/0044).",
-                    );
+                    $message = "A role may not hold both [{$maker}] (maker) and [{$ability}] (checker) — segregation of duties (ADR 0040/0044).";
+
+                    $v->errors()->add('permissions', $message);
+
+                    // ALSO keyed by position, so the console can put the error on the offending
+                    // chip instead of parsing the ability back out of the prose. Both keys are
+                    // populated deliberately: `permissions` remains the bag any existing consumer
+                    // reads, `permissions.N` is the addressable one.
+                    $v->errors()->add("permissions.{$index}", $message);
                 }
             }
 
@@ -78,16 +84,27 @@ class SyncRolePermissionsRequest extends FormRequest
             // write (wholesale). Shares DutySeparation's enforced-pair definition (Decision 1).
             $roleName = (string) $this->route('roleName');
             foreach (DutySeparation::violationsFromRolePermissionSync($roleName, $requested) as $violation) {
-                $v->errors()->add(
-                    'permissions',
-                    sprintf(
-                        'This set would leave [%s] holding BOTH the checker [%s] and the maker [%s] in school #%d — via another role they already hold — segregation of duties (ADR 0040/0044). Give one of the two grants to a different user.',
-                        $violation['userLabel'],
-                        $violation['pair']['checker'],
-                        $violation['pair']['maker'],
-                        $violation['schoolId'],
-                    ),
+                $message = sprintf(
+                    'This set would leave [%s] holding BOTH the checker [%s] and the maker [%s] in school #%d — via another role they already hold — segregation of duties (ADR 0040/0044). Give one of the two grants to a different user.',
+                    $violation['userLabel'],
+                    $violation['pair']['checker'],
+                    $violation['pair']['maker'],
+                    $violation['schoolId'],
                 );
+
+                $v->errors()->add('permissions', $message);
+
+                // Attach to whichever side of the pair the edit actually requested, so this lands
+                // on a chip too. Unlike the role-level rule above there may be no requested index
+                // (the conflict can come entirely from another role), in which case the message
+                // lives only in the bag and the console renders it in the panel.
+                foreach (['checker', 'maker'] as $side) {
+                    $index = array_search($violation['pair'][$side], $requested, true);
+
+                    if ($index !== false) {
+                        $v->errors()->add("permissions.{$index}", $message);
+                    }
+                }
             }
         });
     }

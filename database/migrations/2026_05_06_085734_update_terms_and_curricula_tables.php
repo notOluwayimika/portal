@@ -23,6 +23,28 @@ return new class extends Migration
 
         // 2. Seed terms (we need them for data migration)
         // Note: Running seeder here to ensure terms exist before migrating curricula data
+        //
+        // ⚠ HAZARD — NON-DETERMINISTIC MIGRATION. DO NOT COPY THIS PATTERN.
+        //
+        // TermSeeder computes every term window from `now()->startOfYear()`, so the rows this
+        // migration writes DEPEND ON THE DAY IT RUNS: a `migrate:fresh` in 2025 and one in 2026
+        // produce different term dates from identical code. A migration is supposed to be a
+        // deterministic function of the schema before it; this one is a function of the calendar.
+        // Its `updateOrCreate` is keyed on (academic_session_id, order), so re-running it also
+        // OVERWRITES the dates of terms that already exist.
+        //
+        // NOT REPAIRED, DELIBERATELY: it has already run on every environment, and changing it
+        // now would alter history without altering any deployed database. Rewriting it would only
+        // change what a future `migrate:fresh` produces, which is the one case where the current
+        // behaviour is at least self-consistent. The correct fix is to stop seeding from a
+        // migration at all, which is a separate change with its own data question.
+        //
+        // WHAT THIS COSTS TODAY: term dates are now load-bearing for money —
+        // `finance_fee_schedules.term_id` is a RESTRICT FK (S1 commit 2) — so wall-clock-derived
+        // term windows can price a fee schedule. The CHECK constraint added in
+        // 2026_07_28_120000 catches the crude failure (end before start) but cannot know whether a
+        // generated window is the school's ACTUAL term. Nothing here should be trusted as calendar
+        // truth; see the term-calendar hardening PR for the rows currently affected.
         Artisan::call('db:seed', ['--class' => 'TermSeeder', '--force' => true]);
 
         // 3. Update curricula table

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CATALOG TAB — read-only.
+// CATALOG PANEL — read-only, shared by both RBAC consoles.
 //
 // Answers "what can be granted, and who holds it". Editing lives entirely in
 // the Roles tab: one write path means one place for segregation-of-duties
@@ -7,6 +7,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
+import type { RbacGroup, RbacPermission } from '@/types/rbac';
 import {
     CoverageBar,
     ExpandChevron,
@@ -15,13 +17,11 @@ import {
     PermissionName,
     RbacBadge,
     TableEmptyRow,
-} from '@/components/rbac/rbac-ui';
-import { cn } from '@/lib/utils';
-import type { RbacGroup, RbacPermission } from '@/types/rbac';
+} from './rbac-ui';
 
 type Filter = 'all' | 'granted' | 'unused';
 
-export function CatalogTab({ groups }: { groups: RbacGroup[] }) {
+export function CatalogPanel({ groups }: { groups: RbacGroup[] }) {
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState<Filter>('all');
     const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());

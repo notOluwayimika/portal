@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// HISTORY TAB — who changed a grant, and when.
+// HISTORY PANEL — who changed a grant, and when. Shared by both consoles.
 //
 // Reuses the existing activity-log API rather than adding a route. The C1
 // listener already writes every attach/detach under log_name='rbac', and the
@@ -8,12 +8,17 @@
 // data that was already reachable.
 //
 // Fetched on tab activation only, so the default page payload stays small.
+//
+// School-scoped for free: the endpoint filters rows by the viewer's activity_log
+// grants, and a school admin holds view_all but NOT view_cross_school — so the
+// same component shows a super admin every school's changes and a school admin
+// only their own.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import axios from 'axios';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { RbacBadge } from '@/components/rbac/rbac-ui';
+import { RbacBadge } from './rbac-ui';
 
 interface ActivityRow {
     id: number;
@@ -35,7 +40,7 @@ const EVENT_TONE: Record<string, 'emerald' | 'rose' | 'slate'> = {
     permission_detached: 'rose',
 };
 
-export function HistoryTab() {
+export function HistoryPanel() {
     const [rows, setRows] = useState<ActivityRow[] | null>(null);
     const [failed, setFailed] = useState(false);
     const [token, setToken] = useState(0);

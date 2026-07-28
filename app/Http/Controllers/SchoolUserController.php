@@ -5,50 +5,49 @@ namespace App\Http\Controllers;
 use App\Http\Requests\SyncUserRolesRequest;
 use App\Models\User;
 use App\Support\ActiveSchool;
+use App\Support\SchoolRbacOverview;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 /**
- * The school-admin Users module (C5): list the ACTIVE School's users and sync
- * their roles within that School's team. First human-driven role write — every
- * prior role mutation was a seeder — so this is where C1's role-mutation audit
- * (LogRbacChange → activity('rbac'), causer = the acting admin) and the
- * User::assignRole null-team invariant run for real for the first time.
+ * The school-admin RBAC console (C5): who holds which roles in the ACTIVE School, what those roles
+ * grant, and the history of changes. Roles are synced within that School's team.
+ *
+ * First human-driven role write — every prior role mutation was a seeder — so this is where C1's
+ * role-mutation audit (LogRbacChange → activity('rbac'), causer = the acting admin) and the
+ * User::assignRole null-team invariant run for real.
+ *
+ * READ-ONLY EXCEPT USER→ROLE. Role→permission editing is super-admin territory
+ * (SyncRolePermissionsRequest refuses anyone else), so the roles and catalogue tabs here inform
+ * the assignment rather than offering an edit the server would refuse.
  */
 class SchoolUserController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         // getOrFail() returns the School MODEL (not an id) — 403s when no
         // active school is selected.
         $school = ActiveSchool::getOrFail();
 
-        // Scoped to the active School and read from model_has_roles — the S7
-        // SINGLE SOURCE — not the school_user pivot or users.school_id (both
-        // are removal targets; runtime-zero lint forbids new consumers). For a
-        // ROLES module this is also the honest read: it lists exactly the
-        // users who hold a role here, i.e. the rows this page manages. Never
-        // a global user dump.
-        $userIds = DB::table('model_has_roles')
-            ->where('school_id', $school->id)
-            ->where('model_type', User::class)
-            ->pluck('model_id')
-            ->unique();
-
-        $users = User::whereIn('id', $userIds)
-            ->orderBy('first_name')
-            ->get();
+        $search = $request->string('search')->trim()->value() ?: null;
+        $role = $request->string('role')->trim()->value() ?: null;
 
         return Inertia::render('admin/users/index', [
-            'users' => $users->map(fn (User $user): array => [
-                'uuid' => $user->getRouteKey(),
-                'name' => $user->getAttribute('full_name'),
-                'email' => $user->getAttribute('email'),
-                'is_super_admin' => $user->isSuperAdmin(),
-                'is_self' => $user->getKey() === auth()->id(),
-                'roles' => $user->getRoleNames()->values(),
-            ])->values(),
-            'assignable_roles' => $this->assignableRoles(),
+            ...SchoolRbacOverview::build(
+                $school,
+                $request->user(),
+                $search,
+                $role,
+                max(1, $request->integer('page', 1)),
+                min(100, max(5, $request->integer('per_page', SchoolRbacOverview::PER_PAGE))),
+            ),
+            'school' => ['name' => $school->name],
+            // Tab in the URL, not component state: syncRoles returns back(), so a save from the
+            // Users tab has to land back on it with the same search and page.
+            'tab' => in_array($request->query('tab'), ['users', 'roles', 'permissions', 'history'], true)
+                ? $request->query('tab')
+                : 'users',
         ]);
     }
 
@@ -78,22 +77,5 @@ class SchoolUserController extends Controller
         $user->flushSchoolAccessCache();
 
         return back()->with('success', 'Roles updated.');
-    }
-
-    /**
-     * What the CURRENT actor may assign — mirrors the SyncUserRolesRequest
-     * rule (D2) so the UI offers exactly what the write will accept.
-     *
-     * @return list<string>
-     */
-    private function assignableRoles(): array
-    {
-        $roles = SyncUserRolesRequest::SCHOOL_ROLES;
-
-        if (auth()->user()?->isSuperAdmin()) {
-            $roles[] = 'admin';
-        }
-
-        return $roles;
     }
 }

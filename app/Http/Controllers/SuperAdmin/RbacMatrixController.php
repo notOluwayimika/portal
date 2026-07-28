@@ -2,40 +2,35 @@
 
 namespace App\Http\Controllers\SuperAdmin;
 
-use App\Enums\Permission as PermissionEnum;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SyncRolePermissionsRequest;
 use App\Models\Role;
+use App\Support\RbacOverview;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 /**
- * The super-admin role × permission matrix (C6): site-wide editing of what
- * each role is GRANTED. Definitions are code (the Permission enum + the nine
- * seeded roles) — nothing is created or deleted here; the seeder remains the
- * canonical default and runtime edits survive rbac:sync (its non-destructive
+ * The super-admin RBAC console (C6): site-wide editing of what each role is GRANTED. Definitions
+ * are code (the Permission enum + the seeded roles) — nothing is created or deleted here; the
+ * seeder remains the canonical default and runtime edits survive rbac:sync (its non-destructive
  * contract, pinned end-to-end by the C6 tests).
+ *
+ * The read side is assembled by {@see RbacOverview}; this controller owns only the two writes.
  */
 class RbacMatrixController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $roles = Role::with('permissions')
-            ->where('guard_name', RbacSeeder::GUARD)
-            ->whereNull('school_id')
-            ->orderBy('name')
-            ->get();
-
         return Inertia::render('super-admin/rbac/index', [
-            'permissions' => PermissionEnum::values(),
-            'roles' => $roles->map(fn (Role $role) => [
-                'name' => $role->getAttribute('name'),
-                // The immutable row renders read-only; the guard is D1.
-                'editable' => $role->getAttribute('name') !== 'super_admin',
-                'permissions' => $role->permissions->pluck('name')->sort()->values(),
-            ])->values(),
+            ...RbacOverview::build(),
+            // Tab lives in the URL, not component state: the writes below return back(), so a save
+            // from the Roles tab has to land back on the Roles tab, and an admin tool is something
+            // people paste links to.
+            'tab' => in_array($request->query('tab'), ['catalog', 'roles', 'history'], true)
+                ? $request->query('tab')
+                : 'catalog',
         ]);
     }
 

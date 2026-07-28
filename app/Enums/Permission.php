@@ -160,4 +160,29 @@ enum Permission: string
     {
         return array_map(fn (self $case) => $case->value, self::cases());
     }
+
+    /**
+     * The catalogue group this permission belongs to.
+     *
+     * Never falls back to a default: {@see PermissionGroup} lists membership explicitly and
+     * PermissionGroupTest asserts the groups partition this enum exactly, so an unfiled case is a
+     * failing test rather than a permission that quietly disappears from the RBAC console.
+     */
+    public function group(): PermissionGroup
+    {
+        return PermissionGroup::lookup()[$this->value];
+    }
+
+    /**
+     * A human-readable name, for display and search only.
+     *
+     * DERIVED, not hand-written: `guardian.update_credentials` reads as "Guardian update
+     * credentials". Ninety-odd hand-written labels would drift the moment someone adds a case
+     * without touching them, and the permission NAME remains the identifier of record — this is a
+     * reading aid beside it, never a replacement for it.
+     */
+    public function label(): string
+    {
+        return ucfirst(str_replace(['.', '_', '-'], ' ', $this->value));
+    }
 }

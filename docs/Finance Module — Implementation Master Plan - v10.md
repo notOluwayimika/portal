@@ -1,12 +1,12 @@
 # Finance Implementation Specification v10 (Clean Edition)
 
 **Brookstone School Management System — Invoicing & Receivables**
-**Status:** Approved for implementation · **Timeline:** ≈44 weeks · **Source of truth for development.**
+**Status:** Approved for implementation · **Timeline:** ≈49 weeks · **Source of truth for development.**
 
 > This document supersedes the original implementation plan and all addenda. It contains only approved decisions.
 > A **Change Summary** at the end records what was consolidated and removed.
 >
-> ⚠️ **Read §28 before actioning §1 or §4.4.** This spec's §1 Executive Summary and §4.4 Technical-Debt table describe the **project-start baseline** — they are preserved as the historical "why," not as current state. As of **2026-07-19**, most of Phase 1 has landed and a Finance walking skeleton is frozen as the module template (verified against the repo). **§28 — Reconciliation with delivered state** holds the per-item status and maps these 14 phases onto the walking-skeleton handoff's slices and F1–F6 invariants (`docs/handoff/session-2-start.md`).
+> ⚠️ **Read §28 before actioning §1 or §4.4.** This spec's §1 Executive Summary and §4.4 Technical-Debt table describe the **project-start baseline** — they are preserved as the historical "why," not as current state. As of **2026-07-28** (re-verified against the repo), most of Phase 1 has landed and a Finance walking skeleton is frozen as the module template. **§28 — Reconciliation with delivered state** holds the per-item status and maps these 14 phases onto the walking-skeleton handoff's slices and F1–F6 invariants (`docs/handoff/session-2-start.md`).
 
 ---
 
@@ -41,7 +41,7 @@
 | 25 | Verification Checklist |
 | 26 | Open Questions |
 | 27 | Change Summary |
-| 28 | Reconciliation with delivered state (2026-07-19) |
+| 28 | Reconciliation with delivered state (re-verified 2026-07-28) |
 
 ---
 
@@ -51,9 +51,9 @@ Brookstone requires an Invoicing & Receivables module for its existing School Ma
 
 **The platform cannot support those controls today.** The School isolation and data layers are well-built, but the authorization layer has been hollowed out: 52 authorization checks are commented out in production code, 19 of 32 Permissions are never seeded, there are zero Policy classes and zero `Gate::` usage, and a live cross-School IDOR exists. Money, locking, idempotency, sequences, PDF generation, runtime configuration and production observability do not exist at all. CI has never passed.
 
-> **Reconciliation — 2026-07-19, verified against the repo.** The paragraph above is the **project-start baseline**, retained for its rationale, not current state. Since then: the IDOR is closed, Permission seeders are wired, `.env.example` exists and CI runs its gates, `Money` and `Sequences` are built, and a Finance walking skeleton is frozen as the module template. The commented-authz count is down from 52 to **10 baselined** legacy checks (lint-gated in `lint.yml` + `composer ci:check`, ratcheting to zero). Still genuinely absent: the generic **Approvals** engine, **Idempotency**, **PDF**, **FeatureFlags**, **observability**, and the **`finance_student_accounts`** lock anchor. Full per-item status and the walking-skeleton mapping are in **§28**.
+> **Reconciliation — 2026-07-19, verified against the repo.** The paragraph above is the **project-start baseline**, retained for its rationale, not current state. Since then: the IDOR is closed, Permission seeders are wired, `.env.example` exists and CI runs its gates, `Money` and `Sequences` are built, and a Finance walking skeleton is frozen as the module template. The commented-authz count is down from 52 to **10 baselined** legacy checks (lint-gated in `lint.yml` + `composer ci:check`, ratcheting to zero). Still genuinely absent: **Idempotency**, **PDF**, **FeatureFlags**, **observability**, and the **`finance_student_accounts` lock discipline** — the table itself is delivered and its balance and reporting projections are in use; what does not exist is any code that takes the lock (§28.2). The generic **Approvals** engine is no longer on this list in either direction: it **will not be built**, superseded by per-domain change tables under ADRs 0049 and 0050. Full per-item status and the walking-skeleton mapping are in **§28**.
 
-**Approach:** a **6-week Engineering Foundation phase** repairs and hardens the platform, followed by **13 independently shippable Finance phases**. Total ≈44 weeks with 2 developers.
+**Approach:** a **6.5-week Engineering Foundation phase** repairs and hardens the platform, followed by **13 independently shippable Finance phases**. Total ≈49 weeks with 2 developers (≈44 before the 2026-07-28 BRD-alignment re-estimation; see §23).
 
 **Four decisions define the architecture:**
 
@@ -96,10 +96,25 @@ Brookstone requires an Invoicing & Receivables module for its existing School Ma
 
 | Item | Decision |
 |---|---|
-| General Ledger, AP, Procurement, Payroll, Inventory, Fixed Assets, Budgeting (§19) | The Ledger makes these *possible later*. Not built now. |
+| General Ledger, AP, Procurement, Payroll, Inventory, Fixed Assets, Budgeting (§19) | **Not built — but §19's requirement is met.** §19 asks that the system be *designed to support* future integration, not that it deliver these. The append-only Ledger with a real chart of accounts (§12.1, ADR 0003) is that design: each becomes a new posting source, not a re-architecture. Scope clarity, not rejection. |
 | Inter-company accounting | Cross-School payments are prohibited. Never built. |
 | In-app backup/restore (§18) | **Rejected as an application feature.** A restore button contradicts §15C (nothing deleted) and §15E (period locking). Delivered as infrastructure: automated snapshots + a **rehearsed** restore runbook. |
 | Cross-School reporting | Not required. If ever needed: a read model iterating Schools — no new entity. |
+| Late payment rules / penalties (§17) | **Not built.** §17 lists this as *"if introduced in future"*; Brookstone has no current late-fee policy. Recorded so a reader can tell *decided against* from *forgotten*. Introducing one is a `finance_settings` category plus a dunning rule — no schema change. |
+
+**Accepted divergence from the BRD — ruled by the project lead, 2026-07-28**
+
+Kept as its own row rather than folded into the table above, because the BRD asked for something and the answer is "no". A reader comparing the two documents is entitled to find that stated, not inferred from an absence.
+
+| BRD | What the BRD asks | What this plan does | Ruling |
+|---|---|---|---|
+| §5, and the cross-School half of §10 | *"One parent (Bill Payer) should be linked to **all** of their children."* Approved credit balances transfer between siblings. | §2.1, §6.2, §12.7 and Phase 7 scope every Guardian, every allocation and every credit transfer to one School. A parent with a child in Primary and a child in Secondary has two Guardian records, two statements, two payment contexts, and **cannot** move a credit balance between their own two children. | ✅ **DECIDED — §2.1 stands.** The Schools are independent entities operating on separate bank accounts. A Bill Payer is linked to all of their children **within a School**, not across Schools; a credit balance moving from Primary to Secondary is not an allocation but an inter-company transfer, and the portal will not manufacture one silently. |
+
+**What this ruling does *not* remove.** §5's multi-ward billing is scoped, not discarded. One Guardian linked to all of their children in a School, one payment covering those children, distributed by §5's configurable rules — oldest invoice first · exact amount due per child · equal distribution · manual allocation by an authorized officer — with every allocation and reallocation fully traceable. A parent with three children in Secondary receives exactly the behaviour the BRD describes. Only the cross-School half is answered "no", and §15B's *"payments transferred between students"* is correspondingly **within-School only**.
+
+**Already enforced, not merely intended.** `guardian_student` carries a same-School constraint at the database level (`2026_07_16_000003_add_guardian_student_same_school_constraint`), and Phase 6's acceptance requires that a cross-School guardian↔student link cannot be allocated against. The ruling confirms the built behaviour rather than changing it.
+
+**Outstanding communication, not an outstanding decision.** §5 and §10's sibling-transfer line were authored by Brookstone Finance and Internal Audit. They are being answered "no" and should be told so directly, so it surfaces in a conversation rather than at UAT when an accounts officer looks for a transfer button that was never going to exist.
 
 ---
 
@@ -119,7 +134,7 @@ Brookstone requires an Invoicing & Receivables module for its existing School Ma
 | **Module** | A self-contained domain: `app/Finance/`, later `app/Admissions/`, `app/HR/`… |
 | **Domain** | The business area a Module models. |
 | **Ledger** | The append-only financial record. Authoritative. |
-| **Approval** | A maker–checker request. Generic engine in the Shared Kernel. |
+| **Approval** | A maker–checker request. **Not** a generic Kernel engine — a per-domain change table sharing one shape (§12.9, ADRs 0049/0050). What the Kernel supplies is the enforcement mechanism, not the table. |
 | **Permission** | A dotted capability (`finance.invoice.approve`), evaluated in the Active School. |
 | **Policy** | The authorization layer. Owns record-level rules. |
 | **Action** | A final, single-public-method class owning exactly one transaction. |
@@ -334,6 +349,9 @@ Spatie teams keyed on `school_id` already expresses *"Secondary → Teacher, IFY
 Roles are **bundles of Permissions, never checked directly in business logic**. `hasRole()` is banned in Module code.
 
 **Finance roles:** `accounts_officer` · `accounts_supervisor` · `head_of_account` · `internal_auditor`.
+
+**`internal_auditor` is read-all, write-nothing, per School (§15A).** §15A requires Internal Audit to have full read access to *all* financial records and audit logs — a grant shape, not a label: the `.view`/`.index` half of every `finance.*` resource plus activity-log read, and no `.submit`/`.approve`/`.reject` or mutating capability at all. Because it holds no maker capability, `DutySeparation` will never flag it — the control here is *completeness of the read set*, detected by the Phase 11 role-coverage exception, not by duty separation. **Open:** whether the read-all set is enumerated in the seeder or derived from the `Permission` enum's terminal segment. The enum is now convention-derived (`ApprovalAbility` parses the terminal segment); improvising this later is how a derived convention acquires an exception. Decide before Phase 2 seeds the four roles.
+
 **Group-level roles** (Finance Director, Group Administrator, ICT Administrator, Registrar) are granted **per School, explicitly**. There is no global role concept — `super_admin` remains the sole team-less role (platform support, not a business role).
 
 **Coverage gaps are detected, not automated.** The Audit Dashboard (Phase 11) reports *"Internal Auditor lacks access to School Y"*. This satisfies §15A's audit-coverage requirement with zero schema, and turns a silent gap into a detected exception.
@@ -387,14 +405,14 @@ app/Notifications/   channel infrastructure (mail, SMS driver)
 app/Providers/
 ```
 
-**Kernel tables are unprefixed:** `sequences`, `approval_requests`, `idempotency_keys`.
+**Kernel tables are unprefixed:** `sequences`, `idempotency_keys`. *(`approval_requests` was listed here and is **not built** — ADRs 0049/0050 replaced the generic engine with per-domain `finance_*_changes` / `finance_*_requests` tables, which are Finance-owned and therefore prefixed. §12.9.)*
 
 ## 8.2 Why these are shared, not Finance's
 
 | Concern | If it lived in Finance… |
 |---|---|
 | **Sequences** | **Admissions would depend on Finance** for admission numbers. *(Shared Sequences also fixes the racy `HasAdmissionNumber`.)* |
-| **Approvals** | **HR would depend on Finance** for leave approvals. The engine is already polymorphic by design; placing it in a Module and extracting later is pure waste. Finance supplies only the amount limits. |
+| **Approvals** *(mechanism only — see below)* | **HR would depend on Finance** for leave approvals. ~~The engine is already polymorphic by design; placing it in a Module and extracting later is pure waste.~~ **Corrected by ADRs 0049/0050:** there is no shared engine and no shared table. What the Kernel shares is the *enforcement mechanism* — `ApprovalAbility` (checker/maker segment convention) and `DutySeparation` (grant-time, Policy and DB-level maker ≠ checker) — which HR can key on without depending on Finance. The **table** is per-domain and Module-owned, because a polymorphic target cannot carry the composite `(target_id, school_id)` FK that School isolation rests on. Finance supplies only the amount limits. |
 | **Money** | Payroll, Procurement and Inventory valuation could not use it. |
 | **Pdf** | Result cards need the engine as much as invoices do. Templates stay Module-owned. |
 
@@ -569,6 +587,8 @@ SEC/INV/2026/000123      PRI/INV/2026/000047
 
 **The trade-off, stated explicitly:** you cannot have *gap-free* **and** *batch-reserved* **and** *rollback-safe* simultaneously. One lock per invoice serialises §18's bulk generation (1,200 invoices = 1,200 lock cycles holding the row lock for the whole batch). **Reserve the block in a single statement** (`UPDATE … SET next_value = next_value + N`) inside the transaction and assign from it. Gaps then occur only on genuine rollback — **and must be logged and explained**. Brookstone Finance signs the gap policy in `accounting-policy.md`.
 
+**An assigned number is immutable.** §16 requires that users cannot edit, duplicate or reuse an invoice or receipt number. Gap-free allocation gives *uniqueness*; it does not give *immutability* — a controller that lets `number` through mass assignment satisfies every sequence guarantee and still breaks §16. Three layers, because a rule with no gate is wallpaper: the column is in no model's `$fillable` and no `FormRequest` validates it; an architecture test asserts no class but the allocator assigns it (mirroring the sole-writer assertions already used for approval Actions); the append-only trigger on the owning table rejects an `UPDATE` that changes it. **The test is the deliverable, not this sentence** — plant the regression, watch it go red, before calling §16 covered. Lands in Phase 5.
+
 ## 12.6 `students.status` — billing eligibility
 
 **Required before Phase 5.** `students` has no status column; `StudentStatusEnum` lives on `StudentCurriculum` — the *enrollment*.
@@ -609,33 +629,74 @@ finance_bank_accounts
   ledger_account_code · currency · is_default · active
   unique(school_id, account_number)
 
-fee_components.bank_account_id   ← nullable; which account this fee is banked into
-finance_payments.bank_account_id ← required; where the money landed
+finance_fee_items.bank_account_id  ← nullable; which account this fee is banked into
+finance_payments.bank_account_id   ← required; where the money landed
 ```
 
 **Each bank account is a distinct asset account in the chart** — `Dr Bank:Tuition`, never a generic `Dr Bank`. Reconciliation (§8) and Daily Collections (§12) are per bank account. Paystack maps a subaccount / dedicated virtual account per bank account. Sage 50 maps bank codes per bank account.
 
 ## 12.9 Approval workflow (§15B)
 
-**One generic engine in the Shared Kernel**, not ten.
+**Per-domain change tables sharing one shape — *not* one polymorphic engine.** v10 originally specified a single `approval_requests` table with `approvable_type`/`approvable_id`. **ADRs 0049 and 0050 overturned that, and the delivered code follows the ADRs.** The reason is School isolation: a polymorphic target cannot carry a foreign key, so the composite `(target_id, school_id)` FK that makes a change and its target sharing a School a *database fact* rather than an application convention cannot be expressed. This Module's method is that isolation is enforced by the database; the duplication between near-identical change tables is the price, and ADR 0050 exists specifically to stop the next reader "refactoring" them into one.
+
+Each governed act gets a table of the same shape:
 
 ```
-approval_requests
-  school_id · approvable_type · approvable_id · action (enum)
-  requested_by · requested_at · reason · payload (json)
-  state (pending|approved|rejected|expired)
-  decided_by · decided_at · decision_reason · amount_minor
+finance_<domain>_changes / _requests
+  school_id · target_id · kind (enum) · reason
+  submitted_by · submitted_at
+  decided_by · decided_at · decision_reason · state (pending|approved|rejected)
+  open_key                          ← generated column; one open request per target
+  composite FK (target_id, school_id) → target table
+  CHECK decided_by <> submitted_by · no_update / no_delete triggers
 ```
 
-- **Maker ≠ checker enforced at the Policy layer AND with a DB check constraint.** Two layers, because §15B is a fraud control.
-- **Approval limits (§17)** are per-role, per-action, per-amount configuration rows — supplied by Finance, not baked into the engine.
+**What is genuinely shared is the enforcement mechanism, not a table:** `App\Support\ApprovalAbility` (terminal-segment convention `.submit`/`.approve`/`.reject`), `App\Support\DutySeparation` (derives maker↔checker pairs from the `Permission` enum — there is no pair list to maintain), the `Gate::before` super-admin bypass exclusion (ADR 0040), and the nightly `finance:audit-duty-separation` detection job.
+
+- **Maker ≠ checker at three layers:** grant-time (a role may not hold both sides), Policy, and a DB `CHECK`. Three, because §15B is a fraud control.
+- **Approval limits (§17)** are per-role, per-action, per-amount configuration rows — supplied by Finance, not baked in. **Not yet built; Phase 3 scope.**
 - The pending queue feeds the Audit Dashboard's "outstanding approvals" tile.
+
+**§15B's ten governed acts, in full** — §15B is an enumeration, and covering nine of ten is a fraud-control gap, not a rounding error. State as of 2026-07-28:
+
+| § | Governed act | Governed by | State |
+|---|---|---|---|
+| 1 | Scholarships granted | approval | ⬜ Ph4 |
+| 2 | Discounts applied | approval | ⬜ Ph4 · the *pricing catalog* half (`finance_discount_policy_changes`) is ✅ delivered; per-student application is not |
+| 3 | Balances written off | approval | ✅ `finance_credit_notes` + `CreditNoteKind::WriteOff` — a **write-off** is a distinct kind from a credit note so a forgiven balance is separately reportable |
+| 4 | Refunds processed | approval | ⬜ Ph7 |
+| 5 | Receipts reversed | approval | ⬜ Ph7 |
+| 6 | Invoices cancelled | approval | ✅ `finance_void_requests` |
+| 7 | Credit notes issued | approval | ✅ `finance_credit_notes` |
+| 8 | Opening balances changed | approval | ⬜ Ph6 |
+| 9 | Payments transferred between students | approval | ⬜ Ph7 — **within one School only** (§12.7) |
+| 10 | Posted transactions edited | **structurally impossible — stronger than approved** | ✅ the Ledger is append-only (§12.1), trigger-enforced; a posted transaction cannot be edited by anyone, approver or not. The correction path is a contra entry, itself an approved act under rows 3–7. A deliberate improvement on §15B.10, not an omission of it |
+
+Also delivered and *not* in §15B's ten: **fee-schedule publication** (`finance_fee_schedule_changes`, ADR 0050) — a §3/§17 configuration act governed to the same standard.
+
+See **ADR 0049** and **ADR 0050**.
 
 ## 12.10 Configuration (§17) — bounded, not a DSL
 
 **Per School. No inheritance — each School configures itself.**
 
-Unbounded configurability produces a rules engine nobody can operate and nothing can test. **Data-driven configuration with a fixed schema per category**: billing frequencies, fee components, discount types, allocation rules, approval limits, reminder schedules are **rows, not scripts**. "Any future billing schedule" (§2) is a row with an interval spec — not an eval'd expression.
+Unbounded configurability produces a rules engine nobody can operate and nothing can test. **Data-driven configuration with a fixed schema per category** — rows, not scripts. §17 names **eleven** configurable items; all eleven, with their category and state:
+
+| §17 item | Category | State |
+|---|---|---|
+| Billing frequencies | `billing_frequency` | Ph2 |
+| Fee templates & components | `fee_schedule` / `fee_item` | Ph2 · ✅ delivered |
+| Scholarship & discount types | `discount_policy` | Ph4 · ✅ catalog delivered |
+| Approval limits | `approval_limit` (role × action × amount) | Ph3 |
+| Payment allocation rules | `allocation_rule` | Ph6 |
+| Reminder schedules | `reminder_schedule` | Ph9 |
+| Notification templates | `notification_template` | Ph9 |
+| User roles & permissions | RBAC console | ✅ delivered |
+| **Approval hierarchy** | `approval_chain` | ⬜ **not designed.** Approval *limits* are covered; the *escalation chain* — who a request goes to when it exceeds a limit, and in what order — is not. §17 asks for it to be configurable. Ph3 |
+| Academic sessions & billing periods | `Term` + billing-period binding | Ph2 |
+| Late payment rules / penalties | — | out of scope, §2.3 |
+
+"Any future billing schedule" (§2) is a row with an interval spec — not an eval'd expression.
 
 School-configurable data lives in School-scoped `finance_settings` tables, never `config/*.php` (deploy-time only).
 
@@ -719,10 +780,12 @@ app/Finance/
 ├── Enums/           InvoiceState, PaymentMethod, LedgerAccount,
 │                    AllocationRule, BillingFrequency, DiscountType
 │                    ── PRIVATE ──
-├── Models/          Invoice, InvoiceLine, Payment, Receipt, Allocation,
-│                    LedgerEntry, StudentAccount, CreditNote, Refund,
-│                    FeeComponent, FeeTemplate, FeeTemplateLine, BankAccount,
-│                    Discount, DiscountAward, BillingPeriod, Settings
+├── Models/          DELIVERED — CreditNote, DiscountPolicy, DiscountPolicyChange,
+│                    FeeItem, FeeSchedule, FeeScheduleChange, Invoice, InvoiceLine,
+│                    LedgerTransaction, Payment, PaymentAllocation,
+│                    SchoolFinanceSettings, StudentAccount, VoidRequest
+│                    PLANNED — Receipt, Refund, BankAccount, DiscountAward,
+│                    BillingPeriod
 ├── DTOs/            validated, typed, behavioural
 ├── Actions/         GenerateInvoice, RecordPayment, AllocatePayment,
 │                    IssueCreditNote, ProcessRefund, ReverseReceipt, ClosePeriod
@@ -743,7 +806,7 @@ tests/Feature/Finance/  tests/Unit/Finance/  tests/Arch/FinanceTest.php
 
 **Money, Sequences, Approvals, Idempotency, FeatureFlags and the Pdf engine are Shared Kernel — see §8.**
 
-**Table naming:** `finance_*` for **every** Finance-owned table without exception — `finance_invoices`, `finance_payments`, and the rest. Kernel tables unprefixed. The `finance_` prefix is what Constitution 3 and the §17.2 boundary lint key on. *(Superseded: this document previously specified unprefixed `fee_*` names for the first three tables. The shipped schema uses `finance_*`; the prefix rule is now uniform. `docs/roadmap.md` governs.)* *(S1 commit 2: the pricing-catalog table shipped as `finance_fee_schedules` (a versioned, published catalog: draft → active → superseded), NOT `finance_fee_structures`. That earlier name was planned but never built — it survives only as a dead `Schema::hasTable()` probe in `ModuleClassificationService` that is never reached; do not name a table after it. A consumer under `app/Services/` does not get to name a Finance aggregate, Constitution 3.)* Every table: `school_id` as **`foreignId`** (bigint — *not* `foreignUuid`; the hybrid ID conversion means the original migrations do not describe the live schema) + its own `uuid` route key.
+**Table naming:** `finance_*` for **every** Finance-owned table without exception — `finance_invoices`, `finance_payments`, and the rest. Kernel tables unprefixed. The `finance_` prefix is what Constitution 3 and the §17.2 boundary lint key on. *(Superseded: this document previously specified unprefixed `fee_*` names for the first three tables, to match what `ModuleClassificationService` probed. Migration `2026_07_19_110000_rename_fee_tables_to_finance` renamed them all at the template freeze and the service's probe list was updated to match, so that rationale is dead — do not reintroduce a `fee_*` name. `docs/roadmap.md` governs.)* *(S1 commit 2: the pricing-catalog table shipped as `finance_fee_schedules` (a versioned, published catalog: draft → active → superseded), NOT `finance_fee_structures`. That earlier name was planned but never built — it survives only as a dead `Schema::hasTable()` probe in `ModuleClassificationService`, which is both never reached and guarded, so it fails silently rather than erroring; correcting it belongs to Phase 2. Do not name a table after it. A consumer under `app/Services/` does not get to name a Finance aggregate, Constitution 3.)* Every table: `school_id` as **`foreignId`** (bigint — *not* `foreignUuid`; the hybrid ID conversion means the original migrations do not describe the live schema) + its own `uuid` route key.
 
 ---
 
@@ -865,7 +928,7 @@ The project has no README, no CONTRIBUTING and no ADRs — and `docs/`, `plan_do
 | 0005 | Policies are *the* enforcement layer; route middleware is defence-in-depth. `Gate::before` super-admin bypass | 1 |
 | 0007 | Sequences: gap-free per School + School prefix, allocated at commit; batch-reservation strategy + **signed gap policy** | 1 |
 | 0008 | Idempotency keys for Finance mutations and webhooks | 1 |
-| 0009 | Generic Approval engine (**Shared Kernel**); maker ≠ checker at Policy + DB level; Finance supplies amount limits | 3 |
+| 0009 | ~~Generic Approval engine (**Shared Kernel**)~~ — **partially superseded by ADRs 0049 + 0050.** The *engine and its polymorphic table are withdrawn*; the rest of 0009 stands and is delivered: maker ≠ checker at Policy + DB level (and at grant time), with Finance supplying the amount limits. The table is per-domain and Module-owned. | 3 |
 | 0010 | Configuration is School-scoped data rows, not config files or a DSL | 2 |
 | 0011 | Domain events as the Finance ↔ Academics seam | 1 |
 | 0012 | Finance tests run on MySQL; SQLite is insufficient for money | 1 |
@@ -900,7 +963,7 @@ The project has no README, no CONTRIBUTING and no ADRs — and `docs/`, `plan_do
 
 Every phase is independently deployable and independently valuable. Finance phases ship **behind a per-School feature flag**.
 
-## Phase 1 — Engineering Foundation ⛔ *blocks everything* · 6 weeks
+## Phase 1 — Engineering Foundation ⛔ *blocks everything* · 6.5 weeks
 
 ### 1A · Security hotfix — *ship in week 1, standalone*
 - Fix the `downloadExport` IDOR: restore all three checks; **repartition exports** to `exports/{schoolId}/{userId}/{uuid}.csv` + a DB row (owner, School, expiry); serve by DB id, never by filename. The flat path is *why* the IDOR is cross-School.
@@ -946,7 +1009,8 @@ Every phase is independently deployable and independently valuable. Finance phas
 ### 1E · Shared Kernel primitives
 - `Money` VO + `MoneyCast` + `formatNaira()`.
 - **Shared `Sequences`** (`sequences.type`: invoice · receipt · **admission**) — **also fixes the racy `HasAdmissionNumber`**.
-- **Shared `Approvals`** engine (polymorphic `ApprovalRequest`).
+- ~~**Shared `Approvals`** engine (polymorphic `ApprovalRequest`).~~ **Removed — see ADRs 0049 and 0050.** A polymorphic target cannot carry a foreign key, so the composite `(target_id, school_id)` FK that keeps a change request and its target in the same School becomes inexpressible. Replaced by **per-domain change tables sharing one shape**; what the Kernel supplies is the enforcement mechanism (`ApprovalAbility`, `DutySeparation`), not a table.
+- **Shared file storage** — School-partitioned paths, MIME/size validation, append-only retention, no user-supplied path segment. Required by §18 supporting documents (Phase 3); the codebase's only existing storage path is Risk 1.
 - `Idempotency` table + middleware. `FeatureFlags`. **Shared `Pdf` engine.**
 - Audit immutability: `updating`/`deleting` guards on `Activity`; capture **IP, user-agent, reason, approver**.
 - **Disable `activitylog:clean`** + DB-level `DELETE` deny on `activity_log`.
@@ -960,21 +1024,26 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 
 ## Phase 2 — Finance Foundation & Configuration · 5 weeks
 **Objective:** the Ledger + the configuration surface. No user-facing billing yet.
-**Scope:** `app/Finance/` skeleton; Ledger schema + `LedgerPoster`; chart of accounts; **`finance_student_accounts`** (lock anchor + balance projection + reconciliation job); fee components/templates per year group & programme (§3); billing frequencies (§2); billing periods bound to `Term`; `finance_bank_accounts` + fee-category mapping; `finance_settings`; admin config UI; `Scholarship` gains a monetary value; Finance Permissions + 4 roles seeded; **`FinanceModuleStatus` contract**; feature flag.
+**Scope:** `app/Finance/` skeleton; Ledger schema + `LedgerPoster`; chart of accounts; **`finance_student_accounts`** (lock anchor + balance projection + reconciliation job); fee components/templates per year group & programme (§3); billing frequencies (§2); billing periods bound to `Term`; `finance_bank_accounts` + fee-category mapping; `finance_settings`; admin config UI; **bulk fee updates across a class or year group (§18)**; `Scholarship` gains a monetary value; Finance Permissions + 4 roles seeded (incl. the `internal_auditor` read-all grant, §7.2); **`FinanceModuleStatus` contract**; feature flag.
 **Deliverables:** migrations, models, config UI, ADRs 0003/0010/0020/0030, **`accounting-policy.md` co-signed by Brookstone Finance**.
-**Acceptance:** an admin configures a full Brookstone fee template **and its bank accounts** with zero code changes; Ledger posts and balances derive correctly per bank account; cross-School isolation proven; `ModuleClassificationService` detects the Module via the contract.
+**Acceptance:** an admin configures a full Brookstone fee template **and its bank accounts** with zero code changes, covering all twelve §3 fee components — Tuition · Boarding · Learning Resources · Examination Fees · Prize-Giving/Graduation · Uniforms · Books · C2C Billings · Co-Curricular Activities · Swimming Lessons · Repairs/Damages · Other Miscellaneous — **as configuration rows, none of them enumerated in code** (the twelve are §3's list, not a schema: a thirteenth is a row); Ledger posts and balances derive correctly per bank account; cross-School isolation proven; `ModuleClassificationService` detects the Module via the contract.
 **Risks:** over-configurable → unusable. Mitigate by building Brookstone's real template and real bank accounts as the acceptance test.
 > **Start WCBS extract profiling here** — legacy data shape constrains the Ledger schema.
 
-## Phase 3 — Approval Workflow Engine · 3 weeks
-**Objective:** §15B, once, reusably (Shared Kernel).
-**Scope:** approval state machine; Policy enforcing maker ≠ checker (**Policy + DB constraint**); approval limits by role/action/amount; pending-approvals queue UI; notifications; full audit capture.
-**Acceptance:** a maker cannot approve their own request via UI **or** direct API; over-limit requests escalate; every decision is audited with reason.
-> Shipped early: six later phases depend on it.
+## Phase 3 — Approval Workflow · 4 weeks
 
-## Phase 4 — Discounts, Scholarships & Concessions · 2 weeks
+> *Retitled: this phase was "Approval Workflow **Engine**" while v10 still specified a generic polymorphic engine. ADRs 0049/0050 withdrew the engine; the workflow — maker–checker, limits, queue, audit, attachments — is unchanged and is what this phase delivers.*
+**Objective:** §15B, once, reusably (Shared Kernel).
+**Scope:** approval state machine; Policy enforcing maker ≠ checker (**Policy + DB constraint**); approval limits by role/action/amount; pending-approvals queue UI; notifications; full audit capture; **supporting-document attachments on approval requests (§18)** — scholarship approval letters, discount approvals, refund approvals, payment evidence, other supporting documents.
+**Acceptance:** a maker cannot approve their own request via UI **or** direct API; over-limit requests escalate; every decision is audited with reason; **evidence can be attached to a request, cannot be deleted once attached** (append-only, §15C's "no financial record should ever be permanently deleted"), **and School A cannot fetch School B's attachment by URL** — the proof-19 shape, `super_admin` included, since ADR 0036 makes isolation un-bypassable by role.
+> Shipped early: six later phases depend on it.
+> **Attachment storage is School-partitioned** per §5.2 point 8; visibility follows the parent approval request's Policy rather than a second access rule of its own.
+> **Phase 3 placement is a recommendation, not a ruling.** §18 attaches documents to *a student's account*, not to an approval request. Binding them to the request is what makes them evidence-for-a-decision and gets them append-only and Policy-covered for free; the cost is that a document with no decision behind it (a standing scholarship letter) has nowhere to live until Phase 8. The alternative — a `student_documents` table in Phase 6 — inverts that trade. **Awaiting the client's answer on which of the two §18 means.**
+
+## Phase 4 — Discounts, Scholarships & Concessions · 3 weeks
 **Objective:** §4 — percentage and fixed-amount; scholarships, concessions, sibling, special approval, performance.
-**Acceptance:** discount application requires approval; the correct final payable is derived; sibling discount resolves within a School.
+**Scope:** the discount catalog and award flow; **bulk application of an already-approved discount to a class or year group (§18)**.
+**Acceptance:** discount application requires approval; the correct final payable is derived; sibling discount resolves within a School; **a bulk award writes one individually-audited award row per Student and is reversible per Student, not only as a batch** — a batch that can only be undone wholesale is an unauditable mass mutation, which is precisely what §15C forbids.
 > Before invoicing: §4 requires discounts to reduce the invoice to the final payable.
 
 ## Phase 5 — Invoicing · 4 weeks
@@ -983,6 +1052,7 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Dependencies:** Phases 2, 3, 4 · **`students.status` (1D)**.
 **Acceptance:** bulk-generate a year group idempotently; **numbers gap-free under concurrency**; cancelled invoices retain history; deferred income recognizes across a term boundary.
 **Risks:** bulk generation × concurrency × sequences is the highest-risk code in the Module. `ShouldBeUnique`, idempotency keys, load test.
+> **§18's five bulk actions, and where each lands.** Generate invoices for a class or year group → **Phase 5** (here). Apply approved discounts → **Phase 4**. Send payment reminders → **Phase 9**. Print or email statements → **Phase 8**. Apply fee updates → **Phase 2**. No sixth phase owns "bulk"; each action belongs to the phase that owns the underlying single-record operation, so a bulk path can never do something its single-record path cannot.
 
 ## Phase 6 — Payments, Receipts & Allocation ⭐ · 5 weeks
 **Objective:** §1, §5, §6 — *the heart of the specification*.
@@ -992,11 +1062,12 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Risks:** the allocation engine is where money is lost. Property-based tests on *sum(allocations) + credit == payment, always*.
 
 ## Phase 7 — Adjustments · 3 weeks
-**Objective:** §10 — credit notes, refunds, receipt reversals, sibling credit transfers (**within-School only**). All approval-gated, all contra entries.
+**Objective:** §10 and §15B — credit notes, **balance write-offs**, refunds, receipt reversals, **opening-balance adjustments**, sibling credit transfers (**within-School only**). All approval-gated, all contra entries.
 **Acceptance:** every adjustment is a contra entry; balances re-derive; no `UPDATE`/`DELETE` touches a Ledger row (test + DB grant); a cross-School credit transfer is rejected.
+> **Write-offs already exist** and are governed today — `CreditNoteKind::WriteOff` shares the credit note's ledger effect under a distinct label so a write-off is reportable apart from a credit note. §15B names them as a separate approval class and this Objective now names them too; what remains for Phase 7 is refunds, receipt reversals, opening-balance adjustments and transfers.
 
-## Phase 8 — Statements & Parent Portal · 3 weeks ∥
-**Objective:** §7 — real-time per-child statement (opening balance, charges, discounts, payments, advances, credits, outstanding, receipt numbers, references, **allocation history**, dates); portal UI; statement PDF.
+## Phase 8 — Statements & Parent Portal · 3.5 weeks ∥
+**Objective:** §7 — real-time per-child statement (opening balance, charges, discounts, payments, advances, credits, outstanding, receipt numbers, references, **allocation history**, dates); portal UI; statement PDF; **bulk print and bulk email of statements for a class or year group (§18)**.
 **Scope note:** the portal is **per-School**. The existing mock's unified cross-School view is **redesigned, not built**. Replaces `pages/parent/dashboard.tsx` and its 43 tsc errors.
 **Acceptance:** statement reconciles to the Ledger exactly for every Phase 5–7 scenario; Guardians see only their own wards (Policy test); no view spans Schools.
 > `result_locked` (fee-gates-results) is confirmed **School-scoped**. Whether to build it is a product decision.
@@ -1009,12 +1080,13 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Objective:** §12, §18 — all 14 reports; Excel + PDF; the real-time Financial Dashboard; revenue by class/year group/term; **collections & reconciliation per bank account**.
 **Risks:** mitigated by `finance_student_accounts` (Phase 2) — reports read the projection, not a growing `SUM()`.
 
-## Phase 11 — Period Controls, Audit Dashboard & Exception Monitoring · 3 weeks
+## Phase 11 — Period Controls, Audit Dashboard & Exception Monitoring · 4 weeks
 **Objective:** §15E, §15F.
 **Scope:** period close & locked-transaction enforcement; reopen restricted to Head of Account + audited; the Audit Dashboard — all 11 exception signals, **plus role-coverage gap and bank-account/fee-category mismatch**; exception reports.
-**Also:** store activity **severity as a column at write time** — the current `LIKE`-pattern derivation is unindexable and will not scale.
+**Also:** store activity **severity as a column at write time** — the current `LIKE`-pattern derivation is unindexable and will not scale. **`module` and `approval_status` are columns on the same terms, for the same reason** — §15D requires the activity log to be searchable and filterable by module accessed and approval status, and deriving either from a serialized properties blob is the same unindexable pattern under a different name.
+**Audit coverage §15C does not yet have (a build, not a rename):** **student transfers** — no listener records a Student moving class, year group or School-level enrolment state; and **system configuration changes** — no listener exists on `SchoolFinanceSettings` or the discount/fee catalogs, so a settings edit today leaves no original-value/new-value/reason record. Both are named explicitly by §15C's coverage list and both are absent from the tree, not merely mislabelled.
 **Dependencies:** Phases 7, 10 · `schools.timezone` · failed-login logging.
-**Acceptance:** a locked period rejects writes at the **Policy** layer; every signal fires on a synthetic trigger; creating a 5th School raises a coverage-gap exception.
+**Acceptance:** a locked period rejects writes at the **Policy** layer; every signal fires on a synthetic trigger; creating a 5th School raises a coverage-gap exception; **a settings change and a student transfer each produce an audit row carrying actor, timestamp, original value, new value and reason**; **the activity log filters by module and approval status against an index, proven on a seeded volume rather than an empty table.**
 
 ## Phase 12 — Paystack & Auto-Reconciliation · 4 weeks ∥
 **Objective:** §8 — payment links, **idempotent signature-verified webhooks**, virtual accounts; auto-matching by reference; **the exception list for unmatched payments**; reconciliation reports; POS/bank statement import (reuse the guardian-import pipeline); **a subaccount per bank account**.
@@ -1025,10 +1097,11 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Blocked on:** Brookstone confirming the Sage 50 import format.
 **Acceptance:** a real Sage 50 instance imports the file with zero manual re-entry (**client-verified**).
 
-## Phase 14 — WCBS Migration & Go-Live · 3 weeks
-**Objective:** §14 — outstanding balances, advance payments, credit balances, historical references → opening Ledger entries with **provenance markers** (migrated rows have no genuine audit trail).
-**Scope note:** **each School migrates independently.** No de-duplication, no identity merge, no cross-School carry-over. A child with Primary history now at Secondary is **two records**.
-**Acceptance:** migrated totals reconcile to WCBS **to the kobo, per School**, signed off by Brookstone Finance; dry run in staging; documented rollback.
+## Phase 14 — WCBS Migration & Go-Live · 4 weeks
+**Objective:** §14 — **parent records and student records**, then outstanding balances, advance payments, credit balances and historical references → opening Ledger entries with **provenance markers** (migrated rows have no genuine audit trail).
+**Scope:** §14 names six things to retain and the first two are the *subjects* the other four attach to: **Guardian and Student records migrate first**, and no financial artifact may be loaded against a Student that the migration did not create. A balance with no owner is not a partial migration, it is a reconciliation that cannot be signed.
+**Scope note:** **each School migrates independently.** No de-duplication, no identity merge, no cross-School carry-over — this applies to the parent and student records exactly as it applies to the money. A child with Primary history now at Secondary is **two records**; a parent with a child in each is **two Guardian records**.
+**Acceptance:** migrated totals reconcile to WCBS **to the kobo, per School**, signed off by Brookstone Finance; **every migrated financial row resolves to a migrated Student, and every migrated Student to at least one migrated Guardian, with zero orphans — asserted, not eyeballed**; dry run in staging; documented rollback.
 **Risks:** the highest-risk phase. Budget ≥3 dry runs and a reconciliation sign-off gate.
 
 ---
@@ -1062,7 +1135,10 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 - Paystack account + sandbox credentials *(blocks 12)*
 - Sage 50 import format *(blocks 13)*
 - SMS provider decision + budget *(blocks 9)*
-- Ruling on §18 backup/restore *(ADR 0017)*
+
+§18's backup-and-recovery requirement is no longer listed here: **ADR 0017 rules it infrastructure, not an application feature**, so there is nothing for the client to unblock — the requirement is answered by the hosting posture, and the ADR is the answer. It stays a *deliverable* (a documented, exercised restore) rather than a *blocker*.
+
+**None of the seven blockers above carries an owner or a due date.** That is recorded, not invented: this plan does not know who at Brookstone owns the Sage 50 format or the SMS budget, and assigning names here would be fabrication. Phase 1 is six weeks of runway; a blocker with no owner is a blocker nobody is working on, and the first four in this list gate Phases 2 and 5 directly.
 
 ---
 
@@ -1085,6 +1161,7 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 | 13 | **`accessibleSchoolIds` becomes a per-request query** | M | M | **Before** | Cache + invalidate; query-count test |
 | 14 | **Fail-closed `SchoolScope` breaks seeders/console** | M | M | **Before** | Land behind tests; per-model rollout |
 | 15 | **Type-error trend (101→143) swamps Finance** | M | M | **Before** | Ratchet in CI (1B) |
+| 16 | **Attachments add a second file-upload surface** (§18, Ph3) — the first one is Risk 1, a live cross-School IDOR where an unvalidated filename reached `Storage::download`. Uploads also carry MIME spoofing, path traversal and unbounded-size exposure. | M | H | **Before Ph3** | The 1E storage primitive owns pathing — School-partitioned, no user-supplied segment, validated MIME and size. Isolation proven by the proof-19 cross-School fetch test, `super_admin` included (ADR 0036). |
 | 16 | **Wrong-School posting** — single login's accepted cost | M | H | **During** (Ph6/11) | School indicator; confirmation on financial writes |
 | 17 | **Cross-School guardian↔student links already possible** | M | H | **Before** (1D) | Constraint + data audit + Ph6 regression test |
 | 18 | **Approval fatigue → rubber-stamping** — control that looks real but isn't | M | H | **During** (Ph3) | Amount thresholds; **monitor approve-latency as control health** |
@@ -1105,24 +1182,38 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 
 **Assumptions — validate before committing:** 2 full-time developers, one senior; Brookstone Finance available for policy sign-off and UAT; external blockers resolved during Phase 1. **Estimates ±30%**, excluding UAT cycles.
 
-| Phase | Weeks | Cumulative |
-|---|---|---|
-| 1 Engineering Foundation | 6 | 6 |
-| 2 Config & Ledger | 5 | 11 |
-| 3 Approval Engine | 3 | 14 |
-| 4 Discounts | 2 | 16 |
-| 5 Invoicing | 4 | 20 |
-| 6 **Payments & Allocation** | 5 | 25 |
-| 7 Adjustments | 3 | 28 |
-| 8 Statements ∥ | 3 | 30 |
-| 9 Notifications ∥ | 3 | 31 |
-| 10 Reporting & Dashboard | 4 | 35 |
-| 11 Period & Audit Dashboard | 3 | 38 |
-| 12 Paystack ∥ | 4 | 40 |
-| 13 Sage 50 ∥ | 2 | 41 |
-| 14 WCBS Migration & Go-Live | 3 | **44** |
+| Phase | Weeks | Cumulative | Δ |
+|---|---|---|---|
+| 1 Engineering Foundation | 6.5 | 6.5 | +0.5 |
+| 2 Config & Ledger | 5 | 11.5 | — |
+| 3 Approval Engine | 4 | 15.5 | **+1** |
+| 4 Discounts | 3 | 18.5 | **+1** |
+| 5 Invoicing | 4 | 22.5 | — |
+| 6 **Payments & Allocation** | 5 | 27.5 | — |
+| 7 Adjustments | 3 | 30.5 | — |
+| 8 Statements ∥ | 3.5 | 33 | +0.5 |
+| 9 Notifications ∥ | 3 | 34 | — |
+| 10 Reporting & Dashboard | 4 | 38 | — |
+| 11 Period & Audit Dashboard | 4 | 42 | **+1** |
+| 12 Paystack ∥ | 4 | 44 | — |
+| 13 Sage 50 ∥ | 2 | 45 | — |
+| 14 WCBS Migration & Go-Live | 4 | **49** | **+1** |
 
-**≈44 weeks (~10 months)** with 2 developers and parallelization. **~58 weeks single-threaded.**
+**≈49 weeks (~11 months)** with 2 developers and parallelization. **~63 weeks single-threaded.**
+
+**Re-estimated 2026-07-28 for the BRD-alignment scope (≈44 → ≈49).** Six phases gained requirements that were in the BRD but not in this plan; leaving the durations untouched would have made the total a number nobody had checked. The arithmetic, so it can be argued with:
+
+| Phase | Added scope | Δ | Reasoning |
+|---|---|---|---|
+| **1E** | file-storage primitive for attachments | +0.5 | There is no storage primitive today, and the codebase's one existing storage path is Risk 1 — the `Storage::download` IDOR. A second upload surface is not built on that. |
+| **2** | bulk fee updates across a class or year group (§18) | **0** | Deliberately zero, not overlooked. Publishing a new fee-schedule version *is* the bulk update: schedules are versioned catalogs scoped to a year group, so the single-record path already fans out. **Ambiguity flagged:** if §18 means re-pricing *already-issued* invoices, that is not a Phase 2 catalog edit but a credit-note-and-reissue cycle, and it belongs to Phase 7 at roughly +1 week. Needs the client's reading before it is costed. |
+| **3** | supporting-document attachments (§18) | +1 | Upload endpoint, School-partitioned paths, append-only retention, MIME/size validation, Policy inheritance, and the cross-School fetch proof — on a fraud-control surface where the isolation test is the deliverable. |
+| **4** | bulk application of approved discounts (§18) | +1 | Cheap as a batch, expensive done correctly: one audited award row per Student and per-Student reversal, plus partial-failure semantics. A batch reversible only wholesale would violate §15C. |
+| **8** | bulk print / email of statements (§18) | +0.5 | The single-statement path and the PDF engine already exist by then; what is new is queue fan-out and memory behaviour at class scale. |
+| **11** | student-transfer auditing, configuration-change auditing, `module` + `approval_status` columns (§15C, §15D) | +1 | Two listeners that do not exist, each capturing original value / new value / reason, plus two indexed columns with backfill and a filter test on seeded volume rather than an empty table. |
+| **14** | parent and student record migration (§14) | +1 | §14 names six things to retain; only the four financial ones were scoped. Held to +1 rather than +2 because the guardian-import pipeline already exists — what is new is WCBS mapping, per-School matching rules and the zero-orphan assertion, on the highest-risk phase in the plan. |
+
+**These are judgements, not measurements.** No velocity data exists for this team on this codebase — CI has never executed a job (§28.1 item 9) — so the ±30% band above applies to these deltas at least as much as to the original figures. The value here is that the number now has arithmetic behind it that can be disputed; it is not a claim of precision.
 
 > **Be honest with the client:** this is a financial control system, not a billing screen. §15 alone (SoD, maker–checker, immutable audit, period controls, exception monitoring) is roughly a third of the effort — and it is the part that cannot be cut, because it is why Finance and Internal Audit wrote the document.
 
@@ -1277,11 +1368,11 @@ This document consolidates the original implementation plan and seven review add
 | **Per-School gap-free sequences + School prefix** — resolves the conflict between "separate legal entity per School" and "one sequence for Brookstone". | §12.5 |
 | ADR **0006** superseded by **0026**; ADR **0025** withdrawn. | §19 |
 
-**Timeline unchanged at ≈44 weeks.** The consolidation moved work and removed a contingency; it added none.
+**Timeline unchanged at ≈44 weeks.** The consolidation moved work and removed a contingency; it added none. *(True of the consolidation, and left as written. The separate BRD-alignment pass of 2026-07-28 did add scope, and the timeline is now **≈49 weeks** — the arithmetic is in §23.)*
 
 ---
 
-# 28. Reconciliation with delivered state (2026-07-19)
+# 28. Reconciliation with delivered state (re-verified 2026-07-28)
 
 > Added post-hoc, **verified against the repository**. §1 and §4.4 are the project-start baseline and are left unedited as the historical "why"; this section is the **live delta** — what has landed, what is genuinely open, and how v10's 14 phases map onto the walking-skeleton handoff (`docs/handoff/session-2-start.md`) that development has actually been following.
 
@@ -1319,10 +1410,20 @@ Legend: ✅ resolved · ◑ partial / enforced-but-staged · ⬜ open · ❓ not
 | PDF | absent | ⬜ open (v10 1E/5) |
 | Runtime config (FeatureFlags) | absent | ⬜ open (v10 1E) |
 | Observability | absent | ⬜ open (v10 1E) |
-| Locking (`finance_student_accounts` anchor) | absent | ⬜ open — only `fee_ledger_transactions` exists (v10 2) |
-| Generic Approvals engine | (v10 Phase 3) | ⬜ open — only a domain-specific `PrincipalApprovalController` exists |
+| Locking (`finance_student_accounts` anchor) | absent | ◑ **table delivered; two of its three jobs delivered; the lock-anchor job itself is declared but unused** — see below |
+| Generic Approvals engine | (v10 Phase 3) | ⛔ **will not be built** — superseded by ADRs 0049 + 0050; the per-domain shape is delivered and governing today. `PrincipalApprovalController` still exists and is unrelated legacy |
 
 Also stale in §1: "zero Policy classes" (`ExportPolicy` exists) and "zero `Gate::` usage" (`Gate::before` super_admin bypass lives in `AppServiceProvider`).
+
+**The `finance_student_accounts` row, re-derived against the tree rather than carried.** §12.2 gives the table three jobs. Two are delivered and one is not:
+
+| §12.2 job | State | Evidence |
+|---|---|---|
+| **Balance projection** | ✅ delivered | the atomic upsert-increment in `SubledgerPoster::post` (`balance = balance + delta` — skew-free without an application lock), backstopped by scheduled `finance:reconcile-accounts` (`routes/console.php`) and its sibling `finance:audit-ledger-coherence` (ADR 0047) |
+| **Reporting projection** | ✅ delivered | `AccountReadModel` (`receivables` = `SUM(balance_minor > 0)`, `creditSigned` = `SUM(balance_minor < 0)`), `InvoiceReadModel`, `FinanceAccountController` — reports read the projection, not a growing `SUM()` over the ledger |
+| **Lock anchor** | ⬜ **declared, not exercised** | **no `lockForUpdate` in the tree touches `finance_student_accounts`.** Every current lock site is elsewhere: `Sequences`, `RecordPayment`, `GenerateInvoice`, and the four `Approve*` actions. The migration says so itself — *"NO `version` column: W2 has no optimistic read-modify-write to guard; the pessimistic `lockForUpdate` arrives in W3"* — and the model docblock notes it is **deliberately not `AppendOnly`**, because a projection must be re-derivable |
+
+So the row is not "open" and not "done". The **table exists and earns its keep today**; what does not exist is the *lock discipline* the anchor was created to host, and that lands in W3 with credit application — the first genuine read-modify-write. This matters for Phase 6's gate, corrected in §28.6.
 
 ## 28.3 What the walking skeleton delivered (outside v10's origin frame)
 
@@ -1351,10 +1452,16 @@ The handoff tracks progress with **F1–F6 invariants** and incremental **slices
 
 | Handoff term | v10 equivalent |
 |---|---|
-| "Phase-1 prerequisites" | v10 **Phase 1** — mostly landed; open: observability, idempotency, PDF, FeatureFlags, generic Approvals engine (all 1E) |
+| "Phase-1 prerequisites" | v10 **Phase 1** — mostly landed; open: observability, idempotency, PDF, FeatureFlags (all 1E). The generic Approvals engine is **removed from this list, not deferred** — ADRs 0049/0050 |
 | Walking skeleton (frozen template) | an early thin slice of v10 **Phase 2** (skeleton + Ledger) and **Phase 5** (invoice doc) |
 | "slice 2: multi-line invoices" | v10 **Phase 5 — Invoicing**, first increment: lands F6 + void-safety (default scope excludes VOID; void posts a reversing ledger entry) |
 
 ## 28.6 Net
 
-Engineering-foundation work is largely done and gate-enforced. The genuinely-open Phase-1 items are **observability, idempotency, PDF, FeatureFlags, the generic Approvals engine, and the `finance_student_accounts` lock anchor**. The next build increment ("slice 2" / Phase 5 invoicing) can proceed on the frozen skeleton — but **Phase 6 (Payments & Allocation) is gated on the lock anchor**, and **Phase 3 / §15B (maker–checker) is gated on the Approvals engine** — neither exists yet.
+Engineering-foundation work is largely done and gate-enforced. The genuinely-open Phase-1 items are **observability, idempotency, PDF and FeatureFlags** — each re-confirmed absent this pass (no Sentry/Telescope/Bugsnag/Flare and no dompdf/snappy/browsershot/mpdf in `composer.json`). The next build increment ("slice 2" / Phase 5 invoicing) can proceed on the frozen skeleton.
+
+**Both of the gate sentences this section used to end on were wrong, and are replaced:**
+
+**Phase 6 is not gated on the `finance_student_accounts` table** — the table is delivered and two of its three jobs with it (§28.2). Phase 6 is gated on **W3's lock discipline**: applying credit is the first genuine read-modify-write against the projection, and today nothing in the tree locks that table. The gate moved from *does the anchor exist* to *does the anchor get taken* — a narrower and more testable question, and one that Phase 6's own acceptance already states ("two simultaneous payments against a Student with a credit balance consume it exactly once, proven under parallel load **on MySQL**"). That acceptance test is the gate; nothing else needs to precede it.
+
+**Phase 3 / §15B is not gated on a generic Approvals engine, because there will not be one.** ADRs 0049 and 0050 rule it out on a hard constraint, not a preference: a polymorphic target cannot carry a foreign key, so the composite `(target_id, school_id)` FK that guarantees a change request and its target belong to the same School becomes inexpressible — the isolation guarantee §5 rests on would be downgraded from a database invariant to a convention. The replacement is **per-domain change tables sharing one shape**, and it is already load-bearing: **three of §15B's ten classes — write-offs, invoice cancellation and credit notes — are governed and bite-proven in the tree today** (`finance_void_requests`, the credit-note maker-checker migration, `ApproveCreditNote` / `ApproveVoidRequest`), with fee-schedule and discount-policy publication governed on the same shape. What Phase 3 still owes §15B is the remaining seven classes, approval **limits** (per-role/action/amount configuration rows — genuinely not built), the pending-approvals queue UI, and attachments. That is a real backlog; it is not a missing engine.

@@ -142,10 +142,17 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);
 
-    // protected term routes
+    // protected term routes — guarded by this group's permission:academic_setup.manage.
+    //
+    // SCOPED bindings, deliberately: {term:uuid} is resolved THROUGH $session->terms(), so a term
+    // belonging to another session 404s at the router instead of reaching the controller. These
+    // two carried ->withoutScopedBindings(), which let a foreign uuid through to
+    // `$session->terms()->find($term->id)` — null — and a 500 on the next line. The controller
+    // also uses findOrFail now, so the methods are correct even if this flag is ever removed
+    // again; the route is the declarative half, the controller the defensive one.
     Route::post('/sessions/{session:uuid}/terms', [TermController::class, 'store']);
-    Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update'])->withoutScopedBindings();
-    Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy'])->withoutScopedBindings();
+    Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update']);
+    Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy']);
 
     // protected marking components
     Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);

@@ -22,32 +22,37 @@ class FormTeacherCommentController extends Controller
 
         $assignment = $this->formTeacherAssignment();
 
-        if (!$assignment) {
+        if (! $assignment) {
             return Response::success(['can_assess' => false, 'rows' => []]);
         }
 
         $term = $this->resolveTermFilter($request);
 
-        if (!$term) {
+        if (! $term) {
             return Response::success(['can_assess' => false, 'rows' => []]);
         }
 
         // Form teachers take over assessments only when the school has no
         // boarding parents at all.
-        $canAssess = !$this->schoolHasBoardingParents();
+        $canAssess = ! $this->schoolHasBoardingParents();
 
         $studentCurricula = StudentCurriculum::query()
             ->whereIn('status', $this->enrollmentStatusesFor($term))
-            ->whereHas('curriculum', fn($query) => $query
+            ->whereHas('curriculum', fn ($query) => $query
                 ->where('term_id', $term->id)
                 ->where('class_level_arm_id', $assignment->class_level_arm_id))
+            // Exclude withdrawn students in SQL. `students` is soft-deleted, so whereHas() drops
+            // enrolments whose student has left — the rows that would otherwise arrive with a
+            // null `->student` and take the endpoint down. Same idiom the boarding-parent query
+            // in ResolvesAssessmentAccess already uses.
+            ->whereHas('student')
             ->with([
                 'student',
                 'curriculum.classLevelArm.classLevel',
                 'curriculum.classLevelArm.arm',
                 'curriculum.classLevelArm.stream',
-                'behavioralAssessments' => fn($query) => $query->where('assessment_term_id', $term->id),
-                'psychomotorSkills' => fn($query) => $query->where('assessment_term_id', $term->id),
+                'behavioralAssessments' => fn ($query) => $query->where('assessment_term_id', $term->id),
+                'psychomotorSkills' => fn ($query) => $query->where('assessment_term_id', $term->id),
             ])
             ->get();
 

@@ -270,6 +270,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/result-status', [CurriculumSubjectController::class, 'getResultStatus']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
+    // Clearing a score is a DELETE, not a POST of 0. An absent row means "not entered yet" and a
+    // stored 0 means "scored zero" — the old clear-by-zero made the second unrecordable. Same
+    // group, so it inherits the same ability as entering a score; no new permission.
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'clearScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
 
     // Categorical grading is SCORE ENTRY, not setup — the teacher-facing act of recording a

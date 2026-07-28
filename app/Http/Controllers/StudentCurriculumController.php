@@ -118,7 +118,23 @@ class StudentCurriculumController extends Controller
             $studentCurriculum->promoted_to_id = null;
         }
         if ($studentCurriculum->status === StudentStatusEnum::ACTIVE) {
-            abort_if(StudentCurriculum::where('student_id', $studentCurriculum->student->id)->where('status', 'active')->exists(), 422, 'Student is already enrolled in a curriculum.');
+            // `student_id` off the row itself, not `->student->id`: the relation is null for a
+            // withdrawn (soft-deleted) student while the enrolment row remains, and reading
+            // through it turned "reactivate this enrolment" into a 500. The column is present
+            // either way, and reactivating an enrolment whose student is gone is refused below
+            // rather than crashing here.
+            abort_if(
+                $studentCurriculum->student === null,
+                422,
+                'This student has been withdrawn; restore the student before reactivating the enrollment.',
+            );
+
+            abort_if(
+                StudentCurriculum::where('student_id', $studentCurriculum->student_id)
+                    ->where('status', 'active')->exists(),
+                422,
+                'Student is already enrolled in a curriculum.',
+            );
         }
 
         $studentCurriculum->save();

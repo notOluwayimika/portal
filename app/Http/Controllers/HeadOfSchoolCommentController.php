@@ -32,16 +32,21 @@ class HeadOfSchoolCommentController extends Controller
 
         $term = $this->resolveTermFilter($request);
 
-        if (!$term) {
+        if (! $term) {
             return Response::success([]);
         }
 
         $studentCurricula = StudentCurriculum::query()
             ->whereIn('status', $this->enrollmentStatusesFor($term))
             // ->where('head_of_school_comment', null)
-            ->whereHas('curriculum', fn($query) => $query
+            ->whereHas('curriculum', fn ($query) => $query
                 ->where('term_id', $term->id)
                 ->whereIn('class_level_arm_id', $classLevelArmIds))
+            // Exclude withdrawn students in SQL. `students` is soft-deleted, so whereHas() drops
+            // enrolments whose student has left — the rows that would otherwise arrive with a
+            // null `->student` and take the endpoint down. Same idiom the boarding-parent query
+            // in ResolvesAssessmentAccess already uses.
+            ->whereHas('student')
             ->with([
                 'student',
                 'curriculum.classLevelArm.classLevel',
@@ -76,13 +81,13 @@ class HeadOfSchoolCommentController extends Controller
             'student',
             'curriculum.examType.gradeBoundaries',
             'curriculum.term',
-            'studentSubjects' => fn($q) => $q->where('status', 'active'),
+            'studentSubjects' => fn ($q) => $q->where('status', 'active'),
             'studentSubjects.curriculumSubject.studentResults.student',
             'studentSubjects.curriculumSubject.resultStatus',
             'studentSubjects.curriculumSubject.subject',
             // The boarding parent's comment lives on the enrollment's
             // behavioral assessment for the curriculum's own term.
-            'behavioralAssessments' => fn($q) => $q->where('assessment_term_id', $studentCurriculum->curriculum?->term_id),
+            'behavioralAssessments' => fn ($q) => $q->where('assessment_term_id', $studentCurriculum->curriculum?->term_id),
         ]);
 
         $defaultBoundaries = GradeBoundary::whereNull('exam_type_id')->get();
@@ -151,8 +156,8 @@ class HeadOfSchoolCommentController extends Controller
     {
         $teacher = Teacher::where('user_id', auth()->id())->first();
 
-        if (!$teacher) {
-            return new Collection();
+        if (! $teacher) {
+            return new Collection;
         }
 
         return ClassLevelArmTeacher::where('teacher_id', $teacher->id)

@@ -1039,12 +1039,6 @@ parameters:
 			path: app/Http/Controllers/StudentCurriculumController.php
 
 		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentCurriculumController.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term_id\.$#'
 			identifier: property.notFound
 			count: 1

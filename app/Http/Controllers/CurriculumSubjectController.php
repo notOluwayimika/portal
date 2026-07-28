@@ -48,6 +48,17 @@ class CurriculumSubjectController extends Controller
 
         $studentAssignments = $curriculumSubject->studentAssignments()
             ->where('status', 'active')
+            // A WITHDRAWN student is still 'active' here. `students` is soft-deleted and
+            // School-scoped, but `student_curricula` and `student_subjects` rows outlive the
+            // withdrawal — so `studentCurriculum->student` resolves to null while the assignment
+            // row still says active. Both loops below read `->student->id` directly, and in
+            // production that was "Attempt to read property id on null" on POST .../submit: one
+            // student leaving broke submission for the whole class.
+            //
+            // Filtered ONCE, here, so the delete below and both loops agree on who counts. The
+            // id list was already null-safe (->filter()), which is exactly why the mismatch went
+            // unnoticed: the deletion silently did the right thing and the loop then crashed.
+            ->whereHas('studentCurriculum.student')
             ->get();
 
         // Get active student IDs

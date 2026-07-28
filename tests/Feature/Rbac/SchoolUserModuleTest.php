@@ -173,16 +173,18 @@ it('lists only the active school\'s members — never a global user dump', funct
         ->get('/setup/users')
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('admin/users/index')
-            ->where('users', fn ($users) => collect($users)->pluck('uuid')->contains($this->target->uuid)
+            // Users are paginated now, so the list lives under users.data. The assertion is
+            // otherwise untouched: this school's member is present, the other school's is not.
+            ->where('users.data', fn ($users) => collect($users)->pluck('uuid')->contains($this->target->uuid)
                 && ! collect($users)->pluck('uuid')->contains($foreign->uuid)),
         );
 });
 
-it('offers `admin` in assignable_roles only to a super_admin actor (mirrors D2)', function () {
+it('offers `admin` in assignableRoles only to a super_admin actor (mirrors D2)', function () {
     $this->actingAs($this->admin)->withSession(['school_id' => $this->school->id])
         ->get('/setup/users')
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('assignable_roles', fn ($roles) => ! collect($roles)->contains('admin')),
+            ->where('assignableRoles', fn ($roles) => ! collect($roles)->contains('admin')),
         );
 
     config(['auth.gate_before_superadmin' => true]);
@@ -192,7 +194,7 @@ it('offers `admin` in assignable_roles only to a super_admin actor (mirrors D2)'
     $this->actingAs($superAdmin)->withSession(['school_id' => $this->school->id])
         ->get('/setup/users')
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('assignable_roles', fn ($roles) => collect($roles)->contains('admin')),
+            ->where('assignableRoles', fn ($roles) => collect($roles)->contains('admin')),
         );
 });
 

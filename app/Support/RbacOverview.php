@@ -61,7 +61,8 @@ final class RbacOverview
         $lastChanged = self::lastChanged($roles);
 
         return [
-            'groups' => self::groups($permissionRoles),
+            // Shared with the school-admin console, so both render one taxonomy.
+            'groups' => PermissionCatalog::grouped($permissionRoles),
             'roles' => self::roles($roles, $rolePermissions, $holderCounts, $lastChanged),
             'sodPairs' => DutySeparation::pairs(),
             'stats' => self::stats($roles, $rolePermissions, $permissionRoles, $holderCounts),
@@ -131,44 +132,6 @@ final class RbacOverview
 
                 return $carry;
             }, []);
-    }
-
-    /**
-     * The catalogue, grouped. Permission→roles comes from the inverted map, never a query.
-     *
-     * @param  array<string, list<string>>  $permissionRoles
-     * @return list<array<string, mixed>>
-     */
-    private static function groups(array $permissionRoles): array
-    {
-        return array_map(function (PermissionGroup $group) use ($permissionRoles) {
-            $permissions = array_map(function (Permission $permission) use ($permissionRoles) {
-                $holders = $permissionRoles[$permission->value] ?? [];
-
-                return [
-                    'name' => $permission->value,
-                    'label' => $permission->label(),
-                    'roles' => $holders,
-                    'roleCount' => count($holders),
-                    // Granted to nothing. Either the feature it gated was removed and the
-                    // permission outlived it, or a grant was revoked and never replaced — both
-                    // worth seeing rather than discovering during an incident.
-                    'unused' => $holders === [],
-                    'isChecker' => ApprovalAbility::isExcludedFromSuperAdminBypass($permission->value),
-                    'matchingMaker' => ApprovalAbility::matchingMakerFor($permission->value),
-                ];
-            }, $group->permissions());
-
-            return [
-                'key' => $group->value,
-                'label' => $group->label(),
-                'description' => $group->description(),
-                'icon' => $group->icon(),
-                'permissionCount' => count($permissions),
-                'grantedCount' => count(array_filter($permissions, fn (array $p) => ! $p['unused'])),
-                'permissions' => $permissions,
-            ];
-        }, PermissionGroup::cases());
     }
 
     /**

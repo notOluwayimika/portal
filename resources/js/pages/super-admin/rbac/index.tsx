@@ -10,10 +10,10 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import { KeyRound, Layers, ShieldCheck, Unplug } from 'lucide-react';
 import { FinanceStatCard } from '@/components/finance/finance-stat-card';
+import { CatalogPanel } from '@/components/rbac/catalog-panel';
+import { HistoryPanel } from '@/components/rbac/history-panel';
 import { cn } from '@/lib/utils';
 import type { RbacPageProps, RbacTab } from '@/types/rbac';
-import { CatalogTab } from './catalog-tab';
-import { HistoryTab } from './history-tab';
 import { RolesTab } from './roles-tab';
 
 export default function RbacConsole() {
@@ -140,7 +140,7 @@ export default function RbacConsole() {
                         ))}
                     </div>
 
-                    {tab === 'catalog' && <CatalogTab groups={groups} />}
+                    {tab === 'catalog' && <CatalogPanel groups={groups} />}
                     {tab === 'roles' && (
                         <RolesTab
                             roles={roles}
@@ -149,7 +149,7 @@ export default function RbacConsole() {
                             errors={errors ?? {}}
                         />
                     )}
-                    {tab === 'history' && <HistoryTab />}
+                    {tab === 'history' && <HistoryPanel />}
                 </div>
             </div>
         </>

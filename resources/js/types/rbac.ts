@@ -80,3 +80,64 @@ export type RbacPageProps = {
     stats: RbacStats;
     tab: RbacTab;
 };
+
+// ─── School-admin console (/setup/users) ───────────────────────────────────
+
+export interface SchoolUser {
+    uuid: string;
+    name: string;
+    email: string;
+    /** Role names held IN THIS SCHOOL. */
+    roles: string[];
+    /** False for super admins and for yourself — mirrors the server's structural guards. */
+    editable: boolean;
+    lockReason: string | null;
+    schoolId: number;
+}
+
+export interface SchoolRole {
+    name: string;
+    permissions: string[];
+    permissionCount: number;
+    /** Users in THIS school holding it. A role held widely elsewhere reads as zero here. */
+    holderCount: number;
+    assignable: boolean;
+    unassignableReason: string | null;
+    twoFactorRequired: boolean;
+    holdsMaker: boolean;
+    holdsChecker: boolean;
+}
+
+export interface SchoolRbacStats {
+    userCount: number;
+    roleCount: number;
+    assignableRoleCount: number;
+    unusedRoleCount: number;
+    multiRoleUserCount: number;
+}
+
+export type SchoolRbacTab = 'users' | 'roles' | 'permissions' | 'history';
+
+/**
+ * Type alias, not interface — Inertia's usePage<T> needs the implicit index signature.
+ */
+export type SchoolRbacPageProps = {
+    users: {
+        data: SchoolUser[];
+        pagination: {
+            total: number;
+            per_page: number;
+            current_page: number;
+            last_page: number;
+        };
+    };
+    roles: SchoolRole[];
+    /** The same catalogue the super-admin console renders, from one shared builder. */
+    groups: RbacGroup[];
+    sodPairs: RbacSodPair[];
+    assignableRoles: string[];
+    stats: SchoolRbacStats;
+    filters: { search: string | null; role: string | null };
+    school: { name: string };
+    tab: SchoolRbacTab;
+};

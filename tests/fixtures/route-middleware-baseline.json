@@ -47,6 +47,12 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/scores": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
     "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": [
         "api",
         "auth:sanctum",

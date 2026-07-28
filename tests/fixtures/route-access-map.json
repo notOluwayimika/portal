@@ -71,6 +71,15 @@
             "super_admin"
         ]
     },
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/scores": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": {
         "auth": true,
         "roles": [

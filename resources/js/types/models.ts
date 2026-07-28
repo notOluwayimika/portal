@@ -471,7 +471,20 @@ export interface Score {
     student: Student;
     marking_component: MarkingComponent;
     created_by: User;
+    /**
+     * The WEIGHTED value as stored: the percentage the teacher typed times the component's weight,
+     * so 100 on a 10%-weighted component is 10. Do NOT render this to a teacher.
+     */
     score: number;
+    /**
+     * The percentage the teacher typed, 0–100 — computed server-side by App\Support\ScoreUnit.
+     *
+     * Always prefer this for display and entry. Dividing `score` by the weight in the browser is
+     * exactly what produced "I typed 100 and it shows 10.0": the two halves of the conversion
+     * lived only in the client, so a stale bundle applying one of them silently changed the
+     * meaning of a stored score. Absent when the server did not load the marking component.
+     */
+    score_percent?: number | null;
 }
 
 export interface StudentCurriculum {

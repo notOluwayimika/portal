@@ -102,3 +102,18 @@ new mechanism.
 **Negative / accepted:** a second change table the next reader will want to merge with the first (recorded
 above, twice, so they don't); and every read path over `finance_fee_schedules` must remember the status
 filter — the accepted cost of choice (c), localized to `FeeScheduleLookup` and bite-proved there.
+
+**Negative / accepted — the draft is mutable between submit and approve, and commit 4 does not detect it.**
+This follows directly from choosing (c) over (b): because the proposal is a *live draft row* rather than a
+frozen payload, its **items are deliberately mutable** while it is a draft — proof 30 asserts exactly that,
+and it must, because a draft is assembled over days. The change row itself is frozen
+(`finance_fee_schedule_changes_update_guard`) and the target is frozen (the composite FK), but the *numbers*
+are not. So a third seat — anyone holding `finance.fee-schedule.manage`, distinct from the Head who submits
+and the ED who approves — can change the amounts *after* submission, and the ED approves a different schedule
+from the one they were shown. Nothing in commit 4 catches it. The remedy is a **submit-time fingerprint**:
+stamp the item count plus the sum of `amount_minor` on the change row at submit, re-derive it under the lock
+at approve, and refuse on mismatch. It is scheduled as **commit 4a**, after 3b and before any pilot school
+enters real prices — the window in which the gap could bite money does not open until then. Recorded here,
+now, rather than in 4a, so that if 4a slips the gap is still on the record with an owner and a slot; an
+unrecorded gap with no owner is how it becomes permanent. (3b does not build the fingerprint — the pilot has
+not started, and 3b is line-level reduction enforcement, not schedule-approval hardening.)

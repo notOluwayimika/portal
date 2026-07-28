@@ -45,6 +45,11 @@ class GenerateInvoiceRequest extends FormRequest
             'lines.*.note' => ['sometimes', 'nullable', 'string', 'max:255'],
             'lines.*.currency' => ['sometimes', 'string', 'size:3'],
             'lines.*.fee_item_id' => ['sometimes', 'nullable', 'integer'],
+            // The discount policy a REDUCTION line cites (S1 3b). A LOOKUP id, not the wire's to validate
+            // beyond shape — the DB reduction_guard is the authority (active + not approval-requiring + same
+            // School). There is deliberately NO is_discountable rule: that is a fee-item property resolved
+            // server-side in the Action, never a client claim (it would let a caller move the percentage base).
+            'lines.*.discount_policy_id' => ['sometimes', 'nullable', 'integer'],
         ];
     }
 
@@ -86,6 +91,8 @@ class GenerateInvoiceRequest extends FormRequest
                     : InvoiceLineKind::Charge,
                 note: isset($line['note']) ? (string) $line['note'] : null,
                 percent: isset($line['percent']) ? (int) $line['percent'] : null,
+                discountPolicyId: isset($line['discount_policy_id']) ? (int) $line['discount_policy_id'] : null,
+                // isDiscountable is NOT read from the wire — the Action resolves it from the fee item.
             ),
             $lines,
         ));

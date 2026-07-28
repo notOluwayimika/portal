@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Models\DiscountPolicy;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -57,26 +58,43 @@ function iraEnrollment(School $school): string
     ]))->uuid;
 }
 
+/**
+ * An active, non-approval-requiring discount policy — the ONLY thing that lets a reduction line reach the
+ * insert (S1 3b's DB reduction_guard). Both audit proofs below cite one so that the trigger is satisfied
+ * and the ONLY remaining barrier is the PERMISSION they were written to test — which is the whole point of
+ * 13b: from 3b the trigger refuses a policy-less reduction REGARDLESS of permission, so a proof that still
+ * posts a policy-less line would pass on the trigger, not the permission, and its plant would stop biting.
+ */
+function iraPolicy(School $school): DiscountPolicy
+{
+    return ActiveSchool::runFor($school->id, fn () => DiscountPolicy::create([
+        'school_id' => $school->id, 'name' => 'Sibling', 'basis' => 'percent', 'percent' => 10,
+        'requires_approval' => false, 'status' => 'active',
+    ]));
+}
+
 // ── §0.4.1 The actor is recorded on every line ──────────────────────────────
 
 it('records the acting user on every invoice line (the audit hole closed)', function () {
     $school = School::factory()->create();
     $user = iraUser($school, ['finance.access', 'finance.invoice.generate', 'finance.invoice.reduction.apply']);
     $enrollment = iraEnrollment($school);
+    $policy = iraPolicy($school); // 3b: the discount line must cite an active policy or the trigger refuses it.
 
     $this->actingAs($user)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 100000],
-                ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount'],
+                ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
             ],
         ])->assertCreated();
 
     $lines = DB::table('finance_invoice_lines')->get();
     expect($lines)->toHaveCount(2);
     $lines->each(fn ($line) => expect((int) $line->created_by_user_id)->toBe($user->id));
-    // PLANT: drop `'created_by_user_id' => $actorId` from GenerateInvoice's lines()->create() → null here.
+    // PLANT (re-run after the 3b rewrite): drop `'created_by_user_id' => $actorId` from GenerateInvoice's
+    // lines()->create() → created_by_user_id is null → this assertion reds. Watched red again post-3b.
 });
 
 // ── §0.4.2 The reduction permission bites, BEFORE the transaction ────────────
@@ -85,20 +103,26 @@ it('refuses a reduction line without finance.invoice.reduction.apply — 403, an
     $school = School::factory()->create();
     $user = iraUser($school, ['finance.access', 'finance.invoice.generate']); // NOT reduction.apply
     $enrollment = iraEnrollment($school);
+    // 13b REWRITE: cite a REAL active policy, so the trigger is satisfied and the ONLY barrier between this
+    // request and a 201 is the missing permission. Without this, from 3b the trigger would refuse the
+    // policy-less line regardless of permission — the test would pass on the trigger, not the permission,
+    // and deleting the can() check would no longer turn it red.
+    $policy = iraPolicy($school);
 
     $this->actingAs($user)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 100000],
-                ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount'],
+                ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
             ],
         ])->assertStatus(403);
 
     // Refused before the Action's transaction — not a partial write.
     expect(DB::table('finance_invoices')->count())->toBe(0)
         ->and(DB::table('finance_invoice_lines')->count())->toBe(0);
-    // PLANT: delete the assertMayReduce()/can() check → 201 + rows exist.
+    // PLANT (re-run after the 3b rewrite): delete the assertMayReduce()/can() check → the request reaches the
+    // Action, the cited policy is valid, so it 201s with rows → assertStatus(403) reds. Watched red again post-3b.
 });
 
 // ── §0.4.3 A charge-only invoice still passes — the guard is scoped ──────────

@@ -6,6 +6,7 @@ use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\StudentAccount;
 use App\Finance\Models\VoidRequest;
@@ -156,6 +157,12 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
     [, $token] = bursarWithToken($school, ['finance.access', 'finance.invoice.reduction.apply']);
     $studentUuid = acceptanceStudent($school);
 
+    // From S1 3b a reduction line must cite an active, non-approval-requiring policy (the DB reduction_guard).
+    $policy = ActiveSchool::runFor($school->id, fn () => DiscountPolicy::create([
+        'school_id' => $school->id, 'name' => 'Sibling', 'basis' => 'percent', 'percent' => 10,
+        'requires_approval' => false, 'status' => 'active',
+    ]));
+
     // The modal's read: resolves the episode server-side + the F7 preview (not yet invoiced).
     mcApi($token)
         ->getJson("/api/v1/finance/students/{$studentUuid}/billable-enrollment")
@@ -169,7 +176,7 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
         ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 50000, 'kind' => 'charge'],
-                ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount'],
+                ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
             ],
         ])
         ->assertCreated()

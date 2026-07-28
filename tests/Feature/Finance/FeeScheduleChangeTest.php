@@ -299,17 +299,27 @@ it('proof 30 — items are freely editable on a DRAFT and frozen on an ACTIVE sc
 // ── Proof 31 / arch — a schedule reaches `active` in exactly one place ───────
 
 it('proof 31 / arch — finance_fee_schedules is set ACTIVE ONLY by ApproveFeeScheduleChange', function () {
-    // Match only the two WRITE idioms — a mass-assign array `'status' => FeeScheduleStatus::Active` and a
-    // property assignment `->status = FeeScheduleStatus::Active`. READS (`!== FeeScheduleStatus::Active` in
-    // SubmitFeeScheduleChange's retire guard, `FeeScheduleStatus::Active->value` in FeeScheduleLookup's where)
-    // are deliberately excluded, so the set is writers of `active` and nothing else.
-    $writesActive = "/(['\"]status['\"]\\s*=>\\s*FeeScheduleStatus::Active|->status\\s*=\\s*FeeScheduleStatus::Active)/";
+    // Two stages. FIRST narrow the file set to files that even touch schedules, so the write pattern below
+    // does not match an unrelated model's `'status' => 'active'` (invoices, void requests, …). THEN match a
+    // WRITE of active in BOTH forms — the enum `FeeScheduleStatus::Active` and the RAW STRING 'active' — in
+    // either the mass-assign (`'status' => …`) or property-assignment (`->status = …`) idiom. The raw-string
+    // arm was added in 3b (0a): about ten places in app/ write status as the bare string, and any could be a
+    // schedule write tomorrow with an enum-only regex still green — the hole was demonstrated with a watched
+    // green before this arm existed. READS (`!== FeeScheduleStatus::Active`, `FeeScheduleStatus::Active->value`)
+    // fit neither idiom and are excluded.
+    //
+    // DELIBERATELY app/-only: a seeder or factory writing 'active' is invisible to this scan. Seeders are not
+    // production write paths, so that is the right boundary — stated so the next reader does not conclude the
+    // test covers more than it does.
+    $touchesSchedules = '/FeeSchedule|finance_fee_schedules/';
+    $writesActive = "/(['\"]status['\"]\\s*=>\\s*(FeeScheduleStatus::Active|['\"]active['\"])|->status\\s*=\\s*(FeeScheduleStatus::Active|['\"]active['\"]))/";
     $writers = collect(Finder::create()->files()->in(app_path())->name('*.php'))
+        ->filter(fn ($f) => preg_match($touchesSchedules, $f->getContents()))
         ->filter(fn ($f) => preg_match($writesActive, $f->getContents()))
         ->map(fn ($f) => $f->getFilename())
         ->values()->all();
 
-    // PLANT: restore the commit-2 draft→active flip in CreateFeeSchedule → CreateFeeSchedule.php joins this set → red.
+    // PLANT: write `'status' => 'active'` (raw) or restore the commit-2 flip in CreateFeeSchedule → it joins this set → red.
     expect($writers)->toBe(['ApproveFeeScheduleChange.php']);
 });
 

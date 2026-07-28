@@ -48,6 +48,22 @@ final readonly class InvoiceLineSpec
          * percentage recomputed against numbers that may have moved.
          */
         public ?int $percent = null,
+        /**
+         * The discount policy this REDUCTION line cites (S1 3b) — a LOOKUP id, off the wire because the
+         * bursar chooses which active policy backs the reduction. Null on a charge line. The DB
+         * finance_invoice_lines_reduction_guard is the guarantee: a reduction with null (or a non-active /
+         * approval-requiring / cross-school) policy is refused at INSERT; a charge with a policy is refused.
+         * Added AFTER the existing params so positional construction sites (DriveFinanceStates) keep working.
+         */
+        public ?int $discountPolicyId = null,
+        /**
+         * Whether this CHARGE line is inside the percentage-reduction base (S1 3.6). A property of the fee
+         * ITEM, NOT a wire claim — resolved server-side in GenerateInvoice from finance_fee_items by
+         * feeItemId, never read from request input (a client could otherwise shrink or inflate a percentage
+         * base). Default TRUE everywhere, so a free-text line and a school that configures nothing behave
+         * exactly as before. resolvePercentages() excludes charge lines with isDiscountable === false.
+         */
+        public bool $isDiscountable = true,
     ) {}
 
     public function isReduction(): bool
@@ -70,9 +86,15 @@ final readonly class InvoiceLineSpec
         return $this->amount;
     }
 
-    /** A copy of this spec with a concrete amount and no pending percentage. */
+    /** A copy of this spec with a concrete amount and no pending percentage (carrying the provenance fields). */
     public function withAmount(Money $amount): self
     {
-        return new self($this->description, $amount, $this->feeItemId, $this->kind, $this->note, null);
+        return new self($this->description, $amount, $this->feeItemId, $this->kind, $this->note, null, $this->discountPolicyId, $this->isDiscountable);
+    }
+
+    /** A copy of this spec with the server-resolved discountability (S1 3.6 — never taken from the wire). */
+    public function withDiscountable(bool $isDiscountable): self
+    {
+        return new self($this->description, $this->amount, $this->feeItemId, $this->kind, $this->note, $this->percent, $this->discountPolicyId, $isDiscountable);
     }
 }

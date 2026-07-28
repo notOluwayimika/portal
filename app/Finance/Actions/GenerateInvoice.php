@@ -7,6 +7,7 @@ use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
+use App\Finance\Models\FeeItem;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Finance\Models\PaymentAllocation;
@@ -49,6 +50,9 @@ final class GenerateInvoice
 {
     /** MySQL duplicate-entry error code. */
     private const DUPLICATE_ENTRY = 1062;
+
+    /** MySQL error number for a user SIGNAL with SQLSTATE '45000' (a trigger-raised business rule). */
+    private const SIGNAL_EXCEPTION = 1644;
 
     public function __construct(
         private readonly BillableEnrollmentProvider $enrollments,
@@ -109,6 +113,10 @@ final class GenerateInvoice
         if ($lines === []) {
             throw new BusinessRuleException('An invoice must have at least one line.');
         }
+
+        // Resolve each charge line's discountability from its fee item (S1 3.6) BEFORE percentages, since
+        // the percentage base depends on it. Server-side and never from the wire — see resolveDiscountability.
+        $lines = $this->resolveDiscountability($lines);
 
         // Resolve percentage reductions into concrete amounts FIRST, so everything below
         // — the throw checks, the fold, the persisted rows — operates on a single,
@@ -207,6 +215,9 @@ final class GenerateInvoice
                         'note' => $line->note,
                         'amount' => $line->resolvedAmount(),
                         'fee_item_id' => $line->feeItemId,
+                        // A reduction line carries the policy it cites; a charge carries null. The
+                        // finance_invoice_lines_reduction_guard is the authority (proofs 11–14).
+                        'discount_policy_id' => $line->discountPolicyId,
                         'created_by_user_id' => $actorId,
                     ]);
                 }
@@ -245,8 +256,50 @@ final class GenerateInvoice
                 );
             }
 
+            // The reduction_guard (S1 3b) is the AUTHORITY on which reductions may be inserted — a
+            // policy-less / non-active / approval-requiring / cross-school reduction line. Surface its
+            // refusal as a friendly 422 carrying the trigger's own message, rather than a raw 500 (the
+            // credit-note precedent: an untranslated 500 in a money flow is how the operator stops trusting
+            // it). This maps the DB's error, it does not pre-empt it — a raw write that never enters this
+            // Action still hits the trigger directly (proof 12's direct-write half).
+            if ($this->isReductionGuardViolation($e)) {
+                throw new BusinessRuleException((string) ($e->errorInfo[2] ?? 'The reduction could not be applied.'));
+            }
+
             throw $e;
         }
+    }
+
+    /**
+     * Resolve each line's discountability from its fee item (S1 3.6) — SERVER-SIDE, never from the wire. A
+     * client does not get to say whether a line is in the percentage base: is_discountable is a property of
+     * the fee ITEM. A line with no feeItemId (free text) stays discountable = true (the additive default),
+     * so every existing line behaves exactly as before. One query for all cited fee items, keyed by id; a
+     * cited id that does not resolve (foreign / deleted) also stays true. FeeItem carries SchoolScope, so
+     * this cannot read another School's item — the resolution is implicitly under the active School.
+     *
+     * @param  list<InvoiceLineSpec>  $lines
+     * @return list<InvoiceLineSpec>
+     */
+    private function resolveDiscountability(array $lines): array
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn (InvoiceLineSpec $line) => $line->feeItemId, $lines),
+            static fn (?int $id) => $id !== null,
+        )));
+
+        if ($ids === []) {
+            return $lines;
+        }
+
+        $flags = FeeItem::query()->whereIn('id', $ids)->pluck('is_discountable', 'id');
+
+        return array_map(
+            static fn (InvoiceLineSpec $line) => $line->feeItemId === null
+                ? $line
+                : $line->withDiscountable((bool) ($flags[$line->feeItemId] ?? true)),
+            $lines,
+        );
     }
 
     /**
@@ -286,7 +339,9 @@ final class GenerateInvoice
         // compound in an order-dependent way.
         $grossCharges = null;
         foreach ($lines as $line) {
-            if (! $line->isReduction() && ! $line->isPercentage()) {
+            // Skip non-discountable charge lines (S1 3.6): a "50% staff-child discount" takes 50% off the
+            // discountable charges only — tuition, not transport/feeding an item marks is_discountable=false.
+            if (! $line->isReduction() && ! $line->isPercentage() && $line->isDiscountable) {
                 $grossCharges = $grossCharges === null
                     ? $line->resolvedAmount()
                     : $grossCharges->plus($line->resolvedAmount());
@@ -392,5 +447,16 @@ final class GenerateInvoice
     {
         return (int) ($e->errorInfo[1] ?? 0) === self::DUPLICATE_ENTRY
             && str_contains($e->getMessage(), 'finance_invoices_active_enrollment_unique');
+    }
+
+    /**
+     * A SIGNAL from finance_invoice_lines_reduction_guard (S1 3b): MySQL maps SQLSTATE '45000' to error
+     * 1644, and every message the guard raises names the "discount policy" — narrow enough to not catch an
+     * unrelated 1644 from some other trigger.
+     */
+    private function isReductionGuardViolation(QueryException $e): bool
+    {
+        return (int) ($e->errorInfo[1] ?? 0) === self::SIGNAL_EXCEPTION
+            && str_contains($e->getMessage(), 'discount policy');
     }
 }

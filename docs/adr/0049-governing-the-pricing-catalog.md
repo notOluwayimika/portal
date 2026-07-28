@@ -51,13 +51,14 @@ with `requires_approval = false` enters as a line at generation; `requires_appro
 policy-less "exceptional case" enters as a credit note after issuance, through the machinery already
 shipped and bite-proven.
 
-**⚠ Axis B's line-level enforcement is NOT yet live as of 3a.** The DB rule that a reduction line must
-cite an active, non-approval-requiring policy — the `finance_invoice_lines_reduction_guard` trigger and
-the `discount_policy_id` columns — ships in **commit 3b**, together as one migration (the columns must
-not exist ahead of the guard that gives them meaning). Until 3b merges, a reduction line at generation
-time is still reachable free-text, exactly as before Part 0's actor column made it attributable. This
-ADR describes the full control; 3b makes the axis-B half of it real, and this paragraph is amended when
-it does.
+**✅ Axis B's line-level enforcement is LIVE as of commit 3b (merged to staging 2026-07-28).** The DB rule
+that a reduction line must cite an active, non-approval-requiring policy of the same School — the
+`finance_invoice_lines_reduction_guard` trigger and the `discount_policy_id` columns — shipped in
+**commit 3b**, together as one migration (`2026_07_26_140002`; the columns must not exist ahead of the
+guard that gives them meaning). From that migration on, a reduction line at generation is refused unless it
+cites an active, non-approval-requiring, same-School policy; a charge line may cite none. The friendly path
+is `GenerateInvoice` translating the trigger's refusal to a 422; the guard itself is the guarantee, holding
+for raw writes and jobs too (proof 12's direct-write half).
 
 ### The other decisions, recorded so they are not re-litigated
 
@@ -112,8 +113,10 @@ people; the catalog is single-writer and every reduction's provenance is a real 
 the void-request shape already proven, not a new mechanism.
 
 **Negative / accepted:** two change tables the next reader will want to merge (recorded above so they
-don't); axis B's line-level enforcement is live only from 3b, so the free-text-reduction hole at
-generation time stays open across 3a; and `discount_policy_id` on every reduction line written before
-3b is permanently NULL (the reduction guard is BEFORE INSERT only, and the line table is
-append-only) — 3b records its own merge date as the provenance boundary before which "every reduction
-cites a policy" is false by construction.
+don't); and the **provenance boundary**, now a fixed date. Axis B's guard is BEFORE INSERT only and
+`finance_invoice_lines` is append-only, so **every reduction line written before commit 3b merged
+(2026-07-28 on staging) has `discount_policy_id` NULL and always will** — the guard could never retro-fit
+provenance onto lines that predate it. Anyone later auditing "does every reduction cite a policy?" must
+read that as TRUE only for lines created on or after 2026-07-28, and NULL below the line is correct history,
+not a data-quality failure. This date is the permanent provenance boundary; it is a fact about the data, so
+it is written here rather than inferred later from a schema history.

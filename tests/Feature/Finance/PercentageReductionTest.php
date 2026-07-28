@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
 use App\Models\Role;
@@ -40,12 +41,28 @@ function pctSetup(): array
         'status' => 'active',
     ]));
 
-    return [$school, $admin, $enrollment];
+    // From S1 3b every reduction line must cite an active, non-approval-requiring policy (the DB
+    // reduction_guard). These tests exercise percentage MATH (rounding, gross base, F6), not the
+    // citation — postPct injects a valid policy into each reduction line so their bite is unchanged.
+    $policy = ActiveSchool::runFor($school->id, fn () => DiscountPolicy::create([
+        'school_id' => $school->id, 'name' => 'Reductions', 'basis' => 'percent', 'percent' => 10,
+        'requires_approval' => false, 'status' => 'active',
+    ]));
+
+    return [$school, $admin, $enrollment, $policy];
 }
 
 function postPct(array $lines): TestResponse
 {
-    [$school, $admin, $enrollment] = pctSetup();
+    [$school, $admin, $enrollment, $policy] = pctSetup();
+
+    $lines = array_map(function (array $line) use ($policy) {
+        if (($line['kind'] ?? 'charge') !== 'charge' && ! isset($line['discount_policy_id'])) {
+            $line['discount_policy_id'] = $policy->id;
+        }
+
+        return $line;
+    }, $lines);
 
     return test()->actingAs($admin)
         ->withSession(['school_id' => $school->id])

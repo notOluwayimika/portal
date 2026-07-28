@@ -218,6 +218,9 @@ class RbacSeeder extends Seeder
                 // create/amend/retire. Approval is a different seat (principal), so no role holds both.
                 PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
+                // Fee-schedule governance (S1 commit 4): the Head is the MAKER here too — proposes
+                // publish/retire. Approval is principal's, so no role holds both sides of this pair either.
+                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
                 // Route access (C2)
                 PermissionEnum::RESULT_REVIEW_ACCESS->value,
                 PermissionEnum::REPORT_VIEW->value,
@@ -270,6 +273,10 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT->value,
+                // Fee-schedule governance (S1 commit 4): the principal is the CHECKER for schedules too —
+                // approves/rejects publish/retire. Holds neither side's maker, so maker ≠ checker holds.
+                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_APPROVE->value,
+                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_REJECT->value,
                 // Route access (C2) — principal's first grants; exactly the
                 // groups that listed `principal` pre-swap.
                 PermissionEnum::STUDENT_DIRECTORY_VIEW->value,

@@ -122,6 +122,15 @@ enum Permission: string
     case FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT = 'finance.discount-policy.change.submit';
     case FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE = 'finance.discount-policy.change.approve';
     case FINANCE_DISCOUNT_POLICY_CHANGE_REJECT = 'finance.discount-policy.change.reject';
+    // Fee-schedule governance (S1 commit 4, the SECOND governance pair): the Head proposes publishing a
+    // draft or retiring an active schedule; the ED approves/rejects. Same four-segment convention as the
+    // discount pair — the terminal verb (submit/approve/reject) drives the ApprovalAbility maker-derivation
+    // and super-admin bypass exclusion for free; nothing is registered in a list. Distinct from
+    // finance.fee-schedule.manage (draft AUTHORSHIP), which commit 4 narrows to exactly that: a school may
+    // let a bursar assemble the numbers and only the Head submit them (Part 4.3).
+    case FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT = 'finance.fee-schedule.change.submit';
+    case FINANCE_FEE_SCHEDULE_CHANGE_APPROVE = 'finance.fee-schedule.change.approve';
+    case FINANCE_FEE_SCHEDULE_CHANGE_REJECT = 'finance.fee-schedule.change.reject';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

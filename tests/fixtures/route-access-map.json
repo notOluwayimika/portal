@@ -1109,6 +1109,12 @@
             "principal"
         ]
     },
+    "GET /api/v1/finance/fee-schedule-changes/pending": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
     "GET /api/v1/finance/fee-schedules": {
         "auth": true,
         "roles": [
@@ -2611,6 +2617,25 @@
         ]
     },
     "POST /api/v1/finance/discount-policy-changes/{change}/reject": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
+    "POST /api/v1/finance/fee-schedule-changes": {
+        "auth": true,
+        "roles": [
+            "head_of_school",
+            "super_admin"
+        ]
+    },
+    "POST /api/v1/finance/fee-schedule-changes/{change}/approve": {
+        "auth": true,
+        "roles": [
+            "principal"
+        ]
+    },
+    "POST /api/v1/finance/fee-schedule-changes/{change}/reject": {
         "auth": true,
         "roles": [
             "principal"

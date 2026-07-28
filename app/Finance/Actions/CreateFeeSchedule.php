@@ -7,22 +7,23 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Models\FeeSchedule;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Publish a fee schedule for (term, class level) — S1 commit 2, the DIRECT-PUBLISH path.
+ * Author a DRAFT fee schedule for (term, class level) — S1 commit 2, NARROWED in commit 4.
  *
- * ⚠️ COMMIT 4 DELETES THE `active` FLIP AT THE END OF THIS ACTION. Once fee-schedule governance lands,
- * publishing becomes an approved change request (Head submits a draft, ED approves), and no route or
- * Action other than ApproveFeeScheduleChange may set `status = active`. This Action's whole reason to
- * exist in commit 2 is to give the catalog a way to reach `active` before that governance exists, and
- * to give proofs 24/25/26 a live table to bite. Proof 31 asserts this back door is gone after commit 4.
+ * In commit 2 this Action also flipped the new schedule to `active` (the direct-publish path). COMMIT 4
+ * DELETED THAT FLIP: publishing is now an approved change request ({@see ApproveFeeScheduleChange} is the
+ * only code that may set `status = active`, proof 31). This Action's whole job is now draft authorship —
+ * create the schedule as a draft and insert its items, so the Head can assemble the numbers and later
+ * submit the draft for the ED's approval. Re-pricing an active slot means authoring a fresh draft here and
+ * publishing it through a change request; the supersession that used to live at step 3 has moved into the
+ * approval Action, where it belongs.
  *
- * ORDERING IS LOAD-BEARING (and is the same order ApproveFeeScheduleChange must follow — proof 29b):
- * the schedule is created as a DRAFT so the parent-state trigger permits the item inserts; the existing
- * active schedule is SUPERSEDED *before* the new one is activated, or `finance_fee_schedules_active_unique`
- * rejects the flip. Writing activate-before-supersede passes on a fresh DB (no prior active) and fails
- * only on the second publish — a first-run-passes bug.
+ * The schedule is created as a DRAFT so the parent-state trigger permits the item inserts (an item may only
+ * be added to a draft). At most one draft per (school, term, class level) exists at a time
+ * (finance_fee_schedules_draft_unique) — a second concurrent draft for the same slot is a friendly 422.
  */
 final class CreateFeeSchedule
 {
@@ -39,43 +40,38 @@ final class CreateFeeSchedule
             throw new BusinessRuleException('A fee schedule must have at least one item.');
         }
 
-        return DB::transaction(function () use ($schoolId, $termId, $classLevelId, $label, $items) {
-            // 1. Create as a DRAFT — items may only be inserted into a draft (parent-state trigger).
-            $schedule = FeeSchedule::create([
-                'school_id' => $schoolId,
-                'term_id' => $termId,
-                'class_level_id' => $classLevelId,
-                'label' => $label,
-                'status' => FeeScheduleStatus::Draft,
-            ]);
-
-            // 2. Insert the items.
-            foreach ($items as $i => $item) {
-                $schedule->items()->create([
+        try {
+            return DB::transaction(function () use ($schoolId, $termId, $classLevelId, $label, $items) {
+                // Create as a DRAFT — items may only be inserted into a draft (parent-state trigger), and a
+                // draft is a proposal, never a price: it becomes billable only when the ED approves a publish.
+                $schedule = FeeSchedule::create([
                     'school_id' => $schoolId,
-                    'description' => (string) $item['description'],
-                    'amount' => Money::fromKobo((int) $item['amount_minor'], (string) ($item['currency'] ?? Money::DEFAULT_CURRENCY)),
-                    'is_mandatory' => (bool) ($item['is_mandatory'] ?? true),
-                    'is_discountable' => (bool) ($item['is_discountable'] ?? true),
-                    'sort_order' => (int) ($item['sort_order'] ?? $i),
+                    'term_id' => $termId,
+                    'class_level_id' => $classLevelId,
+                    'label' => $label,
+                    'status' => FeeScheduleStatus::Draft,
                 ]);
+
+                foreach ($items as $i => $item) {
+                    $schedule->items()->create([
+                        'school_id' => $schoolId,
+                        'description' => (string) $item['description'],
+                        'amount' => Money::fromKobo((int) $item['amount_minor'], (string) ($item['currency'] ?? Money::DEFAULT_CURRENCY)),
+                        'is_mandatory' => (bool) ($item['is_mandatory'] ?? true),
+                        'is_discountable' => (bool) ($item['is_discountable'] ?? true),
+                        'sort_order' => (int) ($item['sort_order'] ?? $i),
+                    ]);
+                }
+
+                return $schedule->load(['items' => fn ($q) => $q->orderBy('sort_order')]);
+            });
+        } catch (QueryException $e) {
+            // A second open draft for the same slot trips finance_fee_schedules_draft_unique — translate to
+            // a friendly 422 rather than a raw 500 (there is already a draft to edit or publish).
+            if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'finance_fee_schedules_draft_unique')) {
+                throw new BusinessRuleException('A draft schedule already exists for this term and class level; edit or publish it.');
             }
-
-            // 3. Supersede any current active schedule for this slot — BEFORE activating the new one.
-            $current = FeeSchedule::query()
-                ->where('term_id', $termId)->where('class_level_id', $classLevelId)
-                ->where('status', FeeScheduleStatus::Active->value)
-                ->lockForUpdate()->first();
-            if ($current !== null) {
-                $current->update(['status' => FeeScheduleStatus::Superseded]);
-                $schedule->supersedes_schedule_id = $current->id;
-            }
-
-            // 4. DIRECT-PUBLISH FLIP (deleted in commit 4).
-            $schedule->status = FeeScheduleStatus::Active;
-            $schedule->save();
-
-            return $schedule->load(['items' => fn ($q) => $q->orderBy('sort_order')]);
-        });
+            throw $e;
+        }
     }
 }

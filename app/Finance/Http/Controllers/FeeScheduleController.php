@@ -14,10 +14,11 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
 /**
- * The fee-schedule catalog surface (S1 commit 2). `index` reads the School's schedules; `store`/`update`
- * publish (direct-publish path, removed in commit 4 in favour of an approved change); `prefill` resolves
- * the active schedule's items into prefilled invoice-line specs for the bursar's generate form — the
- * bursar still confirms and posts them, so GenerateInvoice's contract is unchanged.
+ * The fee-schedule catalog surface (S1 commit 2, narrowed in commit 4). `index` reads the School's
+ * schedules; `store`/`update` author DRAFTS ONLY (commit 4 removed the direct-publish flip — publishing is
+ * now an approved fee-schedule change, {@see FeeScheduleChangeController}); `prefill` resolves the active
+ * schedule's items into prefilled invoice-line specs for the bursar's generate form — the bursar still
+ * confirms and posts them, so GenerateInvoice's contract is unchanged.
  */
 class FeeScheduleController extends Controller
 {
@@ -48,9 +49,10 @@ class FeeScheduleController extends Controller
     }
 
     /**
-     * Re-price a slot: publish a fresh set of items for the bound schedule's (term, class level),
-     * superseding whatever is currently active there. The bound schedule identifies the slot; term and
-     * class level come from it, not the body, so a re-price cannot silently move a schedule's slot.
+     * Re-price a slot: author a fresh DRAFT for the bound schedule's (term, class level). The bound
+     * schedule identifies the slot; term and class level come from it, not the body, so a re-price cannot
+     * silently move a schedule's slot. Publishing the draft (superseding the current active) is the ED's
+     * approval, not this route — commit 4 moved activation out of here entirely.
      */
     public function update(FeeScheduleRequest $request, FeeSchedule $feeSchedule, CreateFeeSchedule $action): JsonResponse
     {

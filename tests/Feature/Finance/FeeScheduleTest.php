@@ -99,29 +99,11 @@ it('proof 24b — the lifecycle uniqueness indexes are state-scoped (school_id +
         ->and($shape('finance_fee_schedules_draft_unique'))->toBe(['school_id', 'draft_term_key', 'draft_class_level_key']);
 });
 
-// ── Proof 24c — a SECOND publish supersedes the first and links back (the REAL Action) ──
-//
-// This is proof 29b's substance, exercised in commit 2 against CreateFeeSchedule (in commit 4 it moves
-// with steps 3+4 into ApproveFeeScheduleChange and becomes 29b). Watched red three ways, each failing
-// differently: (a) activate-before-supersede → the SECOND publish reds on active_unique (the
-// first-run-passes bug); (b) drop the supersedes_schedule_id assignment → only the LINK assertion reds
-// (the commit-4 trap: a minimal "delete step 4" drops the link while every status stays green); (c)
-// drop the supersede step → the second publish reds on the unique index.
-
-it('proof 24c — a SECOND publish supersedes the first and links back', function () {
-    [$school, $term, $level] = fsContext();
-
-    ActiveSchool::runFor($school->id, function () use ($term, $level) {
-        $first = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v1',
-            [['description' => 'Tuition', 'amount_minor' => 10000000]]);
-        $second = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v2',
-            [['description' => 'Tuition', 'amount_minor' => 12000000]]);
-
-        expect($first->fresh()->status->value)->toBe('superseded')
-            ->and($second->fresh()->status->value)->toBe('active')
-            ->and($second->fresh()->supersedes_schedule_id)->toBe($first->id);
-    });
-});
+// Proof 24c (the SECOND-publish supersession, exercised in commit 2 against CreateFeeSchedule) MOVED in
+// commit 4: with the direct-publish flip removed, CreateFeeSchedule now authors a DRAFT and never
+// supersedes/activates. Its substance — supersede-before-activate, the link-back, and the twice-published
+// slot — is now proof 29b in FeeScheduleChangeTest, exercised against ApproveFeeScheduleChange (the only
+// code that may set `active`). Removed here rather than left asserting behaviour this Action no longer has.
 
 // ── Proof 25 — a draft and an active coexist; two drafts do not ──
 
@@ -203,12 +185,13 @@ it('proof 23 — deleting an academic session whose term has a fee schedule is r
         ->and(Term::find($term->id))->not->toBeNull();
 });
 
-// ── Smoke — the direct-publish store + prefill round-trip ──
+// ── Smoke — commit 4: store authors a DRAFT (not active); a draft does not prefill ──
 
-it('SMOKE — store publishes an active schedule with items; prefill returns them as charge lines', function () {
+it('SMOKE — store authors a DRAFT with items; the draft does NOT prefill (a draft is not a price)', function () {
     [$school, $term, $level] = fsContext();
     $admin = fsAdmin($school);
 
+    // Commit 4 removed the direct-publish flip: store now creates a DRAFT (publishing is an approved change).
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/fee-schedules', [
             'term_id' => $term->id, 'class_level_id' => $level->id, 'label' => 'JSS1 T1',
@@ -218,12 +201,13 @@ it('SMOKE — store publishes an active schedule with items; prefill returns the
             ],
         ])
         ->assertCreated()
-        ->assertJsonPath('status', 'active')
+        ->assertJsonPath('status', 'draft')
         ->assertJsonCount(2, 'items');
 
+    // No active schedule exists yet, so prefill returns nothing — the draft is not billable until the ED approves.
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->getJson("/api/v1/finance/fee-schedules/prefill?term_id={$term->id}&class_level_id={$level->id}")
         ->assertOk()
-        ->assertJsonCount(2, 'lines')
-        ->assertJsonPath('lines.0.kind', 'charge');
+        ->assertJsonPath('schedule', null)
+        ->assertJsonCount(0, 'lines');
 });

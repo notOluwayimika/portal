@@ -3,6 +3,7 @@
 use App\Finance\Http\Controllers\CreditNoteController;
 use App\Finance\Http\Controllers\DiscountPolicyChangeController;
 use App\Finance\Http\Controllers\DiscountPolicyController;
+use App\Finance\Http\Controllers\FeeScheduleChangeController;
 use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
@@ -76,11 +77,12 @@ Route::get('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::c
 Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
 
 /*
- * Fee schedules (S1 commit 2) — the per-School pricing catalog per (term × class level). Reads carry
- * only the group's finance.access; authoring (store/update) needs finance.fee-schedule.manage. `store`
- * and `update` are the DIRECT-PUBLISH path (draft→items→active in one Action); commit 4 removes the
- * activation from them and routes it through an approved change request. `prefill` resolves the ACTIVE
- * schedule's items into prefilled charge lines for the bursar's generate form (draft never prices).
+ * Fee schedules (S1 commit 2, narrowed in commit 4) — the per-School pricing catalog per (term × class
+ * level). Reads carry only the group's finance.access; DRAFT authoring (store/update) needs
+ * finance.fee-schedule.manage. As of commit 4 `store`/`update` write DRAFTS ONLY — the act of making a
+ * schedule `active` has moved entirely into the fee-schedule-change approval below, so there is no route
+ * by which a schedule reaches `active` without an approved change (proof 31). `prefill` resolves the
+ * ACTIVE schedule's items into prefilled charge lines for the bursar's generate form (a draft never prices).
  */
 Route::get('/v1/finance/fee-schedules', [FeeScheduleController::class, 'index']);
 Route::get('/v1/finance/fee-schedules/prefill', [FeeScheduleController::class, 'prefill']);
@@ -88,6 +90,21 @@ Route::post('/v1/finance/fee-schedules', [FeeScheduleController::class, 'store']
     ->middleware('permission:finance.fee-schedule.manage');
 Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleController::class, 'update'])
     ->middleware('permission:finance.fee-schedule.manage');
+
+/*
+ * Fee-schedule governance (S1 commit 4). PUBLISHING a schedule is maker-checker: the Head submits a
+ * publish/retire change (finance.fee-schedule.change.submit), the ED approves/rejects (…approve / …reject).
+ * A schedule reaches `active` ONLY when ApproveFeeScheduleChange approves; the pending queue joins the
+ * unified approvals screen by the ApprovalAbility convention (no route edit). Mirrors discount governance.
+ */
+Route::post('/v1/finance/fee-schedule-changes', [FeeScheduleChangeController::class, 'submit'])
+    ->middleware('permission:finance.fee-schedule.change.submit');
+Route::get('/v1/finance/fee-schedule-changes/pending', [FeeScheduleChangeController::class, 'pending'])
+    ->middleware('permission:finance.fee-schedule.change.approve');
+Route::post('/v1/finance/fee-schedule-changes/{change:uuid}/approve', [FeeScheduleChangeController::class, 'approve'])
+    ->middleware('permission:finance.fee-schedule.change.approve');
+Route::post('/v1/finance/fee-schedule-changes/{change:uuid}/reject', [FeeScheduleChangeController::class, 'reject'])
+    ->middleware('permission:finance.fee-schedule.change.reject');
 
 /*
  * Discount policies (S1 commit 3, axis A). The catalog is read-only here — editing and removing are

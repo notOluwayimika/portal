@@ -70,8 +70,9 @@ it does.
   with nothing registered in a list — proven by three convention tests, not trusted.
 - **`basis` is CHECK-constrained to "amount XOR percent, never both, never neither"** — "make both
   available" as a database fact, not a FormRequest convention.
-- **Two change tables, not one polymorphic `finance_approval_requests`** (fee schedules get their own in
-  3b/commit 4). A polymorphic `target_type` + `target_id` cannot carry a foreign key, so the composite
+- **Two change tables, not one polymorphic `finance_approval_requests`** (fee schedules get their own,
+  `finance_fee_schedule_changes`, in commit 4 — see [0050](0050-governing-fee-schedule-publication.md)).
+  A polymorphic `target_type` + `target_id` cannot carry a foreign key, so the composite
   `(target_id, school_id)` FK that guarantees a change and its target share a School becomes impossible.
   This module's method is that isolation and integrity are database facts; two tables with real FKs is
   the price, and it is worth paying. The next person to see two near-identical tables will want to merge

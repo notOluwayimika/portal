@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     CommentBand,
@@ -62,7 +62,13 @@ const commentsForRating = (
         : undefined
     )?.map((entry) => entry.body) ?? [];
 
-const maxForComponent = (mc: MarkingComponent) => Math.round(mc.weight * 100);
+/**
+ * Every component is scored out of 100. The old `Math.round(mc.weight * 100)` produced the
+ * WEIGHTED ceiling (10 for a 10%-weighted component) and was used both to convert the teacher's
+ * input and as the input's `max` — so the header said "/ 100" while the field rejected anything
+ * over 10. Weighting now happens server-side; the client only ever handles percentages.
+ */
+const SCORE_MAX = 100;
 
 const fullName = (s: Student) =>
     [s.last_name, s.first_name, s.middle_name].filter(Boolean).join(' ');
@@ -128,8 +134,16 @@ function NumericScoreEntryPage({
                 continue;
             }
 
+            // `score_percent`, computed server-side — NOT `score / weight` computed here.
+            // The stored value is weighted, and dividing it back out in the browser meant the
+            // meaning of a score depended on which bundle was loaded: one half of the conversion
+            // without the other turns a 100 into 10.0, which is the bug this page had.
+            if (s.score_percent === null || s.score_percent === undefined) {
+                continue;
+            }
+
             map[cellKey(s.student.id, s.marking_component.id)] = {
-                value: String(s.score / s.marking_component.weight),
+                value: String(s.score_percent),
                 status: 'idle',
             };
         }
@@ -144,6 +158,10 @@ function NumericScoreEntryPage({
     const savedFlashRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
         {},
     );
+    // Keys known to hold a stored score, so clearing a cell that never had one makes no request at
+    // all. The DELETE endpoint is idempotent and would answer 204 either way — this just keeps the
+    // network and the audit trail free of no-ops.
+    const storedRef = useRef<Set<string>>(new Set(Object.keys(initialCells)));
 
     useEffect(() => {
         const getOverlappingMC = async () => {
@@ -196,28 +214,24 @@ function NumericScoreEntryPage({
     const persist = useCallback(
         async (studentId: string, mc: MarkingComponent, raw: string) => {
             const key = cellKey(studentId, mc.id);
-            // Empty input: leave the existing server value alone, return to idle.
-            // if (raw.trim() === '') {
-            //     setCell(key, { value: '', status: 'idle', error: undefined });
 
-            //     return;
-            // }
-            // if (
-            //     cs.result_status?.status === 'submitted' ||
-            //     cs.result_status?.status === 'approved'
-            // ) {
-            //     return;
-            // }
+            // An empty cell is NOT a score of zero. This guard was commented out, so clearing a
+            // box sent `Number('') === 0`, which the API then treated as "delete this score" —
+            // destructive, and it also made a genuine 0 impossible to record. Emptying a cell is
+            // now an explicit DELETE, fired from handleBlur; here we simply refuse to write.
+            if (raw.trim() === '') {
+                return;
+            }
 
             const num = Number(raw);
 
-            const max = maxForComponent(mc);
-            const value = (num / 100) * max;
-
-            if (!Number.isFinite(value) || value < 0 || value > max) {
+            // The percentage the teacher typed, sent as-is. The weighting is the server's job
+            // (App\Support\ScoreUnit) — doing it here is what let a stale bundle store a 100 as a
+            // raw 100 or read a 10.0 back as the score.
+            if (!Number.isFinite(num) || num < 0 || num > SCORE_MAX) {
                 setCell(key, {
                     status: 'error',
-                    error: `0–${100}`,
+                    error: `0–${SCORE_MAX}`,
                 });
 
                 return;
@@ -230,13 +244,14 @@ function NumericScoreEntryPage({
                     curriculum_subject_id: cs.id,
                     student_id: studentId,
                     marking_component_id: mc.id,
-                    score: value,
+                    score_percent: num,
                 };
                 await axios.post(
                     '/api/curriculum-subjects/' + cs.id + '/scores',
                     payload,
                 );
 
+                storedRef.current.add(key);
                 setCell(key, { status: 'saved', error: undefined });
 
                 if (savedFlashRef.current[key]) {
@@ -275,6 +290,64 @@ function NumericScoreEntryPage({
         [setCell, cs.id],
     );
 
+    const clearScore = useCallback(
+        async (studentId: string, mc: MarkingComponent) => {
+            const key = cellKey(studentId, mc.id);
+
+            if (!storedRef.current.has(key)) {
+                setCell(key, { value: '', status: 'idle', error: undefined });
+
+                return;
+            }
+
+            setCell(key, { value: '', status: 'saving', error: undefined });
+
+            try {
+                await axios.delete(
+                    '/api/curriculum-subjects/' + cs.id + '/scores',
+                    {
+                        data: {
+                            student_id: studentId,
+                            marking_component_id: mc.id,
+                        },
+                    },
+                );
+
+                storedRef.current.delete(key);
+                setCell(key, { value: '', status: 'saved', error: undefined });
+
+                if (savedFlashRef.current[key]) {
+                    clearTimeout(savedFlashRef.current[key]);
+                }
+
+                savedFlashRef.current[key] = setTimeout(() => {
+                    setCells((prev) => {
+                        const cur = prev[key];
+
+                        if (!cur || cur.status !== 'saved') {
+                            return prev;
+                        }
+
+                        return { ...prev, [key]: { ...cur, status: 'idle' } };
+                    });
+                }, 1200);
+            } catch (e: unknown) {
+                const err = e as {
+                    response?: { data?: { message?: string; error?: string } };
+                };
+
+                setCell(key, {
+                    status: 'error',
+                    error:
+                        err?.response?.data?.error ??
+                        err?.response?.data?.message ??
+                        'Could not clear',
+                });
+            }
+        },
+        [setCell, cs.id],
+    );
+
     const handleChange = (
         studentId: string,
         mc: MarkingComponent,
@@ -285,6 +358,13 @@ function NumericScoreEntryPage({
 
         if (debounceRef.current[key]) {
             clearTimeout(debounceRef.current[key]);
+        }
+
+        // Deliberately NOT debounced when the box is empty. A teacher clearing a cell in order to
+        // retype passes through '' on the way, and firing a delete 600ms later would remove the
+        // score mid-edit. Emptying only takes effect on blur, or on the explicit × button.
+        if (raw.trim() === '') {
+            return;
         }
 
         debounceRef.current[key] = setTimeout(() => {
@@ -302,9 +382,17 @@ function NumericScoreEntryPage({
 
         const cell = getCell(studentId, mc.id);
 
-        if (cell.status === 'dirty') {
-            void persist(studentId, mc, cell.value);
+        if (cell.status !== 'dirty') {
+            return;
         }
+
+        if (cell.value.trim() === '') {
+            void clearScore(studentId, mc);
+
+            return;
+        }
+
+        void persist(studentId, mc, cell.value);
     };
 
     // ---------- Derived ----------
@@ -457,8 +545,13 @@ function NumericScoreEntryPage({
                                             )}
                                         </td>
                                         {markingComponents?.map((mc) => {
+                                            // Read once. Every handler below needs the same id,
+                                            // and repeating the chain per prop just multiplies the
+                                            // same unchecked access.
+                                            const studentId =
+                                                s.student_curriculum.student.id;
                                             const cell = getCell(
-                                                s.student_curriculum.student.id,
+                                                studentId,
                                                 mc.id,
                                             );
 
@@ -470,23 +563,22 @@ function NumericScoreEntryPage({
                                                     <ScoreCell
                                                         status={status}
                                                         cell={cell}
-                                                        max={maxForComponent(
-                                                            mc,
-                                                        )}
                                                         onChange={(v) =>
                                                             handleChange(
-                                                                s
-                                                                    .student_curriculum
-                                                                    .student.id,
+                                                                studentId,
                                                                 mc,
                                                                 v,
                                                             )
                                                         }
                                                         onBlur={() =>
                                                             handleBlur(
-                                                                s
-                                                                    .student_curriculum
-                                                                    .student.id,
+                                                                studentId,
+                                                                mc,
+                                                            )
+                                                        }
+                                                        onClear={() =>
+                                                            void clearScore(
+                                                                studentId,
                                                                 mc,
                                                             )
                                                         }
@@ -1208,24 +1300,32 @@ function CommentCell({
 
 function ScoreCell({
     cell,
-    max,
     onChange,
     onBlur,
+    onClear,
     status,
     disabled = false,
 }: {
     cell: CellState;
-    max: number;
     onChange: (v: string) => void;
     onBlur: () => void;
+    onClear: () => void;
     status: SubjectResultStatus;
     disabled?: boolean;
 }) {
-    const [value, setValue] = useState(
-        typeof Number(cell.value) === 'number' && cell.value !== ''
-            ? Number(cell.value)
-            : '',
-    );
+    // DERIVED from the cell, never mirrored into local state. This used to be a `useState` seeded
+    // from `cell.value` on mount and never re-synced, so once the parent's value changed for any
+    // reason the box kept showing the old number — the input and the saved score could disagree
+    // with nothing on screen to say so. There is now no second copy to drift.
+    const value = cell.value;
+
+    const locked =
+        status.status === 'submitted' ||
+        status.status === 'approved' ||
+        disabled;
+
+    // Only offer the × when there is something to clear and clearing is allowed.
+    const canClear = value.trim() !== '' && !locked;
 
     const borderClass =
         cell.status === 'error'
@@ -1237,48 +1337,83 @@ function ScoreCell({
                 : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500';
 
     return (
-        <div className="relative">
-            <input
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min={0}
-                max={max}
-                onWheel={(e) => {
-                    e.currentTarget.blur();
-                }}
-                onInput={(e) => {
-                    const val = (e.target as HTMLInputElement).value;
+        // `group` drives the × reveal on hover; `focus-within` covers keyboard and touch, where
+        // hover never fires.
+        <div className="group relative flex items-center gap-1">
+            {/*
+              The status dot is positioned against the INPUT, not the row. It is `absolute
+              right-1`, and now that the row also holds the × slot, anchoring it to the row would
+              park the dot on top of the × — the two would fight for the same corner.
+            */}
+            <span className="relative">
+                <input
+                    type="number"
+                    inputMode="numeric"
+                    // Whole numbers only. `step="0.1"` promised a precision the storage cannot keep:
+                    // scores are stored weighted in decimal(4,1), so 33.5 on a 70%-weighted component
+                    // rounds to 23.5 and reads back as 33.6. Every whole percentage is exact for the
+                    // weights in use.
+                    step="1"
+                    min={0}
+                    max={SCORE_MAX}
+                    onWheel={(e) => {
+                        e.currentTarget.blur();
+                    }}
+                    onInput={(e) => {
+                        const val = (e.target as HTMLInputElement).value;
 
-                    // allow empty (user deleting)
-                    if (val === '') {
-                        return;
-                    }
+                        // allow empty (user deleting)
+                        if (val === '') {
+                            return;
+                        }
 
-                    // blur if not a valid number
-                    if (isNaN(Number(val))) {
-                        (e.target as HTMLInputElement).blur();
-                    }
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                        e.preventDefault();
-                    }
-                }}
-                value={typeof value === 'number' ? value.toFixed(1) : value}
-                disabled={
-                    status.status === 'submitted' ||
-                    status.status === 'approved' ||
-                    disabled
-                }
-                onChange={(e) => {
-                    setValue(e.target.value);
-                    onChange(e.target.value);
-                }}
-                onBlur={onBlur}
-                className={`w-20 [appearance:textfield] rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${borderClass}`}
-            />
-            <StatusDot status={cell.status} />
+                        // blur if not a valid number
+                        if (isNaN(Number(val))) {
+                            (e.target as HTMLInputElement).blur();
+                        }
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                        }
+                    }}
+                    value={value}
+                    disabled={locked}
+                    onChange={(e) => onChange(e.target.value)}
+                    onBlur={onBlur}
+                    className={`w-20 [appearance:textfield] rounded-md border px-2 py-1 text-right text-sm shadow-sm focus:ring-1 focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${borderClass}`}
+                />
+                <StatusDot status={cell.status} />
+            </span>
+
+            {/*
+              Clear affordance. The slot is ALWAYS reserved (w-4) and only its contents appear, so
+              revealing the × cannot shift the row — the input is text-right and any width change
+              would visibly nudge the digits.
+
+              tabIndex={-1} is the important part: teachers tab across a row to enter a class, and
+              a focusable button per cell would double the tab stops on a grid of up to ~96 cells.
+              Clearing by keyboard is emptying the box and tabbing on; this is the pointer
+              shortcut, and it keeps an aria-label so it is still announced in browse mode.
+            */}
+            <span className="flex w-4 shrink-0 items-center justify-center">
+                {canClear && (
+                    <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label="Clear score"
+                        title="Clear score"
+                        // Without this the input blurs first, so handleBlur and this click would
+                        // both try to clear the same cell.
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={onClear}
+                        className="rounded text-gray-300 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-red-600 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-red-500 focus-visible:outline-none"
+                    >
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                )}
+            </span>
+
             {cell.status === 'error' && cell.error && (
                 <div className="absolute top-full left-0 z-20 mt-1 rounded bg-red-600 px-2 py-0.5 text-xs whitespace-nowrap text-white shadow">
                     {cell.error}

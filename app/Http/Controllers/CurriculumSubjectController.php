@@ -8,6 +8,7 @@ use App\Http\Resources\CurriculumSubjectResource;
 use App\Http\Resources\MarkingComponentResource;
 use App\Http\Resources\SubjectResultStatusResource;
 use App\Http\Resources\TeacherCurriculumSubjectResource;
+use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\GradeBoundary;
 use App\Models\GradingSchemeItem;
@@ -20,6 +21,7 @@ use App\Models\Teacher;
 use App\Models\TeacherCurriculumSubject;
 use App\Support\ActiveSchool;
 use App\Support\Authz;
+use App\Support\ScoreUnit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -325,6 +327,11 @@ class CurriculumSubjectController extends Controller
                 return response()->json(['error' => 'Marking component does not belong to this curriculum subject.'], 422);
             }
 
+            // THE CONVERSION LIVES HERE, and only here. The client posts the percentage the
+            // teacher typed; the column stores it weighted. Doing this server-side is what stops a
+            // stale browser bundle deciding the unit — see UpsertScoreRequest.
+            $weighted = ScoreUnit::toWeighted((float) $data['score_percent'], $markingComponent);
+
             $score = Score::updateOrCreate(
                 [
                     'student_id' => $student->id,
@@ -333,19 +340,28 @@ class CurriculumSubjectController extends Controller
                 ],
                 [
                     'curriculum_subject_id' => $curriculumSubjectId,
-                    'score' => $data['score'],
+                    'score' => $weighted,
                     'created_by' => Auth::id(),
                 ]
             );
-            if ($score->score == 0) {
-                $score->delete();
-            } elseif (abs($score->score) < 0.5) {
-                $score->update(['score' => 0]);
-            }
+
+            // NO `if ($score->score == 0) { $score->delete(); }` and no `abs(...) < 0.5 => 0`.
+            // Both used to live here and both destroyed data while answering 200:
+            //   - a legitimate zero was DELETED, which is not the same thing. Row absence is the
+            //     publish gate (`count($scores) === count($markingComponents)` in
+            //     handleStudentResults), so "scored 0" silently became "not entered yet" and the
+            //     subject could never complete.
+            //   - on a 10%-weight component every percentage below 5 weighs under 0.5 and was
+            //     rounded to zero, so a teacher entering 4 got 0 back with no warning.
+            // Clearing a score is now an explicit DELETE — see clearScore() below.
 
             return response()->json([
-                'id' => $score->id,
+                // The UUID. This returned `$score->id` — the internal integer — so a client had no
+                // usable identifier for a row it had just created. Nothing consumed it, which is
+                // why it went unnoticed.
+                'id' => $score->uuid,
                 'score' => (float) $score->score,
+                'score_percent' => ScoreUnit::toPercent($score->score, $markingComponent),
             ]);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
@@ -353,6 +369,82 @@ class CurriculumSubjectController extends Controller
             return response()->json(['error' => 'Failed to assign score'], 500);
         }
 
+    }
+
+    /**
+     * Clear a single score — the explicit way to empty a cell.
+     *
+     * Clearing used to be done by posting a score of 0, which the write path then deleted. That
+     * conflated two different facts: an ABSENT row means "not entered yet", a stored 0 means "the
+     * student scored zero". They are not interchangeable — row absence is the publish gate in
+     * handleStudentResults (`count($scores) === count($markingComponents)`), so a genuine zero
+     * silently held the whole subject back from completing, and there was no way to record one.
+     *
+     * Deliberately idempotent: clearing an already-empty cell is 204, not 404. The teacher's intent
+     * is "this cell is empty", and that is already true.
+     *
+     * Identified by (student, component) rather than a score uuid because that is the pair the
+     * client actually holds — the same pair assignScore upserts on.
+     */
+    public function clearScore(Request $request, CurriculumSubject $curriculumSubject)
+    {
+        $data = $request->validate([
+            'student_id' => ['required', 'string', 'exists:students,uuid'],
+            'marking_component_id' => ['required', 'string', 'exists:marking_components,uuid'],
+        ]);
+
+        // ISOLATION. `curriculum_subjects` carries no `school_id` and no SchoolScope — it is owned
+        // through its curriculum — so route-model binding will happily resolve another school's
+        // uuid here. Same guard, and the same reasoning, as routes/web.php on the page itself.
+        // getOrFail(), not id(): with no active school both sides would be null and `===` would
+        // pass, which is the fail-OPEN direction on an isolation check.
+        /** @var Curriculum|null $curriculum */
+        $curriculum = $curriculumSubject->curriculum;
+
+        // Cast both sides. `school_id` is not statically known to be an int here, and an isolation
+        // check resting on a loose `===` between a string and an int is the fail-OPEN direction —
+        // the comparison quietly stops meaning what it reads as.
+        abort_unless(
+            $curriculum !== null
+                && (int) $curriculum->school_id === (int) ActiveSchool::getOrFail()->id,
+            404
+        );
+
+        $curriculumSubject->loadMissing(['markingComponents', 'curriculum.markingScheme.components']);
+
+        // Read the status directly rather than through the relation, matching Score::guardApproved.
+        $status = SubjectResultStatus::where('curriculum_subject_id', $curriculumSubject->id)
+            ->value('status');
+
+        if (in_array($status, ['submitted', 'approved'], true)) {
+            return response()->json(['error' => 'Scores submitted, contact administrator'], 422);
+        }
+
+        // School-scoped, so another school's student uuid resolves to null and cannot be used to
+        // probe for — or delete — a score outside the active school.
+        $student = Student::where('uuid', $data['student_id'])->first();
+
+        if (! $student) {
+            return response()->json(['error' => 'Student is not enrolled in this subject.'], 422);
+        }
+
+        $markingComponent = $curriculumSubject->effectiveMarkingComponents()
+            ->first(fn ($mc) => $mc->uuid === $data['marking_component_id']);
+
+        if (! $markingComponent) {
+            return response()->json(['error' => 'Marking component does not belong to this curriculum subject.'], 422);
+        }
+
+        $score = Score::where('student_id', $student->id)
+            ->where('curriculum_subject_id', $curriculumSubject->id)
+            ->where('marking_component_id', $markingComponent->id)
+            ->first();
+
+        // Already empty. The activity row below only exists when something was actually removed,
+        // so an idempotent no-op does not pollute the audit trail.
+        $score?->delete();
+
+        return response()->json(null, 204);
     }
 
     public function assignCategoricalResult(Request $request, CurriculumSubject $curriculumSubject, Student $student)

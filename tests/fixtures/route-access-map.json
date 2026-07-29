@@ -71,6 +71,15 @@
             "super_admin"
         ]
     },
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/scores": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "DELETE /api/curriculum-subjects/{curriculumSubject}/teachers/{teacher}": {
         "auth": true,
         "roles": [
@@ -232,6 +241,23 @@
             "form_teacher",
             "head_of_school",
             "super_admin"
+        ]
+    },
+    "DELETE /impersonation": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "boarding_parent",
+            "finance_director",
+            "finance_void_approver",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
         ]
     },
     "DELETE /result-signature": {
@@ -2743,6 +2769,12 @@
             "registrar",
             "super_admin",
             "teacher"
+        ]
+    },
+    "POST /impersonation": {
+        "auth": true,
+        "roles": [
+            "super_admin"
         ]
     },
     "POST /login": {

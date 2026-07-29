@@ -7,6 +7,7 @@ use App\Http\Requests\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\School;
 use App\Models\User;
+use App\Support\Impersonation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -85,6 +86,15 @@ class AuthenticationController extends Controller
     {
         $request->validate(['school_uuid' => 'required|uuid']);
 
+        // Refused mid-impersonation: switching would carry the impersonated
+        // user into a school they may have no access to, manufacturing reach
+        // the target does not have. Stop the session, then switch.
+        if ($request->hasSession() && $request->session()->has(Impersonation::SESSION_KEY)) {
+            return response()->json([
+                'message' => 'Stop impersonating before switching school.',
+            ], 409);
+        }
+
         /** @var User $user */
         $user = $request->user();
 
@@ -119,6 +129,11 @@ class AuthenticationController extends Controller
 
     public function logout(Request $request)
     {
+        // Impersonation is ended by EndImpersonationOnLogout, on the Logout
+        // event that Auth::guard('web')->logout() below fires — one listener
+        // covering this path and Fortify's web logout, rather than the same
+        // "write the row, clear the keys" pairing copied into each.
+
         // Under auth:sanctum the default guard is Sanctum's RequestGuard,
         // which has no logout() — the old Auth::logout() call 500'd for every
         // caller this endpoint ever admitted. Revoke the bearer token when one

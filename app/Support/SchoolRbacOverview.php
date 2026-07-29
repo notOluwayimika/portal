@@ -144,8 +144,17 @@ final class SchoolRbacOverview
 
         $superAdminIds = self::superAdminIds();
 
+        // Resolved ONCE for the page, not per row: the check flips the
+        // permissions team and clears cached relations, which is the same
+        // per-row cost the $superAdminIds set exists to avoid. Flag-independent
+        // by design (see Impersonation::operatorMayImpersonate) — a can()-shaped
+        // check here would show the action to every super_admin under the
+        // bypass, including one whose grant is missing, who would then be
+        // refused by the controller.
+        $actorMayImpersonate = $actor !== null && Impersonation::operatorMayImpersonate($actor);
+
         return [
-            'data' => collect($paginator->items())->map(function (User $user) use ($rolesByUser, $actor, $school, $superAdminIds) {
+            'data' => collect($paginator->items())->map(function (User $user) use ($rolesByUser, $actor, $school, $superAdminIds, $actorMayImpersonate) {
                 // Looked up from a prepared set rather than calling $user->isSuperAdmin() per row:
                 // that method flips the permissions team, clears cached relations and re-queries,
                 // so on a 25-row page it was 25 extra queries — the same shape of problem as the
@@ -173,6 +182,14 @@ final class SchoolRbacOverview
                         $actor === null => 'No acting user.',
                         default => null,
                     },
+                    // Mirrors ImpersonationController's refusals exactly, for the
+                    // same reason as `editable`: never offer a write the server
+                    // will refuse. A super_admin target would be lateral
+                    // escalation and self is a no-op; both are refused there.
+                    // These users all hold a role in this school, so the
+                    // target-can-access-the-school condition is satisfied by
+                    // construction.
+                    'impersonable' => $actorMayImpersonate && ! $isSuperAdmin && ! $isSelf,
                     'schoolId' => $school->id,
                 ];
             })->all(),

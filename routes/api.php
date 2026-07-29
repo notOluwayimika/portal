@@ -142,10 +142,17 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // get setup data
     Route::get('/setup-data', [SetupController::class, 'index']);
 
-    // protected term routes
+    // protected term routes — guarded by this group's permission:academic_setup.manage.
+    //
+    // SCOPED bindings, deliberately: {term:uuid} is resolved THROUGH $session->terms(), so a term
+    // belonging to another session 404s at the router instead of reaching the controller. These
+    // two carried ->withoutScopedBindings(), which let a foreign uuid through to
+    // `$session->terms()->find($term->id)` — null — and a 500 on the next line. The controller
+    // also uses findOrFail now, so the methods are correct even if this flag is ever removed
+    // again; the route is the declarative half, the controller the defensive one.
     Route::post('/sessions/{session:uuid}/terms', [TermController::class, 'store']);
-    Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update'])->withoutScopedBindings();
-    Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy'])->withoutScopedBindings();
+    Route::put('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'update']);
+    Route::delete('/sessions/{session:uuid}/terms/{term:uuid}', [TermController::class, 'destroy']);
 
     // protected marking components
     Route::put('/marking-components/{markingComponent}', [MarkingComponentController::class, 'update']);
@@ -270,6 +277,10 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/result-status', [CurriculumSubjectController::class, 'getResultStatus']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/marking-components', [CurriculumSubjectController::class, 'assignMarkingComponent']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'assignScore']);
+    // Clearing a score is a DELETE, not a POST of 0. An absent row means "not entered yet" and a
+    // stored 0 means "scored zero" — the old clear-by-zero made the second unrecordable. Same
+    // group, so it inherits the same ability as entering a score; no new permission.
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/scores', [CurriculumSubjectController::class, 'clearScore']);
     Route::post('/curriculum-subjects/{curriculumSubject:uuid}/submit', [CurriculumSubjectController::class, 'submit']);
 
     // Categorical grading is SCORE ENTRY, not setup — the teacher-facing act of recording a

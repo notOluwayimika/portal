@@ -6,6 +6,7 @@ use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ImpersonationController;
 use App\Http\Controllers\PrincipalController;
 use App\Http\Controllers\ResultSignatureController;
 use App\Http\Controllers\SchoolSwitchController;
@@ -54,6 +55,22 @@ Route::middleware('auth')->group(function () {
     Route::get('/select-school', [SchoolSwitchController::class, 'show'])->name('school.select');
     Route::post('/select-school', [SchoolSwitchController::class, 'switch'])->name('school.switch');
 });
+
+// Impersonation (ADR 0045). START is platform-admin gated; the controller
+// re-checks flag-independently because `permission:` resolves through the
+// Gate, which the super-admin bypass answers regardless of the grant.
+Route::middleware(['auth', 'role:super_admin', 'permission:rbac.impersonate'])
+    ->post('/impersonation', [ImpersonationController::class, 'store'])
+    ->name('impersonation.store');
+
+// STOP carries `auth` and NOTHING ELSE, deliberately. Inside a session the
+// acting user IS the target, who holds neither the role nor the permission —
+// any authorization here reading the acting user's grants would 403 the
+// operator and strand them inside the session. The session's own existence is
+// the authorization, checked in the controller.
+Route::middleware('auth')
+    ->delete('/impersonation', [ImpersonationController::class, 'destroy'])
+    ->name('impersonation.destroy');
 
 // Super admin area (manage schools + admins)
 Route::middleware(['auth', 'role:super_admin'])->prefix('super-admin')->group(function () {

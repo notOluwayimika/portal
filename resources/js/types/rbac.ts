@@ -92,6 +92,13 @@ export interface SchoolUser {
     /** False for super admins and for yourself — mirrors the server's structural guards. */
     editable: boolean;
     lockReason: string | null;
+    /**
+     * True only when the VIEWER may start an impersonation session as this user
+     * (ADR 0045): viewer is a super admin holding `rbac.impersonate`, and the
+     * target is neither a super admin nor the viewer. Mirrors
+     * ImpersonationController's refusals so the UI never offers a rejected write.
+     */
+    impersonable: boolean;
     schoolId: number;
 }
 

@@ -1,7 +1,7 @@
 # Finance Implementation Specification v10 (Clean Edition)
 
 **Brookstone School Management System — Invoicing & Receivables**
-**Status:** Approved for implementation · **Timeline:** ≈49 weeks · **Source of truth for development.**
+**Status:** Approved for implementation · **Timeline:** ≈53 weeks · **Source of truth for development.**
 
 > This document supersedes the original implementation plan and all addenda. It contains only approved decisions.
 > A **Change Summary** at the end records what was consolidated and removed.
@@ -53,7 +53,7 @@ Brookstone requires an Invoicing & Receivables module for its existing School Ma
 
 > **Reconciliation — 2026-07-19, verified against the repo.** The paragraph above is the **project-start baseline**, retained for its rationale, not current state. Since then: the IDOR is closed, Permission seeders are wired, `.env.example` exists and CI runs its gates, `Money` and `Sequences` are built, and a Finance walking skeleton is frozen as the module template. The commented-authz count is down from 52 to **10 baselined** legacy checks (lint-gated in `lint.yml` + `composer ci:check`, ratcheting to zero). Still genuinely absent: **Idempotency**, **PDF**, **FeatureFlags**, **observability**, and the **`finance_student_accounts` lock discipline** — the table itself is delivered and its balance and reporting projections are in use; what does not exist is any code that takes the lock (§28.2). The generic **Approvals** engine is no longer on this list in either direction: it **will not be built**, superseded by per-domain change tables under ADRs 0049 and 0050. Full per-item status and the walking-skeleton mapping are in **§28**.
 
-**Approach:** a **6.5-week Engineering Foundation phase** repairs and hardens the platform, followed by **13 independently shippable Finance phases**. Total ≈49 weeks with 2 developers (≈44 before the 2026-07-28 BRD-alignment re-estimation; see §23).
+**Approach:** a **7-week Engineering Foundation phase** repairs and hardens the platform, followed by **13 independently shippable Finance phases**. Total ≈53 weeks with 2 developers — ≈44 originally, ≈49 after the 2026-07-28 BRD-alignment re-estimation, ≈53 after the 2026-07-29 pass for Brookstone's rulings and the §15F capture gaps. **Every step of that arithmetic is in §23 and none of it is a round number chosen for comfort.**
 
 **Four decisions define the architecture:**
 
@@ -100,7 +100,16 @@ Brookstone requires an Invoicing & Receivables module for its existing School Ma
 | Inter-company accounting | Cross-School payments are prohibited. Never built. |
 | In-app backup/restore (§18) | **Rejected as an application feature.** A restore button contradicts §15C (nothing deleted) and §15E (period locking). Delivered as infrastructure: automated snapshots + a **rehearsed** restore runbook. |
 | Cross-School reporting | Not required. If ever needed: a read model iterating Schools — no new entity. |
-| Late payment rules / penalties (§17) | **Not built.** §17 lists this as *"if introduced in future"*; Brookstone has no current late-fee policy. Recorded so a reader can tell *decided against* from *forgotten*. Introducing one is a `finance_settings` category plus a dunning rule — no schema change. |
+| Late payment rules / penalties (§17) | **Not built — confirmed by Brookstone, 2026-07-29.** §17 lists this as *"if introduced in future"*; Brookstone has no current late-fee policy and has now said so directly, so this row moves from *this plan's inference* to *the client's answer*. Recorded so a reader can tell *decided against* from *forgotten*. Introducing one is a `finance_settings` category plus a dunning rule — no schema change. |
+| Instalment schedules / payment-plan entity (§6) | **Not built — confirmed by Brookstone, 2026-07-29, and this is a reading of §6 rather than a divergence from it.** See *Confirmed readings* below. |
+
+**Confirmed readings of the BRD — Brookstone, 2026-07-29**
+
+These are not divergences. In each case the BRD's own text is satisfied by what the plan already builds, and the client has confirmed the reading. They are recorded because the *absence* of an entity a reader expects to find is exactly the thing that gets "fixed" later by someone who did not know it was decided.
+
+**§6 — "pay fees in instalments" is an open balance, not a schedule.** §6 asks that parents be able to pay in instalments and that the system always display Total Invoice Amount · Amount Paid · Outstanding Balance · Available Credit Balance, with invoices remaining open until fully settled. It does **not** ask for instalment dates, instalment amounts, or a plan a parent is held to. An invoice that stays open and accepts part payments until settled *is* paying in instalments, and all four display fields are already in Phase 8's statement scope and Phase 6's part-payment scope. **Consequence: there is no `finance_payment_plans` table, no schedule generator, no missed-instalment state, and — since there is no late-fee policy either (row above) — nothing that would consume one.** Should Brookstone later want an enforced schedule, it is a new entity plus a dunning rule, not a change to the Ledger.
+
+> **`Money::allocate()` is now a primitive with no consumer, and will not acquire one.** It divides an amount into *n* parts with the indivisible remainder on the final part — instalment arithmetic. The instalment consumer is the one this ruling removes. It is left in place rather than deleted because it is correct, tested, and the natural home for any future scheduled-payment work; it is named here so that §28.4's rule ("do not front-load a primitive ahead of its consumer") is not read as an instruction to go build a consumer for it. **Do not build a payment-plan feature to justify this method.** See §28.4 — its docblock currently instructs the reader to do exactly that, and needs one line changed.
 
 **Accepted divergence from the BRD — ruled by the project lead, 2026-07-28**
 
@@ -350,7 +359,24 @@ Roles are **bundles of Permissions, never checked directly in business logic**. 
 
 **Finance roles:** `accounts_officer` · `accounts_supervisor` · `head_of_account` · `internal_auditor`.
 
-**`internal_auditor` is read-all, write-nothing, per School (§15A).** §15A requires Internal Audit to have full read access to *all* financial records and audit logs — a grant shape, not a label: the `.view`/`.index` half of every `finance.*` resource plus activity-log read, and no `.submit`/`.approve`/`.reject` or mutating capability at all. Because it holds no maker capability, `DutySeparation` will never flag it — the control here is *completeness of the read set*, detected by the Phase 11 role-coverage exception, not by duty separation. **Open:** whether the read-all set is enumerated in the seeder or derived from the `Permission` enum's terminal segment. The enum is now convention-derived (`ApprovalAbility` parses the terminal segment); improvising this later is how a derived convention acquires an exception. Decide before Phase 2 seeds the four roles.
+**`internal_auditor` is read-all, write-nothing, per School (§15A).** §15A requires Internal Audit to have full read access to *all* financial records and audit logs — a grant shape, not a label: the `.view`/`.index` half of every `finance.*` resource plus activity-log read, and no `.submit`/`.approve`/`.reject` or mutating capability at all. Because it holds no maker capability, `DutySeparation` will never flag it — the control here is *completeness of the read set*, detected by the Phase 11 role-coverage exception, not by duty separation.
+
+**DECIDED 2026-07-29 — the read-all set is derived, not enumerated.** *(This was carried as an open question and put to the client; it should not have been. §15A already answers it: Internal Audit is to have full read access to **all** financial records and audit logs. "All" is a scope statement, not an implementation hint, and an enumerated list cannot satisfy it — a list is fixed on the day it is written and the resource set is not. The provenance of this decision is §15A's word "all", not a client ruling.)*
+
+The grant is derived from the `Permission` enum's **terminal segment**, alongside `ApprovalAbility::CHECKER_SEGMENTS`, on the same convention and in the same place — improvising a second, different derivation later is how a derived convention acquires an exception.
+
+- **Read segments** (the auditor's grant): `view`, **any segment prefixed `view_`**, and `export`. **`export` is a read** — it reads financial data and writes a file outside the domain; an auditor who cannot export cannot audit, and §12/§18 deliver every report as Excel and PDF.
+- **Scope first, then segment.** The grant covers `finance.*` and `activity_log.*` — §15A's words are *"all financial records and audit logs"*, not every readable row in the application. A read segment outside those prefixes is not the auditor's business.
+- **Default-deny, and loud.** An unrecognised terminal segment is **not** treated as a read. It is not treated as a write either — it **fails the build**.
+- **Four assertions, not three.** (a) Every in-scope read-segment Permission is in the `internal_auditor` grant. (b) No in-scope non-read-segment Permission is. (c) **Every Permission's terminal segment is a member of a known vocabulary at all** — read ∪ write ∪ surface-entry. (d) **Every explicitly denied Permission is read-shaped and in scope**, so the deny-list cannot quietly become a dumping ground. (c) is the one that makes §15A's "all" survive the next year: without it, a Permission introduced with a novel segment lands silently on one side or the other and "all financial records" quietly stops meaning all — the same failure as an enumerated list, merely deferred and harder to see.
+
+> **CORRECTED 2026-07-29, later the same day, after reading `app/Enums/Permission.php` instead of reasoning about it.** This section first specified the read set as `view · index · show · export · download`. **`index`, `show` and `download` do not appear in the enum — not once across 77 permissions.** The enum instead carries **44 distinct terminal segments**, including eight compound reads (`view_all`, `view_own`, `view_system`, `view_sensitive`, `view_cross_school`, `view_scores`, `view_history`, `view_audit`) and nine legacy non-dotted names (`view_behavioral_assessments`, `manage_form_teacher_comments`, …) for which `terminalSegment()` returns the whole string. The original five-element set matched **14 of 77** permissions (`view` ×12, `export` ×2); the other **63** fell outside it, and the section named no write vocabulary against which they could have been recognised instead — so under its own loud default-deny, the first run of the assertion fails on 63 permissions. The rule above is prefix-based and scoped because that is what the actual vocabulary requires. *(The five-element list was a plausible REST convention carried instead of read — the same error as `Money::split`, which is also not what the method is called.)*
+>
+> **Two things the rule cannot derive, and both must be explicit lists that are themselves asserted.** First, `activity_log.view_cross_school` **is read-shaped, is in scope, and must not be granted** — it is a *cross-School* read, and §15A asks for all financial records within the auditor's School, while ADR 0036 makes isolation un-bypassable by role. A mechanical "grant every read" would hand the auditor the one permission that crosses the only boundary this architecture treats as absolute. Second, **`access` is a third class** — neither read nor write, but entry to a surface. Five exist (`finance.access`, `admin_area.access`, `boarding_portal.access`, `parent_portal.access`, `result_review.access`); the auditor needs the first and must not have the fourth, and no segment rule can tell them apart. Each `access` permission is classified individually and the classification asserted as exhaustive.
+>
+> **The finding that outranks all of the above: there is not one `finance.*` read permission in the enum today.** Finance holds `access`, `generate`, `apply`, `manage`, `submit`, `approve`, `reject` — every one a write or an entry, not a read. So the derived auditor grant, run against the tree as it stands this morning, returns activity-log reads and `finance.access` and **nothing financial to read at all**. This is not a bug in the derivation; it is the derivation reporting, correctly, that **the read half of the Finance permission surface has never been built**. `finance.credit-note.submit` exists and `finance.credit-note.view` does not, which means that today *nobody* — auditor, Finance Lead, Head of Account — holds a permission that names reading a credit note. **Phase 2 owes a symmetry gate: every Finance resource carrying a write permission must also carry a read permission.** That gate is worth more than the auditor grant it was found underneath.
+
+The full derivation brief — segment vocabulary, the two explicit lists, the arch-test shape, the seeder change and the regression each assertion must be watched to fail — is a Phase 2 deliverable and is written separately. **Nothing here blocks Phase 2 role seeding**, but the symmetry gate does gate the grant being meaningful.
 
 **Group-level roles** (Finance Director, Group Administrator, ICT Administrator, Registrar) are granted **per School, explicitly**. There is no global role concept — `super_admin` remains the sole team-less role (platform support, not a business role).
 
@@ -545,6 +571,12 @@ finance_ledger_entries   (INSERT only; no UPDATE, no DELETE)
 
 Invoices, payments, credit notes and refunds are **documents that emit Ledger entries**. Documents stay user-facing; the Ledger stays authoritative.
 
+> **`effective_at` does not exist in the tree — verified 2026-07-29, and this is why §15F's "backdated transactions" signal cannot fire.** `database/migrations/2026_07_19_100001_create_fee_ledger_transactions_table.php` creates `fee_ledger_transactions` with `id · uuid · school_id · student_id · type · amount_minor · amount_currency · source_type · source_id · narration · timestamps()`. There is no `posted_at` and no `effective_at`. The table therefore carries exactly one date, `created_at`, it is the system clock, and **nothing can be backdated because there is no field in which to backdate it**. The §15F signal is not unimplemented; it is *undefined by construction*, and a dashboard cannot derive it later from rows that never recorded the distinction.
+>
+> Two dates is not a nicety. `posted_at` is when the system learned of the entry; `effective_at` is the date the entry belongs to in the books. They diverge whenever a payment arrives on Friday and is entered on Monday — the ordinary case for offline payments, which is the whole of Phase 6. Without the split, either the books are wrong or the audit trail is, and there is no third option.
+>
+> **The ledger half of this costs nothing new** — §12.1 has always specified both columns, so building them is not added scope but a spec the tree has not caught up with. The **payment** half *is* added scope and is costed in Phase 6: a user-supplied received date, a Policy governing who may set one earlier than today, and its interaction with a closed period (§15E). Phase 6's scope line said "with references", not "with dates".
+
 ## 12.2 `finance_student_accounts` — the lock anchor
 
 **You cannot `lockForUpdate` a `SUM()`.** Without a lockable row, two concurrent payments read the same credit balance and both spend it — a **write-skew** anomaly that MySQL's default `REPEATABLE READ` does not prevent.
@@ -621,6 +653,12 @@ Billing eligibility becomes one indexed predicate. This also makes progression-a
 - **`guardian_student` gains a same-School constraint.** Nothing currently prevents a Primary Guardian linking to a Secondary Student, which the engine would follow into another School's invoices.
 - `Student::primaryGuardian()` is a `BelongsToMany` and nothing enforces exactly one primary — handle 0 and 2+ explicitly.
 
+> **"Fully traceable" is not the same as "attributable to a rule", and §15F needs the second — verified 2026-07-29.** `fee_payment_allocations` as built (`2026_07_19_100002_create_fee_payments_tables.php`) carries `id · uuid · school_id · payment_id · invoice_id · amount_minor · amount_currency · timestamps`. Every allocation is traceable in the sense above: you can always say which payment settled which invoice for how much. What you cannot say is **whether a human overrode the engine**, because the row does not record which rule was in force, what the engine would have proposed, or that a person chose otherwise.
+>
+> §15F names *"manual overrides of automatic payment allocations"* as an exception signal. Detecting one requires, at minimum, the **rule in force at the time of allocation** plus either the **auto-proposal that was displaced** or an **explicit override marker with a reason**. None of the three is captured today, and **Phase 11 cannot derive any of them retroactively** — the information was never written down. This is upstream capture in Phase 6, not dashboard work in Phase 11.
+>
+> The allocation rule is per-School configuration (`allocation_rule`, §12.10) and configuration changes over time, so **recording the rule on the allocation row is not denormalisation — it is the only way the row stays interpretable after the rule is edited.** Reading today's setting to explain last term's allocation gives a confident wrong answer.
+
 ## 12.8 Bank accounts (per School, per fee category)
 
 ```
@@ -643,13 +681,18 @@ Each governed act gets a table of the same shape:
 
 ```
 finance_<domain>_changes / _requests
-  school_id · target_id · kind (enum) · reason
-  submitted_by · submitted_at
-  decided_by · decided_at · decision_reason · state (pending|approved|rejected)
+  id · uuid · school_id · target_id · kind (enum) · reason
+  submitted_by · created_at         ← the submit time IS created_at; there is no submitted_at column
+  decided_by · decided_at · rejection_reason
+  status (submitted|approved|rejected)   ← default 'submitted'
   open_key                          ← generated column; one open request per target
   composite FK (target_id, school_id) → target table
-  CHECK decided_by <> submitted_by · no_update / no_delete triggers
+  CHECK decided_by <> submitted_by
+  <table>_no_delete trigger         ← the row is un-deletable
+  <table>_update_guard trigger      ← every column except the decision fields is frozen after insert
 ```
+
+> **The column names above are the delivered ones, re-read 2026-07-29, and three of them were wrong here before.** This block previously said `submitted_at`, `decision_reason`, `state (pending|approved|rejected)` and `no_update`. All three change tables in the tree (`finance_fee_schedule_changes`, `finance_discount_policy_changes`, `finance_void_requests`) use `created_at`, `rejection_reason`, `status` defaulting to **`submitted`**, and an *update guard* rather than a no-update trigger — the guard has to permit the decision write, which is exactly why it is a guard and not a blanket refusal. **The `state`/`pending` wording was the one that had to go.** §12.9 is about to introduce a `pending_approval` state on the *target* schedule, and `FeeScheduleStatus::PendingApproval` is named distinctly from `FeeScheduleChangeStatus::Submitted` on purpose, so that a reader never has to work out which row is being talked about. A plan that calls the change row's own state "pending" destroys that distinction in the one document most likely to be quoted back.
 
 **What is genuinely shared is the enforcement mechanism, not a table:** `App\Support\ApprovalAbility` (terminal-segment convention `.submit`/`.approve`/`.reject`), `App\Support\DutySeparation` (derives maker↔checker pairs from the `Permission` enum — there is no pair list to maintain), the `Gate::before` super-admin bypass exclusion (ADR 0040), and the nightly `finance:audit-duty-separation` detection job.
 
@@ -674,6 +717,16 @@ finance_<domain>_changes / _requests
 
 Also delivered and *not* in §15B's ten: **fee-schedule publication** (`finance_fee_schedule_changes`, ADR 0050) — a §3/§17 configuration act governed to the same standard.
 
+> **The approved thing must be the thing that was shown — `FeeScheduleStatus::PendingApproval`, delivered by S1 commit 4a (2026-07-29, PR #148).** The shape above governs *the request*. It says nothing about the **target**, and for one of the two governed configuration acts that silence was a gap: ADR 0050 chose option **(c)** for fee schedules — the proposal *is* a live draft schedule with real, editable `finance_fee_items` rows, not a frozen payload on the change row — so between a Head submitting a publish and the ED approving it, any third seat holding `finance.fee-schedule.manage` could edit the amounts. The ED would then approve a schedule different from the one shown, with every audit record intact and every signature genuine. **The change table cannot see this**, because the numbers are not on the change row.
+>
+> It is closed by **prevention, not detection**. `finance_fee_schedules` gained a fifth lifecycle state and `SubmitFeeScheduleChange` moves the target `draft → pending_approval` **in the same transaction that creates the change row** (under `lockForUpdate()`, because a state change now rides on the maker-side status check). The three `finance_fee_items_parent_state_guard_{ins,upd,del}` triggers were already in the tree and already plant-proven; their condition is *"parent is not `draft`"*, so they begin refusing every INSERT, UPDATE and DELETE on the items the instant the schedule leaves `draft`. **No new detection logic was written.** The full lifecycle is now `draft → pending_approval → active → superseded | retired`, and money is never mutated — only `status` moves. Reject returns it `pending_approval → draft` and the items unfreeze for re-editing; approve moves it `pending_approval → active`. A **retire** deliberately does *not* move the target: an active schedule must keep billing until its retirement is approved.
+>
+> **One consequence is a database dependency, not a state name.** `finance_fee_schedules_draft_unique` is keyed on generated columns defined `IF(status = 'draft', …)`, and the change table's `open_key` only guarantees one open request *per target* — "one open request per (school, term, class level)" was true only because a second draft for an occupied slot could not exist. A submitted schedule leaving `draft` would have freed that slot. The index is therefore widened to `finance_fee_schedules_pending_unique` over `status IN ('draft','pending_approval')` **in the same migration**, and its generated columns renamed `draft_*_key → pending_*_key` so the name cannot come to describe something it no longer means.
+>
+> **Two costs are accepted and on the record, not discovered later.** (1) While a publish is pending, the Head **cannot** edit the numbers; a correction means the ED rejects with a reason and the Head edits and resubmits. (2) A maker-side **withdraw** would relieve a schedule frozen while the ED is unavailable, and is deliberately not built — no consumer yet, no pilot, and a withdraw is a separate governed act deserving its own proofs. It has a slot, not a date. **`finance_discount_policy_changes` has no equivalent state and needs none**: it took option (b), the proposed terms are scalar columns on the change row frozen by that table's own update guard, and `DiscountPolicyStatus` has no `draft` case at all. The tamper window was a consequence of (c), which only the fee schedule took. See **ADR 0050**, amendment of 2026-07-29.
+
+> **Fee components need no approval class of their own — confirmed by Brookstone, 2026-07-29.** The question put to the client was whether adding or changing an individual fee component (§3's twelve) should require its own approval. The answer is no. **Record what that confirms rather than what it permits: the delivered shape already exceeds the ask.** A fee component is not a free-standing record — it is a row in `finance_fee_items` belonging to a fee schedule, and the item guards refuse every INSERT, UPDATE and DELETE against items whose parent schedule is not a draft (`finance_fee_items_parent_state_guard_{ins,upd,del}`). Since S1 commit 4a the draft itself is frozen the moment a publication is submitted (`FeeScheduleStatus::PendingApproval`), so components are editable only on a schedule nobody has yet asked to publish, and the only path from *editable* to *in force* runs through a maker–checker approval on `finance_fee_schedule_changes`. **A component therefore cannot reach a billable state without an approval, even though no approval class names it.** No work follows from this ruling; it is recorded so that a later reader does not read "no approval required for fee components" as licence to loosen the item guards.
+
 See **ADR 0049** and **ADR 0050**.
 
 ## 12.10 Configuration (§17) — bounded, not a DSL
@@ -697,6 +750,15 @@ Unbounded configurability produces a rules engine nobody can operate and nothing
 | Late payment rules / penalties | — | out of scope, §2.3 |
 
 "Any future billing schedule" (§2) is a row with an interval spec — not an eval'd expression.
+
+**§15F's two undefined adjectives are configuration, and they are missing from the eleven.** §15F asks the Audit Dashboard to flag *"large or unusual discounts"* and *"frequent payment reversals"*. Neither word means anything until someone supplies a number, and §17 does not list either as a configurable item — which is exactly how a threshold ends up hard-coded as `50_000` in a service class by whoever writes the signal first, invisible to the Head of Account who is the only person qualified to set it. Two further `exception_threshold` rows, per School:
+
+| Item | Category | Shape | State |
+|---|---|---|---|
+| Large-discount threshold | `exception_threshold` | amount **and** percentage-of-invoice — either may trip it, because ₦50,000 off a ₦2m boarding invoice is routine and off a ₦60,000 one is not | Ph2 (rows) · Ph11 (signal) |
+| Frequent-reversal threshold | `exception_threshold` | count per window, scoped to actor **and** to student — the same number means different things about a cashier and about a family | Ph2 (rows) · Ph11 (signal) |
+
+> **This is an addition to §17's list, not a reading of it** — recorded as such so a later reader does not mistake it for something the client asked for. It costs no extra time: the rows ride Phase 2's existing `finance_settings` surface and the signals are already inside Phase 11's four weeks. What it buys is that "large" is a number Internal Audit owns and can change, rather than a constant only a developer can find.
 
 School-configurable data lives in School-scoped `finance_settings` tables, never `config/*.php` (deploy-time only).
 
@@ -963,7 +1025,7 @@ The project has no README, no CONTRIBUTING and no ADRs — and `docs/`, `plan_do
 
 Every phase is independently deployable and independently valuable. Finance phases ship **behind a per-School feature flag**.
 
-## Phase 1 — Engineering Foundation ⛔ *blocks everything* · 6.5 weeks
+## Phase 1 — Engineering Foundation ⛔ *blocks everything* · 7 weeks
 
 ### 1A · Security hotfix — *ship in week 1, standalone*
 - Fix the `downloadExport` IDOR: restore all three checks; **repartition exports** to `exports/{schoolId}/{userId}/{uuid}.csv` + a DB row (owner, School, expiry); serve by DB id, never by filename. The flat path is *why* the IDOR is cross-School.
@@ -990,8 +1052,11 @@ Every phase is independently deployable and independently valuable. Finance phas
 - **Collapse five sources of School access into one** (§7.1): `model_has_roles` authoritative; expand/contract with a **parity test gating the drop** of `users.school_id` and `school_user`; remove **all three** `?? $user->school_id` fallbacks + the arch rule.
 - Cache `accessibleSchoolIds`; invalidate on grant/revoke.
 - `LogsActivity` on `Role`/`Permission`; `events_enabled => true`.
+- **The grant-audit listener — §15F's "changes made to user access rights or permissions", +0.5 week.** *(Added 2026-07-29 on re-derivation of §15F. See the note below: §7.5 as written does not produce this signal, and this is the only §15F gap that sits in the phase blocking everything else.)* A listener on Spatie's role/permission events that writes an activity row per **user-grant change**, carrying actor, target user, School, before-set, after-set and reason. **It must diff before against after and write nothing when they are equal** — 1C rebuilds RBAC using `syncRoles`, which detaches and reattaches every role, so a naive listener turns a re-sync of *unchanged* grants into a burst of phantom "access rights changed" rows on Internal Audit's dashboard. **Proving test: a `syncRoles` call with an identical role set writes zero activity rows.** A signal that fires on non-events trains its reader to ignore it, which is worse than not having it.
 - Share Permissions to Inertia; `usePermissions` + `<Can>`; stop shipping `rolesFull`.
 - Enforceable per-role 2FA. Route failed logins into the activity log.
+
+> **Why §7.5 is not already this.** §7.5 specifies `LogsActivity` on `Role`/`Permission` plus `events_enabled => true`, and that is one step short in two separate places. First, model-level `LogsActivity` captures the role *record* changing — a rename, a permission added to a role definition — not a **role being granted to a user**, which is a pivot write on `model_has_roles` and fires no model event on `Role`. Second, `events_enabled => true` makes Spatie *emit* events; it does not write activity rows. No listener is specified anywhere in this plan, so today the config flag produces events that nothing is subscribed to. §15F's signal is privilege escalation — someone quietly granting themselves an approval right — and it is the pivot write, not the role record, that carries it.
 
 ### 1D · School isolation hardening
 - **`terms.school_id`** (backfill from `academic_sessions`) + scope + fix `ResolvesTermFilter:32` and the 4 `CurriculumController` sites.
@@ -1024,21 +1089,30 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 
 ## Phase 2 — Finance Foundation & Configuration · 5 weeks
 **Objective:** the Ledger + the configuration surface. No user-facing billing yet.
-**Scope:** `app/Finance/` skeleton; Ledger schema + `LedgerPoster`; chart of accounts; **`finance_student_accounts`** (lock anchor + balance projection + reconciliation job); fee components/templates per year group & programme (§3); billing frequencies (§2); billing periods bound to `Term`; `finance_bank_accounts` + fee-category mapping; `finance_settings`; admin config UI; **bulk fee updates across a class or year group (§18)**; `Scholarship` gains a monetary value; Finance Permissions + 4 roles seeded (incl. the `internal_auditor` read-all grant, §7.2); **`FinanceModuleStatus` contract**; feature flag.
+**Scope:** `app/Finance/` skeleton; Ledger schema + `LedgerPoster`; chart of accounts; **`finance_student_accounts`** (lock anchor + balance projection + reconciliation job); fee components/templates per year group & programme (§3); billing frequencies (§2); billing periods bound to `Term`; `finance_bank_accounts` + fee-category mapping; `finance_settings`; admin config UI; **bulk fee updates across a class or year group — the *catalog* side only, i.e. publishing a new fee-schedule version** *(§18's phrase itself was ruled on 2026-07-29 to mean re-pricing already-issued invoices; that work is Phase 7)*; **the two `exception_threshold` rows of §12.10**; `Scholarship` gains a monetary value; Finance Permissions + 4 roles seeded (incl. the `internal_auditor` read-all grant, §7.2); **`FinanceModuleStatus` contract**; feature flag.
 **Deliverables:** migrations, models, config UI, ADRs 0003/0010/0020/0030, **`accounting-policy.md` co-signed by Brookstone Finance**.
 **Acceptance:** an admin configures a full Brookstone fee template **and its bank accounts** with zero code changes, covering all twelve §3 fee components — Tuition · Boarding · Learning Resources · Examination Fees · Prize-Giving/Graduation · Uniforms · Books · C2C Billings · Co-Curricular Activities · Swimming Lessons · Repairs/Damages · Other Miscellaneous — **as configuration rows, none of them enumerated in code** (the twelve are §3's list, not a schema: a thirteenth is a row); Ledger posts and balances derive correctly per bank account; cross-School isolation proven; `ModuleClassificationService` detects the Module via the contract.
 **Risks:** over-configurable → unusable. Mitigate by building Brookstone's real template and real bank accounts as the acceptance test.
 > **Start WCBS extract profiling here** — legacy data shape constrains the Ledger schema.
 
-## Phase 3 — Approval Workflow · 4 weeks
+## Phase 3 — Approval Workflow · 5 weeks
 
 > *Retitled: this phase was "Approval Workflow **Engine**" while v10 still specified a generic polymorphic engine. ADRs 0049/0050 withdrew the engine; the workflow — maker–checker, limits, queue, audit, attachments — is unchanged and is what this phase delivers.*
 **Objective:** §15B, once, reusably (Shared Kernel).
-**Scope:** approval state machine; Policy enforcing maker ≠ checker (**Policy + DB constraint**); approval limits by role/action/amount; pending-approvals queue UI; notifications; full audit capture; **supporting-document attachments on approval requests (§18)** — scholarship approval letters, discount approvals, refund approvals, payment evidence, other supporting documents.
-**Acceptance:** a maker cannot approve their own request via UI **or** direct API; over-limit requests escalate; every decision is audited with reason; **evidence can be attached to a request, cannot be deleted once attached** (append-only, §15C's "no financial record should ever be permanently deleted"), **and School A cannot fetch School B's attachment by URL** — the proof-19 shape, `super_admin` included, since ADR 0036 makes isolation un-bypassable by role.
+**Scope:** approval state machine; Policy enforcing maker ≠ checker (**Policy + DB constraint**); approval limits by role/action/amount; pending-approvals queue UI; notifications; full audit capture; **supporting-document attachments on approval requests (§18)** — scholarship approval letters, discount approvals, refund approvals, payment evidence, other supporting documents; **and `student_documents` — the same five types attached directly to a student's account, with its own append-only guard and its own visibility Policy, staff-only in this phase** (ruled 2026-07-29, see below).
+**Acceptance:** a maker cannot approve their own request via UI **or** direct API; over-limit requests escalate; every decision is audited with reason; **evidence can be attached to a request, cannot be deleted once attached** (append-only, §15C's "no financial record should ever be permanently deleted"), **and School A cannot fetch School B's attachment by URL** — the proof-19 shape, `super_admin` included, since ADR 0036 makes isolation un-bypassable by role. **The same fetch proof is required a second time, independently, against `student_documents`** — it is a different table under a different Policy, and a passing proof on the approval surface says nothing about it.
 > Shipped early: six later phases depend on it.
-> **Attachment storage is School-partitioned** per §5.2 point 8; visibility follows the parent approval request's Policy rather than a second access rule of its own.
-> **Phase 3 placement is a recommendation, not a ruling.** §18 attaches documents to *a student's account*, not to an approval request. Binding them to the request is what makes them evidence-for-a-decision and gets them append-only and Policy-covered for free; the cost is that a document with no decision behind it (a standing scholarship letter) has nowhere to live until Phase 8. The alternative — a `student_documents` table in Phase 6 — inverts that trade. **Awaiting the client's answer on which of the two §18 means.**
+> **Attachment storage is School-partitioned** per §5.2 point 8; approval-request attachments inherit the parent request's Policy rather than carrying a second access rule of their own.
+
+> **RULED 2026-07-29 — Brookstone: both. Phase 3 builds two attachment surfaces, and the phase moves 4 → 5 weeks.** This plan carried the placement as a recommendation and put the either/or to the client; the client declined the fork and answered *both*, which is the right answer and is what §18 actually says. §18 locates supporting documents on **a student's account**, yet four of its five named types — scholarship approval letters, discount approvals, refund approvals, payment evidence — are artifacts *of an approval decision*. Neither home alone holds all five. A standing scholarship letter has no decision to hang from; a discount approval that lives only on the student record is no longer evidence attached to the decision it justified.
+>
+> **The second surface: `student_documents`.** Its own table, its own append-only guard, its own Policy — and the Policy is the reason this is not free. The approval-request attachment inherits visibility from its parent request, so it needed no access rule of its own. A document on a student's account has **no parent to inherit from**; who may see a scholarship letter is a genuinely new question, answered by a genuinely new rule, and that rule needs its own cross-School fetch proof. Plus a student-record UI, which the approval queue did not need.
+>
+> **Phase 3's surface is staff-only.** Guardian visibility lands in **Phase 8**, where the parent portal exists. Building a parent-facing access path here would drag portal scaffolding three phases forward to serve one screen — and Phase 8 is parallel, so the wait costs less than the pull-forward.
+>
+> **Costing, honestly.** The +1 recorded in §23 on 2026-07-28 was scoped against *one* surface — the phase note it was derived from stated the two options as alternatives in as many words. It bought an upload endpoint, School-partitioned paths, append-only retention, MIME/size validation, Policy inheritance and one cross-School fetch proof. The second surface adds a table with its own guard, a Policy that is new rather than inherited, a second isolation proof and a UI. **4 → 5 weeks.** The 1E storage primitive stays at +0.5 and is **not** double-counted — one primitive serves both surfaces; what doubles is the number of things standing on it.
+>
+> **One unresolved consequence, and it is a security decision, not a scoping one.** §18 lists *"payment evidence"* among the document types. If parents upload their own transfer receipts, this stops being a staff-upload surface and becomes a **public-upload** surface — untrusted files, a different threat model, and a re-rating of Risk 16 — and Phase 8 is then +1 rather than +0.5. Put to Brookstone 2026-07-29 and **not yet answered**; the Phase 8 figure below is provisional on it.
 
 ## Phase 4 — Discounts, Scholarships & Concessions · 3 weeks
 **Objective:** §4 — percentage and fixed-amount; scholarships, concessions, sibling, special approval, performance.
@@ -1052,25 +1126,40 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Dependencies:** Phases 2, 3, 4 · **`students.status` (1D)**.
 **Acceptance:** bulk-generate a year group idempotently; **numbers gap-free under concurrency**; cancelled invoices retain history; deferred income recognizes across a term boundary.
 **Risks:** bulk generation × concurrency × sequences is the highest-risk code in the Module. `ShouldBeUnique`, idempotency keys, load test.
-> **§18's five bulk actions, and where each lands.** Generate invoices for a class or year group → **Phase 5** (here). Apply approved discounts → **Phase 4**. Send payment reminders → **Phase 9**. Print or email statements → **Phase 8**. Apply fee updates → **Phase 2**. No sixth phase owns "bulk"; each action belongs to the phase that owns the underlying single-record operation, so a bulk path can never do something its single-record path cannot.
+> **§18's five bulk actions, and where each lands.** Generate invoices for a class or year group → **Phase 5** (here). Apply approved discounts → **Phase 4**. Send payment reminders → **Phase 9**. Print or email statements → **Phase 8**. Apply fee updates → **Phase 7** *(corrected 2026-07-29: this read "Phase 2" while the meaning of §18's phrase was still open. Brookstone ruled it means re-pricing **already-issued** invoices, which is a credit-note-and-reissue cycle, not a catalog edit. Phase 2 still owns bulk changes to the fee **catalog** — that is a schedule version and remains free — but §18's actual ask lands in Phase 7.)*. No sixth phase owns "bulk"; each action belongs to the phase that owns the underlying single-record operation, so a bulk path can never do something its single-record path cannot.
 
-## Phase 6 — Payments, Receipts & Allocation ⭐ · 5 weeks
+## Phase 6 — Payments, Receipts & Allocation ⭐ · 6 weeks
 **Objective:** §1, §5, §6 — *the heart of the specification*.
-**Scope:** manual/offline recording (bank transfer, POS, cash) with references; receipt numbering + PDF; **payment without an invoice**; part payments; overpayment → advance/credit balance; the allocation engine (configurable + manual, single-School); multi-ward allocation within a School; fully traceable allocation & reallocation; `bank_account_id` on payments + mismatch exception; opening balances (approval-gated); **wrong-School UX guards**.
+**Scope:** manual/offline recording (bank transfer, POS, cash) with references **and a user-supplied received date**; receipt numbering + PDF; **payment without an invoice**; part payments; overpayment → advance/credit balance; the allocation engine (configurable + manual, single-School); multi-ward allocation within a School; fully traceable allocation & reallocation **carrying the rule in force and an override marker**; `bank_account_id` on payments + mismatch exception; opening balances (approval-gated); **wrong-School UX guards**.
 **Dependencies:** Phase 5 · Phase 2 bank accounts + `finance_student_accounts` · Phase 1D `guardian_student` constraint.
 **Acceptance:** every §1 scenario passes; one payment across 3 wards in one School allocates per each rule; reallocation traceable; **two simultaneous payments against a Student with a credit balance consume it exactly once**, proven under parallel load **on MySQL**; a cross-School guardian↔student link cannot be allocated against.
 **Risks:** the allocation engine is where money is lost. Property-based tests on *sum(allocations) + credit == payment, always*.
 
-## Phase 7 — Adjustments · 3 weeks
-**Objective:** §10 and §15B — credit notes, **balance write-offs**, refunds, receipt reversals, **opening-balance adjustments**, sibling credit transfers (**within-School only**). All approval-gated, all contra entries.
+> **Two §15F signals are captured here, not in Phase 11 — added 2026-07-29, +1 week.** Both were counted as Phase 11 dashboard work and neither is. Phase 11 can only report what earlier phases wrote down, and for these two nothing is written down; **Phase 11's four weeks do not move, because the shortfall was never dashboard time.**
+>
+> **(a) Allocation-mode capture, +0.5.** Every allocation row records the **rule in force** and, where a person departed from what the engine proposed, an **explicit override marker with a reason**. Without it, §15F's *"manual overrides of automatic payment allocations"* is underivable — see §12.7. **Acceptance: an auto-allocation and a hand-corrected allocation of the same payment are distinguishable in the data by a query that reads no code**, and the rule name survives a later edit to that School's `allocation_rule` setting.
+>
+> **(b) Payment received date, +0.5.** A payment carries a **user-supplied received date** distinct from `created_at`, feeding the ledger's `effective_at` (§12.1). With it comes a **Policy on who may set a date earlier than today** and defined behaviour when that date falls in a **closed period** (§15E) — which is the case that matters, because a backdate into a closed period is either the thing §15F wants flagged or the thing §15E should refuse, and the plan must say which. **Acceptance: a backdated payment is flagged as an exception and its ledger entries carry the effective date, not the entry date**; a backdate into a locked period is refused at the Policy layer with the refusal audited.
+>
+> This is the one place where "record it now, report it later" is not a deferral but the only order that works: **a signal not captured at write time cannot be recovered at read time.**
+
+## Phase 7 — Adjustments · 4 weeks
+**Objective:** §10 and §15B — credit notes, **balance write-offs**, refunds, receipt reversals, **opening-balance adjustments**, sibling credit transfers (**within-School only**), **and bulk re-pricing of already-issued invoices (§18)**. All approval-gated, all contra entries.
 **Acceptance:** every adjustment is a contra entry; balances re-derive; no `UPDATE`/`DELETE` touches a Ledger row (test + DB grant); a cross-School credit transfer is rejected.
+> **RULED 2026-07-29 — Brookstone: §18's "apply fee updates" means re-pricing already-issued invoices. Phase 7 moves 3 → 4 weeks.** §23's Phase 2 row flagged this exact ambiguity and pre-costed the answer at roughly +1 in Phase 7; the client's reading matches the flagged branch, so the number is confirmed rather than invented. **Phase 2 keeps its 0** — publishing a new fee-schedule version *is* the catalog-side bulk update and remains genuinely free.
+>
+> **What lands here.** An issued invoice is not editable — §15C and the append-only Ledger both forbid it, and no client ruling can change that. Re-pricing is therefore a **credit-note-and-reissue cycle**: credit the original in full, issue a replacement at the new price, and hold the two together by an explicit link so a statement reads as a correction rather than as double-billing. Applied in bulk across a class or year group, approval-gated as one decision, **individually audited and individually reversible per invoice** — the same rule §15C forces on Phase 4's bulk discount awards, and for the same reason.
+>
+> **The hard cases, named so they are not discovered late:** an invoice that is **already part-paid** (the payment must survive the reissue and re-allocate to the replacement, not fall to a credit balance and quietly change what it settled); an invoice already **settled** (re-pricing downward produces a genuine refundable overpayment, which is a Phase 7 refund and must be routed as one, not written off); and a re-price whose original sits in a **closed period** (§15E) — the correction is a current-period entry against a prior-period document, and it cannot be posted back into the closed period.
+
 > **Write-offs already exist** and are governed today — `CreditNoteKind::WriteOff` shares the credit note's ledger effect under a distinct label so a write-off is reportable apart from a credit note. §15B names them as a separate approval class and this Objective now names them too; what remains for Phase 7 is refunds, receipt reversals, opening-balance adjustments and transfers.
 
-## Phase 8 — Statements & Parent Portal · 3.5 weeks ∥
+## Phase 8 — Statements & Parent Portal · 4 weeks ∥
 **Objective:** §7 — real-time per-child statement (opening balance, charges, discounts, payments, advances, credits, outstanding, receipt numbers, references, **allocation history**, dates); portal UI; statement PDF; **bulk print and bulk email of statements for a class or year group (§18)**.
 **Scope note:** the portal is **per-School**. The existing mock's unified cross-School view is **redesigned, not built**. Replaces `pages/parent/dashboard.tsx` and its 43 tsc errors.
 **Acceptance:** statement reconciles to the Ledger exactly for every Phase 5–7 scenario; Guardians see only their own wards (Policy test); no view spans Schools.
 > `result_locked` (fee-gates-results) is confirmed **School-scoped**. Whether to build it is a product decision.
+> **Guardian visibility of supporting documents lands here, +0.5 — and the figure is provisional.** Phase 3 builds `student_documents` staff-only (ruled 2026-07-29); the portal is where a Guardian could ever see one, and it exists in this phase and not before. +0.5 covers **read-only** guardian visibility: a Policy extension, a portal surface, and a test that a Guardian sees documents for their own wards in this School and nothing else. **If Brookstone answers that parents upload their own payment evidence, this becomes +1, not +0.5** — an untrusted public upload path is a different threat model from a read-only view, and it re-rates Risk 16. That question was asked on 2026-07-29 and is unanswered; **§23 carries the +0.5 and flags it, rather than carrying the larger number for a decision nobody has made.**
 
 ## Phase 9 — Notifications & Dunning · 3 weeks ∥
 **Objective:** §11 — the six triggers; Email + **SMS driver (new)** + in-portal; configurable templates; configurable reminder schedules; overdue detection; bulk reminders.
@@ -1085,7 +1174,28 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 **Scope:** period close & locked-transaction enforcement; reopen restricted to Head of Account + audited; the Audit Dashboard — all 11 exception signals, **plus role-coverage gap and bank-account/fee-category mismatch**; exception reports.
 **Also:** store activity **severity as a column at write time** — the current `LIKE`-pattern derivation is unindexable and will not scale. **`module` and `approval_status` are columns on the same terms, for the same reason** — §15D requires the activity log to be searchable and filterable by module accessed and approval status, and deriving either from a serialized properties blob is the same unindexable pattern under a different name.
 **Audit coverage §15C does not yet have (a build, not a rename):** **student transfers** — no listener records a Student moving class, year group or School-level enrolment state; and **system configuration changes** — no listener exists on `SchoolFinanceSettings` or the discount/fee catalogs, so a settings edit today leaves no original-value/new-value/reason record. Both are named explicitly by §15C's coverage list and both are absent from the tree, not merely mislabelled.
-**Dependencies:** Phases 7, 10 · `schools.timezone` · failed-login logging.
+**Dependencies:** Phases 7, 10 · `schools.timezone` · failed-login logging · **the three upstream captures below**.
+
+> **§15F coverage, re-derived line by line against the BRD and the tree — 2026-07-29. Twelve items: nine covered, three gaps. Every gap is upstream capture, and Phase 11's four weeks do not move.** That last clause is the finding. The instinct on reading "three signals missing" is to add weeks to the dashboard; it would be the wrong move. A dashboard can only display what earlier phases wrote down, and for these three nothing is written down. Adding time here would buy a better view of data that does not exist.
+>
+> | # | §15F signal | Covered? | Where it is captured |
+> |---|---|---|---|
+> | 1 | Large or unusual discounts | ✅ | Ph4 award rows · signal Ph11 — **but "large" is undefined until §12.10's threshold row exists** |
+> | 2 | Manual overrides of automatic payment allocations | ❌ **GAP** | **Ph6 +0.5** — see §12.7. Not derivable in Ph11 at any price |
+> | 3 | Multiple failed login attempts | ✅ | Ph1C — "route failed logins into the activity log" |
+> | 4 | Invoices cancelled after payment received | ✅ | Ph5 cancellation-via-approval + the Ledger |
+> | 5 | Frequent payment reversals | ✅ | Ph7 reversals — **"frequent" undefined until §12.10's threshold row exists** |
+> | 6 | Refunds processed | ✅ | Ph7, approval-gated |
+> | 7 | Changes to user access rights or permissions | ❌ **GAP** | **Ph1C +0.5** — §7.5 is one step short twice; see the 1C note |
+> | 8 | Transactions outside normal working hours | ✅ | `schools.timezone` + working hours (1D, §12.11) |
+> | 9 | Backdated transactions | ❌ **GAP** | **Ph6 +0.5** — the field does not exist; see §12.1. Ledger half already owed by §12.1 |
+> | 10 | Changes to system configuration | ✅ | Ph11's own configuration-change listener — already named above as *a build, not a rename* |
+> | 11 | Outstanding approvals awaiting authorization | ✅ | Ph3 pending-approvals queue |
+> | 12 | **Exception Reports over all of the above** — §15F's closing sentence, a deliverable distinct from the dashboard | ✅ | Ph11 scope |
+>
+> **Two of the nine "covered" are covered in mechanism only.** Items 1 and 5 turn on adjectives — *large*, *unusual*, *frequent* — that mean nothing until a number is supplied, and §17 does not list either as configurable. §12.10 adds the two `exception_threshold` rows. Left unspecified, the first developer to write the signal hard-codes a constant, and Internal Audit inherits a threshold they cannot see or change.
+>
+> **The one to land early is item 7.** It is the privilege-escalation signal — the one that catches someone quietly granting themselves an approval right — and it sits in 1C, the phase blocking everything else. It should be built on that ground regardless of what the exception dashboard eventually looks like.
 **Acceptance:** a locked period rejects writes at the **Policy** layer; every signal fires on a synthetic trigger; creating a 5th School raises a coverage-gap exception; **a settings change and a student transfer each produce an audit row carrying actor, timestamp, original value, new value and reason**; **the activity log filters by module and approval status against an index, proven on a seeded volume rather than an empty table.**
 
 ## Phase 12 — Paystack & Auto-Reconciliation · 4 weeks ∥
@@ -1184,34 +1294,53 @@ README · CONTRIBUTING (**the Architecture Constitution**) · CLAUDE.md · `docs
 
 | Phase | Weeks | Cumulative | Δ |
 |---|---|---|---|
-| 1 Engineering Foundation | 6.5 | 6.5 | +0.5 |
-| 2 Config & Ledger | 5 | 11.5 | — |
-| 3 Approval Engine | 4 | 15.5 | **+1** |
-| 4 Discounts | 3 | 18.5 | **+1** |
-| 5 Invoicing | 4 | 22.5 | — |
-| 6 **Payments & Allocation** | 5 | 27.5 | — |
-| 7 Adjustments | 3 | 30.5 | — |
-| 8 Statements ∥ | 3.5 | 33 | +0.5 |
-| 9 Notifications ∥ | 3 | 34 | — |
-| 10 Reporting & Dashboard | 4 | 38 | — |
-| 11 Period & Audit Dashboard | 4 | 42 | **+1** |
-| 12 Paystack ∥ | 4 | 44 | — |
-| 13 Sage 50 ∥ | 2 | 45 | — |
-| 14 WCBS Migration & Go-Live | 4 | **49** | **+1** |
+| 1 Engineering Foundation | 7 | 7 | **+0.5** |
+| 2 Config & Ledger | 5 | 12 | — |
+| 3 Approval Workflow | 5 | 17 | **+1** |
+| 4 Discounts | 3 | 20 | — |
+| 5 Invoicing | 4 | 24 | — |
+| 6 **Payments & Allocation** | 6 | 30 | **+1** |
+| 7 Adjustments | 4 | 34 | **+1** |
+| 8 Statements ∥ | 4 | 37 | **+0.5** |
+| 9 Notifications ∥ | 3 | 38 | — |
+| 10 Reporting & Dashboard | 4 | 42 | — |
+| 11 Period & Audit Dashboard | 4 | 46 | — |
+| 12 Paystack ∥ | 4 | 48 | — |
+| 13 Sage 50 ∥ | 2 | 49 | — |
+| 14 WCBS Migration & Go-Live | 4 | **53** | — |
 
-**≈49 weeks (~11 months)** with 2 developers and parallelization. **~63 weeks single-threaded.**
+**≈53 weeks (~12 months)** with 2 developers and parallelization.
+
+> **Read the Cumulative column before disputing it: it is not a running sum, and it never was.** The durations add to **59**; the cumulative ends at **53**. The six-week difference is the four ∥ phases running alongside their neighbours rather than after them — Ph8 (4) advances the line by 3, Ph9 (3) by 1, Ph12 (4) by 2, Ph13 (2) by 1. **The same four absorptions were in the ≈49 table** (durations 55, cumulative 49, identical 6 weeks absorbed), so this pass changed the durations and left the parallelism model untouched. Anyone re-deriving the total must apply the absorption or they will get 59 and think the table is broken.
+
+> **On the single-threaded figure.** The ≈49 table carried *"~63 weeks single-threaded"* against a 55-week duration sum — an unexplained +8, and the document never records how it was derived. Carrying the same +8 forward gives **~67 weeks single-threaded**, and that is **a carried number, not a re-derived one.** It is stated here so it is not quietly dropped, and flagged so it is not quoted to a client as though it had been checked. **Do not use it in a commitment without deriving it first.**
+
+**Re-estimated 2026-07-29 (≈49 → ≈53)** for Brookstone's rulings 4 and 6 of that date and the three §15F capture gaps found on re-derivation. Deltas in the table below, added beneath the 2026-07-28 pass rather than replacing it, so both passes stay arguable.
 
 **Re-estimated 2026-07-28 for the BRD-alignment scope (≈44 → ≈49).** Six phases gained requirements that were in the BRD but not in this plan; leaving the durations untouched would have made the total a number nobody had checked. The arithmetic, so it can be argued with:
 
 | Phase | Added scope | Δ | Reasoning |
 |---|---|---|---|
 | **1E** | file-storage primitive for attachments | +0.5 | There is no storage primitive today, and the codebase's one existing storage path is Risk 1 — the `Storage::download` IDOR. A second upload surface is not built on that. |
-| **2** | bulk fee updates across a class or year group (§18) | **0** | Deliberately zero, not overlooked. Publishing a new fee-schedule version *is* the bulk update: schedules are versioned catalogs scoped to a year group, so the single-record path already fans out. **Ambiguity flagged:** if §18 means re-pricing *already-issued* invoices, that is not a Phase 2 catalog edit but a credit-note-and-reissue cycle, and it belongs to Phase 7 at roughly +1 week. Needs the client's reading before it is costed. |
+| **2** | bulk fee updates across a class or year group (§18) | **0** | Deliberately zero, not overlooked. Publishing a new fee-schedule version *is* the bulk update: schedules are versioned catalogs scoped to a year group, so the single-record path already fans out. **Ambiguity flagged — and since RESOLVED, 2026-07-29:** the flag read *"if §18 means re-pricing already-issued invoices, that is not a Phase 2 catalog edit but a credit-note-and-reissue cycle, and it belongs to Phase 7 at roughly +1 week."* Brookstone confirmed that reading. **Phase 2 stays at 0** — the catalog-side bulk update really is free — and the +1 lands in Phase 7 in the pass below, at the number this row named before the answer arrived rather than at one invented after it. |
 | **3** | supporting-document attachments (§18) | +1 | Upload endpoint, School-partitioned paths, append-only retention, MIME/size validation, Policy inheritance, and the cross-School fetch proof — on a fraud-control surface where the isolation test is the deliverable. |
 | **4** | bulk application of approved discounts (§18) | +1 | Cheap as a batch, expensive done correctly: one audited award row per Student and per-Student reversal, plus partial-failure semantics. A batch reversible only wholesale would violate §15C. |
 | **8** | bulk print / email of statements (§18) | +0.5 | The single-statement path and the PDF engine already exist by then; what is new is queue fan-out and memory behaviour at class scale. |
 | **11** | student-transfer auditing, configuration-change auditing, `module` + `approval_status` columns (§15C, §15D) | +1 | Two listeners that do not exist, each capturing original value / new value / reason, plus two indexed columns with backfill and a filter test on seeded volume rather than an empty table. |
 | **14** | parent and student record migration (§14) | +1 | §14 names six things to retain; only the four financial ones were scoped. Held to +1 rather than +2 because the guardian-import pipeline already exists — what is new is WCBS mapping, per-School matching rules and the zero-orphan assertion, on the highest-risk phase in the plan. |
+
+**Second pass — re-estimated 2026-07-29 (≈49 → ≈53).** Two client rulings and three capture gaps found by re-deriving §15F against the tree rather than against this document:
+
+| Phase | Added scope | Δ | Reasoning |
+|---|---|---|---|
+| **1C** | the grant-audit listener — §15F "changes to user access rights or permissions" | +0.5 | §7.5 is one step short twice: model-level `LogsActivity` misses the pivot write that *is* a grant, and `events_enabled => true` emits events nothing listens to. The half-week is mostly the **before/after diff** — 1C's own `syncRoles` rebuild detaches and reattaches every role, so a naive listener floods the dashboard with phantom changes. Proving test: an unchanged re-sync writes zero rows. |
+| **3** | `student_documents` — the **second** attachment surface (§18, ruled *both*) | +1 | The 2026-07-28 +1 was costed against one surface; the phase note it came from stated the two homes as alternatives in as many words. New here: a second table with its own append-only guard, a visibility Policy that is **new rather than inherited** (a document on a student's account has no parent request to inherit from), a second cross-School fetch proof, and a student-record UI. The 1E storage primitive stays +0.5 and is **not** double-counted. |
+| **6** | allocation-mode + rule-in-force capture (§15F "manual overrides") | +0.5 | `fee_payment_allocations` records payment, invoice and amount — enough to trace an allocation, not enough to tell whether a human overrode the engine. Needs the rule in force plus an override marker with a reason. **Phase 11 cannot derive this retroactively at any price.** |
+| **6** | user-supplied payment received date + backdating Policy (§15F "backdated transactions") | +0.5 | The ledger half is **already owed by §12.1** and costs nothing new — `posted_at`/`effective_at` are specified and absent from the tree. This half is the payment side: a received date distinct from `created_at`, a Policy on who may set one in the past, and defined behaviour when it lands in a closed period. Phase 6's scope line said "with references", not "with dates". |
+| **7** | bulk re-pricing of already-issued invoices (§18, ruled *re-pricing*) | +1 | **Pre-flagged, not newly invented** — §23's Phase 2 row named Phase 7 and roughly +1 before the client answered. Credit-note-and-reissue, approval-gated as one decision but individually audited and reversible per invoice. The cost sits in the hard cases: part-paid invoices whose payment must re-allocate to the replacement, settled invoices whose downward re-price is a genuine refund, and originals in closed periods. |
+| **8** | guardian visibility of supporting documents | +0.5 *(provisional)* | Read-only: a Policy extension, a portal surface, an isolation test. **Becomes +1 if Brookstone answers that parents upload their own payment evidence** — a public upload path is a different threat model and re-rates Risk 16. Question asked 2026-07-29, unanswered; the smaller number is carried and flagged rather than the larger one assumed. |
+| **11** | — | **0** | **Deliberately zero, and it is the finding of this pass.** Three §15F signals are missing, and the instinct is to add weeks to the dashboard. All three are missing *upstream* — the data was never captured — and a dashboard cannot display what nobody wrote down. Phase 11's four weeks were never the shortfall. |
+| **2** | §12.10's two `exception_threshold` rows | **0** | They ride the `finance_settings` surface already in scope. Recorded because "large" and "frequent" are undefined without them, and an unspecified threshold becomes a hard-coded constant in whichever service class implements the signal first. |
 
 **These are judgements, not measurements.** No velocity data exists for this team on this codebase — CI has never executed a job (§28.1 item 9) — so the ±30% band above applies to these deltas at least as much as to the original figures. The value here is that the number now has arithmetic behind it that can be disputed; it is not a claim of precision.
 
@@ -1324,6 +1453,25 @@ npx tsc --noEmit | tail -1   # baseline 143 → must never increase
 - Whether to build the `result_locked` fee-gates-results rule at all. *(Its scope is settled: School-local.)*
 - Invoice/receipt reference format confirmation.
 
+## 26.1 Brookstone answers of 2026-07-29 — where each one landed
+
+Six questions were put to Brookstone and answered. Recorded here as an index, with the substance written into the section that owns it, so that a reader who wants to know *why* a decision reads the argument rather than the minute.
+
+| # | Question | Answer | Written into | Work implied |
+|---|---|---|---|---|
+| 1 | Is Internal Audit's read access an enumerated list or a derived set? | Derived | **§7.2** | None new — but note the provenance: **§15A's word "all" already answered this and it should not have been asked.** Recorded there, not as a client ruling. |
+| 2 | Do parents need an instalment *schedule*, or is an open balance they pay down freely sufficient? | Open balance is sufficient | **§2.3** *Confirmed readings* | None. Removes the only consumer `Money::split()` would ever have had — see §28.4. |
+| 3 | Should individual fee components carry their own approval? | No | **§12.9** | None. The delivered shape already exceeds the ask; recorded so the item guards are not later loosened on the strength of this answer. |
+| 4 | Should supporting documents (§18) bind to the approval decision, to the student's account, or both? | **Both** | **Phase 3** scope + note · **Phase 8** note · **§23** second-pass table | **Real, and verified: Phase 3 4 → 5 weeks, Phase 8 3.5 → 4 (provisional).** The recorded +1 bought one surface, not two. Phase 3 is staff-only; guardian visibility waits for the portal in Phase 8. |
+| 5 | Are late-payment charges required? | No | **§2.3** table | None. Confirms an existing row; moves it from inference to answer. |
+| 6 | Does §18's "apply fee updates" mean the catalog, or re-pricing already-issued invoices? | Re-pricing issued invoices | **Phase 7** objective + note · **Phase 5** bulk-action map *(corrected)* · **§23** both tables | **Real, and confirmed at the pre-flagged number: Phase 7 3 → 4 weeks.** §23's Phase 2 row named Phase 7 and roughly +1 *before* the answer arrived, so the cost is a confirmation rather than a fresh guess. Phase 2 keeps its 0. |
+
+> **4 and 6 landed 2026-07-29, in the same pass as the §15F capture findings, and the plan now reads ≈53 weeks (~12 months).** Both were held back a day rather than recorded from memory, which is the discipline §23's re-estimate table exists to enforce; verifying them changed one of the two figures materially. **Ruling 4 was under-costed** — the +1 already in the plan had been scoped against a single attachment surface, and the plan's own Phase 3 note said so, which is what made the shortfall findable rather than a matter of opinion. **Ruling 6 was costed correctly in advance** and needed only confirming.
+>
+> The §15F re-derivation run alongside them produced the more useful result: **three of the twelve signals are uncovered, all three are upstream capture, and Phase 11 does not move.** Weeks went to Phases 1C and 6, where the data has to be written down, not to the dashboard that reads it.
+
+**Still open, and internal — not a client question.** §15A names the seat *"Internal Auditor / Finance Lead"*. One role is built (`internal_auditor`). Whether Finance Lead is a distinct person holding a different grant must be settled **before Phase 2 seeds the four roles**, because a fifth role added after seeding is a migration plus a re-derivation of the RBAC oracles, not a seeder edit.
+
 ---
 
 # 27. Change Summary
@@ -1368,7 +1516,7 @@ This document consolidates the original implementation plan and seven review add
 | **Per-School gap-free sequences + School prefix** — resolves the conflict between "separate legal entity per School" and "one sequence for Brookstone". | §12.5 |
 | ADR **0006** superseded by **0026**; ADR **0025** withdrawn. | §19 |
 
-**Timeline unchanged at ≈44 weeks.** The consolidation moved work and removed a contingency; it added none. *(True of the consolidation, and left as written. The separate BRD-alignment pass of 2026-07-28 did add scope, and the timeline is now **≈49 weeks** — the arithmetic is in §23.)*
+**Timeline unchanged at ≈44 weeks.** The consolidation moved work and removed a contingency; it added none. *(True of the consolidation, and left as written. Two later passes did add scope: BRD alignment on 2026-07-28 (≈44 → ≈49) and Brookstone's rulings plus the §15F capture gaps on 2026-07-29 (≈49 → ≈53). The timeline is now **≈53 weeks** — the arithmetic for both passes is in §23.)*
 
 ---
 
@@ -1423,7 +1571,7 @@ Also stale in §1: "zero Policy classes" (`ExportPolicy` exists) and "zero `Gate
 | **Reporting projection** | ✅ delivered | `AccountReadModel` (`receivables` = `SUM(balance_minor > 0)`, `creditSigned` = `SUM(balance_minor < 0)`), `InvoiceReadModel`, `FinanceAccountController` — reports read the projection, not a growing `SUM()` over the ledger |
 | **Lock anchor** | ⬜ **declared, not exercised** | **no `lockForUpdate` in the tree touches `finance_student_accounts`.** Every current lock site is elsewhere: `Sequences`, `RecordPayment`, `GenerateInvoice`, and the four `Approve*` actions. The migration says so itself — *"NO `version` column: W2 has no optimistic read-modify-write to guard; the pessimistic `lockForUpdate` arrives in W3"* — and the model docblock notes it is **deliberately not `AppendOnly`**, because a projection must be re-derivable |
 
-So the row is not "open" and not "done". The **table exists and earns its keep today**; what does not exist is the *lock discipline* the anchor was created to host, and that lands in W3 with credit application — the first genuine read-modify-write. This matters for Phase 6's gate, corrected in §28.6.
+So the row is not "open" and not "done". The **table exists and earns its keep today**; what does not exist is the *lock discipline* the anchor was created to host, and that lands in W3 with credit application — the first genuine read-modify-write. This matters for Phase 6's gate, corrected in §28.7.
 
 ## 28.3 What the walking skeleton delivered (outside v10's origin frame)
 
@@ -1436,6 +1584,16 @@ An early thin vertical slice was built and **frozen as the module template**, ah
 ## 28.4 Sequencing divergence — read before trusting the phase order
 
 The skeleton front-loaded shapes from v10 **Phase 2** (Finance skeleton + Ledger) and **Phase 5** (the invoice document) as a frozen template, **before** Phase 1's Approvals / Idempotency / Observability primitives landed. Under §21's dependency matrix (Phase 5 depends on 2, 3, 4) this is deliberately "out of order": the skeleton's purpose was to **freeze the module template**, not to ship billing. **Do not read the skeleton as "Phase 5 done."** Real invoicing is still to be built on top of it.
+
+**The rule this section exists to enforce: do not front-load a primitive ahead of its consumer.** A primitive built before anything needs it is a guess about a shape, and a wrong guess is worse than a gap because it looks finished.
+
+**One primitive is now parked under that rule — `Money::allocate(int $parts)`** *(the method is named `allocate`, not `split`; `App\Support\Money`, verified 2026-07-29)*. It divides an amount into *n* parts with the indivisible remainder landing on the final part, so the pieces sum exactly to the original — instalment arithmetic. Brookstone's 2026-07-29 answer that an open balance a parent pays down freely satisfies §6 (see §2.3, *Confirmed readings*) removes the only consumer it was ever going to have, and there is no late-fee or dunning-schedule feature to inherit it. **Verified: zero callers outside `Money.php` across `app/` and `resources/`.** Status: correct, tested, unused, and expected to stay unused.
+
+Three things follow, and the third is the one that needs an edit:
+
+1. It is **not** deleted. It is right, it is covered, and it is the natural home for scheduled-payment work if Brookstone ever asks for one.
+2. It is **not** evidence that the rule above was broken. `Money` is a §1E Shared Kernel value object delivered as a whole; `allocate` came with `times`, `percentage` and the rest, and separating them would have been the odder decision.
+3. **Its own docblock is now wrong, and wrong in the direction that causes work.** It reads *"The general split primitive installments will reuse. This slice does not build installment logic — only percentage reductions — but the primitive is written generally…"* — an instruction, sitting in the code, to build the consumer this ruling has just cancelled. A reader who finds a tested method with no callers and a comment naming the feature that will call it will go and look for that feature. **Action: the implementing agent replaces that sentence with a pointer to this section and to §2.3's confirmed reading of §6** — one comment, no signature change, no test change. Deleting the method instead is a defensible cleanup, but it is a cleanup, not the closing of a gap, and it is not what is being asked for here.
 
 ## 28.5 Phase ↔ slice ↔ invariant map
 
@@ -1456,7 +1614,29 @@ The handoff tracks progress with **F1–F6 invariants** and incremental **slices
 | Walking skeleton (frozen template) | an early thin slice of v10 **Phase 2** (skeleton + Ledger) and **Phase 5** (invoice doc) |
 | "slice 2: multi-line invoices" | v10 **Phase 5 — Invoicing**, first increment: lands F6 + void-safety (default scope excludes VOID; void posts a reversing ledger entry) |
 
-## 28.6 Net
+## 28.6 Target-side lifecycle states — the axis v10 never named
+
+v10 has a vocabulary for the state of an **approval request** (§12.9's shape: `submitted → approved | rejected`) and no vocabulary at all for the state of the **thing being approved**. The delivered system has both axes, and that omission is not cosmetic: the mutable-draft window closed by S1 commit 4a existed precisely *because* the plan reasoned about the request and never about the target. Recorded here so the next governed act is designed on both axes from the start.
+
+Every enum in `app/Finance/Enums/`, re-read 2026-07-29 at `10ae032`:
+
+| Enum | States | Axis |
+|---|---|---|
+| `FeeScheduleChangeStatus` | `submitted · approved · rejected` | request |
+| `DiscountPolicyChangeStatus` | `submitted · approved · rejected` | request |
+| `VoidRequestStatus` | `submitted · approved · rejected` | request |
+| `CreditNoteStatus` | `submitted · approved · rejected` | request |
+| **`FeeScheduleStatus`** | **`draft · pending_approval · active · superseded · retired`** | **target** |
+| `DiscountPolicyStatus` | `active · superseded · retired` | target |
+| `InvoiceStatus` | `issued · void` | target |
+
+Two things are worth reading off that table rather than leaving implicit.
+
+**§12.9's "one shape" claim holds in the enum layer, and holds exactly.** All four request enums are the identical triple, independently written, with no shared base and no inheritance — which is the intended outcome of ADRs 0049/0050 (a shared *convention*, not a shared table or a shared class) and also the thing a future reader will be most tempted to "DRY up". Do not. The duplication is the price of the composite `(target_id, school_id)` FK, and it is priced in §12.9.
+
+**`FeeScheduleStatus` is the only target lifecycle with an authoring state, and that is why it is the only one that had this gap.** `DiscountPolicyStatus` has no `draft` case at all — its proposed terms live as frozen scalar columns on the change row (ADR 0050 option **(b)**), so there is nothing to tamper with. `InvoiceStatus` has two states and an append-only ledger under it. The fee schedule took option **(c)** — the proposal *is* a live row — and option (c) is the only one that needs a `pending_approval`. **The rule to carry forward: an option-(c) target needs a state that means "submitted, therefore frozen", and it needs it in the same commit as the change table, not after.** §12.9 carries the full mechanism, the widened `finance_fee_schedules_pending_unique` index it depends on, and the two accepted costs.
+
+## 28.7 Net
 
 Engineering-foundation work is largely done and gate-enforced. The genuinely-open Phase-1 items are **observability, idempotency, PDF and FeatureFlags** — each re-confirmed absent this pass (no Sentry/Telescope/Bugsnag/Flare and no dompdf/snappy/browsershot/mpdf in `composer.json`). The next build increment ("slice 2" / Phase 5 invoicing) can proceed on the frozen skeleton.
 

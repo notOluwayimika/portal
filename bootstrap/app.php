@@ -3,6 +3,7 @@
 use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\ReconcileAccounts;
+use App\Http\Middleware\ApplyImpersonation;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactorEnrolled;
 use App\Http\Middleware\HandleAppearance;
@@ -54,6 +55,12 @@ return Application::configure(basePath: dirname(__DIR__))
             // the requirement read is team-agnostic, so the ordering is not
             // load-bearing for correctness (c7-brief D1).
             EnsureTwoFactorEnrolled::class,
+            // IMMEDIATELY after the 2FA gate, and this ordering IS load-bearing:
+            // EnsureTwoFactorEnrolled reads $request->user(), so swapping the
+            // user first would evaluate 2FA against the impersonated TARGET —
+            // letting an operator enrol 2FA on someone else's account. Before
+            // Inertia, so shared props resolve as the target. See the class.
+            ApplyImpersonation::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -62,6 +69,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             SetSchoolContext::class,
             EnsureTwoFactorEnrolled::class,
+            // statefulApi() is enabled, so the SPA's /api calls carry the same
+            // session — one mechanism impersonates both transports. Pure token
+            // clients have no session and are never impersonated, which is the
+            // behaviour we want. Same slot, same reason as the web group.
+            ApplyImpersonation::class,
         ]);
 
         $middleware->alias([

@@ -167,6 +167,10 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "DELETE /impersonation": [
+        "web",
+        "auth"
+    ],
     "DELETE /result-signature": [
         "web",
         "auth",
@@ -1735,6 +1739,12 @@
     "POST /forgot-password": [
         "web",
         "guest:web"
+    ],
+    "POST /impersonation": [
+        "web",
+        "auth",
+        "role:super_admin",
+        "permission:rbac.impersonate"
     ],
     "POST /login": [
         "web",

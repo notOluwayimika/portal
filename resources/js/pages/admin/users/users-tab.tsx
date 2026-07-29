@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { router } from '@inertiajs/react';
-import { AlertTriangle, Loader2, Save, ShieldBan } from 'lucide-react';
+import { AlertTriangle, Loader2, Save, ShieldBan, UserCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
@@ -284,6 +284,31 @@ export function UsersTab({
                                     </td>
 
                                     <td className="px-4 py-2.5 text-right">
+                                        {user.impersonable && (
+                                            <button
+                                                type="button"
+                                                title={`Act as ${user.name}`}
+                                                aria-label={`Impersonate ${user.name}`}
+                                                onClick={() =>
+                                                    router.post(
+                                                        '/impersonation',
+                                                        {
+                                                            user_uuid:
+                                                                user.uuid,
+                                                        },
+                                                        {
+                                                            preserveScroll: true,
+                                                        },
+                                                    )
+                                                }
+                                                className="mr-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-indigo-600 focus-visible:ring-1 focus-visible:ring-indigo-500 focus-visible:outline-none dark:hover:bg-slate-800"
+                                            >
+                                                <UserCog
+                                                    className="h-3.5 w-3.5"
+                                                    aria-hidden
+                                                />
+                                            </button>
+                                        )}
                                         {user.editable ? (
                                             <span className="text-slate-500 tabular-nums">
                                                 <span className="font-bold text-slate-900 dark:text-white">

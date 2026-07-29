@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\StudentCurriculum;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -36,7 +37,21 @@ class StudentCurriculumResource extends JsonResource
             // curriculum's full subject list here would just repeat that
             // same data once per student for no reason.
             'curriculum' => (new CurriculumResource($this->whenLoaded('curriculum')))->withoutSubjects(),
-            'promoted_to' => (new CurriculumResource($this->whenLoaded('promotedTo')))->withoutSubjects(),
+            // promotedTo is an EPISODE (S1 commit 5), not a curriculum. Serialise the episode's uuid plus its
+            // curriculum — the same wrapper shape StudentCurriculumController::presentStudentCurriculum emits,
+            // so the two presenters agree key-for-key on the one TypeScript type they both feed.
+            'promoted_to' => $this->whenLoaded('promotedTo', function () {
+                // $this->resource (the wrapped StudentCurriculum) is typed mixed, so this reads the loaded
+                // episode without the undefined-property noise a resource gets accessing $this->promotedTo.
+                $episode = $this->resource->promotedTo;
+
+                return [
+                    'id' => $episode->uuid,
+                    'curriculum' => $episode->curriculum
+                        ? (new CurriculumResource($episode->curriculum))->withoutSubjects()
+                        : null,
+                ];
+            }),
             'subjects' => StudentSubjectResource::collection($this->whenLoaded('studentSubjects')),
             'status' => $this->status,
             'principal_approval' => (bool) $this->principal_approval,

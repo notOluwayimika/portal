@@ -240,7 +240,6 @@ export interface Student {
         full_class: string;
     };
     curriculum_id?: number;
-    promoted_to_id?: number;
     guardians?: Guardian[];
     student_curricula: StudentCurriculum[];
     admission_date?: string | null;
@@ -493,7 +492,9 @@ export interface StudentCurriculum {
     curriculum: Curriculum;
     status: string;
     principal_approval: boolean;
-    promoted_to?: Curriculum;
+    // The episode this one was promoted into (S1 commit 5): its uuid plus that episode's curriculum — NOT a
+    // bare Curriculum. Both server presenters emit this wrapper shape.
+    promoted_to?: { id: string; curriculum?: Curriculum | null };
     subjects?: StudentSubject[];
     ended_at?: string | null;
     ended_by_user_id?: number | null;

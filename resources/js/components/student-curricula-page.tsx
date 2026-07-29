@@ -121,19 +121,6 @@ function CurriculumRow({
                         )}
                 </div>
             </Td>
-            {/* <Td>
-                                            {sc.promoted_to ? (
-                                                <span className="text-gray-700">
-                                                    {formatCurriculum(
-                                                        sc.promoted_to,
-                                                    )}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">
-                                                    —
-                                                </span>
-                                            )}
-                                        </Td> */}
             <Td className="text-right">
                 <div className="flex gap-4">
                     {roles.includes('guardian') && !activeResultAvailable ? (

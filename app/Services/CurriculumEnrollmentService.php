@@ -49,7 +49,8 @@ class CurriculumEnrollmentService
                 'student_id' => $student->id,
                 'curriculum_id' => $curriculum->id,
                 'status' => $options['status'] ?? StudentStatusEnum::ACTIVE,
-                'promoted_to_id' => $options['promoted_to_id'] ?? null,
+                // No promoted_to_id: enrollment does not set a promotion link (S1 commit 5). It is the OUTPUT
+                // of promote() / BackfillPastTermJob / MoveFromCcmJob, never a caller-supplied enroll option.
             ]);
 
             $this->subjectService->autoAttachCompulsorySubjects($enrollment);

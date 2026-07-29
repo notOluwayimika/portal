@@ -57,7 +57,6 @@ class StudentResource extends JsonResource
             ],
             'curriculum_id' => $curriculum?->id,
             'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
-            'promoted_to_id' => $currentCurriculum?->promoted_to_id,
             'admission_date' => $this->admission_date?->toDateString(),
             'address' => $this->address,
             'nationality' => $this->nationality,

@@ -113,9 +113,16 @@ class StudentCurriculum extends Model
         return $this->belongsTo(Curriculum::class);
     }
 
+    /**
+     * The episode this one was promoted INTO (S1 commit 5). `promoted_to_id` is a self-reference: the
+     * column's FK targets student_curricula, and both legitimate writers (promote(), BackfillPastTermJob,
+     * MoveFromCcmJob) store a student_curricula id. This relation was wrongly declared against Curriculum,
+     * which — because low ids collide across the two tables — served a plausible but unrelated curriculum on
+     * every promotion response. It is an EPISODE; read `->promotedTo->curriculum` for its curriculum.
+     */
     public function promotedTo(): BelongsTo
     {
-        return $this->belongsTo(Curriculum::class, 'promoted_to_id');
+        return $this->belongsTo(StudentCurriculum::class, 'promoted_to_id');
     }
 
     public function endedBy(): BelongsTo

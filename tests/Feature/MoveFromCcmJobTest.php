@@ -17,6 +17,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Subject;
 use App\Models\Term;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -224,4 +225,33 @@ it('carries scores for overlapping marking components onto the new non-ccm subje
 
     $migratedCa1->refresh();
     expect((float) $migratedCa1->score)->toBe(22.8);
+});
+
+// ── Proof 7b (S1 commit 5) — MoveFromCcm records the promotion LINK, not just the status ──
+
+it('proof 7b — MoveFromCcm sets the source episode promoted_to_id to the new episode, not just status=promoted', function () {
+    $school = School::factory()->create();
+    $admin = User::factory()->create(['school_id' => $school->id]);
+    $arm = mfc_classLevelArm($school);
+    $term = mfc_term($school);
+    $examType = mfc_examType($school);
+    $ccm = mfc_curriculum($school, $arm, $term, $examType, true);
+
+    $student = Student::create([
+        'school_id' => $school->id, 'first_name' => 'Ccm', 'last_name' => Str::random(6),
+        'gender' => 'male', 'admission_number' => 'ADM-'.Str::random(8),
+    ]);
+    $old = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => $ccm->id, 'status' => 'active']);
+
+    (new MoveFromCcmJob($ccm, $admin->id, (int) $ccm->school_id))->handle();
+
+    $target = Curriculum::withoutGlobalScope(SchoolScope::class)
+        ->where('school_id', $school->id)->where('is_ccm', false)->first();
+    $new = StudentCurriculum::withoutGlobalScopes()
+        ->where('student_id', $student->id)->where('curriculum_id', $target->id)->first();
+
+    // PLANT: revert 5c (drop promoted_to_id from the :304 update) → the source row is status='promoted' with a
+    // NULL link → this reds. Assert the LINK value, not just the status (the status passes before AND after).
+    expect($old->fresh()->status->value)->toBe('promoted')
+        ->and($old->fresh()->promoted_to_id)->toBe($new->id);
 });

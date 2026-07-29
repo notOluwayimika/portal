@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DTOs\StudentDto;
 use App\Enums\GenderTypeEnum;
+use App\Enums\StudentStatusEnum;
 use App\Models\Curriculum;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -80,7 +81,7 @@ class StudentService
                 auth()->user(),
                 [
                     'status' => $attributes['status'] ?? 'active',
-                    'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
+                    // No promoted_to_id: a newly admitted student has not been promoted from anywhere (S1 c5).
                 ]
             );
 
@@ -127,15 +128,17 @@ class StudentService
                 isset($attributes['curriculum_id']) &&
                 $student->studentCurriculum?->curriculum_id != $attributes['curriculum_id']
             ) {
-                StudentCurriculum::updateOrCreate(
-                    [
-                        'student_id' => $student->id,
-                        'curriculum_id' => $attributes['curriculum_id'],
-                    ],
-                    [
-                        'promoted_to_id' => $attributes['promoted_to_id'] ?? null,
-                    ]
-                );
+                // firstOrCreate, said plainly (S1 commit 5). With promoted_to_id gone (Part 2), the old
+                // updateOrCreate's update-array was empty — a firstOrCreate wearing a disguise that ALSO
+                // cleared any existing link on an unrelated match. school_id is derived by the model's
+                // creating hook from student_id. NOTE: this leans on
+                // student_curricula_student_id_curriculum_id_unique, which Option B will revisit — do not
+                // build anything new on it. Editing a curriculum through the student form is a
+                // promotion-shaped act outside promote(); that is Option B's problem, not this commit's.
+                StudentCurriculum::firstOrCreate([
+                    'student_id' => $student->id,
+                    'curriculum_id' => $attributes['curriculum_id'],
+                ]);
             }
 
             return $student;
@@ -146,7 +149,15 @@ class StudentService
     {
         $latestCurriculum = $student->studentCurricula()->latest('id')->first();
         if ($latestCurriculum instanceof StudentCurriculum) {
-            $latestCurriculum->update(['status' => $status]);
+            // Clear the promotion link when the status leaves 'promoted' — parity with
+            // StudentCurriculumController::updateStatus (:98, :118), which this route (PATCH
+            // /students/{student}/status) bypassed. `status` is cast to StudentStatusEnum, so compare AFTER
+            // assignment (as the controller does), not against the raw string parameter.
+            $latestCurriculum->status = StudentStatusEnum::from($status);
+            if ($latestCurriculum->status !== StudentStatusEnum::PROMOTED) {
+                $latestCurriculum->promoted_to_id = null;
+            }
+            $latestCurriculum->save();
         }
     }
 

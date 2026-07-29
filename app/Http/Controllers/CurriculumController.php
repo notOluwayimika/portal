@@ -19,6 +19,7 @@ use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
 use App\Support\ActiveSchool;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -116,6 +117,19 @@ class CurriculumController extends Controller
             $curriculum->delete();
 
             return response()->json(['message' => 'Curriculum deleted successfully'], 204);
+        } catch (QueryException $e) {
+            // A RESTRICT child refuses the cascade (MySQL 1451). As of S1 commit 5 that includes a curriculum
+            // whose episodes are promotion TARGETS (student_curricula_promoted_to_student_school_foreign); it
+            // already included episodes carrying subjects (2026_05_17_000004) or invoices (2026_07_19_100000).
+            // A business rule delivered as a 500 reads as a server fault — name it as a 409 instead.
+            if ((int) ($e->errorInfo[1] ?? 0) === 1451) {
+                return response()->json([
+                    'error' => 'This curriculum has enrollment records — students promoted into it, or episodes with subjects or invoices — and cannot be deleted.',
+                ], 409);
+            }
+            \Log::error($e->getMessage());
+
+            return response()->json(['error' => 'Failed to delete curriculum'], 500);
         } catch (\Throwable $th) {
             \Log::error($th->getMessage());
 

@@ -73,12 +73,13 @@ class StudentRequest extends FormRequest
                 'integer',
                 Rule::exists('curricula', 'id')->where('school_id', ActiveSchool::id()),
             ],
-            // NOT scoped here on purpose: `promoted_to_id`'s FK actually targets
-            // `student_curricula` (self-referencing), so this rule names the wrong
-            // TABLE, not merely the wrong scope. Fixing the table is Option-B's
-            // promotion-chain slice — see the defect list. Scoping it to `curricula`
-            // now would only entrench the wrong target.
-            'promoted_to_id' => ['nullable', 'integer', 'exists:curricula,id'],
+            // `promoted_to_id` is deliberately NOT accepted here (S1 commit 5). It is not an attribute a
+            // client supplies — it is the OUTPUT of a promotion, written only by promote(), BackfillPastTermJob
+            // and MoveFromCcmJob, each computing it from a row they created moments earlier in the same
+            // transaction. The old `exists:curricula,id` rule named the wrong TABLE (the FK targets
+            // student_curricula), and even a corrected rule could not stop one student's episode pointing at
+            // another's — that needs a comparison against $student no validator can express. The composite
+            // (promoted_to_id, student_id, school_id) FK makes it a database fact instead. Do not re-add it.
 
             'admission_date' => ['nullable', 'date'],
             'address' => ['nullable', 'string'],

@@ -301,7 +301,15 @@ class MoveFromCcmJob implements ShouldQueue
                     ]
                 );
             }
-            $oldStudentCurriculum->update(['status' => 'promoted']);
+            // Record the promotion LINK, not just the status (S1 commit 5). This is the third legitimate
+            // writer of promoted_to_id; it had $newStudentCurriculum in hand and was setting status='promoted'
+            // without it, manufacturing a promoted-without-link row. The new episode is the same student
+            // (student_id copied at :278) in the same school (the :56 guard aborts otherwise, under SchoolAware),
+            // so the composite (promoted_to_id, student_id, school_id) FK accepts it.
+            $oldStudentCurriculum->update([
+                'status' => 'promoted',
+                'promoted_to_id' => $newStudentCurriculum->id,
+            ]);
         }
     }
 }

@@ -17,7 +17,15 @@ return [
         'auth.failed_login_threshold_exceeded',
         'permissions.role_assigned',
         'permissions.role_revoked',
-        'admin.user_impersonated',
+        // Impersonation entry/exit. These keys replace 'admin.user_impersonated',
+        // which NOTHING emitted — severity resolves "{log_name}.{event}" and the
+        // code writes log name `rbac` with these two events, so the dead key left
+        // the single most security-relevant event in the system falling through
+        // to the `info` default. ADR 0045 accepts that super_admin can drive both
+        // sides of maker-checker precisely BECAUSE impersonation is loudly
+        // attributed; that acceptance is only sound if these rows are surfaced.
+        'rbac.impersonation_started',
+        'rbac.impersonation_ended',
         'finance.refund_issued',
     ],
 

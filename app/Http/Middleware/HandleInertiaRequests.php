@@ -6,6 +6,7 @@ use App\Models\School;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\EffectivePermissions;
+use App\Support\Impersonation;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,6 +38,37 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
+    /**
+     * Who is really driving this session, when it is not the acting user.
+     *
+     * Read from the session rather than from Impersonation's in-process state so
+     * it reflects the durable session, and resolved without global scopes: the
+     * operator is a super_admin with no school of their own.
+     *
+     * @return array{operator: string, target: string, school: string|null}|null
+     */
+    private function impersonationState(Request $request): ?array
+    {
+        if (! $request->hasSession() || ! $request->session()->has(Impersonation::SESSION_KEY)) {
+            return null;
+        }
+
+        $state = (array) $request->session()->get(Impersonation::SESSION_KEY);
+
+        $operator = User::withoutGlobalScopes()->find($state['operator_id'] ?? null);
+        $target = User::withoutGlobalScopes()->find($state['target_id'] ?? null);
+
+        if (! $operator || ! $target) {
+            return null;
+        }
+
+        return [
+            'operator' => $operator->full_name,
+            'target' => $target->full_name,
+            'school' => School::find($state['school_id'] ?? null)?->name,
+        ];
+    }
+
     public function share(Request $request): array
     {
         /** @var User|null $user */
@@ -61,6 +93,13 @@ class HandleInertiaRequests extends Middleware
                 // (dropped: no frontend read; bite-proven).
                 'permissions' => $user ? EffectivePermissions::for($user) : [],
             ],
+            // Non-null ONLY inside an impersonation session. `auth.user` above is
+            // already the TARGET (this middleware runs after ApplyImpersonation,
+            // deliberately), so without this the UI has no way to tell it is not
+            // really that person — which is exactly the state a persistent banner
+            // has to make impossible to miss.
+            'impersonation' => $this->impersonationState($request),
+
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

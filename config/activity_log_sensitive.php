@@ -26,7 +26,10 @@ return [
         'permissions.role_assigned',
         'permissions.role_revoked',
         'permissions.*',
-        'admin.user_impersonated',
+        // See the note in activity_log_severity.php: 'admin.user_impersonated'
+        // was never emitted by anything. The real events are these.
+        'rbac.impersonation_started',
+        'rbac.impersonation_ended',
         'auth.password_reset',
     ],
 

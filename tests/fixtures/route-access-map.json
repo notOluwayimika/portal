@@ -243,6 +243,23 @@
             "super_admin"
         ]
     },
+    "DELETE /impersonation": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "boarding_parent",
+            "finance_director",
+            "finance_void_approver",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "DELETE /result-signature": {
         "auth": true,
         "roles": [
@@ -2752,6 +2769,12 @@
             "registrar",
             "super_admin",
             "teacher"
+        ]
+    },
+    "POST /impersonation": {
+        "auth": true,
+        "roles": [
+            "super_admin"
         ]
     },
     "POST /login": {

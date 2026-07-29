@@ -51,9 +51,12 @@ final class ApproveFeeScheduleChange
     {
         $draft = FeeSchedule::query()->whereKey($change->target_schedule_id)->lockForUpdate()->firstOrFail();
 
-        // Re-read under lock: the draft may have been published or retired since submission.
-        if ($draft->status !== FeeScheduleStatus::Draft) {
-            throw new BusinessRuleException('The target schedule is no longer a draft.');
+        // Re-read under lock: the target must still be AWAITING APPROVAL (4a). Submit moved it draft →
+        // pending_approval; anything else means it was published, retired, or manually reverted to draft
+        // since submission — and a schedule reverted to draft must NOT be approvable, which is the second
+        // half of the guarantee (proof 37).
+        if ($draft->status !== FeeScheduleStatus::PendingApproval) {
+            throw new BusinessRuleException('The target schedule is no longer awaiting approval.');
         }
 
         // An empty approved schedule bills nothing and looks like a working configuration — refuse it. This

@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\TermStatusEnum;
+use App\Exceptions\BusinessRuleException;
 use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Actions\ApproveFeeScheduleChange;
 use App\Finance\Actions\CreateFeeSchedule;
+use App\Finance\Enums\FeeScheduleChangeStatus;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Models\FeeItem;
 use App\Finance\Models\FeeSchedule;
@@ -113,14 +115,15 @@ function fscSubmit($test, User $user, School $school, FeeSchedule $target, strin
 
 // ── Proof 27 — a submitted change does nothing ──────────────────────────────
 
-it('proof 27 — a submitted publish leaves the target a DRAFT; nothing becomes billable', function () {
+it('proof 27 — a submitted publish moves the target to PENDING_APPROVAL (frozen), never active; nothing becomes billable', function () {
     [$school, $term, $level] = fscContext();
     $draft = fscDraft($school, $term, $level);
 
     fscSubmit($this, fscMaker($school), $school, $draft)->assertCreated()->assertJsonPath('status', 'submitted');
 
-    // PLANT: move the status flip into Submit… → the target is active here → red.
-    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Draft);
+    // The CHANGE is 'submitted'; the SCHEDULE is now pending_approval — frozen (4a) and still NOT billable.
+    // PLANT: make Submit flip the target straight to active → the lookup below finds it → red.
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::PendingApproval);
     ActiveSchool::runFor($school->id, fn () => expect(app(FeeScheduleLookup::class)->activeFor($term->id, $level->id))->toBeNull());
 });
 
@@ -150,7 +153,7 @@ it('proof 28 (DB CHECK) — a raw write setting decided_by = submitted_by is ref
 
 // ── Proof 29 — approval is atomic and supersedes; zero-active invariant scoped to publish ──
 
-it('proof 29 — a failing publish leaves NOTHING moved (prior active still active, draft still draft, change still submitted)', function () {
+it('proof 29 — a failing publish leaves NOTHING moved (prior active still active, target still pending_approval, change still submitted)', function () {
     [$school, $term, $level] = fscContext();
     $active = fscDraft($school, $term, $level, 'active-one');
     // Publish + approve the first so an ACTIVE exists to supersede.
@@ -184,7 +187,7 @@ it('proof 29 — a failing publish leaves NOTHING moved (prior active still acti
     // Nothing moved — and the slot still has exactly ONE active (the publish-scoped zero-active invariant:
     // a publish that fails must not silently drop the slot to zero active).
     expect($active->fresh()->status)->toBe(FeeScheduleStatus::Active)
-        ->and($draft->fresh()->status)->toBe(FeeScheduleStatus::Draft)
+        ->and($draft->fresh()->status)->toBe(FeeScheduleStatus::PendingApproval) // submit froze it; the failed approve rolled back, so it stays pending
         ->and($change->fresh()->status->value)->toBe('submitted');
     ActiveSchool::runFor($school->id, fn () => expect(
         FeeSchedule::where('term_id', $term->id)->where('class_level_id', $level->id)->where('status', 'active')->count()
@@ -260,67 +263,81 @@ it('proof 29c — approving a publish of an EMPTY draft is refused (an empty sch
     $this->actingAs($checker)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/fee-schedule-changes/{$change}/approve")->assertStatus(422);
 
-    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Draft); // never activated
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::PendingApproval); // never activated; the refused approve left it pending
 });
 
 // ── Proof 30 — an active schedule's items are frozen; a draft's are free (state-scoped guard) ──
 
-it('proof 30 — items are freely editable on a DRAFT and frozen on an ACTIVE schedule (INSERT, UPDATE, DELETE)', function () {
+it('proof 36 (was 30) — items are free on DRAFT, and FROZEN on both PENDING_APPROVAL and ACTIVE', function () {
     [$school, $term, $level] = fscContext();
     $maker = fscMaker($school);
     $checker = fscChecker($school);
-    $draft = fscDraft($school, $term, $level);
+    $draft = fscDraft($school, $term, $level); // carries a 'Tuition' item
 
-    // While DRAFT — all three item mutations succeed.
+    // While DRAFT — all three item mutations succeed (on a throwaway item, so Tuition survives to be frozen).
     ActiveSchool::runFor($school->id, function () use ($draft) {
         $extra = $draft->items()->create(['school_id' => $draft->school_id, 'description' => 'Transport', 'amount' => Money::fromKobo(500000)]);
         DB::table('finance_fee_items')->where('id', $extra->id)->update(['amount_minor' => 600000]);
         DB::table('finance_fee_items')->where('id', $extra->id)->delete();
     });
-
-    // Publish it.
-    $c = fscSubmit($this, $maker, $school, $draft)->json('id');
-    $this->actingAs($checker)->withSession(['school_id' => $school->id])->postJson("/api/v1/finance/fee-schedule-changes/{$c}/approve")->assertOk();
     $item = FeeItem::where('fee_schedule_id', $draft->id)->firstOrFail();
 
-    // Now ACTIVE — INSERT, UPDATE and DELETE against its items are all refused by the parent-state trigger.
-    // (PLANT lives in the commit-2 migration: guard only UPDATE, leave INSERT open → the INSERT line reds.
-    // A migration DDL plant fights RefreshDatabase's wrapping transaction — see the PR body; the draft/active
-    // contrast above is the standing bite that needs no DDL edit.)
-    expect(fn () => DB::table('finance_fee_items')->insert([
-        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'fee_schedule_id' => $draft->id,
-        'description' => 'Sneak', 'amount_minor' => 5000000, 'amount_currency' => 'NGN',
-        'is_mandatory' => 1, 'is_discountable' => 1, 'sort_order' => 9, 'created_at' => now(), 'updated_at' => now(),
-    ]))->toThrow(QueryException::class)
-        ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 999]))->toThrow(QueryException::class)
-        ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->delete())->toThrow(QueryException::class);
+    // INSERT, UPDATE and DELETE against the items are all refused by the three parent-state triggers whenever
+    // the parent is not a draft. (PLANT lives in the commit-2 migration: guard only UPDATE, leave INSERT open →
+    // the INSERT line reds. A migration DDL plant fights RefreshDatabase's wrapping transaction — see the PR
+    // body; the draft-vs-frozen contrast here is the standing bite that needs no DDL edit.)
+    $frozen = function () use ($school, $draft, $item) {
+        expect(fn () => DB::table('finance_fee_items')->insert([
+            'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'fee_schedule_id' => $draft->id,
+            'description' => 'Sneak', 'amount_minor' => 5000000, 'amount_currency' => 'NGN',
+            'is_mandatory' => 1, 'is_discountable' => 1, 'sort_order' => 9, 'created_at' => now(), 'updated_at' => now(),
+        ]))->toThrow(QueryException::class)
+            ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 999]))->toThrow(QueryException::class)
+            ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->delete())->toThrow(QueryException::class);
+    };
+
+    // Submit → PENDING_APPROVAL: 4a freezes the items HERE, before the ED approves — the whole point of the
+    // commit. ADR 0050 cited proof 30 for the "items are mutable" claim it is about to lose; this is that
+    // claim, AMENDED in the same place a reader looks for the original, not replaced by a new test elsewhere.
+    $c = fscSubmit($this, $maker, $school, $draft)->json('id');
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::PendingApproval);
+    $frozen();
+
+    // Approve → ACTIVE: still frozen (the original proof-30 guarantee).
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])->postJson("/api/v1/finance/fee-schedule-changes/{$c}/approve")->assertOk();
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Active);
+    $frozen();
 });
 
-// ── Proof 31 / arch — a schedule reaches `active` in exactly one place ───────
+// ── Proof 31 / arch — who writes a fee-schedule status, and who writes ACTIVE ───────
 
-it('proof 31 / arch — finance_fee_schedules is set ACTIVE ONLY by ApproveFeeScheduleChange', function () {
-    // Two stages. FIRST narrow the file set to files that even touch schedules, so the write pattern below
-    // does not match an unrelated model's `'status' => 'active'` (invoices, void requests, …). THEN match a
-    // WRITE of active in BOTH forms — the enum `FeeScheduleStatus::Active` and the RAW STRING 'active' — in
-    // either the mass-assign (`'status' => …`) or property-assignment (`->status = …`) idiom. The raw-string
-    // arm was added in 3b (0a): about ten places in app/ write status as the bare string, and any could be a
-    // schedule write tomorrow with an enum-only regex still green — the hole was demonstrated with a watched
-    // green before this arm existed. READS (`!== FeeScheduleStatus::Active`, `FeeScheduleStatus::Active->value`)
-    // fit neither idiom and are excluded.
+it('proof 31 / arch — every fee-schedule status write is one of the four Actions; ACTIVE only ApproveFeeScheduleChange', function () {
+    // Broadened in 4a: three Actions now write a schedule status (Create→draft, Submit→pending_approval,
+    // Reject→draft, Approve→active/superseded), so a regex that saw only `active` would miss a rogue write of
+    // any OTHER state — e.g. a fifth class flipping something to pending_approval or back to draft. Assert the
+    // full writer set, AND keep `active` narrowed to Approve alone. This is 3b's 0a lesson (a status regex too
+    // narrow to see a write) generalised while the scope is already changing.
     //
-    // DELIBERATELY app/-only: a seeder or factory writing 'active' is invisible to this scan. Seeders are not
-    // production write paths, so that is the right boundary — stated so the next reader does not conclude the
-    // test covers more than it does.
+    // A WRITE is `'status' => …` (mass-assign) or `->status = …` (property), enum OR raw string. READS
+    // (`!== FeeScheduleStatus::X`, `=== FeeScheduleStatus::X`, `->where('status', …->value)`) fit neither and
+    // are excluded. DELIBERATELY app/-only: a seeder/factory write is invisible — seeders are not production
+    // write paths, so that is the right boundary, stated so the next reader does not over-read the scan.
     $touchesSchedules = '/FeeSchedule|finance_fee_schedules/';
+    $states = '(draft|pending_approval|active|superseded|retired)';
+    // The case names, NOT `::\w+` — that would match the model's cast declaration `'status' => FeeScheduleStatus::class`.
+    $cases = '(Draft|PendingApproval|Active|Superseded|Retired)';
+    $writesAny = "/(['\"]status['\"]\\s*=>\\s*(FeeScheduleStatus::{$cases}|['\"]{$states}['\"])|->status\\s*=\\s*(FeeScheduleStatus::{$cases}|['\"]{$states}['\"]))/";
     $writesActive = "/(['\"]status['\"]\\s*=>\\s*(FeeScheduleStatus::Active|['\"]active['\"])|->status\\s*=\\s*(FeeScheduleStatus::Active|['\"]active['\"]))/";
-    $writers = collect(Finder::create()->files()->in(app_path())->name('*.php'))
-        ->filter(fn ($f) => preg_match($touchesSchedules, $f->getContents()))
-        ->filter(fn ($f) => preg_match($writesActive, $f->getContents()))
-        ->map(fn ($f) => $f->getFilename())
-        ->values()->all();
 
-    // PLANT: write `'status' => 'active'` (raw) or restore the commit-2 flip in CreateFeeSchedule → it joins this set → red.
-    expect($writers)->toBe(['ApproveFeeScheduleChange.php']);
+    $files = collect(Finder::create()->files()->in(app_path())->name('*.php'))
+        ->filter(fn ($f) => preg_match($touchesSchedules, $f->getContents()));
+    $anyWriters = $files->filter(fn ($f) => preg_match($writesAny, $f->getContents()))->map(fn ($f) => $f->getFilename())->sort()->values()->all();
+    $activeWriters = $files->filter(fn ($f) => preg_match($writesActive, $f->getContents()))->map(fn ($f) => $f->getFilename())->values()->all();
+
+    // PLANT (any): write a FeeScheduleStatus in a FIFTH class → $anyWriters grows → red.
+    // PLANT (active): restore the commit-2 flip or any raw 'active' write → $activeWriters grows → red.
+    expect($anyWriters)->toBe(['ApproveFeeScheduleChange.php', 'CreateFeeSchedule.php', 'RejectFeeScheduleChange.php', 'SubmitFeeScheduleChange.php'])
+        ->and($activeWriters)->toBe(['ApproveFeeScheduleChange.php']);
 });
 
 // ── Proof 19 — School isolation (this commit's table only), super_admin included ──
@@ -376,4 +393,120 @@ it('convention (c) — a user holding only fee-schedule.change.approve reaches t
     $user->flushSchoolAccessCache();
 
     $this->actingAs($user)->withSession(['school_id' => $school->id])->get('/finance/approvals')->assertOk();
+});
+
+// ══ S1 4a — the pending_approval window (proofs 32–35, 37, + the pending-approval invariant) ══
+
+// ── Proof 32 — the window is shut: submitting a publish freezes the items ────
+
+it('proof 32 — after a publish is submitted, its items cannot be INSERTed, UPDATEd or DELETEd', function () {
+    [$school, $term, $level] = fscContext();
+    $draft = fscDraft($school, $term, $level);
+    $item = FeeItem::where('fee_schedule_id', $draft->id)->firstOrFail();
+
+    fscSubmit($this, fscMaker($school), $school, $draft)->assertCreated();
+
+    // PLANT: remove the status flip in SubmitFeeScheduleChange → the schedule stays draft → all three succeed → red.
+    expect(fn () => DB::table('finance_fee_items')->insert([
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'fee_schedule_id' => $draft->id,
+        'description' => 'Sneak', 'amount_minor' => 1, 'amount_currency' => 'NGN',
+        'is_mandatory' => 1, 'is_discountable' => 1, 'sort_order' => 9, 'created_at' => now(), 'updated_at' => now(),
+    ]))->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 1]))->toThrow(QueryException::class)
+        ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->delete())->toThrow(QueryException::class);
+});
+
+// ── Proof 33 — reject re-opens the window ────────────────────────────────────
+
+it('proof 33 — rejecting a publish returns the schedule to draft and unfreezes its items', function () {
+    [$school, $term, $level] = fscContext();
+    $maker = fscMaker($school);
+    $checker = fscChecker($school);
+    $draft = fscDraft($school, $term, $level);
+    $item = FeeItem::where('fee_schedule_id', $draft->id)->firstOrFail();
+
+    $c = fscSubmit($this, $maker, $school, $draft)->json('id');
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->postJson("/api/v1/finance/fee-schedule-changes/{$c}/reject", ['reason' => 'redo the numbers'])->assertOk();
+
+    // PLANT: drop the pending_approval → draft restore in RejectFeeScheduleChange → it stays pending → these red.
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Draft);
+    ActiveSchool::runFor($school->id, function () use ($item) {
+        DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 777]); // no throw
+    });
+    expect((int) DB::table('finance_fee_items')->where('id', $item->id)->value('amount_minor'))->toBe(777);
+});
+
+// ── Proof 34 — a submitted retire does NOT stop billing ──────────────────────
+
+it('proof 34 — an active schedule with a submitted retire is still active and still bills', function () {
+    [$school, $term, $level] = fscContext();
+    $maker = fscMaker($school);
+    $checker = fscChecker($school);
+
+    // Get an active schedule.
+    $draft = fscDraft($school, $term, $level);
+    $pub = fscSubmit($this, $maker, $school, $draft)->json('id');
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])->postJson("/api/v1/finance/fee-schedule-changes/{$pub}/approve")->assertOk();
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Active);
+
+    // Submit a retire — the schedule must keep billing until it is APPROVED.
+    fscSubmit($this, $maker, $school, $draft->fresh(), 'retire')->assertCreated();
+
+    // PLANT: flip status on the retire path in Submit too → the lookup returns null → red.
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Active);
+    ActiveSchool::runFor($school->id, fn () => expect(app(FeeScheduleLookup::class)->activeFor($term->id, $level->id))?->id)->toBe($draft->id);
+});
+
+// ── Proof 35 — the §3 dependency: pending_unique blocks a second open schedule for the slot ──
+
+it('proof 35 — while a publish is pending for a slot, a second draft for that slot is refused', function () {
+    [$school, $term, $level] = fscContext();
+    $draft = fscDraft($school, $term, $level);
+    fscSubmit($this, fscMaker($school), $school, $draft)->assertCreated(); // draft → pending_approval
+
+    // A second draft for the SAME (school, term, class level) now collides on finance_fee_schedules_pending_unique
+    // (which covers draft AND pending_approval). Without the widened index, the pending schedule frees its slot
+    // and this would insert — re-opening the exact two-open-requests gap 4a closes.
+    // PLANT (migration DDL): revert the generated columns to IF(status = 'draft', …) → this second draft inserts → red.
+    expect(fn () => fscDraft($school, $term, $level, 'second'))->toThrow(BusinessRuleException::class);
+});
+
+// ── Proof 37 — a target reverted to draft cannot be approved ─────────────────
+
+it('proof 37 — a schedule manually reverted to draft after submit cannot be approved', function () {
+    [$school, $term, $level] = fscContext();
+    $maker = fscMaker($school);
+    $checker = fscChecker($school);
+    $draft = fscDraft($school, $term, $level);
+    $c = fscSubmit($this, $maker, $school, $draft)->json('id');
+
+    // Force the target back to draft behind the change's back (a raw write, the kind the DB guards exist for).
+    DB::table('finance_fee_schedules')->where('id', $draft->id)->update(['status' => 'draft']);
+
+    // PLANT: leave ApproveFeeScheduleChange::publish comparing against Draft → this approves → red.
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->postJson("/api/v1/finance/fee-schedule-changes/{$c}/approve")->assertStatus(422);
+    expect($draft->fresh()->status)->toBe(FeeScheduleStatus::Draft); // never activated
+});
+
+// ── Invariant (test-level, NOT a DB rule) — pending_approval ⇒ exactly one submitted change ──
+
+it('invariant — no schedule sits in pending_approval without exactly one submitted change targeting it', function () {
+    // A cross-table property, so it is NOT expressible as a CHECK and is NOT enforced anywhere — it is
+    // asserted here over a built fixture. Do not mistake this for a database guarantee; it is a consistency
+    // check on the Actions, which is the only thing that ever moves a schedule into pending_approval.
+    [$school, $term, $level] = fscContext();
+    $maker = fscMaker($school);
+
+    $a = fscDraft($school, $term, $level, 'A');
+    fscSubmit($this, $maker, $school, $a); // A → pending_approval
+
+    ActiveSchool::runFor($school->id, function () {
+        FeeSchedule::where('status', FeeScheduleStatus::PendingApproval->value)->get()->each(function ($schedule) {
+            $open = FeeScheduleChange::where('target_schedule_id', $schedule->id)
+                ->where('status', FeeScheduleChangeStatus::Submitted->value)->count();
+            expect($open)->toBe(1);
+        });
+    });
 });

@@ -117,3 +117,51 @@ enters real prices — the window in which the gap could bite money does not ope
 now, rather than in 4a, so that if 4a slips the gap is still on the record with an owner and a slot; an
 unrecorded gap with no owner is how it becomes permanent. (3b does not build the fingerprint — the pilot has
 not started, and 3b is line-level reduction enforcement, not schedule-approval hardening.)
+
+---
+
+## Amendment — 2026-07-29 (commit 4a): the gap is closed by PREVENTION, not the fingerprint above
+
+The "Negative / accepted" paragraph directly above named a **submit-time fingerprint** as the remedy and
+cited proof 30's "items are mutable" assertion as load-bearing. Both change with commit 4a. The original
+text is left standing (it is the reasoning of record for why the gap existed); this amendment supersedes the
+*remedy*, ruled by the project lead on 2026-07-29.
+
+**The fingerprint was considered and rejected.** As specified it was count-plus-sum, and that is weaker than
+it looks: moving money *between* items (tuition 4,000,000 → 3,000,000, transport 1,000,000 → 2,000,000)
+preserves both the count and the sum, so the fingerprint says nothing about the edit a bad actor would
+actually make. Worse, since 3b `is_discountable` is load-bearing — a reduction line at generation is refused
+unless the cited policy is active and the item allows it — so flipping `is_discountable` on one item changes
+what can be billed and is invisible to a count and a sum alike. The strong version is a digest over the
+ordered tuple of every billing-relevant column, which can only be computed in PHP (a SQL `SHA2(GROUP_CONCAT(…))`
+fails *open* at `group_concat_max_len`), so the database could only ever hold the weak half. Detection was
+the wrong tool.
+
+**Prevention was available, cheaper, and already bite-proven.** 4a adds a `pending_approval` lifecycle state
+to `finance_fee_schedules`. Submitting a *publish* moves the target `draft → pending_approval` in the same
+transaction that creates the change row; the three `finance_fee_items_parent_state_guard_{ins,upd,del}`
+triggers — in the tree since commit 2, plant-proven by proof 30 — then refuse every INSERT/UPDATE/DELETE on
+its items, because their condition is already "parent is not `draft`". No new detection logic; the ED now
+approves exactly the numbers that were shown. Reject returns it `pending_approval → draft` (items unfreeze);
+approve moves it `pending_approval → active`. A **retire** does NOT change status — an active schedule must
+keep billing until the retirement is approved (proof 34). The `finance_fee_schedules_draft_unique` index was
+widened to `…_pending_unique` (covering `draft` AND `pending_approval`) in the same migration, or the freed
+slot would have re-opened the two-open-requests gap (§3 dependency, proof 35).
+
+**Option (c) is unchanged for the authoring window** — the draft is still a live row with real, editable item
+rows while it is a `draft`; that window now simply *ends at submit* rather than at approve. What proof 30
+asserted (items mutable) is amended in place as **proof 36** (items free on `draft`, frozen on
+`pending_approval` and `active`), in the same file, so a reader who followed the citation here finds the
+updated claim.
+
+**Cost, on the record:** while a publish is pending, the Head cannot edit the numbers — a correction means
+the ED rejects (with a reason) and the Head edits and resubmits. A maker-side **withdraw** would relieve a
+schedule frozen while the ED is unavailable; it is deliberately *not* in 4a (no consumer yet, no pilot, and a
+withdraw is a separate governed act deserving its own proofs) — recorded here with a slot rather than
+discovered at pilot.
+
+**The sibling table has no such gap.** `finance_discount_policy_changes` took option (b): the proposed terms
+are scalar columns on the *change row itself*, frozen by `finance_discount_policy_changes_update_guard`, and
+`ApproveDiscountPolicyChange` inserts a new policy from those columns rather than reading a mutable target —
+`DiscountPolicyStatus` has no `draft` case at all. The tamper window is a consequence of (c), which only the
+fee schedule took; confirmed by re-derivation, not assumed (project lead, 2026-07-29).

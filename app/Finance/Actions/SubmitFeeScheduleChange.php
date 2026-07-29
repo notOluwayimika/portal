@@ -49,13 +49,28 @@ final class SubmitFeeScheduleChange
             throw new BusinessRuleException('A change for this schedule is already awaiting approval.');
         }
 
-        return DB::transaction(fn () => FeeScheduleChange::create([
-            'school_id' => $schoolId,
-            'kind' => $kind,
-            'target_schedule_id' => $target->id,
-            'reason' => trim($reason),
-            'status' => FeeScheduleChangeStatus::Submitted,
-            'submitted_by' => $maker->id,
-        ]));
+        return DB::transaction(function () use ($schoolId, $kind, $target, $reason, $maker) {
+            // 4a: a publish FREEZES the target by moving it draft → pending_approval, so the numbers the ED
+            // sees cannot change under approval (the item guards refuse every write once it leaves draft).
+            // Re-read the target status UNDER LOCK first: the maker-side check above read a model loaded
+            // outside this transaction, and with a real state change now riding on it two submissions could
+            // otherwise race between that check and this flip (open_key would catch the loser only as a 500).
+            if ($kind === FeeScheduleChangeKind::Publish) {
+                $locked = FeeSchedule::query()->whereKey($target->id)->lockForUpdate()->firstOrFail();
+                if ($locked->status !== FeeScheduleStatus::Draft) {
+                    throw new BusinessRuleException('Only a draft schedule can be submitted for publication.');
+                }
+                $locked->update(['status' => FeeScheduleStatus::PendingApproval]);
+            }
+
+            return FeeScheduleChange::create([
+                'school_id' => $schoolId,
+                'kind' => $kind,
+                'target_schedule_id' => $target->id,
+                'reason' => trim($reason),
+                'status' => FeeScheduleChangeStatus::Submitted,
+                'submitted_by' => $maker->id,
+            ]);
+        });
     }
 }

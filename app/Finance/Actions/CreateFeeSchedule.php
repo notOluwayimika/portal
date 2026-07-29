@@ -66,10 +66,11 @@ final class CreateFeeSchedule
                 return $schedule->load(['items' => fn ($q) => $q->orderBy('sort_order')]);
             });
         } catch (QueryException $e) {
-            // A second open draft for the same slot trips finance_fee_schedules_draft_unique — translate to
-            // a friendly 422 rather than a raw 500 (there is already a draft to edit or publish).
-            if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'finance_fee_schedules_draft_unique')) {
-                throw new BusinessRuleException('A draft schedule already exists for this term and class level; edit or publish it.');
+            // A second OPEN schedule for the same slot trips finance_fee_schedules_pending_unique — which
+            // covers draft AND pending_approval as of 4a (a slot with a schedule awaiting approval is also
+            // occupied). Translate to a friendly 422 rather than a raw 500.
+            if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'finance_fee_schedules_pending_unique')) {
+                throw new BusinessRuleException('A draft or pending schedule already exists for this term and class level; edit, publish, or await its approval.');
             }
             throw $e;
         }

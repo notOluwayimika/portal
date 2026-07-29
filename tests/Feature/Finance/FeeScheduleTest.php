@@ -95,8 +95,10 @@ it('proof 24b — the lifecycle uniqueness indexes are state-scoped (school_id +
         ['finance_fee_schedules', $index],
     ))->pluck('COLUMN_NAME')->all();
 
+    // S1 4a widened the draft key to cover pending_approval too, renaming it _pending_unique on
+    // pending_{term,class_level}_key — a draft OR a schedule awaiting approval occupies the slot.
     expect($shape('finance_fee_schedules_active_unique'))->toBe(['school_id', 'active_term_key', 'active_class_level_key'])
-        ->and($shape('finance_fee_schedules_draft_unique'))->toBe(['school_id', 'draft_term_key', 'draft_class_level_key']);
+        ->and($shape('finance_fee_schedules_pending_unique'))->toBe(['school_id', 'pending_term_key', 'pending_class_level_key']);
 });
 
 // Proof 24c (the SECOND-publish supersession, exercised in commit 2 against CreateFeeSchedule) MOVED in

@@ -3,15 +3,21 @@
 namespace App\Finance\Actions;
 
 use App\Exceptions\BusinessRuleException;
+use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleChangeStatus;
+use App\Finance\Enums\FeeScheduleStatus;
+use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\FeeScheduleChange;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Governance checker side — the ED REJECTS a change with a reason. The schedule is untouched (the draft
- * stays a draft and may be edited and resubmitted); the change is retained (un-deletable) for audit.
- * maker ≠ checker holds via the Policy (403) and the DB CHECK. Mirrors {@see RejectDiscountPolicyChange}.
+ * Governance checker side — the ED REJECTS a change with a reason; the change is retained (un-deletable)
+ * for audit. maker ≠ checker holds via the Policy (403) and the DB CHECK. Mirrors {@see RejectDiscountPolicyChange}.
+ *
+ * 4a: rejecting a PUBLISH restores the target pending_approval → draft, in the same transaction, so the
+ * Head can edit and resubmit — the items unfreeze the moment the schedule is a draft again. Rejecting a
+ * retire touches only the change row (the target stayed active throughout).
  */
 final class RejectFeeScheduleChange
 {
@@ -28,6 +34,14 @@ final class RejectFeeScheduleChange
         }
 
         return DB::transaction(function () use ($change, $checker, $reason) {
+            // Restore a rejected publish's target to draft (under lock) so its items unfreeze for re-editing.
+            if ($change->kind === FeeScheduleChangeKind::Publish) {
+                $target = FeeSchedule::query()->whereKey($change->target_schedule_id)->lockForUpdate()->firstOrFail();
+                if ($target->status === FeeScheduleStatus::PendingApproval) {
+                    $target->update(['status' => FeeScheduleStatus::Draft]);
+                }
+            }
+
             $change->update([
                 'status' => FeeScheduleChangeStatus::Rejected,
                 'decided_by' => $checker->id,

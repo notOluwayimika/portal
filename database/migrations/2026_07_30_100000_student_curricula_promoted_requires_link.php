@@ -24,6 +24,20 @@ use Illuminate\Support\Facades\DB;
  * are lowercase ASCII and it makes no practical difference here; the point of a house rule is that it does
  * not require a per-site judgement). A NULL promoted_to_id is permitted for every non-promoted status, and
  * a promoted row with a link passes — so ordinary enrollment is untouched.
+ *
+ * PRE-FLIGHT GUARD, AND WHY THIS ALREADY-APPLIED MIGRATION WAS EDITED (deliberate, not a workaround). This
+ * repo's convention is "do not edit an applied migration; supersede it." Here superseding is IMPOSSIBLE: a
+ * new migration is timestamped later, so it runs AFTER this CHECK — too late to guard it. And the three
+ * pieces of the closure (composite FK → backfill command → this CHECK) cannot run in one `php artisan
+ * migrate`, because the backfill must run BETWEEN the FK and the CHECK. Without a guard, a production
+ * `migrate` that skips the backfill reaches the ALTER with 366 violating rows, fails with an opaque MySQL
+ * error, and stops the deploy with the FK on and the CHECK off. The guard added to up() below fixes that.
+ * Editing this file is safe precisely because Laravel tracks migrations by FILENAME: it will not re-run on
+ * dev/staging (where it is already recorded and there are 0 violating rows, so the guard is a no-op), and a
+ * fresh `migrate` (test DB, quality-clean-db) runs it with 0 violating rows too — the guard only ever fires
+ * on an environment where this CHECK has not yet been added, which is exactly production. The convention's
+ * purpose (never diverge an already-migrated environment) is therefore preserved. Flagged in the PR for a
+ * deliberate review decision rather than assumed.
  */
 return new class extends Migration
 {
@@ -31,11 +45,36 @@ return new class extends Migration
 
     public function up(): void
     {
+        // PRE-FLIGHT GUARD (added post-merge, deliberately editing this already-applied migration — see the
+        // docblock's PRE-FLIGHT GUARD note for why that is safe). The three pieces cannot deploy in one `migrate`:
+        // the composite FK, then THIS check, run back-to-back, but `academics:backfill-promotion-links` has to
+        // run BETWEEN them. If a `migrate` reaches here with violating rows still present, the raw ALTER fails
+        // with an opaque MySQL constraint error and the deploy stops with the FK applied and the CHECK not.
+        // Fail LOUDLY instead, naming the count and the command, so the procedure explains itself when skipped.
+        $violating = (int) DB::table('student_curricula')
+            ->whereRaw("status = BINARY 'promoted'")
+            ->whereNull('promoted_to_id')
+            ->count();
+
+        if ($violating > 0) {
+            throw new RuntimeException(
+                "Refusing to add {$this->constraintName()}: {$violating} student_curricula row(s) are "
+                ."status='promoted' with a NULL promoted_to_id. Run `php artisan academics:backfill-promotion-links` "
+                .'(dry run first, then --commit), resolve any orphans it reports, then re-run this migration. '
+                .'See the S1 promotion-link closure.'
+            );
+        }
+
         DB::statement(
             'ALTER TABLE student_curricula
                 ADD CONSTRAINT '.self::CHECK.'
                 CHECK (status <> BINARY \'promoted\' OR promoted_to_id IS NOT NULL)'
         );
+    }
+
+    private function constraintName(): string
+    {
+        return self::CHECK;
     }
 
     public function down(): void

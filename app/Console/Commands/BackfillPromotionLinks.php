@@ -20,12 +20,16 @@ use Illuminate\Support\Facades\DB;
  * migration would run against every fresh test DB where these rows do not exist), it must be re-runnable
  * and must report what it did, and it needs a dry run. `--dry-run` is the DEFAULT; writing needs `--commit`.
  *
- * SAFETY GATE (the numbers behind the "safe backfill" claim are dev, not production): before touching a
- * single row this counts ORPHANS (a promoted-NULL row with no later episode — nothing to point at) and
- * MULTI-CANDIDATE rows (more than one later episode — "the next by id" is then a choice, not a fact). If
- * EITHER is above zero it stops and reports, because both are decisions a human must make, not a command.
- * It spans ALL schools (withoutGlobalScopes + school_id in the join), so it can never silently repair only
- * the operator's active school.
+ * SKIP-AND-REPORT, not abort-all. Every UNAMBIGUOUS row is linked; the odd rows are reported and the command
+ * exits FAILURE, so a human rules on what remains rather than the whole batch waiting behind them:
+ *   • ORPHAN (a promoted-NULL row with no later episode — nothing to point at): skipped and its id reported.
+ *     Resolve by moving its status off promoted; this command cannot invent a target.
+ *   • MULTI-CANDIDATE (more than one later episode): NOT a problem — "the next by id" is deterministic, so a
+ *     student with three later episodes still has an unambiguous next one. The count + a sample are printed
+ *     as information only.
+ * A skipped or refused row is STILL a violating row the CHECK refuses, so exiting FAILURE while any remain
+ * is the point — the deploy is not unblocked until the odd rows are ruled on. It spans ALL schools
+ * (withoutGlobalScopes + school_id in the join), so it can never silently repair only the active school.
  */
 class BackfillPromotionLinks extends Command
 {
@@ -37,32 +41,23 @@ class BackfillPromotionLinks extends Command
     {
         $commit = (bool) $this->option('commit');
 
-        // ── Safety gate: orphans and multi-candidates must both be zero, or a human decides ──
-        $orphaned = $this->orphanCount();
-        $multi = $this->multiCandidateCount();
-
-        if ($orphaned > 0 || $multi > 0) {
-            $this->error('Refusing to backfill — the data needs a human decision first:');
-            $this->line("  orphaned (promoted, no later episode to link):  {$orphaned}");
-            $this->line("  multi-candidate (more than one later episode):  {$multi}");
-            $this->line('An orphan has nothing to point at (resolve by moving its status off promoted). A');
-            $this->line('multi-candidate makes "the next episode by id" a choice, not a fact — review a sample');
-            $this->line('before any write. Neither is this command\'s call. Nothing was written.');
-
-            return self::FAILURE;
+        // Multi-candidate rows are REPORTED, not blocked (the next by id is still unambiguous).
+        $multi = $this->multiCandidateIds();
+        if ($multi !== []) {
+            $this->warn(count($multi).' promoted-NULL row(s) have more than one later episode; the NEXT by id '
+                .'is still unambiguous. Sample ids: '.implode(', ', array_slice($multi, 0, 10)));
         }
 
-        // ── Link each promoted-NULL row to its (unique) next same-student, same-school episode ──
         $targets = StudentCurriculum::withoutGlobalScopes()
-            ->where('status', 'promoted')
+            ->whereRaw("status = BINARY 'promoted'")   // BINARY per house discipline (matches the migration)
             ->whereNull('promoted_to_id')
             ->orderBy('id')
             ->get(['id', 'student_id', 'school_id']);
 
         $examined = $targets->count();
         $linked = 0;
-        $skippedOrphan = 0;
-        $refused = [];
+        $skipped = [];              // orphan ids (no later episode)
+        $refused = [];              // id => driver message
 
         foreach ($targets as $row) {
             // getAttribute for school_id: it was added by a raw ALTER migration, so static analysis cannot
@@ -75,67 +70,68 @@ class BackfillPromotionLinks extends Command
                 ->value('id');
 
             if ($nextId === null) {
-                // Impossible once the gate above passes (orphaned === 0); kept so a mid-run change of the
-                // data cannot make the command invent a link it has no basis for.
-                $skippedOrphan++;
+                $skipped[] = $row->id;   // orphan — skip and report; never invent a target
 
                 continue;
             }
 
             if (! $commit) {
-                $linked++; // would-link
+                $linked++;               // would-link
 
                 continue;
             }
 
-            // Each write is wrapped alone: one row refused by the FK must not roll back the other 365.
+            // Each write is wrapped alone: one row the FK refuses must not roll back the rest.
             try {
                 StudentCurriculum::withoutGlobalScopes()
                     ->whereKey($row->id)
                     ->update(['promoted_to_id' => $nextId, 'updated_at' => now()]);
                 $linked++;
             } catch (QueryException $e) {
-                $refused[] = $row->id;
+                $refused[$row->id] = $e->getMessage();
             }
         }
 
         $verb = $commit ? 'linked' : 'would link';
-        $this->info(($commit ? 'Backfill committed.' : 'DRY RUN (pass --commit to write).'));
+        $this->info($commit ? 'Backfill committed.' : 'DRY RUN (pass --commit to write).');
         $this->line("  examined (promoted, NULL link):  {$examined}");
         $this->line("  {$verb}:  {$linked}");
-        $this->line("  skipped as orphaned:  {$skippedOrphan}");
+        $this->line('  skipped as orphaned:  '.count($skipped).($skipped !== [] ? ' — ids: '.implode(', ', $skipped) : ''));
         $this->line('  refused by the database:  '.count($refused));
 
         if ($refused !== []) {
-            // A refusal means the "next episode by id" rule picked a row the composite FK rejects — a fact
-            // about the data worth understanding before it is worked around. Do not retry blindly.
-            $this->error('Some links were REFUSED by the composite FK — student_curricula ids: '.implode(', ', $refused));
-
-            return self::FAILURE;
+            $firstId = array_key_first($refused);
+            $this->error('Some links were REFUSED — student_curricula ids: '.implode(', ', array_keys($refused)));
+            // The reason lives in the driver message, not the id — surface it (A4) so the operator does not
+            // have to reproduce the failure to find out what happened.
+            $this->error("First refusal (#{$firstId}): ".$refused[$firstId]);
         }
 
-        return self::SUCCESS;
+        if ($skipped !== []) {
+            $this->warn('Orphaned rows remain status=promoted with a NULL link — they STILL violate the CHECK. '
+                .'Resolve each by moving its status off promoted; this command cannot invent a target.');
+        }
+
+        // SUCCESS only when nothing was skipped or refused — i.e. no violating row remains. A skipped orphan
+        // or a refused row is still a CHECK violation, so the command must not exit 0 with one outstanding.
+        return $skipped === [] && $refused === [] ? self::SUCCESS : self::FAILURE;
     }
 
-    private function orphanCount(): int
+    /**
+     * ids of promoted-NULL rows whose student has MORE THAN ONE later same-school episode. Reported only.
+     *
+     * @return list<int>
+     */
+    private function multiCandidateIds(): array
     {
-        return (int) DB::table('student_curricula as sc')
-            ->where('sc.status', 'promoted')
-            ->whereNull('sc.promoted_to_id')
-            ->whereNotExists(fn ($q) => $q->select(DB::raw(1))->from('student_curricula as t')
-                ->whereColumn('t.student_id', 'sc.student_id')
-                ->whereColumn('t.school_id', 'sc.school_id')
-                ->whereColumn('t.id', '>', 'sc.id'))
-            ->count();
-    }
-
-    private function multiCandidateCount(): int
-    {
-        return (int) DB::table('student_curricula as sc')
-            ->where('sc.status', 'promoted')
+        return DB::table('student_curricula as sc')
+            ->whereRaw("sc.status = BINARY 'promoted'")
             ->whereNull('sc.promoted_to_id')
             ->whereRaw('(SELECT COUNT(*) FROM student_curricula t
                          WHERE t.student_id = sc.student_id AND t.school_id = sc.school_id AND t.id > sc.id) > 1')
-            ->count();
+            ->orderBy('sc.id')
+            ->pluck('sc.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 }

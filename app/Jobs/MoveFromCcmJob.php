@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\StudentStatusEnum;
 use App\Enums\StudentSubjectStatus;
 use App\Jobs\Middleware\SchoolAware;
 use App\Models\Curriculum;
@@ -280,7 +281,16 @@ class MoveFromCcmJob implements ShouldQueue
                     'curriculum_id' => $targetCurriculum->id,
                 ],
                 [
-                    'status' => $oldStudentCurriculum->status,
+                    // The new row is a fresh enrollment in the target curriculum. NARROWED fix (S1
+                    // promotion-link closure): never inherit 'promoted' — a promoted new row would carry no
+                    // link and never will (the source of the pre-closure promoted-with-NULL rows), and it is
+                    // now forbidden by the student_curricula_promoted_requires_link CHECK. An old 'promoted'
+                    // becomes 'active' (the enrollment the student now holds); every other status is inherited
+                    // unchanged — deliberately narrowed, because whether a withdrawn/repeated student should
+                    // be CCM-migrated at all is a separate CCM-workflow question, not this closure's to answer.
+                    'status' => $oldStudentCurriculum->status === StudentStatusEnum::PROMOTED
+                        ? StudentStatusEnum::ACTIVE
+                        : $oldStudentCurriculum->status,
                 ]
             );
 

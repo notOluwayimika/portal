@@ -20,7 +20,12 @@ class UpdateStudentCurriculumStatusRequest extends FormRequest
         return [
             'status' => [
                 'required',
-                Rule::in(['active', 'promoted', 'repeated', 'withdrawn']),
+                // 'promoted' is deliberately NOT settable here (S1 promotion-link closure). It is a state a
+                // student ARRIVES AT via promote() — which writes the promotion link — not one an admin
+                // asserts; a manual 'promoted' would manufacture exactly the status='promoted' + NULL link row
+                // the student_curricula_promoted_requires_link CHECK forbids. Moving OFF promoted (to
+                // active/repeated/withdrawn) is still allowed and still clears the link (controller :98/:118).
+                Rule::in(['active', 'repeated', 'withdrawn']),
             ],
         ];
     }

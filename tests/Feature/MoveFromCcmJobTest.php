@@ -255,3 +255,42 @@ it('proof 7b — MoveFromCcm sets the source episode promoted_to_id to the new e
     expect($old->fresh()->status->value)->toBe('promoted')
         ->and($old->fresh()->promoted_to_id)->toBe($new->id);
 });
+
+// ── Proof 1 (S1 promotion-link closure) — MoveFromCcm never BIRTHS a promoted row (2a) ──
+
+it('proof 1 — migrating a source episode that is already promoted yields an ACTIVE new episode, not promoted', function () {
+    $school = School::factory()->create();
+    $admin = User::factory()->create(['school_id' => $school->id]);
+    $arm = mfc_classLevelArm($school);
+    $term = mfc_term($school);
+    $examType = mfc_examType($school);
+    $ccm = mfc_curriculum($school, $arm, $term, $examType, true);
+
+    // A separate curriculum whose episode is the link target, so the CCM source can legitimately be
+    // 'promoted' WITH a link (the CHECK requires one). Different arm → not the job's auto-resolved target.
+    $otherArm = mfc_classLevelArm($school);
+    $linkTarget = mfc_curriculum($school, $otherArm, $term, $examType, false);
+
+    $student = Student::create([
+        'school_id' => $school->id, 'first_name' => 'Promoted', 'last_name' => Str::random(6),
+        'gender' => 'male', 'admission_number' => 'ADM-'.Str::random(8),
+    ]);
+    $target = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => $linkTarget->id, 'status' => 'active']);
+    // The source episode inside the CCM curriculum is already promoted (with its link) before the job runs.
+    $source = StudentCurriculum::create([
+        'student_id' => $student->id, 'curriculum_id' => $ccm->id, 'status' => 'promoted', 'promoted_to_id' => $target->id,
+    ]);
+
+    (new MoveFromCcmJob($ccm, $admin->id, (int) $ccm->school_id))->handle();
+
+    $jobTarget = Curriculum::withoutGlobalScope(SchoolScope::class)
+        ->where('school_id', $school->id)->where('class_level_arm_id', $arm->id)->where('is_ccm', false)->first();
+    $new = StudentCurriculum::withoutGlobalScopes()
+        ->where('student_id', $student->id)->where('curriculum_id', $jobTarget->id)->first();
+
+    // PLANT (2a): restore `'status' => $old->status` unconditionally → the job tries to create a
+    // promoted-with-NULL row, the CHECK refuses it, handle() throws → this test reds (and, without the CHECK,
+    // $new->status would be 'promoted'). Either way it is not the clean 'active' the fix produces.
+    expect($new)->not->toBeNull()
+        ->and($new->status->value)->toBe('active');
+});

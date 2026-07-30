@@ -112,7 +112,16 @@ function CurriculumRow({
                                 disabled={busy}
                                 className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
                             >
-                                {STATUS_OPTIONS.map((o) => (
+                                {/* 'Promoted' is not a manually-settable status (S1 promotion-link closure):
+                                    a student is promoted via the promote() flow, which records the link. It
+                                    stays in the list only for a row that IS already promoted, so its current
+                                    value renders; moving off it to active/repeated/withdrawn clears the link.
+                                    The filter tabs below keep the full set so promoted rows stay viewable. */}
+                                {STATUS_OPTIONS.filter(
+                                    (o) =>
+                                        o.value !== 'promoted' ||
+                                        sc.status === 'promoted',
+                                ).map((o) => (
                                     <option key={o.value} value={o.value}>
                                         {o.label}
                                     </option>

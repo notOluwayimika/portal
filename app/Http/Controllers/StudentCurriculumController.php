@@ -17,6 +17,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Services\CurriculumEnrollmentService;
 use App\Support\Authz;
+use App\Support\Boarding;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,14 @@ class StudentCurriculumController extends Controller
             'headOfSchool' => $headOfSchool,
             'behavioralAssessments' => $behavioralAssessments,
             'psychomotorSkills' => $psychomotorSkills,
+            // Whether boarding exists AT ALL in this school, which is a different
+            // question from `boardingParent` above (that one is this student's, and
+            // is null for an arm/gender with no assignment). The result sheet needs
+            // both: the school-level answer decides whether "Boarding Parent" is a
+            // meaningful label, the student-level one decides whether to print a
+            // name. Without the school-level answer the sheet attributed a day
+            // school's form-tutor comment to a boarding parent who does not exist.
+            'schoolHasBoardingParents' => Boarding::schoolHasParents(),
         ]);
     }
 

@@ -74,6 +74,67 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
     );
 }
 
+/**
+ * The comment-attribution rows, shared by both card layouts below so the two can
+ * never disagree about who wrote what.
+ *
+ * BOARDING IS CONDITIONAL, AND ON TWO LEVELS. `schoolHasBoardingParents` says
+ * whether this school runs boarding at all; `boardingParent` says whether one is
+ * assigned for THIS student's arm and gender. Both must hold before a comment is
+ * attributed to a boarding parent.
+ *
+ * The bug this fixes: the comment row was gated on nothing, so it rendered
+ * whenever a behavioural assessment existed. In a school with no boarding parents
+ * the FORM TUTOR writes that assessment (see ResolvesAssessmentAccess —
+ * canRecordAssessmentFor falls through to the form teacher exactly then), so a
+ * printed result credited their comment to a "Boarding Parent" who does not exist.
+ * A day school now gets the same comment under a neutral label rather than losing
+ * it.
+ */
+function AttributionRows({ scDetails }: { scDetails: any }) {
+    const hasBoarding = Boolean(scDetails?.schoolHasBoardingParents);
+    const boardingParentName = scDetails?.boardingParent?.full_name;
+    const assessmentComment = scDetails?.behavioralAssessments?.[0]?.comment;
+
+    return (
+        <>
+            <DetailRow
+                label="Form Tutor's Name:"
+                value={scDetails?.formTeacher?.full_name}
+            />
+            <DetailRow
+                label="Form Tutor Comment:"
+                value={scDetails?.studentCurriculum?.form_teacher_comment}
+            />
+            {hasBoarding ? (
+                <>
+                    <DetailRow
+                        label="Boarding Parent's Name:"
+                        value={boardingParentName}
+                    />
+                    <DetailRow
+                        label="Boarding Parent Comment:"
+                        value={boardingParentName ? assessmentComment : null}
+                    />
+                </>
+            ) : (
+                <DetailRow
+                    label="Behaviour Comment:"
+                    value={assessmentComment}
+                />
+            )}
+            <DetailRow
+                label="Head of School Name:"
+                value={scDetails?.headOfSchool?.full_name}
+            />
+            <DetailRow
+                label="Head of School Comment:"
+                value={scDetails?.studentCurriculum?.head_of_school_comment}
+            />
+        </>
+    );
+}
+
 function SubjectRow({
     r,
     i,
@@ -441,30 +502,7 @@ function NumericCurriculumCardFinal({
                 </div>
             </div>
             <div className="grid grid-cols-4 text-xs">
-                <DetailRow
-                    label="Form Tutor's Name:"
-                    value={scDetails?.formTeacher?.full_name}
-                />
-                <DetailRow
-                    label="Form Tutor Comment:"
-                    value={scDetails?.studentCurriculum?.form_teacher_comment}
-                />
-                <DetailRow
-                    label="Boarding Parent's Name:"
-                    value={scDetails?.boardingParent?.full_name}
-                />
-                <DetailRow
-                    label="Boarding Parent Comment:"
-                    value={scDetails?.behavioralAssessments?.[0]?.comment}
-                />
-                <DetailRow
-                    label="Head of School Name:"
-                    value={scDetails?.headOfSchool?.full_name}
-                />
-                <DetailRow
-                    label="Head of School Comment:"
-                    value={scDetails?.studentCurriculum?.head_of_school_comment}
-                />
+                <AttributionRows scDetails={scDetails} />
                 {resultSignature && (
                     <>
                         <div className="col-span-1 border font-bold">
@@ -583,30 +621,7 @@ function CategoricalCurriculumCard({
                 />
             </div>
             <div className="grid grid-cols-4 text-xs">
-                <DetailRow
-                    label="Form Tutor's Name:"
-                    value={scDetails?.formTeacher?.full_name}
-                />
-                <DetailRow
-                    label="Form Tutor Comment:"
-                    value={scDetails?.studentCurriculum?.form_teacher_comment}
-                />
-                <DetailRow
-                    label="Boarding Parent's Name:"
-                    value={scDetails?.boardingParent?.full_name}
-                />
-                <DetailRow
-                    label="Boarding Parent Comment:"
-                    value={scDetails?.behavioralAssessments?.[0]?.comment}
-                />
-                <DetailRow
-                    label="Head of School Name:"
-                    value={scDetails?.headOfSchool?.full_name}
-                />
-                <DetailRow
-                    label="Head of School Comment:"
-                    value={scDetails?.studentCurriculum?.head_of_school_comment}
-                />
+                <AttributionRows scDetails={scDetails} />
                 {resultSignature && (
                     <>
                         <div className="col-span-1 border font-bold">

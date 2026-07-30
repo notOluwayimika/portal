@@ -239,6 +239,19 @@ export default function List() {
                             <div className="" key={curriculum.id}>
                                 {curriculum.student_curricula?.map(
                                     (sc: StudentCurriculum) => {
+                                        // Defence in depth on a print path. The
+                                        // controller already drops enrollments whose
+                                        // student has been withdrawn (whereHas in
+                                        // ClassResultsController), but every card
+                                        // below dereferences the student — photo
+                                        // here, class_details.full_class.split()
+                                        // inside CurriculumCardFinal — so one null
+                                        // takes down the entire sheet rather than one
+                                        // card. Skip the row instead.
+                                        if (!sc.student) {
+                                            return null;
+                                        }
+
                                         const boundaries =
                                             sc.curriculum.exam_type
                                                 ?.grade_boundaries?.length &&

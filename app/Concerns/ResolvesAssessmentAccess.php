@@ -7,6 +7,7 @@ use App\Models\ClassLevelArmTeacher;
 use App\Models\StudentCurriculum;
 use App\Models\Teacher;
 use App\Models\Term;
+use App\Support\Boarding;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -23,8 +24,8 @@ trait ResolvesAssessmentAccess
     {
         $teacher = Teacher::where('user_id', auth()->id())->first();
 
-        if (!$teacher) {
-            return new Collection();
+        if (! $teacher) {
+            return new Collection;
         }
 
         $assignments = ClassLevelArmTeacher::where('teacher_id', $teacher->id)
@@ -33,22 +34,22 @@ trait ResolvesAssessmentAccess
             ->get(['class_level_arm_id', 'gender']);
 
         if ($assignments->isEmpty()) {
-            return new Collection();
+            return new Collection;
         }
 
-        if (!$term) {
-            return new Collection();
+        if (! $term) {
+            return new Collection;
         }
 
         return StudentCurriculum::query()
             ->whereIn('status', $this->enrollmentStatusesFor($term))
-            ->whereHas('curriculum', fn($query) => $query->where('term_id', $term->id))
+            ->whereHas('curriculum', fn ($query) => $query->where('term_id', $term->id))
             ->where(function ($query) use ($assignments) {
                 foreach ($assignments as $assignment) {
                     $query->orWhere(function ($groupQuery) use ($assignment) {
                         $groupQuery
-                            ->whereHas('curriculum', fn($q) => $q->where('class_level_arm_id', $assignment->class_level_arm_id))
-                            ->whereHas('student', fn($q) => $q->where('gender', $assignment->gender?->value));
+                            ->whereHas('curriculum', fn ($q) => $q->where('class_level_arm_id', $assignment->class_level_arm_id))
+                            ->whereHas('student', fn ($q) => $q->where('gender', $assignment->gender?->value));
                     });
                 }
             })
@@ -57,8 +58,8 @@ trait ResolvesAssessmentAccess
                 'curriculum.classLevelArm.classLevel',
                 'curriculum.classLevelArm.arm',
                 'curriculum.classLevelArm.stream',
-                'behavioralAssessments' => fn($query) => $query->where('assessment_term_id', $term->id),
-                'psychomotorSkills' => fn($query) => $query->where('assessment_term_id', $term->id),
+                'behavioralAssessments' => fn ($query) => $query->where('assessment_term_id', $term->id),
+                'psychomotorSkills' => fn ($query) => $query->where('assessment_term_id', $term->id),
             ])
             ->get();
     }
@@ -67,7 +68,7 @@ trait ResolvesAssessmentAccess
     {
         $teacher = Teacher::where('user_id', auth()->id())->first();
 
-        if (!$teacher) {
+        if (! $teacher) {
             return null;
         }
 
@@ -77,11 +78,14 @@ trait ResolvesAssessmentAccess
             ->first();
     }
 
+    /**
+     * Delegated to {@see Boarding::schoolHasParents()} so the result sheet's
+     * label and this authorship rule read the SAME predicate — see that class
+     * for why a second source of truth is the bug being prevented.
+     */
     protected function schoolHasBoardingParents(): bool
     {
-        return ClassLevelArmTeacher::where('role', TeacherAssignmentRoleEnum::BOARDING_PARENT->value)
-            ->inActiveSchool()
-            ->exists();
+        return Boarding::schoolHasParents();
     }
 
     /**

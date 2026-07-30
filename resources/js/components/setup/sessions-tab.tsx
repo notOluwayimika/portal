@@ -20,8 +20,18 @@ interface TermForm {
     end_date: string;
     result_visible_at: string;
     registration_deadline: string;
-    status: string;
+    /**
+     * DISPLAY ONLY — never sent. The API ignores `status` on term create and
+     * update (there is no transition endpoint yet), so an editable control here
+     * would report success for a change the server never made. New terms are
+     * created `upcoming` by the column default.
+     */
+    status: TermStatus;
 }
+
+/** `Term.status` is a loose `string` on the wire; narrow it without a cast. */
+const asTermStatus = (value: string): TermStatus =>
+    value === 'active' || value === 'completed' ? value : 'upcoming';
 
 const emptyTermForm: TermForm = {
     name: '',
@@ -239,7 +249,7 @@ export function SessionsTab({
                     0,
                     10,
                 ),
-                status: t.status,
+                status: asTermStatus(t.status),
             });
             setTermModal(t.id);
         } else {
@@ -275,13 +285,25 @@ export function SessionsTab({
             return;
         }
 
+        // `status` is deliberately excluded: the API ignores it on both create
+        // and update, so sending it produced a success toast for a change the
+        // server never made. Everything else in the form IS writable.
+        const payload = {
+            name: termForm.name,
+            order: termForm.order,
+            start_date: termForm.start_date,
+            end_date: termForm.end_date,
+            result_visible_at: termForm.result_visible_at,
+            registration_deadline: termForm.registration_deadline,
+        };
+
         try {
             setTermSaving(true);
 
             if (termModal === 'new') {
                 const response = await axios.post(
                     `/api/sessions/${termsSession.id}/terms`,
-                    termForm,
+                    payload,
                 );
 
                 if (response.status === 201 || response.status === 200) {
@@ -292,7 +314,7 @@ export function SessionsTab({
             } else if (termModal) {
                 const response = await axios.put(
                     `/api/sessions/${termsSession.id}/terms/${termModal}`,
-                    termForm,
+                    payload,
                 );
 
                 if (response.status === 200) {
@@ -860,19 +882,27 @@ export function SessionsTab({
                         </div>
                         <div className="field">
                             <label>Status</label>
-                            <select
-                                value={termForm.status}
-                                onChange={(e) =>
-                                    setTermForm((p) => ({
-                                        ...p,
-                                        status: e.target.value as TermStatus,
-                                    }))
-                                }
+                            {/*
+                                Read-only on purpose. The API ignores `status` on
+                                create and update, so an editable control reported
+                                success for a change that never happened. Lifecycle
+                                transitions need their own permissioned endpoint.
+                            */}
+                            <span
+                                className={statusPillClass(
+                                    termModal === 'new'
+                                        ? 'upcoming'
+                                        : termForm.status,
+                                )}
                             >
-                                <option value="upcoming">Upcoming</option>
-                                <option value="active">Active</option>
-                                <option value="completed">Completed</option>
-                            </select>
+                                {termModal === 'new'
+                                    ? 'upcoming'
+                                    : termForm.status}
+                            </span>
+                            <small>
+                                Set automatically — term status cannot be
+                                changed here yet.
+                            </small>
                         </div>
                     </div>
 

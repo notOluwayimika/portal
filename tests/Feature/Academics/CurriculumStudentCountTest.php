@@ -51,11 +51,23 @@ function csc_enrol(Curriculum $curriculum, int $schoolId, StudentStatusEnum $sta
     return ActiveSchool::runFor($schoolId, function () use ($curriculum, $schoolId, $status) {
         $student = Student::factory()->create(['school_id' => $schoolId]);
 
+        // A promoted episode must carry its link (student_curricula_promoted_requires_link). Give it a real
+        // same-student target in a throwaway curriculum; the count under test is per-curriculum, so the
+        // target (in a different curriculum) does not affect $curriculum's tally.
+        $promotedTo = $status === StudentStatusEnum::PROMOTED
+            ? StudentCurriculum::create([
+                'student_id' => $student->id, 'school_id' => $schoolId,
+                'curriculum_id' => Curriculum::factory()->create(['school_id' => $schoolId])->id,
+                'status' => StudentStatusEnum::ACTIVE,
+            ])->id
+            : null;
+
         return StudentCurriculum::create([
             'student_id' => $student->id,
             'school_id' => $schoolId,
             'curriculum_id' => $curriculum->id,
             'status' => $status,
+            'promoted_to_id' => $promotedTo,
         ]);
     });
 }

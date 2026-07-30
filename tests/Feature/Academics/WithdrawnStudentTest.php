@@ -226,7 +226,14 @@ it('refuses to reactivate an enrollment whose student is withdrawn, rather than 
     $admin->grantSchoolAccess($this->school, 'admin');
     $admin->flushSchoolAccessCache();
 
-    $enrolment->forceFill(['status' => 'promoted'])->save();
+    // A promoted episode must carry its link (student_curricula_promoted_requires_link) — give it a real
+    // same-student target before flipping the status.
+    $target = StudentCurriculum::create([
+        'student_id' => $student->id, 'school_id' => $this->school->id,
+        'curriculum_id' => Curriculum::factory()->create(['school_id' => $this->school->id])->id,
+        'status' => 'active',
+    ]);
+    $enrolment->forceFill(['status' => 'promoted', 'promoted_to_id' => $target->id])->save();
     $student->delete();
 
     $this->actingAs($admin)->withSession(['school_id' => $this->school->id])

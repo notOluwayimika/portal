@@ -102,7 +102,14 @@ it('lets principals and admins approve active class results', function (string $
 
 it('does not change historical enrollments when disapproving an arm', function () {
     $data = pa_setup();
-    $data['enrollment']->update(['status' => 'promoted', 'principal_approval' => true]);
+    // A promoted episode must carry its link (student_curricula_promoted_requires_link) — give it a real
+    // same-student target before flipping the status.
+    $target = StudentCurriculum::create([
+        'student_id' => $data['enrollment']->student_id, 'school_id' => $data['school']->id,
+        'curriculum_id' => Curriculum::factory()->create(['school_id' => $data['school']->id])->id,
+        'status' => 'active',
+    ]);
+    $data['enrollment']->update(['status' => 'promoted', 'principal_approval' => true, 'promoted_to_id' => $target->id]);
 
     $this->actingAs($data['principal'])
         ->withSession(['school_id' => $data['school']->id])

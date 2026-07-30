@@ -63,8 +63,11 @@ class ResponseMacroProvider extends ServiceProvider
          *
          * This is the ONLY production caller's status: bootstrap/app.php renders
          * ValidationException through here. A genuine `abort(400)` would be untouched
-         * by this change — there are none in app/, so no legitimate 400 exists to
-         * preserve.
+         * by this change, and there are none in app/. (The sentence here once claimed
+         * "no legitimate 400 exists to preserve"; that was false — bootstrap/app.php's
+         * QueryException handler was rendering EVERY database error as a 400 via the
+         * `error` macro. That outlier is fixed in the query-exception-handler commit,
+         * which maps DB errors to 409/500/503; `abort(400)` remains untouched.)
          *
          * The `errors` key is returned, not just logged. Dropping it made every 422 a
          * dead end for the client, and the frontend already depends on it:

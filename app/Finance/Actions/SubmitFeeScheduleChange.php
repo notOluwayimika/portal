@@ -54,7 +54,8 @@ final class SubmitFeeScheduleChange
             // sees cannot change under approval (the item guards refuse every write once it leaves draft).
             // Re-read the target status UNDER LOCK first: the maker-side check above read a model loaded
             // outside this transaction, and with a real state change now riding on it two submissions could
-            // otherwise race between that check and this flip (open_key would catch the loser only as a 500).
+            // otherwise race between that check and this flip (open_key would catch the loser only as a raw
+            // unique-violation the caller cannot act on, not a graceful refusal).
             if ($kind === FeeScheduleChangeKind::Publish) {
                 $locked = FeeSchedule::query()->whereKey($target->id)->lockForUpdate()->firstOrFail();
                 if ($locked->status !== FeeScheduleStatus::Draft) {

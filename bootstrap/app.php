@@ -170,7 +170,10 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->renderable(function (ConnectionException $e) {
-            return response()->error($e->getMessage());
+            // Illuminate\Http\Client\ConnectionException — an OUTBOUND HTTP dependency did not answer. That is
+            // not a client error (503, not 400), and $e->getMessage() carries the outbound host/port/URL, so
+            // the response body is a fixed generic string; the full message is still logged by the reporter.
+            return response()->service_unavailable('A required service is unavailable. Please try again shortly.');
         });
 
         /*
@@ -179,13 +182,26 @@ return Application::configure(basePath: dirname(__DIR__))
         |----------------------------------------------------
         */
         $exceptions->renderable(function (QueryException $e) {
-            $code = $e->errorInfo[1] ?? null;
-
-            return match ($code) {
-                23000 => response()->conflict('Duplicate entry detected'),
-                547 => response()->error('Record has dependencies'),
-                '40001' => response()->error('Transaction conflict, retry'),
-                default => response()->error('Database error'),
+            // errorInfo[1] is the MySQL DRIVER numeric code; errorInfo[0] is the SQLSTATE string. The previous
+            // handler matched errorInfo[1] against SQLSTATEs (23000, '40001') and a SQL Server FK code (547) —
+            // none of which errorInfo[1] can ever hold, and `match` compares with === so an int never equals a
+            // string — so ALL THREE arms were dead and EVERY database error fell to a 400. This casts to int
+            // per the house convention every other errorInfo consumer follows (TermController,
+            // CurriculumController, GenerateInvoice, CreateFeeSchedule, ApproveDiscountPolicyChange).
+            //
+            // renderable() overrides HTTP rendering only — the default reporter (and the report() callback
+            // above) still LOG the full exception; none of this suppresses that.
+            return match ((int) ($e->errorInfo[1] ?? 0)) {
+                1062 => response()->conflict('Duplicate entry detected.'),                       // ER_DUP_ENTRY
+                1451 => response()->conflict('This record has dependent records and cannot be changed.'), // ER_ROW_IS_REFERENCED_2
+                1205, 1213 => response()->conflict('The database is busy; please retry.'),       // ER_LOCK_WAIT_TIMEOUT / ER_LOCK_DEADLOCK — transient, retryable
+                // 1452 (child → missing parent: a bug, the documented incident — see StudentSubjectCommentAuthorTest),
+                // 1644 (SIGNAL '45000' from a house invariant trigger), 3819 (CHECK), and any unclassified failure
+                // (connection 2002/2006, syntax, …) are SERVER faults, not bad requests: reaching an invariant
+                // backstop means the application-layer guard that should run first is MISSING, and ops must SEE
+                // it (a ledger-tamper trigger returning 400 never shows on a 5xx alert). Fixed generic message,
+                // NEVER $e->getMessage() — that leaks table/column names and SQL fragments.
+                default => response()->server_error('A database error occurred.'),
             };
         });
 

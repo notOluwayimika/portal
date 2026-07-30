@@ -141,8 +141,8 @@ class TermController extends Controller
         $term = $session->terms()->findOrFail($term->id);
 
         // A term priced by a finance fee schedule is protected by a RESTRICT FK (S1 commit 2). Without
-        // this guard the FK surfaces a raw QueryException (MySQL 1451) as a 500; translate it to a
-        // friendly refusal. The same protection reaches an academic-session delete via the CASCADE
+        // this guard the FK surfaces a raw QueryException (MySQL 1451) the client cannot act on; translate
+        // it to a friendly refusal here. The same protection reaches an academic-session delete via the CASCADE
         // academic_sessions ← terms chain — deleting a session whose term is priced is refused too.
         try {
             $term->delete();

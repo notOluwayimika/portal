@@ -2,7 +2,9 @@
 
 namespace App\Finance\Actions;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
+use App\Finance\Approval\ApprovalRequirement;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
 use App\Finance\Models\DiscountPolicy;
@@ -47,6 +49,12 @@ final class SubmitDiscountPolicyChange
             ->exists()
         ) {
             throw new BusinessRuleException('A change for this policy is already awaiting approval.');
+        }
+
+        // The maker-checker seam (ADR 0051): always requires a checker today. No transaction amount — a
+        // discount policy is a definition, so a future threshold rule would key on the ability alone.
+        if (! ApprovalRequirement::for(Permission::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value)->required) {
+            throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
         $proposed = $kind === DiscountPolicyChangeKind::Retire

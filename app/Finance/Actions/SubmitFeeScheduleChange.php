@@ -2,7 +2,9 @@
 
 namespace App\Finance\Actions;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
+use App\Finance\Approval\ApprovalRequirement;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleChangeStatus;
 use App\Finance\Enums\FeeScheduleStatus;
@@ -47,6 +49,12 @@ final class SubmitFeeScheduleChange
             ->exists()
         ) {
             throw new BusinessRuleException('A change for this schedule is already awaiting approval.');
+        }
+
+        // The maker-checker seam (ADR 0051): always requires a checker today. No transaction amount —
+        // publishing/retiring a schedule is a governance act, not a sum; a future rule keys on the ability.
+        if (! ApprovalRequirement::for(Permission::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value)->required) {
+            throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
         return DB::transaction(function () use ($schoolId, $kind, $target, $reason, $maker) {

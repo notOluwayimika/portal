@@ -140,6 +140,48 @@ foreach ($tests as [$rel, $line]) {
     }
 }
 
+// approval-seam-missing — every Finance maker (an app/Finance/Actions/Submit*.php) must route its
+// "does this submission need a second signature" decision through the ApprovalRequirement seam
+// (ADR 0051). That seam is the ONE place the maker-checker requirement becomes configurable; a Submit
+// action that does not INVOKE it has an unconditional decision hard-wired back at the call site —
+// exactly the ten-places drift the seam exists to erase. Keyed on the CALL (`ApprovalRequirement::for(`)
+// on a LIVE line, not the mere token and not a comment: deleting only the branch (leaving a stale `use`)
+// trips the rule, and so does commenting the call out (the authz-rule-15 hole, closed here too). The set
+// of Submit actions is enumerated from the filesystem, never hardcoded — a new Submit*.php is covered the
+// moment it lands. Pure enforcement: ZERO baseline entries.
+$submitActions = glob($root.'/app/Finance/Actions/Submit*.php') ?: [];
+foreach ($submitActions as $path) {
+    $rel = ltrim(str_replace($root, '', $path), '/');
+    $calls = false;
+    foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
+        if (! isComment($line) && str_contains($line, 'ApprovalRequirement::for(')) {
+            $calls = true;
+            break;
+        }
+    }
+    if (! $calls) {
+        $add('approval-seam-missing', $rel, 'does not call ApprovalRequirement::for() — the maker-checker seam (ADR 0051)');
+    }
+}
+
+// approval-seam-count — the Finance Submit actions must stay in lockstep with the maker abilities the
+// maker-checker convention derives: exactly one Submit*.php per finance `*_SUBMIT` Permission case. A new
+// maker permission with no Submit action (or a Submit action with no maker ability) is coverage drift the
+// per-file rule above cannot see. Counts are STATIC — grep the enum, no Laravel boot. NOTE: this is the
+// count of distinct MAKERS, not DutySeparation::pairs(): pairs() double-counts (each maker yields an
+// approve AND a reject checker → 8 finance pairs for 4 makers), so the invariant is makers == Submit files.
+$financeSubmitAbilities = preg_match_all(
+    '/case\s+FINANCE_[A-Z_]*SUBMIT\s*=/',
+    (string) file_get_contents($root.'/app/Enums/Permission.php')
+);
+if ($financeSubmitAbilities !== count($submitActions)) {
+    $add(
+        'approval-seam-count',
+        'app/Enums/Permission.php',
+        "finance *_SUBMIT abilities ({$financeSubmitAbilities}) != Submit* actions (".count($submitActions).') — ADR 0051 seam-coverage drift'
+    );
+}
+
 $found = array_keys($found);
 sort($found);
 
@@ -161,6 +203,9 @@ if ($mode === 'generate') {
 #   contract (ADR 0030) replaces ModuleClassificationService's direct finance_* reads.
 # halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
 #   uses a block closure, so the rule is pure enforcement (no exceptions).
+# approval-seam-missing / approval-seam-count have ZERO baseline entries — every Finance
+#   Submit action calls the ApprovalRequirement seam and the maker/action counts match
+#   (ADR 0051), so both rules are pure enforcement (no exceptions).
 
 TXT;
     file_put_contents($baselinePath, $header.($found ? implode("\n", $found)."\n" : ''));

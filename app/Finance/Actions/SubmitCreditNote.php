@@ -2,7 +2,9 @@
 
 namespace App\Finance\Actions;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
+use App\Finance\Approval\ApprovalRequirement;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Models\CreditNote;
@@ -33,6 +35,13 @@ final class SubmitCreditNote
 
         if ($invoice->isVoid()) {
             throw new BusinessRuleException('Cannot submit a credit note against a void invoice.');
+        }
+
+        // The maker-checker seam (ADR 0051): today always requires a checker; when finance_approval_rules
+        // lands, a straight-through row is built HERE. The other arm throws until that path is real and
+        // tested — an unreachable half-implemented arm is worse than an honest marker.
+        if (! ApprovalRequirement::for(Permission::FINANCE_CREDIT_NOTE_SUBMIT->value, $amount)->required) {
+            throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
         return DB::transaction(function () use ($invoice, $amount, $kind, $note, $maker) {

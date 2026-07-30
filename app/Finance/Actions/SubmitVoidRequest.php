@@ -2,7 +2,9 @@
 
 namespace App\Finance\Actions;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
+use App\Finance\Approval\ApprovalRequirement;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\VoidRequest;
@@ -56,6 +58,12 @@ final class SubmitVoidRequest
             ->exists()
         ) {
             throw new BusinessRuleException('A void request for this invoice is already awaiting approval.');
+        }
+
+        // The maker-checker seam (ADR 0051): always requires a checker today. The amount at risk is the
+        // whole invoice total — the natural key for a future threshold rule on voids.
+        if (! ApprovalRequirement::for(Permission::FINANCE_INVOICE_VOID_REQUEST_SUBMIT->value, $invoice->total)->required) {
+            throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
         return DB::transaction(fn () => VoidRequest::create([

@@ -47,9 +47,45 @@ class ClassResultsController extends Controller
         );
     }
 
+    /**
+     * Widen the process memory cap to at least $bytes, never narrow it.
+     *
+     * Returns early on an unlimited ('-1') ambient limit: capping an
+     * intentionally-unlimited process is exactly the narrowing this avoids.
+     */
+    private static function ensureMemoryLimitAtLeast(int $bytes): void
+    {
+        $current = trim((string) ini_get('memory_limit'));
+
+        if ($current === '-1' || $current === '') {
+            return;
+        }
+
+        $value = (int) $current;
+        $currentBytes = match (strtolower(substr($current, -1))) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => $value,
+        };
+
+        if ($currentBytes < $bytes) {
+            ini_set('memory_limit', (string) $bytes);
+        }
+    }
+
     private function renderResults(Builder $armsQuery, string $approvalEndpoint, string $scopeName)
     {
-        ini_set('memory_limit', '256M');
+        // A result sheet hydrates a whole class at once, so this page wants more
+        // headroom than a stock 128M php.ini gives it.
+        //
+        // RAISE ONLY. A bare ini_set('memory_limit', '256M') also LOWERS the cap
+        // whenever the ambient limit is already higher — the opposite of the
+        // intent — and ini_set is process-wide, not request-scoped. Under the test
+        // suite (phpunit.xml sets 1G) the first request through here capped every
+        // subsequent test at 256M, and the run died on an allocation fatal in an
+        // unrelated test. Same hazard with a php-fpm pool configured above 256M.
+        self::ensureMemoryLimitAtLeast(256 * 1024 * 1024);
 
         $classLevelArms = $armsQuery->with([
             'classLevel',
@@ -82,8 +118,22 @@ class ClassResultsController extends Controller
             },
             'curricula.curriculumSubjects.studentResults.gradingSchemeItem',
             'curricula.curriculumSubjects.resultStatus',
+            // A WITHDRAWN student is still 'active' HERE. `students` is soft-deleted
+            // and School-scoped, but `student_curricula` rows outlive the withdrawal,
+            // so the enrollment arrives with `->student` resolving to null while its
+            // own status still says active. This page then serialized `student: null`
+            // and the print view died on `sc.student.photo` — one student leaving
+            // broke the result sheet for the whole class.
+            //
+            // whereHas() runs through the Student model, so SoftDeletes and
+            // SchoolScope both apply and the orphan rows never hydrate. FOURTH site
+            // in this family: CurriculumSubjectController::handleStudentResults,
+            // FormTeacherCommentController::index and
+            // HeadOfSchoolCommentController::index carry the same guard for the same
+            // reason. If you are adding a fifth, the smell is that enrollment reads
+            // need this by default.
             'curricula.studentCurricula' => function ($query) {
-                $query->where('status', 'active');
+                $query->where('status', 'active')->whereHas('student');
             },
             'curricula.studentCurricula.student.photoFile',
             'curricula.studentCurricula.student.sportHouse',

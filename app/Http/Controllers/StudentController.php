@@ -127,7 +127,12 @@ class StudentController extends Controller
     public function updateStatus(Request $request, Student $student)
     {
         $data = $request->validate([
-            'status' => ['required', 'string', Rule::enum(StudentStatusEnum::class)],
+            // 'promoted' is NOT settable here (S1 promotion-link closure) — the sibling of the same rule on
+            // UpdateStudentCurriculumStatusRequest. A student ARRIVES at 'promoted' via promote(), which
+            // writes the link; asserting it manually would leave a status='promoted' row with a NULL link
+            // (updateStatus never sets one), a guaranteed student_curricula_promoted_requires_link violation
+            // surfacing as a 500. Derived from the enum (every case except PROMOTED), so a new status stays in.
+            'status' => ['required', 'string', Rule::enum(StudentStatusEnum::class)->except([StudentStatusEnum::PROMOTED])],
         ]);
 
         $this->studentService->updateStatus($student, $data['status']);

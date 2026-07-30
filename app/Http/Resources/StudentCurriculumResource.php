@@ -38,8 +38,8 @@ class StudentCurriculumResource extends JsonResource
             // same data once per student for no reason.
             'curriculum' => (new CurriculumResource($this->whenLoaded('curriculum')))->withoutSubjects(),
             // promotedTo is an EPISODE (S1 commit 5), not a curriculum. Serialise the episode's uuid plus its
-            // curriculum — the same wrapper shape StudentCurriculumController::presentStudentCurriculum emits,
-            // so the two presenters agree key-for-key on the one TypeScript type they both feed.
+            // curriculum — a { id: uuid, curriculum } wrapper. The shape is correct because it matches the
+            // `promoted_to` TypeScript type this resource feeds (models.ts), never a raw auto-increment id.
             'promoted_to' => $this->whenLoaded('promotedTo', function () {
                 // $this->resource (the wrapped StudentCurriculum) is typed mixed, so this reads the loaded
                 // episode without the undefined-property noise a resource gets accessing $this->promotedTo.

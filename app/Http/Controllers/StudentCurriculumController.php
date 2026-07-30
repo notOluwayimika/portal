@@ -292,36 +292,4 @@ class StudentCurriculumController extends Controller
     {
         // Enforcement lives in the FormRequest (see docblock). Nothing to do here.
     }
-
-    protected function presentStudentCurriculum(StudentCurriculum $sc): array
-    {
-        return [
-            'id' => $sc->uuid,
-            'status' => $sc->status,
-            'created_at' => optional($sc->created_at)->toIso8601String(),
-            'curriculum' => $sc->curriculum
-                ? $this->presentCurriculum($sc->curriculum)
-                : null,
-            'promoted_to' => $sc->promotedTo
-                ? [
-                    'id' => $sc->promotedTo->uuid,
-                    'curriculum' => $sc->promotedTo->curriculum
-                        ? $this->presentCurriculum($sc->promotedTo->curriculum)
-                        : null,
-                ]
-                : null,
-        ];
-    }
-
-    protected function presentCurriculum(Curriculum $c): array
-    {
-        return [
-            'id' => $c->id,
-            'term' => $c->term,
-            'status' => $c->status,
-            'class_label' => optional($c->classLevelArm)->name,
-            'exam_type' => optional($c->examType)->name,
-            'session' => optional($c->academicSession)->name,
-        ];
-    }
 }

@@ -2,9 +2,12 @@
 
 use App\Http\Requests\UpdateStudentCurriculumStatusRequest;
 use App\Models\Curriculum;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\User;
 use App\Support\ActiveSchool;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -79,4 +82,50 @@ it('proof 10 — a promoted episode carrying its link is accepted by the CHECK (
 
     expect($from->fresh()->status->value)->toBe('promoted')
         ->and($from->fresh()->promoted_to_id)->toBe($target->id);
+});
+
+// ── B1 — the SECOND status route (PATCH /students/{uuid}/status) also refuses 'promoted' ──
+
+function plcAdmin(School $school): User
+{
+    setPermissionsTeamId($school->id);
+    $role = Role::firstOrCreate(['name' => 'plc_admin', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'academic_setup.manage', 'guard_name' => 'web']);
+    $role->syncPermissions(['academic_setup.manage']); // the group gating PATCH /students/{}/status
+    setPermissionsTeamId(null);
+
+    $user = User::factory()->create(['school_id' => $school->id]);
+    $user->grantSchoolAccess($school, 'plc_admin');
+    $user->flushSchoolAccessCache();
+
+    return $user;
+}
+
+it('B-1 — PATCH /students/{uuid}/status with promoted is 422, not a 500 from the CHECK', function () {
+    [$school, $student, $curriculum] = plcSetup();
+    plcEpisode($student, $curriculum); // an active, link-less latest episode — what a manual 'promoted' would violate
+
+    // PLANT (B-3): restore Rule::enum(StudentStatusEnum) without ->except([PROMOTED]) → the request validates,
+    // updateStatus writes status='promoted' onto the link-less episode, the CHECK refuses it → 500. This 422
+    // assertion reds.
+    $this->actingAs(plcAdmin($school))->withSession(['school_id' => $school->id])
+        ->patchJson("/api/students/{$student->uuid}/status", ['status' => 'promoted'])
+        ->assertStatus(422);
+});
+
+it('B-2 — the same route still accepts active/repeated/withdrawn, and clears the link (unchanged)', function () {
+    [$school, $student, $cFrom] = plcSetup();
+    $target = plcEpisode($student, Curriculum::factory()->create(['school_id' => $school->id]));
+    $latest = plcEpisode($student, $cFrom, ['status' => 'promoted', 'promoted_to_id' => $target->id]);
+    $admin = plcAdmin($school);
+
+    foreach (['active', 'repeated', 'withdrawn'] as $status) {
+        $this->actingAs($admin)->withSession(['school_id' => $school->id])
+            ->patchJson("/api/students/{$student->uuid}/status", ['status' => $status])
+            ->assertOk();
+        // Leaving 'promoted' clears the link (StudentService::updateStatus, 5b) — the transition still works.
+        expect($latest->fresh()->promoted_to_id)->toBeNull();
+        // Re-link for the next iteration so we are always moving OFF promoted.
+        ActiveSchool::runFor($school->id, fn () => $latest->fresh()->forceFill(['status' => 'promoted', 'promoted_to_id' => $target->id])->save());
+    }
 });

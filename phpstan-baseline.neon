@@ -1021,32 +1021,8 @@ parameters:
 			path: app/Http/Controllers/StudentController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentCurriculumController.php
-
-		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentCurriculumController.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$term_id\.$#'
 			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentCurriculumController.php
-
-		-
-			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentCurriculumController.php
-
-		-
-			message: '#^Parameter \#1 \$c of method App\\Http\\Controllers\\StudentCurriculumController\:\:presentCurriculum\(\) expects App\\Models\\Curriculum, Illuminate\\Database\\Eloquent\\Model given\.$#'
-			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/StudentCurriculumController.php
 
@@ -3258,7 +3234,6 @@ parameters:
 			count: 1
 			path: app/Models/Teacher.php
 
-
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curriculum\.$#'
 			identifier: property.notFound
@@ -3546,7 +3521,6 @@ parameters:
 			identifier: property.onlyWritten
 			count: 1
 			path: app/Services/GuardianService.php
-
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$signatureFile\.$#'

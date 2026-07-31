@@ -688,6 +688,41 @@ function CategoricalEntryPage({
         }
     };
 
+    /**
+     * Return a pupil to "not assessed". The placeholder option is `disabled`, so
+     * without this a rating could only ever be overwritten — a mis-click on the
+     * wrong pupil was permanent and the sheet then reported a rating nobody meant
+     * to give. Same affordance the numeric grid has had via clearScore.
+     *
+     * Optimistic like saveRating, and reverted the same way, so both paths behave
+     * identically when the server refuses (a locked subject, most often).
+     */
+    const clearRating = async (studentId: string) => {
+        const previous = ratings[studentId] ?? '';
+
+        if (previous === '') {
+            return;
+        }
+
+        setRatings((current) => ({ ...current, [studentId]: '' }));
+        setSaving((current) => new Set(current).add(studentId));
+
+        try {
+            await axios.delete(
+                `/api/curriculum-subjects/${cs.id}/categorical-results/${studentId}`,
+            );
+        } catch {
+            setRatings((current) => ({ ...current, [studentId]: previous }));
+        } finally {
+            setSaving((current) => {
+                const next = new Set(current);
+                next.delete(studentId);
+
+                return next;
+            });
+        }
+    };
+
     return (
         <>
             <Head title={`Enter ratings — ${cs.subject.name}`} />
@@ -751,39 +786,74 @@ function CategoricalEntryPage({
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <select
-                                                value={
-                                                    ratings[student.id] ?? ''
-                                                }
-                                                disabled={
-                                                    locked ||
-                                                    saving.has(student.id)
-                                                }
-                                                onChange={(event) =>
-                                                    saveRating(
-                                                        student.id,
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                className="min-w-52 rounded-md border border-gray-300 px-3 py-2"
-                                            >
-                                                <option value="" disabled>
-                                                    Select rating
-                                                </option>
-                                                {items.map(
-                                                    (
-                                                        item: GradingSchemeItem,
-                                                    ) => (
-                                                        <option
-                                                            key={item.id}
-                                                            value={item.id}
-                                                        >
-                                                            {item.code} —{' '}
-                                                            {item.label}
-                                                        </option>
-                                                    ),
-                                                )}
-                                            </select>
+                                            <div className="group flex items-center gap-1">
+                                                <select
+                                                    value={
+                                                        ratings[student.id] ??
+                                                        ''
+                                                    }
+                                                    disabled={
+                                                        locked ||
+                                                        saving.has(student.id)
+                                                    }
+                                                    onChange={(event) =>
+                                                        saveRating(
+                                                            student.id,
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    className="min-w-52 rounded-md border border-gray-300 px-3 py-2"
+                                                >
+                                                    <option value="" disabled>
+                                                        Select rating
+                                                    </option>
+                                                    {items.map(
+                                                        (
+                                                            item: GradingSchemeItem,
+                                                        ) => (
+                                                            <option
+                                                                key={item.id}
+                                                                value={item.id}
+                                                            >
+                                                                {item.code} —{' '}
+                                                                {item.label}
+                                                            </option>
+                                                        ),
+                                                    )}
+                                                </select>
+                                                {/*
+                                                    Slot always reserved (w-4) so revealing the ×
+                                                    never shifts the select — the same reason the
+                                                    numeric grid reserves it. tabIndex={-1} for the
+                                                    same reason too: a teacher tabs down the column
+                                                    to rate a class, and a focusable button per row
+                                                    would double the tab stops. The keyboard route
+                                                    is the select itself; this is the pointer one.
+                                                */}
+                                                <span className="flex w-4 shrink-0 items-center justify-center">
+                                                    {!locked &&
+                                                        (ratings[student.id] ??
+                                                            '') !== '' && (
+                                                            <button
+                                                                type="button"
+                                                                tabIndex={-1}
+                                                                aria-label={`Clear rating for ${fullName(student)}`}
+                                                                title="Clear rating"
+                                                                disabled={saving.has(
+                                                                    student.id,
+                                                                )}
+                                                                onClick={() =>
+                                                                    void clearRating(
+                                                                        student.id,
+                                                                    )
+                                                                }
+                                                                className="rounded text-gray-300 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-red-600 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-red-500 focus-visible:outline-none"
+                                                            >
+                                                                <X className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        )}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3 text-gray-600">
                                             {selected?.label ?? '—'}

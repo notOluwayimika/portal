@@ -32,26 +32,31 @@ class ClassLevel extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<GradingScheme, $this> */
     public function gradingScheme(): BelongsTo
     {
         return $this->belongsTo(GradingScheme::class);
     }
 
+    /** @return BelongsToMany<Arm, $this> */
     public function arms(): BelongsToMany
     {
         return $this->belongsToMany(Arm::class, 'class_level_arms');
     }
 
+    /** @return HasMany<ClassLevelArm, $this> */
     public function classLevelArms(): HasMany
     {
         return $this->hasMany(ClassLevelArm::class);
     }
 
+    /** @return HasMany<Stream, $this> */
     public function streams(): HasMany
     {
         return $this->hasMany(Stream::class);

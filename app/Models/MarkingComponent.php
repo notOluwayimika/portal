@@ -32,16 +32,19 @@ class MarkingComponent extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
 
+    /** @return BelongsTo<MarkingScheme, $this> */
     public function markingScheme(): BelongsTo
     {
         return $this->belongsTo(MarkingScheme::class);
     }
 
+    /** @return HasMany<Score, $this> */
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);

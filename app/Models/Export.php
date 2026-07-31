@@ -38,11 +38,13 @@ class Export extends Model
         return $this->expires_at !== null && $this->expires_at->isPast();
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

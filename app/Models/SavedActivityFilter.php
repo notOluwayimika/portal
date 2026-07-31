@@ -10,10 +10,11 @@ class SavedActivityFilter extends Model
     protected $fillable = ['user_id', 'school_id', 'name', 'filters', 'is_default'];
 
     protected $casts = [
-        'filters'    => 'array',
+        'filters' => 'array',
         'is_default' => 'boolean',
     ];
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -38,6 +38,7 @@ class GradingSchemeItem extends Model implements Commentable
         return 'uuid';
     }
 
+    /** @return BelongsTo<GradingScheme, $this> */
     public function gradingScheme(): BelongsTo
     {
         return $this->belongsTo(GradingScheme::class);

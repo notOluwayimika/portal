@@ -44,11 +44,13 @@ class Term extends Model
         });
     }
 
+    /** @return BelongsTo<AcademicSession, $this> */
     public function academicSession(): BelongsTo
     {
         return $this->belongsTo(AcademicSession::class);
     }
 
+    /** @return HasMany<Curriculum, $this> */
     public function curricula(): HasMany
     {
         return $this->hasMany(Curriculum::class);

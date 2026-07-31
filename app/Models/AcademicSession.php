@@ -32,16 +32,19 @@ class AcademicSession extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return HasMany<Term, $this> */
     public function terms(): HasMany
     {
         return $this->hasMany(Term::class);
     }
 
+    /** @return HasManyThrough<Curriculum, Term, $this> */
     public function curricula(): HasManyThrough
     {
         return $this->hasManyThrough(Curriculum::class, Term::class);

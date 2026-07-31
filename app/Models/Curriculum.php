@@ -14,6 +14,13 @@ use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ * @property int|null $class_level_arm_id Larastan otherwise infers string|null, which made a
+ *                                        strict comparison against ClassLevelArmTeacher::\$class_level_arm_id look
+ *                                        always-false. Verified integer at runtime on both sides.
+ */
 class Curriculum extends Model
 {
     use HasFactory, LogsActivity;
@@ -54,16 +61,19 @@ class Curriculum extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<MarkingScheme, $this> */
     public function markingScheme(): BelongsTo
     {
         return $this->belongsTo(MarkingScheme::class);
     }
 
+    /** @return BelongsTo<GradingScheme, $this> */
     public function gradingScheme(): BelongsTo
     {
         return $this->belongsTo(GradingScheme::class);
@@ -74,31 +84,37 @@ class Curriculum extends Model
         return $this->grading_scheme_id !== null;
     }
 
+    /** @return BelongsTo<Term, $this> */
     public function term(): BelongsTo
     {
         return $this->belongsTo(Term::class);
     }
 
+    /** @return HasOneThrough<AcademicSession, Term, $this> */
     public function academicSession(): HasOneThrough
     {
         return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');
     }
 
+    /** @return BelongsTo<ClassLevelArm, $this> */
     public function classLevelArm(): BelongsTo
     {
         return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
 
+    /** @return BelongsTo<ExamType, $this> */
     public function examType(): BelongsTo
     {
         return $this->belongsTo(ExamType::class);
     }
 
+    /** @return HasMany<CurriculumSubject, $this> */
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);
     }
 
+    /** @return HasMany<StudentCurriculum, $this> */
     public function studentCurricula(): HasMany
     {
         return $this->hasMany(StudentCurriculum::class);
@@ -106,12 +122,15 @@ class Curriculum extends Model
 
     public function isRegistrationOpen(): bool
     {
-        return $this->term->start_date && now()->lessThanOrEqualTo($this->term->start_date);
+        // `terms.start_date` is NOT NULL, so the old truthiness guard could never
+        // be false — Larastan reports it as an always-true left side.
+        return now()->lessThanOrEqualTo($this->term->start_date);
     }
 
     public function areResultsVisible(): bool
     {
-        return $this->term->end_date && now()->greaterThanOrEqualTo($this->term->end_date);
+        // As above: `terms.end_date` is NOT NULL.
+        return now()->greaterThanOrEqualTo($this->term->end_date);
     }
 
     public function getFullNameAttribute()

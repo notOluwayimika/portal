@@ -18,14 +18,14 @@ class TeacherSchoolAccessController extends Controller
      */
     public function sync(SyncTeacherSchoolsRequest $request, Teacher $teacher)
     {
-        abort_unless($teacher->user, 422, 'This teacher has no login account, so school access cannot be managed.');
+        abort_unless($teacher->user !== null, 422, 'This teacher has no login account, so school access cannot be managed.');
 
         $manageableIds = $request->user()->accessibleSchoolIds();
 
         $target = School::whereIn('uuid', $request->validated('schools'))->get();
 
         abort_if(
-            $target->contains(fn (School $school) => !$manageableIds->contains((int) $school->id)),
+            $target->contains(fn (School $school) => ! $manageableIds->contains((int) $school->id)),
             403,
             'You can only grant access to schools you have access to.'
         );
@@ -40,7 +40,7 @@ class TeacherSchoolAccessController extends Controller
                     continue;
                 }
 
-                if (!$current->contains('id', $school->id)) {
+                if (! $current->contains('id', $school->id)) {
                     $user->grantSchoolAccess($school, 'teacher');
                 }
             }
@@ -50,11 +50,11 @@ class TeacherSchoolAccessController extends Controller
                     continue;
                 }
 
-                if (!$manageableIds->contains((int) $school->id)) {
+                if (! $manageableIds->contains((int) $school->id)) {
                     continue;
                 }
 
-                if (!$target->contains('id', $school->id)) {
+                if (! $target->contains('id', $school->id)) {
                     $user->revokeSchoolAccess($school, 'teacher');
                 }
             }

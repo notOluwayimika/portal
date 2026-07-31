@@ -25,16 +25,19 @@ class MarkingScheme extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return HasMany<MarkingComponent, $this> */
     public function components(): HasMany
     {
         return $this->hasMany(MarkingComponent::class)->orderBy('id');
     }
 
+    /** @return HasMany<Curriculum, $this> */
     public function curricula(): HasMany
     {
         return $this->hasMany(Curriculum::class);

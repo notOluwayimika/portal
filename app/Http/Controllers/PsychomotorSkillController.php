@@ -25,11 +25,11 @@ class PsychomotorSkillController extends Controller
         // mirroring behavioral assessments.
         $term = $studentCurriculum->curriculum?->term;
 
-        abort_unless($term, 422, 'There is no term to record an assessment for.');
+        abort_unless($term !== null, 422, 'There is no term to record an assessment for.');
         abort_if($term->status === TermStatusEnum::UPCOMING, 422, 'Cannot record assessments for an upcoming term.');
 
         abort_unless(
-            (bool) $studentCurriculum->curriculum?->usesCategoricalGrading(),
+            (bool) $studentCurriculum->curriculum->usesCategoricalGrading(),
             422,
             'Psychomotor skills are only recorded for categorical-grading curricula.'
         );

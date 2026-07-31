@@ -17,6 +17,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ */
 class Student extends Model
 {
     use AddUuid, BelongsToSchool, HasAdmissionNumber, HasFactory, SoftDeletes;
@@ -91,41 +95,49 @@ class Student extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /** @return BelongsTo<FileUpload, $this> */
     public function photoFile(): BelongsTo
     {
         return $this->belongsTo(FileUpload::class, 'photo_id');
     }
 
+    /** @return HasMany<StudentCurriculum, $this> */
     public function studentCurricula(): HasMany
     {
         return $this->hasMany(StudentCurriculum::class);
     }
 
+    /** @return HasOne<StudentCurriculum, $this> */
     public function currentCurriculum(): HasOne
     {
         return $this->hasOne(StudentCurriculum::class)->where('status', StudentStatusEnum::ACTIVE);
     }
 
+    /** @return HasMany<Score, $this> */
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
     }
 
+    /** @return HasMany<StudentResult, $this> */
     public function results(): HasMany
     {
         return $this->hasMany(StudentResult::class);
     }
 
+    /** @return BelongsToMany<Guardian, $this> */
     public function guardians(): BelongsToMany
     {
         return $this->belongsToMany(Guardian::class, 'guardian_student')
@@ -138,11 +150,13 @@ class Student extends Model
         return $this->guardians()->wherePivot('is_primary', true);
     }
 
+    /** @return BelongsTo<SportHouse, $this> */
     public function sportHouse(): BelongsTo
     {
         return $this->belongsTo(SportHouse::class);
     }
 
+    /** @return BelongsTo<Scholarship, $this> */
     public function scholarship(): BelongsTo
     {
         return $this->belongsTo(Scholarship::class);

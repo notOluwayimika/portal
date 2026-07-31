@@ -28,6 +28,7 @@ class NoticeCategory extends Model
         return 'uuid';
     }
 
+    /** @return HasMany<Notice, $this> */
     public function notices(): HasMany
     {
         return $this->hasMany(Notice::class);

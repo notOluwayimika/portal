@@ -87,7 +87,7 @@ class HeadOfSchoolCommentController extends Controller
             'studentSubjects.curriculumSubject.subject',
             // The boarding parent's comment lives on the enrollment's
             // behavioral assessment for the curriculum's own term.
-            'behavioralAssessments' => fn ($q) => $q->where('assessment_term_id', $studentCurriculum->curriculum?->term_id),
+            'behavioralAssessments' => fn ($q) => $q->where('assessment_term_id', $studentCurriculum->curriculum->term_id),
         ]);
 
         $defaultBoundaries = GradeBoundary::whereNull('exam_type_id')->get();
@@ -132,7 +132,7 @@ class HeadOfSchoolCommentController extends Controller
         // the comment can only be edited once the boarding parent has
         // recorded an assessment — there is no row to attach it to before.
         $assessment = $studentCurriculum->behavioralAssessments()
-            ->where('assessment_term_id', $studentCurriculum->curriculum?->term_id)
+            ->where('assessment_term_id', $studentCurriculum->curriculum->term_id)
             ->first();
 
         if (array_key_exists('boarding_parent_comment', $data)) {

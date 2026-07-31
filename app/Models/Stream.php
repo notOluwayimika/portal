@@ -10,6 +10,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Stream extends Model
 {
     use LogsActivity;
+
     protected $fillable = [
         'uuid',
         'class_level_id',
@@ -18,6 +19,7 @@ class Stream extends Model
         'sort_order',
     ];
 
+    /** @return BelongsTo<ClassLevel, $this> */
     public function classLevel(): BelongsTo
     {
         return $this->belongsTo(ClassLevel::class);

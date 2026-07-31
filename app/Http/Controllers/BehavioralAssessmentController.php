@@ -54,7 +54,7 @@ class BehavioralAssessmentController extends Controller
         // correctly-dated past-term assessments with the same code path.
         $term = $studentCurriculum->curriculum?->term;
 
-        abort_unless($term, 422, 'There is no term to record an assessment for.');
+        abort_unless($term !== null, 422, 'There is no term to record an assessment for.');
         abort_if($term->status === TermStatusEnum::UPCOMING, 422, 'Cannot record assessments for an upcoming term.');
 
         abort_unless($this->canRecordAssessmentFor($studentCurriculum, $term), 403);

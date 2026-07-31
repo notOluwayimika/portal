@@ -45,21 +45,25 @@ class StudentResult extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<Student, $this> */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    /** @return BelongsTo<GradingSchemeItem, $this> */
     public function gradingSchemeItem(): BelongsTo
     {
         return $this->belongsTo(GradingSchemeItem::class);

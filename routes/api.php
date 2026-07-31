@@ -181,6 +181,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // curriculum subject archival
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive', [CurriculumSubjectController::class, 'archive']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
+    // Stop offering a subject AND withdraw everyone taking it, as one act. Shares
+    // `curriculum_subject.archive` with archive() above — it IS an archive, plus the
+    // enrollment half archive() was always missing — so no new permission and no RBAC
+    // oracle regeneration.
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/withdraw', [CurriculumSubjectController::class, 'withdraw']);
 
     // protected marking components
     Route::get('/marking-components', [MarkingComponentController::class, 'index']);

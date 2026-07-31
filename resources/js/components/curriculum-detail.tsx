@@ -963,6 +963,9 @@ export function CurriculumDetail({
                         setConfirmUnarchiveSubject(null);
                     }}
                     onClose={() => setConfirmUnarchiveSubject(null)}
+                />
+            )}
+
             {confirmWithdrawSubject && (
                 <Confirm
                     msg={`"${confirmWithdrawSubject.curriculumSubject.subject.name}" is being taken by ${confirmWithdrawSubject.enrolledCount} student(s), so it cannot simply be deleted. Withdraw it instead? The subject stops being offered and those students are dropped from it. Marks already recorded are kept, and restoring the subject later does NOT restore the students.`}

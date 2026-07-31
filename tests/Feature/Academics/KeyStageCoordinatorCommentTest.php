@@ -181,6 +181,39 @@ it('leaves the comment out of reach of a user without the permission', function 
         ->assertForbidden();
 });
 
+/**
+ * THE GAP THAT SHIPPED. The coordinator's NAME reached the result card (via the
+ * `keyStageCoordinator` object on the details payload) while their COMMENT did not,
+ * because StudentCurriculumResource never exposed the column. The tests above assert
+ * the coordinator's own endpoint, which is why none of them noticed — the result
+ * card reads a different payload.
+ */
+it('exposes the comment on the payload the result card actually reads', function () {
+    $w = ksc_world();
+
+    $w['myEnrollment']->update(['key_stage_coordinator_comment' => 'Reads fluently.']);
+
+    // Acting as an ADMIN, not the coordinator: this endpoint feeds the printed
+    // result, which the coordinator never opens. Reading it as them would 403 and
+    // prove nothing about the card.
+    setPermissionsTeamId(null);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $admin = al_makeUser($w['school']->id);
+    setPermissionsTeamId($w['school']->id);
+    $admin->assignRole('admin');
+
+    $response = $this->actingAs($admin)
+        ->withSession(['school_id' => $w['school']->id])
+        ->getJson("/api/student-curricula/{$w['myEnrollment']->uuid}")
+        ->assertOk();
+
+    // Both halves: the name comes from one key, the comment from another, and the
+    // card needs both to print the pair.
+    expect($response->json('keyStageCoordinator.id'))->not->toBeNull();
+    expect($response->json('studentCurriculum.key_stage_coordinator_comment'))
+        ->toBe('Reads fluently.');
+});
+
 it('defaults the result-template flags so existing schools print what they always printed', function () {
     $school = School::factory()->create();
 

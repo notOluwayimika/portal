@@ -33,10 +33,17 @@ interface OutstandingData {
     form_teachers: AssignmentRow[];
     boarding_parents: AssignmentRow[];
     head_of_schools: AssignmentRow[];
+    key_stage_coordinators: AssignmentRow[];
     term: string | null;
 }
 
-function ProgressBar({ completed, total }: { completed: number; total: number }) {
+function ProgressBar({
+    completed,
+    total,
+}: {
+    completed: number;
+    total: number;
+}) {
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
     const color =
         pct === 100
@@ -53,7 +60,7 @@ function ProgressBar({ completed, total }: { completed: number; total: number })
                     style={{ width: `${pct}%` }}
                 />
             </div>
-            <span className="text-xs tabular-nums text-gray-500">
+            <span className="text-xs text-gray-500 tabular-nums">
                 {completed}/{total}
             </span>
         </div>
@@ -90,7 +97,9 @@ function StatCard({
 }) {
     return (
         <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${color}`}>
+            <div
+                className={`flex h-10 w-10 items-center justify-center rounded-lg ${color}`}
+            >
                 <Icon className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -124,7 +133,8 @@ function SectionTable({
                             {title}
                         </h2>
                         <p className="mt-0.5 text-xs text-gray-500">
-                            {rows.length} assignment{rows.length !== 1 ? 's' : ''}
+                            {rows.length} assignment
+                            {rows.length !== 1 ? 's' : ''}
                         </p>
                     </div>
                 </div>
@@ -147,7 +157,8 @@ function SectionTable({
                         No assignments found
                     </p>
                     <p className="mt-1 text-xs text-gray-400">
-                        No teachers have been assigned this role for the active term
+                        No teachers have been assigned this role for the active
+                        term
                     </p>
                 </div>
             ) : (
@@ -190,7 +201,11 @@ function SectionTable({
                                                 </p>
                                                 {row.teacher.staff_number && (
                                                     <p className="text-xs text-gray-400">
-                                                        #{row.teacher.staff_number}
+                                                        #
+                                                        {
+                                                            row.teacher
+                                                                .staff_number
+                                                        }
                                                     </p>
                                                 )}
                                             </div>
@@ -254,6 +269,10 @@ export default function OutstandingComments() {
     const [termId, setTermId] = useState('');
 
     useEffect(() => {
+        // Pre-existing: setLoading(true) here is a synchronous setState in the
+        // effect body. Restructuring this page's loading is out of scope for adding
+        // a section — suppressed with the reason rather than quietly rewritten.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         axios
             .get<{ data: OutstandingData }>('/api/outstanding-comments', {
@@ -284,20 +303,19 @@ export default function OutstandingComments() {
         );
     }
 
-    const totalOutstanding =
-        data.form_teachers.reduce((s, r) => s + r.outstanding, 0) +
-        data.boarding_parents.reduce((s, r) => s + r.outstanding, 0) +
-        data.head_of_schools.reduce((s, r) => s + r.outstanding, 0);
+    // One list, three sums. The previous version added the three groups by hand in
+    // each total, which is how a fourth group would have been counted in some
+    // figures and not others.
+    const allRows = [
+        ...data.form_teachers,
+        ...data.boarding_parents,
+        ...data.head_of_schools,
+        ...(data.key_stage_coordinators ?? []),
+    ];
 
-    const totalCompleted =
-        data.form_teachers.reduce((s, r) => s + r.completed, 0) +
-        data.boarding_parents.reduce((s, r) => s + r.completed, 0) +
-        data.head_of_schools.reduce((s, r) => s + r.completed, 0);
-
-    const totalAssignments =
-        data.form_teachers.length +
-        data.boarding_parents.length +
-        data.head_of_schools.length;
+    const totalOutstanding = allRows.reduce((s, r) => s + r.outstanding, 0);
+    const totalCompleted = allRows.reduce((s, r) => s + r.completed, 0);
+    const totalAssignments = allRows.length;
 
     return (
         <div className="space-y-6 p-4">
@@ -330,7 +348,9 @@ export default function OutstandingComments() {
                     label="Outstanding"
                     value={totalOutstanding}
                     icon={AlertTriangle}
-                    color={totalOutstanding > 0 ? 'bg-red-600' : 'bg-emerald-600'}
+                    color={
+                        totalOutstanding > 0 ? 'bg-red-600' : 'bg-emerald-600'
+                    }
                 />
             </div>
 
@@ -351,6 +371,12 @@ export default function OutstandingComments() {
                 title="Head of Schools"
                 icon={Shield}
                 rows={data.head_of_schools}
+            />
+
+            <SectionTable
+                title="Key Stage Coordinators"
+                icon={Shield}
+                rows={data.key_stage_coordinators ?? []}
             />
         </div>
     );

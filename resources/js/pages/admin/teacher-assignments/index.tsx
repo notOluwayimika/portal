@@ -68,6 +68,14 @@ const ROLE_META: Record<
     },
 };
 
+/** Plural heading per section; ROLE_META's label is the singular used elsewhere. */
+const SECTION_TITLES: Record<TeacherAssignmentRole, string> = {
+    form_teacher: 'Form Teachers',
+    boarding_parent: 'Boarding Parents',
+    head_of_school: 'Heads of School',
+    key_stage_coordinator: 'Key Stage Coordinators',
+};
+
 type WizardStep = 'role' | 'teacher' | 'classes' | 'review';
 
 const STEP_ORDER: WizardStep[] = ['role', 'teacher', 'classes', 'review'];
@@ -973,16 +981,20 @@ export default function TeacherAssignmentsIndex() {
         return Array.from(map.values()).sort((a, b) => a.order - b.order);
     }, [classLevelArms]);
 
+    // Derived from ROLE_META rather than listed by hand: the hand-written version
+    // silently omitted key_stage_coordinator when that role was added, so its
+    // assignments existed but had no section to appear in. Adding a role to
+    // ROLE_META is now enough.
     const grouped = useMemo(
-        () => ({
-            form_teacher: assignments.filter((a) => a.role === 'form_teacher'),
-            boarding_parent: assignments.filter(
-                (a) => a.role === 'boarding_parent',
-            ),
-            head_of_school: assignments.filter(
-                (a) => a.role === 'head_of_school',
-            ),
-        }),
+        () =>
+            Object.fromEntries(
+                (Object.keys(ROLE_META) as TeacherAssignmentRole[]).map(
+                    (role) => [
+                        role,
+                        assignments.filter((a) => a.role === role),
+                    ],
+                ),
+            ) as Record<TeacherAssignmentRole, ClassLevelArmTeacher[]>,
         [assignments],
     );
 
@@ -1052,36 +1064,21 @@ export default function TeacherAssignmentsIndex() {
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        <AssignmentSection
-                            title="Form Teachers"
-                            description="One teacher per class arm. Writes the term comment for each student."
-                            icon={UserCog}
-                            assignments={grouped.form_teacher}
-                            showGender={false}
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
-                        <AssignmentSection
-                            title="Boarding Parents"
-                            description="Up to one male and one female teacher per class arm. Records behavioral assessments."
-                            icon={Heart}
-                            assignments={grouped.boarding_parent}
-                            showGender
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
-                        <AssignmentSection
-                            title="Heads of School"
-                            description="May supervise multiple class levels. Writes the term comment for each student."
-                            icon={ShieldCheck}
-                            assignments={grouped.head_of_school}
-                            showGender={false}
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
+                        {(
+                            Object.keys(ROLE_META) as TeacherAssignmentRole[]
+                        ).map((role) => (
+                            <AssignmentSection
+                                key={role}
+                                title={SECTION_TITLES[role]}
+                                description={ROLE_META[role].description}
+                                icon={ROLE_META[role].icon}
+                                assignments={grouped[role]}
+                                showGender={role === 'boarding_parent'}
+                                getInitials={getInitials}
+                                onReplace={openReplace}
+                                onRemove={setRemoving}
+                            />
+                        ))}
                     </div>
                 )}
             </div>

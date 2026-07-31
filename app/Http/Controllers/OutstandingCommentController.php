@@ -21,11 +21,12 @@ class OutstandingCommentController extends Controller
     {
         $term = $this->resolveTermFilter($request);
 
-        if (!$term) {
+        if (! $term) {
             return Response::success([
                 'form_teachers' => [],
                 'boarding_parents' => [],
                 'head_of_schools' => [],
+                'key_stage_coordinators' => [],
                 'term' => null,
             ]);
         }
@@ -49,7 +50,7 @@ class OutstandingCommentController extends Controller
             ->with(['student:id,gender', 'curriculum:id,class_level_arm_id'])
             ->get();
 
-        $studentsByArm = $studentCurricula->groupBy(fn($sc) => $sc->curriculum->class_level_arm_id);
+        $studentsByArm = $studentCurricula->groupBy(fn ($sc) => $sc->curriculum->class_level_arm_id);
 
         $assessedIds = BehavioralAssessment::where('assessment_term_id', $term->id)
             ->whereIn('student_curriculum_id', $studentCurricula->pluck('id'))
@@ -59,12 +60,13 @@ class OutstandingCommentController extends Controller
         $formTeachers = [];
         $boardingParents = [];
         $headOfSchools = [];
+        $keyStageCoordinators = [];
 
         foreach ($assignments as $assignment) {
             $classLevelArm = $assignment->classLevelArm;
             $teacher = $assignment->teacher;
 
-            if (!$teacher || !$classLevelArm) {
+            if (! $teacher || ! $classLevelArm) {
                 continue;
             }
 
@@ -73,7 +75,7 @@ class OutstandingCommentController extends Controller
 
             if ($assignment->role === TeacherAssignmentRoleEnum::FORM_TEACHER) {
                 $total = $students->count();
-                $completed = $students->filter(fn($sc) => $sc->form_teacher_comment !== null)->count();
+                $completed = $students->filter(fn ($sc) => $sc->form_teacher_comment !== null)->count();
 
                 $formTeachers[] = [
                     'teacher' => new TeacherResource($teacher),
@@ -86,11 +88,11 @@ class OutstandingCommentController extends Controller
 
             if ($assignment->role === TeacherAssignmentRoleEnum::BOARDING_PARENT) {
                 $genderStudents = $assignment->gender
-                    ? $students->filter(fn($sc) => $sc->student && $sc->student->gender === $assignment->gender->value)
+                    ? $students->filter(fn ($sc) => $sc->student && $sc->student->gender === $assignment->gender->value)
                     : $students;
 
                 $total = $genderStudents->count();
-                $completed = $genderStudents->filter(fn($sc) => $assessedIds->has($sc->id))->count();
+                $completed = $genderStudents->filter(fn ($sc) => $assessedIds->has($sc->id))->count();
 
                 $boardingParents[] = [
                     'teacher' => new TeacherResource($teacher),
@@ -102,9 +104,25 @@ class OutstandingCommentController extends Controller
                 ];
             }
 
+            // Primary's equivalent of the Head of School below, counted the same way
+            // against its own comment column. Omitted when the role was added, so
+            // coordinators' outstanding comments were invisible on this page.
+            if ($assignment->role === TeacherAssignmentRoleEnum::KEY_STAGE_COORDINATOR) {
+                $total = $students->count();
+                $completed = $students->filter(fn ($sc) => $sc->key_stage_coordinator_comment !== null)->count();
+
+                $keyStageCoordinators[] = [
+                    'teacher' => new TeacherResource($teacher),
+                    'class_name' => $className,
+                    'total' => $total,
+                    'completed' => $completed,
+                    'outstanding' => $total - $completed,
+                ];
+            }
+
             if ($assignment->role === TeacherAssignmentRoleEnum::HEAD_OF_SCHOOL) {
                 $total = $students->count();
-                $completed = $students->filter(fn($sc) => $sc->head_of_school_comment !== null)->count();
+                $completed = $students->filter(fn ($sc) => $sc->head_of_school_comment !== null)->count();
 
                 $headOfSchools[] = [
                     'teacher' => new TeacherResource($teacher),
@@ -120,6 +138,7 @@ class OutstandingCommentController extends Controller
             'form_teachers' => $formTeachers,
             'boarding_parents' => $boardingParents,
             'head_of_schools' => $headOfSchools,
+            'key_stage_coordinators' => $keyStageCoordinators,
             'term' => $term->name,
         ]);
     }

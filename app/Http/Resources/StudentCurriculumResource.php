@@ -6,6 +6,15 @@ use App\Models\StudentCurriculum;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/**
+ * @mixin StudentCurriculum
+ *
+ * JsonResource proxies every unknown property and method to the wrapped model via
+ * __get/__call, which PHPStan cannot see — so each `$this->some_column` here was an
+ * "undefined property" and nine of them sat in the baseline. Declaring the mixin
+ * states the proxy explicitly and resolves them all, including the newly added
+ * key_stage_coordinator_comment that would otherwise have been a tenth.
+ */
 class StudentCurriculumResource extends JsonResource
 {
     /**
@@ -64,6 +73,12 @@ class StudentCurriculumResource extends JsonResource
             'head_of_school' => new TeacherResource($this->whenLoaded('headOfSchool')),
             'form_teacher_comment' => $this->form_teacher_comment,
             'head_of_school_comment' => $this->head_of_school_comment,
+            // The result card reads this to print the Key Stage Coordinator's
+            // comment. Its ABSENCE is why the coordinator's NAME appeared on the
+            // sheet while their comment did not: the name comes from the
+            // `keyStageCoordinator` object on the details payload, the comment from
+            // the enrollment — and only the first had been wired.
+            'key_stage_coordinator_comment' => $this->key_stage_coordinator_comment,
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentSubjectStatus;
 use App\Http\Requests\RejectSubjectResultRequest;
 use App\Http\Requests\UpsertScoreRequest;
 use App\Http\Resources\CurriculumSubjectResource;
@@ -19,6 +20,7 @@ use App\Models\StudentSubject;
 use App\Models\SubjectResultStatus;
 use App\Models\Teacher;
 use App\Models\TeacherCurriculumSubject;
+use App\Services\StudentSubjectService;
 use App\Support\ActiveSchool;
 use App\Support\Authz;
 use App\Support\ScoreUnit;
@@ -272,6 +274,31 @@ class CurriculumSubjectController extends Controller
 
     public function destroy(CurriculumSubject $curriculumSubject)
     {
+        // A BUSINESS RULE, ANSWERED BEFORE THE DATABASE ANSWERS IT.
+        //
+        // `student_subjects.curriculum_subject_id` is the ONE foreign key here that
+        // does not cascade (ON DELETE NO ACTION; every sibling — scores,
+        // student_results, subject_result_statuses, marking_components,
+        // teacher_curriculum_subjects — is CASCADE). So this delete was already
+        // impossible once anyone was enrolled: InnoDB raised 1451 and the catch
+        // below flattened it into a 500 reading "Failed to delete curriculum
+        // subject", which tells the operator neither what went wrong nor what to do.
+        //
+        // Checking first turns a server fault into an instruction. Same correction
+        // as a4d12cc made for DB error codes generally: a rule the system enforces
+        // deliberately is not an error the system suffered.
+        //
+        // Deleting is still the right verb for a subject assigned by mistake and
+        // never taught — that path drops the empty scaffolding and stays.
+        $enrolled = $curriculumSubject->studentAssignments()->count();
+
+        if ($enrolled > 0) {
+            return response()->json([
+                'error' => 'This subject has enrolled students — withdraw it instead.',
+                'enrolled_count' => $enrolled,
+            ], 409);
+        }
+
         try {
             $curriculumSubject->delete();
 
@@ -281,6 +308,70 @@ class CurriculumSubjectController extends Controller
 
             return response()->json(['error' => 'Failed to delete curriculum subject'], 500);
         }
+    }
+
+    /**
+     * PATCH /api/curriculum-subjects/{curriculumSubject}/withdraw
+     *
+     * Stop offering a subject AND withdraw everyone currently taking it, as one
+     * act. Archiving alone left every enrollment `active`, so a withdrawn subject
+     * kept appearing on result sheets and kept counting as a missing result in the
+     * readiness check — both of which read `student_subjects`, not `archived_at`.
+     *
+     * Archive rather than delete: deleting cascades `scores`, `student_results` and
+     * `subject_result_statuses`, destroying every mark recorded before the subject
+     * was pulled. A subject taught for six weeks has real history, and withdrawing
+     * it should not erase the term.
+     */
+    public function withdraw(
+        Request $request,
+        CurriculumSubject $curriculumSubject,
+        StudentSubjectService $studentSubjectService,
+    ): JsonResponse {
+        Authz::abilityCheck($request->user(), 'curriculum_subject.archive', 'CurriculumSubjectController@withdraw');
+
+        // Locked results are already printed, or on their way to being. The same
+        // condition assignScore and assignCategoricalResult refuse on — withdrawing
+        // a pupil from a subject whose results are approved would silently rewrite
+        // what a parent has already been shown.
+        // Read as a column rather than `resultStatus?->status`: the relation is not
+        // generically typed, so a property access there resolves to
+        // Model::$status and trips Larastan's baselined ignore-count for exactly
+        // that pattern. One query either way.
+        $resultStatus = $curriculumSubject->resultStatus()->value('status');
+
+        if (in_array($resultStatus, ['submitted', 'approved'], true)) {
+            return response()->json([
+                'error' => 'Results are locked for this subject. Contact an administrator.',
+            ], 422);
+        }
+
+        $withdrawn = DB::transaction(function () use ($request, $curriculumSubject, $studentSubjectService) {
+            $count = $studentSubjectService->withdrawAllForCurriculumSubject(
+                $curriculumSubject,
+                $request->user(),
+            );
+
+            // Idempotent on the archive half: re-running withdraws anyone enrolled
+            // since, without a 409 for an already-archived subject the way archive()
+            // itself would.
+            if (! $curriculumSubject->isArchived()) {
+                $curriculumSubject->update([
+                    'active' => false,
+                    'archived_at' => now(),
+                    'archived_by_user_id' => $request->user()->id,
+                ]);
+            }
+
+            return $count;
+        });
+
+        return response()->json([
+            'message' => $withdrawn === 1
+                ? 'Subject withdrawn. 1 enrollment was dropped.'
+                : "Subject withdrawn. {$withdrawn} enrollments were dropped.",
+            'withdrawn_count' => $withdrawn,
+        ]);
     }
 
     public function assignScore(UpsertScoreRequest $upsertScoreRequest)
@@ -655,7 +746,27 @@ class CurriculumSubjectController extends Controller
             'archived_by_user_id' => null,
         ]);
 
-        return response()->json(['message' => 'Subject restored successfully.']);
+        // ASYMMETRIC ON PURPOSE. withdraw() drops enrollments; this does not bring
+        // them back. Restoring them automatically would mean telling a school
+        // withdrawal apart from a pupil's own drop, and the only thing recording
+        // the difference is a human-readable `drop_reason` string — too weak a
+        // signal to decide whether a pupil's subject and marks reappear.
+        //
+        // So the count is REPORTED rather than acted on: the operator restores the
+        // ones they meant to, through the per-pupil restore that already exists.
+        // Silence here would look like success while leaving a subject offered and
+        // nobody taking it.
+        $droppedCount = $curriculumSubject->studentAssignments()
+            ->where('status', StudentSubjectStatus::Dropped)
+            ->count();
+
+        return response()->json([
+            'message' => 'Subject restored successfully.',
+            'dropped_enrollment_count' => $droppedCount,
+            'warning' => $droppedCount > 0
+                ? "{$droppedCount} enrollment(s) remain dropped for this subject and must be restored per student."
+                : null,
+        ]);
     }
 
     public function show(CurriculumSubject $curriculumSubject)

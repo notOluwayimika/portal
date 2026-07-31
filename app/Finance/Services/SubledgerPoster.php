@@ -76,6 +76,24 @@ final class SubledgerPoster
      */
     private function applyToAccount(int $schoolId, int $studentId, Money $amount): void
     {
+        // Currency invariant — the layer that catches EVERY future caller, not just today's two Actions.
+        // ON DUPLICATE KEY below adds VALUES(balance_minor) into the existing balance_minor but does NOT
+        // touch balance_currency, so a mismatched currency would silently add e.g. USD kobo into an NGN
+        // balance and leave the label reading NGN. Refuse it before the write. A LogicException (not a
+        // BusinessRuleException) deliberately: both payment Actions now guard currency at the edge, so
+        // reaching here with a mismatch is a PROGRAMMING error by a new caller — a 500 is the right,
+        // loud answer, the same role Money's own constructor plays. DB::selectOne (not DB::table — the
+        // boundary lint forbids that on a finance_ literal) reads the current label under this Action's tx.
+        $existing = DB::selectOne(
+            'SELECT balance_currency FROM finance_student_accounts WHERE school_id = ? AND student_id = ?',
+            [$schoolId, $studentId],
+        );
+        if ($existing !== null && $existing->balance_currency !== $amount->currency) {
+            throw new \LogicException(
+                "Ledger currency {$amount->currency} does not match account balance currency {$existing->balance_currency} for student {$studentId}."
+            );
+        }
+
         DB::insert(
             'INSERT INTO finance_student_accounts
                 (uuid, school_id, student_id, balance_minor, balance_currency, created_at, updated_at)

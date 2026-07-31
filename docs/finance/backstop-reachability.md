@@ -52,7 +52,8 @@ UNKNOWN = 0.
 | finance_invoices_total_immutable | finance_invoices | change total on UPDATE | 1644 | UNREACHABLE | Void UPDATEs status only (`ApproveVoidRequest.php:70`); no route writes total. |
 | finance_ledger_transactions_no_delete | finance_ledger_transactions | DELETE ledger row | 1644 | UNREACHABLE | No route mutates the ledger. |
 | finance_ledger_transactions_no_update | finance_ledger_transactions | UPDATE ledger row | 1644 | UNREACHABLE | No route mutates the ledger. |
-| finance_allocation_not_over_invoice_total | finance_payment_allocations | allocation > invoice total; currency≠ | 1644 | GUARDED | Amount capped before insert: `RecordPayment.php:84` `min(amount, outstanding)`; `GenerateInvoice.php:416` `min(remaining, unallocated)`, `:245` `min(credit, total)`. |
+| finance_allocation_not_over_invoice_total (ceiling arm) | finance_payment_allocations | allocation > invoice total | 1644 | GUARDED | Amount capped before insert: `RecordPayment.php:84` `min(amount, outstanding)`; `GenerateInvoice.php:416` `min(remaining, unallocated)`, `:245` `min(credit, total)`. |
+| finance_allocation_not_over_invoice_total (currency arm) | finance_payment_allocations | allocation currency ≠ invoice | 1644 | REACHABLE→guarded (647d419+1) | **Was misclassified GUARDED — the compound row was classified by its loud ceiling arm.** The currency arm had NO app guard: a "USD" payment reached the DB unchecked via the account-payment route unconditionally (no allocation row → this trigger structurally unreachable there → silent balance corruption), and via the invoice route against a fully-allocated invoice (`allocateKobo === 0` → no allocation row → same silent path). Now guarded three layers: `RecordPaymentRequest`/`RecordAccountPaymentRequest` `Rule::in([DEFAULT_CURRENCY])`, currency checks in `RecordPayment`/`RecordAccountPayment`, and a currency invariant in `SubledgerPoster::applyToAccount`. **Lesson: a compound trigger written as one audit row gets classified by its loudest arm — every other multi-arm row in this table should be re-read on that suspicion (open check, not done here).** |
 | finance_payment_allocations_no_delete | finance_payment_allocations | DELETE allocation | 1644 | UNREACHABLE | No route DELETEs allocations. |
 | finance_payment_allocations_no_update | finance_payment_allocations | UPDATE allocation | 1644 | UNREACHABLE | No route UPDATEs allocations. |
 | finance_payments_no_delete | finance_payments | DELETE payment | 1644 | UNREACHABLE | No route DELETEs payments. |
@@ -164,6 +165,15 @@ Environment: **`brookstone_portal_db` (local dev)** — **0 bad rows** across al
 staging and production** — not reachable from the dev shell; they must be swept by someone with DB access
 before the door is called closed on real data. A dated clean sweep is the evidence; the dev result does not
 speak for the other two environments.
+
+**The sweep tested SHAPE, not correctness — and would not have caught the payment corruption (647d419+1).**
+`balance_currency` on `finance_student_accounts` is written on INSERT and **never on UPDATE** in
+`SubledgerPoster::applyToAccount` (its `ON DUPLICATE KEY` omits the column), so a `'USD'` payment used to
+add its kobo straight into an NGN `balance_minor` and leave `balance_currency` reading `'NGN'` — a balance
+whose label does not reflect its contents. Every one of those values matches `^[A-Z]{3}$`, so the sweep's
+zero was a zero about *shape*, not about a balance being denominated in what it claims. A correctness sweep
+(does each account's `balance_currency` match the currency of the ledger rows that built it?) is a different
+query and has not been run — noted here so "clean sweep" is not read as more than it proved.
 
 **MoneyCast ordering (answer to the open question).** `DiscountPolicy` / `DiscountPolicyChange` should get
 a `MoneyCast` on `value_currency` **eventually, not next, and not before staging+production are swept

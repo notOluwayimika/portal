@@ -63,6 +63,19 @@ final class RecordAccountPayment
             throw new BusinessRuleException('That student belongs to another School.');
         }
 
+        // A payment must be in the account's currency — there is no invoice to compare to here, so compare
+        // to the existing account's balance_currency, or to the default on a student's first-ever movement.
+        // Without this a "USD" payment adds straight into an NGN balance_minor (applyToAccount's ON DUPLICATE
+        // KEY never rewrites balance_currency) — silent corruption, no allocation trigger on this path. 422.
+        $existing = DB::selectOne(
+            'SELECT balance_currency FROM finance_student_accounts WHERE school_id = ? AND student_id = ?',
+            [$schoolId, $studentId],
+        );
+        $expected = $existing->balance_currency ?? Money::DEFAULT_CURRENCY;
+        if ($amount->currency !== $expected) {
+            throw new BusinessRuleException("A payment must be in the account's currency ({$expected}).");
+        }
+
         return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor) {
             // Same sequence scope and key as RecordPayment — one receipt series per school across both
             // doors; UNIQUE(school_id, reference) is the backstop that makes a second counter fail loudly.

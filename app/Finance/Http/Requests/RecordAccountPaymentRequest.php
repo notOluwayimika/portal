@@ -2,7 +2,9 @@
 
 namespace App\Finance\Http\Requests;
 
+use App\Support\Money;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Record a payment on the ACCOUNT (the route carries {student:uuid}, no invoice). Rules are
@@ -26,7 +28,10 @@ class RecordAccountPaymentRequest extends FormRequest
             'amount_minor' => ['required', 'integer', 'min:1'],
             // regex mirrors Money's own ISO-4217 invariant — bad case/format is a 422 here, not the
             // constructor's InvalidArgumentException → 500 (backstop-reachability audit). Refuse, don't repair.
-            'currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            // Rule::in([DEFAULT_CURRENCY]) — refuse at the edge what the single-currency system cannot
+            // process; a well-formed "USD" would otherwise add straight into an NGN balance. The Action
+            // (account currency) and SubledgerPoster backstop this. Reverses the f293358 regex steer.
+            'currency' => ['sometimes', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             'payer_name' => ['required', 'string', 'max:255'],
         ];
     }

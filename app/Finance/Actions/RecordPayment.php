@@ -47,6 +47,14 @@ final class RecordPayment
             throw new BusinessRuleException('Cannot record a payment against a void invoice.');
         }
 
+        // A payment must be in the invoice's currency (mirrors SubmitCreditNote's check). Without this a
+        // "USD" payment against an NGN invoice banks silently as an unallocated advance (no allocation row
+        // when outstanding is 0), corrupting the account balance — the allocation trigger only fires when an
+        // allocation row is written. Refuse at the edge → 422; SubledgerPoster is the backstop.
+        if ($amount->currency !== $invoice->total->currency) {
+            throw new BusinessRuleException("A payment must be in the invoice's currency ({$invoice->total->currency}).");
+        }
+
         return DB::transaction(function () use ($invoice, $amount, $payerName, $actor) {
             // Concurrency anchor (#94, UNCHANGED). Lock the INVOICE ROW first so
             // allocations to the same invoice serialise: a competing allocation blocks

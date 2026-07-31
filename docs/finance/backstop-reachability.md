@@ -138,6 +138,35 @@ completed it — worse. The regex refuses it at the edge (proof asserts no row i
 gap remains: **adding a `MoneyCast` to `DiscountPolicy`/`DiscountPolicyChange` is deliberately NOT done
 here** (its own migration questions; the discount slice's call).
 
-**Still un-swept:** every column holding a value-object-shaped string that is **not** cast through that
-value object. That set has not been enumerated — the two named above are the found instances, not a
-proof there are no others.
+**The set is closed at two (1016f08+1).** It *was* enumerable and now is enumerated: there are exactly
+**10** `*_currency` columns in the schema — `amount_currency` on `finance_invoice_lines`,
+`finance_ledger_transactions`, `finance_payments`, `finance_payment_allocations`, `finance_credit_notes`,
+`finance_fee_items`; `total_currency` on `finance_invoices`; `balance_currency` on
+`finance_student_accounts` (8 cast through `Money`); and `value_currency` on `finance_discount_policies`
+and `finance_discount_policy_changes` (2 **not** cast). `Money` is the **only** constructor-throwing value
+object in the codebase (`grep -rl InvalidArgumentException app/Support app/Casts` → `Money.php`,
+`MoneyCast.php`, nothing else). So the population is not open-ended, and the two `value_currency` columns
+are the whole of the uncast half — not "found instances among unknown others".
+
+**A bad `value_currency` already stored is not just undeletable — it is UNFIXABLE.** Both tables carry a
+`BEFORE UPDATE` immutability guard that names `value_currency` (`NOT (NEW.value_currency <=> OLD.value_currency)
+→ SIGNAL`), on top of the `BEFORE DELETE` no-delete trigger. So a stored `'ngn'` can be neither DELETEd nor
+UPDATEd — not by the app, not by an operator at a MySQL prompt. Correcting one needs a migration that drops
+the guard, updates, and recreates it verbatim. That is why the edge regex (1016f08) mattered more than the
+500 symptom suggested: for `value_currency` the DB never threw, and once written the value is permanent.
+The 8 **cast** columns carry the mirror risk — `MoneyCast` constructs a `Money` on **read**, so a bad
+currency there is a permanent read-time 500 on every page touching the row until repaired.
+
+**Sweep — 2026-07-31, clean.** All 10 columns checked for a value not matching `^[A-Z]{3}$`
+(case-sensitive via `COLLATE utf8mb4_bin` — a plain `NOT REGEXP BINARY` errors 3995 on utf8mb4, and a
+case-insensitive match would false-pass `'ngn'`; the regex was proven to bite: `'ngn'`→1, `'NGN'`→0).
+Environment: **`brookstone_portal_db` (local dev)** — **0 bad rows** across all 10 columns. **NOT swept:
+staging and production** — not reachable from the dev shell; they must be swept by someone with DB access
+before the door is called closed on real data. A dated clean sweep is the evidence; the dev result does not
+speak for the other two environments.
+
+**MoneyCast ordering (answer to the open question).** `DiscountPolicy` / `DiscountPolicyChange` should get
+a `MoneyCast` on `value_currency` **eventually, not next, and not before staging+production are swept
+clean** — the cast turns a quiet stored defect into a read-time 500 on a row nobody can repair without a
+migration, so it is an improvement only once no such value exists. The sweep gates the cast, not the
+reverse. (Still out of scope here: the cast itself, and any repair migration.)

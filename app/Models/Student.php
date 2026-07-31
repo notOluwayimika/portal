@@ -17,6 +17,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ */
 class Student extends Model
 {
     use AddUuid, BelongsToSchool, HasAdmissionNumber, HasFactory, SoftDeletes;

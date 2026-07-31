@@ -14,6 +14,13 @@ use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ * @property int|null $class_level_arm_id Larastan otherwise infers string|null, which made a
+ *                                        strict comparison against ClassLevelArmTeacher::\$class_level_arm_id look
+ *                                        always-false. Verified integer at runtime on both sides.
+ */
 class Curriculum extends Model
 {
     use HasFactory, LogsActivity;
@@ -115,12 +122,15 @@ class Curriculum extends Model
 
     public function isRegistrationOpen(): bool
     {
-        return $this->term->start_date && now()->lessThanOrEqualTo($this->term->start_date);
+        // `terms.start_date` is NOT NULL, so the old truthiness guard could never
+        // be false — Larastan reports it as an always-true left side.
+        return now()->lessThanOrEqualTo($this->term->start_date);
     }
 
     public function areResultsVisible(): bool
     {
-        return $this->term->end_date && now()->greaterThanOrEqualTo($this->term->end_date);
+        // As above: `terms.end_date` is NOT NULL.
+        return now()->greaterThanOrEqualTo($this->term->end_date);
     }
 
     public function getFullNameAttribute()

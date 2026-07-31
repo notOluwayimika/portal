@@ -14,6 +14,10 @@ use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ */
 class CurriculumSubject extends Model
 {
     use LogsActivity;

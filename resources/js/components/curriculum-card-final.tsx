@@ -553,15 +553,36 @@ function CategoricalCurriculumCard({
 
     return (
         <div className="student-result-card overflow-hidden border border-slate-300">
-            <div className="grid grid-cols-2 bg-blue-100 text-xs text-black">
+            {/*
+                Same five identifying fields the numeric card prints. The
+                categorical card carried only Name and Class, so a printed
+                progress-rating sheet could not be matched back to a pupil by
+                admission number — the one field the office actually files by.
+                grid-cols-3 mirrors the numeric header so the two print alike.
+            */}
+            <div className="grid grid-cols-3 bg-blue-100 text-xs text-black">
                 <p className="border border-slate-300 p-1">
                     <strong>Name: </strong>
                     {student.last_name}, {student.first_name}{' '}
                     {student.middle_name}
                 </p>
                 <p className="border border-slate-300 p-1">
-                    <strong>Class: </strong>
+                    <strong>Admission No: </strong>
+                    {student.admission_number}
+                </p>
+                <p className="border border-slate-300 p-1">
+                    <strong>Date Of Birth: </strong>
+                    {student.date_of_birth
+                        ? fmtDate(student.date_of_birth)
+                        : '—'}
+                </p>
+                <p className="border border-slate-300 p-1">
+                    <strong>Year Group: </strong>
                     {student.class_details.full_class}
+                </p>
+                <p className="border border-slate-300 p-1">
+                    <strong>Sport House: </strong>
+                    {student.sport_house?.name}
                 </p>
             </div>
             <table className="w-full border-collapse text-xs">

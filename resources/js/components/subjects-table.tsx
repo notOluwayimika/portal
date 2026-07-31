@@ -2,7 +2,13 @@
 
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
-import { PackagePlus, PencilIcon, Trash2Icon } from 'lucide-react';
+import {
+    ArchiveIcon,
+    ArchiveRestoreIcon,
+    PackagePlus,
+    PencilIcon,
+    Trash2Icon,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Modal } from '@/components/setup/setup-ui';
@@ -321,6 +327,7 @@ export function SubjectsTable({
     curriculumSubjects,
     onToggleCompulsory,
     onRemoveSubject,
+    onArchiveSubject,
     onAssignTeacher,
     onRemoveTeacher,
     onReorder,
@@ -328,6 +335,7 @@ export function SubjectsTable({
     curriculumSubjects: CurriculumSubject[];
     onToggleCompulsory: (cs: CurriculumSubject) => void;
     onRemoveSubject: (cs: CurriculumSubject) => void;
+    onArchiveSubject: (cs: CurriculumSubject) => void;
     onAssignTeacher: (cs: CurriculumSubject) => void;
     onRemoveTeacher: (
         cs: CurriculumSubject,
@@ -575,6 +583,14 @@ export function SubjectsTable({
                                         <PencilIcon />
                                     </Link>
                                     <button
+                                        className="btn btn-secondary btn-sm btn-icon"
+                                        onClick={() => onArchiveSubject(cs)}
+                                        title="Archive subject — stops being offered to new enrollments"
+                                        aria-label={`Archive ${cs.subject.name}`}
+                                    >
+                                        <ArchiveIcon />
+                                    </button>
+                                    <button
                                         className="btn btn-danger btn-sm btn-icon"
                                         onClick={() => onRemoveSubject(cs)}
                                         title="Remove subject"
@@ -596,6 +612,92 @@ export function SubjectsTable({
                     }}
                 />
             )}
+        </table>
+    );
+}
+
+/**
+ * Archived subjects, kept OUT of the live table above.
+ *
+ * They were previously mixed in with everything else and rendered identically, so
+ * a subject that had been withdrawn or archived looked exactly like one still
+ * being taught — there was no way to tell, and no way to bring it back.
+ *
+ * A separate table rather than a badge in the main one, because the two lists
+ * answer different questions ("what is this class taught?" vs "what did we stop
+ * offering?") and almost none of the live table's affordances apply here: an
+ * archived subject cannot be reordered, its compulsory flag means nothing while it
+ * is not offered, and assigning a teacher to it would be odd. Restore is the only
+ * action.
+ */
+export function ArchivedSubjectsTable({
+    curriculumSubjects,
+    onUnarchiveSubject,
+}: {
+    curriculumSubjects: CurriculumSubject[];
+    onUnarchiveSubject: (cs: CurriculumSubject) => void;
+}) {
+    const sorted = [...curriculumSubjects].sort(
+        (a, b) => a.display_order - b.display_order,
+    );
+
+    if (sorted.length === 0) {
+        return null;
+    }
+
+    return (
+        <table>
+            <thead>
+                <tr>
+                    <th>Subject</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {sorted.map((cs) => (
+                    <tr key={cs.id}>
+                        <td style={{ fontWeight: 500 }}>{cs.subject.name}</td>
+                        <td>
+                            {cs.subject.code ? (
+                                <span className="code-tag">
+                                    {cs.subject.code}
+                                </span>
+                            ) : (
+                                <span className="muted">—</span>
+                            )}
+                        </td>
+                        <td>
+                            <span
+                                className="pill pill-slate"
+                                title={
+                                    cs.archived_at
+                                        ? `Archived ${new Date(cs.archived_at).toLocaleDateString()}`
+                                        : undefined
+                                }
+                            >
+                                Archived
+                            </span>
+                        </td>
+                        <td>
+                            <div
+                                className="row-actions"
+                                style={{ justifyContent: 'flex-end' }}
+                            >
+                                <button
+                                    className="btn btn-secondary btn-sm btn-icon"
+                                    onClick={() => onUnarchiveSubject(cs)}
+                                    title="Restore subject"
+                                    aria-label={`Restore ${cs.subject.name}`}
+                                >
+                                    <ArchiveRestoreIcon />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
         </table>
     );
 }

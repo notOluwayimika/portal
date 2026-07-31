@@ -17,7 +17,7 @@ import type {
     Teacher,
     TeacherCurriculumSubject,
 } from '@/types/models';
-import { SubjectsTable } from './subjects-table';
+import { ArchivedSubjectsTable, SubjectsTable } from './subjects-table';
 import EmptyState from './ui/EmptyState';
 
 // ─── Local types ───────────────────────────────────────────────────────────
@@ -309,6 +309,13 @@ export function CurriculumDetail({
     };
 
     // ── handlers ──────────────────────────────────────────────────────────
+
+    // Archived subjects are serialized alongside live ones (CurriculumResource does
+    // not filter), and rendering them in the same table made a withdrawn subject
+    // indistinguishable from one still being taught. Split here so each table
+    // answers one question.
+    const liveSubjects = curriculumSubjects.filter((cs) => !cs.archived_at);
+    const archivedSubjects = curriculumSubjects.filter((cs) => cs.archived_at);
 
     const handleAssignSubject = async (
         subjectId: string,
@@ -766,15 +773,6 @@ export function CurriculumDetail({
                                         </td>
                                         <td style={{ fontWeight: 500 }}>
                                             {cs.subject.name}
-                                            {cs.archived_at && (
-                                                <span
-                                                    className="pill pill-slate"
-                                                    style={{ marginLeft: 8 }}
-                                                    title="Archived — not offered to new enrollments"
-                                                >
-                                                    Archived
-                                                </span>
-                                            )}
                                         </td>
                                         <td>
                                             {cs.subject.code ? (
@@ -852,33 +850,6 @@ export function CurriculumDetail({
                                                     justifyContent: 'flex-end',
                                                 }}
                                             >
-                                                {cs.archived_at ? (
-                                                    <button
-                                                        className="btn btn-ghost btn-sm btn-icon"
-                                                        onClick={() =>
-                                                            setConfirmUnarchiveSubject(
-                                                                cs,
-                                                            )
-                                                        }
-                                                        title="Restore subject"
-                                                        aria-label={`Restore ${cs.subject.name}`}
-                                                    >
-                                                        ↺
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        className="btn btn-ghost btn-sm btn-icon"
-                                                        onClick={() =>
-                                                            setConfirmArchiveSubject(
-                                                                cs,
-                                                            )
-                                                        }
-                                                        title="Archive subject"
-                                                        aria-label={`Archive ${cs.subject.name}`}
-                                                    >
-                                                        🗄
-                                                    </button>
-                                                )}
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
                                                     onClick={() =>
@@ -897,9 +868,10 @@ export function CurriculumDetail({
                         </tbody>
                     </table> */}
                     <SubjectsTable
-                        curriculumSubjects={curriculumSubjects}
+                        curriculumSubjects={liveSubjects}
                         onToggleCompulsory={handleToggleCompulsory}
                         onRemoveSubject={setConfirmRemoveSubject}
+                        onArchiveSubject={setConfirmArchiveSubject}
                         onAssignTeacher={setAssignTeacherFor}
                         onRemoveTeacher={(cs, t) =>
                             setConfirmRemoveTeacher({
@@ -911,6 +883,28 @@ export function CurriculumDetail({
                     />
                 </div>
             </div>
+
+            {archivedSubjects.length > 0 && (
+                <div className="card" style={{ marginTop: 16 }}>
+                    <div className="card-hdr">
+                        <div>
+                            <h2>Archived subjects</h2>
+                            <p>
+                                {archivedSubjects.length} subject
+                                {archivedSubjects.length !== 1 ? 's' : ''} no
+                                longer offered to new enrollments. Restoring one
+                                does not restore students dropped from it.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="tbl-wrap">
+                        <ArchivedSubjectsTable
+                            curriculumSubjects={archivedSubjects}
+                            onUnarchiveSubject={setConfirmUnarchiveSubject}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* ── Modals ───────────────────────────────────────────────── */}
 

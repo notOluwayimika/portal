@@ -6,10 +6,10 @@ import axios from 'axios';
 import { FileWarningIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { Confirm, Modal } from '@/components/setup/setup-ui';
 import type { SelectOption } from '@/components/single-select';
 import SingleSelect from '@/components/single-select';
 import { fmtDate, handleBack } from '@/helpers';
-import { Confirm, Modal } from '@/components/setup/setup-ui';
 import type {
     Curriculum,
     CurriculumSubject,
@@ -238,6 +238,8 @@ export function CurriculumDetail({
         useState<CurriculumSubject | null>(null);
     const [confirmRemoveSubject, setConfirmRemoveSubject] =
         useState<CurriculumSubject | null>(null);
+    const [confirmUnarchiveSubject, setConfirmUnarchiveSubject] =
+        useState<CurriculumSubject | null>(null);
     const [confirmRemoveTeacher, setConfirmRemoveTeacher] = useState<{
         curriculumSubject: CurriculumSubject;
         teacherCurriculumSubject: TeacherCurriculumSubject;
@@ -336,6 +338,42 @@ export function CurriculumDetail({
             }
         } catch {
             toast.error('Failed to remove subject');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Restore an archived subject so it is offered to new enrollments again.
+     *
+     * The archive/unarchive endpoints have existed since a4a119e (2026-05-17) but
+     * NOTHING in the UI ever called either of them — an archived subject could
+     * only be brought back through the API. That was survivable while nothing
+     * could archive from the UI either; it stops being academic the moment
+     * anything can.
+     *
+     * Surfaces the server's `warning` when present. Unarchiving offers the
+     * subject again but does NOT restore enrollments dropped when it was
+     * withdrawn, and staying silent about that would read as a full undo.
+     */
+    const handleUnarchiveSubject = async (cs: CurriculumSubject) => {
+        setLoading(true);
+
+        try {
+            const response = await axios.patch(
+                `/api/curriculum-subjects/${cs.id}/unarchive`,
+            );
+
+            toast.success(response.data?.message ?? 'Subject restored');
+
+            if (response.data?.warning) {
+                toast.warning(response.data.warning);
+            }
+        } catch (error) {
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.message) ||
+                    'Failed to restore subject',
+            );
         } finally {
             setLoading(false);
         }
@@ -651,6 +689,15 @@ export function CurriculumDetail({
                                         </td>
                                         <td style={{ fontWeight: 500 }}>
                                             {cs.subject.name}
+                                            {cs.archived_at && (
+                                                <span
+                                                    className="pill pill-slate"
+                                                    style={{ marginLeft: 8 }}
+                                                    title="Archived — not offered to new enrollments"
+                                                >
+                                                    Archived
+                                                </span>
+                                            )}
                                         </td>
                                         <td>
                                             {cs.subject.code ? (
@@ -728,6 +775,20 @@ export function CurriculumDetail({
                                                     justifyContent: 'flex-end',
                                                 }}
                                             >
+                                                {cs.archived_at && (
+                                                    <button
+                                                        className="btn btn-ghost btn-sm btn-icon"
+                                                        onClick={() =>
+                                                            setConfirmUnarchiveSubject(
+                                                                cs,
+                                                            )
+                                                        }
+                                                        title="Restore subject"
+                                                        aria-label={`Restore ${cs.subject.name}`}
+                                                    >
+                                                        ↺
+                                                    </button>
+                                                )}
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
                                                     onClick={() =>
@@ -790,6 +851,17 @@ export function CurriculumDetail({
                         setConfirmRemoveSubject(null);
                     }}
                     onClose={() => setConfirmRemoveSubject(null)}
+                />
+            )}
+
+            {confirmUnarchiveSubject && (
+                <Confirm
+                    msg={`Restore "${confirmUnarchiveSubject.subject.name}" to this curriculum? It will be offered to new enrollments again. Students dropped from it when it was withdrawn are NOT restored — those must be restored per student.`}
+                    onConfirm={() => {
+                        handleUnarchiveSubject(confirmUnarchiveSubject);
+                        setConfirmUnarchiveSubject(null);
+                    }}
+                    onClose={() => setConfirmUnarchiveSubject(null)}
                 />
             )}
 

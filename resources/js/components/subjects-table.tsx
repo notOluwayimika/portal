@@ -3,7 +3,6 @@
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import {
-    ArchiveIcon,
     ArchiveRestoreIcon,
     PackagePlus,
     PencilIcon,
@@ -287,9 +286,11 @@ function SubjectCard({ cs }: SubjectCardProps) {
 function ManageSubjectModal({
     cs,
     onClose,
+    onArchive,
 }: {
     cs: CurriculumSubject | null;
     onClose: () => void;
+    onArchive: (cs: CurriculumSubject) => void;
 }) {
     const [curriculumSubject, setCurriculumSubject] =
         useState<CurriculumSubject | null>(null);
@@ -311,6 +312,27 @@ function ManageSubjectModal({
             onClose={onClose}
             footer={
                 <>
+                    {/*
+                        Archiving lives HERE rather than in the row's icon strip.
+                        It is a once-a-term act — stop offering this subject to
+                        anyone who enrolls from now on — and it did not earn a
+                        permanent icon beside the everyday ones. Note this is NOT
+                        the same as marking the subject optional: optional only
+                        stops the auto-attach, leaving it addable, whereas an
+                        archived subject is refused by
+                        StudentSubjectService::addOptionalSubject outright.
+                    */}
+                    {cs && !cs.archived_at && (
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                                onArchive(cs);
+                                onClose();
+                            }}
+                        >
+                            Archive subject
+                        </button>
+                    )}
                     <button className="btn btn-outline" onClick={onClose}>
                         Cancel
                     </button>
@@ -583,14 +605,6 @@ export function SubjectsTable({
                                         <PencilIcon />
                                     </Link>
                                     <button
-                                        className="btn btn-secondary btn-sm btn-icon"
-                                        onClick={() => onArchiveSubject(cs)}
-                                        title="Archive subject — stops being offered to new enrollments"
-                                        aria-label={`Archive ${cs.subject.name}`}
-                                    >
-                                        <ArchiveIcon />
-                                    </button>
-                                    <button
                                         className="btn btn-danger btn-sm btn-icon"
                                         onClick={() => onRemoveSubject(cs)}
                                         title="Remove subject"
@@ -606,6 +620,7 @@ export function SubjectsTable({
             {showManageSubject && (
                 <ManageSubjectModal
                     cs={cs}
+                    onArchive={onArchiveSubject}
                     onClose={() => {
                         setShowManageSubject(false);
                         setCs(null);

@@ -215,4 +215,56 @@ class StudentSubjectService
             return $studentSubject;
         });
     }
+
+    /**
+     * Withdraw EVERY active enrollment from a curriculum subject the school is no
+     * longer offering. Returns the number of enrollments dropped.
+     *
+     * DELIBERATELY EXEMPT FROM THE COMPULSORY RULE, and therefore deliberately not
+     * a flag on dropOptionalSubject(). That method enforces canBeDropped(), which
+     * refuses compulsory subjects — the right rule for a PUPIL-INITIATED drop of a
+     * subject the curriculum requires. It is the wrong rule here: the school is
+     * removing the subject from the curriculum itself, so "compulsory" no longer
+     * refers to anything. Expressing that as a $force parameter would put the
+     * pupil-facing guard one boolean away from being switched off at any call
+     * site; a separate method keeps the exemption where it can be read.
+     *
+     * MARKS ARE NOT TOUCHED. `scores` and `student_results` are keyed by
+     * (student_id, curriculum_subject_id) and are independent of these rows, so a
+     * withdrawal removes the subject from the sheets — which iterate ACTIVE
+     * student_subjects — while every recorded mark survives. That makes a
+     * mis-click recoverable instead of destroying a term's marking.
+     *
+     * NO AUTOMATIC RESTORE. Unarchiving does not bring these back; the reason
+     * string below is a human-readable record, not a machine-readable batch marker,
+     * so nothing tries to tell a school withdrawal from a pupil's own drop. That
+     * asymmetry is a decision, not an oversight — see unarchive(), which warns.
+     *
+     * Looped rather than mass-updated ON PURPOSE: LogsActivity fires per model, so
+     * this writes one audit row per withdrawn pupil. A single UPDATE would be one
+     * query and no trail, and "who lost this subject and when" is exactly the
+     * question this action creates.
+     */
+    public function withdrawAllForCurriculumSubject(
+        CurriculumSubject $curriculumSubject,
+        User $performedBy,
+        string $reason = 'Subject withdrawn from the curriculum.',
+    ): int {
+        return DB::transaction(function () use ($curriculumSubject, $performedBy, $reason) {
+            $active = $curriculumSubject->studentAssignments()
+                ->where('status', StudentSubjectStatus::Active)
+                ->get();
+
+            foreach ($active as $studentSubject) {
+                $studentSubject->update([
+                    'status' => StudentSubjectStatus::Dropped,
+                    'dropped_by_user_id' => $performedBy->id,
+                    'dropped_at' => now(),
+                    'drop_reason' => $reason,
+                ]);
+            }
+
+            return $active->count();
+        });
+    }
 }

@@ -181,6 +181,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // curriculum subject archival
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/archive', [CurriculumSubjectController::class, 'archive']);
     Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/unarchive', [CurriculumSubjectController::class, 'unarchive']);
+    // Stop offering a subject AND withdraw everyone taking it, as one act. Shares
+    // `curriculum_subject.archive` with archive() above — it IS an archive, plus the
+    // enrollment half archive() was always missing — so no new permission and no RBAC
+    // oracle regeneration.
+    Route::patch('/curriculum-subjects/{curriculumSubject:uuid}/withdraw', [CurriculumSubjectController::class, 'withdraw']);
 
     // protected marking components
     Route::get('/marking-components', [MarkingComponentController::class, 'index']);
@@ -289,6 +294,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     // numeric scores could not record a categorical rating for the same class, while anyone who
     // could edit the academic structure could. `score.manage` is the ability that matches the act.
     Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
+        ->withoutScopedBindings();
+
+    // Clearing a rating is a DELETE, for the same reason clearing a score is one two
+    // lines up: the grid's placeholder option is disabled, so a rating could only ever
+    // be overwritten and "not assessed" was unreachable once anything was picked. Same
+    // group, so it inherits the same ability as setting the rating; no new permission.
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'clearCategoricalResult'])
         ->withoutScopedBindings();
 });
 

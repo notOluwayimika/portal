@@ -242,6 +242,13 @@ export function CurriculumDetail({
         useState<CurriculumSubject | null>(null);
     const [confirmArchiveSubject, setConfirmArchiveSubject] =
         useState<CurriculumSubject | null>(null);
+    // Raised when the server refuses a delete because pupils are enrolled (409).
+    // Removing then becomes a different act — withdrawal — so the operator is
+    // asked again rather than the refusal being reported as a plain failure.
+    const [confirmWithdrawSubject, setConfirmWithdrawSubject] = useState<{
+        curriculumSubject: CurriculumSubject;
+        enrolledCount: number;
+    } | null>(null);
     const [confirmRemoveTeacher, setConfirmRemoveTeacher] = useState<{
         curriculumSubject: CurriculumSubject;
         teacherCurriculumSubject: TeacherCurriculumSubject;
@@ -338,8 +345,49 @@ export function CurriculumDetail({
             } else {
                 toast.error('Failed to remove subject');
             }
-        } catch {
-            toast.error('Failed to remove subject');
+        } catch (error) {
+            // 409 is not a failure — it is the server saying this subject is
+            // being taught, so removing it means withdrawing pupils rather than
+            // deleting the row. Offer that instead of reporting a dead end.
+            // Previously every outcome, including this one, surfaced as
+            // "Failed to remove subject".
+            if (axios.isAxiosError(error) && error.response?.status === 409) {
+                setConfirmWithdrawSubject({
+                    curriculumSubject: cs,
+                    enrolledCount: error.response.data?.enrolled_count ?? 0,
+                });
+
+                return;
+            }
+
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.error) ||
+                    'Failed to remove subject',
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Stop offering the subject AND drop everyone taking it. Recorded marks are
+     * kept, so this is reversible in the sense that matters; unarchiving restores
+     * the subject but not the enrollments, which the server reports back.
+     */
+    const handleWithdrawSubject = async (cs: CurriculumSubject) => {
+        setLoading(true);
+
+        try {
+            const response = await axios.patch(
+                `/api/curriculum-subjects/${cs.id}/withdraw`,
+            );
+
+            toast.success(response.data?.message ?? 'Subject withdrawn');
+        } catch (error) {
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.error) ||
+                    'Failed to withdraw subject',
+            );
         } finally {
             setLoading(false);
         }
@@ -887,7 +935,7 @@ export function CurriculumDetail({
 
             {confirmRemoveSubject && (
                 <Confirm
-                    msg={`Remove "${confirmRemoveSubject.subject.name}" from this curriculum? Any linked scores will be affected.`}
+                    msg={`Remove "${confirmRemoveSubject.subject.name}" from this curriculum? If any students are taking it you will be asked to withdraw it instead.`}
                     onConfirm={() => {
                         handleRemoveSubject(confirmRemoveSubject);
                         setConfirmRemoveSubject(null);
@@ -915,6 +963,16 @@ export function CurriculumDetail({
                         setConfirmUnarchiveSubject(null);
                     }}
                     onClose={() => setConfirmUnarchiveSubject(null)}
+            {confirmWithdrawSubject && (
+                <Confirm
+                    msg={`"${confirmWithdrawSubject.curriculumSubject.subject.name}" is being taken by ${confirmWithdrawSubject.enrolledCount} student(s), so it cannot simply be deleted. Withdraw it instead? The subject stops being offered and those students are dropped from it. Marks already recorded are kept, and restoring the subject later does NOT restore the students.`}
+                    onConfirm={() => {
+                        handleWithdrawSubject(
+                            confirmWithdrawSubject.curriculumSubject,
+                        );
+                        setConfirmWithdrawSubject(null);
+                    }}
+                    onClose={() => setConfirmWithdrawSubject(null)}
                 />
             )}
 

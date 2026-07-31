@@ -29,7 +29,10 @@ class SubmitCreditNoteRequest extends FormRequest
     {
         return [
             'amount_minor' => ['required', 'integer', 'min:1'],
-            'currency' => ['sometimes', 'string', 'size:3'],
+            // regex mirrors Money's own ISO-4217 invariant, so bad case/format is a 422 here, not the
+            // constructor's InvalidArgumentException → 500 one frame later in the controller. Refuse, don't
+            // uppercase: 'ngn'/'usd' are not typos to repair silently (backstop-reachability audit).
+            'currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             // Defaults to credit_note in the controller when absent; a write-off is the
             // same mechanism under a distinct, reportable label.
             'kind' => ['sometimes', Rule::enum(CreditNoteKind::class)],

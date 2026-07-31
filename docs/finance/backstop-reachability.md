@@ -99,3 +99,24 @@ Both get an application guard **in front** of the untouched constraint: a house 
   - GUARDED `terms_end_after_start_check` — to violate you'd send `end_date` before `start_date`; refused by `after:start_date` in `TermController::validatedTerm`.
 - **B-3 / B-4** — after each guard: same request returns 422 with a readable message AND the constraint
   is still present in `information_schema`; removing the guard brings the 500 back. See the commit body.
+
+## Addendum (faa868e+1) — a second population: value-object invariants
+
+The audit above is scoped to **database** backstops (triggers + CHECKs). A second population produces
+the identical failure — a dead-end HTTP 500 on ordinary input — and is **not** in the schema: value
+objects that throw `InvalidArgumentException` (no `renderable()` in `bootstrap/app.php` → default 500).
+
+Found instance: `App\Support\Money`'s constructor rejects a non-`/^[A-Z]{3}$/` currency. Three finance
+requests accepted the currency as any 3 chars (`size:3`) and built Money from it in the controller —
+so `currency:"ngn"` (right currency, wrong case) 500'd *before* even `SubmitCreditNote`'s currency
+guard could run. Fixed by mirroring the invariant one layer up:
+`'currency' => [...,'size:3','regex:/^[A-Z]{3}$/']` on `SubmitCreditNoteRequest`,
+`RecordPaymentRequest`, `RecordAccountPaymentRequest`. The constructor stays as the backstop; input
+never reaches it — the same argument this audit made about triggers. No `renderable()` was added for
+`InvalidArgumentException` (that would hide real programming faults), and the input is refused, never
+uppercased (`"usd"` is not a typo to repair).
+
+**NOT swept:** this value-object population has not been audited the way the DB backstops were. Two
+further sites build Money from unvalidated request currency and carry the same 500 —
+`GenerateInvoiceRequest` (`lines.*.currency`) and `FeeScheduleRequest` (`items.*.currency`) — reported
+here, deliberately left for their own commit. On the record, not in someone's head.

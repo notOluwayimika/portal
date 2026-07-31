@@ -43,7 +43,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/11]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/12]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -105,6 +105,19 @@ check "lint-changed" bash bin/lint-changed.sh "$BASE"
 step "types (tsc ratchet vs tsc-baseline)"
 pnpm run types:check >/tmp/quality-tsc.txt 2>&1 || true
 check "tsc-ratchet" php bin/ci-tsc-ratchet.php /tmp/quality-tsc.txt
+
+# 4. Frontend build. The tsc ratchet CANNOT stand in for this: a syntax error that
+#    stops a file parsing is not a TYPE error, so the ratchet counts it as zero and
+#    stays at baseline while the bundle refuses to build. That is not theoretical —
+#    merging #162 into a staging already carrying #160 interleaved two JSX blocks and
+#    dropped a `/>` and `)}`; all eleven previous gates passed on a tree whose
+#    frontend did not compile, and it was found by a human running `npm run build`.
+#
+#    NOT ratcheted and NOT a changed-files check: a bundle either builds or it does
+#    not, there is no baseline to be behind, and a break can live in a file the diff
+#    never touched — which is exactly how the merge artifact arose.
+step "frontend build (vite — catches what the tsc ratchet structurally cannot)"
+check "build" pnpm run build
 
 step "authorization guard (no new commented-out checks)"
 check "authz-lint" php bin/ci-authz-lint.php

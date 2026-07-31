@@ -33,26 +33,31 @@ class Notice extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<NoticeCategory, $this> */
     public function category(): BelongsTo
     {
         return $this->belongsTo(NoticeCategory::class, 'notice_category_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** @return BelongsToMany<ClassLevel, $this> */
     public function classLevels(): BelongsToMany
     {
         return $this->belongsToMany(ClassLevel::class, 'notice_class_level');
     }
 
+    /** @return BelongsToMany<ClassLevelArm, $this> */
     public function classLevelArms(): BelongsToMany
     {
         return $this->belongsToMany(ClassLevelArm::class, 'notice_class_level_arm');
     }
 
+    /** @return BelongsToMany<Student, $this> */
     public function students(): BelongsToMany
     {
         return $this->belongsToMany(Student::class, 'notice_student');

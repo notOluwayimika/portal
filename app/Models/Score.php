@@ -77,21 +77,25 @@ class Score extends Model
         }
     }
 
+    /** @return BelongsTo<Student, $this> */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
 
+    /** @return BelongsTo<MarkingComponent, $this> */
     public function markingComponent(): BelongsTo
     {
         return $this->belongsTo(MarkingComponent::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

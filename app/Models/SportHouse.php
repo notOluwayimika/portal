@@ -22,11 +22,13 @@ class SportHouse extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return HasMany<Student, $this> */
     public function students(): HasMany
     {
         return $this->hasMany(Student::class);

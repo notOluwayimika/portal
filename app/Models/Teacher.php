@@ -74,31 +74,37 @@ class Teacher extends Model
         return $this->photoFile?->url;
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /** @return BelongsTo<FileUpload, $this> */
     public function photoFile(): BelongsTo
     {
         return $this->belongsTo(FileUpload::class, 'photo_id');
     }
 
+    /** @return HasMany<TeacherCurriculumSubject, $this> */
     public function assignedCurriculumSubjects(): HasMany
     {
         return $this->hasMany(TeacherCurriculumSubject::class, 'teacher_id');
     }
 
+    /** @return HasMany<TeacherCurriculumSubject, $this> */
     public function assignments(): HasMany
     {
         return $this->hasMany(TeacherCurriculumSubject::class, 'teacher_id');
     }
 
+    /** @return HasMany<ClassLevelArmTeacher, $this> */
     public function classLevelArmAssignments(): HasMany
     {
         return $this->hasMany(ClassLevelArmTeacher::class);

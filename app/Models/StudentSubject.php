@@ -50,21 +50,25 @@ class StudentSubject extends Model
 
     /* ── Relationships ───────────────────────────────────────────────────── */
 
+    /** @return BelongsTo<StudentCurriculum, $this> */
     public function studentCurriculum(): BelongsTo
     {
         return $this->belongsTo(StudentCurriculum::class);
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function droppedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dropped_by_user_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function restoredBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'restored_by_user_id');
@@ -104,6 +108,7 @@ class StudentSubject extends Model
         return $this->status === StudentSubjectStatus::Dropped;
     }
 
+    /** @return BelongsTo<Teacher, $this> */
     public function commentedBy(): BelongsTo
     {
         return $this->belongsTo(Teacher::class, 'commented_by');

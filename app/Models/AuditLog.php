@@ -36,6 +36,7 @@ class AuditLog extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

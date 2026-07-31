@@ -48,16 +48,19 @@ class ClassLevelArmTeacher extends Model
         );
     }
 
+    /** @return BelongsTo<ClassLevelArm, $this> */
     public function classLevelArm(): BelongsTo
     {
         return $this->belongsTo(ClassLevelArm::class);
     }
 
+    /** @return BelongsTo<Teacher, $this> */
     public function teacher(): BelongsTo
     {
         return $this->belongsTo(Teacher::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function assignedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_by');

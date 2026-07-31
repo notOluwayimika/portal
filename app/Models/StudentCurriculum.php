@@ -103,11 +103,13 @@ class StudentCurriculum extends Model
 
     /* ── Relationships ───────────────────────────────────────────────────── */
 
+    /** @return BelongsTo<Student, $this> */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
     }
 
+    /** @return BelongsTo<Curriculum, $this> */
     public function curriculum(): BelongsTo
     {
         return $this->belongsTo(Curriculum::class);
@@ -120,26 +122,31 @@ class StudentCurriculum extends Model
      * which — because low ids collide across the two tables — served a plausible but unrelated curriculum on
      * every promotion response. It is an EPISODE; read `->promotedTo->curriculum` for its curriculum.
      */
+    /** @return BelongsTo<StudentCurriculum, $this> */
     public function promotedTo(): BelongsTo
     {
         return $this->belongsTo(StudentCurriculum::class, 'promoted_to_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function endedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'ended_by_user_id');
     }
 
+    /** @return HasMany<StudentSubject, $this> */
     public function studentSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class);
     }
 
+    /** @return HasMany<BehavioralAssessment, $this> */
     public function behavioralAssessments(): HasMany
     {
         return $this->hasMany(BehavioralAssessment::class);
     }
 
+    /** @return HasMany<PsychomotorSkill, $this> */
     public function psychomotorSkills(): HasMany
     {
         return $this->hasMany(PsychomotorSkill::class);
@@ -147,6 +154,7 @@ class StudentCurriculum extends Model
 
     /* ── Query helpers ───────────────────────────────────────────────────── */
 
+    /** @return HasMany<StudentSubject, $this> */
     public function activeSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)
@@ -154,6 +162,7 @@ class StudentCurriculum extends Model
             ->with('curriculumSubject.subject');
     }
 
+    /** @return HasMany<StudentSubject, $this> */
     public function droppedSubjects(): HasMany
     {
         return $this->hasMany(StudentSubject::class)

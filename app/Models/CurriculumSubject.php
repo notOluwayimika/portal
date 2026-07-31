@@ -47,16 +47,19 @@ class CurriculumSubject extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<Curriculum, $this> */
     public function curriculum(): BelongsTo
     {
         return $this->belongsTo(Curriculum::class);
     }
 
+    /** @return BelongsTo<Subject, $this> */
     public function subject(): BelongsTo
     {
         return $this->belongsTo(Subject::class);
     }
 
+    /** @return HasMany<MarkingComponent, $this> */
     public function markingComponents(): HasMany
     {
         return $this->hasMany(MarkingComponent::class);
@@ -87,31 +90,37 @@ class CurriculumSubject extends Model
             : $this->markingComponents()->get();
     }
 
+    /** @return HasMany<Score, $this> */
     public function scores(): HasMany
     {
         return $this->hasMany(Score::class);
     }
 
+    /** @return HasMany<StudentResult, $this> */
     public function studentResults(): HasMany
     {
         return $this->hasMany(StudentResult::class);
     }
 
+    /** @return HasOne<SubjectResultStatus, $this> */
     public function resultStatus(): HasOne
     {
         return $this->hasOne(SubjectResultStatus::class);
     }
 
+    /** @return HasMany<TeacherCurriculumSubject, $this> */
     public function teacherAssignments(): HasMany
     {
         return $this->hasMany(TeacherCurriculumSubject::class);
     }
 
+    /** @return HasMany<StudentSubject, $this> */
     public function studentAssignments(): HasMany
     {
         return $this->hasMany(StudentSubject::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function archivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'archived_by_user_id');

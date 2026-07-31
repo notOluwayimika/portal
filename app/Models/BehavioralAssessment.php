@@ -44,16 +44,19 @@ class BehavioralAssessment extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<StudentCurriculum, $this> */
     public function studentCurriculum(): BelongsTo
     {
         return $this->belongsTo(StudentCurriculum::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function assessedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assessed_by');
     }
 
+    /** @return BelongsTo<Term, $this> */
     public function assessmentTerm(): BelongsTo
     {
         return $this->belongsTo(Term::class, 'assessment_term_id');

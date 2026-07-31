@@ -28,11 +28,13 @@ class TeacherCurriculumSubject extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<Teacher, $this> */
     public function teacher(): BelongsTo
     {
         return $this->belongsTo(Teacher::class, 'teacher_id');
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);

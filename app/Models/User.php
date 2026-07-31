@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
@@ -25,6 +26,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
+
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -102,11 +104,13 @@ class User extends Authenticatable
      * Schools this user has been explicitly granted login access to
      * (managed by super admins, used for multi-school admins).
      */
+    /** @return BelongsToMany<School, $this> */
     public function schools(): BelongsToMany
     {
         return $this->belongsToMany(School::class)->withTimestamps();
     }
 
+    /** @return BelongsTo<FileUpload, $this> */
     public function signatureFile(): BelongsTo
     {
         return $this->belongsTo(FileUpload::class, 'signature_id');
@@ -321,22 +325,26 @@ class User extends Authenticatable
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
-    public function teacher()
+    /** @return HasOne<Teacher, $this> */
+    public function teacher(): HasOne
     {
         return $this->hasOne(Teacher::class, 'user_id');
     }
 
-    public function student()
+    /** @return HasOne<Student, $this> */
+    public function student(): HasOne
     {
         return $this->hasOne(Student::class, 'user_id');
     }
 
-    public function guardian()
+    /** @return HasOne<Guardian, $this> */
+    public function guardian(): HasOne
     {
         return $this->hasOne(Guardian::class, 'user_id');
     }

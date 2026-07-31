@@ -46,21 +46,25 @@ class SubjectResultStatus extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<CurriculumSubject, $this> */
     public function curriculumSubject(): BelongsTo
     {
         return $this->belongsTo(CurriculumSubject::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function updatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function submittedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function decidedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'decided_by');

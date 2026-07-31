@@ -32,13 +32,13 @@ class Import extends Model
 
     protected $casts = [
         'update_existing_links' => 'boolean',
-        'started_at'            => 'datetime',
-        'completed_at'          => 'datetime',
-        'total_rows'            => 'integer',
-        'processed_rows'        => 'integer',
-        'succeeded'             => 'integer',
-        'failed'                => 'integer',
-        'skipped'               => 'integer',
+        'started_at' => 'datetime',
+        'completed_at' => 'datetime',
+        'total_rows' => 'integer',
+        'processed_rows' => 'integer',
+        'succeeded' => 'integer',
+        'failed' => 'integer',
+        'skipped' => 'integer',
     ];
 
     public function getRouteKeyName(): string
@@ -46,11 +46,13 @@ class Import extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

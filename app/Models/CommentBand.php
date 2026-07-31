@@ -69,11 +69,13 @@ class CommentBand extends Model implements Commentable
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<ExamType, $this> */
     public function examType(): BelongsTo
     {
         return $this->belongsTo(ExamType::class);

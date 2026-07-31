@@ -31,11 +31,13 @@ class Subject extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return HasMany<CurriculumSubject, $this> */
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);

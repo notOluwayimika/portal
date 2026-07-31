@@ -31,11 +31,13 @@ class Arm extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsToMany<ClassLevel, $this> */
     public function classLevels(): BelongsToMany
     {
         return $this->belongsToMany(ClassLevel::class, 'class_level_arms');

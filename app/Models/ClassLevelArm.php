@@ -6,6 +6,7 @@ use App\Concerns\BelongsToSchool;
 use App\Enums\GenderTypeEnum;
 use App\Enums\TeacherAssignmentRoleEnum;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
@@ -27,26 +28,31 @@ class ClassLevelArm extends Model
         return 'uuid';
     }
 
-    public function classLevel()
+    /** @return BelongsTo<ClassLevel, $this> */
+    public function classLevel(): BelongsTo
     {
         return $this->belongsTo(ClassLevel::class);
     }
 
-    public function arm()
+    /** @return BelongsTo<Arm, $this> */
+    public function arm(): BelongsTo
     {
         return $this->belongsTo(Arm::class);
     }
 
-    public function stream()
+    /** @return BelongsTo<Stream, $this> */
+    public function stream(): BelongsTo
     {
         return $this->belongsTo(Stream::class);
     }
 
-    public function curricula()
+    /** @return HasMany<Curriculum, $this> */
+    public function curricula(): HasMany
     {
         return $this->hasMany(Curriculum::class);
     }
 
+    /** @return HasMany<ClassLevelArmTeacher, $this> */
     public function teacherAssignments(): HasMany
     {
         return $this->hasMany(ClassLevelArmTeacher::class);

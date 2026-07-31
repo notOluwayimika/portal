@@ -31,8 +31,12 @@ class ClassLevelArmController extends Controller
     {
         try {
             $school = ActiveSchool::getOrFail();
+            // setRelation, not `$session->terms = ...`: assigning over a relation
+            // property drops the value into the attribute bag, which happens to
+            // render but is not the relation any more — Larastan flags it as a
+            // read-only property for exactly that reason.
             $sessions = $school->sessions()->with('terms')->get()->map(function ($session) {
-                $session->terms = TermResource::collection($session->terms);
+                $session->setRelation('terms', TermResource::collection($session->terms));
 
                 return $session;
             });

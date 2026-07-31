@@ -31,16 +31,19 @@ class ExamType extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return HasMany<Curriculum, $this> */
     public function curricula(): HasMany
     {
         return $this->hasMany(Curriculum::class);
     }
 
+    /** @return HasMany<GradeBoundary, $this> */
     public function gradeBoundaries(): HasMany
     {
         return $this->hasMany(GradeBoundary::class);

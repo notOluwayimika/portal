@@ -54,16 +54,19 @@ class Curriculum extends Model
         return 'uuid';
     }
 
+    /** @return BelongsTo<School, $this> */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
     }
 
+    /** @return BelongsTo<MarkingScheme, $this> */
     public function markingScheme(): BelongsTo
     {
         return $this->belongsTo(MarkingScheme::class);
     }
 
+    /** @return BelongsTo<GradingScheme, $this> */
     public function gradingScheme(): BelongsTo
     {
         return $this->belongsTo(GradingScheme::class);
@@ -74,31 +77,37 @@ class Curriculum extends Model
         return $this->grading_scheme_id !== null;
     }
 
+    /** @return BelongsTo<Term, $this> */
     public function term(): BelongsTo
     {
         return $this->belongsTo(Term::class);
     }
 
+    /** @return HasOneThrough<AcademicSession, $this> */
     public function academicSession(): HasOneThrough
     {
         return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');
     }
 
+    /** @return BelongsTo<ClassLevelArm, $this> */
     public function classLevelArm(): BelongsTo
     {
         return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
 
+    /** @return BelongsTo<ExamType, $this> */
     public function examType(): BelongsTo
     {
         return $this->belongsTo(ExamType::class);
     }
 
+    /** @return HasMany<CurriculumSubject, $this> */
     public function curriculumSubjects(): HasMany
     {
         return $this->hasMany(CurriculumSubject::class);
     }
 
+    /** @return HasMany<StudentCurriculum, $this> */
     public function studentCurricula(): HasMany
     {
         return $this->hasMany(StudentCurriculum::class);

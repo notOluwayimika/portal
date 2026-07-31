@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class TeacherResource extends JsonResource
 {
@@ -41,9 +40,21 @@ class TeacherResource extends JsonResource
                         ])
                 )->values()
             ),
-            'photo' => $this->photo
-                ? Storage::disk('s3')->temporaryUrl($this->photo, now()->addMinutes(15))
-                : null,
+            // The stored `url` IS the final URL — the same shape StudentResource
+            // and GuardianResource emit, and the only shape any writer produces
+            // (FileUploadService::storeFile sets url to Storage::url($path)).
+            //
+            // This used to hand that value to temporaryUrl(), which expects an
+            // object KEY and signs whatever it is given. The full
+            // "https://bucket.s3.../teachers/photos/x.jpg" therefore became the
+            // key, and S3 answered 404 NoSuchKey with the whole URL echoed back
+            // inside <Key>. Student and Guardian never broke because they never
+            // re-derived anything.
+            //
+            // Presigning was wrong here regardless of the key bug: storeFile()
+            // uploads with public visibility, so these objects need no signature,
+            // and a 15-minute expiry only rots any cached page holding one.
+            'photo' => $this->photo,
             'user' => $this->whenLoaded('user', fn () => new UserResource($this->user)),
         ];
     }

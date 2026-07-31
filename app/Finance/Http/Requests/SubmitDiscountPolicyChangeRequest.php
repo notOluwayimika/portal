@@ -30,9 +30,11 @@ class SubmitDiscountPolicyChangeRequest extends FormRequest
             'name' => ['required_unless:kind,retire', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
             'basis' => ['required_unless:kind,retire', 'in:amount,percent'],
-            'value_minor' => ['required_if:basis,amount', 'integer', 'min:1'],
-            'value_currency' => ['required_if:basis,amount', 'string', 'size:3'],
-            'percent' => ['required_if:basis,percent', 'integer', 'between:1,100'],
+            // amount XOR percent, refused here so a cross combo is a 422, not the DB terms_shape CHECK's
+            // 3819 → 500 (backstop-reachability audit). The CHECK stays as the backstop.
+            'value_minor' => ['required_if:basis,amount', 'prohibited_if:basis,percent', 'integer', 'min:1'],
+            'value_currency' => ['required_if:basis,amount', 'prohibited_if:basis,percent', 'string', 'size:3'],
+            'percent' => ['required_if:basis,percent', 'prohibited_if:basis,amount', 'integer', 'between:1,100'],
             'requires_approval' => ['sometimes', 'boolean'],
         ];
     }

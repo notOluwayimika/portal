@@ -37,6 +37,12 @@ final class SubmitCreditNote
             throw new BusinessRuleException('Cannot submit a credit note against a void invoice.');
         }
 
+        // A credit note must be in the invoice's currency. Refused here (422) so a mismatch is not the DB
+        // insert_guard's 1644 → 500 (backstop-reachability audit); the trigger stays as the backstop.
+        if ($amount->currency !== $invoice->total->currency) {
+            throw new BusinessRuleException("A credit note must be in the invoice's currency ({$invoice->total->currency}).");
+        }
+
         // The maker-checker seam (ADR 0051): today always requires a checker; when finance_approval_rules
         // lands, a straight-through row is built HERE. The other arm throws until that path is real and
         // tested — an unreachable half-implemented arm is worse than an honest marker.

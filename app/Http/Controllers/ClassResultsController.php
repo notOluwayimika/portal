@@ -104,6 +104,23 @@ class ClassResultsController extends Controller
             'curricula.markingScheme.components',
             'curricula.curriculumSubjects.subject',
             'curricula.curriculumSubjects.markingComponents',
+            // The CATEGORICAL card's "Subject Teacher" column reads this straight
+            // off the payload — `curriculum_subject.teachers[0].teacher.full_name`
+            // — and CurriculumSubjectResource emits `teachers` under
+            // whenLoaded('teacherAssignments'), so without this the key was simply
+            // ABSENT and every row rendered the `|| '—'` fallback no matter how
+            // many teachers were assigned.
+            //
+            // The numeric card never showed the bug because it does not use the
+            // payload at all: SubjectRow fetches GET /curriculum-subjects/{uuid}/teachers
+            // per subject and loads the relation itself. Two mechanisms for one
+            // column is what let this rot unnoticed on the only page that omits
+            // the eager load.
+            //
+            // Loaded ONCE per curriculum subject, not per student: the re-point
+            // loop below hands every enrollment the same shared instance, so this
+            // costs two queries for the whole sheet rather than two per pupil.
+            'curricula.curriculumSubjects.teacherAssignments.teacher',
             'curricula.curriculumSubjects.studentResults' => function ($query) {
                 $query->select([
                     'id',

@@ -205,18 +205,6 @@ parameters:
 			path: app/Http/Controllers/ClassLevelArmController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\ClassLevel\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/ClassResultsController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\ClassLevelArm\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/ClassResultsController.php
-
-		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$curricula\.$#'
 			identifier: property.notFound
 			count: 1

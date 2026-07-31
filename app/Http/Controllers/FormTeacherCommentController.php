@@ -64,7 +64,7 @@ class FormTeacherCommentController extends Controller
             return [
                 'student_curriculum_id' => $studentCurriculum->uuid,
                 'student' => new StudentResource($studentCurriculum->student),
-                'class_name' => $classLevelArm ? $this->classLevelArmName($classLevelArm) : null,
+                ...$this->classLevelArmIdentity($classLevelArm),
                 'comment' => $studentCurriculum->form_teacher_comment,
                 'uses_categorical_grading' => (bool) $studentCurriculum->curriculum?->usesCategoricalGrading(),
                 'assessment' => $assessment ? new BehavioralAssessmentResource($assessment) : null,

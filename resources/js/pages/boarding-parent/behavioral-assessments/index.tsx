@@ -4,6 +4,12 @@ import { ChevronDown, ChevronUp, Heart } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AssessmentGradeFields } from '@/components/assessment-grade-fields';
+import type { CommentFilterState } from '@/components/comment-filters';
+import {
+    applyCommentFilters,
+    CommentFilters,
+    emptyCommentFilters,
+} from '@/components/comment-filters';
 import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -16,11 +22,9 @@ import { useInitials } from '@/hooks/use-initials';
 import {
     PILLARS,
     PSYCHOMOTOR_CATEGORIES,
-    PSYCHOMOTOR_LABELS
-    
-    
+    PSYCHOMOTOR_LABELS,
 } from '@/lib/assessment';
-import type {Pillar, PsychomotorCategory} from '@/lib/assessment';
+import type { Pillar, PsychomotorCategory } from '@/lib/assessment';
 import type {
     BehavioralAssessment,
     BehavioralGrade,
@@ -41,19 +45,19 @@ const defaultGrades: PillarGrades = PILLARS.reduce((acc, pillar) => {
     return acc;
 }, {} as PillarGrades);
 
-const defaultPsychomotorGrades: PsychomotorGrades = PSYCHOMOTOR_CATEGORIES.reduce(
-    (acc, category) => {
+const defaultPsychomotorGrades: PsychomotorGrades =
+    PSYCHOMOTOR_CATEGORIES.reduce((acc, category) => {
         acc[category] = '';
 
         return acc;
-    },
-    {} as PsychomotorGrades,
-);
+    }, {} as PsychomotorGrades);
 
 interface AssessmentRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
+    class_level?: { id: string; name: string } | null;
+    class_level_arm?: { id: string; name: string } | null;
     assessment: BehavioralAssessment | null;
     uses_categorical_grading: boolean;
     psychomotor: PsychomotorSkill | null;
@@ -289,6 +293,8 @@ export default function BehavioralAssessmentsIndex() {
         string | null
     >(null);
     const [termId, setTermId] = useState('');
+    const [filters, setFilters] =
+        useState<CommentFilterState>(emptyCommentFilters);
 
     useEffect(() => {
         async function fetchData() {
@@ -327,10 +333,20 @@ export default function BehavioralAssessmentsIndex() {
         fetchData();
     }, [termId]);
 
+    // "Done" here means an ASSESSMENT exists, not a comment — this screen records
+    // behavioural pillars, and its filter is labelled Assessed / Not assessed to
+    // match. That difference is exactly why applyCommentFilters takes the
+    // predicate from the caller.
+    const visibleRows = applyCommentFilters(
+        rows,
+        filters,
+        (row) => row.assessment !== null,
+    );
+
     const grouped = useMemo(() => {
         const map = new Map<string, AssessmentRow[]>();
 
-        for (const row of rows) {
+        for (const row of visibleRows) {
             const key = row.class_name ?? 'Unassigned';
 
             if (!map.has(key)) {
@@ -341,7 +357,7 @@ export default function BehavioralAssessmentsIndex() {
         }
 
         return Array.from(map.entries());
-    }, [rows]);
+    }, [visibleRows]);
 
     async function handleSave(row: AssessmentRow) {
         const form = forms[row.student_curriculum_id];
@@ -423,12 +439,22 @@ export default function BehavioralAssessmentsIndex() {
                             Behavioral Assessments
                         </h1>
                         <p className="mt-1 text-sm text-gray-500">
-                            Record the behavioral pillar grades for the
-                            students in your care for the selected term.
+                            Record the behavioral pillar grades for the students
+                            in your care for the selected term.
                         </p>
                     </div>
                     <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
+
+                {rows.length > 0 && (
+                    <CommentFilters
+                        rows={rows}
+                        value={filters}
+                        onChange={setFilters}
+                        doneLabel="Assessed"
+                        pendingLabel="Not assessed"
+                    />
+                )}
 
                 {loading ? (
                     <div className="flex items-center justify-center py-24">

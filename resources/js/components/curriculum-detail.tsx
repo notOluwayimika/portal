@@ -238,6 +238,10 @@ export function CurriculumDetail({
         useState<CurriculumSubject | null>(null);
     const [confirmRemoveSubject, setConfirmRemoveSubject] =
         useState<CurriculumSubject | null>(null);
+    const [confirmUnarchiveSubject, setConfirmUnarchiveSubject] =
+        useState<CurriculumSubject | null>(null);
+    const [confirmArchiveSubject, setConfirmArchiveSubject] =
+        useState<CurriculumSubject | null>(null);
     // Raised when the server refuses a delete because pupils are enrolled (409).
     // Removing then becomes a different act — withdrawal — so the operator is
     // asked again rather than the refusal being reported as a plain failure.
@@ -383,6 +387,69 @@ export function CurriculumDetail({
             toast.error(
                 (axios.isAxiosError(error) && error.response?.data?.error) ||
                     'Failed to withdraw subject',
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Stop offering a subject to NEW enrollments, leaving current ones alone.
+     *
+     * This is the plain archive, and it is deliberately the weaker of the two
+     * removal verbs: pupils already taking the subject keep it, keep their marks,
+     * and keep appearing on its result sheets. Use withdraw when they should be
+     * dropped as well.
+     */
+    const handleArchiveSubject = async (cs: CurriculumSubject) => {
+        setLoading(true);
+
+        try {
+            const response = await axios.patch(
+                `/api/curriculum-subjects/${cs.id}/archive`,
+            );
+
+            toast.success(response.data?.message ?? 'Subject archived');
+        } catch (error) {
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.message) ||
+                    'Failed to archive subject',
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Restore an archived subject so it is offered to new enrollments again.
+     *
+     * The archive/unarchive endpoints have existed since a4a119e (2026-05-17) but
+     * NOTHING in the UI ever called either of them — an archived subject could
+     * only be brought back through the API. That was survivable while nothing
+     * could archive from the UI either; it stops being academic the moment
+     * anything can.
+     *
+     * Surfaces the server's `warning` when present. Unarchiving offers the
+     * subject again but does NOT restore enrollments dropped when it was
+     * withdrawn, and staying silent about that would read as a full undo.
+     */
+    const handleUnarchiveSubject = async (cs: CurriculumSubject) => {
+        setLoading(true);
+
+        try {
+            const response = await axios.patch(
+                `/api/curriculum-subjects/${cs.id}/unarchive`,
+            );
+
+            toast.success(response.data?.message ?? 'Subject restored');
+
+            if (response.data?.warning) {
+                toast.warning(response.data.warning);
+            }
+        } catch (error) {
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.message) ||
+                    'Failed to restore subject',
             );
         } finally {
             setLoading(false);
@@ -699,6 +766,15 @@ export function CurriculumDetail({
                                         </td>
                                         <td style={{ fontWeight: 500 }}>
                                             {cs.subject.name}
+                                            {cs.archived_at && (
+                                                <span
+                                                    className="pill pill-slate"
+                                                    style={{ marginLeft: 8 }}
+                                                    title="Archived — not offered to new enrollments"
+                                                >
+                                                    Archived
+                                                </span>
+                                            )}
                                         </td>
                                         <td>
                                             {cs.subject.code ? (
@@ -776,6 +852,33 @@ export function CurriculumDetail({
                                                     justifyContent: 'flex-end',
                                                 }}
                                             >
+                                                {cs.archived_at ? (
+                                                    <button
+                                                        className="btn btn-ghost btn-sm btn-icon"
+                                                        onClick={() =>
+                                                            setConfirmUnarchiveSubject(
+                                                                cs,
+                                                            )
+                                                        }
+                                                        title="Restore subject"
+                                                        aria-label={`Restore ${cs.subject.name}`}
+                                                    >
+                                                        ↺
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="btn btn-ghost btn-sm btn-icon"
+                                                        onClick={() =>
+                                                            setConfirmArchiveSubject(
+                                                                cs,
+                                                            )
+                                                        }
+                                                        title="Archive subject"
+                                                        aria-label={`Archive ${cs.subject.name}`}
+                                                    >
+                                                        🗄
+                                                    </button>
+                                                )}
                                                 <button
                                                     className="btn btn-danger btn-sm btn-icon"
                                                     onClick={() =>
@@ -841,6 +944,25 @@ export function CurriculumDetail({
                 />
             )}
 
+            {confirmArchiveSubject && (
+                <Confirm
+                    msg={`Archive "${confirmArchiveSubject.subject.name}"? It stops being offered to new enrollments. Students already taking it KEEP it and their marks, and it still appears on their result sheets — archiving does not withdraw anyone.`}
+                    onConfirm={() => {
+                        handleArchiveSubject(confirmArchiveSubject);
+                        setConfirmArchiveSubject(null);
+                    }}
+                    onClose={() => setConfirmArchiveSubject(null)}
+                />
+            )}
+
+            {confirmUnarchiveSubject && (
+                <Confirm
+                    msg={`Restore "${confirmUnarchiveSubject.subject.name}" to this curriculum? It will be offered to new enrollments again. Students dropped from it when it was withdrawn are NOT restored — those must be restored per student.`}
+                    onConfirm={() => {
+                        handleUnarchiveSubject(confirmUnarchiveSubject);
+                        setConfirmUnarchiveSubject(null);
+                    }}
+                    onClose={() => setConfirmUnarchiveSubject(null)}
             {confirmWithdrawSubject && (
                 <Confirm
                     msg={`"${confirmWithdrawSubject.curriculumSubject.subject.name}" is being taken by ${confirmWithdrawSubject.enrolledCount} student(s), so it cannot simply be deleted. Withdraw it instead? The subject stops being offered and those students are dropped from it. Marks already recorded are kept, and restoring the subject later does NOT restore the students.`}

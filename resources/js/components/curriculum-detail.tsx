@@ -240,6 +240,8 @@ export function CurriculumDetail({
         useState<CurriculumSubject | null>(null);
     const [confirmUnarchiveSubject, setConfirmUnarchiveSubject] =
         useState<CurriculumSubject | null>(null);
+    const [confirmArchiveSubject, setConfirmArchiveSubject] =
+        useState<CurriculumSubject | null>(null);
     const [confirmRemoveTeacher, setConfirmRemoveTeacher] = useState<{
         curriculumSubject: CurriculumSubject;
         teacherCurriculumSubject: TeacherCurriculumSubject;
@@ -338,6 +340,33 @@ export function CurriculumDetail({
             }
         } catch {
             toast.error('Failed to remove subject');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /**
+     * Stop offering a subject to NEW enrollments, leaving current ones alone.
+     *
+     * This is the plain archive, and it is deliberately the weaker of the two
+     * removal verbs: pupils already taking the subject keep it, keep their marks,
+     * and keep appearing on its result sheets. Use withdraw when they should be
+     * dropped as well.
+     */
+    const handleArchiveSubject = async (cs: CurriculumSubject) => {
+        setLoading(true);
+
+        try {
+            const response = await axios.patch(
+                `/api/curriculum-subjects/${cs.id}/archive`,
+            );
+
+            toast.success(response.data?.message ?? 'Subject archived');
+        } catch (error) {
+            toast.error(
+                (axios.isAxiosError(error) && error.response?.data?.message) ||
+                    'Failed to archive subject',
+            );
         } finally {
             setLoading(false);
         }
@@ -775,7 +804,7 @@ export function CurriculumDetail({
                                                     justifyContent: 'flex-end',
                                                 }}
                                             >
-                                                {cs.archived_at && (
+                                                {cs.archived_at ? (
                                                     <button
                                                         className="btn btn-ghost btn-sm btn-icon"
                                                         onClick={() =>
@@ -787,6 +816,19 @@ export function CurriculumDetail({
                                                         aria-label={`Restore ${cs.subject.name}`}
                                                     >
                                                         ↺
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="btn btn-ghost btn-sm btn-icon"
+                                                        onClick={() =>
+                                                            setConfirmArchiveSubject(
+                                                                cs,
+                                                            )
+                                                        }
+                                                        title="Archive subject"
+                                                        aria-label={`Archive ${cs.subject.name}`}
+                                                    >
+                                                        🗄
                                                     </button>
                                                 )}
                                                 <button
@@ -851,6 +893,17 @@ export function CurriculumDetail({
                         setConfirmRemoveSubject(null);
                     }}
                     onClose={() => setConfirmRemoveSubject(null)}
+                />
+            )}
+
+            {confirmArchiveSubject && (
+                <Confirm
+                    msg={`Archive "${confirmArchiveSubject.subject.name}"? It stops being offered to new enrollments. Students already taking it KEEP it and their marks, and it still appears on their result sheets — archiving does not withdraw anyone.`}
+                    onConfirm={() => {
+                        handleArchiveSubject(confirmArchiveSubject);
+                        setConfirmArchiveSubject(null);
+                    }}
+                    onClose={() => setConfirmArchiveSubject(null)}
                 />
             )}
 

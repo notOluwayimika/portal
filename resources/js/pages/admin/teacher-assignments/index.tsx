@@ -25,29 +25,55 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Input } from '@/components/ui/input';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
-import { useInitials, type GetInitialsFn } from '@/hooks/use-initials';
-import type { ClassLevelArm, ClassLevelArmTeacher, Teacher, TeacherAssignmentRole } from '@/types/models';
+import type { GetInitialsFn } from '@/hooks/use-initials';
+import { useInitials } from '@/hooks/use-initials';
+import type {
+    ClassLevelArm,
+    ClassLevelArmTeacher,
+    Teacher,
+    TeacherAssignmentRole,
+} from '@/types/models';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
 // ---------------------------------------------------------------------------
 
-const ROLE_META: Record<TeacherAssignmentRole, { label: string; description: string; icon: LucideIcon }> = {
+const ROLE_META: Record<
+    TeacherAssignmentRole,
+    { label: string; description: string; icon: LucideIcon }
+> = {
     form_teacher: {
         label: 'Form Teacher',
-        description: 'Manages a single class arm and writes the term comment for each student.',
+        description:
+            'Manages a single class arm and writes the term comment for each student.',
         icon: UserCog,
     },
     boarding_parent: {
         label: 'Boarding Parent',
-        description: 'Records behavioral assessments for students of one gender in an arm. Up to one male and one female per arm.',
+        description:
+            'Records behavioral assessments for students of one gender in an arm. Up to one male and one female per arm.',
         icon: Heart,
     },
     head_of_school: {
         label: 'Head of School',
-        description: 'May supervise several class levels and writes the term comment for each student.',
+        description:
+            'May supervise several class levels and writes the term comment for each student.',
         icon: ShieldCheck,
     },
+    key_stage_coordinator: {
+        label: 'Key Stage Coordinator',
+        description:
+            "Primary's equivalent of a Head of School: supervises several class levels and writes the term comment for each student.",
+        icon: ShieldCheck,
+    },
+};
+
+/** Plural heading per section; ROLE_META's label is the singular used elsewhere. */
+const SECTION_TITLES: Record<TeacherAssignmentRole, string> = {
+    form_teacher: 'Form Teachers',
+    boarding_parent: 'Boarding Parents',
+    head_of_school: 'Heads of School',
+    key_stage_coordinator: 'Key Stage Coordinators',
 };
 
 type WizardStep = 'role' | 'teacher' | 'classes' | 'review';
@@ -91,7 +117,13 @@ interface AssignmentWizardProps {
     onSaved: () => Promise<void> | void;
 }
 
-function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose, onSaved }: AssignmentWizardProps) {
+function AssignmentWizard({
+    classLevelGroups,
+    initialStep,
+    initialState,
+    onClose,
+    onSaved,
+}: AssignmentWizardProps) {
     const getInitials = useInitials();
     const [step, setStep] = useState<WizardStep>(initialStep);
     const [state, setState] = useState<WizardState>(initialState);
@@ -108,13 +140,23 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
         }
 
         let active = true;
-        setSearchingTeachers(true);
 
+        // Deferred out of the effect BODY: calling setState synchronously there
+        // triggers a cascading render, which is what react-hooks/set-state-in-effect
+        // flags. The spinner is wanted for the debounce window anyway, so moving it
+        // inside the timeout is both lint-clean and closer to the intent.
         const handle = setTimeout(async () => {
+            if (active) {
+                setSearchingTeachers(true);
+            }
+
             try {
-                const res = await axios.get('/api/teacher-assignments/teachers', {
-                    params: teacherQuery ? { search: teacherQuery } : {},
-                });
+                const res = await axios.get(
+                    '/api/teacher-assignments/teachers',
+                    {
+                        params: teacherQuery ? { search: teacherQuery } : {},
+                    },
+                );
 
                 if (active) {
                     setTeacherResults(res.data.data ?? []);
@@ -140,7 +182,10 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
     const stepIndex = STEP_ORDER.indexOf(step);
 
     const selectedArms = useMemo(
-        () => classLevelGroups.flatMap((group) => group.arms).filter((cla) => state.classLevelArmIds.includes(cla.id)),
+        () =>
+            classLevelGroups
+                .flatMap((group) => group.arms)
+                .filter((cla) => state.classLevelArmIds.includes(cla.id)),
         [classLevelGroups, state.classLevelArmIds],
     );
 
@@ -155,7 +200,9 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
 
     function toggleClassLevel(group: ClassLevelGroup) {
         const armIds = group.arms.map((a) => a.id);
-        const allSelected = armIds.length > 0 && armIds.every((id) => state.classLevelArmIds.includes(id));
+        const allSelected =
+            armIds.length > 0 &&
+            armIds.every((id) => state.classLevelArmIds.includes(id));
 
         setState((s) => ({
             ...s,
@@ -176,7 +223,10 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                     return false;
                 }
 
-                if (state.role === 'form_teacher' && state.classLevelArmIds.length !== 1) {
+                if (
+                    state.role === 'form_teacher' &&
+                    state.classLevelArmIds.length !== 1
+                ) {
                     return false;
                 }
 
@@ -220,17 +270,26 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
             await axios.post('/api/teacher-assignments', {
                 teacher_id: state.teacher.id,
                 role: state.role,
-                gender: state.role === 'boarding_parent' ? state.gender : undefined,
+                gender:
+                    state.role === 'boarding_parent' ? state.gender : undefined,
                 class_level_arm_ids: state.classLevelArmIds,
             });
 
             await onSaved();
         } catch (error) {
             if (axios.isAxiosError(error)) {
-                const errors = error.response?.data?.errors as Record<string, string[]> | undefined;
-                const firstError = errors ? Object.values(errors)[0]?.[0] : undefined;
+                const errors = error.response?.data?.errors as
+                    | Record<string, string[]>
+                    | undefined;
+                const firstError = errors
+                    ? Object.values(errors)[0]?.[0]
+                    : undefined;
 
-                setErrorMessage(firstError ?? error.response?.data?.message ?? 'Failed to save assignment.');
+                setErrorMessage(
+                    firstError ??
+                        error.response?.data?.message ??
+                        'Failed to save assignment.',
+                );
             } else {
                 setErrorMessage('Failed to save assignment.');
             }
@@ -242,7 +301,10 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
     const stepTitles: Record<WizardStep, string> = {
         role: 'Select a role',
         teacher: 'Select a teacher',
-        classes: state.role === 'boarding_parent' ? 'Select class arm and gender' : 'Select class arm(s)',
+        classes:
+            state.role === 'boarding_parent'
+                ? 'Select class arm and gender'
+                : 'Select class arm(s)',
         review: 'Review and save',
     };
 
@@ -254,23 +316,41 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
             size="lg"
             footer={
                 <div className="flex items-center justify-between">
-                    <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={onClose}
+                        disabled={submitting}
+                    >
                         Cancel
                     </Button>
                     <div className="flex gap-2">
                         {stepIndex > minStepIndex && (
-                            <Button type="button" variant="outline" onClick={goBack} disabled={submitting}>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={goBack}
+                                disabled={submitting}
+                            >
                                 <ChevronLeft className="h-4 w-4" />
                                 Back
                             </Button>
                         )}
                         {step !== 'review' ? (
-                            <Button type="button" onClick={goNext} disabled={!canProceed()}>
+                            <Button
+                                type="button"
+                                onClick={goNext}
+                                disabled={!canProceed()}
+                            >
                                 Next
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         ) : (
-                            <Button type="button" onClick={handleSubmit} disabled={submitting}>
+                            <Button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={submitting}
+                            >
                                 {submitting && <Spinner className="size-4" />}
                                 Save Assignment
                             </Button>
@@ -294,30 +374,40 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
             {/* Step: Role */}
             {step === 'role' && (
                 <div className="space-y-3">
-                    {(Object.keys(ROLE_META) as TeacherAssignmentRole[]).map((role) => {
-                        const meta = ROLE_META[role];
-                        const Icon = meta.icon;
-                        const selected = state.role === role;
+                    {(Object.keys(ROLE_META) as TeacherAssignmentRole[]).map(
+                        (role) => {
+                            const meta = ROLE_META[role];
+                            const Icon = meta.icon;
+                            const selected = state.role === role;
 
-                        return (
-                            <button
-                                key={role}
-                                type="button"
-                                onClick={() => setState({ ...emptyWizardState, role })}
-                                className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition ${
-                                    selected
-                                        ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100'
-                                        : 'border-gray-200 hover:border-gray-300'
-                                }`}
-                            >
-                                <Icon className={`mt-0.5 h-5 w-5 ${selected ? 'text-indigo-600' : 'text-gray-400'}`} />
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-900">{meta.label}</p>
-                                    <p className="mt-0.5 text-xs text-gray-500">{meta.description}</p>
-                                </div>
-                            </button>
-                        );
-                    })}
+                            return (
+                                <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() =>
+                                        setState({ ...emptyWizardState, role })
+                                    }
+                                    className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition ${
+                                        selected
+                                            ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100'
+                                            : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                                >
+                                    <Icon
+                                        className={`mt-0.5 h-5 w-5 ${selected ? 'text-indigo-600' : 'text-gray-400'}`}
+                                    />
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900">
+                                            {meta.label}
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-gray-500">
+                                            {meta.description}
+                                        </p>
+                                    </div>
+                                </button>
+                            );
+                        },
+                    )}
                 </div>
             )}
 
@@ -340,16 +430,21 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                 <Spinner className="size-5 text-gray-400" />
                             </div>
                         ) : teacherResults.length === 0 ? (
-                            <p className="py-8 text-center text-sm text-gray-400">No teachers found.</p>
+                            <p className="py-8 text-center text-sm text-gray-400">
+                                No teachers found.
+                            </p>
                         ) : (
                             teacherResults.map((teacher) => {
-                                const selected = state.teacher?.id === teacher.id;
+                                const selected =
+                                    state.teacher?.id === teacher.id;
 
                                 return (
                                     <button
                                         key={teacher.id}
                                         type="button"
-                                        onClick={() => setState((s) => ({ ...s, teacher }))}
+                                        onClick={() =>
+                                            setState((s) => ({ ...s, teacher }))
+                                        }
                                         className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition ${
                                             selected
                                                 ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100'
@@ -357,27 +452,39 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                         }`}
                                     >
                                         <Avatar className="h-9 w-9">
-                                            <AvatarImage src={teacher.photo ?? undefined} />
+                                            <AvatarImage
+                                                src={teacher.photo ?? undefined}
+                                            />
                                             <AvatarFallback className="bg-indigo-100 text-sm font-semibold text-indigo-700">
-                                                {getInitials(`${teacher.first_name} ${teacher.last_name}`)}
+                                                {getInitials(
+                                                    `${teacher.first_name} ${teacher.last_name}`,
+                                                )}
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="min-w-0 flex-1">
                                             <p className="truncate text-sm font-medium text-gray-900">
-                                                {teacher.first_name} {teacher.last_name}
+                                                {teacher.first_name}{' '}
+                                                {teacher.last_name}
                                             </p>
                                             <div className="mt-0.5 flex items-center gap-2">
                                                 {teacher.staff_number && (
-                                                    <span className="text-xs text-gray-400">#{teacher.staff_number}</span>
+                                                    <span className="text-xs text-gray-400">
+                                                        #{teacher.staff_number}
+                                                    </span>
                                                 )}
                                                 {!teacher.user?.id && (
-                                                    <Badge variant="outline" className="text-amber-700">
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="text-amber-700"
+                                                    >
                                                         No account
                                                     </Badge>
                                                 )}
                                             </div>
                                         </div>
-                                        {selected && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
+                                        {selected && (
+                                            <Check className="h-4 w-4 shrink-0 text-indigo-600" />
+                                        )}
                                     </button>
                                 );
                             })
@@ -398,7 +505,10 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                     </p>
                                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                         {group.arms.map((cla) => {
-                                            const selected = state.classLevelArmIds.includes(cla.id);
+                                            const selected =
+                                                state.classLevelArmIds.includes(
+                                                    cla.id,
+                                                );
 
                                             return (
                                                 <label
@@ -414,7 +524,13 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                                         name="form-teacher-arm"
                                                         className="h-4 w-4 text-indigo-600"
                                                         checked={selected}
-                                                        onChange={() => setState((s) => ({ ...s, classLevelArmIds: [cla.id] }))}
+                                                        onChange={() =>
+                                                            setState((s) => ({
+                                                                ...s,
+                                                                classLevelArmIds:
+                                                                    [cla.id],
+                                                            }))
+                                                        }
                                                     />
                                                     {armLabel(cla)}
                                                 </label>
@@ -428,26 +544,42 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                         <div className="space-y-4">
                             {classLevelGroups.map((group) => {
                                 const armIds = group.arms.map((a) => a.id);
-                                const allSelected = armIds.length > 0 && armIds.every((id) => state.classLevelArmIds.includes(id));
-                                const someSelected = armIds.some((id) => state.classLevelArmIds.includes(id));
+                                const allSelected =
+                                    armIds.length > 0 &&
+                                    armIds.every((id) =>
+                                        state.classLevelArmIds.includes(id),
+                                    );
+                                const someSelected = armIds.some((id) =>
+                                    state.classLevelArmIds.includes(id),
+                                );
 
                                 return (
-                                    <div key={group.id} className="rounded-lg border border-gray-200 p-3">
+                                    <div
+                                        key={group.id}
+                                        className="rounded-lg border border-gray-200 p-3"
+                                    >
                                         <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-gray-800">
                                             <input
                                                 type="checkbox"
                                                 className="h-4 w-4 rounded text-indigo-600"
                                                 checked={allSelected}
-                                                onChange={() => toggleClassLevel(group)}
+                                                onChange={() =>
+                                                    toggleClassLevel(group)
+                                                }
                                             />
                                             {group.name}
                                             {someSelected && !allSelected && (
-                                                <span className="text-xs font-normal text-gray-400">partially selected</span>
+                                                <span className="text-xs font-normal text-gray-400">
+                                                    partially selected
+                                                </span>
                                             )}
                                         </label>
                                         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                                             {group.arms.map((cla) => {
-                                                const selected = state.classLevelArmIds.includes(cla.id);
+                                                const selected =
+                                                    state.classLevelArmIds.includes(
+                                                        cla.id,
+                                                    );
 
                                                 return (
                                                     <label
@@ -462,7 +594,11 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                                             type="checkbox"
                                                             className="h-4 w-4 rounded text-indigo-600"
                                                             checked={selected}
-                                                            onChange={() => toggleArm(cla.id)}
+                                                            onChange={() =>
+                                                                toggleArm(
+                                                                    cla.id,
+                                                                )
+                                                            }
                                                         />
                                                         {armLabel(cla)}
                                                     </label>
@@ -477,7 +613,9 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
 
                     {state.role === 'boarding_parent' && (
                         <div>
-                            <p className="mb-2 text-xs font-semibold tracking-wide text-gray-500 uppercase">Gender</p>
+                            <p className="mb-2 text-xs font-semibold tracking-wide text-gray-500 uppercase">
+                                Gender
+                            </p>
                             <div className="flex gap-3">
                                 {(['male', 'female'] as const).map((gender) => {
                                     const selected = state.gender === gender;
@@ -486,7 +624,12 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                         <button
                                             key={gender}
                                             type="button"
-                                            onClick={() => setState((s) => ({ ...s, gender }))}
+                                            onClick={() =>
+                                                setState((s) => ({
+                                                    ...s,
+                                                    gender,
+                                                }))
+                                            }
                                             className={`flex-1 rounded-lg border p-3 text-center text-sm font-medium capitalize transition ${
                                                 selected
                                                     ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-100'
@@ -499,8 +642,10 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                                 })}
                             </div>
                             <p className="mt-2 text-xs text-gray-400">
-                                This teacher will assess {state.gender ?? 'the selected'} students in the chosen arm. Up to one
-                                male and one female boarding parent are allowed per arm.
+                                This teacher will assess{' '}
+                                {state.gender ?? 'the selected'} students in the
+                                chosen arm. Up to one male and one female
+                                boarding parent are allowed per arm.
                             </p>
                         </div>
                     )}
@@ -513,22 +658,30 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                     <dl className="space-y-3 rounded-lg border border-gray-200 p-4 text-sm">
                         <div className="flex items-center justify-between">
                             <dt className="text-gray-500">Role</dt>
-                            <dd className="font-medium text-gray-900">{ROLE_META[state.role].label}</dd>
+                            <dd className="font-medium text-gray-900">
+                                {ROLE_META[state.role].label}
+                            </dd>
                         </div>
                         <div className="flex items-center justify-between">
                             <dt className="text-gray-500">Teacher</dt>
                             <dd className="font-medium text-gray-900">
-                                {state.teacher ? `${state.teacher.first_name} ${state.teacher.last_name}` : '—'}
+                                {state.teacher
+                                    ? `${state.teacher.first_name} ${state.teacher.last_name}`
+                                    : '—'}
                             </dd>
                         </div>
                         {state.role === 'boarding_parent' && (
                             <div className="flex items-center justify-between">
                                 <dt className="text-gray-500">Gender</dt>
-                                <dd className="font-medium text-gray-900 capitalize">{state.gender ?? '—'}</dd>
+                                <dd className="font-medium text-gray-900 capitalize">
+                                    {state.gender ?? '—'}
+                                </dd>
                             </div>
                         )}
                         <div>
-                            <dt className="text-gray-500">Class arm{selectedArms.length > 1 ? 's' : ''}</dt>
+                            <dt className="text-gray-500">
+                                Class arm{selectedArms.length > 1 ? 's' : ''}
+                            </dt>
                             <dd className="mt-1.5 flex flex-wrap gap-1.5">
                                 {selectedArms.map((cla) => (
                                     <Badge key={cla.id} variant="secondary">
@@ -540,13 +693,20 @@ function AssignmentWizard({ classLevelGroups, initialStep, initialState, onClose
                     </dl>
 
                     <p className="text-xs text-gray-400">
-                        Saving will replace any existing {ROLE_META[state.role].label.toLowerCase()}
-                        {state.role === 'boarding_parent' && state.gender ? ` (${state.gender})` : ''} assigned to the selected
-                        arm{selectedArms.length > 1 ? 's' : ''}, and grant the {ROLE_META[state.role].label} role to{' '}
+                        Saving will replace any existing{' '}
+                        {ROLE_META[state.role].label.toLowerCase()}
+                        {state.role === 'boarding_parent' && state.gender
+                            ? ` (${state.gender})`
+                            : ''}{' '}
+                        assigned to the selected arm
+                        {selectedArms.length > 1 ? 's' : ''}, and grant the{' '}
+                        {ROLE_META[state.role].label} role to{' '}
                         {state.teacher?.first_name ?? 'this teacher'}.
                     </p>
 
-                    {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+                    {errorMessage && (
+                        <p className="text-sm text-red-600">{errorMessage}</p>
+                    )}
                 </div>
             )}
         </Modal>
@@ -587,13 +747,17 @@ function AssignmentSection({
 
         for (const assignment of assignments) {
             if (assignment.class_level_arm) {
-                map.set(assignment.class_level_arm.id, assignment.class_level_arm.name ?? 'Unknown class');
+                map.set(
+                    assignment.class_level_arm.id,
+                    assignment.class_level_arm.name ?? 'Unknown class',
+                );
             }
         }
 
-        const options = Array.from(map, ([value, label]) => ({ value, label })).sort((a, b) =>
-            a.label.localeCompare(b.label),
-        );
+        const options = Array.from(map, ([value, label]) => ({
+            value,
+            label,
+        })).sort((a, b) => a.label.localeCompare(b.label));
 
         return [{ value: '', label: 'All classes' }, ...options];
     }, [assignments]);
@@ -640,82 +804,111 @@ function AssignmentSection({
                             className={`ml-auto h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
                         />
                     </CardTitle>
-                    <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                        {description}
+                    </p>
                 </button>
             </CardHeader>
             {open && (
-            <CardContent>
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <Input
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search by teacher, staff number or class…"
-                            className="pl-9"
-                        />
+                <CardContent>
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative flex-1">
+                            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <Input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Search by teacher, staff number or class…"
+                                className="pl-9"
+                            />
+                        </div>
+                        <div className="w-full sm:w-56">
+                            <Select
+                                value={armFilter}
+                                onChange={(val) =>
+                                    setArmFilter(String(val ?? ''))
+                                }
+                                options={armOptions}
+                                placeholder="All classes"
+                            />
+                        </div>
                     </div>
-                    <div className="w-full sm:w-56">
-                        <Select
-                            value={armFilter}
-                            onChange={(val) => setArmFilter(String(val ?? ''))}
-                            options={armOptions}
-                            placeholder="All classes"
-                        />
-                    </div>
-                </div>
 
-                {filtered.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-gray-400">
-                        {assignments.length === 0 ? 'No assignments yet.' : 'No assignments match your filters.'}
-                    </p>
-                ) : (
-                    <div className="divide-y divide-gray-100">
-                        {filtered.map((assignment) => (
-                            <div key={assignment.id} className="flex items-center gap-4 py-3">
-                                <Avatar>
-                                    <AvatarImage src={assignment.teacher?.photo ?? undefined} />
-                                    <AvatarFallback className="bg-indigo-100 text-sm font-semibold text-indigo-700">
-                                        {assignment.teacher
-                                            ? getInitials(`${assignment.teacher.first_name} ${assignment.teacher.last_name}`)
-                                            : '?'}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-gray-900">
-                                        {assignment.teacher
-                                            ? `${assignment.teacher.first_name} ${assignment.teacher.last_name}`
-                                            : 'Unknown teacher'}
-                                    </p>
-                                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
-                                        <span>{assignment.class_level_arm?.name ?? 'Unknown class'}</span>
-                                        {showGender && assignment.gender && (
-                                            <Badge variant="outline" className="capitalize">
-                                                {assignment.gender}
-                                            </Badge>
-                                        )}
+                    {filtered.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-gray-400">
+                            {assignments.length === 0
+                                ? 'No assignments yet.'
+                                : 'No assignments match your filters.'}
+                        </p>
+                    ) : (
+                        <div className="divide-y divide-gray-100">
+                            {filtered.map((assignment) => (
+                                <div
+                                    key={assignment.id}
+                                    className="flex items-center gap-4 py-3"
+                                >
+                                    <Avatar>
+                                        <AvatarImage
+                                            src={
+                                                assignment.teacher?.photo ??
+                                                undefined
+                                            }
+                                        />
+                                        <AvatarFallback className="bg-indigo-100 text-sm font-semibold text-indigo-700">
+                                            {assignment.teacher
+                                                ? getInitials(
+                                                      `${assignment.teacher.first_name} ${assignment.teacher.last_name}`,
+                                                  )
+                                                : '?'}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium text-gray-900">
+                                            {assignment.teacher
+                                                ? `${assignment.teacher.first_name} ${assignment.teacher.last_name}`
+                                                : 'Unknown teacher'}
+                                        </p>
+                                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                                            <span>
+                                                {assignment.class_level_arm
+                                                    ?.name ?? 'Unknown class'}
+                                            </span>
+                                            {showGender &&
+                                                assignment.gender && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="capitalize"
+                                                    >
+                                                        {assignment.gender}
+                                                    </Badge>
+                                                )}
+                                        </div>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                onReplace(assignment)
+                                            }
+                                        >
+                                            <RefreshCw className="h-3.5 w-3.5" />
+                                            Replace
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                            onClick={() => onRemove(assignment)}
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                            Remove
+                                        </Button>
                                     </div>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={() => onReplace(assignment)}>
-                                        <RefreshCw className="h-3.5 w-3.5" />
-                                        Replace
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                        onClick={() => onRemove(assignment)}
-                                    >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        Remove
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </CardContent>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
             )}
         </Card>
     );
@@ -732,8 +925,10 @@ export default function TeacherAssignmentsIndex() {
     const [loading, setLoading] = useState(true);
 
     const [wizardOpen, setWizardOpen] = useState(false);
-    const [wizardInitialStep, setWizardInitialStep] = useState<WizardStep>('role');
-    const [wizardInitialState, setWizardInitialState] = useState<WizardState>(emptyWizardState);
+    const [wizardInitialStep, setWizardInitialStep] =
+        useState<WizardStep>('role');
+    const [wizardInitialState, setWizardInitialState] =
+        useState<WizardState>(emptyWizardState);
 
     const [removing, setRemoving] = useState<ClassLevelArmTeacher | null>(null);
     const [removeLoading, setRemoveLoading] = useState(false);
@@ -757,7 +952,12 @@ export default function TeacherAssignmentsIndex() {
     }
 
     useEffect(() => {
-        fetchData();
+        // fetchData() opens with setLoading(true), which the rule reads as a
+        // synchronous setState in the effect body. Pre-existing, and restructuring
+        // this page's data loading is out of scope for a result-template change —
+        // suppressed with the reason rather than quietly rewritten.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        void fetchData();
     }, []);
 
     const classLevelGroups = useMemo<ClassLevelGroup[]>(() => {
@@ -767,7 +967,12 @@ export default function TeacherAssignmentsIndex() {
             const level = cla.class_level;
 
             if (!map.has(level.id)) {
-                map.set(level.id, { id: level.id, name: level.name, order: level.order, arms: [] });
+                map.set(level.id, {
+                    id: level.id,
+                    name: level.name,
+                    order: level.order,
+                    arms: [],
+                });
             }
 
             map.get(level.id)!.arms.push(cla);
@@ -776,12 +981,20 @@ export default function TeacherAssignmentsIndex() {
         return Array.from(map.values()).sort((a, b) => a.order - b.order);
     }, [classLevelArms]);
 
+    // Derived from ROLE_META rather than listed by hand: the hand-written version
+    // silently omitted key_stage_coordinator when that role was added, so its
+    // assignments existed but had no section to appear in. Adding a role to
+    // ROLE_META is now enough.
     const grouped = useMemo(
-        () => ({
-            form_teacher: assignments.filter((a) => a.role === 'form_teacher'),
-            boarding_parent: assignments.filter((a) => a.role === 'boarding_parent'),
-            head_of_school: assignments.filter((a) => a.role === 'head_of_school'),
-        }),
+        () =>
+            Object.fromEntries(
+                (Object.keys(ROLE_META) as TeacherAssignmentRole[]).map(
+                    (role) => [
+                        role,
+                        assignments.filter((a) => a.role === role),
+                    ],
+                ),
+            ) as Record<TeacherAssignmentRole, ClassLevelArmTeacher[]>,
         [assignments],
     );
 
@@ -831,9 +1044,12 @@ export default function TeacherAssignmentsIndex() {
             <div className="space-y-6 p-4">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900">Teacher Assignments</h1>
+                        <h1 className="text-xl font-semibold text-gray-900">
+                            Teacher Assignments
+                        </h1>
                         <p className="mt-1 text-sm text-gray-500">
-                            Assign Form Teachers, Boarding Parents and Heads of School to class arms.
+                            Assign Form Teachers, Boarding Parents and Heads of
+                            School to class arms.
                         </p>
                     </div>
                     <Button onClick={openNewAssignment}>
@@ -848,36 +1064,21 @@ export default function TeacherAssignmentsIndex() {
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        <AssignmentSection
-                            title="Form Teachers"
-                            description="One teacher per class arm. Writes the term comment for each student."
-                            icon={UserCog}
-                            assignments={grouped.form_teacher}
-                            showGender={false}
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
-                        <AssignmentSection
-                            title="Boarding Parents"
-                            description="Up to one male and one female teacher per class arm. Records behavioral assessments."
-                            icon={Heart}
-                            assignments={grouped.boarding_parent}
-                            showGender
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
-                        <AssignmentSection
-                            title="Heads of School"
-                            description="May supervise multiple class levels. Writes the term comment for each student."
-                            icon={ShieldCheck}
-                            assignments={grouped.head_of_school}
-                            showGender={false}
-                            getInitials={getInitials}
-                            onReplace={openReplace}
-                            onRemove={setRemoving}
-                        />
+                        {(
+                            Object.keys(ROLE_META) as TeacherAssignmentRole[]
+                        ).map((role) => (
+                            <AssignmentSection
+                                key={role}
+                                title={SECTION_TITLES[role]}
+                                description={ROLE_META[role].description}
+                                icon={ROLE_META[role].icon}
+                                assignments={grouped[role]}
+                                showGender={role === 'boarding_parent'}
+                                getInitials={getInitials}
+                                onReplace={openReplace}
+                                onRemove={setRemoving}
+                            />
+                        ))}
                     </div>
                 )}
             </div>

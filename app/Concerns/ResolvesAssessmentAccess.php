@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Collection;
  */
 trait ResolvesAssessmentAccess
 {
+    /** @return Collection<int, StudentCurriculum> */
     protected function boardingParentVisibleStudentCurricula(?Term $term): Collection
     {
         $teacher = Teacher::where('user_id', auth()->id())->first();

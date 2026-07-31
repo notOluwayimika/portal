@@ -5,6 +5,7 @@ namespace App\Concerns;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
 use App\Models\Term;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 
 /**
@@ -21,15 +22,15 @@ trait ResolvesTermFilter
 
         if ($uuid) {
             $term = Term::where('uuid', $uuid)
-                ->whereHas('academicSession', fn($query) => $query->where('school_id', \App\Support\ActiveSchool::id()))
+                ->whereHas('academicSession', fn ($query) => $query->where('school_id', ActiveSchool::id()))
                 ->first();
 
-            abort_unless($term, 404, 'Term not found.');
+            abort_unless($term !== null, 404, 'Term not found.');
 
             return $term;
         }
 
-        $schoolId = \App\Support\ActiveSchool::id();
+        $schoolId = ActiveSchool::id();
         $schoolActiveTerms = fn () => Term::where('status', TermStatusEnum::ACTIVE->value)
             ->whereHas('academicSession', fn ($query) => $query->where('school_id', $schoolId));
 

@@ -35,6 +35,9 @@ type SchoolRow = {
     name_on_result: string | null;
     fallback_signature_url: string | null;
     result_approver_name: string | null;
+    result_approver_title: string | null;
+    show_subject_comments_on_result: boolean;
+    show_head_of_school_comment_on_result: boolean;
     active: boolean;
     students_count: number;
     teachers_count: number;
@@ -53,6 +56,9 @@ type SchoolFormData = {
     website: string;
     name_on_result: string;
     result_approver_name: string;
+    result_approver_title: string;
+    show_subject_comments_on_result: boolean;
+    show_head_of_school_comment_on_result: boolean;
     active: boolean;
 };
 
@@ -76,6 +82,11 @@ function SchoolFormDialog({
             website: school?.website ?? '',
             name_on_result: school?.name_on_result ?? '',
             result_approver_name: school?.result_approver_name ?? '',
+            result_approver_title: school?.result_approver_title ?? '',
+            show_subject_comments_on_result:
+                school?.show_subject_comments_on_result ?? true,
+            show_head_of_school_comment_on_result:
+                school?.show_head_of_school_comment_on_result ?? true,
             active: school?.active ?? true,
         });
 
@@ -198,6 +209,52 @@ function SchoolFormDialog({
                         </p>
                         <InputError message={errors.result_approver_name} />
                     </div>
+
+                    <div className="space-y-1">
+                        <Label htmlFor="school-result-approver-title">
+                            Result approver title
+                        </Label>
+                        <Input
+                            id="school-result-approver-title"
+                            placeholder="e.g. Head of School"
+                            value={data.result_approver_title}
+                            onChange={(e) =>
+                                setData('result_approver_title', e.target.value)
+                            }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            When set, the signature caption names the office —
+                            &ldquo;Approved by the Head of School&rdquo; —
+                            instead of the approver&rsquo;s name.
+                        </p>
+                        <InputError message={errors.result_approver_title} />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                            checked={data.show_subject_comments_on_result}
+                            onCheckedChange={(v) =>
+                                setData(
+                                    'show_subject_comments_on_result',
+                                    Boolean(v),
+                                )
+                            }
+                        />
+                        Print per-subject teacher comments on results
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                            checked={data.show_head_of_school_comment_on_result}
+                            onCheckedChange={(v) =>
+                                setData(
+                                    'show_head_of_school_comment_on_result',
+                                    Boolean(v),
+                                )
+                            }
+                        />
+                        Print the Head of School&rsquo;s comment on results
+                    </label>
 
                     {isEdit && (
                         <label className="flex items-center gap-2 text-sm">

@@ -193,30 +193,6 @@ parameters:
 			path: app/Http/Controllers/Api/AuthenticationController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/BehavioralAssessmentController.php
-
-		-
-			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/BehavioralAssessmentController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 1
-			path: app/Http/Controllers/BehavioralAssessmentController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<\(int\|string\),Illuminate\\Database\\Eloquent\\Model\>\:\:map\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\|string\)\: array\{student_curriculum_id\: mixed, student\: App\\Http\\Resources\\StudentResource, class_name\: string\|null, assessment\: App\\Http\\Resources\\BehavioralAssessmentResource\|null, uses_categorical_grading\: bool, psychomotor\: App\\Http\\Resources\\PsychomotorSkillResource\|null\}, Closure\(App\\Models\\StudentCurriculum\)\: array\{student_curriculum_id\: mixed, student\: App\\Http\\Resources\\StudentResource, class_name\: string\|null, assessment\: App\\Http\\Resources\\BehavioralAssessmentResource\|null, uses_categorical_grading\: bool, psychomotor\: App\\Http\\Resources\\PsychomotorSkillResource\|null\} given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/BehavioralAssessmentController.php
-
-		-
 			message: '#^Expression on left side of \?\? is not nullable\.$#'
 			identifier: nullCoalesce.expr
 			count: 1
@@ -259,64 +235,16 @@ parameters:
 			path: app/Http/Controllers/ClassResultsController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/CurriculumController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Support\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 1
-			path: app/Http/Controllers/CurriculumController.php
-
-		-
 			message: '#^Access to an undefined property App\\Models\\StudentResult\:\:\$uuid\.$#'
 			identifier: property.notFound
 			count: 1
 			path: app/Http/Controllers/CurriculumSubjectController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/FormTeacherCommentController.php
-
-		-
-			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/FormTeacherCommentController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 1
-			path: app/Http/Controllers/FormTeacherCommentController.php
-
-		-
 			message: '#^Using nullsafe property access "\?\-\>full_name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 1
 			path: app/Http/Controllers/GuardianController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/HeadOfSchoolCommentController.php
-
-		-
-			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/HeadOfSchoolCommentController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StudentCurriculum\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 1
-			path: app/Http/Controllers/HeadOfSchoolCommentController.php
 
 		-
 			message: '#^Parameter \#1 \$message of static method Illuminate\\Log\\Logger\:\:info\(\) expects array\|Illuminate\\Contracts\\Support\\Arrayable\|Illuminate\\Contracts\\Support\\Jsonable\|Illuminate\\Support\\Stringable\|string, bool given\.$#'
@@ -355,12 +283,6 @@ parameters:
 			path: app/Http/Controllers/NoticeController.php
 
 		-
-			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/OutstandingCommentController.php
-
-		-
 			message: '#^Call to function abort_unless\(\) with false and 404 will always evaluate to false\.$#'
 			identifier: function.impossibleType
 			count: 1
@@ -383,12 +305,6 @@ parameters:
 			identifier: argument.unresolvableType
 			count: 1
 			path: app/Http/Controllers/PrincipalController.php
-
-		-
-			message: '#^Parameter \#1 \$boolean of function abort_unless expects bool, App\\Models\\Term\|null given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Http/Controllers/PsychomotorSkillController.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
@@ -455,12 +371,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/StudentController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\StudentCurriculum\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StudentSubjectController.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$active\.$#'
@@ -1457,60 +1367,6 @@ parameters:
 			identifier: property.notFound
 			count: 1
 			path: app/Http/Resources/StreamResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$form_teacher_comment\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$head_of_school_comment\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$principal_approval\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$status\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$student\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$studentSubjects\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$updated_at\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\StudentCurriculumResource\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/StudentCurriculumResource.php
-
-		-
-			message: '#^Call to an undefined method App\\Http\\Resources\\StudentCurriculumResource\:\:relationLoaded\(\)\.$#'
-			identifier: method.notFound
-			count: 2
-			path: app/Http/Resources/StudentCurriculumResource.php
 
 		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\StudentResource\:\:\$address\.$#'

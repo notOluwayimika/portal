@@ -15,6 +15,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ */
 class StudentCurriculum extends Model
 {
     use AddUuid, LogsActivity;
@@ -30,6 +34,7 @@ class StudentCurriculum extends Model
         'end_reason',
         'form_teacher_comment',
         'head_of_school_comment',
+        'key_stage_coordinator_comment',
         'principal_approval',
     ];
 
@@ -223,6 +228,13 @@ class StudentCurriculum extends Model
             GenderTypeEnum::FEMALE->value => $this->femaleBoardingParent(),
             default => null,
         };
+    }
+
+    public function keyStageCoordinator(): ?Teacher
+    {
+        $classLevelArm = $this->curriculum ? $this->curriculum->classLevelArm : null;
+
+        return $classLevelArm ? $classLevelArm->keyStageCoordinator() : null;
     }
 
     public function headOfSchool(): ?Teacher

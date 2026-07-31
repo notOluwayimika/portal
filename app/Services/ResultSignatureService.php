@@ -10,8 +10,8 @@ class ResultSignatureService
 {
     public function resolve(StudentCurriculum $studentCurriculum, School $school): ?array
     {
-        $signature = $this->principalSignature()
-            ?? $this->headOfSchoolSignature($studentCurriculum)
+        $signature = $this->principalSignature($school)
+            ?? $this->headOfSchoolSignature($studentCurriculum, $school)
             ?? $this->fallbackSignature($school);
 
         return $this->withApprovalDate($signature, $studentCurriculum);
@@ -20,12 +20,12 @@ class ResultSignatureService
     public function forCurricula(iterable $studentCurricula, School $school): array
     {
         $signatures = [];
-        $principalSignature = $this->principalSignature();
+        $principalSignature = $this->principalSignature($school);
         $fallbackSignature = $this->fallbackSignature($school);
 
         foreach ($studentCurricula as $studentCurriculum) {
             $signature = $principalSignature
-                ?? $this->headOfSchoolSignature($studentCurriculum)
+                ?? $this->headOfSchoolSignature($studentCurriculum, $school)
                 ?? $fallbackSignature;
             $signatures[$studentCurriculum->uuid] = $this->withApprovalDate($signature, $studentCurriculum);
         }
@@ -33,7 +33,7 @@ class ResultSignatureService
         return $signatures;
     }
 
-    private function principalSignature(): ?array
+    private function principalSignature(School $school): ?array
     {
         $principal = User::role('principal')
             ->whereNotNull('signature_id')
@@ -44,7 +44,7 @@ class ResultSignatureService
         if ($principal?->signatureFile) {
             return [
                 'url' => $principal->signatureFile->url,
-                'label' => $this->approvalLabel($principal->full_name),
+                'label' => $this->approvalLabel($principal->full_name, $school->result_approver_title),
                 'signer_name' => null,
                 'source' => 'principal',
             ];
@@ -53,14 +53,14 @@ class ResultSignatureService
         return null;
     }
 
-    private function headOfSchoolSignature(StudentCurriculum $studentCurriculum): ?array
+    private function headOfSchoolSignature(StudentCurriculum $studentCurriculum, School $school): ?array
     {
         $headOfSchool = $studentCurriculum->headOfSchool()?->load('user.signatureFile');
 
         if ($headOfSchool?->user?->signatureFile) {
             return [
                 'url' => $headOfSchool->user->signatureFile->url,
-                'label' => $this->approvalLabel($headOfSchool->full_name),
+                'label' => $this->approvalLabel($headOfSchool->full_name, $school->result_approver_title),
                 'signer_name' => null,
                 'source' => 'head_of_school',
             ];
@@ -76,7 +76,7 @@ class ResultSignatureService
         if ($school->fallbackSignatureFile) {
             return [
                 'url' => $school->fallbackSignatureFile->url,
-                'label' => $this->approvalLabel($school->result_approver_name),
+                'label' => $this->approvalLabel($school->result_approver_name, $school->result_approver_title),
                 'signer_name' => null,
                 'source' => 'fallback',
             ];
@@ -97,8 +97,22 @@ class ResultSignatureService
         ];
     }
 
-    private function approvalLabel(?string $approverName): string
+    /**
+     * The caption printed under the signature.
+     *
+     * When the school has set a `result_approver_title` — primary sets
+     * "Head of School" — the caption names the OFFICE rather than the person, which
+     * is what that school asked for ("Approved by the Head of School" above the
+     * signature). Without one, the existing name-based wording is unchanged, so
+     * every school that has not been configured prints exactly what it printed
+     * before.
+     */
+    private function approvalLabel(?string $approverName, ?string $approverTitle = null): string
     {
+        if ($approverTitle) {
+            return 'Approved by the '.$approverTitle;
+        }
+
         return $approverName
             ? 'Reviewed and approved by '.$approverName
             : 'Authorized Signature';

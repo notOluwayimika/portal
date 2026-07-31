@@ -160,6 +160,10 @@
         "view_behavioral_assessments",
         "view_psychomotor_skills"
     ],
+    "key_stage_coordinator": [
+        "academic_data.view",
+        "manage_key_stage_coordinator_comments"
+    ],
     "principal": [
         "dashboard.view",
         "finance.access",

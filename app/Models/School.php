@@ -20,9 +20,13 @@ class School extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'slug', 'timezone', 'working_hours_start', 'working_hours_end', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'active'];
+    protected $fillable = ['name', 'slug', 'timezone', 'working_hours_start', 'working_hours_end', 'address', 'phone', 'email', 'website', 'name_on_result', 'fallback_signature_id', 'result_approver_name', 'show_subject_comments_on_result', 'show_head_of_school_comment_on_result', 'result_approver_title', 'active'];
 
-    protected $casts = ['active' => 'boolean'];
+    protected $casts = [
+        'active' => 'boolean',
+        'show_subject_comments_on_result' => 'boolean',
+        'show_head_of_school_comment_on_result' => 'boolean',
+    ];
 
     protected static function booted(): void
     {

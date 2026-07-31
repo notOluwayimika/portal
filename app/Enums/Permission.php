@@ -153,6 +153,7 @@ enum Permission: string
     case MANAGE_TEACHER_ASSIGNMENTS = 'manage_teacher_assignments';
     case MANAGE_FORM_TEACHER_COMMENTS = 'manage_form_teacher_comments';
     case MANAGE_HEAD_OF_SCHOOL_COMMENTS = 'manage_head_of_school_comments';
+    case MANAGE_KEY_STAGE_COORDINATOR_COMMENTS = 'manage_key_stage_coordinator_comments';
     case VIEW_BEHAVIORAL_ASSESSMENTS = 'view_behavioral_assessments';
     case CREATE_BEHAVIORAL_ASSESSMENTS = 'create_behavioral_assessments';
     case EDIT_BEHAVIORAL_ASSESSMENTS = 'edit_behavioral_assessments';

@@ -71,6 +71,8 @@ class RbacSeeder extends Seeder
         'guardian',
         'boarding_parent',
         'form_teacher',
+        // Primary's senior commenter — see the grants map below.
+        'key_stage_coordinator',
         'registrar',
         // Finance credit-note maker-checker (Ph3, ADR 0040/0044). Segregation of duties:
         // the maker proposes, the checker (≠ maker) decides. The SyncRolePermissionsRequest
@@ -294,6 +296,23 @@ class RbacSeeder extends Seeder
                 // Route access (C2)
                 PermissionEnum::BOARDING_PORTAL_ACCESS->value,
                 PermissionEnum::ASSESSMENT_RECORD->value,
+            ],
+            // Primary's senior commenter — the same job head_of_school does in
+            // secondary, under the name that school uses. Modelled on form_teacher,
+            // NOT on head_of_school: a Key Stage Coordinator writes a comment for the
+            // arms they are assigned, and holds none of head_of_school's admin or
+            // finance maker grants.
+            'key_stage_coordinator' => [
+                PermissionEnum::MANAGE_KEY_STAGE_COORDINATOR_COMMENTS->value,
+                // Route access: the comment screen's term filter reads
+                // GET /api/class-structure, which sits behind academic_data.view.
+                //
+                // DELIBERATELY NOT academic_setup.manage, which form_teacher holds:
+                // the route-access oracle showed that grant would hand a Key Stage
+                // Coordinator DELETE on class levels, arms, streams and comment
+                // bands. form_teacher carrying it is pre-existing and out of scope,
+                // but there is no reason to copy it into a new role.
+                PermissionEnum::ACADEMIC_DATA_VIEW->value,
             ],
             'form_teacher' => [
                 PermissionEnum::MANAGE_FORM_TEACHER_COMMENTS->value,

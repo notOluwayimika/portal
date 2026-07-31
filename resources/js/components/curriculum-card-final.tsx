@@ -95,6 +95,10 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
     const hasBoarding = Boolean(scDetails?.schoolHasBoardingParents);
     const boardingParentName = scDetails?.boardingParent?.full_name;
     const assessmentComment = scDetails?.behavioralAssessments?.[0]?.comment;
+    // Default TRUE when the payload has not arrived yet, so the rows do not
+    // flicker in and then out on a school that shows them.
+    const showHeadOfSchoolComment =
+        scDetails?.showHeadOfSchoolComment !== false;
 
     return (
         <>
@@ -105,6 +109,26 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
             <DetailRow
                 label="Form Tutor Comment:"
                 value={scDetails?.studentCurriculum?.form_teacher_comment}
+            />
+            {/*
+                Primary's senior comment. Independent of the Head of School rows
+                below: an arm prints whichever seats it actually has, and in
+                practice primary has only a coordinator while secondary has only a
+                head. DetailRow hides empty values, so an unassigned arm prints
+                nothing here without a further condition.
+            */}
+            <DetailRow
+                label="Key Stage Coordinator's Name:"
+                value={scDetails?.keyStageCoordinator?.full_name}
+            />
+            <DetailRow
+                label="Key Stage Coordinator's Comment:"
+                value={
+                    scDetails?.keyStageCoordinator
+                        ? scDetails?.studentCurriculum
+                              ?.key_stage_coordinator_comment
+                        : null
+                }
             />
             {hasBoarding ? (
                 <>
@@ -123,14 +147,25 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
                     value={assessmentComment}
                 />
             )}
-            <DetailRow
-                label="Head of School Name:"
-                value={scDetails?.headOfSchool?.full_name}
-            />
-            <DetailRow
-                label="Head of School Comment:"
-                value={scDetails?.studentCurriculum?.head_of_school_comment}
-            />
+            {/*
+                Off for primary, where the Head of School APPROVES with a signature
+                rather than commenting — the signature block below carries them.
+                Defaults true, so secondary is untouched.
+            */}
+            {showHeadOfSchoolComment && (
+                <>
+                    <DetailRow
+                        label="Head of School Name:"
+                        value={scDetails?.headOfSchool?.full_name}
+                    />
+                    <DetailRow
+                        label="Head of School Comment:"
+                        value={
+                            scDetails?.studentCurriculum?.head_of_school_comment
+                        }
+                    />
+                </>
+            )}
         </>
     );
 }
@@ -139,10 +174,12 @@ function SubjectRow({
     r,
     i,
     boundaries,
+    showComment,
 }: {
     r: ResultRow;
     i: number;
     boundaries: GradeBoundary[];
+    showComment: boolean;
 }) {
     const csScIds = r.key?.split(',');
     const csId = csScIds?.[0];
@@ -257,10 +294,12 @@ function SubjectRow({
                     teachers?.[0]?.teacher?.full_name ?? '',
                 )}
             </td>
-            <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
-                {/* comment */}
-                {r.comment}
-            </td>
+            {showComment && (
+                <td className="border border-slate-300 px-1 text-left text-slate-600 tabular-nums">
+                    {/* comment */}
+                    {r.comment}
+                </td>
+            )}
         </tr>
     );
 }
@@ -283,6 +322,9 @@ function NumericCurriculumCardFinal({
     const { auth } = usePage().props;
     const roles = auth.roles;
     const [scDetails, setScDetails] = useState<any | null>(null);
+    // Defaults TRUE while the payload is in flight, so the column does not appear
+    // and then vanish on a school that prints it.
+    const showSubjectComments = scDetails?.showSubjectComments !== false;
     useEffect(() => {
         const getScDetails = async (scId: string) => {
             const response = await axios.get(`/api/student-curricula/${scId}`);
@@ -433,9 +475,17 @@ function NumericCurriculumCardFinal({
                             <th className="border border-slate-300 px-1 text-center font-semibold">
                                 Teacher
                             </th>
-                            <th className="border border-slate-300 px-1 text-center font-semibold">
-                                Comments
-                            </th>
+                            {/*
+                                Primary prints no per-subject teacher comments —
+                                only the class teacher writes on the report. The
+                                column is dropped entirely rather than blanked, so
+                                the remaining columns take the width back.
+                            */}
+                            {showSubjectComments && (
+                                <th className="border border-slate-300 px-1 text-center font-semibold">
+                                    Comments
+                                </th>
+                            )}
                         </tr>
                     </thead>
                     <tbody>
@@ -454,6 +504,7 @@ function NumericCurriculumCardFinal({
                                     r={r}
                                     i={i}
                                     boundaries={boundaries ?? defaultBoundaries}
+                                    showComment={showSubjectComments}
                                 />
                             ))
                         )}
@@ -608,10 +659,15 @@ function CategoricalCurriculumCard({
                             <td className="border border-slate-300 px-2 py-1">
                                 {subject.curriculum_subject?.subject?.name}
                             </td>
+                            {/*
+                                Code alone. The rating's meaning belongs in the
+                                Comments column beside it (below), not doubled up
+                                here — the school asked for "GP" under Evaluation
+                                and "Good Progress" under Comment.
+                            */}
                             <td className="border border-slate-300 px-2 py-1 text-center font-bold">
-                                {subject.own_result?.grading_item
-                                    ? `${subject.own_result.grading_item.code} — ${subject.own_result.grading_item.label}`
-                                    : 'Not assessed'}
+                                {subject.own_result?.grading_item?.code ??
+                                    'Not assessed'}
                             </td>
                             <td className="border border-slate-300 px-2 py-1">
                                 {convertNameToResultFmt(
@@ -619,8 +675,16 @@ function CategoricalCurriculumCard({
                                         ?.teacher?.full_name ?? '',
                                 ) || '—'}
                             </td>
+                            {/*
+                                The rating's DESCRIPTION, not the subject teacher's
+                                remark: Early Years subject teachers do not write
+                                per-subject comments — only the class teacher
+                                comments on the report. The comment a teacher CAN
+                                still enter on the score grid is untouched and
+                                simply not printed here.
+                            */}
                             <td className="border border-slate-300 px-2 py-1">
-                                {subject.comment || '—'}
+                                {subject.own_result?.grading_item?.label ?? '—'}
                             </td>
                         </tr>
                     ))}

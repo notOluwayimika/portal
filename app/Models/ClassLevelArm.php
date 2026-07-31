@@ -67,6 +67,15 @@ class ClassLevelArm extends Model
         return $assignment ? $assignment->teacher : null;
     }
 
+    public function keyStageCoordinator(): ?Teacher
+    {
+        $assignment = $this->teacherAssignments()
+            ->where('role', TeacherAssignmentRoleEnum::KEY_STAGE_COORDINATOR->value)
+            ->first();
+
+        return $assignment ? $assignment->teacher : null;
+    }
+
     public function headOfSchool(): ?Teacher
     {
         $assignment = $this->teacherAssignments()

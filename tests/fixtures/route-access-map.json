@@ -4,6 +4,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -69,6 +70,15 @@
             "form_teacher",
             "head_of_school",
             "super_admin"
+        ]
+    },
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "head_of_school",
+            "super_admin",
+            "teacher"
         ]
     },
     "DELETE /api/curriculum-subjects/{curriculumSubject}/scores": {
@@ -254,6 +264,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -279,6 +290,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -309,6 +321,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -326,6 +339,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -351,6 +365,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -360,6 +375,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -369,6 +385,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -378,6 +395,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -387,6 +405,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -396,6 +415,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -405,6 +425,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -449,6 +470,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -458,6 +480,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -476,6 +499,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -485,6 +509,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -494,6 +519,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -595,6 +621,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -611,6 +638,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -775,6 +803,13 @@
             "super_admin"
         ]
     },
+    "GET /api/key-stage-coordinator/students": {
+        "auth": true,
+        "roles": [
+            "key_stage_coordinator",
+            "super_admin"
+        ]
+    },
     "GET /api/marking-components": {
         "auth": true,
         "roles": [
@@ -846,6 +881,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -855,6 +891,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -1027,6 +1064,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -1288,6 +1326,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1337,6 +1376,13 @@
             "super_admin"
         ]
     },
+    "GET /key-stage-coordinator/comments": {
+        "auth": true,
+        "roles": [
+            "key_stage_coordinator",
+            "super_admin"
+        ]
+    },
     "GET /login": {
         "auth": false,
         "roles": [
@@ -1348,6 +1394,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1413,6 +1460,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1447,6 +1495,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1471,6 +1520,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1488,6 +1538,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1505,6 +1556,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1522,6 +1574,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1653,6 +1706,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1738,6 +1792,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1755,6 +1810,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1772,6 +1828,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1789,6 +1846,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1806,6 +1864,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1823,6 +1882,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1840,6 +1900,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1857,6 +1918,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -1930,6 +1992,15 @@
             "super_admin"
         ]
     },
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/withdraw": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "form_teacher",
+            "head_of_school",
+            "super_admin"
+        ]
+    },
     "PATCH /api/form-teacher/students/{studentCurriculum}/comment": {
         "auth": true,
         "roles": [
@@ -1952,6 +2023,13 @@
             "admin",
             "form_teacher",
             "head_of_school",
+            "super_admin"
+        ]
+    },
+    "PATCH /api/key-stage-coordinator/students/{studentCurriculum}/comment": {
+        "auth": true,
+        "roles": [
+            "key_stage_coordinator",
             "super_admin"
         ]
     },
@@ -2047,6 +2125,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2058,6 +2137,7 @@
         "roles": [
             "admin",
             "head_of_school",
+            "key_stage_coordinator",
             "super_admin",
             "teacher"
         ]
@@ -2379,6 +2459,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2396,6 +2477,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2577,6 +2659,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2765,6 +2848,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2788,6 +2872,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2805,6 +2890,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2822,6 +2908,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2847,6 +2934,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2896,6 +2984,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2913,6 +3002,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2930,6 +3020,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2947,6 +3038,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -2964,6 +3056,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -3192,6 +3285,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -3216,6 +3310,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",
@@ -3264,6 +3359,7 @@
             "form_teacher",
             "guardian",
             "head_of_school",
+            "key_stage_coordinator",
             "principal",
             "registrar",
             "super_admin",

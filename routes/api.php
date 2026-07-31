@@ -345,3 +345,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:assessment.record'])->g
 Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_form_teacher_comments'])->group(function () {
     require __DIR__.'/endpoints/form-teacher.php';
 });
+
+// Primary's senior comment, mirroring the form-teacher and head-of-school groups
+// above: one permission, one prefix, the same shape of controller.
+Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_key_stage_coordinator_comments'])->group(function () {
+    require __DIR__.'/endpoints/key-stage-coordinator.php';
+});

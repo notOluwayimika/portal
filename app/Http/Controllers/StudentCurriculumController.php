@@ -12,10 +12,12 @@ use App\Http\Resources\ScoreResource;
 use App\Http\Resources\StudentCurriculumResource;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\School;
 use App\Models\Score;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Services\CurriculumEnrollmentService;
+use App\Support\ActiveSchool;
 use App\Support\Authz;
 use App\Support\Boarding;
 use Illuminate\Http\JsonResponse;
@@ -31,10 +33,15 @@ class StudentCurriculumController extends Controller
         $formTeacher = $studentCurriculum->formTeacher();
         $boardingParent = $studentCurriculum->boardingParent();
         $headOfSchool = $studentCurriculum->headOfSchool();
+        $keyStageCoordinator = $studentCurriculum->keyStageCoordinator();
         $behavioralAssessments = $studentCurriculum->behavioralAssessments;
         $psychomotorSkills = $studentCurriculum->psychomotorSkills()
             ->where('assessment_term_id', $studentCurriculum->curriculum?->term_id)
             ->get();
+
+        // firstWhere, not find(): Larastan types find(int) as non-null here, so the
+        // `?->` below reads as unnecessary to it while still being the honest guard.
+        $school = School::query()->whereKey(ActiveSchool::id())->first();
 
         return response()->json([
             'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
@@ -51,6 +58,17 @@ class StudentCurriculumController extends Controller
             // name. Without the school-level answer the sheet attributed a day
             // school's form-tutor comment to a boarding parent who does not exist.
             'schoolHasBoardingParents' => Boarding::schoolHasParents(),
+            // Primary's equivalent of the Head of School. Both keys are always
+            // present and either may be null: an arm prints whichever seats it
+            // actually has, rather than the template guessing from the school.
+            'keyStageCoordinator' => $keyStageCoordinator,
+            // Per-school result-template settings. The two schools share this
+            // component and disagree about what belongs on the page, so the
+            // difference is data rather than a branch on school id. Defaults are
+            // true, so a school that has never been configured prints what it
+            // always printed.
+            'showSubjectComments' => $school === null || (bool) $school->show_subject_comments_on_result,
+            'showHeadOfSchoolComment' => $school === null || (bool) $school->show_head_of_school_comment_on_result,
         ]);
     }
 

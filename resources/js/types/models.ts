@@ -292,7 +292,8 @@ export interface Teacher {
 export type TeacherAssignmentRole =
     | 'boarding_parent'
     | 'form_teacher'
-    | 'head_of_school';
+    | 'head_of_school'
+    | 'key_stage_coordinator';
 
 export interface ClassLevelArmTeacher {
     id: string;

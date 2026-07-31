@@ -579,4 +579,10 @@ Route::middleware(['auth', 'tenant', 'permission:manage_head_of_school_comments'
     })->name('head-of-school.comments');
 });
 
+Route::middleware(['auth', 'tenant', 'permission:manage_key_stage_coordinator_comments'])->group(function () {
+    Route::get('key-stage-coordinator/comments', function () {
+        return Inertia::render('key-stage-coordinator/comments/index');
+    })->name('key-stage-coordinator.comments');
+});
+
 require __DIR__.'/settings.php';

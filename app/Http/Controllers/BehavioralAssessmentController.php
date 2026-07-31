@@ -13,6 +13,7 @@ use App\Http\Resources\StudentResource;
 use App\Models\BehavioralAssessment;
 use App\Models\StudentCurriculum;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Response;
 
 class BehavioralAssessmentController extends Controller
@@ -25,7 +26,8 @@ class BehavioralAssessmentController extends Controller
 
         $term = $this->resolveTermFilter($request);
 
-        $rows = $this->boardingParentVisibleStudentCurricula($term)->map(function (StudentCurriculum $studentCurriculum) {
+        /** @var Collection<int, array<string, mixed>> $rows */
+        $rows = $this->boardingParentVisibleStudentCurricula($term)->map(function (StudentCurriculum $studentCurriculum): array {
             $classLevelArm = $studentCurriculum->curriculum ? $studentCurriculum->curriculum->classLevelArm : null;
             $assessment = $studentCurriculum->behavioralAssessments->first();
             $psychomotor = $studentCurriculum->psychomotorSkills->first();

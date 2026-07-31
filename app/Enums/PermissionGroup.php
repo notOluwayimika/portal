@@ -180,6 +180,7 @@ enum PermissionGroup: string
                 Permission::MANAGE_TEACHER_ASSIGNMENTS,
                 Permission::MANAGE_FORM_TEACHER_COMMENTS,
                 Permission::MANAGE_HEAD_OF_SCHOOL_COMMENTS,
+                Permission::MANAGE_KEY_STAGE_COORDINATOR_COMMENTS,
                 Permission::VIEW_BEHAVIORAL_ASSESSMENTS,
                 Permission::CREATE_BEHAVIORAL_ASSESSMENTS,
                 Permission::EDIT_BEHAVIORAL_ASSESSMENTS,

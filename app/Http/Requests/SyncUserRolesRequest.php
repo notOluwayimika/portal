@@ -32,6 +32,7 @@ class SyncUserRolesRequest extends FormRequest
         'guardian',
         'boarding_parent',
         'form_teacher',
+        'key_stage_coordinator',
         'registrar',
     ];
 

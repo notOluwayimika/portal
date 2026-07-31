@@ -114,6 +114,19 @@ const boardingParentNavGroups: NavGroup[] = [
     },
 ];
 
+const keyStageCoordinatorNavGroups: NavGroup[] = [
+    {
+        label: 'Key Stage Coordinator',
+        items: [
+            {
+                title: 'Student Comments',
+                href: '/key-stage-coordinator/comments',
+                icon: MessageSquare,
+            },
+        ],
+    },
+];
+
 const formTeacherNavGroups: NavGroup[] = [
     {
         label: 'Form Teacher',
@@ -390,6 +403,10 @@ export function AppSidebar() {
 
         if (roles.includes('boarding_parent')) {
             groups.push(...boardingParentNavGroups);
+        }
+
+        if (roles.includes('key_stage_coordinator')) {
+            groups.push(...keyStageCoordinatorNavGroups);
         }
 
         if (roles.includes('form_teacher')) {

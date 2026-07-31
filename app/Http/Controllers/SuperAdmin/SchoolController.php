@@ -38,6 +38,9 @@ class SchoolController extends Controller
                 'name_on_result' => $s->name_on_result,
                 'fallback_signature_url' => $s->fallbackSignatureFile?->url,
                 'result_approver_name' => $s->result_approver_name,
+                'result_approver_title' => $s->result_approver_title,
+                'show_subject_comments_on_result' => (bool) $s->show_subject_comments_on_result,
+                'show_head_of_school_comment_on_result' => (bool) $s->show_head_of_school_comment_on_result,
                 'active' => (bool) $s->active,
                 'students_count' => $s->students_count,
                 'teachers_count' => $s->teachers_count,
@@ -56,6 +59,9 @@ class SchoolController extends Controller
             'website' => ['nullable', 'url', 'max:255'],
             'name_on_result' => ['nullable', 'string', 'max:255'],
             'result_approver_name' => ['nullable', 'string', 'max:255'],
+            'result_approver_title' => ['nullable', 'string', 'max:255'],
+            'show_subject_comments_on_result' => ['boolean'],
+            'show_head_of_school_comment_on_result' => ['boolean'],
         ]);
 
         School::create([
@@ -77,6 +83,9 @@ class SchoolController extends Controller
             'website' => ['nullable', 'url', 'max:255'],
             'name_on_result' => ['nullable', 'string', 'max:255'],
             'result_approver_name' => ['nullable', 'string', 'max:255'],
+            'result_approver_title' => ['nullable', 'string', 'max:255'],
+            'show_subject_comments_on_result' => ['boolean'],
+            'show_head_of_school_comment_on_result' => ['boolean'],
             'active' => ['boolean'],
         ]);
 

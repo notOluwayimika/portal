@@ -47,6 +47,12 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "DELETE /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:score.manage"
+    ],
     "DELETE /api/curriculum-subjects/{curriculumSubject}/scores": [
         "api",
         "auth:sanctum",
@@ -502,6 +508,12 @@
         "tenant",
         "permission:admin_area.access"
     ],
+    "GET /api/key-stage-coordinator/students": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:manage_key_stage_coordinator_comments"
+    ],
     "GET /api/marking-components": [
         "api",
         "auth:sanctum",
@@ -871,6 +883,12 @@
         "tenant",
         "permission:manage_head_of_school_comments"
     ],
+    "GET /key-stage-coordinator/comments": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:manage_key_stage_coordinator_comments"
+    ],
     "GET /login": [
         "web",
         "guest:web"
@@ -1170,6 +1188,12 @@
         "tenant",
         "permission:academic_setup.manage"
     ],
+    "PATCH /api/curriculum-subjects/{curriculumSubject}/withdraw": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:academic_setup.manage"
+    ],
     "PATCH /api/form-teacher/students/{studentCurriculum}/comment": [
         "api",
         "auth:sanctum",
@@ -1187,6 +1211,12 @@
         "auth:sanctum",
         "tenant",
         "permission:academic_setup.manage"
+    ],
+    "PATCH /api/key-stage-coordinator/students/{studentCurriculum}/comment": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:manage_key_stage_coordinator_comments"
     ],
     "PATCH /api/student-curricula/{studentCurriculum}": [
         "api",

@@ -584,6 +584,68 @@ class CurriculumSubjectController extends Controller
         ]);
     }
 
+    /**
+     * DELETE /api/curriculum-subjects/{curriculumSubject}/categorical-results/{student}
+     *
+     * The categorical counterpart of clearScore(). A rating could be OVERWRITTEN
+     * but never removed: the grid's "Select rating" placeholder is `disabled`, so
+     * once any rating was picked there was no way back to "not assessed" — a
+     * mis-click on the wrong pupil was permanent, and the sheet then reported a
+     * rating nobody meant to give.
+     *
+     * Deleting the row rather than nulling `grading_scheme_item_id`: absent means
+     * NOT ASSESSED, and that is what an absent `student_results` row already means
+     * everywhere else (the numeric path deletes too, and the readiness check tests
+     * for the row's existence). A row kept with a null item would read as assessed
+     * to every one of those callers.
+     *
+     * Guards mirror assignCategoricalResult exactly — same curriculum-mode check,
+     * same lock, same enrolment test — because clearing is the same act as setting
+     * and must not be reachable where setting is refused.
+     */
+    public function clearCategoricalResult(CurriculumSubject $curriculumSubject, Student $student): JsonResponse
+    {
+        $curriculumSubject->loadMissing('curriculum', 'resultStatus');
+
+        // Typed local, the same idiom clearScore() uses: the relation is not
+        // generically typed, so calling the method straight off it resolves to
+        // Model::usesCategoricalGrading() and trips Larastan's baselined
+        // ignore-count for that pattern.
+        /** @var Curriculum|null $curriculum */
+        $curriculum = $curriculumSubject->curriculum;
+
+        if ($curriculum === null || ! $curriculum->usesCategoricalGrading()) {
+            return response()->json(['error' => 'This curriculum uses numerical grading.'], 422);
+        }
+
+        // Read as a column, not through the relation: a property access on an
+        // untyped relation resolves to Model::$status and trips Larastan's
+        // baselined ignore-count for that pattern.
+        $status = SubjectResultStatus::where('curriculum_subject_id', $curriculumSubject->id)
+            ->value('status');
+
+        if (in_array($status, ['submitted', 'approved'], true)) {
+            return response()->json(['error' => 'Results are locked. Contact an administrator.'], 422);
+        }
+
+        $isEnrolled = $curriculumSubject->studentAssignments()
+            ->where('status', 'active')
+            ->whereHas('studentCurriculum', fn ($query) => $query->where('student_id', $student->id))
+            ->exists();
+
+        if (! $isEnrolled) {
+            return response()->json(['error' => 'Student is not enrolled in this subject.'], 422);
+        }
+
+        // Idempotent: clearing an already-empty cell is a no-op, matching
+        // clearScore's `$score?->delete()`.
+        StudentResult::where('student_id', $student->id)
+            ->where('curriculum_subject_id', $curriculumSubject->id)
+            ->delete();
+
+        return response()->json(null, 204);
+    }
+
     public function submit(Request $request, CurriculumSubject $curriculumSubject): JsonResponse
     {
         $user = $request->user();

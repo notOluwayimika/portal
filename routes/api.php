@@ -295,6 +295,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
     // could edit the academic structure could. `score.manage` is the ability that matches the act.
     Route::put('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'assignCategoricalResult'])
         ->withoutScopedBindings();
+
+    // Clearing a rating is a DELETE, for the same reason clearing a score is one two
+    // lines up: the grid's placeholder option is disabled, so a rating could only ever
+    // be overwritten and "not assessed" was unreachable once anything was picked. Same
+    // group, so it inherits the same ability as setting the rating; no new permission.
+    Route::delete('/curriculum-subjects/{curriculumSubject:uuid}/categorical-results/{student:uuid}', [CurriculumSubjectController::class, 'clearCategoricalResult'])
+        ->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {

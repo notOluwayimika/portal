@@ -120,3 +120,24 @@ uppercased (`"usd"` is not a typo to repair).
 further sites build Money from unvalidated request currency and carry the same 500 —
 `GenerateInvoiceRequest` (`lines.*.currency`) and `FeeScheduleRequest` (`items.*.currency`) — reported
 here, deliberately left for their own commit. On the record, not in someone's head.
+
+### Addendum 2 (f293358+1) — the value-object population has a SECOND failure mode
+
+The three nested/nested-ish currency fields the first addendum reported as un-fixed are now closed
+(`lines.*.currency`, `items.*.currency`, `value_currency`) with the same regex. Two of them 500'd
+before a write. The third — `value_currency` on a discount-policy change — revealed a **second, worse
+failure mode of the value-object population**: a shape `Money` would reject can be **persisted** when
+the column is not cast through `Money`, and then fails far from its cause.
+
+`DiscountPolicy.value_currency` / `DiscountPolicyChange.value_currency` are raw strings (neither model
+casts them through `Money`). So `value_currency:"ngn"` passed validation, passed `terms_shape` (which
+only tests NULL/NOT NULL), and was written — and copied into `finance_discount_policies` at approval —
+denominated in a currency no `Money` will ever equal (`Money::plus/minus/equals` throw on mismatch).
+Both rows are append-only (undeletable). A 500 is loud and stops the write; this was silent and
+completed it — worse. The regex refuses it at the edge (proof asserts no row is created), but the cast
+gap remains: **adding a `MoneyCast` to `DiscountPolicy`/`DiscountPolicyChange` is deliberately NOT done
+here** (its own migration questions; the discount slice's call).
+
+**Still un-swept:** every column holding a value-object-shaped string that is **not** cast through that
+value object. That set has not been enumerated — the two named above are the found instances, not a
+proof there are no others.

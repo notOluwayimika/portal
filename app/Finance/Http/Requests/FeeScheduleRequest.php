@@ -31,7 +31,9 @@ class FeeScheduleRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.description' => ['required', 'string', 'max:255'],
             'items.*.amount_minor' => ['required', 'integer', 'min:1'],
-            'items.*.currency' => ['sometimes', 'string', 'size:3'],
+            // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not CreateFeeSchedule's
+            // Money::fromKobo → InvalidArgumentException → 500 inside the transaction (f293358 finish).
+            'items.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'items.*.is_mandatory' => ['sometimes', 'boolean'],
             'items.*.is_discountable' => ['sometimes', 'boolean'],
             'items.*.sort_order' => ['sometimes', 'integer', 'min:0'],

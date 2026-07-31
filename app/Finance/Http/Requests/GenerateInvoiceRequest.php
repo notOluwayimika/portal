@@ -43,7 +43,9 @@ class GenerateInvoiceRequest extends FormRequest
             'lines.*.percent' => ['sometimes', 'integer', 'between:1,100', 'prohibits:lines.*.amount_minor'],
             'lines.*.kind' => ['sometimes', Rule::enum(InvoiceLineKind::class)],
             'lines.*.note' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'lines.*.currency' => ['sometimes', 'string', 'size:3'],
+            // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not Money::fromKobo's
+            // InvalidArgumentException → 500 inside lineSpecs() one frame later (f293358 finish).
+            'lines.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'lines.*.fee_item_id' => ['sometimes', 'nullable', 'integer'],
             // The discount policy a REDUCTION line cites (S1 3b). A LOOKUP id, not the wire's to validate
             // beyond shape — the DB reduction_guard is the authority (active + not approval-requiring + same

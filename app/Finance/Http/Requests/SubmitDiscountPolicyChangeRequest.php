@@ -33,7 +33,11 @@ class SubmitDiscountPolicyChangeRequest extends FormRequest
             // amount XOR percent, refused here so a cross combo is a 422, not the DB terms_shape CHECK's
             // 3819 → 500 (backstop-reachability audit). The CHECK stays as the backstop.
             'value_minor' => ['required_if:basis,amount', 'prohibited_if:basis,percent', 'integer', 'min:1'],
-            'value_currency' => ['required_if:basis,amount', 'prohibited_if:basis,percent', 'string', 'size:3'],
+            // regex mirrors Money's ISO-4217 invariant. WORSE than the 500 siblings: value_currency is NOT cast
+            // through Money on DiscountPolicyChange/DiscountPolicy, so a bad shape here does not 500 — it PERSISTS
+            // (append-only, undeletable) and fails far later at whatever applies the policy. Refuse it at the edge.
+            // required_if/prohibited_if kept first, in order (prohibited_if keeps terms_shape unreachable, faa868e).
+            'value_currency' => ['required_if:basis,amount', 'prohibited_if:basis,percent', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'percent' => ['required_if:basis,percent', 'prohibited_if:basis,amount', 'integer', 'between:1,100'],
             'requires_approval' => ['sometimes', 'boolean'],
         ];

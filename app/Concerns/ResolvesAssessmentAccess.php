@@ -41,6 +41,11 @@ trait ResolvesAssessmentAccess
             return new Collection;
         }
 
+        // Larastan false positive on `classLevel` — see the note in
+        // BillableEnrollmentAdapter::findByUuid. The relation is real; its siblings
+        // `arm` and `stream` in this same array resolve. Self-deletes when Larastan
+        // stops emitting it (reportUnmatchedIgnoredErrors).
+        // @phpstan-ignore larastan.relationExistence
         return StudentCurriculum::query()
             ->whereIn('status', $this->enrollmentStatusesFor($term))
             ->whereHas('curriculum', fn ($query) => $query->where('term_id', $term->id))

@@ -50,7 +50,7 @@ class School extends Model
         return $this->hasMany(AcademicSession::class);
     }
 
-    /** @return HasManyThrough<Term, $this> */
+    /** @return HasManyThrough<Term, AcademicSession, $this> */
     public function terms(): HasManyThrough
     {
         return $this->hasManyThrough(Term::class, AcademicSession::class);

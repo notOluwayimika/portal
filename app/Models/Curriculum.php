@@ -83,7 +83,7 @@ class Curriculum extends Model
         return $this->belongsTo(Term::class);
     }
 
-    /** @return HasOneThrough<AcademicSession, $this> */
+    /** @return HasOneThrough<AcademicSession, Term, $this> */
     public function academicSession(): HasOneThrough
     {
         return $this->hasOneThrough(AcademicSession::class, Term::class, 'id', 'id', 'term_id', 'academic_session_id');

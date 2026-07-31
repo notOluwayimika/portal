@@ -44,7 +44,7 @@ class AcademicSession extends Model
         return $this->hasMany(Term::class);
     }
 
-    /** @return HasManyThrough<Curriculum, $this> */
+    /** @return HasManyThrough<Curriculum, Term, $this> */
     public function curricula(): HasManyThrough
     {
         return $this->hasManyThrough(Curriculum::class, Term::class);

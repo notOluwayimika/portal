@@ -3,7 +3,14 @@ import axios from 'axios';
 import { CheckCircle, Eye, MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import type { CommentFilterState } from '@/components/comment-filters';
+import {
+    applyCommentFilters,
+    CommentFilters,
+    emptyCommentFilters,
+} from '@/components/comment-filters';
 import { CurriculumCardFinal } from '@/components/curriculum-card-final';
+import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +22,6 @@ import {
 } from '@/components/ui/dialog';
 import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
-import { TermFilterSelect } from '@/components/term-filter-select';
 import { useInitials } from '@/hooks/use-initials';
 import type { GradeBoundary, Student, StudentCurriculum } from '@/types/models';
 
@@ -23,6 +29,8 @@ interface CommentRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
+    class_level?: { id: string; name: string } | null;
+    class_level_arm?: { id: string; name: string } | null;
     comment: string | null;
 }
 
@@ -42,6 +50,8 @@ export default function HeadOfSchoolCommentsIndex() {
     const [modalData, setModalData] = useState<ModalData | null>(null);
     const [modalLoading, setModalLoading] = useState(false);
     const [termId, setTermId] = useState('');
+    const [filters, setFilters] =
+        useState<CommentFilterState>(emptyCommentFilters);
     const [ftComment, setFtComment] = useState('');
     const [bpComment, setBpComment] = useState('');
 
@@ -74,10 +84,18 @@ export default function HeadOfSchoolCommentsIndex() {
         fetchData();
     }, [savingId, termId]);
 
+    // Filter on the LIVE comment state so a student leaves "Not commented" the
+    // moment their comment saves, rather than on the next reload.
+    const visibleRows = applyCommentFilters(
+        rows,
+        filters,
+        (row) => (comments[row.student_curriculum_id] ?? '').trim() !== '',
+    );
+
     const grouped = useMemo(() => {
         const map = new Map<string, CommentRow[]>();
 
-        for (const row of rows) {
+        for (const row of visibleRows) {
             const key = row.class_name ?? 'Unassigned';
 
             if (!map.has(key)) {
@@ -88,7 +106,7 @@ export default function HeadOfSchoolCommentsIndex() {
         }
 
         return Array.from(map.entries());
-    }, [rows]);
+    }, [visibleRows]);
 
     async function openModal(row: CommentRow) {
         setSelectedRow(row);
@@ -175,13 +193,22 @@ export default function HeadOfSchoolCommentsIndex() {
                             Student Comments
                         </h1>
                         <p className="mt-1 text-sm text-gray-500">
-                            Write the head of school comment for students
-                            across your supervised classes for the selected
-                            term.
+                            Write the head of school comment for students across
+                            your supervised classes for the selected term.
                         </p>
                     </div>
                     <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
+
+                {rows.length > 0 && (
+                    <CommentFilters
+                        rows={rows}
+                        value={filters}
+                        onChange={setFilters}
+                        doneLabel="Commented"
+                        pendingLabel="Not commented"
+                    />
+                )}
 
                 {loading ? (
                     <div className="flex items-center justify-center py-24">
@@ -229,7 +256,7 @@ export default function HeadOfSchoolCommentsIndex() {
                                                 {row.student.first_name}{' '}
                                                 {row.student.last_name}{' '}
                                                 {row.comment && (
-                                                    <CheckCircle className='text-green-500 inline-block size-4' />
+                                                    <CheckCircle className="inline-block size-4 text-green-500" />
                                                 )}
                                             </p>
                                             <p className="text-xs text-gray-400">

@@ -214,6 +214,27 @@ it('exposes the comment on the payload the result card actually reads', function
         ->toBe('Reads fluently.');
 });
 
+/**
+ * The comment and assessment screens filter by class level and arm CLIENT-SIDE, so
+ * the rows have to carry identifiers. They previously carried only `class_name`, a
+ * formatted label, which cannot be filtered on without parsing it.
+ */
+it('ships class level and arm identifiers on each row for the filters', function () {
+    $w = ksc_world();
+
+    $response = $this->actingAs($w['user'])
+        ->withSession(['school_id' => $w['school']->id])
+        ->getJson('/api/key-stage-coordinator/students')
+        ->assertOk();
+
+    $row = $response->json('data.0');
+
+    expect($row['class_name'])->not->toBeNull()
+        ->and($row['class_level']['id'])->toBe($w['mine']->classLevel->uuid)
+        ->and($row['class_level']['name'])->toBe('Year 3')
+        ->and($row['class_level_arm']['id'])->toBe($w['mine']->uuid);
+});
+
 it('defaults the result-template flags so existing schools print what they always printed', function () {
     $school = School::factory()->create();
 

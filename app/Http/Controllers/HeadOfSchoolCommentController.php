@@ -61,7 +61,7 @@ class HeadOfSchoolCommentController extends Controller
             return [
                 'student_curriculum_id' => $studentCurriculum->uuid,
                 'student' => new StudentResource($studentCurriculum->student),
-                'class_name' => $classLevelArm ? $this->classLevelArmName($classLevelArm) : null,
+                ...$this->classLevelArmIdentity($classLevelArm),
                 'comment' => $studentCurriculum->head_of_school_comment,
             ];
         });

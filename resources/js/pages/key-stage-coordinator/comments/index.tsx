@@ -3,6 +3,12 @@ import axios from 'axios';
 import { CheckCircle, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import type { CommentFilterState } from '@/components/comment-filters';
+import {
+    applyCommentFilters,
+    CommentFilters,
+    emptyCommentFilters,
+} from '@/components/comment-filters';
 import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +32,8 @@ interface CommentRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
+    class_level?: { id: string; name: string } | null;
+    class_level_arm?: { id: string; name: string } | null;
     comment: string | null;
 }
 
@@ -36,6 +44,8 @@ export default function KeyStageCoordinatorCommentsIndex() {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [termId, setTermId] = useState('');
+    const [filters, setFilters] =
+        useState<CommentFilterState>(emptyCommentFilters);
 
     useEffect(() => {
         async function fetchData() {
@@ -66,6 +76,14 @@ export default function KeyStageCoordinatorCommentsIndex() {
 
         fetchData();
     }, [termId]);
+
+    // Filter on the LIVE comment state, not the value the row arrived with, so a
+    // student leaves the "Not commented" list as soon as their comment is saved.
+    const visibleRows = applyCommentFilters(
+        rows,
+        filters,
+        (row) => (comments[row.student_curriculum_id] ?? '').trim() !== '',
+    );
 
     async function handleSave(row: CommentRow) {
         setSavingId(row.student_curriculum_id);
@@ -103,6 +121,16 @@ export default function KeyStageCoordinatorCommentsIndex() {
                     <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
 
+                {rows.length > 0 && (
+                    <CommentFilters
+                        rows={rows}
+                        value={filters}
+                        onChange={setFilters}
+                        doneLabel="Commented"
+                        pendingLabel="Not commented"
+                    />
+                )}
+
                 {loading ? (
                     <div className="flex items-center justify-center py-24">
                         <Spinner className="size-6 text-gray-400" />
@@ -113,10 +141,16 @@ export default function KeyStageCoordinatorCommentsIndex() {
                         title="No students found"
                         description="You don't have a Key Stage Coordinator assignment for the current term yet, or no students are currently enrolled in your assigned classes."
                     />
+                ) : visibleRows.length === 0 ? (
+                    <EmptyState
+                        icon={<MessageSquare className="h-8 w-8" />}
+                        title="No students match these filters"
+                        description="Clear or widen the filters to see the rest of your students."
+                    />
                 ) : (
                     <Card>
                         <CardContent className="divide-y divide-gray-100">
-                            {rows.map((row) => (
+                            {visibleRows.map((row) => (
                                 <div
                                     key={row.student_curriculum_id}
                                     className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start"

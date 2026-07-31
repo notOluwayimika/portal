@@ -35,7 +35,7 @@ class BehavioralAssessmentController extends Controller
             return [
                 'student_curriculum_id' => $studentCurriculum->uuid,
                 'student' => new StudentResource($studentCurriculum->student),
-                'class_name' => $classLevelArm ? $this->classLevelArmName($classLevelArm) : null,
+                ...$this->classLevelArmIdentity($classLevelArm),
                 'assessment' => $assessment ? new BehavioralAssessmentResource($assessment) : null,
                 'uses_categorical_grading' => (bool) $studentCurriculum->curriculum?->usesCategoricalGrading(),
                 'psychomotor' => $psychomotor ? new PsychomotorSkillResource($psychomotor) : null,

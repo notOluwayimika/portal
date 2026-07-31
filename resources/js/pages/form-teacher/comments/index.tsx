@@ -3,6 +3,12 @@ import axios from 'axios';
 import { CheckCircle, ClipboardCheck, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import type { CommentFilterState } from '@/components/comment-filters';
+import {
+    applyCommentFilters,
+    CommentFilters,
+    emptyCommentFilters,
+} from '@/components/comment-filters';
 import { TermFilterSelect } from '@/components/term-filter-select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -12,13 +18,15 @@ import EmptyState from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/hooks/use-initials';
 import type { Student } from '@/types/models';
-import { AssessmentModal  } from './assessment-modal';
-import type {AssessableRow} from './assessment-modal';
+import { AssessmentModal } from './assessment-modal';
+import type { AssessableRow } from './assessment-modal';
 
 interface CommentRow extends AssessableRow {
     student_curriculum_id: string;
     student: Student;
     class_name: string | null;
+    class_level?: { id: string; name: string } | null;
+    class_level_arm?: { id: string; name: string } | null;
     comment: string | null;
 }
 
@@ -31,6 +39,8 @@ export default function FormTeacherCommentsIndex() {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [termId, setTermId] = useState('');
+    const [filters, setFilters] =
+        useState<CommentFilterState>(emptyCommentFilters);
 
     useEffect(() => {
         async function fetchData() {
@@ -40,12 +50,22 @@ export default function FormTeacherCommentsIndex() {
                 const res = await axios.get('/api/form-teacher/students', {
                     params: termId ? { term_id: termId } : {},
                 });
-                const payload = res.data.data ?? { can_assess: false, rows: [] };
+                const payload = res.data.data ?? {
+                    can_assess: false,
+                    rows: [],
+                };
                 const data: CommentRow[] = payload.rows ?? [];
 
                 setCanAssess(!!payload.can_assess);
                 setRows(data);
-                setComments(Object.fromEntries(data.map((row) => [row.student_curriculum_id, row.comment ?? ''])));
+                setComments(
+                    Object.fromEntries(
+                        data.map((row) => [
+                            row.student_curriculum_id,
+                            row.comment ?? '',
+                        ]),
+                    ),
+                );
             } catch {
                 toast.error('Failed to load students.');
             } finally {
@@ -56,18 +76,32 @@ export default function FormTeacherCommentsIndex() {
         fetchData();
     }, [termId]);
 
+    // Filtered on the LIVE comment state, so saving moves a student between the
+    // "Commented" and "Not commented" views immediately.
+    const visibleRows = applyCommentFilters(
+        rows,
+        filters,
+        (row) => (comments[row.student_curriculum_id] ?? '').trim() !== '',
+    );
+
     const assessingRow = assessingId
-        ? rows.find((row) => row.student_curriculum_id === assessingId) ?? null
+        ? (rows.find((row) => row.student_curriculum_id === assessingId) ??
+          null)
         : null;
 
     async function handleSave(row: CommentRow) {
         setSavingId(row.student_curriculum_id);
 
         try {
-            await axios.patch(`/api/form-teacher/students/${row.student_curriculum_id}/comment`, {
-                comment: comments[row.student_curriculum_id] || null,
-            });
-            toast.success(`Saved comment for ${row.student.first_name} ${row.student.last_name}.`);
+            await axios.patch(
+                `/api/form-teacher/students/${row.student_curriculum_id}/comment`,
+                {
+                    comment: comments[row.student_curriculum_id] || null,
+                },
+            );
+            toast.success(
+                `Saved comment for ${row.student.first_name} ${row.student.last_name}.`,
+            );
         } catch {
             toast.error('Failed to save comment.');
         } finally {
@@ -81,13 +115,26 @@ export default function FormTeacherCommentsIndex() {
             <div className="space-y-6 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900">Student Comments</h1>
+                        <h1 className="text-xl font-semibold text-gray-900">
+                            Student Comments
+                        </h1>
                         <p className="mt-1 text-sm text-gray-500">
-                            Write the form teacher comment for each student in your class for the selected term.
+                            Write the form teacher comment for each student in
+                            your class for the selected term.
                         </p>
                     </div>
                     <TermFilterSelect value={termId} onChange={setTermId} />
                 </div>
+
+                {rows.length > 0 && (
+                    <CommentFilters
+                        rows={rows}
+                        value={filters}
+                        onChange={setFilters}
+                        doneLabel="Commented"
+                        pendingLabel="Not commented"
+                    />
+                )}
 
                 {loading ? (
                     <div className="flex items-center justify-center py-24">
@@ -102,22 +149,43 @@ export default function FormTeacherCommentsIndex() {
                 ) : (
                     <Card>
                         <CardContent className="divide-y divide-gray-100">
-                            {rows.map((row) => (
-                                <div key={row.student_curriculum_id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
+                            {visibleRows.map((row) => (
+                                <div
+                                    key={row.student_curriculum_id}
+                                    className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start"
+                                >
                                     <div className="flex items-center gap-3 sm:w-64 sm:shrink-0">
                                         <Avatar>
-                                            <AvatarImage src={row.student.photo ?? undefined} />
+                                            <AvatarImage
+                                                src={
+                                                    row.student.photo ??
+                                                    undefined
+                                                }
+                                            />
                                             <AvatarFallback className="bg-indigo-100 text-sm font-semibold text-indigo-700">
-                                                {getInitials(`${row.student.first_name} ${row.student.last_name}`)}
+                                                {getInitials(
+                                                    `${row.student.first_name} ${row.student.last_name}`,
+                                                )}
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="min-w-0">
                                             <p className="truncate text-sm font-medium text-gray-900">
-                                                {row.student.first_name} {row.student.last_name} {comments[row.student_curriculum_id] && <CheckCircle className='text-green-500 inline-block size-4' />}
+                                                {row.student.first_name}{' '}
+                                                {row.student.last_name}{' '}
+                                                {comments[
+                                                    row.student_curriculum_id
+                                                ] && (
+                                                    <CheckCircle className="inline-block size-4 text-green-500" />
+                                                )}
                                             </p>
-                                            <p className="text-xs text-gray-400">{row.student.admission_number}</p>
+                                            <p className="text-xs text-gray-400">
+                                                {row.student.admission_number}
+                                            </p>
                                             {row.class_name && (
-                                                <Badge variant="outline" className="mt-1">
+                                                <Badge
+                                                    variant="outline"
+                                                    className="mt-1"
+                                                >
                                                     {row.class_name}
                                                 </Badge>
                                             )}
@@ -125,9 +193,17 @@ export default function FormTeacherCommentsIndex() {
                                     </div>
                                     <div className="flex-1 space-y-2">
                                         <textarea
-                                            value={comments[row.student_curriculum_id] ?? ''}
+                                            value={
+                                                comments[
+                                                    row.student_curriculum_id
+                                                ] ?? ''
+                                            }
                                             onChange={(e) =>
-                                                setComments((prev) => ({ ...prev, [row.student_curriculum_id]: e.target.value }))
+                                                setComments((prev) => ({
+                                                    ...prev,
+                                                    [row.student_curriculum_id]:
+                                                        e.target.value,
+                                                }))
                                             }
                                             rows={2}
                                             placeholder="Write a comment for this student…"
@@ -138,20 +214,32 @@ export default function FormTeacherCommentsIndex() {
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
-                                                    onClick={() => setAssessingId(row.student_curriculum_id)}
+                                                    onClick={() =>
+                                                        setAssessingId(
+                                                            row.student_curriculum_id,
+                                                        )
+                                                    }
                                                 >
                                                     <ClipboardCheck
                                                         className={`size-4 ${row.assessment ? 'text-green-500' : ''}`}
                                                     />
-                                                    {row.assessment ? 'Edit Assessment' : 'Assessment'}
+                                                    {row.assessment
+                                                        ? 'Edit Assessment'
+                                                        : 'Assessment'}
                                                 </Button>
                                             )}
                                             <Button
                                                 size="sm"
                                                 onClick={() => handleSave(row)}
-                                                disabled={savingId === row.student_curriculum_id}
+                                                disabled={
+                                                    savingId ===
+                                                    row.student_curriculum_id
+                                                }
                                             >
-                                                {savingId === row.student_curriculum_id && <Spinner className="size-4" />}
+                                                {savingId ===
+                                                    row.student_curriculum_id && (
+                                                    <Spinner className="size-4" />
+                                                )}
                                                 Save
                                             </Button>
                                         </div>
@@ -172,7 +260,8 @@ export default function FormTeacherCommentsIndex() {
                     onSaved={(updates) =>
                         setRows((prev) =>
                             prev.map((row) =>
-                                row.student_curriculum_id === assessingRow.student_curriculum_id
+                                row.student_curriculum_id ===
+                                assessingRow.student_curriculum_id
                                     ? { ...row, ...updates }
                                     : row,
                             ),

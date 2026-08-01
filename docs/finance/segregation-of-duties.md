@@ -104,7 +104,7 @@ abilities (`role_has_permissions`), because it is asked about a hypothetical res
 about what a live Gate would answer.
 
 As of this writing the dev database contains a real both-sides finance user (an account holding
-`admin` + `accounts_officer` + `finance_director`) that **predates** this guard — reported by the
+`admin` + `accounts_officer` + `accounts_supervisor`) that **predates** this guard — reported by the
 audit, remediated by revoking one side (an operational grant fix, not a code change).
 
 ## Staffing readiness — a different check again

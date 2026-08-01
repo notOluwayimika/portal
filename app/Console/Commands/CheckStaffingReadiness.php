@@ -60,7 +60,10 @@ class CheckStaffingReadiness extends Command
 
                 $rows[] = [
                     'school' => $school->name,
-                    'pair' => str_replace('.approve', '', $pair['checker']),
+                    // The checker permission verbatim. Stripping only `.approve` printed the approve pair as
+                    // `finance.credit-note` and the reject pair as `finance.credit-note.reject`, reading as if
+                    // the second were a variant of the first — they are two separate pairs of the same shape.
+                    'pair' => $pair['checker'],
                     'makers' => $makers->count(),
                     'checkers' => $checkers->count(),
                     'status' => $distinctPair ? 'OK' : 'GAP',

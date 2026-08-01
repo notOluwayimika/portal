@@ -71,10 +71,10 @@ it('a user holding NEITHER checker ability (finance.access only) is refused the 
     getApprovalsPage($user, $school)->assertForbidden();
 });
 
-it('the full checker (finance_director, both sides) reaches the page (200)', function () {
+it('the full checker (accounts_supervisor, both sides) reaches the page (200)', function () {
     $school = School::factory()->create();
     $user = User::factory()->create(['school_id' => $school->id]);
-    $user->grantSchoolAccess($school, 'finance_director');
+    $user->grantSchoolAccess($school, 'accounts_supervisor');
     $user->flushSchoolAccessCache();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 

@@ -53,7 +53,7 @@ fixture with no duplication.
 | Sign in as | Email | Drives |
 |---|---|---|
 | Maker (`accounts_officer`) | `maker@drive.test` | the statements + submitting credit notes / voids |
-| Full checker (`finance_director`) | `checker@drive.test` | the unified approvals queue (both feeds) |
+| Full checker (`accounts_supervisor`) | `checker@drive.test` | the unified approvals queue (both feeds) |
 | Void-only checker (`void-request.approve`, **no** `credit-note.approve`) | `void-checker@drive.test` | the per-feed 403-tolerant queue |
 | Super admin | `super@drive.test` | the bypass exclusion (cannot approve) |
 | School B bursar | `school-b@drive.test` | cross-School isolation |
@@ -63,7 +63,7 @@ fixture with no duplication.
 The maker and the checker above are **separate accounts on purpose, and now mandatorily so.**
 Grant-time segregation-of-duties enforcement (Finance pairs only — see
 [segregation-of-duties.md](segregation-of-duties.md) § "Grant level") refuses to give one user both
-`accounts_officer` and `finance_director` in the same school: `User::assignRole` throws before the
+`accounts_officer` and `accounts_supervisor` in the same school: `User::assignRole` throws before the
 write. There is **no bypass** — no flag, no `--force`, no super-admin shortcut — because the guard
 lives in the model, below every path. So you cannot "just add both roles to my dev login" to click
 through the whole flow yourself; the fixture hands you `maker@drive.test` and `checker@drive.test`

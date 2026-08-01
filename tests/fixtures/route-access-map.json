@@ -257,13 +257,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -283,13 +284,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -314,13 +316,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -332,13 +335,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1141,9 +1145,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1152,16 +1156,16 @@
     "GET /api/v1/finance/credit-notes/pending": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "accounts_supervisor"
         ]
     },
     "GET /api/v1/finance/discount-policies": {
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1170,22 +1174,22 @@
     "GET /api/v1/finance/discount-policy-changes/pending": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "GET /api/v1/finance/fee-schedule-changes/pending": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "GET /api/v1/finance/fee-schedules": {
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1195,9 +1199,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1207,9 +1211,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1219,9 +1223,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1230,8 +1234,7 @@
     "GET /api/v1/finance/void-requests/pending": {
         "auth": true,
         "roles": [
-            "finance_director",
-            "finance_void_approver"
+            "accounts_supervisor"
         ]
     },
     "GET /boarding-parent/behavioral-assessments": {
@@ -1287,9 +1290,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1298,18 +1301,17 @@
     "GET /finance/approvals": {
         "auth": true,
         "roles": [
-            "finance_director",
-            "finance_void_approver",
-            "principal"
+            "accounts_supervisor",
+            "head_of_school"
         ]
     },
     "GET /finance/students/{student}/statement": {
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1319,13 +1321,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1387,13 +1390,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1453,13 +1457,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1488,13 +1493,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1513,13 +1519,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1531,13 +1538,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1549,13 +1557,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1567,13 +1576,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1699,13 +1709,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1785,13 +1796,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1803,13 +1815,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1821,13 +1834,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1839,13 +1853,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1857,13 +1872,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1875,13 +1891,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1893,13 +1910,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -1911,13 +1929,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2118,13 +2137,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2452,13 +2472,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2470,13 +2491,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2652,13 +2674,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2703,51 +2726,53 @@
     "POST /api/v1/finance/credit-notes/{creditNote}/approve": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "accounts_supervisor"
         ]
     },
     "POST /api/v1/finance/credit-notes/{creditNote}/reject": {
         "auth": true,
         "roles": [
-            "finance_director"
+            "accounts_supervisor"
         ]
     },
     "POST /api/v1/finance/discount-policy-changes": {
         "auth": true,
         "roles": [
-            "head_of_school",
+            "accounts_officer",
+            "finance_lead",
             "super_admin"
         ]
     },
     "POST /api/v1/finance/discount-policy-changes/{change}/approve": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "POST /api/v1/finance/discount-policy-changes/{change}/reject": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "POST /api/v1/finance/fee-schedule-changes": {
         "auth": true,
         "roles": [
-            "head_of_school",
+            "accounts_officer",
+            "accounts_supervisor",
             "super_admin"
         ]
     },
     "POST /api/v1/finance/fee-schedule-changes/{change}/approve": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "POST /api/v1/finance/fee-schedule-changes/{change}/reject": {
         "auth": true,
         "roles": [
-            "principal"
+            "head_of_school"
         ]
     },
     "POST /api/v1/finance/fee-schedules": {
@@ -2770,6 +2795,7 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "finance_lead",
             "super_admin"
         ]
     },
@@ -2777,9 +2803,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -2804,9 +2830,9 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "head_of_school",
             "principal",
             "super_admin"
@@ -2815,15 +2841,13 @@
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": {
         "auth": true,
         "roles": [
-            "finance_director",
-            "finance_void_approver"
+            "accounts_supervisor"
         ]
     },
     "POST /api/v1/finance/void-requests/{voidRequest}/reject": {
         "auth": true,
         "roles": [
-            "finance_director",
-            "finance_void_approver"
+            "accounts_supervisor"
         ]
     },
     "POST /dashboard/refresh": {
@@ -2841,13 +2865,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2865,13 +2890,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2883,13 +2909,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2901,13 +2928,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2927,13 +2955,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2977,13 +3006,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -2995,13 +3025,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3013,13 +3044,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3031,13 +3063,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3049,13 +3082,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3278,13 +3312,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3303,13 +3338,14 @@
         "auth": false,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",
@@ -3352,13 +3388,14 @@
         "auth": true,
         "roles": [
             "accounts_officer",
+            "accounts_supervisor",
             "admin",
             "boarding_parent",
-            "finance_director",
-            "finance_void_approver",
+            "finance_lead",
             "form_teacher",
             "guardian",
             "head_of_school",
+            "internal_auditor",
             "key_stage_coordinator",
             "principal",
             "registrar",

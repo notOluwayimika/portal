@@ -53,7 +53,7 @@ function bgTriggerPresent(string $name): bool
 
 it('discount change with basis=amount AND percent is a 422 (guard), and terms_shape still exists', function () {
     $school = School::factory()->create();
-    $head = bgUser($school, 'head_of_school');
+    $head = bgUser($school, 'accounts_officer');
 
     $this->actingAs($head)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/discount-policy-changes', [
@@ -68,7 +68,7 @@ it('discount change with basis=amount AND percent is a 422 (guard), and terms_sh
 
 it('the symmetric case basis=percent AND value_minor is also a 422', function () {
     $school = School::factory()->create();
-    $head = bgUser($school, 'head_of_school');
+    $head = bgUser($school, 'accounts_officer');
 
     $this->actingAs($head)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/discount-policy-changes', [

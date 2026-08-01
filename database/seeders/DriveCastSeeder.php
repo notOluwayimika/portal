@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
  * the enrollment UUIDs this exposes ({@see App\Finance\Console\DriveFinanceStates}), exactly as
  * production bills a UUID resolved through the ACL port.
  *
- * It lives in database/seeders (not app/): it references role NAMES like `finance_director`, which
+ * It lives in database/seeders (not app/): it references role NAMES like `accounts_supervisor`, which
  * the boundary lint's `finance_*` table-literal rule would false-positive on inside app/, and it
  * touches Academics (enrollments), which the arch boundary forbids inside app/Finance. Seeders sit
  * outside both — the same reason cross-module test fixtures do.
@@ -73,7 +73,7 @@ class DriveCastSeeder extends Seeder
     private function seedCast(School $schoolA, School $schoolB): void
     {
         $this->maker = $this->driveUser('maker@drive.test', $schoolA, 'accounts_officer');
-        $this->checker = $this->driveUser('checker@drive.test', $schoolA, 'finance_director');
+        $this->checker = $this->driveUser('checker@drive.test', $schoolA, 'accounts_supervisor');
 
         // The one-permission checker — the exact user the per-feed 403-tolerant queue was written
         // for. A dedicated role holding ONLY the void checker permissions (legal under the grant

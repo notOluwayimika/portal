@@ -100,7 +100,7 @@ class SeedDriveFixture extends Command
             ['Role in the drive', 'Email'],
             [
                 ['Maker (accounts_officer)', 'maker@drive.test'],
-                ['Full checker (finance_director)', 'checker@drive.test'],
+                ['Full checker (accounts_supervisor)', 'checker@drive.test'],
                 ['Void-only checker (no credit-note.approve)', 'void-checker@drive.test'],
                 ['Super admin', 'super@drive.test'],
                 ['School B bursar (isolation)', 'school-b@drive.test'],

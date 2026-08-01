@@ -55,21 +55,21 @@ function fscContext(): array
     return [$school, $term, $level];
 }
 
-/** A user holding the seeded head_of_school role (finance.fee-schedule.change.submit — the MAKER). */
+/** A user holding the seeded accounts_officer role (finance.fee-schedule.change.submit — the MAKER). */
 function fscMaker(School $school): User
 {
     $user = User::factory()->create(['school_id' => $school->id]);
-    $user->grantSchoolAccess($school, 'head_of_school');
+    $user->grantSchoolAccess($school, 'accounts_officer');
     $user->flushSchoolAccessCache();
 
     return $user;
 }
 
-/** A user holding the seeded principal role (change.approve + change.reject — the CHECKER/ED). */
+/** A user holding the seeded head_of_school role (change.approve + change.reject — the CHECKER/ED). */
 function fscChecker(School $school): User
 {
     $user = User::factory()->create(['school_id' => $school->id]);
-    $user->grantSchoolAccess($school, 'principal');
+    $user->grantSchoolAccess($school, 'head_of_school');
     $user->flushSchoolAccessCache();
 
     return $user;

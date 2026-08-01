@@ -27,7 +27,7 @@ uses(RefreshDatabase::class);
 const ACCESS_DEVIATIONS = [
     // (Empty.) The former POST /api/logout deviation is gone: the regenerated
     // route-access-map fixture now derives the correct plain-auth:sanctum role set
-    // (every authenticated role, including the Ph3 accounts_officer / finance_director)
+    // (every authenticated role, including the Ph3 accounts_officer / accounts_supervisor)
     // directly, so no hand-override is needed — fixture == live.
 ];
 

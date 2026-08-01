@@ -2,10 +2,20 @@
     "accounts_officer": [
         "finance.access",
         "finance.credit-note.submit",
+        "finance.discount-policy.change.submit",
+        "finance.fee-schedule.change.submit",
         "finance.fee-schedule.manage",
         "finance.invoice.generate",
         "finance.invoice.reduction.apply",
         "finance.invoice.void-request.submit"
+    ],
+    "accounts_supervisor": [
+        "finance.access",
+        "finance.credit-note.approve",
+        "finance.credit-note.reject",
+        "finance.fee-schedule.change.submit",
+        "finance.invoice.void-request.approve",
+        "finance.invoice.void-request.reject"
     ],
     "admin": [
         "academic_data.view",
@@ -75,17 +85,10 @@
         "view_behavioral_assessments",
         "view_psychomotor_skills"
     ],
-    "finance_director": [
+    "finance_lead": [
         "finance.access",
-        "finance.credit-note.approve",
-        "finance.credit-note.reject",
-        "finance.invoice.void-request.approve",
-        "finance.invoice.void-request.reject"
-    ],
-    "finance_void_approver": [
-        "finance.access",
-        "finance.invoice.void-request.approve",
-        "finance.invoice.void-request.reject"
+        "finance.credit-note.submit",
+        "finance.discount-policy.change.submit"
     ],
     "form_teacher": [
         "academic_setup.manage",
@@ -124,8 +127,10 @@
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
         "finance.access",
-        "finance.discount-policy.change.submit",
-        "finance.fee-schedule.change.submit",
+        "finance.discount-policy.change.approve",
+        "finance.discount-policy.change.reject",
+        "finance.fee-schedule.change.approve",
+        "finance.fee-schedule.change.reject",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",
@@ -160,6 +165,11 @@
         "view_behavioral_assessments",
         "view_psychomotor_skills"
     ],
+    "internal_auditor": [
+        "activity_log.export",
+        "activity_log.view",
+        "activity_log.view_cross_school"
+    ],
     "key_stage_coordinator": [
         "academic_data.view",
         "manage_key_stage_coordinator_comments"
@@ -167,10 +177,6 @@
     "principal": [
         "dashboard.view",
         "finance.access",
-        "finance.discount-policy.change.approve",
-        "finance.discount-policy.change.reject",
-        "finance.fee-schedule.change.approve",
-        "finance.fee-schedule.change.reject",
         "principal_approval.manage",
         "report.view",
         "result.view",

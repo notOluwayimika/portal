@@ -92,7 +92,7 @@ it('fee schedule: an item currency "ngn" is a 422 naming the field; "NGN" succee
 
 it('discount change: value_currency "ngn" is a 422 AND persists nothing (the silent bug)', function () {
     $s = School::factory()->create();
-    $u = ncvUser($s, 'head_of_school');
+    $u = ncvUser($s, 'accounts_officer');
 
     $before = DB::table('finance_discount_policy_changes')->count();
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/discount-policy-changes', [
@@ -106,7 +106,7 @@ it('discount change: value_currency "ngn" is a 422 AND persists nothing (the sil
 
 it('discount change: valid "NGN" amount submits; and basis=percent needs no value_currency (prohibited_if intact)', function () {
     $s = School::factory()->create();
-    $u = ncvUser($s, 'head_of_school');
+    $u = ncvUser($s, 'accounts_officer');
 
     // D-4a: valid amount currency submits.
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/discount-policy-changes', [

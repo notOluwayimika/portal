@@ -69,6 +69,10 @@ class StudentCurriculumController extends Controller
             // always printed.
             'showSubjectComments' => $school === null || (bool) $school->show_subject_comments_on_result,
             'showHeadOfSchoolComment' => $school === null || (bool) $school->show_head_of_school_comment_on_result,
+            // Covers the row under BOTH its captions — "Boarding Parent Comment" and
+            // "Behaviour Comment" are one field, `behavioralAssessments[0].comment`,
+            // under two labels. Printing only; the assessment UI keeps capturing it.
+            'showBehaviourComment' => $school === null || (bool) $school->show_behaviour_comment_on_result,
         ]);
     }
 

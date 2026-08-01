@@ -9,6 +9,7 @@ use App\Models\ClassLevelArm;
 use App\Models\ClassLevelArmTeacher;
 use App\Models\Curriculum;
 use App\Models\ExamType;
+use App\Models\FileUpload;
 use App\Models\Role;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -184,4 +185,76 @@ it('reports that the school has boarding parents only when one is assigned', fun
         ->getJson($endpoint)
         ->assertOk()
         ->assertJsonPath('schoolHasBoardingParents', true);
+});
+
+/**
+ * THE BUG. CurriculumCardFinal renders its "Approved by …" row only when a
+ * `resultSignature` prop is present. The single-student routes have always passed
+ * `resultSignatures`; ClassResultsController never did, so the class sheets — the
+ * pages a school actually prints from — showed no signature at all while the
+ * individual view of the same enrollment showed one.
+ *
+ * Asserted on BOTH routes, because they are two entry points into one private
+ * renderResults() and a fix applied to either alone would look green from the other.
+ */
+it('ships a result signature for every enrollment on both class result sheets', function () {
+    $data = cr_setup();
+
+    $signature = FileUpload::create([
+        'name' => 'signature.png',
+        'folder_path' => 'school-result-signatures',
+        'url' => 'https://example.test/signature.png',
+    ]);
+
+    $data['school']->update([
+        'fallback_signature_id' => $signature->id,
+        'result_approver_title' => 'Head of School',
+    ]);
+
+    $uuid = $data['stayingEnrollment']->uuid;
+
+    foreach ([
+        "class-level-arm/{$data['classLevelArm']->uuid}/results",
+        "class-level/{$data['level']->uuid}/results",
+    ] as $url) {
+        $this->actingAs($data['admin'])
+            ->withSession(['school_id' => $data['school']->id])
+            ->get($url)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('student/results/list')
+                // Keyed by ENROLLMENT uuid — the key the page indexes with
+                // (`resultSignatures[sc.id]`). A signature keyed by student or by
+                // curriculum would still be "present" and still print nothing.
+                ->where("resultSignatures.{$uuid}.url", 'https://example.test/signature.png')
+                ->where("resultSignatures.{$uuid}.label", 'Approved by the Head of School')
+                ->etc()
+            );
+    }
+});
+
+/**
+ * Primary asked for the behavioural-assessment comment to come off its result;
+ * secondary keeps it. One field, two captions ("Boarding Parent Comment" where
+ * boarding applies, "Behaviour Comment" otherwise), so one flag governs both.
+ */
+it('reports whether the behaviour comment should print, defaulting to yes', function () {
+    $data = cr_setup();
+
+    $endpoint = "/api/student-curricula/{$data['stayingEnrollment']->uuid}";
+
+    // Untouched school: prints what it always printed.
+    $this->actingAs($data['admin'])
+        ->withSession(['school_id' => $data['school']->id])
+        ->getJson($endpoint)
+        ->assertOk()
+        ->assertJsonPath('showBehaviourComment', true);
+
+    $data['school']->update(['show_behaviour_comment_on_result' => false]);
+
+    $this->actingAs($data['admin'])
+        ->withSession(['school_id' => $data['school']->id])
+        ->getJson($endpoint)
+        ->assertOk()
+        ->assertJsonPath('showBehaviourComment', false);
 });

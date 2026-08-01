@@ -38,6 +38,7 @@ type SchoolRow = {
     result_approver_title: string | null;
     show_subject_comments_on_result: boolean;
     show_head_of_school_comment_on_result: boolean;
+    show_behaviour_comment_on_result: boolean;
     active: boolean;
     students_count: number;
     teachers_count: number;
@@ -59,6 +60,7 @@ type SchoolFormData = {
     result_approver_title: string;
     show_subject_comments_on_result: boolean;
     show_head_of_school_comment_on_result: boolean;
+    show_behaviour_comment_on_result: boolean;
     active: boolean;
 };
 
@@ -87,6 +89,8 @@ function SchoolFormDialog({
                 school?.show_subject_comments_on_result ?? true,
             show_head_of_school_comment_on_result:
                 school?.show_head_of_school_comment_on_result ?? true,
+            show_behaviour_comment_on_result:
+                school?.show_behaviour_comment_on_result ?? true,
             active: school?.active ?? true,
         });
 
@@ -254,6 +258,27 @@ function SchoolFormDialog({
                             }
                         />
                         Print the Head of School&rsquo;s comment on results
+                    </label>
+
+                    {/*
+                        One checkbox, two captions: the row prints as "Boarding
+                        Parent Comment" in a boarding school with a parent assigned
+                        for this student and as "Behaviour Comment" otherwise, but
+                        it is the same behavioural-assessment field either way.
+                        Unticking stops it PRINTING only — the assessment form keeps
+                        capturing it and nothing stored is lost.
+                    */}
+                    <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                            checked={data.show_behaviour_comment_on_result}
+                            onCheckedChange={(v) =>
+                                setData(
+                                    'show_behaviour_comment_on_result',
+                                    Boolean(v),
+                                )
+                            }
+                        />
+                        Print the behaviour / boarding parent comment on results
                     </label>
 
                     {isEdit && (

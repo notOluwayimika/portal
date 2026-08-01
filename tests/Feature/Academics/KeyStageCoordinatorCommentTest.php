@@ -278,5 +278,6 @@ it('defaults the result-template flags so existing schools print what they alway
 
     expect($school->fresh()->show_subject_comments_on_result)->toBeTrue()
         ->and($school->fresh()->show_head_of_school_comment_on_result)->toBeTrue()
+        ->and($school->fresh()->show_behaviour_comment_on_result)->toBeTrue()
         ->and($school->fresh()->result_approver_title)->toBeNull();
 });

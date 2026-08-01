@@ -7,6 +7,8 @@ use App\Http\Resources\GradeBoundaryResource;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\GradeBoundary;
+use App\Models\School;
+use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Inertia\Inertia;
@@ -169,6 +171,13 @@ class ClassResultsController extends Controller
         // into an N-per-student-times-N-students blow-up. Re-point each
         // child's relation at the single instance already loaded on its
         // parent curriculum instead of letting Eloquent hydrate it again.
+        //
+        // The same walk collects every enrollment for the signature lookup below —
+        // the alternative, a `flatMap->curricula->flatMap->studentCurricula` chain,
+        // walks the identical tree a second time and loses its element type on the
+        // way (the query builder's get() is Collection<int, Model>).
+        $studentCurricula = [];
+
         foreach ($classLevelArms as $arm) {
             foreach ($arm->curricula as $curriculum) {
                 $curriculumSubjectsById = $curriculum->curriculumSubjects->keyBy('id');
@@ -190,6 +199,7 @@ class ClassResultsController extends Controller
                 }
 
                 foreach ($curriculum->studentCurricula as $studentCurriculum) {
+                    $studentCurricula[] = $studentCurriculum;
                     $studentCurriculum->setRelation('curriculum', $curriculumForStudents);
                     // StudentResource normally resolves currentCurriculum on
                     // demand. This enrollment is already the active one, so
@@ -210,11 +220,24 @@ class ClassResultsController extends Controller
 
         $defaultGradeBoundaries = GradeBoundary::where('exam_type_id', null)->get();
 
+        // The approval signature, which this page printed for nobody.
+        //
+        // The single-student routes (students/{student}/results/*) have always passed
+        // `resultSignatures`, and CurriculumCardFinal renders its signature row only
+        // when the prop is present — so the class sheets, which never sent it, simply
+        // showed no "Approved by …" row at all. Same component, same template, one
+        // missing prop. Keyed by enrollment uuid, which is what StudentCurriculum
+        // exposes as `id` on the wire; `$studentCurricula` was gathered by the
+        // re-point walk above.
         return Inertia::render('student/results/list', [
             'classLevelArms' => ClassLevelArmResource::collection($classLevelArms),
             'defaultGradeBoundaries' => GradeBoundaryResource::collection($defaultGradeBoundaries),
             'approvalEndpoint' => $approvalEndpoint,
             'approvalScopeName' => $scopeName,
+            'resultSignatures' => app(ResultSignatureService::class)->forCurricula(
+                $studentCurricula,
+                School::findOrFail(ActiveSchool::id()),
+            ),
         ]);
     }
 }

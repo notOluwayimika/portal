@@ -1723,7 +1723,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:finance.access"
+        "permission:finance.access",
+        "permission:finance.payment.record"
     ],
     "POST /api/v1/finance/invoices/{invoice}/void-requests": [
         "api",
@@ -1743,7 +1744,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:finance.access"
+        "permission:finance.access",
+        "permission:finance.payment.record"
     ],
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": [
         "api",

@@ -332,6 +332,10 @@ class RbacSeeder extends Seeder
             // Account Officer (AO) — the bursar. MAKER on every finance flow; never a checker.
             'accounts_officer' => [
                 PermissionEnum::FINANCE_ACCESS->value,
+                // Record money IN (ADR 0048 D1): the bursar takes payments at both doors. Held by AO ONLY —
+                // NOT accounts_supervisor (matrix row 4 gives AS view, not do), finance_lead, head_of_school,
+                // principal or admin — so "takes the money in" separates from "approves the write-off".
+                PermissionEnum::FINANCE_PAYMENT_RECORD->value,
                 // Billing (S1 Part 0): the bursar raises invoices and applies policy-backed reductions.
                 PermissionEnum::FINANCE_INVOICE_GENERATE->value,
                 PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,

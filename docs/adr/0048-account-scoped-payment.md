@@ -63,6 +63,17 @@ until refunds exist. The posture gap becomes exploitable the day refunds land �
 Meanwhile the new route ships under the existing `finance.access` group, exactly the gate the
 sibling invoice-scoped route already carries.
 
+**Correction (2026-08-01, when D1 was built — `feat/finance-payment-record`).** The "no live hole"
+claim above understated the interim exposure, and D2 (below) is why. Per D2 and
+`docs/finance/accounting-policy.md`, an account-scoped payment **settles the oldest invoice first at
+the next generation** and the invoice-scoped route allocates against the named invoice **immediately**
+— so a fabricated payment does not merely park credit, it **discharges real receivables**: a
+student's debt is extinguished and the receivables position is misstated. No cash leaves the school
+until refunds exist (that half of the original reasoning stands, and is retained above deliberately —
+not deleted), but *debt discharge is live today*, which is a bursar-shaped fraud vector, not merely a
+posture gap. This is exactly why D1 is now built: `finance.payment.record` gates both payment routes,
+held by `accounts_officer` only, so `finance.access` alone can no longer record a payment.
+
 **L4 (statement discovery) — out of scope, size stated.** A bursar still cannot navigate to the
 statement of a student who has never been invoiced (`finance_student_accounts` rows exist only after a
 first ledger movement; the accounts index resolves names to ids and filters accounts to them, so a

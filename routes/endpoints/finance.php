@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\Route;
  */
 Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate'])
     ->middleware('permission:finance.invoice.generate');
-Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store']);
+Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store'])
+    ->middleware('permission:finance.payment.record');
 
 /*
  * Invoice VOID is MAKER-CHECKER (Ph3b) — the second instance of the credit-note template. The
@@ -135,9 +136,11 @@ Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::
 
 /*
  * Record a payment ON THE ACCOUNT — no invoice named (the "money at the window" door). Banks as
- * account credit and settles oldest-first at the next generation (ADR 0048). Ships under the
- * finance.access group with NO ability of its own: the dedicated finance.payment.record permission
- * (D1) is decided-and-scheduled as its own seeder-owned slice, sequenced before any pilot takes a
- * payment — recorded in ADR 0048, not omitted. Mirrors the student-addressed invoice POST above.
+ * account credit and settles oldest-first at the next generation (ADR 0048). Gated on
+ * finance.payment.record (ADR 0048 D1), held by accounts_officer only, so recording money IN is a
+ * distinct capability from viewing finance — a fabricated payment discharges real receivables (D2),
+ * so finance.access alone must not reach here. super_admin stays on both payment routes: record is
+ * not a checker ability, so the Gate::before bypass applies. Mirrors the student-addressed invoice POST above.
  */
-Route::post('/v1/finance/students/{student:uuid}/payments', [PaymentController::class, 'storeForStudent']);
+Route::post('/v1/finance/students/{student:uuid}/payments', [PaymentController::class, 'storeForStudent'])
+    ->middleware('permission:finance.payment.record');

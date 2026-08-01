@@ -2803,11 +2803,6 @@
         "auth": true,
         "roles": [
             "accounts_officer",
-            "accounts_supervisor",
-            "admin",
-            "finance_lead",
-            "head_of_school",
-            "principal",
             "super_admin"
         ]
     },
@@ -2830,11 +2825,6 @@
         "auth": true,
         "roles": [
             "accounts_officer",
-            "accounts_supervisor",
-            "admin",
-            "finance_lead",
-            "head_of_school",
-            "principal",
             "super_admin"
         ]
     },

@@ -82,6 +82,14 @@ enum Permission: string
     // Superseded when Finance's Ph2 permission scheme (finance.<resource>.
     // <action>, v10 §343) lands with the 4 Finance roles — I1/I6 coordination.
     case FINANCE_ACCESS = 'finance.access';
+    // Record money IN (ADR 0048 D1): the two payment doors (invoice-scoped and account-scoped) shipped
+    // under `finance.access` with NO ability of their own, so anyone who could view finance could take a
+    // payment — and a fabricated payment discharges real receivables (ADR 0048 D2). This narrows both
+    // doors to an explicit grant, held by `accounts_officer` only, so "takes the money in" separates from
+    // "approves the write-off". NOT a maker-checker ability — its terminal segment is `record`, not
+    // approve/reject, so ApprovalAbility derives no matching maker and the super-admin Gate::before bypass
+    // still applies (super_admin stays on both payment routes).
+    case FINANCE_PAYMENT_RECORD = 'finance.payment.record';
     // Credit-note issuance is MAKER-CHECKER (Ph3): forgiving money takes two people.
     // `submit` is the maker side (propose, no money moves); `approve`/`reject` are the
     // checker side. The terminal `approve`/`reject` names are load-bearing — the Kernel's

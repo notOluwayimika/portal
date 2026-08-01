@@ -41,6 +41,10 @@ function financeSetup(): array
     setPermissionsTeamId($school->id);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     $admin->assignRole('admin');
+    // ADR 0048 D1: recording a payment now needs finance.payment.record, which admin no longer carries.
+    // Grant it to THIS actor directly (not to the admin role), so the skeleton's pay step has a
+    // payment-capable bursar without re-widening the admin seat.
+    $admin->givePermissionTo('finance.payment.record');
     setPermissionsTeamId(null);
 
     $student = Student::factory()->create(['school_id' => $school->id, 'first_name' => 'Ada', 'last_name' => 'Obi']);

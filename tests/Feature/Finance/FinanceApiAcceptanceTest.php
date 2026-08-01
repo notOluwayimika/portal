@@ -216,7 +216,7 @@ it('NO ENROLLMENT — a student with no active enrollment cannot be billed (422 
 
 it('PAYMENTS — appear on the statement read as their own history (Piece B)', function () {
     $school = School::factory()->create();
-    [, $token] = bursarWithToken($school, ['finance.access']);
+    [, $token] = bursarWithToken($school, ['finance.access', 'finance.payment.record']); // D1: recording needs the grant
     $studentUuid = acceptanceStudent($school);
 
     $invoiceUuid = mcApi($token)
@@ -240,7 +240,7 @@ it('PAYMENTS — appear on the statement read as their own history (Piece B)', f
 
 it('COMPOSES — the full bursar lifecycle through the real API: generate → pay → SUBMIT → APPROVE → statement', function () {
     $school = School::factory()->create();
-    [, $maker] = bursarWithToken($school, ['finance.access', 'finance.credit-note.submit']);
+    [, $maker] = bursarWithToken($school, ['finance.access', 'finance.credit-note.submit', 'finance.payment.record']); // D1: the maker also pays
     [, $checker] = bursarWithToken($school, ['finance.access', 'finance.credit-note.approve']);
     $enrollment = acceptanceEnrollment($school);
 
@@ -719,7 +719,9 @@ it('ISOLATION — a bursar cannot bill an enrollment in another School (cross-sc
 /** @return array{0: string, 1: string} [voidMakerToken, voidCheckerToken] — distinct users, one side each. */
 function voidTokens(School $school): array
 {
-    [, $maker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.submit']);
+    // finance.payment.record: VOID PROOF 5 has the maker record a payment through this token (D1). The
+    // other void tests never pay, so the extra grant is inert there — it probes no payment gate.
+    [, $maker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.submit', 'finance.payment.record']);
     [, $checker] = bursarWithToken($school, ['finance.access', 'finance.invoice.void-request.approve', 'finance.invoice.void-request.reject']);
 
     return [$maker, $checker];
@@ -845,7 +847,7 @@ it('VOID PROOF 4 — a second approval is refused and posts no second reversal (
 it('VOID PROOF 5 — a payment landing after submit blocks approval (authoritative re-check)', function () {
     $school = School::factory()->create();
     [$maker, $checker] = voidTokens($school);
-    // The maker also holds finance.access, so it can record the payment (group permission only).
+    // The maker also holds finance.payment.record (ADR 0048 D1), so it can record the payment below.
     $studentUuid = acceptanceStudentUuidFor($school, $enrollment = acceptanceEnrollment($school));
     $invoiceUuid = mcInvoice($maker, $enrollment);
 
@@ -1184,7 +1186,7 @@ it('UNIFIED QUEUE — a void-only checker gets their void feed (200) and is 403 
 // (the read-model gap this slice closed), proven through the real HTTP stack.
 it('SETTLEMENT WIRE — the statement returns outstanding, settlement_state and eligibility flags per invoice', function () {
     $school = School::factory()->create();
-    [, $token] = bursarWithToken($school, ['finance.access']);
+    [, $token] = bursarWithToken($school, ['finance.access', 'finance.payment.record']); // D1: this test records a payment
     $studentUuid = acceptanceStudent($school);
     $enrollment = DB::table('student_curricula')->where('student_id', function ($q) use ($school, $studentUuid) {
         $q->from('students')->where('school_id', $school->id)->where('uuid', $studentUuid)->select('id');

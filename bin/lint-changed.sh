@@ -20,8 +20,25 @@ fi
 php_files=()
 prettier_files=()
 eslint_files=()
-while IFS= read -r f; do
-  [ -n "$f" ] && [ -f "$f" ] || continue
+status_unresolved=0
+# -z / read -d '': `git diff --name-only` QUOTES and octal-escapes any path holding a
+# non-ASCII byte, emitting `"resources/js/a \342\200\224 b.ts"` rather than the real
+# name. `[ -f ]` then fails on that quoted string and the file drops out of the lists
+# below — silently, with the gate still exiting 0. `-z` emits raw NUL-terminated
+# paths, so nothing needs unquoting. (`read -r -d ''` works on macOS bash 3.2; still
+# no `mapfile`.)
+while IFS= read -r -d '' f; do
+  # A trailing empty read is normal; skip it quietly.
+  [ -n "$f" ] || continue
+  # A path that git reports as changed but that is not a file on disk is either a bug
+  # in this script or something nobody anticipated. It must NOT be a silent `continue`:
+  # in a lint gate that produces a green meaning "I did not look", which is worse than
+  # a red. Name it and fail.
+  if [ ! -f "$f" ]; then
+    echo "lint-changed: NOT LINTED — git reported '$f' as changed but it is not a file on disk"
+    status_unresolved=1
+    continue
+  fi
   case "$f" in
     *.php) php_files+=("$f") ;;
   esac
@@ -31,9 +48,9 @@ while IFS= read -r f; do
   case "$f" in
     *.ts|*.tsx|*.js|*.jsx) eslint_files+=("$f") ;;
   esac
-done < <(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD)
+done < <(git diff -z --name-only --diff-filter=ACMR "$BASE"...HEAD)
 
-status=0
+status="$status_unresolved"
 
 if [ "${#php_files[@]}" -gt 0 ]; then
   echo "==> Pint (check) on ${#php_files[@]} changed PHP file(s)"

@@ -9,11 +9,28 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Segregation-of-duties DETECTION (never enforcement). The act-level guarantee — no one approves a
- * request they submitted — is absolute and lives in the database (`CHECK (submitted_by <>
- * decided_by)` on every approval table). This class detects the softer, CAPABILITY-level problem
- * that CHECK cannot: a single user holding BOTH sides of a maker-checker pair, a setup that reads
- * as segregated but lets one person approve a colleague's work in both directions.
+ * Segregation of duties — this class both DEFINES the maker-checker pairs and ENFORCES a subset of them
+ * at grant time (corrected: an earlier docblock summarised it as "detection, never enforcement", which
+ * Decision 0 made false). The act-level guarantee — no one approves a request they submitted — is absolute
+ * and lives in the database (`CHECK (submitted_by <> decided_by)` on every approval table). This class
+ * handles the softer, CAPABILITY-level problem that CHECK cannot: a single user holding BOTH sides of a
+ * maker-checker pair, a setup that reads as segregated but lets one person approve a colleague's work in
+ * both directions.
+ *
+ * WHICH METHOD DOES WHICH — read this before assuming the class can or cannot throw:
+ *   - `pairs()` and `violations()` DEFINE the pairs and DETECT a both-sides holder. They describe; they
+ *     refuse nothing.
+ *   - `assertRoleSetAllowed()` — and its callers `assertAssignmentAllowed()` and
+ *     `violationsFromRolePermissionSync()` — ENFORCE. The role-level paths THROW
+ *     {@see DutySeparationViolationException} before the spatie write; the sync path returns the violations
+ *     as DATA for the FormRequest to reject. Either way the grant is refused WHOLESALE — nothing lands.
+ *   - `enforcedPairs()` is the SCOPE line: it decides how much of `pairs()` that refusal applies to.
+ *
+ * ENFORCEMENT IS DELIBERATELY NARROWER THAN DETECTION. `enforcedPairs()` filters to `finance.` pairs
+ * (Decision 0); the result workstream is DETECTED but not REFUSED, pending its own clean audit and its
+ * agreement to enforcement on the record. `pairs()` is the full set; `enforcedPairs()` is the subset that
+ * throws. Nothing here claims enforcement is universal — the scope is that one commented line on
+ * `enforcedPairs()`, and widening it is a one-line change there.
  *
  * THE RULE (stated once, so the invariant test and the audit command agree): for every checker
  * ability C, with maker M = ApprovalAbility::matchingMakerFor(C), a user holding BOTH C and M
@@ -28,7 +45,8 @@ use Illuminate\Support\Facades\DB;
  * never does. Scoped PER SCHOOL (spatie teams, team_foreign_key = school_id): a maker at school A
  * and a checker at school B share no record on which both apply, so that is not a violation.
  *
- * This class is DEFINITION + DETECTION only. It revokes nothing and refuses nothing.
+ * In one line: this class DEFINES all pairs, DETECTS both-sides holders across all of them, and ENFORCES
+ * the Finance subset — refusing (throwing) an enforced-pair grant, detecting the rest without refusing.
  */
 final class DutySeparation
 {

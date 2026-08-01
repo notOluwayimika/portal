@@ -74,6 +74,16 @@ class KeyStageCoordinatorCommentController extends Controller
                 'student' => new StudentResource($studentCurriculum->student),
                 ...$this->classLevelArmIdentity($classLevelArm),
                 'comment' => $studentCurriculum->key_stage_coordinator_comment,
+                // READ-ONLY CONTEXT. A coordinator covers several classes and will
+                // not know every pupil as the class teacher does, so their comment
+                // is shown alongside to write from rather than starting blank.
+                //
+                // Exposed, never accepted back: update() validates `comment` alone,
+                // so a coordinator cannot rewrite the class teacher's remark. That
+                // is the difference from HeadOfSchoolCommentController, which does
+                // edit it on their behalf — a wider authority this seat has no need
+                // of.
+                'form_teacher_comment' => $studentCurriculum->form_teacher_comment,
             ];
         });
 

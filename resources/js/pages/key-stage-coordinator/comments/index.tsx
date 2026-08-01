@@ -35,6 +35,7 @@ interface CommentRow {
     class_level?: { id: string; name: string } | null;
     class_level_arm?: { id: string; name: string } | null;
     comment: string | null;
+    form_teacher_comment: string | null;
 }
 
 export default function KeyStageCoordinatorCommentsIndex() {
@@ -193,6 +194,29 @@ export default function KeyStageCoordinatorCommentsIndex() {
                                         </div>
                                     </div>
                                     <div className="flex-1 space-y-2">
+                                        {/*
+                                            The class teacher's comment, read-only.
+                                            A coordinator covers several classes and
+                                            will not know every pupil as their class
+                                            teacher does — this is the context to
+                                            write from. It is never editable here:
+                                            the endpoint accepts only the
+                                            coordinator's own comment.
+                                        */}
+                                        <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                                            <p className="text-xs font-medium tracking-wide text-gray-500 uppercase">
+                                                Class teacher&rsquo;s comment
+                                            </p>
+                                            <p className="mt-1 text-sm text-gray-700">
+                                                {row.form_teacher_comment?.trim() ? (
+                                                    row.form_teacher_comment
+                                                ) : (
+                                                    <span className="text-gray-400 italic">
+                                                        Not written yet
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
                                         <textarea
                                             value={
                                                 comments[

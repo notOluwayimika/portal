@@ -219,6 +219,44 @@ it('exposes the comment on the payload the result card actually reads', function
  * the rows have to carry identifiers. They previously carried only `class_name`, a
  * formatted label, which cannot be filtered on without parsing it.
  */
+/**
+ * A coordinator covers several classes and will not know every pupil as their class
+ * teacher does, so the class teacher's comment is shown as context to write from.
+ * Read-only: exposing it must not make it writable.
+ */
+it('shows the class teacher comment as context', function () {
+    $w = ksc_world();
+
+    $w['myEnrollment']->update(['form_teacher_comment' => 'Settled well this term.']);
+
+    $response = $this->actingAs($w['user'])
+        ->withSession(['school_id' => $w['school']->id])
+        ->getJson('/api/key-stage-coordinator/students')
+        ->assertOk();
+
+    expect($response->json('data.0.form_teacher_comment'))
+        ->toBe('Settled well this term.');
+});
+
+it('REFUSES to let a coordinator rewrite the class teacher comment', function () {
+    $w = ksc_world();
+
+    $w['myEnrollment']->update(['form_teacher_comment' => 'Settled well this term.']);
+
+    $this->actingAs($w['user'])
+        ->withSession(['school_id' => $w['school']->id])
+        ->patchJson("/api/key-stage-coordinator/students/{$w['myEnrollment']->uuid}/comment", [
+            'comment' => 'Agreed.',
+            'form_teacher_comment' => 'Overwritten.',
+        ])
+        ->assertOk();
+
+    // Their own comment lands; the class teacher's is untouched. update() validates
+    // `comment` alone, so the extra key is ignored rather than applied.
+    expect($w['myEnrollment']->fresh()->key_stage_coordinator_comment)->toBe('Agreed.')
+        ->and($w['myEnrollment']->fresh()->form_teacher_comment)->toBe('Settled well this term.');
+});
+
 it('ships class level and arm identifiers on each row for the filters', function () {
     $w = ksc_world();
 

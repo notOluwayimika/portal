@@ -46,6 +46,13 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
   but the instruction, not the prompt, is what protects the matrix.) `--fresh` on
   staging in PR #182 was safe only because staging carries no runtime matrix edits;
   production does.
+  And `rbac:sync` **only ever adds** — and only permissions newly created in that
+  run. A grant **removed** from `RbacSeeder::grantsMap()` never leaves an environment
+  where the role already exists, so the map edit alone is half a policy and the half
+  that ships is the permissive half. Every future seat change that takes authority
+  **away** needs its own named revocation migration alongside the map edit (see
+  `2026_08_02_100000_realign_finance_governance_grants.php` — narrow, audited,
+  `down()` deliberately a no-op).
 - [ ] Set `AUTH_GATE_BEFORE_SUPERADMIN=true` explicitly in prod env (intent visible,
   not resting on the config default).
 - [ ] `audit:verify-immutability` after `migrate` — confirms the `activity_log`

@@ -73,8 +73,21 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Drop only constraints that actually exist, so down() survives a PARTIAL up() — if an ALTER had
+        // failed mid-loop (a missing table, a name collision), some of the ten would be present and some not,
+        // and a blind DROP of an absent constraint 1091s and aborts the rollback. MySQL 8.0.43 accepts
+        // neither `DROP CHECK … IF EXISTS` nor `DROP CONSTRAINT … IF EXISTS` (both 1064 — probed), so the
+        // existence check is an information_schema lookup per constraint.
         foreach (self::COLUMNS as [$table, $column]) {
-            DB::statement("ALTER TABLE {$table} DROP CHECK {$table}_{$column}_shape");
+            $name = "{$table}_{$column}_shape";
+            $exists = DB::scalar(
+                'SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                 WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = ?',
+                [$table, $name, 'CHECK'],
+            );
+            if ((int) $exists > 0) {
+                DB::statement("ALTER TABLE {$table} DROP CHECK {$name}");
+            }
         }
     }
 };

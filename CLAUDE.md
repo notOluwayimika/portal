@@ -99,6 +99,12 @@ database, migrate-from-zero, data planted, and rollback/re-up reversibility. It
 stamps the verified SHA and the pre-push hook **refuses a push to `main`** without a
 stamp matching that exact commit.
 
+**The merge into `main` must FAST-FORWARD** — `git merge --ff-only staging`. The
+stamp names one exact SHA, so a merge commit (`--no-ff`, or a real merge because
+`main` has drifted) is by definition a commit the gate never verified, and the push
+is refused. `--ff-only` fails loudly in that case, which is the signal that `main`
+has diverged and needs a human.
+
 **What this floor CANNOT prove — accepted, permanent residuals:**
 
 | Gap                    | Why it stays                                                                                                                           |

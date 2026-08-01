@@ -1,16 +1,26 @@
 <?php
 
+use App\Enums\TermStatusEnum;
+use App\Finance\Actions\CreateFeeSchedule;
+use App\Finance\Actions\GenerateInvoice;
+use App\Finance\DTOs\InvoiceLineSpec;
+use App\Models\AcademicSession;
+use App\Models\ClassLevel;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
 use App\Models\Subject;
 use App\Models\SubjectResultStatus;
+use App\Models\Term;
 use App\Models\User;
 use App\Policies\SubjectResultPolicy;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
 use App\Support\DutySeparation;
+use App\Support\Money;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -191,6 +201,148 @@ it('BITE-PROOF — the DB also rejects an UPDATE that makes the checker the make
     expect(fn () => DB::table('subject_result_statuses')
         ->update(['decided_by' => $maker->id]))
         ->toThrow(QueryException::class, 'subject_result_statuses_maker_ne_checker');
+});
+
+// ── The same guarantee, per approval table, asserted by CHECK NAME ────────────
+//
+// SchemaConventionsTest's SCHEMA INVARIANT proves every table with submitted_by +
+// decided_by carries a CHECK NAMING both columns — but not that the clause says `<>`.
+// The two proofs above pin the DIRECTION for subject_result_statuses only. These pin
+// it for the four finance approval tables too, on a RAW write with no application code
+// in the path, asserting each table's OWN constraint name so a QueryException thrown for
+// any other reason (an FK, a currency/terms CHECK, an update guard) fails the test rather
+// than passing it for the wrong reason. Deliberately NOT a loop: the four constraint
+// names are the thing under test, so they are written out. (The credit-note / fee-schedule
+// tables carry a BEFORE-INSERT/UPDATE guard; the rows below are otherwise valid, so the
+// guard passes and the maker≠checker CHECK is what bites — verified by name.)
+
+/**
+ * Two distinct users plus one valid FK parent per finance approval table, so the only
+ * thing wrong with a violating row is submitted_by = decided_by.
+ *
+ * @return array{0:School,1:User,2:User,3:Student,4:object,5:object}
+ */
+function mc_financeContext(): array
+{
+    $school = School::factory()->create();
+    $maker = User::factory()->create(['school_id' => $school->id]);
+    $checker = User::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    [$invoice, $schedule] = ActiveSchool::runFor($school->id, function () use ($school, $student) {
+        $enrollment = StudentCurriculum::create([
+            'student_id' => $student->id,
+            'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
+            'status' => 'active',
+        ]);
+        $invoice = app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))]);
+
+        $session = AcademicSession::create(['school_id' => $school->id, 'name' => '2026/2027', 'slug' => 'sess-'.Str::random(8), 'is_current' => true]);
+        $term = Term::create([
+            'academic_session_id' => $session->id, 'school_id' => $school->id, 'name' => 'First Term',
+            'slug' => 'term-'.Str::random(8), 'order' => 1, 'start_date' => now()->subMonth(),
+            'end_date' => now()->addMonths(2), 'status' => TermStatusEnum::ACTIVE->value,
+        ]);
+        $level = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 1', 'order' => 1]);
+        $schedule = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v1', [['description' => 'Tuition', 'amount_minor' => 100000]]);
+
+        return [$invoice, $schedule];
+    });
+
+    return [$school, $maker, $checker, $student, $invoice, $schedule];
+}
+
+it('BITE-PROOF — finance_credit_notes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+    [$school, $maker, $checker, $student, $invoice] = mc_financeContext();
+
+    $row = fn (?int $submitted, ?int $decided, string $status) => [
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'student_id' => $student->id,
+        'invoice_id' => $invoice->id, 'number' => random_int(1, 2_000_000_000), 'amount_minor' => 3000,
+        'amount_currency' => 'NGN', 'kind' => 'credit_note', 'status' => $status,
+        'submitted_by' => $submitted, 'decided_by' => $decided, 'created_at' => now(), 'updated_at' => now(),
+    ];
+
+    // INSERT: same identity both sides → the maker≠checker CHECK, named.
+    expect(fn () => DB::table('finance_credit_notes')->insert($row($maker->id, $maker->id, 'approved')))
+        ->toThrow(QueryException::class, 'finance_credit_notes_maker_ne_checker');
+
+    // Not simply rejecting everything: distinct maker/checker inserts.
+    DB::table('finance_credit_notes')->insert($row($maker->id, $checker->id, 'approved'));
+    expect(DB::table('finance_credit_notes')->count())->toBe(1);
+
+    // UPDATE: a submitted row whose approval sets the checker = the maker.
+    DB::table('finance_credit_notes')->insert($row($maker->id, null, 'submitted'));
+    $id = DB::table('finance_credit_notes')->where('status', 'submitted')->value('id');
+    expect(fn () => DB::table('finance_credit_notes')->where('id', $id)
+        ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
+        ->toThrow(QueryException::class, 'finance_credit_notes_maker_ne_checker');
+});
+
+it('BITE-PROOF — finance_void_requests rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+    [$school, $maker, $checker, $student, $invoice] = mc_financeContext();
+
+    $row = fn (?int $submitted, ?int $decided, string $status) => [
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'invoice_id' => $invoice->id, 'reason' => 'r',
+        'status' => $status, 'submitted_by' => $submitted, 'decided_by' => $decided, 'created_at' => now(), 'updated_at' => now(),
+    ];
+
+    expect(fn () => DB::table('finance_void_requests')->insert($row($maker->id, $maker->id, 'approved')))
+        ->toThrow(QueryException::class, 'finance_void_requests_maker_ne_checker');
+
+    DB::table('finance_void_requests')->insert($row($maker->id, $checker->id, 'approved'));
+    expect(DB::table('finance_void_requests')->count())->toBe(1);
+
+    DB::table('finance_void_requests')->insert($row($maker->id, null, 'submitted'));
+    $id = DB::table('finance_void_requests')->where('status', 'submitted')->value('id');
+    expect(fn () => DB::table('finance_void_requests')->where('id', $id)
+        ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
+        ->toThrow(QueryException::class, 'finance_void_requests_maker_ne_checker');
+});
+
+it('BITE-PROOF — finance_discount_policy_changes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+    [$school, $maker, $checker] = mc_financeContext();
+
+    // kind=create → target_policy_id null (target_shape) + full terms (terms_shape), so only
+    // maker≠checker can be the violation.
+    $row = fn (?int $submitted, ?int $decided, string $status) => [
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'kind' => 'create', 'name' => 'Sibling',
+        'basis' => 'percent', 'percent' => 50, 'requires_approval' => 0, 'reason' => 'r', 'status' => $status,
+        'submitted_by' => $submitted, 'decided_by' => $decided, 'created_at' => now(), 'updated_at' => now(),
+    ];
+
+    expect(fn () => DB::table('finance_discount_policy_changes')->insert($row($maker->id, $maker->id, 'approved')))
+        ->toThrow(QueryException::class, 'finance_discount_policy_changes_maker_ne_checker');
+
+    DB::table('finance_discount_policy_changes')->insert($row($maker->id, $checker->id, 'approved'));
+    expect(DB::table('finance_discount_policy_changes')->count())->toBe(1);
+
+    DB::table('finance_discount_policy_changes')->insert($row($maker->id, null, 'submitted'));
+    $id = DB::table('finance_discount_policy_changes')->where('status', 'submitted')->value('id');
+    expect(fn () => DB::table('finance_discount_policy_changes')->where('id', $id)
+        ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
+        ->toThrow(QueryException::class, 'finance_discount_policy_changes_maker_ne_checker');
+});
+
+it('BITE-PROOF — finance_fee_schedule_changes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+    [$school, $maker, $checker, , , $schedule] = mc_financeContext();
+
+    $row = fn (?int $submitted, ?int $decided, string $status) => [
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'kind' => 'publish',
+        'target_schedule_id' => $schedule->id, 'reason' => 'r', 'status' => $status,
+        'submitted_by' => $submitted, 'decided_by' => $decided, 'created_at' => now(), 'updated_at' => now(),
+    ];
+
+    expect(fn () => DB::table('finance_fee_schedule_changes')->insert($row($maker->id, $maker->id, 'approved')))
+        ->toThrow(QueryException::class, 'finance_fee_schedule_changes_maker_ne_checker');
+
+    DB::table('finance_fee_schedule_changes')->insert($row($maker->id, $checker->id, 'approved'));
+    expect(DB::table('finance_fee_schedule_changes')->count())->toBe(1);
+
+    DB::table('finance_fee_schedule_changes')->insert($row($maker->id, null, 'submitted'));
+    $id = DB::table('finance_fee_schedule_changes')->where('status', 'submitted')->value('id');
+    expect(fn () => DB::table('finance_fee_schedule_changes')->where('id', $id)
+        ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
+        ->toThrow(QueryException::class, 'finance_fee_schedule_changes_maker_ne_checker');
 });
 
 // ── The seeded grant map itself is SoD-disjoint (generic, convention-driven) ──

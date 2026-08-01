@@ -152,7 +152,9 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
                     {showBehaviourComment && (
                         <DetailRow
                             label="Boarding Parent Comment:"
-                            value={boardingParentName ? assessmentComment : null}
+                            value={
+                                boardingParentName ? assessmentComment : null
+                            }
                         />
                     )}
                 </>

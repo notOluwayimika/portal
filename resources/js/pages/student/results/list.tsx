@@ -323,7 +323,8 @@ export default function List() {
                                                                 <ResultSignatureBlock
                                                                     signature={
                                                                         resultSignatures[
-                                                                            sc.id
+                                                                            sc
+                                                                                .id
                                                                         ]
                                                                     }
                                                                 />

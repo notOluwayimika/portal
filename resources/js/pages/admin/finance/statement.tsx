@@ -203,23 +203,27 @@ export default function FinanceStatement({ student }: Props) {
                                     />
                                     Refresh
                                 </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setAccountPay(true)}
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <Wallet className="mr-1.5 h-4 w-4" />
-                                    Record payment
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={() => setNewInvoiceOpen(true)}
-                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
-                                >
-                                    <Plus className="mr-1.5 h-4 w-4" />
-                                    New invoice
-                                </Button>
+                                <Can permission="finance.payment.record">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setAccountPay(true)}
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Wallet className="mr-1.5 h-4 w-4" />
+                                        Record payment
+                                    </Button>
+                                </Can>
+                                <Can permission="finance.invoice.generate">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setNewInvoiceOpen(true)}
+                                        className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                    >
+                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        New invoice
+                                    </Button>
+                                </Can>
                             </div>
                         </div>
                     </div>
@@ -458,24 +462,34 @@ export default function FinanceStatement({ student }: Props) {
                                                                 keep AVAILABLE what is a real
                                                                 operation (credit note on a paid
                                                                 invoice), DISABLE-WITH-REASON what a
-                                                                rule forbids (void once settled). */}
+                                                                rule forbids (void once settled).
+                                                                Authority is a SEPARATE axis from the
+                                                                rule: a control shows only when the
+                                                                rule permits it AND the user holds the
+                                                                ability (<Can>), so the flag answers
+                                                                "is this payable" and the gate answers
+                                                                "may you". finance.payment.record
+                                                                (ADR 0048 D1) is the ability behind
+                                                                both payment buttons. */}
                                                             {invoice.status !==
                                                                 'void' && (
                                                                 <div className="flex flex-wrap justify-end gap-1.5">
                                                                     {invoice.can_record_payment && (
-                                                                        <Button
-                                                                            size="sm"
-                                                                            variant="outline"
-                                                                            onClick={() =>
-                                                                                setPayFor(
-                                                                                    invoice,
-                                                                                )
-                                                                            }
-                                                                            className="h-7 rounded-lg text-xs"
-                                                                        >
-                                                                            Record
-                                                                            payment
-                                                                        </Button>
+                                                                        <Can permission="finance.payment.record">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                onClick={() =>
+                                                                                    setPayFor(
+                                                                                        invoice,
+                                                                                    )
+                                                                                }
+                                                                                className="h-7 rounded-lg text-xs"
+                                                                            >
+                                                                                Record
+                                                                                payment
+                                                                            </Button>
+                                                                        </Can>
                                                                     )}
                                                                     {invoice.can_submit_credit_note && (
                                                                         <Can permission="finance.credit-note.submit">

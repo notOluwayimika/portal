@@ -166,6 +166,14 @@ staging and production** — not reachable from the dev shell; they must be swep
 before the door is called closed on real data. A dated clean sweep is the evidence; the dev result does not
 speak for the other two environments.
 
+**Production sweep — 2026-08-01. Finance is EMPTY.** Database `portaa10_portal`: all ten `*_currency`
+columns returned `bad = 0` **and `total = 0`**. There is nothing to repair — but **clean here means empty,
+not correct**: a zero over a zero denominator says nothing about whether the writers are right, only that
+no writer has run. Academics is live on that database (student_curricula and model_has_roles carry real
+rows); Finance has not been used. This closes the sweep note only in the sense that there is no legacy data
+to fix before adding a DB constraint — which is why the currency-shape CHECK (below) could land free, with
+no backfill and no repair migration.
+
 **The sweep tested SHAPE, not correctness — and would not have caught the payment corruption (647d419+1).**
 `balance_currency` on `finance_student_accounts` is written on INSERT and **never on UPDATE** in
 `SubledgerPoster::applyToAccount` (its `ON DUPLICATE KEY` omits the column), so a `'USD'` payment used to
@@ -175,8 +183,30 @@ zero was a zero about *shape*, not about a balance being denominated in what it 
 (does each account's `balance_currency` match the currency of the ledger rows that built it?) is a different
 query and has not been run — noted here so "clean sweep" is not read as more than it proved.
 
-**MoneyCast ordering (answer to the open question).** `DiscountPolicy` / `DiscountPolicyChange` should get
-a `MoneyCast` on `value_currency` **eventually, not next, and not before staging+production are swept
-clean** — the cast turns a quiet stored defect into a read-time 500 on a row nobody can repair without a
-migration, so it is an improvement only once no such value exists. The sweep gates the cast, not the
-reverse. (Still out of scope here: the cast itself, and any repair migration.)
+**MoneyCast on the discount models — REVERSED (2026-08-01).** The earlier note here said the sweep *gated*
+a `MoneyCast` on `DiscountPolicy` / `DiscountPolicyChange` `value_currency` — "eventually, not next, not
+before the sweep is clean". The sweep is now clean (empty), so the gate is satisfied — and the answer has
+changed to **no, and not later either, until a consumer exists.** Recording it as a reversal of my own
+earlier steer, not as if I had always said it. Three reasons:
+
+1. **Nothing consumes a Money-typed discount value.** `DiscountPolicyResource` /
+   `DiscountPolicyChangeResource` emit `value_minor` + `value_currency` as raw scalars, and `GenerateInvoice`
+   never reads a policy's value — discount lines arrive as negative line amounts from the wire and the
+   policy id is only *recorded* on the line. A cast nobody reads is wallpaper.
+2. **`MoneyCast`'s Case 3 (exactly one of the pair NULL) is already impossible** — the `basis` CHECK
+   (`2026_07_26_140000:57-60`) forces `amount → both NOT NULL` and `percent → both NULL`. The cast would add
+   nothing the DB is not already saying.
+3. **It would add a 500 path.** `MoneyCast::get()` Case 1 throws `InvalidArgumentException` (no renderable →
+   500) when a configured column is not selected. No partial select exists today; the cast would create a
+   future 500 for no present benefit.
+What the sweep actually pointed at was the **shape invariant**, missing on all ten columns — now closed below.
+
+**Currency SHAPE is a DB fact on all ten `*_currency` columns (2026-08-01).**
+`{table}_{column}_shape` CHECK: `col IS NULL OR col COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}$'` (case-sensitive;
+`REGEXP`-in-`CHECK` proven on MySQL 8.0.43). Shape only — **not** `= 'NGN'`: single-currency lives in
+`Money::DEFAULT_CURRENCY` + the FormRequests, a DB constraint pinning NGN would have to be dropped the day a
+second currency is real; shape is the permanent invariant. A violation is **3819 → 500** via
+`bootstrap/app.php`'s generic branch — correct for a backstop, because the wire path already gets a **422**
+from the FormRequest regex; this catches every *other* writer (Action, seeder, import, `tinker`, and the raw
+`DB::insert` `SubledgerPoster` must use). The two discount tables' `BEFORE UPDATE` immutability triggers are
+untouched — a CHECK and a trigger coexist.

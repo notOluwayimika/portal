@@ -337,7 +337,14 @@ it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a 
     // that ships an approval document without the CHECK leaves every layer above it looking correct
     // (Policy refuses, Action refuses, tests pass) while the guarantee is silently absent. This
     // reads information_schema, so it sees the REAL schema, and it is general (finance_* AND
-    // subject_result_statuses). Bite-proven by a planted constraint-less table in a migration.
+    // subject_result_statuses).
+    //
+    // BOTH arms watched red on a scratch table before this commit (see the PR body / commit message
+    // for the pasted output): arm 1 — a table with NO check at all; arm 2 — a check naming only ONE
+    // of the two columns (the likelier real mistake, caught by requiring BOTH names in the clause).
+    // The prior comment claimed "bite-proven by a planted constraint-less table in a migration"; no
+    // such migration exists in history (git log -S found none), so that was an unverifiable claim —
+    // replaced by the watched scratch-table proof recorded with THIS commit.
     $tables = collect(DB::select(
         "SELECT DISTINCT c1.TABLE_NAME AS t
            FROM information_schema.COLUMNS c1
@@ -348,6 +355,25 @@ it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a 
     ))->pluck('t');
 
     expect($tables)->not->toBeEmpty(); // there ARE approval tables, or this test is vacuous
+
+    // Containment FLOOR, not a count pin. A table that DISAPPEARS (decided_by renamed away in a
+    // refactor) drops out of the derived set and the loop below would iterate fewer tables, still
+    // green — ->not->toBeEmpty() only catches ALL of them vanishing. This names the specific
+    // expected table that went missing. Deliberately NO upper bound: approval table six must be
+    // covered by the loop without anyone bumping a number, so its arrival is not a failure here.
+    $expectedFloor = [
+        'finance_discount_policy_changes',
+        'finance_void_requests',
+        'finance_fee_schedule_changes',
+        'subject_result_statuses',
+        'finance_credit_notes',
+    ];
+    $missing = array_diff($expectedFloor, $tables->all());
+    expect($missing)->toBe(
+        [],
+        'expected approval table(s) no longer carry submitted_by + decided_by: ['.implode(', ', $missing).
+        '] — a rename/refactor silently dropped one out of the invariant loop.'
+    );
 
     foreach ($tables as $table) {
         $clauses = collect(DB::select(
@@ -363,8 +389,13 @@ it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a 
             fn ($clause) => str_contains((string) $clause, 'submitted_by') && str_contains((string) $clause, 'decided_by')
         );
 
+        // Print the CHECK clauses actually found. Arm 1 (no check) shows "(none)"; arm 2 (a check
+        // naming one column) shows the clause, so the reader can tell a typo'd constraint from a
+        // different constraint entirely without re-querying information_schema by hand.
+        $found = $clauses->isEmpty() ? '(none)' : $clauses->implode(' | ');
         expect($hasMakerNeChecker)->toBeTrue(
-            "table [{$table}] has submitted_by + decided_by but NO maker≠checker CHECK — the act-level guarantee is silently absent there."
+            "table [{$table}] has submitted_by + decided_by but no CHECK naming BOTH — the act-level ".
+            "guarantee is silently absent there. CHECK clauses found on it: {$found}"
         );
     }
 });

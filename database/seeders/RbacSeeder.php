@@ -81,7 +81,9 @@ class RbacSeeder extends Seeder
         'accounts_officer',      // AO — bursar / maker on every finance flow
         'accounts_supervisor',   // AS — renamed from finance_director; CHECKS credit-note + void
         'finance_lead',          // FL — proposer (credit-note + discount submit)
-        'internal_auditor',      // IA — read-all/act-nothing (finance.access gate + activity-log)
+        'internal_auditor',      // IA — activity-log only. NO finance.access: it alone records payments
+        // (endpoints/finance.php:24, :143), so the read-only seat cannot hold it
+        // until finance.payment.record splits payment authority off it.
         // NOTE: finance_void_approver (a one-sided void checker, seeded only so the access oracle
         // exercised the D1 single-side-checker case) was DELETED 2026-08-01 — Brookstone has no such
         // seat and it had zero holders in production. The D1 oracle row is a recorded coverage loss;

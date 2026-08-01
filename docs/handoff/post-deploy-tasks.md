@@ -35,6 +35,17 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
   zero, *then* migrate — the composite-FK migration aborts mid-deploy otherwise.
 - [ ] `rbac:sync` after `migrate`, **before** traffic hits the swapped routes —
   skipping it is a 27-route-group lockout. (Wire an `rbac:verify` gate if not yet.)
+  The production repair is **plain `rbac:sync`**, never `rbac:sync --fresh`:
+  `--fresh` resets every grant to the seeder map and so **discards the C6 per-school
+  runtime matrix edits** (the configurable per-school authority the lead has asked
+  for). Do not lean on the `--fresh` confirm as the safety net: `RbacSync.php:20`
+  fires it **only** when the environment is `production`, so any env not detected as
+  such (a mislabelled `APP_ENV`, a prod-like staging) gets **no prompt at all**, and
+  an operator at an interactive shell can just answer yes. (`--no-interaction` does
+  fail *safe* here — the confirm defaults to no, so it aborts rather than wiping —
+  but the instruction, not the prompt, is what protects the matrix.) `--fresh` on
+  staging in PR #182 was safe only because staging carries no runtime matrix edits;
+  production does.
 - [ ] Set `AUTH_GATE_BEFORE_SUPERADMIN=true` explicitly in prod env (intent visible,
   not resting on the config default).
 - [ ] `audit:verify-immutability` after `migrate` — confirms the `activity_log`

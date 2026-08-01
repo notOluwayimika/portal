@@ -2,7 +2,11 @@ import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
-import { CurriculumCardFinal } from '@/components/curriculum-card-final';
+import type { ResultSignature } from '@/components/curriculum-card-final';
+import {
+    CurriculumCardFinal,
+    ResultSignatureBlock,
+} from '@/components/curriculum-card-final';
 import { GradeKeyTable } from '@/components/student-results/shared';
 import { handleBack } from '@/helpers';
 import type {
@@ -16,6 +20,9 @@ interface ClassLevelArmPageProps {
     defaultGradeBoundaries: { data: GradeBoundary[] };
     approvalEndpoint: string;
     approvalScopeName: string;
+    // Keyed by enrollment id, exactly as on the single-student result page. A
+    // curriculum with no resolvable signer maps to null rather than being absent.
+    resultSignatures: Record<string, ResultSignature | null>;
     auth: { roles: string[] };
     [key: string]: unknown;
 }
@@ -79,6 +86,7 @@ export default function List() {
         defaultGradeBoundaries,
         approvalEndpoint,
         approvalScopeName,
+        resultSignatures,
         auth,
     } = usePage<ClassLevelArmPageProps>().props;
     const armData = classLevelArms.data;
@@ -295,21 +303,30 @@ export default function List() {
                                                             />
                                                         </div>
                                                         <div>
+                                                            {/*
+                                                                The CCM sheet used to
+                                                                hard-code
+                                                                signature_secondary.png
+                                                                captioned "Principal's
+                                                                Signature" — one
+                                                                school's image, and one
+                                                                school's job title,
+                                                                printed for every
+                                                                school. It now resolves
+                                                                the same way as
+                                                                everywhere else, which
+                                                                is also what the CCM
+                                                                branch of active.tsx
+                                                                does.
+                                                            */}
                                                             <div className="my-1 flex w-full p-1 text-xs font-extralight italic">
-                                                                <div>
-                                                                    <img
-                                                                        src="/assets/images/signature_secondary.png"
-                                                                        alt="Brookstone School"
-                                                                        className={`h-16 w-auto sm:h-20`}
-                                                                        draggable={
-                                                                            false
-                                                                        }
-                                                                    />
-                                                                    <p>
-                                                                        Principal's
-                                                                        Signature
-                                                                    </p>
-                                                                </div>
+                                                                <ResultSignatureBlock
+                                                                    signature={
+                                                                        resultSignatures[
+                                                                            sc.id
+                                                                        ]
+                                                                    }
+                                                                />
                                                             </div>
                                                             <div className="my-1 w-full border border-black p-1 text-xs font-extralight italic">
                                                                 <p>
@@ -343,6 +360,11 @@ export default function List() {
                                                             student={sc.student}
                                                             boundaries={
                                                                 boundaries
+                                                            }
+                                                            resultSignature={
+                                                                resultSignatures[
+                                                                    sc.id
+                                                                ]
                                                             }
                                                         />
                                                     </>

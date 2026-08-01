@@ -17,15 +17,48 @@ class ResultSignatureService
         return $this->withApprovalDate($signature, $studentCurriculum);
     }
 
+    /**
+     * Resolve one signature per enrollment, keyed by the enrollment's uuid.
+     *
+     * MEMOISED BY CLASS-LEVEL ARM, because the head-of-school fallback is the only
+     * per-enrollment step and it is not cheap: ClassLevelArm::headOfSchool() runs a
+     * fresh assignment query (it deliberately ignores any loaded relation) and then
+     * loads the teacher's user and signature file. That is a handful of queries per
+     * pupil — invisible on the single-student result page this method was written
+     * for, but the class result sheets call it for a whole arm at once.
+     *
+     * The head of school is a property of the ARM, not of the pupil, so every
+     * enrollment in one arm resolves to the same signature. Only `approval_date`
+     * varies per enrollment, and that is stamped after the lookup. `array_key_exists`
+     * rather than `??`, so an arm with NO head of school is remembered as such
+     * instead of being re-queried for every one of its pupils.
+     */
     public function forCurricula(iterable $studentCurricula, School $school): array
     {
         $signatures = [];
         $principalSignature = $this->principalSignature($school);
         $fallbackSignature = $this->fallbackSignature($school);
+        $headSignaturesByArm = [];
 
         foreach ($studentCurricula as $studentCurriculum) {
+            $headSignature = null;
+
+            if (! $principalSignature) {
+                $armId = $studentCurriculum->curriculum?->class_level_arm_id;
+
+                if ($armId === null) {
+                    $headSignature = $this->headOfSchoolSignature($studentCurriculum, $school);
+                } else {
+                    if (! array_key_exists($armId, $headSignaturesByArm)) {
+                        $headSignaturesByArm[$armId] = $this->headOfSchoolSignature($studentCurriculum, $school);
+                    }
+
+                    $headSignature = $headSignaturesByArm[$armId];
+                }
+            }
+
             $signature = $principalSignature
-                ?? $this->headOfSchoolSignature($studentCurriculum, $school)
+                ?? $headSignature
                 ?? $fallbackSignature;
             $signatures[$studentCurriculum->uuid] = $this->withApprovalDate($signature, $studentCurriculum);
         }

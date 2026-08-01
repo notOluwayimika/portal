@@ -34,7 +34,12 @@ type CurriculumCardFinalProps = CurriculumCardProps & {
     resultSignature?: ResultSignature | null;
 };
 
-function ResultSignatureBlock({
+/**
+ * Exported for the CCM sheets, which print the signature outside the card rather
+ * than as one of its rows — and which, on the class-level sheet, used to print a
+ * hard-coded image instead.
+ */
+export function ResultSignatureBlock({
     signature,
     showCaption = true,
 }: {
@@ -99,6 +104,7 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
     // flicker in and then out on a school that shows them.
     const showHeadOfSchoolComment =
         scDetails?.showHeadOfSchoolComment !== false;
+    const showBehaviourComment = scDetails?.showBehaviourComment !== false;
 
     return (
         <>
@@ -130,22 +136,33 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
                         : null
                 }
             />
+            {/*
+                THE COMMENT IS GATED, THE NAME IS NOT. `showBehaviourComment` was
+                asked for by primary, which prints no behaviour remark; the Boarding
+                Parent's NAME is an attribution the same school still wants, so only
+                the comment rows below it are suppressed. Defaults true (the payload
+                key is absent until it arrives), so secondary is untouched.
+            */}
             {hasBoarding ? (
                 <>
                     <DetailRow
                         label="Boarding Parent's Name:"
                         value={boardingParentName}
                     />
-                    <DetailRow
-                        label="Boarding Parent Comment:"
-                        value={boardingParentName ? assessmentComment : null}
-                    />
+                    {showBehaviourComment && (
+                        <DetailRow
+                            label="Boarding Parent Comment:"
+                            value={boardingParentName ? assessmentComment : null}
+                        />
+                    )}
                 </>
             ) : (
-                <DetailRow
-                    label="Behaviour Comment:"
-                    value={assessmentComment}
-                />
+                showBehaviourComment && (
+                    <DetailRow
+                        label="Behaviour Comment:"
+                        value={assessmentComment}
+                    />
+                )
             )}
             {/*
                 Off for primary, where the Head of School APPROVES with a signature

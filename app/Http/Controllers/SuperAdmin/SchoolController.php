@@ -41,6 +41,7 @@ class SchoolController extends Controller
                 'result_approver_title' => $s->result_approver_title,
                 'show_subject_comments_on_result' => (bool) $s->show_subject_comments_on_result,
                 'show_head_of_school_comment_on_result' => (bool) $s->show_head_of_school_comment_on_result,
+                'show_behaviour_comment_on_result' => (bool) $s->show_behaviour_comment_on_result,
                 'active' => (bool) $s->active,
                 'students_count' => $s->students_count,
                 'teachers_count' => $s->teachers_count,
@@ -62,6 +63,7 @@ class SchoolController extends Controller
             'result_approver_title' => ['nullable', 'string', 'max:255'],
             'show_subject_comments_on_result' => ['boolean'],
             'show_head_of_school_comment_on_result' => ['boolean'],
+            'show_behaviour_comment_on_result' => ['boolean'],
         ]);
 
         School::create([
@@ -86,6 +88,7 @@ class SchoolController extends Controller
             'result_approver_title' => ['nullable', 'string', 'max:255'],
             'show_subject_comments_on_result' => ['boolean'],
             'show_head_of_school_comment_on_result' => ['boolean'],
+            'show_behaviour_comment_on_result' => ['boolean'],
             'active' => ['boolean'],
         ]);
 

@@ -246,6 +246,14 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
         return Inertia::render('admin/activity-logs/index', ['initialActivityId' => $id]);
     })->whereNumber('id')->name('activity-logs.show');
 
+    // Notification queue health. The page itself renders for anyone who can
+    // reach this group; its DATA endpoint is gated on `activity_log.view_system`
+    // (see NotificationQueueHealthController for why that permission is reused
+    // rather than a new one minted in v1).
+    Route::get('notifications/queue-health', function () {
+        return Inertia::render('admin/notifications/queue-health');
+    })->name('notifications.queue-health');
+
     // Guardian profile
     Route::get('guardians/{guardian:uuid}', function (Guardian $guardian) {
         $guardian->load([

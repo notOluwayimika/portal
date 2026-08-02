@@ -2,6 +2,7 @@
 
 namespace App\Finance\Http\Controllers;
 
+use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\RejectVoidRequest;
@@ -12,6 +13,9 @@ use App\Finance\Http\Resources\VoidRequestResource;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\VoidRequest;
 use App\Finance\Services\InvoiceReadModel;
+use App\Notifications\Contracts\Notifier;
+use App\Notifications\Types\ApprovalRequested;
+use App\Support\ActiveSchool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -30,13 +34,33 @@ use Illuminate\Support\Facades\Gate;
 class VoidRequestController extends Controller
 {
     /** Maker: propose voiding an invoice (status `submitted`; invoice untouched, no money moves). */
-    public function submit(SubmitVoidRequestRequest $request, Invoice $invoice, SubmitVoidRequest $action): JsonResponse
-    {
+    public function submit(
+        SubmitVoidRequestRequest $request,
+        Invoice $invoice,
+        SubmitVoidRequest $action,
+        Notifier $notifier,
+    ): JsonResponse {
         try {
             $voidRequest = $action->handle($invoice, (string) $request->input('reason'), $request->user());
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+
+        // Tell the checkers there is something to decide. The queue already
+        // exists as a PULL surface (approvals.tsx polls two endpoints); this is
+        // the push half, so a checker who is not sitting on that page still knows.
+        //
+        // Depends on App\Notifications\Contracts — the module's public port, never
+        // its internals. AFTER the action, so a refused submission notifies nobody,
+        // and the submitter is excluded by the type definition (they cannot decide
+        // their own request: `submitted_by <> decided_by` at Policy and DB).
+        $notifier->send(new ApprovalRequested(
+            checkerAbility: Permission::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
+            subject: $voidRequest,
+            schoolId: ActiveSchool::getOrFail()->id,
+            submittedBy: (int) $request->user()->id,
+            summary: 'A void request is awaiting approval',
+        ));
 
         $voidRequest->load(['invoice', 'submittedBy']);
 

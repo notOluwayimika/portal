@@ -73,6 +73,23 @@ return [
             'after_commit' => true,
         ],
 
+        /*
+         * Notification work, isolated from the shared `jobs` table.
+         *
+         * Same database — no second one is available on the current host — but its
+         * own table, so a fan-out burst cannot starve an import or an export
+         * queued on `jobs`. That contention is the only benefit a Redis queue
+         * would have bought here, and this buys it without Redis.
+         */
+        'notifications' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => 'notification_jobs',
+            'queue' => env('NOTIFICATIONS_QUEUE_FANOUT', 'default'),
+            'retry_after' => 300,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

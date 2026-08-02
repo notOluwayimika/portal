@@ -43,6 +43,15 @@
         <env name="DB_DATABASE" value="portal_testing"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <!--
+            Notification work is pinned to its own `notifications` connection in
+            production (an isolated queue TABLE, since no second database is
+            available). That connection is a database driver, so without this the
+            fan-out job would sit in `notification_jobs` and never run under test,
+            and every assertion past dispatch would be testing nothing.
+        -->
+        <env name="NOTIFICATIONS_QUEUE_CONNECTION" value="sync"/>
+        <env name="NOTIFICATIONS_ENABLED" value="true"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

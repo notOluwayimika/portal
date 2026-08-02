@@ -81,9 +81,11 @@ class RbacSeeder extends Seeder
         'accounts_officer',      // AO — bursar / maker on every finance flow
         'accounts_supervisor',   // AS — renamed from finance_director; CHECKS credit-note + void
         'finance_lead',          // FL — proposer (credit-note + discount submit)
-        'internal_auditor',      // IA — activity-log only. NO finance.access: it alone records payments
-        // (endpoints/finance.php:24, :143), so the read-only seat cannot hold it
-        // until finance.payment.record splits payment authority off it.
+        'internal_auditor',      // IA — activity-log only. Still no finance.access, but the SAFETY reason is
+        // gone: 001fd1f gated both payment doors on finance.payment.record
+        // (endpoints/finance.php:24-25, :145-146), so finance.access now reaches
+        // GET reads only. The grant is DECIDED and UNIMPLEMENTED, not open — see
+        // the internal_auditor block in the grants map below.
         // NOTE: finance_void_approver (a one-sided void checker, seeded only so the access oracle
         // exercised the D1 single-side-checker case) was DELETED 2026-08-01 — Brookstone has no such
         // seat and it had zero holders in production. The D1 oracle row is a recorded coverage loss;
@@ -372,15 +374,24 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_CREDIT_NOTE_SUBMIT->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
             ],
-            // Internal Auditor (IA) — new 2026-08-01, activity-log-only. NO finance.access, deliberately:
-            // finance.access is not a read-only gate — routes/endpoints/finance.php:24 and :143 (POST
-            // …/payments) carry finance.access and NO further permission, PaymentController calls no
-            // authorize(), and the payment FormRequests authorize()=true, so finance.access ALONE posts a
-            // payment. Granting it to the control role would let the auditor CREATE financial transactions —
-            // the exact V→(should-not-be-D) inversion the matrix forbids (IA=V on rows 3-6). IA ships as
-            // activity-log-only (matrix rows 8/9, IA=D — cross-school read/export). Its finance-screen READ
-            // access (rows 3-6, IA=V) is DEFERRED until finance.access splits read from act; recorded as a
-            // named deferral in docs/rbac/finance-seat-realignment.md, not an oversight.
+            // Internal Auditor (IA) — new 2026-08-01, activity-log-only. Still NO finance.access, but the
+            // ORIGINAL REASON NO LONGER HOLDS. It was: finance.access is not a read-only gate — both payment
+            // doors carried it with NO ability of their own, PaymentController calls no authorize() and both
+            // payment FormRequests authorize()=true, so finance.access ALONE posted a payment; granting it to
+            // the control role would have let the auditor CREATE financial transactions — the inversion a
+            // read-only control seat exists to prevent. 001fd1f (ADR 0048 D1) closed that: both doors now gate
+            // on finance.payment.record — routes/endpoints/finance.php:24-25 (invoice-addressed) and :145-146
+            // (student-addressed) — granted to accounts_officer alone (see AO above). Every other mutating
+            // finance route already carried its own permission, so finance.access today reaches only the six
+            // GET reads in that file plus the page shells, and confers NO payment capability on any holder.
+            // The grant is therefore UNIMPLEMENTED, not undecided — do not re-open it as a question. v10 §7.2
+            // (docs/Finance Module — Implementation Master Plan - v10.md:375, under DECIDED 2026-07-29) records
+            // that the auditor NEEDS finance.access; :379 makes it a Phase 2 deliverable. What :377 adds is
+            // why that is a deliverable and not a one-line edit here: NO finance.* read permission exists yet,
+            // so finance.access on its own would buy entry to the surface with nothing financial to read. The
+            // Phase 2 symmetry gate (every Finance resource with a write permission must carry a read one) is
+            // what makes the grant meaningful. IA ships activity-log-only until then;
+            // docs/rbac/finance-seat-realignment.md carries the same record.
             'internal_auditor' => [
                 PermissionEnum::ACTIVITY_LOG_VIEW->value,
                 PermissionEnum::ACTIVITY_LOG_EXPORT->value,

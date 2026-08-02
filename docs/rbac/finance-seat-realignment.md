@@ -51,21 +51,38 @@ AO/FL as proposers and HoS as approver **by analogy with row 2** (fee-schedule c
 did answer. **Flag for confirmation** — if the business wants a different seat owning discount-policy
 governance, the discount-policy.change grants move accordingly. Presented here as derived, not decided.
 
-## Internal Auditor ships activity-log-only — a deliberate deferral
+## Internal Auditor ships activity-log-only — a deferral whose original reason is now closed
 
-The brief first gave IA `finance.access` "to look, not act." **That is wrong: `finance.access` is not a
-read-only gate.** `routes/endpoints/finance.php:24` and `:143` (POST `…/payments`) carry `finance.access`
-and **no further permission**; `PaymentController` calls no `authorize()`, and both payment FormRequests
-`authorize()` return `true`. So `finance.access` **alone posts a payment**. Granting it to the control role
-would let the auditor *create financial transactions* — the exact inversion the matrix forbids (IA=V, not
-D, on the finance screens).
+**The reason at the time of this commit (2026-08-01).** The brief first gave IA `finance.access` "to look,
+not act." That was wrong then: `finance.access` was not a read-only gate. Both payment doors carried it with
+**no further permission**; `PaymentController` calls no `authorize()`, and both payment FormRequests
+`authorize()` return `true`. So `finance.access` **alone posted a payment**, and granting it to the control
+role would have let the auditor *create financial transactions* — the inversion a read-only control seat
+exists to prevent.
 
-So **IA holds no `finance.access`.** It is activity-log-only. Its finance-screen READ access (matrix rows
-3–6, IA=V) is **deferred** until `finance.access` is split into read vs act — a separate change. Recorded
-here as a named, deliberate deferral, not an oversight. Verified: `internal_auditor` reaches only 38
-auth-only/public routes and **zero** `/finance/*` routes.
+**That reason is now closed.** `001fd1f` (ADR 0048 D1) gated both payment doors on `finance.payment.record`:
+`routes/endpoints/finance.php:24-25` (invoice-addressed) and `:145-146` (student-addressed), granted to
+`accounts_officer` alone. Every other mutating finance route already carried its own permission, so
+`finance.access` today reaches only the six GET reads in that file plus the two Inertia page shells in
+`routes/web.php`. **IA would gain no payment capability — and no write capability at all — from
+`finance.access`.**
 
-## Known pre-existing authority leak — NOT fixed here
+**IA still holds no `finance.access`, but the grant is UNIMPLEMENTED, not undecided — do not re-open it as a
+question.** v10 §7.2 (`docs/Finance Module — Implementation Master Plan - v10.md:375`, under **DECIDED
+2026-07-29**) records that the auditor **needs** `finance.access`; `:379` makes the derivation a Phase 2
+deliverable, written separately. `:377` is why that is a deliverable rather than a one-line seeder edit:
+**there is not one `finance.*` read permission in the enum today**, so `finance.access` on its own would buy
+entry to the finance surface with nothing financial to read. The Phase 2 symmetry gate — every Finance
+resource carrying a write permission must also carry a read permission — is what makes the grant meaningful.
+
+IA ships activity-log-only until then. Re-derived 2026-08-02 against `tests/fixtures/route-access-map.json`:
+`internal_auditor` reaches 38 auth-only/public routes and **zero** `/finance/*` routes.
+
+## Known pre-existing authority leak — not fixed here, CLOSED LATER by `001fd1f`
+
+**Status: CLOSED.** `001fd1f` ("finance.payment.record gates both payment doors, ADR 0048 D1") narrowed both
+routes below to `finance.payment.record`, held by `accounts_officer` alone. The paragraph that follows records
+the state as of this commit (2026-08-01) — it is history, not a live leak.
 
 Exactly two mutating routes gate on `finance.access` alone: `POST /v1/finance/invoices/{invoice}/payments`
 and `POST /v1/finance/students/{student}/payments`. So **`finance_lead` and `accounts_supervisor` can post

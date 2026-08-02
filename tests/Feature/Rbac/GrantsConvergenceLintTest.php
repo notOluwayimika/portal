@@ -71,9 +71,13 @@ function gclBlob(string $content): string
 /**
  * Build a commit from a path => content map, optionally on top of $parent (inheriting its tree).
  *
+ * $removes deletes paths from the inherited tree — `--force-remove` acts on the SCRATCH index like
+ * every other call here, so it removes a path from the fixture commit and never from the checkout.
+ *
  * @param  array<string, string>  $files
+ * @param  list<string>  $removes
  */
-function gclCommit(array $files, ?string $parent = null): string
+function gclCommit(array $files, ?string $parent = null, array $removes = []): string
 {
     $index = tempnam(sys_get_temp_dir(), 'gclidx');
     @unlink($index); // git wants to create it itself
@@ -86,6 +90,10 @@ function gclCommit(array $files, ?string $parent = null): string
 
         foreach ($files as $path => $content) {
             $git(['git', 'update-index', '--add', '--cacheinfo', '100644,'.gclBlob($content).','.$path]);
+        }
+
+        foreach ($removes as $path) {
+            $git(['git', 'update-index', '--force-remove', $path]);
         }
 
         $tree = trim($git(['git', 'write-tree'])->output());
@@ -262,6 +270,330 @@ it('exemption 3 — a migration naming the permission EXACTLY exempts it; one na
         ->and($r['output'])->toContain('that rbac:sync will NOT apply')
         // And it must not have been swallowed by the migration exemption on the way past.
         ->and($r['output'])->not->toContain('in this diff names it');
+});
+
+// ── The five holes the cold review of 79798c8...85805da found, armed permanently ─────────────
+//
+// Every one of these was a SILENT GREEN or a false red before the fix, and every arm below is
+// written so that reverting its fix turns the arm red rather than merely changing a message.
+
+it('4a — a ROLES member that is not shaped like a role name is NOT LINTED, not silently trusted', function () {
+    // THE BACKSTOP, armed at the level of the defect class rather than at the level of apostrophes.
+    // constMembers() used a floating `['"]([^'"]+)['"]` quote-pair scan over the raw const body, so
+    // one apostrophe in a comment flipped the pairing and produced junk members. token_get_all()
+    // makes that specific class impossible — but this arm is the assertion that would have caught
+    // the original defect without anyone having had to think of apostrophes first: a member of
+    // ROLES that is not `[a-z0-9_]+` means the parse is unsound, whatever broke it, and exemption 2
+    // cannot be trusted on an unsound parse.
+    //
+    // Before the fix this fixture exits 0 — the grant is exempted as a new role, on a ROLES list
+    // the lint had no way to know it had misread.
+    $enum = <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+}
+PHP;
+
+    $seeder = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const ROLES = [
+        'auditor',
+        'Finance Seats',
+    ];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]);
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => str_replace(
+            ["        'Finance Seats',\n", "            'auditor' => [\n                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            ],\n"],
+            ["        'Finance Seats',\n        'bursar',\n", "            'auditor' => [\n                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            ],\n            'bursar' => [\n                PermissionEnum::ACTIVITY_LOG_VIEW->value,\n            ],\n"],
+            $seeder
+        ),
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->toContain('not a role name')
+        ->and($r['output'])->toContain('Finance Seats')
+        // And it must not have quietly exempted its way there instead.
+        ->and($r['output'])->not->toContain('is NEW in this diff');
+});
+
+it('4a EXPLOITED — rewording an apostrophe-bearing comment in ROLES must not manufacture a new role', function () {
+    // THE LIVE EXPLOIT, built from the REAL RbacSeeder.php rather than a synthetic one, because the
+    // apostrophe that carries it is real: `// Primary's senior commenter` inside RbacSeeder::ROLES.
+    // The measured parse under the old scanner lost `key_stage_coordinator` and `registrar` and
+    // produced three junk members in their place. Both sides of a diff garbled identically, so
+    // nothing fired — until a diff REWORDED the comment. Then head parses correctly, base does not,
+    // and array_diff() hands exemption 2 two roles that have existed for months.
+    //
+    // Before the fix: exit 0, `role [key_stage_coordinator] is NEW in this diff`. After: exit 1.
+    $seeder = file_get_contents(base_path('database/seeders/RbacSeeder.php'));
+    $enum = file_get_contents(base_path('app/Enums/Permission.php'));
+
+    $comment = "// Primary's senior commenter";
+    $anchor = "PermissionEnum::MANAGE_KEY_STAGE_COORDINATOR_COMMENTS->value,\n";
+
+    // Fail loudly if the exploit's preconditions have gone away, rather than passing vacuously on a
+    // file that no longer contains what this arm is about. If the apostrophe comment is ever
+    // reworded for real, re-derive this arm against whatever carries the parity flip then — do not
+    // delete it, and do not let it decay into asserting nothing.
+    expect(str_contains($seeder, $comment))->toBeTrue()
+        ->and(str_contains($seeder, $anchor))->toBeTrue();
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]);
+
+    // The two edits a real diff would make: reword the comment (no apostrophe), and grant
+    // key_stage_coordinator a permission that has existed since long before this diff.
+    $headSeeder = str_replace(
+        [$comment, $anchor],
+        ['// Primary senior commenter', $anchor.'                PermissionEnum::ACTIVITY_LOG_EXPORT->value,'."\n"],
+        $seeder
+    );
+
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => $headSeeder], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('activity_log.export')
+        ->and($r['output'])->toContain('key_stage_coordinator')
+        ->and($r['output'])->toContain('that rbac:sync will NOT apply')
+        // The exemption that must NOT have fired. This is the whole arm.
+        ->and($r['output'])->not->toContain('is NEW in this diff (takes the full');
+});
+
+it('4b — an unreadable enum or seeder at either revision is NOT LINTED, never a pass', function () {
+    // `git()` is shell_exec with 2>/dev/null, so an unreadable revision or a moved file returns ''
+    // and every parser turns '' into an EMPTY SET. Each empty set exempted, silently:
+    //   head enum gone -> no added line resolves to a permission  -> zero findings, forever
+    //   base enum gone -> every value at head is "new"            -> exemption 1 exempts everything
+    // The lint already stated the right rule for an unresolvable base ref and did not apply it here.
+    [$base, $files] = gclFixtureBase();
+    $withGrant = ['database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php'])];
+
+    // (i) The enum has moved out from under the lint at HEAD. Before the fix: exit 0, zero findings,
+    //     and it would have stayed exit 0 on every future diff too.
+    $headNoEnum = gclCommit($withGrant, $base, ['app/Enums/Permission.php']);
+    $r = gclRun($base, $headNoEnum);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->toContain('app/Enums/Permission.php')
+        ->and($r['output'])->not->toContain('no unexempted grant addition');
+
+    // (ii) The enum is unreadable at BASE. Before the fix: exemption 1 swallowed every addition.
+    $baseNoEnum = gclCommit(['database/seeders/RbacSeeder.php' => $files['database/seeders/RbacSeeder.php']]);
+    $headFromIt = gclCommit($withGrant + ['app/Enums/Permission.php' => $files['app/Enums/Permission.php']], $baseNoEnum);
+    $r = gclRun($baseNoEnum, $headFromIt);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->not->toContain('permission is NEW in this diff');
+
+    // (iii) The SEEDER itself has moved. This one sat ABOVE the unchanged-diff early return: a
+    //       seeder renamed out from under SEEDER is indistinguishable, at that return, from a
+    //       seeder nobody edited — so the old lint said "unchanged in this diff" and exited 0.
+    $headNoSeeder = gclCommit([], $base, ['database/seeders/RbacSeeder.php']);
+    $r = gclRun($base, $headNoSeeder);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->not->toContain('is unchanged in this diff');
+});
+
+it('4c — a migration converging role A does NOT exempt the same permission added to role B', function () {
+    // 7370e89, this lint's own canonical defect, added `finance.access` to head_of_school AND
+    // principal. Exemption 3 stopped at the first added migration whose CONTENT named the
+    // permission, with no check that it converged the ROLE — so a migration converging one of the
+    // two would have exempted both. A convergence migration is per (role, permission); so is the
+    // exemption now.
+    $enum = <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+}
+PHP;
+
+    $seeder = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+            'bursar' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]);
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => str_replace(
+            "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n",
+            "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n                PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
+            $seeder
+        ),
+        // Converges the pair (auditor, activity_log.view). Says nothing about bursar.
+        'database/migrations/2099_01_01_000000_converge_auditor.php' => "<?php\n\n// converge: grants 'activity_log.view' to the 'auditor' role\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        // bursar is flagged...
+        ->and($r['output'])->toContain('bursar')
+        ->and($r['output'])->toContain('that rbac:sync will NOT apply')
+        // ...and auditor is still exempt in the same run, by the migration that does converge it.
+        ->and($r['output'])->toContain('names it AND names role [auditor]');
+
+    // The failure block must name bursar, not auditor — otherwise the arm would pass on a lint that
+    // simply flags everything.
+    $failures = substr($r['output'], 0, strpos($r['output'], 'were EXEMPT') ?: strlen($r['output']));
+    expect($failures)->toContain('role: bursar')
+        ->and($failures)->not->toContain('role: auditor');
+});
+
+it('4d — the SUPER_ADMIN_PLATFORM range is bounded at both ends', function () {
+    $enum = <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+}
+PHP;
+
+    // (i) SINGLE-LINE CONST — the window must not run on to the next array's terminator.
+    //     `= ['a'];` never matches /^\s*\];/ on its own line, so the old scan kept going. Measured
+    //     on the real seeder, collapsing the const to one line grew the window from 5 lines to 31.
+    //     Here the next `];` is grantsMap()'s, so the window swallowed the entire map and the added
+    //     grant below was exempted as "inside SUPER_ADMIN_PLATFORM". Before the fix: exit 0.
+    $collapsed = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public const SUPER_ADMIN_PLATFORM = ['activity_log.view_all'];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $collapsed]);
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => str_replace(
+            "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n",
+            "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n                PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
+            $collapsed
+        ),
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('activity_log.view')
+        ->and($r['output'])->not->toContain('inside SUPER_ADMIN_PLATFORM');
+
+    // (ii) AN EARLIER TEXTUAL MENTION — a docblock naming the const must not anchor the window to
+    //      itself. Under `str_contains($line, 'const SUPER_ADMIN_PLATFORM')` the window ran from the
+    //      docblock to ROLES' `];`, so the const's real members fell OUTSIDE it and a legitimate
+    //      super_admin addition was FLAGGED. That is the safe direction but it is still wrong, and a
+    //      gate that fires on the legitimate case is a gate that gets switched off. Before the fix:
+    //      exit 1. After: exit 0, exempt.
+    $documented = <<<'PHP'
+<?php
+
+/**
+ * Platform grants live in const SUPER_ADMIN_PLATFORM, below the role list.
+ */
+class RbacSeeder
+{
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+            'super_admin' => self::SUPER_ADMIN_PLATFORM,
+        ];
+    }
+}
+PHP;
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $documented]);
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => str_replace(
+            "        'activity_log.view_all',\n",
+            "        'activity_log.view_all',\n        'activity_log.view',\n",
+            $documented
+        ),
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('inside SUPER_ADMIN_PLATFORM');
 });
 
 it('exemption 4 — an addition inside SUPER_ADMIN_PLATFORM is exempt (cf9d2a2, real history)', function () {

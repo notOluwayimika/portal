@@ -632,3 +632,239 @@ smuggled in here.**
 - `bin/quality` was not re-run for this commit: it was green on `eafe54f`, and the two files changed
   here are the lint and its own test, both of which are exercised directly above (17/17, Pint clean).
   Say so rather than implying a full-gate run happened.
+
+---
+
+# Appendix 2 — the cold review of `79798c8...85805da`, worked
+
+Third commit on the branch. The cold review returned one **stop**, six **fixes** and six
+**tickets**; all seven of the stop-and-fix items are closed here, and the six tickets are **not
+touched** — listed at the end with why.
+
+Every premise was re-derived against the repo before any edit. Two of the review's own supporting
+facts turned out to be stale and are corrected below rather than carried.
+
+## Deviations from the brief — read these first
+
+1. **I extended fix 4b to the SEEDER, and moved the guards ABOVE the unchanged-diff early return.**
+   The brief named the enum. The same `git()`-returns-`''` mechanism applies to
+   `database/seeders/RbacSeeder.php`, and there it is worse: with the seeder unreadable at head the
+   diff is empty, so the lint printed `OK — RbacSeeder.php is unchanged in this diff` and exited 0.
+   A seeder renamed out from under the `SEEDER` constant is indistinguishable, at that early
+   return, from a seeder nobody edited — a permanent silent green the review did not name. Arm
+   `4b (iii)` covers it.
+
+2. **I added a shape backstop to fix 4a that the brief did not ask for.** Stripping comments (or
+   tokenizing) closes the apostrophe instance. The backstop closes the _class_: after parsing,
+   every member of `ROLES` must match `/^[a-z0-9_]+$/`, and anything else is `NOT LINTED`. That is
+   the assertion that would have caught the original defect without anyone having had to think of
+   apostrophes first. Armed as `4a`.
+
+3. **I added a second arm to fix 1, bite-proving the new oracle.** The brief asked for row
+   snapshots plus `MAX(id)`. An oracle nobody has watched detect anything is the same category of
+   claim as the count-only one it replaces, so there is now an arm that performs the smallest
+   mutation a count cannot see — revoke then re-grant the same pivot pair — and asserts the count
+   is unchanged while the new oracle moves.
+
+4. **`namesRole()` uses BOTH boundaries; `namesPermission()` still uses only the right one.** Not
+   an inconsistency — re-derived. Permission values have 9 prefix pairs, 0 suffix pairs, 0 mid
+   pairs, so a right boundary suffices there (that decision is `85805da`'s and is left alone). Role
+   names do **not** have that shape: `admin` is a suffix of `super_admin` and `teacher` is a suffix
+   of `form_teacher`. Right-only would have let a migration naming `super_admin` count as naming
+   `admin`.
+
+5. **I did NOT tokenize `enumValues()`.** Its pattern is anchored on `case <NAME> = ` before it
+   reaches a quote, so there is no floating quote-pair scan for parity to slide through — the
+   defect being fixed cannot occur there. The residual (a commented-out `case X = 'v';` read as
+   declared) has never occurred in that file and is recorded in the docblock rather than
+   pre-empted. Building the general fix ahead of a demonstrated consumer is the thing to avoid.
+
+## Two of the review's supporting facts were stale
+
+- **The cascade citation.** The review and the brief both anchor the pivot cascade to
+  `create_permission_tables.php:64`. That migration declares `uuid` foreign keys referencing
+  `permissions.uuid`; the live schema has `permission_id bigint unsigned` referencing
+  `permissions.id`, because `2026_04_29_000001_update_foreign_keys_to_integer_ids` rebuilt them.
+  **The substance survives** — re-derived from `information_schema` rather than from either
+  migration:
+
+    ```text
+    model_has_permissions.permission_id -> permissions.id  ON DELETE CASCADE
+    role_has_permissions.permission_id  -> permissions.id  ON DELETE CASCADE
+    ```
+
+    The runbook now carries that query rather than a migration line number, so the next reader
+    derives it instead of trusting it.
+
+- **`bin/quality` step count, re-derived rather than accepted.** The brief's enumeration is
+  correct: 13 `step` calls, grants-convergence is **7**. Confirmed with
+  `grep -c '^step "' bin/quality` → `13`, and the grants-convergence call is the 7th.
+  `docs/testing.md:185` said 6 and now says 7.
+
+## The claim the brief asked me to verify before adopting
+
+> _Once ROLES parses correctly, gate `inferRole`'s result on membership in
+> `constMembers($head, 'ROLES')` — that closes the composition with one mechanism rather than two
+> patches — but verify that claim yourself before adopting it._
+
+**It holds, and for a reason that does not depend on the tokenizer.**
+`$newRoles = array_diff($headRoles, $baseRoles)` is a **subset of `$headRoles` by definition of
+`array_diff`**. Exemption 2 is therefore unreachable for any role outside `$headRoles`, so
+restricting `inferRole`'s codomain to that set can never withhold a role exemption 2 would have
+matched. The gate is free on the legitimate path and total on the illegitimate one.
+
+It also holds independently of fix 4a: junk members contain spaces, newlines and `//`, and
+`inferRole` can only ever return a `[a-z0-9_]+` capture, so a garbled parse could not have fed it
+even if the tokenizer were reverted. Belt and braces, by construction rather than by hope.
+
+Checked empirically as well as by construction — `a0ab3d7` still exempts all four of its
+new-role grants after the gate:
+
+```text
+  ✓ finance.fee-schedule.change.submit   — role [accounts_supervisor] is NEW in this diff
+  ✓ finance.credit-note.submit           — role [finance_lead] is NEW in this diff
+  ✓ finance.discount-policy.change.submit — role [finance_lead] is NEW in this diff
+  ✓ activity_log.view                    — role [internal_auditor] is NEW in this diff
+```
+
+## 4a — the parse, measured before and after
+
+`token_get_all`, not comment-stripping, and the reason is that the defect **is** a lexing failure:
+a regex that cannot tell an apostrophe in a comment from a string delimiter. Answering it with a
+second regex that cannot tell a `//` inside a string from a real comment reproduces the same class
+one layer down. PHP's own lexer is in core, needs no Laravel boot (this lint has none, like its
+siblings), and `T_CONSTANT_ENCAPSED_STRING` is unambiguous by construction.
+
+Measured against the real `database/seeders/RbacSeeder.php`:
+
+```text
+BEFORE — floating ['"]([^'"]+)['"] scan over the raw const body          count=15
+  [ 7] "form_teacher"
+  [ 8] "s senior commenter — see the grants map below.\n        "
+  [ 9] ",\n        "
+  [10] ",\n        // Finance seats — Brookstone"
+  [11] "accounts_officer"
+  key_stage_coordinator present? NO
+  registrar             present? NO
+
+AFTER — token_get_all                                                    count=14
+  [ 7] "form_teacher"
+  [ 8] "key_stage_coordinator"
+  [ 9] "registrar"
+  [10] "accounts_officer"
+```
+
+Parity was restored by luck, by the second apostrophe in `Brookstone's` — which is why the finance
+roles below it survived and only these two were lost.
+
+## Watched reds — all five, before and after
+
+Same fixture commits both times, built with the `GIT_INDEX_FILE` plumbing already in
+`GrantsConvergenceLintTest` (scratch index; no ref, HEAD, index or working-tree write). The lint was
+reverted to `85805da` for the BEFORE column and restored for the AFTER column.
+
+| #            | Fixture                                                                                            | BEFORE                                                          | AFTER                                                                                            |
+| ------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 4a           | `ROLES` contains `'Finance Seats'`; grant added to a new role                                      | **exit 0** — `role [bursar] is NEW in this diff`                | **exit 1** — `NOT LINTED … parsed a member that is not a role name: "Finance Seats"`             |
+| 4a exploited | real seeder; `Primary's` comment reworded + `activity_log.export` added to `key_stage_coordinator` | **exit 0** — `role [key_stage_coordinator] is NEW in this diff` | **exit 1** — `✗ activity_log.export @ RbacSeeder.php:312, role: key_stage_coordinator`           |
+| 4b (i)       | enum removed at head                                                                               | **exit 0** — `OK — no unexempted grant addition (0 exempted)`   | **exit 1** — `NOT LINTED — no case NAME = 'value'; parsed from app/Enums/Permission.php at head` |
+| 4b (ii)      | enum absent at base                                                                                | **exit 0** — `exempt: permission is NEW in this diff`           | **exit 1** — `NOT LINTED … at base`                                                              |
+| 4b (iii)     | seeder removed at head                                                                             | **exit 0** — `OK — no unexempted grant addition`                | **exit 1** — `NOT LINTED — RbacSeeder.php is unreadable at head`                                 |
+| 4c           | migration converges `auditor` only; permission added to `auditor` AND `bursar`                     | **exit 0** — both exempted by `migration … names it`            | **exit 1** — `✗ role: bursar`; `auditor` still exempt via `names it AND names role [auditor]`    |
+| 4d (i)       | `SUPER_ADMIN_PLATFORM` collapsed to one line                                                       | **exit 0** — `exempt: inside SUPER_ADMIN_PLATFORM`              | **exit 1** — `✗ activity_log.view, role: auditor`                                                |
+| 4d (ii)      | docblock mentions the const above `ROLES`                                                          | **exit 1** — false red, `role: ?`                               | **exit 0** — `exempt: inside SUPER_ADMIN_PLATFORM`                                               |
+
+Seven of the eight were **silent greens**. 4d (ii) was the one false red, and it is the direction
+that gets a gate switched off rather than fixed.
+
+**The 4d span, measured.** On the real seeder, collapsing `SUPER_ADMIN_PLATFORM` to one line grew
+the window from **5 lines to 31** and swallowed `ROLES` whole. On the fixture, where the const sits
+above `grantsMap()`, the old rule measured a **9-line window in a 19-line file** and swallowed the
+entire map. The cause is not the `continue` in the old loop: `= ['a'];` never matches
+`/^\s*\];/` on its own line at all, so the scan always ran on to the next array's terminator. The
+fix anchors the declaration on `= [$` (which excludes `*` and `//` comment lines by construction),
+gives the single-line form a range of exactly its own line, and stops the forward scan at the next
+`const`/`function` — discarding the range rather than guessing, which disables exemption 4 and
+fails toward red.
+
+## Fix 1 — the read-only oracle, and its bite-proof
+
+`RbacDiffGrantsTest`'s read-only arm said "byte-identical" and asserted three `count()`s. It now
+snapshots the ordered row content of `role_has_permissions`, `roles` and `permissions`, plus both
+`COUNT(*)` **and `MAX(id)`** on `activity_log`. `MAX(id)` is the part a count cannot fake: an insert
+paired with a delete holds the count still, but the auto-increment only ever goes up, and any
+mutation through the Spatie API lands an activity row.
+
+The bite-proof arm performs `revokePermissionTo` then `givePermissionTo` on the same pair and
+asserts the pivot count is **unchanged** — the old oracle sees nothing — while the new one moves.
+
+## Fix 8 — the runbook, split by direction
+
+Step 2 was one instruction covering two different operations.
+
+- **`missing_rows` only → `rbac:sync` is safe.** `firstOrCreate` (`:447-449`) creates the row, it
+  lands in `$newPermissions` (`:478`), the map's grants are applied. Purely additive.
+- **Any `extra_rows` → STOP.** `:454-457` hard-deletes every `permissions` row the enum no longer
+  declares; both pivots cascade (live `information_schema` above); and the whole prune runs inside
+  `activity()->withoutLogs()` (`:432`), so it leaves **no audit trace**. Afterwards
+  `rbac:diff-grants` cannot even report it: the permission is gone from both the enum and the
+  database, so it is a finding in neither direction. The runbook now names the **enum-rename case**
+  explicitly — a one-line rename destroys every runtime matrix grant of the old name, unlogged, and
+  re-grants only what the map names, which is the map silently overriding C6 local authority.
+- **The third write, in every direction:** `:506-512` self-heals `super_admin` via
+  `syncPermissions` unconditionally on every run. `HasPermissions::syncPermissions` detaches RAW and
+  fires no event, so it is the one write `rbac:sync` makes that `rbac:diff-grants` can never
+  diagnose after the fact.
+
+The runbook also carries an ids-and-counts-only exposure query for enumerating what an `extra_rows`
+prune would destroy, before anyone runs it.
+
+## Tests and gate
+
+```text
+tests/Feature/Rbac/GrantsConvergenceLintTest.php   12 passed, 62 assertions
+tests/Feature/Rbac/RbacDiffGrantsTest.php          11 passed, 61 assertions
+```
+
+Five new lint arms (4a, 4a exploited, 4b, 4c, 4d), one new read-only bite-proof arm. The four
+history-replay arms (`7370e89`, `9caf958`, `a0ab3d7`, `cf9d2a2`) are unchanged and still pass, which
+is the check that these fixes did not over-correct.
+
+`bin/quality`, full run, base `79798c8` — **13/13 PASS**. Run for real this time; the runbook and
+`docs/testing.md` both change, and the first run failed on Pint (`single_quote`,
+`unary_operator_spaces`, `not_operator_with_successor_space` in the lint script), which was fixed and
+re-run rather than reported as green.
+
+## NOT DONE — the six tickets the review raised
+
+Out of scope by the brief. Recorded so they are not rediscovered as new.
+
+1. **`MAP_REMOVAL_GAP` has no test arm**, and unlike `ATTACHED_THEN_LOST` and
+   `DETACHED_THEN_REGAINED` it was not among the two this report already disclosed as untested. It
+   is reachable and live in shape: `internal_auditor` held `activity_log.view_cross_school` from
+   `a0ab3d7`'s seed and the map dropped it on 2026-08-04. Three of the six diagnoses are now
+   code-reviewed only, not four-of-six as the first report said.
+2. **`unmapped_global_roles` and the school-scoped footer carry no diagnosis.** The `rogue_platform`
+   shape is listed with its grants and zero `activity_log` evidence, while a routine `missing` gets
+   a full log row — the highest-risk finding gets the least evidence. School-scoped rows are a bare
+   integer, so one harmless row and one holding an `ISOLATION_CROSSING` permission render
+   identically as `1`.
+3. **The `activity_log` row is a BATCH.** `givePermissionTo([A,B,C])` writes one row listing all
+   three, so `log.id` / `created_at` / `causer_id_null` describe the batch, and the table repeats
+   the same row id across N permissions as if each were independent evidence.
+4. **`bin/quality:30`** says a broken migration "still fails step 11". The suite is step 13. Stale
+   before this branch, staler now.
+5. **The lint sees committed state only** (`git diff <base>...<head>`), while step 2 of the same run
+   lints the working tree. A grant addition staged but uncommitted passes this step and is caught
+   only at push time.
+6. **`GrantsConvergenceLintTest`'s fixture comment overstates.** "NOTHING IN THE REPOSITORY IS
+   MUTATED" — `git hash-object -w` and `commit-tree` do write loose objects into the real
+   `.git/objects`, unreferenced and reclaimed only by `git gc`. The comment's own next sentence
+   (no ref, index, HEAD or worktree) is exact; the headline is not.
+
+## Not reviewed by anyone but me
+
+This appendix was written by the hand that made the changes. Full-review tier — it touches RBAC
+grants, a gate, a runbook an operator follows against a production copy, and a weakened test
+assertion. A cold session started from this file is the review that has not shared a process with
+the work.

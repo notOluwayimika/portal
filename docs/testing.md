@@ -182,7 +182,7 @@ clean-room OS/environment, and any remote enforcement (no required status checks
 `--no-verify` bypasses; a clone without `composer install` has no hook). These are
 known and accepted, not hidden.
 
-**The grants-convergence lint (step 6) is diff-aware and NOT retroactive** — it fails a
+**The grants-convergence lint (step 7) is diff-aware and NOT retroactive** — it fails a
 diff that adds a pre-existing permission to a pre-existing role in `RbacSeeder::grantsMap()`
 without a convergence migration, but it says nothing about grants that have already drifted.
 It cannot: on a freshly seeded database the map and the grants agree by construction

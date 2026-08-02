@@ -240,22 +240,69 @@ it('--json carries the same findings as the table, and both exit the same way', 
         ->and($report['roles']['internal_auditor']['missing'][0]['diagnosis'])->toBe('SYNC_ADD_GAP');
 });
 
-it('writes nothing — the grant rows and the activity rows are byte-identical either side of a run', function () {
+it('writes nothing — the grant rows and the activity rows are identical either side of a run', function () {
     // The non-negotiable posture, asserted rather than asserted-in-a-docblock. It is run against the
     // production copy; a reconciler that repairs is one that can destroy a legitimate C6 edit before
     // anyone has read the diff.
+    //
+    // ROWS, NOT COUNTS. The first version of this arm compared three count()s and called the result
+    // "byte-identical", which it was not: a delete-and-reinsert of the same pivot pair, a revoke of
+    // one grant paired with a grant of another, or any swap that preserves cardinality passes a
+    // count comparison unchanged. The oracle below is what the title claims —
+    //
+    //   · the ordered ROW CONTENT of role_has_permissions and roles, so a swap is visible;
+    //   · MAX(id) on activity_log as well as its count, because that is the part a count cannot
+    //     fake — an insert paired with a delete holds the count still, but the auto-increment only
+    //     ever goes up. Any write that fires PermissionAttached/Detached lands an activity row and
+    //     moves MAX(id), so this also catches a mutation made through the Spatie API.
     $permission = dgMappedPermission('internal_auditor');
     activity()->withoutLogs(fn () => dgGlobalRole('internal_auditor')->revokePermissionTo($permission));
     dgForget();
 
-    $grantsBefore = DB::table('role_has_permissions')->count();
-    $rolesBefore = DB::table('roles')->count();
-    $activityBefore = DB::table('activity_log')->count();
+    $snapshot = fn (): array => [
+        'grants' => DB::table('role_has_permissions')
+            ->orderBy('role_id')->orderBy('permission_id')->get()->toJson(),
+        'roles' => DB::table('roles')->orderBy('id')->get()->toJson(),
+        'permissions' => DB::table('permissions')->orderBy('id')->get()->toJson(),
+        'activity_count' => DB::table('activity_log')->count(),
+        'activity_max_id' => (int) DB::table('activity_log')->max('id'),
+    ];
+
+    $before = $snapshot();
 
     Artisan::call('rbac:diff-grants');
     Artisan::call('rbac:diff-grants', ['--json' => true]);
 
-    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
-        ->and(DB::table('roles')->count())->toBe($rolesBefore)
-        ->and(DB::table('activity_log')->count())->toBe($activityBefore);
+    expect($snapshot())->toBe($before);
+});
+
+it('the read-only oracle is not vacuous — a delete-and-reinsert of the same pivot pair moves it', function () {
+    // BITE-PROOF for the arm above. A count-only oracle passes this mutation, which is exactly why
+    // the arm above was strengthened; without this, a future simplification back to count()s would
+    // look like a tidy-up rather than a regression. The mutation here is deliberately the SMALLEST
+    // one a count cannot see: remove a pivot row and put the identical row back.
+    $role = dgGlobalRole('internal_auditor');
+    $permission = dgMappedPermission('internal_auditor');
+
+    $snapshot = fn (): array => [
+        'grants' => DB::table('role_has_permissions')
+            ->orderBy('role_id')->orderBy('permission_id')->get()->toJson(),
+        'activity_count' => DB::table('activity_log')->count(),
+        'activity_max_id' => (int) DB::table('activity_log')->max('id'),
+    ];
+
+    $before = $snapshot();
+    $countBefore = DB::table('role_has_permissions')->count();
+
+    // Through the Spatie API, so it is the shape a stray write in the command would actually take.
+    $role->revokePermissionTo($permission);
+    $role->givePermissionTo($permission);
+    dgForget();
+
+    // The count is restored — a count-only oracle sees nothing at all here.
+    expect(DB::table('role_has_permissions')->count())->toBe($countBefore);
+
+    // The oracle the read-only arm uses does see it: the two logged events moved MAX(id).
+    expect($snapshot())->not->toBe($before)
+        ->and((int) DB::table('activity_log')->max('id'))->toBeGreaterThan($before['activity_max_id']);
 });

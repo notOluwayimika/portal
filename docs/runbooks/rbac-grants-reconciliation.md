@@ -83,15 +83,107 @@ fires.
 ```bash
 # 1. Section A must be clean before Section B means anything.
 php artisan rbac:diff-grants
+```
 
-# 2. If Section A reported a catalog difference, sync and re-run — do NOT use --fresh,
-#    which discards runtime matrix edits and makes the copy stop being ground truth.
+**Step 2 depends on WHICH DIRECTION Section A is dirty in. They are not the same operation and
+`rbac:sync` is only safe in one of them.** Read the two sub-sections below before running anything.
+
+### 2a. Section A shows `missing_rows` only — `rbac:sync` is safe
+
+`missing_rows` means the enum declares a permission that has no `permissions` row.
+[`firstOrCreate`](../../database/seeders/RbacSeeder.php#L447-L449) creates it; it then lands in
+`$newPermissions` ([:478](../../database/seeders/RbacSeeder.php#L478)) and is granted per the map.
+Purely additive — no row is deleted and no existing grant is touched.
+
+```bash
 php artisan rbac:sync
 php artisan rbac:diff-grants
+```
 
-# 3. Capture the enumeration for a convergence brief.
+### 2b. Section A shows any `extra_rows` — **STOP. Do not run `rbac:sync`.**
+
+`extra_rows` means a `permissions` row exists that the enum no longer declares, and that is the
+input to a **destructive** branch of the same command:
+
+```php
+// database/seeders/RbacSeeder.php:454-457
+Permission::where('guard_name', self::GUARD)
+    ->whereNotIn('name', $enumValues)
+    ->get()
+    ->each(fn (Permission $p) => $p->delete());
+```
+
+Three mechanisms compound:
+
+1. **The row is hard-deleted.** Not soft-deleted, not skipped.
+2. **The pivots cascade.** **Every `role_has_permissions` and `model_has_permissions` row for that
+   permission goes with it** — including runtime C6 matrix grants and direct user permissions.
+   Derived from the live schema, not from the create migration, because the original uuid foreign
+   keys were rebuilt as integer ones by
+   [`2026_04_29_000001_update_foreign_keys_to_integer_ids`](../../database/migrations/2026_04_29_000001_update_foreign_keys_to_integer_ids.php#L90-L96):
+
+    ```sql
+    SELECT rc.TABLE_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, rc.DELETE_RULE
+    FROM information_schema.REFERENTIAL_CONSTRAINTS rc
+    JOIN information_schema.KEY_COLUMN_USAGE k
+      ON k.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND k.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+    WHERE rc.CONSTRAINT_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME = 'permissions';
+
+    -- model_has_permissions.permission_id -> permissions.id  ON DELETE CASCADE
+    -- role_has_permissions.permission_id  -> permissions.id  ON DELETE CASCADE
+    ```
+
+3. **Nothing is logged.** The whole prune runs inside
+   [`activity()->withoutLogs()`](../../database/seeders/RbacSeeder.php#L432), so the deletion leaves
+   **no `activity_log` trace at all**. Afterwards `rbac:diff-grants` cannot even tell you it
+   happened: the permission is gone from both the enum and the database, so it is not a finding in
+   either direction.
+
+That is the same destruction this runbook warns about for `--fresh`, reached by the command
+presented as the safe alternative to it.
+
+**The enum-rename case, explicitly**, because it is the likely one and it looks harmless in the
+diff. A rename of `x.old` → `x.new` in `Permission.php` is one line. On the next `rbac:sync`:
+`x.old` is no longer declared → its row is deleted → every grant of it is cascaded away, unlogged;
+`x.new` is created → it is in `$newPermissions` → it is granted to every role the **map** names. Net
+effect on the production copy: the mapped grants are restored and **every runtime matrix grant of
+that permission is erased with no audit trail**. The map wins silently over C6 local authority,
+which is precisely the inversion the non-destructive contract exists to prevent.
+
+If Section A reports `extra_rows`, get a human. The decision — which of those rows are dead
+enum-pruning and which carry live grants — is not one this runbook can make for you. Enumerate the
+exposure first:
+
+```sql
+-- What would be destroyed. Counts and ids only (privacy rule).
+SELECT p.id AS permission_id,
+       (SELECT COUNT(*) FROM role_has_permissions r WHERE r.permission_id = p.id)  AS role_grants,
+       (SELECT COUNT(*) FROM model_has_permissions m WHERE m.permission_id = p.id) AS direct_grants
+FROM permissions p
+WHERE p.guard_name = 'web'
+  AND p.name NOT IN ( /* the current App\Enums\Permission values */ );
+```
+
+### 3. Capture the enumeration for a convergence brief
+
+```bash
 php artisan rbac:diff-grants --json > /tmp/grants-diff.json
 ```
+
+### The third write `rbac:sync` makes, in every direction
+
+Independent of Section A: the self-heal block at
+[RbacSeeder.php:506-512](../../database/seeders/RbacSeeder.php#L506-L512) runs
+`syncPermissions(self::SUPER_ADMIN_PLATFORM)` on the global `super_admin` row **unconditionally, on
+every run** — outside the `$fresh` branch and outside the `$newPermissions` intersection. Any grant
+on that row which is not in the const is removed. This is intended (ADR 0045 A3; the C6 matrix
+cannot edit that row, so there is no runtime authority to preserve), but two properties are worth
+knowing before you run the command on a production copy:
+
+- `HasPermissions::syncPermissions` **detaches RAW and fires no event**, so the removals write no
+  `permission_detached` row and are invisible to the rbac audit listener.
+- It is therefore the one write `rbac:sync` performs that `rbac:diff-grants` can never diagnose
+  after the fact.
 
 **Never run `rbac:sync --fresh` on the production copy to "fix" a finding.** It resets every role's
 grants to the seeded defaults and destroys exactly the C6 edits a `MATRIX_GRANT` finding is telling

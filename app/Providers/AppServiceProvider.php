@@ -7,6 +7,8 @@ use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
 use App\Models\SubjectResultStatus;
 use App\Models\User;
+use App\Notifications\Contracts\Notifier as NotifierContract;
+use App\Notifications\Services\Notifier as NotifierService;
 use App\Observers\StudentCurriculumObserver;
 use App\Policies\SubjectResultPolicy;
 use App\Services\ActivityLog\ActivitySensitiveService;
@@ -37,6 +39,12 @@ class AppServiceProvider extends ServiceProvider
             ActivitySeverityService::class,
             fn () => ActivitySeverityService::make(),
         );
+
+        // Notifications: the module's single public port. Callers depend on the
+        // Contracts interface so module internals stay private (blueprint §9/§10,
+        // held by tests/Arch/NotificationsArchTest.php); the binding lives here in
+        // the composition root rather than in either module.
+        $this->app->bind(NotifierContract::class, NotifierService::class);
 
         // ACL wiring (composition root): Finance owns the port; the Academics side
         // adapts to it. Binding lives here — not in Finance — so Finance never names

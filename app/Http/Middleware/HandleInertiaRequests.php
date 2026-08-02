@@ -100,6 +100,15 @@ class HandleInertiaRequests extends Middleware
             // has to make impossible to miss.
             'impersonation' => $this->impersonationState($request),
 
+            // v1 has no push transport (BROADCAST_CONNECTION is `log`; no Reverb),
+            // so the poll interval IS the real-time story. Shared from config
+            // rather than hard-coded in the hook, so it can be widened when the
+            // queue is backed up without a frontend deploy. `enabled` false hides
+            // the bell entirely while the subsystem ships dark.
+            'notifications' => [
+                'enabled' => (bool) config('notifications.enabled'),
+                'pollSeconds' => (int) config('notifications.feed.poll_seconds'),
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

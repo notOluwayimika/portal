@@ -351,3 +351,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_form_teacher_com
 Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_key_stage_coordinator_comments'])->group(function () {
     require __DIR__.'/endpoints/key-stage-coordinator.php';
 });
+
+// Notifications (v1 — in-app feed). Required at TOP LEVEL, not inside a
+// `permission:` group: reading your own notifications is not a privilege any
+// role grants, so the file declares its own middleware and the ownership filter
+// in the controller is the authorization. See routes/endpoints/notifications.php.
+require __DIR__.'/endpoints/notifications.php';

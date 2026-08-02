@@ -194,7 +194,15 @@ return new class extends Migration
     /**
      * Per-school holder count for the governed permission — counts and school ids only, no names.
      * Holders derived exactly as the realign migration's report() does (DutySeparation::holdsViaGrant),
-     * so the two agree. Covers ALL holders, so `super_admin`'s unchanged holding is visible either side.
+     * so the two agree.
+     *
+     * SCOPE, so a zero is not misread: this counts holders WITHIN a school's team, and `super_admin`
+     * can never appear in it. Twice over — the model_has_roles query below filters on the school's
+     * `school_id`, and `holdsViaGrant` sets the team id before reading `roles()`, which Spatie
+     * constrains with `wherePivot(<teams key>, <team id>)`. `super_admin` is assigned at team NULL,
+     * so it is outside both. Its holding is therefore NOT what this report evidences either side of
+     * the revoke; that is asserted directly, on the role's grants, by
+     * tests/Feature/Rbac/InternalAuditorCrossSchoolRevocationTest.php ARM A.
      */
     private function report(string $label): void
     {

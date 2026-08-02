@@ -125,12 +125,15 @@ it('ARM D — the revocation is AUDITED: exactly one rbac row, a permission_deta
     // revokePermissionTo produces the row asserted here.
     iaPlantGrant();
 
-    $before = iaRbacRows();
+    // The window is an id watermark, not an offset: OFFSET without ORDER BY has no guaranteed row
+    // order in MySQL, so `offset($countBefore)` only happened to select the new rows under InnoDB
+    // primary-key order. `id > $maxId` names the rows written by up() regardless of ordering.
+    $maxId = (int) DB::table('activity_log')->max('id');
 
     revokeMigration()->up();
 
     $rows = DB::table('activity_log')->where('log_name', 'rbac')
-        ->offset($before)->limit(100)->get();
+        ->where('id', '>', $maxId)->orderBy('id')->get();
 
     expect($rows)->toHaveCount(1)
         ->and($rows->first()->event)->toBe('permission_detached')
@@ -143,8 +146,15 @@ it('ARM E — the permission this migration governs is the isolation-crossing me
     // string. This pins that wiring: if the constant stopped naming this permission, the migration's
     // own opening guard would abort and both other consumers would silently stop guarding it.
     //
-    // NOT proven here: the migration's second guard, which aborts if RbacSeeder::grantsMap() still
-    // grants the permission to internal_auditor. grantsMap() is a static method with no seam, so
-    // reaching that branch would need the map edit reverted on disk — see the report.
+    // The migration's second guard — which aborts if RbacSeeder::grantsMap() still grants the
+    // permission to internal_auditor — is NOT pinned by any arm in this file, and that is a
+    // deliberate limit rather than an unexamined one. It HAS been watched red: restoring the map
+    // line in RbacSeeder.php and running ARM A aborts with "RbacSeeder::grantsMap() still grants
+    // [activity_log.view_cross_school] to [internal_auditor]" (report §"The watched red", red 3).
+    // The reason it is not a committed test is not that grantsMap() lacks a seam — the mutation is
+    // an on-disk edit to the seeder, exactly like the two other watched reds, and a test cannot
+    // carry it: a committed arm would have to rewrite a source file mid-run, and the map edit it
+    // would have to undo is the very thing this change ships. So the guard is proven on scratch and
+    // recorded in the report, not asserted here.
     expect(PermissionEnum::ISOLATION_CROSSING)->toContain(IA_CROSS);
 });

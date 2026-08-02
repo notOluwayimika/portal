@@ -82,12 +82,40 @@ then `unsetRelation('roles')` before `assignRole`, or you get
 (`app/Models/User.php:277-290`) and `ActiveSchool::runFor()`
 (`app/Support/ActiveSchool.php:99-116`).
 
-`rbac:sync` is **non-destructive in both directions**. For a role that already
-exists it grants only permissions created in that same run
-(`RbacSeeder::sync()`). So a grant-map edit that adds a permission which already
-exists lands on fresh installs and silently does nothing on every environment
-where the role row already exists. Both directions of that drift have needed
-dedicated convergence migrations.
+`rbac:sync` is **non-destructive for GRANTS and destructive for PERMISSION
+ROWS**. Do not carry the shorter claim; it is the one that gets a production
+copy wrecked.
+
+Grants: for a role that already exists it grants only permissions created in
+that same run (`RbacSeeder::sync()`, `:478`, `:494-496`). So a grant-map edit
+that adds a permission which already exists lands on fresh installs and silently
+does nothing on every environment where the role row already exists. Both
+directions of that drift have needed dedicated convergence migrations. This is
+what `bin/ci-grants-convergence-lint.php` (bin/quality step 7) exists to catch.
+
+Permission rows: `RbacSeeder.php:454-457` hard-deletes every `permissions` row
+whose name is not in the enum. Both pivots carry `ON DELETE CASCADE` on
+`permissions.id` — derive that from `information_schema`, not from
+`create_permission_tables.php`, whose uuid FKs were rebuilt as integer ones by
+`2026_04_29_000001_update_foreign_keys_to_integer_ids:204`. So the prune takes
+every `role_has_permissions` and `model_has_permissions` row with it, including
+runtime matrix grants. And the whole body runs inside `activity()->withoutLogs()`
+(`:432`), so it leaves **no audit trace**. An enum rename `x.old` → `x.new` is
+one line in a diff and erases every runtime grant of `x.old` silently.
+
+Consequence for a runbook or a brief: `rbac:sync` is safe when the catalog diff
+is `missing_rows` only. Any `extra_rows` and it is a destructive operation. See
+`docs/runbooks/rbac-grants-reconciliation.md` §2a/§2b.
+
+**Never substring-match a permission or a role name.** Of the 79 enum values
+there are 9 prefix pairs, 0 suffix pairs and 0 mid-string pairs — `guardian.view`
+⊂ `guardian.view_audit`, `guardian.update` ⊂ `guardian.update_credentials`,
+`result.view` ⊂ `result.view_scores`, `student_subject.view` ⊂
+`student_subject.view_history`, and `activity_log.view` ⊂ five siblings. A right
+boundary is therefore sufficient for permission VALUES. Role NAMES have the
+opposite shape — `admin` is a suffix of `super_admin`, `teacher` of
+`form_teacher` — so role matching needs BOTH boundaries. Re-derive before
+relying on either count.
 
 ## Duty separation
 
@@ -131,7 +159,7 @@ including 1452, 1644, 3819, 3995 — falls through to a generic 500.
 
 ## Gates and oracles
 
-`bin/quality` is a 12-step script; `core.hooksPath = .githooks` and
+`bin/quality` is a 13-step script (grants-convergence lint is step 7); `core.hooksPath = .githooks` and
 `.githooks/pre-push` runs it. `bin/quality:146` runs the full Pest suite with no
 group filter.
 

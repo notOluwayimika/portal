@@ -41,8 +41,18 @@ a seeder + role-row change, not a data migration.
   `finance.fee-schedule.change.approve/reject`. **`principal` appears nowhere in Brookstone's finance
   matrix and had been holding a finance approval authority the business never sanctioned (removed
   2026-08-01).** It keeps only `finance.access` (route gate); nothing else about `principal` changed.
-- **IA `internal_auditor`** (new) — `activity_log.view`, `activity_log.export`,
-  `activity_log.view_cross_school` (rows 8/9, IA=D, cross-school). See the deferral below.
+- **IA `internal_auditor`** (new) — `activity_log.view`, `activity_log.export`. See the deferral below.
+  **`activity_log.view_cross_school` was granted here by `a0ab3d7` and has since been REVOKED** — the
+  grant contradicted v10 §7.2 (`docs/Finance Module — Implementation Master Plan - v10.md:375`, DECIDED
+  2026-07-29), which says of that exact permission that it "is read-shaped, is in scope, and **must not
+  be granted**": it is a *cross-School* read, and ADR 0036 makes isolation un-bypassable by role.
+  Removed from `RbacSeeder::grantsMap()` and revoked on already-seeded environments by
+  `database/migrations/2026_08_04_100000_revoke_internal_auditor_cross_school.php` (branch
+  `fix/revoke-ia-cross-school`); the forbidden set now lives at `PermissionEnum::ISOLATION_CROSSING`,
+  pinned by `GrantsMapSeparationTest` and refused at runtime by `SyncRolePermissionsRequest`.
+  `super_admin` keeps the permission via `RbacSeeder::SUPER_ADMIN_PLATFORM` (ADR 0045 A3) — that
+  holding is unaffected. The original endorsement read `(rows 8/9, IA=D, cross-school)`; it is recorded
+  here as granted-then-revoked rather than erased.
 
 ## Row 20 is DERIVED, not answered — confirm with the business
 

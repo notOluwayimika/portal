@@ -392,10 +392,25 @@ class RbacSeeder extends Seeder
             // Phase 2 symmetry gate (every Finance resource with a write permission must carry a read one) is
             // what makes the grant meaningful. IA ships activity-log-only until then;
             // docs/rbac/finance-seat-realignment.md carries the same record.
+            //
+            // REMOVED 2026-08-04: activity_log.view_cross_school, which a0ab3d7 granted here. v10 §7.2
+            // (docs/Finance Module — Implementation Master Plan - v10.md:375, the same DECIDED 2026-07-29
+            // block cited above) says of that exact permission that it "is read-shaped, is in scope, and
+            // must NOT be granted" — it is a CROSS-School read, and ADR 0036 makes isolation
+            // un-bypassable by role. It is not a narrow widening: ActivityLogQueryService::baseQuery:42-52
+            // drops the school predicate ENTIRELY for a holder, there being no narrower cross-school path.
+            // What bounded it in practice was :55-57 of that same file restricting to self-caused rows
+            // without activity_log.view_all — which IA does not hold, and which the Phase 2 auditor
+            // derivation (every read segment) would grant. So this was armed, not safe. The seeder is
+            // non-destructive (sync() below), so removing the line here changes nothing on an environment
+            // where the role row already exists — the revocation itself is
+            // 2026_08_04_100000_revoke_internal_auditor_cross_school. `super_admin` KEEPS the permission,
+            // legitimately and by a different route: SUPER_ADMIN_PLATFORM (:57-62), ADR 0045 A3, self-healed
+            // every run (:503-512). The forbidden set is PermissionEnum::ISOLATION_CROSSING, pinned by
+            // GrantsMapSeparationTest and enforced at runtime by SyncRolePermissionsRequest.
             'internal_auditor' => [
                 PermissionEnum::ACTIVITY_LOG_VIEW->value,
                 PermissionEnum::ACTIVITY_LOG_EXPORT->value,
-                PermissionEnum::ACTIVITY_LOG_VIEW_CROSS_SCHOOL->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

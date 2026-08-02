@@ -46,6 +46,34 @@ class SyncRolePermissionsRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v) {
+            // ISOLATION — the RESULTING set may not contain a permission whose effect is to cross
+            // the `school_id` boundary (PermissionEnum::ISOLATION_CROSSING). ADR 0036: isolation is
+            // not role-configurable, and `super_admin` bypasses AUTHORIZATION, never ISOLATION. The
+            // seeded map is pinned by GrantsMapSeparationTest; without this rule the matrix could
+            // hand the same grant back at runtime and the pin would be wallpaper. Same single named
+            // source both sides read — the string is not hardcoded here.
+            //
+            // This cannot strand `super_admin`: authorize() above (:33) refuses any edit whose
+            // target role is `super_admin`, so the one sanctioned holder is unreachable through this
+            // request in the first place, and its grant is self-healed from SUPER_ADMIN_PLATFORM by
+            // RbacSeeder, not written here.
+            $requested = (array) $this->input('permissions', []);
+
+            foreach ($requested as $index => $ability) {
+                if (! is_string($ability) || ! in_array($ability, PermissionEnum::ISOLATION_CROSSING, true)) {
+                    continue;
+                }
+
+                $message = "[{$ability}] crosses the school_id isolation boundary and is not grantable through "
+                    .'the matrix — isolation is not role-configurable (ADR 0036). Only super_admin holds it, '
+                    .'through its self-healed platform set.';
+
+                $v->errors()->add('permissions', $message);
+                // ALSO keyed by position, so the console can put the error on the offending chip
+                // (same two-key convention as the SoD rule below).
+                $v->errors()->add("permissions.{$index}", $message);
+            }
+
             // D2 — grant-time SoD: the RESULTING set may not contain a checker
             // ability together with its matching maker (ApprovalAbility
             // convention: result.approve ↔ result.submit;
@@ -54,9 +82,7 @@ class SyncRolePermissionsRequest extends FormRequest
             // delta — the invariant is about what the edit produces, however
             // it got there. Runtime counterpart of the seeder's SoD test:
             // that pins the DEFAULT map, this pins every map the matrix can
-            // produce.
-            $requested = (array) $this->input('permissions', []);
-
+            // produce. ($requested is read once, above.)
             foreach ($requested as $index => $ability) {
                 if (! is_string($ability)) {
                     continue;

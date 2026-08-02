@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\Permission as PermissionEnum;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ApprovalAbility;
@@ -133,6 +134,61 @@ it('D2 (user level) — the SAME checker grant is allowed when no member holds t
     sam_put($this, $this->superAdmin, 'registrar', $wanted)->assertStatus(302);
 
     expect(sam_rolePermissions('registrar'))->toContain('finance.credit-note.approve');
+});
+
+// ── Isolation: the matrix may not grant a school_id-crossing permission ─────
+
+it('refuses an edit whose resulting set contains an isolation-crossing permission (ADR 0036)', function () {
+    // A test pinning RbacSeeder::grantsMap() stops the SEEDED map carrying it; it does not stop the
+    // C6 matrix handing the same grant back at runtime. Without this rule that pin is wallpaper —
+    // and this is the one boundary the architecture treats as absolute (super_admin bypasses
+    // AUTHORIZATION, never ISOLATION). Derived from PermissionEnum::ISOLATION_CROSSING, the single
+    // named source the seeded-map pin also reads.
+    foreach (PermissionEnum::ISOLATION_CROSSING as $crossing) {
+        $before = sam_rolePermissions('internal_auditor');
+        expect($before)->not->toContain($crossing);
+
+        $response = sam_put($this, $this->superAdmin, 'internal_auditor', [...$before, $crossing]);
+
+        // The OUTCOME is asserted first, and by name: with the rule removed this line is what goes
+        // red, reading "Expecting [...] not to contain 'activity_log.view_cross_school'" rather than
+        // "session is missing expected key [errors]". The permission is the subject of the failure.
+        expect(sam_rolePermissions('internal_auditor'))->not->toContain($crossing);
+        expect(sam_rolePermissions('internal_auditor'))->toBe($before);
+
+        $response->assertRedirect()->assertSessionHasErrors('permissions');
+
+        // And the message the operator sees names it too, so it is legible on the chip and in the panel.
+        expect(session('errors')->get('permissions')[0] ?? '')->toContain($crossing);
+    }
+});
+
+it('the isolation rule is about the permission, not the role — any matrix-reachable role is refused', function () {
+    foreach (PermissionEnum::ISOLATION_CROSSING as $crossing) {
+        $before = sam_rolePermissions('teacher');
+
+        $response = sam_put($this, $this->superAdmin, 'teacher', [...$before, $crossing]);
+
+        expect(sam_rolePermissions('teacher'))->not->toContain($crossing);
+        expect(sam_rolePermissions('teacher'))->toBe($before);
+
+        $response->assertRedirect()->assertSessionHasErrors('permissions');
+    }
+});
+
+it('super_admin is not stranded by the isolation rule — it is unreachable through the matrix at all', function () {
+    // authorize() (:33) refuses any edit targeting super_admin, so the one sanctioned holder never
+    // reaches the validator. Confirmed here rather than assumed: its grant survives the attempt, and
+    // it still carries the crossing permission afterwards.
+    $before = sam_rolePermissions('super_admin');
+
+    sam_put($this, $this->superAdmin, 'super_admin', ['activity_log.view'])->assertForbidden();
+
+    expect(sam_rolePermissions('super_admin'))->toEqual($before);
+
+    foreach (PermissionEnum::ISOLATION_CROSSING as $crossing) {
+        expect($before)->toContain($crossing);
+    }
 });
 
 // ── D4: the enum is code ───────────────────────────────────────────────────

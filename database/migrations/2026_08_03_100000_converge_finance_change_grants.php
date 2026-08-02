@@ -42,9 +42,13 @@ use Spatie\Permission\PermissionRegistrar;
  * command's own primitive, so it cannot disagree with finance:audit-duty-separation), throws and rolls
  * back if any user would hold both sides of an ENFORCED (finance) pair via their combined roles,
  * naming each as user#<id> @ school#<id>. A role-scoped check (violationsFromRolePermissionSync) was
- * considered and dropped: DutySeparation::violations is a strict SUPERSET of it (every violation it
- * finds is a user holding both sides), so the role-scoped one caught nothing extra and only produced a
- * less precise message — a deliberate deviation from the addendum's "keep both", recorded in the PR.
+ * considered and dropped. NOT because the user-scoped check subsumes it — it does not: violations() is
+ * holder-scoped, so a role granting both sides but held by nobody is invisible to it. The role-scoped
+ * check is redundant *here* only because this migration writes a FIXED target derived from grantsMap(),
+ * which carries no both-sides role (a one-shot over a known-clean map). The general "the seeded map has
+ * no both-sides role" invariant — the real hole, since violationsFromRolePermissionSync's only caller is
+ * the C6 matrix-edit request, never the seeder — is pinned separately by
+ * tests/Feature/Rbac/GrantsMapSeparationTest.php.
  */
 return new class extends Migration
 {

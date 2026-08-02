@@ -40,6 +40,33 @@ ADD gap, which means it reproduces on production rather than being a local quirk
 belongs to the separate change on `staging` that fixes it, not to this branch; the finding below is
 left as first written so the two texts can be read against each other.
 
+## Second follow-up commit (on `003b119`) — cold review
+
+A cold session reviewed the branch and returned two fixes. This report now covers **three** commits;
+everything below is the final state.
+
+1. **`ARM F` — the missing-global-role abort is now a committed arm.** `migration:113-115` was the
+   only `throw` in the file reachable by pure database state that had no test. The arm deletes the
+   global `internal_auditor` role row, runs `up()`, and asserts the abort names the role and moves no
+   grant. Watched red first (Red 4 below). Committed at
+   [tests/Feature/Rbac/InternalAuditorCrossSchoolRevocationTest.php:168-195](tests/Feature/Rbac/InternalAuditorCrossSchoolRevocationTest.php#L168-L195).
+2. **The abort-path accounting at the end of "The watched red" was wrong and is corrected.** It said
+   "All three of the migration's abort paths are now watched". There are **four** `throw` sites, and
+   the third thing it counted — "the revoke itself" — is the happy path, not an abort. The corrected
+   accounting is in that section.
+
+**The `003b119` commit message carries the same false claim** ("All three of the migration's abort
+paths are watched") and is left as written — a commit message is a historical record, not a live
+document. It is **superseded by this report**: read the abort-path table at the end of "The watched
+red" instead.
+
+**Not in this commit, deliberately:** the cold review's second-order finding that
+`RbacSeeder::SUPER_ADMIN_PLATFORM` ([database/seeders/RbacSeeder.php:57-62](database/seeders/RbacSeeder.php#L57-L62))
+hardcodes `activity_log.view_cross_school` as a bare string rather than
+`PermissionEnum::ACTIVITY_LOG_VIEW_CROSS_SCHOOL->value` — pre-existing, all four of its entries are
+raw strings, and it is the sanctioned-holder half of this change's invariant. Separate ticket, not
+smuggled in here.
+
 ## Deviations from the brief
 
 **1. The isolation-crossing list lives on the enum, not in the test file.** Item 16 said "a named
@@ -484,8 +511,61 @@ green:
 {"tool":"pest","result":"passed","tests":5,"passed":5,"assertions":18,"duration_ms":8673}
 ```
 
-All three of the migration's abort paths are now watched: this one, the third-holder pre-flight
-(`ARM C`, a committed test), and the revoke itself (red 1).
+### Red 4 — the missing-role pre-flight, `ARM F` (committed)
+
+Added in the second follow-up commit, from the cold review. `migration:113-115` is the only `throw`
+in the file reachable by pure database state that had no arm — ARM C covers the third-holder
+pre-flight, and the other two throws compare source constants (below). The arm deletes the global
+`internal_auditor` role row after seeding, snapshots `role_has_permissions` **after** that delete
+(the FK cascade is the arm's setup, not the migration's doing), and runs `up()`.
+
+Mutation — comment out the null check at
+[database/migrations/2026_08_04_100000_revoke_internal_auditor_cross_school.php:113-115](database/migrations/2026_08_04_100000_revoke_internal_auditor_cross_school.php#L113-L115):
+
+```php
+-        if ($role === null) {
+-            throw new RuntimeException('revoke-ia-cross-school ABORTED: global role ['.self::ROLE.'] is missing.');
+-        }
++        // if ($role === null) {
++        //     throw new RuntimeException('revoke-ia-cross-school ABORTED: global role ['.self::ROLE.'] is missing.');
++        // }
+```
+
+`ARM F` red:
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":1,"duration_ms":13318,"failed":1,"failures":[
+ {"test":"...ARM F — the missing-role pre-flight bites: no global internal_auditor row aborts, no grant changes",
+  "file":"tests/Feature/Rbac/InternalAuditorCrossSchoolRevocationTest.php","line":189,
+  "message":"Failed asserting that 'Attempt to read property \"permissions\" on null' contains \"global role [internal_auditor] is missing\"."}]}
+```
+
+The red is the point of the guard, not incidental to it: without the check, `$role->permissions` at
+`:160` dereferences null and the migration dies on a PHP error that names neither the role nor the
+migration. Restored — `git diff --stat` shows the migration byte-identical, only the test file
+changed — and green, six arms:
+
+```
+{"tool":"pest","result":"passed","tests":6,"passed":6,"assertions":22,"duration_ms":12109}
+```
+
+### Abort-path accounting (corrected)
+
+The previous version of this section said "All three of the migration's abort paths are now watched:
+this one, the third-holder pre-flight (`ARM C`, a committed test), and the revoke itself (red 1)."
+**That was wrong twice.** The migration has **four** `throw` sites, not three, and "the revoke
+itself" is the happy path — red 1 proves the revoke happens, it is not an abort path at all. The
+`003b119` commit message repeats the same claim and is superseded by this table.
+
+| Throw | Guard | Watched? |
+| --- | --- | --- |
+| `:64` | `self::PERMISSION` no longer in `PermissionEnum::ISOLATION_CROSSING` | **No — and it cannot be.** Both sides of the comparison are source constants, so no database state reaches it. A committed test would have to edit `app/Enums/Permission.php` mid-run. What a test *can* do is pin the premise, and `ARM E` does: a change that would arm this guard fails there, by name, instead of surfacing as an abort mid-`migrate`. |
+| `:98` | `RbacSeeder::grantsMap()` still grants the permission to `internal_auditor` | Scratch only (Red 3). Same shape as `:64` — the mutation is an on-disk seeder edit, and what it would have to undo is the map change this branch ships. |
+| `:114` | no global `internal_auditor` role row | **`ARM F`, committed** (Red 4 above). |
+| `:140` | an unaccounted third global holder | **`ARM C`, committed.** |
+
+Reachable by pure database state: `:114` and `:140` — both committed arms. The other two are
+source-constant comparisons and are proven as far as a committed test can reach.
 
 ## Database observations
 

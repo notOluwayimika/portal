@@ -156,5 +156,40 @@ it('ARM E — the permission this migration governs is the isolation-crossing me
     // carry it: a committed arm would have to rewrite a source file mid-run, and the map edit it
     // would have to undo is the very thing this change ships. So the guard is proven on scratch and
     // recorded in the report, not asserted here.
+    //
+    // The migration's FIRST guard (:64, the one this arm's subject feeds) is the stricter case: it
+    // compares two SOURCE constants — the migration's own self::PERMISSION against
+    // PermissionEnum::ISOLATION_CROSSING — so NO database state reaches it and no committed test
+    // ever can. This assertion is the closest a test gets: it pins the premise, so a change that
+    // would arm that guard fails HERE, by name, instead of surfacing as an abort mid-migrate.
     expect(PermissionEnum::ISOLATION_CROSSING)->toContain(IA_CROSS);
+});
+
+it('ARM F — the missing-role pre-flight bites: no global internal_auditor row aborts, no grant changes', function () {
+    // Pre-flight 1 (migration:113-115). Past the fresh-install guard the RBAC substrate IS seeded, so
+    // a missing global role row is a real anomaly, not a fresh database — the migration names it
+    // rather than dereferencing null.
+    //
+    // This is the ONLY throw in the migration reachable by pure database state that ARM C does not
+    // already cover: :64 and :98 both compare source constants or read grantsMap(), so they need an
+    // on-disk edit (see ARM E). No plant here — the arm deletes the very role a plant would grant
+    // to, and reaching :113 does not depend on IA holding anything.
+    iaGlobalRole('internal_auditor')->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // Snapshot AFTER the delete: the cascade that removes the role's own grant rows is the arm's
+    // setup, not the migration's doing. What is asserted is that up() moved nothing further.
+    $grantsBefore = DB::table('role_has_permissions')->count();
+
+    // Named by role, so a failure reads as "the missing row was not caught" rather than
+    // "RuntimeException was not thrown". Watched red: commenting the null check out fails this line
+    // with `Attempt to read property "permissions" on null` — exactly the dereference at :160 that
+    // the guard exists to convert into a named abort.
+    expect(fn () => revokeMigration()->up())
+        ->toThrow(RuntimeException::class, 'global role [internal_auditor] is missing');
+
+    // Aborted before any write, and super_admin's sanctioned holding (ADR 0045 A3) is untouched —
+    // the abort is not a partial run.
+    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
+        ->and(iaGrants('super_admin'))->toContain(IA_CROSS);
 });

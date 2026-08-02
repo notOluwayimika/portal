@@ -8,6 +8,7 @@ use App\Notifications\Http\Resources\NotificationFeedResource;
 use App\Notifications\Models\NotificationRecipient;
 use App\Notifications\Services\PayloadHydrator;
 use App\Support\ActiveSchool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -107,7 +108,7 @@ class NotificationFeedController extends Controller
         return response()->json(['unread_count' => $this->unreadQuery($request)->count()]);
     }
 
-    /** @return \Illuminate\Database\Eloquent\Builder<NotificationRecipient> */
+    /** @return Builder<NotificationRecipient> */
     private function scoped(Request $request)
     {
         return NotificationRecipient::query()->for(
@@ -117,7 +118,7 @@ class NotificationFeedController extends Controller
         );
     }
 
-    /** @return \Illuminate\Database\Eloquent\Builder<NotificationRecipient> */
+    /** @return Builder<NotificationRecipient> */
     private function unreadQuery(Request $request)
     {
         return $this->scoped($request)->whereNull('read_at');

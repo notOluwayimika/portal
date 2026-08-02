@@ -6,6 +6,7 @@ use App\Jobs\Middleware\SchoolAware;
 use App\Notifications\DTOs\Recipient;
 use App\Notifications\Enums\DeliveryStatus;
 use App\Notifications\Models\Notification;
+use App\Notifications\Models\NotificationDelivery;
 use App\Notifications\Models\NotificationRecipient;
 use App\Notifications\Services\ChannelRegistry;
 use App\Notifications\Services\NotificationRegistry;
@@ -114,7 +115,7 @@ class FanOutNotificationJob implements ShouldQueue
 
                 // The UNIQUE (recipient, channel) index plus insertOrIgnore is
                 // what makes a re-run of this job free rather than duplicating.
-                \App\Notifications\Models\NotificationDelivery::query()->insertOrIgnore($rows);
+                NotificationDelivery::query()->insertOrIgnore($rows);
 
                 $this->deliverInApp($chunk->pluck('id')->all(), $channels);
             });
@@ -135,7 +136,7 @@ class FanOutNotificationJob implements ShouldQueue
     {
         $inApp = $channels->inApp();
 
-        $pending = \App\Notifications\Models\NotificationDelivery::query()
+        $pending = NotificationDelivery::query()
             ->whereIn('notification_recipient_id', $recipientIds)
             ->where('channel', $inApp->key()->value)
             ->where('status', DeliveryStatus::PENDING->value)

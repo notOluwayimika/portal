@@ -11,6 +11,7 @@ use App\Notifications\Types\ResultReady;
 use App\Support\ActiveSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class PrincipalApprovalController extends Controller
 {
@@ -83,7 +84,7 @@ class PrincipalApprovalController extends Controller
      * The dedup key is per ENROLMENT, so this loop is safe to re-run: a repeated
      * approval finds the existing row instead of creating a second one.
      *
-     * @param  \Illuminate\Support\Collection<int, StudentCurriculum>  $enrolments
+     * @param  Collection<int, StudentCurriculum>  $enrolments
      */
     private function notifyGuardians($enrolments, Request $request): void
     {

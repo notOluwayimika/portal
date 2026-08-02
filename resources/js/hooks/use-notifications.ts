@@ -54,6 +54,10 @@ export function useUnreadCount(pollSeconds: number) {
     }, []);
 
     useEffect(() => {
+        // The initial fetch. The interval below IS the subscription this rule asks
+        // for; this line only primes it, so the badge is not empty for the first
+        // poll interval after a page load.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void refresh();
 
         const interval = window.setInterval(

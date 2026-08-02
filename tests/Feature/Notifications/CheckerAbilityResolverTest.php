@@ -3,10 +3,13 @@
 use App\Enums\Permission as PermissionEnum;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\Contracts\Notification;
+use App\Notifications\Enums\NotificationType;
 use App\Notifications\Services\Resolvers\CheckerAbilityResolver;
 use App\Notifications\Types\ApprovalRequested;
 use App\Support\ApprovalAbility;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 
@@ -184,13 +187,13 @@ it('refuses a non-checker ability rather than silently omitting super admins', f
 
     // Constructed around ApprovalRequested, which validates too — so the resolver
     // is driven directly to prove ITS guard, not the type's.
-    $notification = new class($ability, $school->id) implements \App\Notifications\Contracts\Notification
+    $notification = new class($ability, $school->id) implements Notification
     {
         public function __construct(private string $ability, private int $schoolId) {}
 
-        public function type(): \App\Notifications\Enums\NotificationType
+        public function type(): NotificationType
         {
-            return \App\Notifications\Enums\NotificationType::APPROVAL_REQUESTED;
+            return NotificationType::APPROVAL_REQUESTED;
         }
 
         public function schoolId(): int
@@ -198,7 +201,7 @@ it('refuses a non-checker ability rather than silently omitting super admins', f
             return $this->schoolId;
         }
 
-        public function subject(): ?\Illuminate\Database\Eloquent\Model
+        public function subject(): ?Model
         {
             return null;
         }

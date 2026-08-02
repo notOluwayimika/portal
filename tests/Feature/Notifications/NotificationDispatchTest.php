@@ -1,9 +1,12 @@
 <?php
 
 use App\Enums\Permission as PermissionEnum;
+use App\Models\AcademicSession;
+use App\Models\Curriculum;
 use App\Models\Role;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\Term;
 use App\Notifications\Contracts\Notifier;
 use App\Notifications\Enums\DeliveryStatus;
 use App\Notifications\Enums\NotificationType;
@@ -12,6 +15,9 @@ use App\Notifications\Models\Notification;
 use App\Notifications\Models\NotificationDelivery;
 use App\Notifications\Models\NotificationPreference;
 use App\Notifications\Models\NotificationRecipient;
+use App\Notifications\Services\ChannelRegistry;
+use App\Notifications\Services\NotificationRegistry;
+use App\Notifications\Services\PreferenceGate;
 use App\Notifications\Types\ApprovalRequested;
 use App\Notifications\Types\ResultReady;
 use App\Support\ActiveSchool;
@@ -35,15 +41,15 @@ function nd_family(int $schoolId, int $childCount): array
     $guardianUser = al_makeUser($schoolId);
     $guardian = al_makeGuardian($schoolId, $guardianUser->id);
 
-    $session = App\Models\AcademicSession::create([
+    $session = AcademicSession::create([
         'school_id' => $schoolId, 'name' => 'S', 'slug' => 'ses-'.Str::random(8), 'is_current' => true,
     ]);
-    $term = App\Models\Term::create([
+    $term = Term::create([
         'academic_session_id' => $session->id, 'school_id' => $schoolId, 'name' => 'T',
         'slug' => 'term-'.Str::random(8), 'order' => 1,
         'start_date' => now()->subMonth(), 'end_date' => now()->addMonth(), 'status' => 'active',
     ]);
-    $curriculum = App\Models\Curriculum::create([
+    $curriculum = Curriculum::create([
         'school_id' => $schoolId, 'term_id' => $term->id, 'status' => 'active',
         'is_ccm' => false, 'min_subjects' => 1,
     ]);
@@ -172,9 +178,9 @@ it('is idempotent when the fan-out job runs twice', function () {
     // Re-running is exactly what happens when shared hosting kills the worker
     // mid-chunk and cron picks the job up again a minute later.
     (new FanOutNotificationJob($record->id, $school->id))->handle(
-        app(App\Notifications\Services\NotificationRegistry::class),
-        app(App\Notifications\Services\ChannelRegistry::class),
-        app(App\Notifications\Services\PreferenceGate::class),
+        app(NotificationRegistry::class),
+        app(ChannelRegistry::class),
+        app(PreferenceGate::class),
     );
 
     expect(NotificationDelivery::query()->count())->toBe(1)

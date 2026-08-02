@@ -7,6 +7,7 @@ use App\Notifications\Models\Notification;
 use App\Notifications\Models\NotificationRecipient;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -16,7 +17,7 @@ beforeEach(fn () => (new RbacSeeder)->run());
 function nf_row(int $schoolId, User $user): NotificationRecipient
 {
     $notification = Notification::withoutEvents(fn () => Notification::forceCreate([
-        'uuid' => (string) Illuminate\Support\Str::orderedUuid(),
+        'uuid' => (string) Str::orderedUuid(),
         'school_id' => $schoolId,
         'type' => NotificationType::RESULT_READY->value,
         'payload' => [],
@@ -24,7 +25,7 @@ function nf_row(int $schoolId, User $user): NotificationRecipient
     ]));
 
     return NotificationRecipient::withoutEvents(fn () => NotificationRecipient::forceCreate([
-        'uuid' => (string) Illuminate\Support\Str::orderedUuid(),
+        'uuid' => (string) Str::orderedUuid(),
         'notification_id' => $notification->id,
         'school_id' => $schoolId,
         'notifiable_type' => User::class,

@@ -1,6 +1,9 @@
 <?php
 
 use App\Enums\Permission as PermissionEnum;
+use App\Models\School;
+use App\Notifications\Contracts\Notification;
+use App\Notifications\Contracts\RecipientResolver;
 use App\Notifications\Services\NotificationRegistry;
 use App\Notifications\Services\Resolvers\CheckerAbilityResolver;
 use App\Notifications\Types\ApprovalRequested;
@@ -74,7 +77,7 @@ it('accepts every terminally-approve/reject enum case and refuses every other on
         try {
             new ApprovalRequested(
                 checkerAbility: $case->value,
-                subject: new App\Models\School,
+                subject: new School,
                 schoolId: 1,
                 submittedBy: null,
                 summary: 'arch probe',
@@ -119,7 +122,7 @@ it('guards the resolver at runtime rather than through assert(), which productio
 */
 
 it('gives the notification contract no access to recipients, so a key cannot vary by one', function () {
-    $reflection = new ReflectionClass(App\Notifications\Contracts\Notification::class);
+    $reflection = new ReflectionClass(Notification::class);
 
     $methods = collect($reflection->getMethods())->map(fn ($m) => $m->getName());
 
@@ -134,7 +137,7 @@ it('gives the notification contract no access to recipients, so a key cannot var
 it('registers a resolver class that exists and implements the contract, for every defined type', function () {
     foreach (app(NotificationRegistry::class)->all() as $key => $definition) {
         expect(class_exists($definition->resolver))->toBeTrue("resolver for [{$key}] does not exist")
-            ->and(is_subclass_of($definition->resolver, App\Notifications\Contracts\RecipientResolver::class))
+            ->and(is_subclass_of($definition->resolver, RecipientResolver::class))
             ->toBeTrue("resolver for [{$key}] does not implement RecipientResolver")
             ->and($definition->defaultChannels)->not->toBeEmpty("type [{$key}] declares no channels");
     }

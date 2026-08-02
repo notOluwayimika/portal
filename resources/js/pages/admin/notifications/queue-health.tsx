@@ -43,6 +43,8 @@ export default function NotificationQueueHealth() {
     }, []);
 
     useEffect(() => {
+        // Fetch-on-mount; the page's entire content is this one request.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void load();
     }, [load]);
 
@@ -182,8 +184,9 @@ export default function NotificationQueueHealth() {
                                                 ),
                                             ),
                                         )}
-                                        {Object.keys(health.deliveries_by_status)
-                                            .length === 0 && (
+                                        {Object.keys(
+                                            health.deliveries_by_status,
+                                        ).length === 0 && (
                                             <tr>
                                                 <td
                                                     colSpan={3}

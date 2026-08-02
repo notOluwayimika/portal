@@ -2,6 +2,7 @@
 
 namespace App\Notifications\Services;
 
+use App\Models\User;
 use App\Notifications\Contracts\Notification as NotificationContract;
 use App\Notifications\Contracts\Notifier as NotifierContract;
 use App\Notifications\Jobs\FanOutNotificationJob;
@@ -10,6 +11,7 @@ use App\Notifications\Models\NotificationRecipient;
 use App\Support\ActiveSchool;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * The developer-facing front door:
@@ -61,7 +63,7 @@ class Notifier implements NotifierContract
 
             if ($definition->excludeActor && $notification->actorId() !== null) {
                 $recipients = $recipients->reject(
-                    fn ($recipient) => $recipient->notifiableType === \App\Models\User::class
+                    fn ($recipient) => $recipient->notifiableType === User::class
                         && $recipient->notifiableId === $notification->actorId()
                 );
             }
@@ -79,7 +81,7 @@ class Notifier implements NotifierContract
             // same event raised twice adds no duplicate feed rows.
             NotificationRecipient::query()->insertOrIgnore(
                 $recipients->map(fn ($recipient) => [
-                    'uuid' => (string) \Illuminate\Support\Str::orderedUuid(),
+                    'uuid' => (string) Str::orderedUuid(),
                     'notification_id' => $record->id,
                     'school_id' => $schoolId,
                     'notifiable_type' => $recipient->notifiableType,

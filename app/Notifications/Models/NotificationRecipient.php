@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One row per (event, person) — THE FEED TABLE, and the only place read state
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * read?" a question with three possible answers.
  *
  * @property int $school_id
- * @property ?\Illuminate\Support\Carbon $read_at
+ * @property ?Carbon $read_at
  */
 class NotificationRecipient extends Model
 {

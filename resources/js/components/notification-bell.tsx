@@ -1,7 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { Bell, CheckCheck } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -31,7 +31,10 @@ export function NotificationBell() {
     const [open, setOpen] = useState(false);
     const [rows, setRows] = useState<NotificationRow[]>([]);
     const [loading, setLoading] = useState(false);
-    const loadedOnce = useRef(false);
+    // STATE, not a ref: this is read during render (to show the spinner only on
+    // the first open, never on a refetch), and a ref read during render is not
+    // safe under concurrent rendering — React may render without committing.
+    const [loadedOnce, setLoadedOnce] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -40,7 +43,7 @@ export function NotificationBell() {
             const { data } = await axios.get('/api/notifications');
             setRows(data.data ?? []);
             setCount(data.unread_count ?? 0);
-            loadedOnce.current = true;
+            setLoadedOnce(true);
         } catch {
             // Same reasoning as the poll: a failed open leaves the last known
             // list rather than throwing a toast into the header.
@@ -54,6 +57,10 @@ export function NotificationBell() {
             return;
         }
 
+        // Fetch-on-open: the panel has no data until it is opened, and there is no
+        // external store to subscribe to. Same pattern, and the same disable, as the
+        // other fetch-on-mount views in this codebase.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void load();
         // Clears the badge without marking anything read.
         void axios.post('/api/notifications/seen').catch(() => {});
@@ -68,7 +75,9 @@ export function NotificationBell() {
         // comes back in the response.
         setRows((prev) =>
             prev.map((r) =>
-                r.id === row.id ? { ...r, read_at: new Date().toISOString() } : r,
+                r.id === row.id
+                    ? { ...r, read_at: new Date().toISOString() }
+                    : r,
             ),
         );
 
@@ -96,7 +105,10 @@ export function NotificationBell() {
             setRows((prev) =>
                 prev.map((r) =>
                     newest !== undefined && r.sort_id <= newest
-                        ? { ...r, read_at: r.read_at ?? new Date().toISOString() }
+                        ? {
+                              ...r,
+                              read_at: r.read_at ?? new Date().toISOString(),
+                          }
                         : r,
                 ),
             );
@@ -148,7 +160,7 @@ export function NotificationBell() {
                 </div>
 
                 <div className="max-h-96 overflow-y-auto">
-                    {loading && !loadedOnce.current ? (
+                    {loading && !loadedOnce ? (
                         <div className="flex justify-center py-8">
                             <Spinner className="size-5 text-gray-400" />
                         </div>
@@ -163,7 +175,9 @@ export function NotificationBell() {
                                 type="button"
                                 onClick={() => void markRead(row)}
                                 className={`flex w-full flex-col items-start gap-0.5 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-50 ${
-                                    row.read_at === null ? 'bg-indigo-50/40' : ''
+                                    row.read_at === null
+                                        ? 'bg-indigo-50/40'
+                                        : ''
                                 }`}
                             >
                                 <span className="flex w-full items-start gap-2">

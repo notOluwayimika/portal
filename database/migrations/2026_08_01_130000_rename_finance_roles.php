@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Finance seat realignment (2026-08-01, docs/rbac/finance-seat-realignment.md) — the role-ROW side.
@@ -62,6 +63,17 @@ return new class extends Migration
     /**
      * Reverse both: rename accounts_supervisor back to finance_director, and recreate finance_void_approver
      * with its original three grants (finance.access + void approve/reject). Guarded so a re-run is safe.
+     *
+     * `uuid` IS SUPPLIED EXPLICITLY. `roles.uuid` is CHAR(36) NOT NULL with no database default — the
+     * value normally comes from the Role model's AddUuid `creating` hook, which a query-builder insert
+     * bypasses entirely. Without it this down() died on "SQLSTATE[HY000]: General error: 1364 Field 'uuid'
+     * doesn't have a default value", AFTER the rename above had already committed: the rollback left the
+     * database half-reverted with this migration still recorded as Ran. It blocked bin/quality-promote,
+     * whose clean-DB stage rolls back and re-applies against planted data.
+     *
+     * Str::uuid() rather than the model, deliberately. A migration that boots app models inherits their
+     * drift — a future global scope, cast or observer on Role would change what this historical migration
+     * does. The column's own contract (a v4 uuid string) is what it needs, and that is stable.
      */
     public function down(): void
     {
@@ -71,6 +83,7 @@ return new class extends Migration
         $exists = DB::table('roles')->where('name', 'finance_void_approver')->where('guard_name', 'web')->exists();
         if (! $exists) {
             $roleId = DB::table('roles')->insertGetId([
+                'uuid' => (string) Str::uuid(),
                 'name' => 'finance_void_approver', 'guard_name' => 'web',
                 'created_at' => now(), 'updated_at' => now(),
             ]);

@@ -170,6 +170,33 @@ enum Permission: string
     case EDIT_PSYCHOMOTOR_SKILLS = 'edit_psychomotor_skills';
 
     /**
+     * The permissions whose effect is to CROSS the `school_id` isolation boundary.
+     *
+     * v10 §7.2 (docs/Finance Module — Implementation Master Plan - v10.md:375) requires this to be
+     * "an explicit list, itself asserted": no segment rule can derive it — `view_cross_school` is
+     * read-shaped like `view` and `export`, and the thing that makes it different is its EFFECT
+     * (ActivityLogQueryService::baseQuery drops the school predicate entirely when the holder has
+     * it), not its name. ADR 0036 makes isolation un-bypassable by role, so membership here means
+     * "no business role may hold this, and the C6 matrix may not grant it at runtime".
+     *
+     * The one member today. `super_admin` is the ONE sanctioned holder (ADR 0045 A3, via
+     * RbacSeeder::SUPER_ADMIN_PLATFORM) and is unreachable through the matrix
+     * (SyncRolePermissionsRequest::authorize()), so this list needs no exemption mechanism of its own.
+     *
+     * Two consumers read it and neither hardcodes the string: the seeded-map pin
+     * (tests/Feature/Rbac/GrantsMapSeparationTest.php) and the runtime matrix guard
+     * (App\Http\Requests\SyncRolePermissionsRequest). Adding a member here arms both at once.
+     *
+     * `activity_log.view_system` is deliberately NOT a member: it widens a read to school-less
+     * (system) rows within the holder's own context, it does not read another School's rows.
+     *
+     * @var list<string>
+     */
+    public const ISOLATION_CROSSING = [
+        self::ACTIVITY_LOG_VIEW_CROSS_SCHOOL->value,
+    ];
+
+    /**
      * All permission string values.
      *
      * @return list<string>

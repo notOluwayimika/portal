@@ -18,6 +18,7 @@
 // hold maker AND checker together. Iterates the map (never a hardcoded role list), so a role added to
 // grantsMap() tomorrow is covered the moment it lands.
 
+use App\Enums\Permission as PermissionEnum;
 use App\Support\DutySeparation;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RbacSeeder;
@@ -54,4 +55,58 @@ it('super_admin holds NO maker-checker ability in grantsMap() (ADR 0040)', funct
     $held = collect(RbacSeeder::grantsMap()['super_admin'] ?? [])->filter(fn ($a) => $sides->contains($a))->values()->all();
 
     expect($held)->toBe([]);
+});
+
+// ── The isolation boundary: no BUSINESS role may cross school_id ────────────
+//
+// v10 §7.2 (docs/Finance Module — Implementation Master Plan - v10.md:375) requires the
+// isolation-crossing set to be "an explicit list, itself asserted" — no segment rule can derive it,
+// because `view_cross_school` is read-shaped like `view`/`export` and what makes it different is its
+// EFFECT (ActivityLogQueryService::baseQuery drops the school predicate entirely for a holder), not
+// its name. The list lives at PermissionEnum::ISOLATION_CROSSING, NOT in this file: the runtime C6
+// matrix guard (App\Http\Requests\SyncRolePermissionsRequest) reads the same constant, and a second
+// hardcoded copy here would be drift waiting for a deploy. These tests are the "itself asserted" half.
+
+it('the isolation-crossing list names only real, currently-declared permissions', function () {
+    // Without this the list can rot into a set of strings that match nothing, and every assertion
+    // below it passes vacuously while the real permission goes unguarded.
+    expect(PermissionEnum::ISOLATION_CROSSING)->not->toBeEmpty()
+        ->and(array_diff(PermissionEnum::ISOLATION_CROSSING, PermissionEnum::values()))->toBe([]);
+});
+
+it('no role in grantsMap() except super_admin grants an isolation-crossing permission (ADR 0036)', function () {
+    // super_admin is the ONE justified exemption, and it is justified rather than merely excluded:
+    // ADR 0045 A3 puts its platform set (RbacSeeder::SUPER_ADMIN_PLATFORM, which carries
+    // activity_log.view_cross_school) in the map explicitly so its access does not silently couple
+    // to the Gate::before flag, and it is platform support rather than a business seat. It is also
+    // unreachable through the C6 matrix (SyncRolePermissionsRequest::authorize()), so exempting it
+    // here strands nothing. An UNEXPLAINED exemption is how a deny-list goes stale — hence this
+    // paragraph. Iterates the map, never a hardcoded role list, so a role added tomorrow is covered
+    // the moment it lands.
+    $bad = [];
+    foreach (RbacSeeder::grantsMap() as $role => $abilities) {
+        if ($role === 'super_admin') {
+            continue;
+        }
+
+        foreach (PermissionEnum::ISOLATION_CROSSING as $crossing) {
+            if (in_array($crossing, $abilities, true)) {
+                $bad[] = "{$role} grants isolation-crossing [{$crossing}]";
+            }
+        }
+    }
+
+    expect($bad)->toBe([]);
+});
+
+it('super_admin holds the isolation-crossing set through SUPER_ADMIN_PLATFORM, not incidentally', function () {
+    // The exemption above is only safe while super_admin's holding comes from the self-healed
+    // platform constant. If it ever arrived some other way, the exemption would be covering an
+    // ordinary grant rather than the sanctioned one.
+    $superAdmin = RbacSeeder::grantsMap()['super_admin'] ?? [];
+
+    foreach (PermissionEnum::ISOLATION_CROSSING as $crossing) {
+        expect($superAdmin)->toContain($crossing)
+            ->and(RbacSeeder::SUPER_ADMIN_PLATFORM)->toContain($crossing);
+    }
 });

@@ -36,8 +36,10 @@
  *      `in_array($roleName, $existingRoles, true)` is false and the role receives the FULL
  *      `$permissions` array. No migration needed.
  *   3. A MIGRATION IN THE DIFF NAMES THE PERMISSION — a file ADDED under `database/migrations/`
- *      whose content contains the permission string. Not merely "a migration exists in the diff":
- *      the weak form would be exempted by any unrelated migration, which is wallpaper.
+ *      whose content names the permission AS A WHOLE NAME ({@see namesPermission}, which is a
+ *      boundary match and NOT a substring test — see that docblock for the prefix-pair hole a
+ *      substring test leaves open). Not merely "a migration exists in the diff": the weak form
+ *      would be exempted by any unrelated migration, which is wallpaper.
  *   4. THE ADDITION IS INSIDE `RbacSeeder::SUPER_ADMIN_PLATFORM` — `grantsMap()['super_admin']` IS
  *      that const, and the self-heal block at `RbacSeeder.php:506-512` runs
  *      `syncPermissions(self::SUPER_ADMIN_PLATFORM)` UNCONDITIONALLY on every sync, outside the
@@ -122,6 +124,42 @@ function constMembers(string $ref, string $const): array
     preg_match_all('/[\'"]([^\'"]+)[\'"]/', $m[1], $q);
 
     return $q[1];
+}
+
+/**
+ * Does $content name $permission — as a WHOLE permission name, not as a prefix of a longer one?
+ *
+ * THE BUG THIS EXISTS TO CLOSE. The first version of exemption 3 was `str_contains($content,
+ * $permission)`, a raw substring test, and the enum is full of prefix pairs that make that unsound.
+ * Nine of them today, re-derived from app/Enums/Permission.php rather than remembered:
+ *
+ *   activity_log.view      ⊂ .view_all / .view_own / .view_system / .view_cross_school / .view_sensitive
+ *   guardian.view          ⊂ guardian.view_audit
+ *   guardian.update        ⊂ guardian.update_credentials
+ *   result.view            ⊂ result.view_scores
+ *   student_subject.view   ⊂ student_subject.view_history
+ *
+ * So a diff adding `activity_log.view` to a pre-existing role, alongside a convergence migration
+ * that names only `activity_log.view_all`, was EXEMPTED — with no migration for the permission
+ * actually added. A silent green, in exactly the class the gate exists for. That is the worst
+ * failure a gate can have: it is indistinguishable from working.
+ *
+ * The fix is a right boundary — the permission must not be followed by another permission-name
+ * character. Only the RIGHT side is guarded, and that is a derived decision, not an oversight: of
+ * the 79 enum values there are 9 prefix pairs, 0 suffix pairs and 0 mid-string pairs, so no enum
+ * value can be matched inside the tail of another. A future permission that is a SUFFIX of an
+ * existing one would need the mirror lookbehind; there is none today, so adding one now would be
+ * guarding nothing and is left out deliberately.
+ *
+ * KNOWN FALSE NEGATIVE, and it is the safe direction: `.` is in the forbidden-following set, so a
+ * comment ending "…grants finance.access." does not count as naming it. It could be dropped, since
+ * all nine of today's pairs extend with `_` rather than `.` — but a future `finance.access.read`
+ * would reopen the hole, and a false negative here means the gate FIRES and a human reads the
+ * message, while a false positive means a silent green. Prefer the red.
+ */
+function namesPermission(string $content, string $permission): bool
+{
+    return (bool) preg_match('/'.preg_quote($permission, '/').'(?![A-Za-z0-9_.\-])/', $content);
 }
 
 // ---------------------------------------------------------------- arguments
@@ -269,7 +307,7 @@ foreach ($added as [$line, $text]) {
 
         $migration = null;
         foreach ($addedMigrations as $path => $content) {
-            if (str_contains($content, $permission)) {
+            if (namesPermission($content, $permission)) {
                 $migration = $path;
                 break;
             }

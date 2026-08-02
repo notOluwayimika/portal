@@ -3,7 +3,8 @@
 **This is full-review tier — recommend a cold session before merge.** Roles, permissions, a new
 `bin/quality` step, and a command whose output is the input to the next brief.
 
-**Base:** `staging` @ `79798c8`. **Branch:** `feat/rbac-diff-grants`. One commit.
+**Base:** `staging` @ `79798c8`. **Branch:** `feat/rbac-diff-grants`. **Two commits** — the second is
+a review fix; see the **Appendix** at the end, which supersedes this body wherever they disagree.
 `fix/revoke-ia-cross-school` **has** merged (`e35ccf1`, merging `964e97a`), so the stop condition on
 it is cleared.
 
@@ -76,8 +77,10 @@ real historical commits instead of fixture diffs — see "Tests" below. `bin/qua
 argument and gets the briefed behaviour.
 
 **6. `GrantsConvergenceLintTest.php` was written, not skipped.** The brief said to skip it rather
-than fake it with a constructed diff. It is not constructed: every arm replays a **real commit from
-this repository's history**, so nothing about the test's shape can flatter the lint.
+than fake it with a constructed diff. As of this commit it is not constructed: every arm replays a
+**real commit from this repository's history**, so nothing about the test's shape can flatter the
+lint. **Superseded in part by the Appendix** — the second commit adds one fixture-driven arm, for a
+diff shape that has never occurred in this repository, and says so there rather than here.
 
 ---
 
@@ -89,7 +92,7 @@ this repository's history**, so nothing about the test's shape can flatter the l
 | [bin/ci-grants-convergence-lint.php](../../../bin/ci-grants-convergence-lint.php) | Diff-aware gate. Four exemptions. No baseline file. |
 | [bin/quality](../../../bin/quality) | New step 7 beside boundary-lint, taking `"$BASE"`. Step count 12 → 13. |
 | [tests/Feature/Rbac/RbacDiffGrantsTest.php](../../../tests/Feature/Rbac/RbacDiffGrantsTest.php) | 10 arms. |
-| [tests/Feature/Rbac/GrantsConvergenceLintTest.php](../../../tests/Feature/Rbac/GrantsConvergenceLintTest.php) | 5 arms, real-history replays. |
+| [tests/Feature/Rbac/GrantsConvergenceLintTest.php](../../../tests/Feature/Rbac/GrantsConvergenceLintTest.php) | 5 arms here, real-history replays. **7 after the Appendix's second commit.** |
 | [docs/runbooks/rbac-grants-reconciliation.md](../rbac-grants-reconciliation.md) | Operator runbook. |
 | [docs/testing.md](../../testing.md) | One paragraph under "Accepted permanent residuals": the lint is **not retroactive**, and why no state-based gate can be. |
 
@@ -454,3 +457,178 @@ The new step lands at **7/13**, beside boundary-lint, and the step count is 12 �
   `syncPermissions`) and the `match` arms are simple, but they are untested and I am flagging that
   rather than claiming six proven diagnoses. Four are proven by arms; two are code-reviewed only.
 - **`--fresh` was never run against `portaa10_portal`,** and the copy was not written to at any point.
+
+---
+
+## Appendix — exemption 3 boundary fix, and permanent arms for exemptions 3 and 4
+
+Second commit on the branch, on top of `eafe54f`. **Scope held:** only
+`bin/ci-grants-convergence-lint.php` and `tests/Feature/Rbac/GrantsConvergenceLintTest.php` are
+touched. The command, the runbook, `docs/testing.md` and `bin/quality` are unchanged.
+
+## The defect, confirmed against the enum rather than accepted
+
+Exemption 3 tested the migration's content with `str_contains($content, $permission)` — a raw
+substring match. Re-derived from `app/Enums/Permission.php` at HEAD (79 values), by comparing every
+value against every other:
+
+```
+PREFIX pairs: 9
+  activity_log.view      ⊂ activity_log.view_all / .view_own / .view_system / .view_cross_school / .view_sensitive
+  guardian.view          ⊂ guardian.view_audit
+  guardian.update        ⊂ guardian.update_credentials
+  student_subject.view   ⊂ student_subject.view_history
+  result.view            ⊂ result.view_scores
+SUFFIX pairs: 0
+MID pairs:    0
+```
+
+So a diff adding `activity_log.view` to a pre-existing role, alongside a migration naming only
+`activity_log.view_all`, was exempted with no migration for the permission actually added. **A
+silent green, in the class the gate exists for** — the worst failure a gate can have, because it is
+indistinguishable from working.
+
+## The expression, verified in both directions before adoption
+
+The brief's proposal was not taken on trust. `preg_match('/'.preg_quote($p,'/').'(?![A-Za-z0-9_.\-])/', $c)`
+was run against 13 cases covering both directions:
+
+```
+ok    sibling only  -> NOT exempt (the bug)                expected=false got=false
+ok    exact sibling -> exempt                              expected=true  got=true
+ok    quoted exact -> exempt                               expected=true  got=true
+ok    space-delimited exact -> exempt                      expected=true  got=true
+ok    end of string -> exempt                              expected=true  got=true
+ok    prefix pair 2                                        expected=false got=false
+ok    prefix pair 3                                        expected=false got=false
+ok    prefix pair 4                                        expected=false got=false
+ok    prefix pair 5                                        expected=false got=false
+ok    hyphen+dot name exact                                expected=true  got=true
+ok    truncated -> not exempt                              expected=false got=false
+ok    KNOWN false-negative: trailing prose period          expected=false got=false
+ok    prose, space after                                   expected=true  got=true
+ALL 13 AS EXPECTED
+```
+
+Adopted as `namesPermission()`. Two decisions inside it are derived, not incidental, and both are in
+its docblock:
+
+- **Right boundary only.** There are 0 suffix pairs and 0 mid pairs, so no enum value can be matched
+  inside the tail of another and a mirror lookbehind would guard nothing today. It is left out
+  deliberately rather than added defensively; a future permission that is a *suffix* of an existing
+  one would need it.
+- **`.` stays in the forbidden-following set,** which makes a comment ending "…grants
+  `finance.access`." not count as naming it. All nine of today's pairs extend with `_`, so `.` could
+  be dropped — but a future `finance.access.read` reopens the hole, and the two error directions are
+  not symmetric: a false negative fires the gate and a human reads the message; a false positive is a
+  silent green.
+
+## Watched red — the sibling case, before and after
+
+Same fixture range both times (`76b3159..570a737`): a pre-existing permission added to a
+pre-existing role, with a migration naming only `activity_log.view_all`.
+
+**Before** (`namesPermission` reverted to `return str_contains($content, $permission);`):
+
+```
+grants-convergence-lint: OK — no unexempted grant addition in database/seeders/RbacSeeder.php (76b3159..570a737; 1 exempted).
+  · activity_log.view @ database/seeders/RbacSeeder.php:18 — exempt: migration [database/migrations/2099_01_01_000000_converge.php] in this diff names it
+EXIT=0
+```
+
+The lint states that the migration "names it". It does not. That is the silent green, verbatim.
+
+**After** (boundary match restored):
+
+```
+grants-convergence-lint: 1 grant addition(s) in database/seeders/RbacSeeder.php that rbac:sync will NOT apply (76b3159..570a737):
+
+  ✗ activity_log.view  @  database/seeders/RbacSeeder.php:18
+      role: auditor (INFERRED from the nearest preceding '<role>' => [ — verify it)
+      line: PermissionEnum::ACTIVITY_LOG_VIEW->value,
+…
+EXIT=1
+```
+
+The arm itself goes red under the same mutation:
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":4,
+ "test":"…exemption 3 — a migration naming the permission EXACTLY exempts it, one naming only a longer sibling does NOT",
+ "file":"tests/Feature/Rbac/GrantsConvergenceLintTest.php","line":260,
+ "message":"Failed asserting that 0 is identical to 1."}
+```
+
+## The two new arms
+
+**Exemption 4 is REAL HISTORY, not a fixture.** `cf9d2a2` created `SUPER_ADMIN_PLATFORM` with four
+already-existing permissions, wired `'super_admin' => self::SUPER_ADMIN_PLATFORM` into `grantsMap()`,
+and added no migration. Replayed:
+
+```
+grants-convergence-lint: OK — no unexempted grant addition in database/seeders/RbacSeeder.php (4d256f6..cf9d2a2; 4 exempted).
+  · rbac.impersonate @ …:58 — exempt: inside SUPER_ADMIN_PLATFORM (self-healed by syncPermissions every run, RbacSeeder.php:506-512)
+  · rbac.manage_users @ …:59 — exempt: inside SUPER_ADMIN_PLATFORM …
+  · activity_log.view_system @ …:60 — exempt: inside SUPER_ADMIN_PLATFORM …
+  · activity_log.view_cross_school @ …:61 — exempt: inside SUPER_ADMIN_PLATFORM …
+EXIT=0
+```
+
+That all four took exemption 4 rather than exemption 1 (which is tested first) is itself the proof
+that they pre-existed — this is a genuine exemption-4 case, not a coincidence.
+
+**Exemption 3's arm IS fixture-driven, and this says so plainly.** The sibling shape has never
+occurred in this repository, so there is no commit to replay. Searched: `01fdeda` — the convergence
+migration for `a0ab3d7`'s grants — does not touch `RbacSeeder.php` at all, so it is not an
+exemption-3 case either. There is no history for either half.
+
+What the fixture is and is not:
+
+- **Real git.** Commits are built with plumbing (`hash-object` / `update-index` / `write-tree` /
+  `commit-tree`) into the object database, and the lint reads them through exactly the same
+  `git diff` and `git show <rev>:<path>` calls it uses in life. Nothing about the lint is stubbed.
+- **Non-mutating.** `GIT_INDEX_FILE` points at a scratch index, so `.git/index` is never written. No
+  ref, branch, HEAD or working-tree file is touched; the commits are unreferenced objects collected
+  by the next `git gc`. Verified after the run: `git status --short` shows only the two files this
+  commit edits.
+- **Minimal, therefore a fixture.** The tree holds a two-case enum, a stub seeder with `ROLES`,
+  `SUPER_ADMIN_PLATFORM` and `grantsMap()`, and one migration — not a copy of the real files. The
+  base already declares both permissions and the role, so neither exemption 1 nor 2 can fire and
+  exemption 3 is the only question left.
+
+`DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Rbac/GrantsConvergenceLintTest.php tests/Feature/Rbac/RbacDiffGrantsTest.php`
+
+```
+{"tool":"pest","result":"passed","tests":17,"passed":17,"assertions":89,"duration_ms":16874}
+```
+
+## A second gap in exemption 3, found while fixing the first — NOT fixed here
+
+Exemption 3 requires the permission to appear as a **literal string** in the migration. The
+convergence migrations this repo actually writes compose names from a prefix plus a segment, so the
+full name frequently never appears. Checked by content, not assumed:
+
+| Migration | `finance.fee-schedule.change.submit` | `finance.discount-policy.change.submit` |
+| --- | --- | --- |
+| `2026_08_03_100000_converge_finance_change_grants.php` | 2 hits (prose) | **0 hits** |
+
+That migration is the convergence for both permissions, and it would satisfy exemption 3 for one of
+them and not the other — and the one it satisfies, it satisfies by accident of prose rather than by
+design. A developer shipping the idiomatic convergence migration can therefore be told "no migration
+names it" and be right to disbelieve the gate.
+
+This is a **false RED**, not a silent green, so it is the safe direction and it is not in the class
+this commit was asked to close. It is also not fixable by widening the string test — soundly
+resolving `'finance.'.$ns.'.change.'.$verb` means evaluating PHP concatenation. The honest options
+are a convention (convergence migrations must name each permission literally once, e.g. in a
+docblock) or a `@converges <permission>` marker the lint reads. **Ticket, needs a decision — not
+smuggled in here.**
+
+## Not done
+
+- The mirror lookbehind (`(?<![A-Za-z0-9_.\-])`). Vacuous today: 0 suffix pairs, 0 mid pairs.
+  Recorded in the `namesPermission()` docblock so the next person adding a suffix-shaped permission
+  has the reason in front of them.
+- `bin/quality` was not re-run for this commit: it was green on `eafe54f`, and the two files changed
+  here are the lint and its own test, both of which are exercised directly above (17/17, Pint clean).
+  Say so rather than implying a full-gate run happened.

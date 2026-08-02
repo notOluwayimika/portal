@@ -182,6 +182,16 @@ clean-room OS/environment, and any remote enforcement (no required status checks
 `--no-verify` bypasses; a clone without `composer install` has no hook). These are
 known and accepted, not hidden.
 
+**The grants-convergence lint (step 6) is diff-aware and NOT retroactive** — it fails a
+diff that adds a pre-existing permission to a pre-existing role in `RbacSeeder::grantsMap()`
+without a convergence migration, but it says nothing about grants that have already drifted.
+It cannot: on a freshly seeded database the map and the grants agree by construction
+(`$existingRoles` is empty, so every role takes the `: $permissions` branch at
+`RbacSeeder.php:494-496`), so no gate with only a seeded database can witness this class.
+The past half is the operator command `php artisan rbac:diff-grants`, run against a real
+copy — see [runbooks/rbac-grants-reconciliation.md](runbooks/rbac-grants-reconciliation.md).
+A green gate here is not evidence that the live grants match the map.
+
 **Nothing in the gate renders a page.** The suite exercises HTTP/JSON and the database;
 tsc and lint read source. No step mounts a React tree, so a page that type-checks and
 lints can still throw at render and come up blank. The browser click-through before

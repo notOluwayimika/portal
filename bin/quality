@@ -12,8 +12,11 @@
 # this too — a fork between the two re-creates the bug that started the tsc saga,
 # where CI and a developer measured different trees and both reported green.
 #
-#   lint.yml (job: quality)          -> steps 1..10 below
-#   tests.yml (job: ci)              -> step 11 below
+#   lint.yml (job: quality)          -> steps 1..12 below
+#   tests.yml (job: ci)              -> step 13 below
+#
+# (The two numbers above are re-derived, not carried: the step count is 13 as of the
+# grants-convergence lint. They were already one behind at 12 steps.)
 #
 # DELIBERATELY OMITTED, and why — these are environment PROVISIONING, not gates:
 #   composer install / pnpm install  - your working copy already has them; this
@@ -43,7 +46,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/12]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/13]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -125,6 +128,18 @@ check "authz-lint" php bin/ci-authz-lint.php
 step "boundary lint (§17.2)"
 check "boundary-lint" php bin/ci-boundary-lint.php
 
+# grants-convergence lint. DIFF-AWARE, and it takes "$BASE" the way lint-changed does at :102 —
+# because this invariant CANNOT be asserted from state. CI's database is freshly seeded, and on a
+# fresh seed RbacSeeder::grantsMap() always matches the database by construction ($existingRoles is
+# empty, so every role takes the `: $permissions` branch at RbacSeeder.php:494-496). The live
+# production copy is the only witness and no gate has it. So the diff is the only place a
+# pre-existing-permission-added-to-a-pre-existing-role grant is visible.
+#
+# IT IS THEREFORE NOT RETROACTIVE — a green here says nothing about grants that have ALREADY
+# drifted. That half is `php artisan rbac:diff-grants`, run against a real database by an operator.
+step "grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)"
+check "grants-convergence-lint" php bin/ci-grants-convergence-lint.php "$BASE"
+
 step "money lint (UI: money via formatNaira, no JS money math)"
 check "money-lint" php bin/ci-money-lint.php
 
@@ -140,7 +155,7 @@ check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
 step "static analysis (Larastan level 5 vs baseline)"
 check "larastan" composer analyse
 
-# 11. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
+# 13. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
 step "tests (failure ratchet vs tests/ratchet-baseline.txt)"
 env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit /tmp/quality-junit.xml >/tmp/quality-pest.log 2>&1 || true

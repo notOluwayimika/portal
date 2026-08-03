@@ -60,26 +60,58 @@ it('rejects free text that a SQL emptiness check would count as a phone', functi
     'punctuation only' => '---',
 ]);
 
-it('rejects numbers that could not be dialled', function (string $raw) {
+/**
+ * CORRECT LENGTH, WRONG NUMBER — the class the first cut left open.
+ *
+ * Rejecting `12345` for being short closed one INSTANCE, not the class. A digit
+ * count validates FORMATTING; whether the number exists is a different axis. Each
+ * of these has a plausible length and no owner, and each one minted a contact point
+ * until validity was checked against the region's actual number plan.
+ */
+it('rejects numbers of a plausible length that no carrier issues', function (string $raw) {
     expect(AddressNormalizer::phone($raw))->toBeNull();
 })->with([
-    // Truncated capture — minting a contact point here produces sends that fail
-    // forever against an address nobody can fix without knowing it is wrong.
+    // 13 digits after prefixing, in any length range, a `123` prefix nobody issues.
+    'unissued prefix' => '1234567890',
+    // Produced `+000000000` before — a country code of `0`, not assignable in E.164
+    // at all. My own code emitting a structurally invalid address.
+    'all zeroes' => '00000000000',
+    // Truncated capture.
     'too short' => '12345',
     'far too long' => '080312345678901234',
 ]);
 
-it('does not mistake an explicitly international number for a national one', function () {
-    // A `+` means the caller already said which country. Applying the trunk-prefix
-    // rule to `+44 20…` would produce `+2344420…` — a plausible-looking, wrong
-    // number, which is worse than a rejection because it silently sends elsewhere.
-    expect(AddressNormalizer::phone('+442079460958'))->toBe('+442079460958');
+/**
+ * VALID IS NOT REACHABLE, and this is the case that surprised me.
+ *
+ * `08000000000` is what gets typed when a phone field is required and unknown — and
+ * libphonenumber says it is a genuinely VALID Nigerian number, because `0800` is an
+ * assignable toll-free range. Validity alone would mint a contact point for it and
+ * report the row as successfully rerouted, inflating the reroute count with an
+ * address no SMS can reach.
+ */
+it('rejects numbers that are valid but cannot receive a message', function (string $raw) {
+    expect(AddressNormalizer::phone($raw))->toBeNull();
+})->with([
+    'toll-free placeholder' => '08000000000',
+    // A real London landline. Valid, dialable, and not messageable.
+    'foreign fixed line' => '+442079460958',
+]);
+
+it('does not re-home an explicitly international number into the default region', function () {
+    // A `+` means the caller already said which country. Treating it as national
+    // would produce `+2344479…` — plausible-looking and wrong, which is worse than a
+    // rejection because it silently sends somewhere else entirely.
+    expect(AddressNormalizer::phone('+447911123456'))->toBe('+447911123456');
 });
 
-it('takes the calling code from config so a second country is not a code change', function () {
-    config(['notifications.default_calling_code' => '44']);
+it('takes the REGION from config, so a second country is genuinely a config change', function () {
+    config(['notifications.default_region' => 'GB']);
 
-    expect(AddressNormalizer::phone('07946095812'))->toBe('+447946095812');
+    // Validated against GB's plan, not merely prefixed with GB's calling code —
+    // which is the difference between the promise the old docblock made and the one
+    // the code can now keep.
+    expect(AddressNormalizer::phone('07911123456'))->toBe('+447911123456');
 });
 
 /*

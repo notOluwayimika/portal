@@ -2,6 +2,10 @@
 
 namespace App\Support;
 
+use libphonenumber\NumberParseException;
+use libphonenumber\PhoneNumberFormat;
+use libphonenumber\PhoneNumberType;
+use libphonenumber\PhoneNumberUtil;
 use Normalizer;
 
 /**
@@ -33,10 +37,24 @@ use Normalizer;
  */
 final class AddressNormalizer
 {
-    /** E.164 permits at most 15 digits; fewer than 7 is not a routable subscriber number. */
-    private const MIN_DIGITS = 7;
-
-    private const MAX_DIGITS = 15;
+    /**
+     * Number types that can actually receive a message.
+     *
+     * VALID IS NOT THE SAME AS REACHABLE, and this is where the first cut of this
+     * class was wrong twice over. `08000000000` — what gets typed when a phone field
+     * is required and unknown — is a genuinely VALID Nigerian number: `0800` is an
+     * assignable toll-free range. It is simply not one you can send SMS to. Checking
+     * validity alone would mint a contact point for it and report the row as
+     * successfully rerouted.
+     *
+     * FIXED_LINE_OR_MOBILE is included because number plans that do not distinguish
+     * the two return it for ordinary mobiles; excluding it would reject real
+     * recipients in those countries.
+     */
+    private const REACHABLE_TYPES = [
+        PhoneNumberType::MOBILE,
+        PhoneNumberType::FIXED_LINE_OR_MOBILE,
+    ];
 
     /**
      * Lowercase, trimmed, Unicode-normalised. Null when it is not an address.
@@ -73,14 +91,29 @@ final class AddressNormalizer
     }
 
     /**
-     * E.164, or null.
+     * E.164, or null — validated against the REGION'S ACTUAL NUMBER PLAN.
      *
-     * The default region exists because this population writes national-format
-     * numbers: `08031234567` is the ordinary way a Nigerian number is typed, and
-     * it is meaningless without knowing the country. Configurable rather than
-     * hard-coded so a second school in another country is a config change.
+     * WHY NOT A LENGTH RANGE, which is what this did first. A digit-count check
+     * validates FORMATTING, not existence, and the two are different axes. The first
+     * cut rejected `12345` for being short and happily minted `+2341234567890` from
+     * `1234567890` — thirteen digits, in range, a `123` prefix no carrier issues. It
+     * even emitted `+000000000` for `00000000000`, reading the leading zeroes as an
+     * international access code and producing a country code of `0`, which is not
+     * assignable in E.164 at all. Same class of defect as the five-digit case,
+     * surviving the fix that was supposed to close it.
+     *
+     * A hand-maintained prefix list would be the other way to close it, and would be
+     * the denylist-drift antipattern this codebase has already rejected twice (see
+     * ApprovalAbility: convention, never a list). Carriers gain prefixes; the list
+     * would rot silently. libphonenumber IS the maintained plan, versioned with the
+     * dependency.
+     *
+     * IT ALSO MAKES THE REGION PROMISE TRUE. The docblock used to claim the calling
+     * code was "configurable so a second country is a config change", while
+     * MIN_DIGITS/MAX_DIGITS were region-BLIND and could not validate any country's
+     * plan. The config now names a REGION, and validity is evaluated against it.
      */
-    public static function phone(?string $raw, ?string $callingCode = null): ?string
+    public static function phone(?string $raw, ?string $region = null): ?string
     {
         $value = trim((string) $raw);
 
@@ -88,52 +121,40 @@ final class AddressNormalizer
             return null;
         }
 
-        $callingCode = ltrim($callingCode ?? (string) config('notifications.default_calling_code', '234'), '+');
+        // `00` → `+` BEFORE parsing, and this is formatting, not a validity claim.
+        // libphonenumber correctly knows Nigeria's international prefix is `009`, so
+        // it rejects `00234…` as not-dialable-from-NG. But this column holds STORED
+        // CONTACT DATA, not a dialling sequence: `00` is the ITU-recommended
+        // international prefix and is simply how people write a foreign number.
+        // Rejecting it would drop real numbers the previous implementation accepted.
+        if (str_starts_with($value, '00')) {
+            $value = '+'.substr($value, 2);
+        }
 
-        // An explicit `+` is the only prefix that means "already international".
-        // Captured BEFORE stripping, because the strip removes it.
-        $isExplicitlyInternational = str_starts_with($value, '+');
+        $region = strtoupper($region ?? (string) config('notifications.default_region', 'NG'));
+        $util = PhoneNumberUtil::getInstance();
 
-        $digits = preg_replace('/\D+/', '', $value) ?? '';
-
-        if ($digits === '') {
-            // `n/a`, `-`, `none`, a name. The reason a phone-string count
-            // overstates how many rows reroute.
+        try {
+            // Parses national (`08031234567`), international (`+234…`) and
+            // access-coded (`00234…`) forms; the region only supplies the country
+            // for the national case, so an explicit `+` is never re-homed.
+            $parsed = $util->parse($value, $region);
+        } catch (NumberParseException) {
+            // `n/a`, `-`, a name typed into the phone field. The reason a SQL count
+            // of `TRIM(phone) <> ''` overstates how many rows will reroute.
             return null;
         }
 
-        // THE MINIMUM APPLIES TO WHAT WAS TYPED, not to what we synthesise.
-        // Checking only the final E.164 lets the prefixing rule RESCUE garbage:
-        // `12345` has no trunk prefix and no country code, so it would gain one and
-        // become `+23412345` — eight digits, structurally valid, and a number nobody
-        // has. Rejecting a short input is right; inventing a country for it is not.
-        if (strlen($digits) < self::MIN_DIGITS) {
+        if (! $util->isValidNumber($parsed)) {
             return null;
         }
 
-        if (! $isExplicitlyInternational) {
-            if (str_starts_with($digits, '00')) {
-                // International access code — `00234…` is `+234…`.
-                $digits = substr($digits, 2);
-            } elseif (str_starts_with($digits, '0')) {
-                // National trunk prefix: drop the 0, prepend the country.
-                $digits = $callingCode.substr($digits, 1);
-            } elseif (! str_starts_with($digits, $callingCode)) {
-                // A bare subscriber number with neither trunk prefix nor country.
-                $digits = $callingCode.$digits;
-            }
-        }
-
-        $length = strlen($digits);
-
-        if ($length < self::MIN_DIGITS || $length > self::MAX_DIGITS) {
-            // Truncated entries, extensions typed into the field, and the
-            // occasional date. Rejecting is correct: minting a contact point for
-            // an unroutable number produces sends that fail forever.
+        if (! in_array($util->getNumberType($parsed), self::REACHABLE_TYPES, true)) {
+            // Valid, but not messageable — a toll-free, premium-rate or fixed line.
             return null;
         }
 
-        return '+'.$digits;
+        return $util->format($parsed, PhoneNumberFormat::E164);
     }
 
     /**

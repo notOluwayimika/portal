@@ -333,6 +333,14 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:result.view'])->group(f
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
     Route::get('/guardian/notices', [NoticeController::class, 'forGuardian']);
+
+    // The parent portal's ward list. Gated on the SAME ability as the page that
+    // consumes it (`parent/wards`, routes/web.php) — the page previously fed off
+    // /api/guardians/{uuid}/students, which sits under `student_status.view`, so a
+    // guardian role holding one ability but not the other rendered the page and
+    // then silently failed to fill it. Takes no guardian id: see
+    // GuardianController::wards.
+    Route::get('/parent/wards', [GuardianController::class, 'wards']);
 });
 
 // Form teachers may record assessments when the school has no boarding

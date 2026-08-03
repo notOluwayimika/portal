@@ -337,34 +337,69 @@ class GuardianController extends Controller
         // as live code (clearing the commented-authz debt) without yet blocking.
         Authz::abilityCheck(request()->user(), 'guardian.view', 'GuardianController@students');
 
+        return response()->json([
+            'data' => $this->wardPayload($guardian),
+        ]);
+    }
+
+    /**
+     * GET /api/parent/wards
+     * The parent portal's own ward list. Unlike `students()` above it takes NO
+     * guardian id from the client: the Guardian is resolved server-side from the
+     * authenticated User and the ACTIVE School.
+     *
+     * That is the whole point of this endpoint. A Guardian is a per-School record
+     * (GuardianService::resolveExistingGuardianForAttachment), so a parent with
+     * wards in two Schools has two `guardians` rows sharing one `users` row. The
+     * portal used to read `auth.user.guardian` — an unordered `hasOne` whose global
+     * scope matches on `school_id = active OR user has access to active`, so it
+     * could hand back the OTHER School's Guardian row. Its wards were then filtered
+     * out by Student's own SchoolScope, and the parent got 200 with an empty list
+     * while the admin, sitting in the ward's School, saw the wards fine.
+     */
+    public function wards(Request $request)
+    {
+        $guardian = $this->guardianService->forUserInActiveSchool($request->user());
+
+        // No Guardian record in this School is a legitimate empty list, not an
+        // error: the parent may have wards in a School they have not switched to.
+        return response()->json([
+            'data' => $guardian ? $this->wardPayload($guardian) : [],
+        ]);
+    }
+
+    /**
+     * Shared ward/student projection. Scoped to the active School by Student's
+     * SchoolScope, via GuardianService::studentsFor.
+     */
+    private function wardPayload(Guardian $guardian)
+    {
         $students = $this->guardianService->studentsFor($guardian);
         $students->load('school', 'currentCurriculum');
 
-        return response()->json([
-            'data' => $students->map(fn ($s) => [
-                'id' => $s->uuid,
-                'full_name' => $s->full_name,
-                'admission_number' => $s->admission_number,
-                'relationship' => $s->pivot->relationship,
-                'is_primary' => (bool) $s->pivot->is_primary,
-                'can_login' => (bool) $s->pivot->can_login,
-                'first_name' => $s->first_name,
-                'middle_name' => $s->middle_name,
-                'last_name' => $s->last_name,
-                'gender' => $s->gender,
-                'date_of_birth' => $s->date_of_birth,
-                'photo' => $s->photo,
-                'school' => $s->school ? [
-                    'id' => $s->school->id,
-                    'name' => $s->school->name,
-                ] : null,
-                // A student between/without enrollments (or withdrawn) has no
-                // current curriculum — null-guard so one such student does not 500
-                // the guardian's entire student list.
-                'current_class' => $s->currentCurriculum
-                    ? new StudentCurriculumResource($s->currentCurriculum->load(['curriculum']))
-                    : null,
-            ]),
+        return $students->map(fn ($s) => [
+            'id' => $s->uuid,
+            'full_name' => $s->full_name,
+            'admission_number' => $s->admission_number,
+            'relationship' => $s->pivot->relationship,
+            'is_primary' => (bool) $s->pivot->is_primary,
+            'can_login' => (bool) $s->pivot->can_login,
+            'first_name' => $s->first_name,
+            'middle_name' => $s->middle_name,
+            'last_name' => $s->last_name,
+            'gender' => $s->gender,
+            'date_of_birth' => $s->date_of_birth,
+            'photo' => $s->photo,
+            'school' => $s->school ? [
+                'id' => $s->school->id,
+                'name' => $s->school->name,
+            ] : null,
+            // A student between/without enrollments (or withdrawn) has no
+            // current curriculum — null-guard so one such student does not 500
+            // the guardian's entire student list.
+            'current_class' => $s->currentCurriculum
+                ? new StudentCurriculumResource($s->currentCurriculum->load(['curriculum']))
+                : null,
         ]);
     }
 

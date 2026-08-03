@@ -79,6 +79,14 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
+                // DO NOT use `auth.user.guardian` to identify WHICH Guardian record
+                // to act on. A Guardian is a per-School record, so a parent with
+                // wards in two Schools has two rows sharing this one User, and this
+                // is an unordered hasOne whose global scope (Guardian::applySchoolScope)
+                // matches on `school_id = active OR user has access to active` — it
+                // can hand back the wrong School's row. The parent portal shipped
+                // that bug. Resolve server-side via
+                // GuardianService::forUserInActiveSchool instead.
                 'user' => $user ? $user->load(['teacher', 'guardian']) : null,
                 'school' => $activeSchoolId ? School::with('currentSession')->find($activeSchoolId) : null,
                 'schools' => $user

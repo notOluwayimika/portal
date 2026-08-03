@@ -364,10 +364,32 @@ class User extends Authenticatable
         return $this->isDisabled() ? '$2y$12$disabled.account.cannot.login.'.bin2hex(random_bytes(8)) : $this->password;
     }
 
+    /**
+     * Account-security fields. The audit trail records that each of these CHANGED,
+     * on which account and by whom — the notification layer's Tier-1 signal reads
+     * the same rows rather than keeping a second field list of its own.
+     *
+     * ⚠️ THE VALUES OF THESE ARE CREDENTIAL MATERIAL, and are stripped before the
+     * row is written by the `creating` hook on App\Models\Activity, using
+     * config/activity_log_sensitive.php `fields`. `password` alone used to be
+     * logged here and its bcrypt hash WAS reaching the column; adding
+     * `two_factor_secret` and `two_factor_recovery_codes` without that redaction in
+     * place would re-open the same hole for a live TOTP seed. Keeping the columns
+     * here and the redaction there is deliberate: the fact of the change is
+     * auditable, the secret is not retained.
+     */
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['password'])
+            ->logOnly([
+                'password',
+                'email',
+                'two_factor_secret',
+                'two_factor_confirmed_at',
+                // Not a credential, but the security-relevant state change that
+                // takes an account in or out of service.
+                'disabled_at',
+            ])
             ->logOnlyDirty();
     }
 }

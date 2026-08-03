@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * @property int $id
@@ -23,7 +25,48 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Student extends Model
 {
-    use AddUuid, BelongsToSchool, HasAdmissionNumber, HasFactory, SoftDeletes;
+    use AddUuid, BelongsToSchool, HasAdmissionNumber, HasFactory, LogsActivity, SoftDeletes;
+
+    /**
+     * Audited fields — a pupil's identity record.
+     *
+     * A student has no login of their own, so none of this is account-security in
+     * the credential sense. It is the sensitive-relationship tier: legal name, date
+     * of birth, address and admission number are the identity a school is
+     * accountable for, and a third party changing one is the event that has to be
+     * answerable later. The notification layer reads these same rows.
+     *
+     * ⚠️ VOLUME. This is the highest-cardinality model the audit trail has been
+     * pointed at — student imports and bulk updates touch hundreds of rows at once.
+     * `logOnlyDirty()` limits each row to fields that actually changed, and the
+     * cosmetic columns (`photo_id`, `sport_house_id`, `scholarship_id`,
+     * `previous_school`) are deliberately excluded, but the retention consequence
+     * is real and is the reason this lands as an audit review rather than inside a
+     * feature branch.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'first_name',
+                'middle_name',
+                'last_name',
+                'gender',
+                'date_of_birth',
+                'address',
+                'nationality',
+                'state_of_origin',
+                'admission_number',
+                'status',
+            ])
+            ->logOnlyDirty()
+            // Without this, changing a NON-audited column still writes a row with an
+            // empty attribute set — pure volume with nothing recorded. On the two
+            // highest-cardinality models in the app that is the difference between an
+            // audit trail and a write amplifier.
+            ->dontSubmitEmptyLogs()
+            ->useLogName('student');
+    }
 
     protected $fillable = [
         'school_id',

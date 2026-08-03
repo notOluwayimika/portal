@@ -301,6 +301,22 @@ class GuardianService
             ],
         ]);
 
+        // THE ATTACH SIDE WAS THE ONE UNLOGGED PIVOT TRANSITION. `detached`,
+        // `login_enabled`, `login_disabled` and `pivot_updated` were all already
+        // recorded; creating the link was not — so "who gave this adult access to
+        // this child, and when" had no answer, while "who took it away" did.
+        //
+        // Spatie logs MODEL attributes and cannot see a pivot write at all, so this
+        // has to be an explicit call; there is no configuration that would have
+        // covered it.
+        if (! $existingPivot) {
+            $this->logPivotEvent($guardian, $student, 'attached', [
+                'relationship' => $relationship,
+                'is_primary' => $isPrimary,
+                'can_login' => $canLogin,
+            ]);
+        }
+
         // Already attached — just update pivot fields if anything changed.
         if ($existingPivot) {
             $student->guardians()->updateExistingPivot($guardian->id, [

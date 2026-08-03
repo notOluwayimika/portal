@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * @property int $id
@@ -19,7 +21,40 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Teacher extends Model
 {
-    use AddUuid, BelongsToSchool, HasStaffNumber, SoftDeletes;
+    use AddUuid, BelongsToSchool, HasStaffNumber, LogsActivity, SoftDeletes;
+
+    /**
+     * Audited fields — identity and contact, not cosmetics.
+     *
+     * `phone` is the security-critical one: it is a delivery address, so a change
+     * to it is an account-security event in the same class as an email change, and
+     * the notification layer's Tier-1 signal reads exactly these rows.
+     *
+     * DELIBERATELY OMITTED: `photo_id` and `qualification`. Neither carries identity
+     * or access, and logging them would add volume to the audit trail with nothing
+     * to answer for it.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'first_name',
+                'last_name',
+                'gender',
+                'date_of_birth',
+                'phone',
+                'address',
+                'staff_number',
+                'status',
+            ])
+            ->logOnlyDirty()
+            // Without this, changing a NON-audited column still writes a row with an
+            // empty attribute set — pure volume with nothing recorded. On the two
+            // highest-cardinality models in the app that is the difference between an
+            // audit trail and a write amplifier.
+            ->dontSubmitEmptyLogs()
+            ->useLogName('teacher');
+    }
 
     protected $fillable = [
         'school_id',

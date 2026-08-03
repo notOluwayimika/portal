@@ -2,6 +2,8 @@
 
 namespace App\Services\ActivityLog;
 
+use Illuminate\Support\Collection;
+
 /**
  * Sensitive-entry detection + field masking, driven by
  * config/activity_log_sensitive.php.
@@ -11,8 +13,7 @@ class ActivitySensitiveService
     public function __construct(
         private readonly array $entryPatterns,
         private readonly array $maskedFields,
-    ) {
-    }
+    ) {}
 
     public static function make(): self
     {
@@ -47,9 +48,20 @@ class ActivitySensitiveService
     }
 
     /**
-     * Recursively mask sensitive keys in a properties array. A read-time
-     * safety net only — sensitive values should already be stripped at
-     * write time by the logging code.
+     * Recursively mask sensitive keys in a properties array.
+     *
+     * USED AT BOTH ENDS, deliberately one implementation. It is applied at WRITE
+     * time by the `Activity::saving` hook in AppServiceProvider — so a sensitive
+     * value never reaches the table — and it remains the read-time safety net for
+     * rows written before that hook existed and for anything a future logging path
+     * inserts directly.
+     *
+     * Until 2026-08-02 the write-time half of that was only a comment here: this
+     * docblock claimed values "should already be stripped at write time by the
+     * logging code", and nothing did it. `User::getActivitylogOptions()` logs
+     * `password`, so every signup and every password change wrote a live bcrypt
+     * hash into `activity_log.properties` — masked on screen, plaintext in the
+     * column, and therefore in every dump and backup.
      */
     public function maskProperties(mixed $properties): ?array
     {
@@ -58,7 +70,7 @@ class ActivitySensitiveService
         }
 
         // Spatie casts the `properties` column to a Collection.
-        if ($properties instanceof \Illuminate\Support\Collection) {
+        if ($properties instanceof Collection) {
             $properties = $properties->toArray();
         }
 

@@ -188,6 +188,29 @@ it('does not log a second attach when the link already exists', function () {
  * crackable.
  */
 it('never lets the two-factor secret reach the column', function () {
+    // THE GATE IS A BEHAVIOURAL PROBE, not a substring match on a method name.
+    //
+    // The first version grepped app/Models/Activity.php for `maskProperties`. That
+    // makes the safety property depend on a NAME: rename the method in #195 and this
+    // test does not fail, it SKIPS — the quietest possible green for a load-bearing
+    // guarantee, and nothing anywhere enforces that the name stays put. Writing a
+    // throwaway activity and looking at what survives tests the property itself.
+    //
+    // Inside the test body rather than in ->skip(), so it runs with the container
+    // booted and inside RefreshDatabase's transaction — the probe row is rolled back.
+    $probe = activity()
+        ->withProperties(['attributes' => ['password' => 'redaction-probe']])
+        ->log('redaction-probe');
+
+    $probeRaw = (string) DB::table('activity_log')->where('id', $probe->id)->value('properties');
+
+    if (str_contains($probeRaw, 'redaction-probe')) {
+        $this->markTestSkipped(
+            'Write-time redaction is absent — this branch must merge AFTER #195 '
+            .'(fix/activity-log-password-hash-exposure). See the PR description.'
+        );
+    }
+
     $user = al_makeUser(al_makeSchool()->id);
 
     $user->forceFill(['two_factor_secret' => encrypt('LIVETOTPSEED')])->save();
@@ -196,15 +219,18 @@ it('never lets the two-factor secret reach the column', function () {
         ->where('id', afc_latestActivityFor($user)?->id)
         ->value('properties');
 
-    expect($raw)->toContain('two_factor_secret')
-        ->and($raw)->toContain('***');
-})->skip(
-    ! str_contains(
-        // A literal path, not base_path(): ->skip() is evaluated at COLLECTION time,
-        // before the application container exists.
-        (string) file_get_contents(dirname(__DIR__, 3).'/app/Models/Activity.php'),
-        'maskProperties'
-    ),
-    'Requires the write-time redaction from PR #195 (fix/activity-log-password-hash-exposure). '
-    .'This branch must merge AFTER it — see the PR description.'
-);
+    $properties = json_decode($raw, true);
+
+    // ASSERT THE VALUE AT THE KEY, not two independent substrings over the whole
+    // blob. `toContain('two_factor_secret')` plus `toContain('***')` passes whenever
+    // the key appears ANYWHERE and a mask token appears ANYWHERE — which coincide
+    // today only because this fixture happens to dirty one redacted field. Let the
+    // fixture touch a second masked column (it nearly does: the 2FA test above nulls
+    // and re-sets `two_factor_confirmed_at` too) and the pair goes green while the
+    // seed sits in the column unmasked, under a test still named for preventing that.
+    expect($properties['attributes']['two_factor_secret'] ?? null)->toBe('***');
+
+    // Deliberately NOT `not->toContain('LIVETOTPSEED')`: the column stores the
+    // CIPHERTEXT of the seed, so a plaintext-absence assertion is green with zero
+    // redaction in place. The key-value form sidesteps that entirely.
+});

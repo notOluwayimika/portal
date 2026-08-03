@@ -345,7 +345,7 @@ class GuardianService
      */
     public function notifyGuardian(User $user, string $plainPassword, array $studentNames = []): void
     {
-        if (! $user->email || $this->isSyntheticEmail($user->email)) {
+        if (! $user->hasDeliverableEmail()) {
             return;
         }
 
@@ -368,7 +368,7 @@ class GuardianService
     private function reissueCredentialsIfPossible(Guardian $guardian, Student $student): void
     {
         $user = $guardian->user;
-        if (! $user || ! $user->email || $this->isSyntheticEmail($user->email)) {
+        if (! $user?->hasDeliverableEmail()) {
             return;
         }
 
@@ -547,7 +547,11 @@ class GuardianService
         // Scenario 1: shouldn't happen with current schema (user_id is NOT NULL),
         // but guard anyway in case of future changes.
         if (! $user) {
-            $email = $guardian->phone ? "{$guardian->phone}@no-email.local" : sprintf('guardian+%s@no-email.local', Str::random(12));
+            // The two MINT sites are all that remain of the sentinel. Both now name the
+            // domain from User so there is one definition of the string, not three.
+            $email = $guardian->phone
+                ? $guardian->phone.User::SYNTHETIC_EMAIL_DOMAIN
+                : sprintf('guardian+%s%s', Str::random(12), User::SYNTHETIC_EMAIL_DOMAIN);
             $plainPassword = $this->passwordGenerator->generate();
             $newUser = User::create([
                 'first_name' => $guardian->first_name,
@@ -698,11 +702,6 @@ class GuardianService
      */
     private function syntheticEmail(int $schoolId): string
     {
-        return sprintf('guardian+%s+%d@no-email.local', Str::random(12), $schoolId);
-    }
-
-    private function isSyntheticEmail(string $email): bool
-    {
-        return str_ends_with($email, '@no-email.local');
+        return sprintf('guardian+%s+%d%s', Str::random(12), $schoolId, User::SYNTHETIC_EMAIL_DOMAIN);
     }
 }

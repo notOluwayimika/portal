@@ -37,7 +37,7 @@ class BulkMessageGuardiansJob implements ShouldQueue
             ->each(function (Guardian $guardian) {
                 $user = $guardian->user;
 
-                if (! $user || ! $user->email || str_ends_with($user->email, '@no-email.local')) {
+                if (! $user?->hasDeliverableEmail()) {
                     return;
                 }
 

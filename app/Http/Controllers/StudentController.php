@@ -244,7 +244,7 @@ class StudentController extends Controller
             // If can_login is being raised from false→true and guardian has a real email, queue a re-notify.
             if ($entry['can_login'] && (! $existingPivot || ! $existingPivot->can_login)) {
                 $user = $guardian->user;
-                if ($user && $user->email && ! str_ends_with($user->email, '@no-email.local')) {
+                if ($user?->hasDeliverableEmail()) {
                     // The service handles credential reissue inside attachToStudent for existing pivots;
                     // for first-time can_login=true on a brand-new link we don't have a fresh password,
                     // so the guardian uses their existing credentials. No-op here.

@@ -38,7 +38,7 @@
  * this lint produces no finding and exits 0.
  *
  * That is a LIVE BLIND SPOT inside this gate's own defect class — not a shape outside it — and it is
- * reached by the map's most common line: `grantsMap()['admin']` opens with five consecutive spreads
+ * reached by the map's most common line: `grantsMap()['admin']` opens with six consecutive spreads
  * before its first literal permission. Resolving `...$fragment,` means locating `$fragment = [...]`
  * in the head seeder and extracting its enum values; that is a behaviour change with its own finding
  * volume and its own arms, so it is a dated successor to this file rather than a rider on it. It is
@@ -559,13 +559,38 @@ foreach (explode("\n", git('diff', '--name-status', '--diff-filter=A', $base.'..
 // Without this, a byte-perfect marker on a pre-existing migration produces a byte-identical red and
 // no explanation: the same dead end the `?`-role remedy was rewritten to remove, reached by a
 // different route.
+// COUNTED ON THE ADDED LINES OF THE PATCH, NOT ON THE FILE AT HEAD — the other half of the
+// `--diff-filter=A` rule above. `git show $head:<path>` never compares against the base, so it counts
+// markers that were ALREADY THERE and merely sit in a file this branch touched for an unrelated
+// reason. The notice's own words assert an author action ("a marker added to it"), so counting the
+// file at head makes it accuse an author who did nothing. Live shape, not hypothetical: a comment-only
+// docblock edit to a shipped convergence migration is `M` and carries its old markers.
+//
+// `--unified=0` so no context line can be miscounted, and the `+++` test so the diff header is not
+// read as content.
+//
+// "ADDED" MEANS ADDED-IN-PATCH, AND THAT INCLUDES A MOVE. A marker relocated within an
+// already-shipped migration counts and will report. Accepted rather than engineered around: a marker
+// on a migration that has already run exempts nothing whichever line it sits on, so the notice is
+// still telling the truth about consequences even when it is wrong about intent. And adds are NOT
+// netted against deletes — an author who deletes one marker and adds a different one has done exactly
+// the thing this notice exists to catch, and netting would silence it.
 $markersOnModified = [];
 foreach (explode("\n", git('diff', '--name-status', '--diff-filter=M', $base.'...'.$head)) as $line) {
     $parts = preg_split('/\t/', trim($line));
     if (count($parts) < 2 || ! str_starts_with($parts[1], 'database/migrations/')) {
         continue;
     }
-    $count = preg_match_all('/@converges/', git('show', $head.':'.$parts[1]));
+
+    $patch = git('diff', '--unified=0', $base.'...'.$head, '--', $parts[1]);
+    $count = 0;
+    foreach (explode("\n", $patch) as $patchLine) {
+        if ($patchLine === '' || $patchLine[0] !== '+' || str_starts_with($patchLine, '+++')) {
+            continue;
+        }
+        $count += preg_match_all('/@converges/', $patchLine);
+    }
+
     if ($count > 0) {
         $markersOnModified[$parts[1]] = $count;
     }
@@ -812,6 +837,15 @@ if ($unparsedMarkers !== []) {
 // The third notice, and the only one whose author did everything right at the level of syntax — see
 // the rule at the `--diff-filter=A` collection for why it still cannot exempt. Failing path only and
 // not a gate, for the same reasons as the two above.
+//
+// AND FOR ONE REASON OF ITS OWN, which is the answer to the next person who asks why this is not a
+// gate: "not added in this diff" is a property of the RANGE, not of the tree, and the range moves.
+// `bin/quality-promote` runs `./bin/quality origin/main`, a wider base than the per-push run, so the
+// same tree would gate differently depending on which script invoked it — and the documented replay
+// form (`<base> <head>`) would gate differently again. A gate whose verdict depends on the caller's
+// base is a gate people learn to route around. The red is already here and already correct: the pair
+// is unexempted, so the run exits 1 and the finding names the permission and the role. This notice
+// attaches the explanation to that red rather than raising a second one for the same fact.
 if ($markersOnModified !== []) {
     fwrite(STDERR, "\n  ".array_sum($markersOnModified)
         .' @converges line(s) sit on a migration that is not new in this diff (they exempt nothing):'."\n");

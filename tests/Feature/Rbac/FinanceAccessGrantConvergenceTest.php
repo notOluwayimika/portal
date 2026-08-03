@@ -7,7 +7,7 @@
 // cannot pass by running against an already-converged database.
 //
 // ARMS 5 and 6 are the two exits that shipped unproven: the fresh-install QUIET green, and the
-// broken-substrate ABORT that is the only thing keeping that quiet green honest. `:147` (a governed
+// broken-substrate ABORT that is the only thing keeping that quiet green honest. `:169` (a governed
 // role missing) throws loudly and stays unarmed — a ticket, not a hole.
 //
 // No duty-separation arm, deliberately: `finance.access` terminates in `access` (not approve/reject)
@@ -119,7 +119,7 @@ it('ARM 1 — converges the drift, leaves the four aligned governed roles byte-i
         expect(faAllGrants($role))->toBe($before[$role]);
     }
 
-    // internal_auditor still does not hold it (RbacSeeder.php:377-391 — DECIDED, UNIMPLEMENTED).
+    // internal_auditor still does not hold it (RbacSeeder.php:377-394 — DECIDED, UNIMPLEMENTED).
     expect(faHolds('internal_auditor'))->toBeFalse()
         ->and(faHolds('super_admin'))->toBeFalse();
 });
@@ -143,7 +143,7 @@ it('ARM 2 — idempotent: a second up() changes no grant and writes no activity 
 });
 
 it('ARM 5 — fresh install: no finance.* permission rows at all is a QUIET GREEN — no throw, no grant, no activity row', function () {
-    // The fresh-install guard (`:75-91`). At migrate-from-zero the seeder has not run, so there is
+    // The fresh-install guard (`:93-113`). At migrate-from-zero the seeder has not run, so there is
     // nothing to converge and the seeder will write the correct map directly. Pairs with ARM 6: this
     // arm pins that the guard returns quietly, ARM 6 pins the boundary of what it returns quietly ON.
     //
@@ -167,7 +167,7 @@ it('ARM 5 — fresh install: no finance.* permission rows at all is a QUIET GREE
 
 it('ARM 6 — broken substrate: finance.* present but finance.access ABSENT aborts; it does not fall through the fresh-install guard', function () {
     // THE ARM THAT MATTERS, and the reason ARM 5 is worth having a sibling for. The guard is keyed on
-    // the whole `finance.` namespace deliberately (`:75-84`): `finance.access` missing while the rest
+    // the whole `finance.` namespace deliberately (`:93-98`): `finance.access` missing while the rest
     // of the namespace exists is not a fresh install, it is a broken substrate. Narrow that guard to
     // `finance.access` alone — a one-word edit that reads like a tightening — and this database
     // returns a quiet green with the grant never written, which is the one failure mode of this

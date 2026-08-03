@@ -33,7 +33,7 @@ use Spatie\Permission\PermissionRegistrar;
  * withoutLogs — a governance act); transaction-wrapped; idempotent; fresh-install guarded; down() a
  * deliberate no-op.
  *
- * The pairs this migration converges, in `bin/ci-grants-convergence-lint.php`'s `@converges` syntax.
+ * The pairs this migration converges, in the marker syntax `bin/ci-grants-convergence-lint.php` reads.
  *
  * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
  * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on

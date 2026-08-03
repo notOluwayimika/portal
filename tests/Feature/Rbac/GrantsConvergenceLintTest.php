@@ -1012,6 +1012,41 @@ it('MARKER 9 — a marker added to a migration that is NOT new in the diff exemp
         ->and($r['output'])->toContain('Write a NEW convergence migration');
 });
 
+it('MARKER 9b — a marker ALREADY on the base is not reported when the branch touches that file for other reasons', function () {
+    // THE SIBLING THAT MAKES MARKER 9 MEAN SOMETHING. In MARKER 9 the marker is both present-at-head
+    // AND added-in-diff, so that arm is green whether the notice counts the file at head or counts
+    // the patch — it proves the rule half, not the notice half. Here the marker is present-at-head
+    // and NOT added, which separates the two implementations.
+    //
+    // The notice's words assert an author action ("a marker added to it"). Counting `git show
+    // $head:<path>` cannot observe that action, so it accuses an author who did nothing — and the
+    // triggering shape is ordinary: a comment-only docblock edit to a shipped convergence migration
+    // is `M` and carries its old markers. This branch did exactly that to two real migrations.
+    [$base, $files] = gclFixtureBase();
+
+    $migrationPath = 'database/migrations/2098_01_01_000000_already_shipped.php';
+    $shipped = "<?php\n\n// @converges auditor activity_log.view\n// converges the auditor read seat\n";
+
+    $base = gclCommit($files + [$migrationPath => $shipped], null);
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php']),
+        // The unrelated touch: one comment line reworded. The marker line is byte-identical.
+        $migrationPath => str_replace('// converges the auditor read seat', '// converges the auditor seat', $shipped),
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        // The rule half is unchanged: a marker on a migration already on the base exempts nothing.
+        ->and($exemptions)->toBe('')
+        ->and($r['output'])->not->toContain('declares @converges')
+        // ...and the notice stays silent, because no marker was added in this diff.
+        ->and($r['output'])->not->toContain('sit on a migration that is not new in this diff')
+        ->and($r['output'])->not->toContain($migrationPath);
+});
+
 it('FAILS rather than passing when it cannot resolve the base — a gate that cannot look must not be green', function () {
     // The failure mode bin/lint-changed.sh names for unresolvable paths: a green here would mean
     // "I did not look", which is worse than a red.

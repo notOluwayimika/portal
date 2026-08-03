@@ -48,7 +48,7 @@ use Spatie\Permission\PermissionRegistrar;
  * reasoned, not forgotten. (2026_08_03_100000 needed it because it moved `*.submit` maker abilities,
  * which do sit inside enforced pairs.)
  *
- * The pairs this migration converges, in `bin/ci-grants-convergence-lint.php`'s `@converges` syntax.
+ * The pairs this migration converges, in the marker syntax `bin/ci-grants-convergence-lint.php` reads.
  *
  * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
  * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on

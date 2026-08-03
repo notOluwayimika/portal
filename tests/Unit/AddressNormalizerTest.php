@@ -98,6 +98,32 @@ it('rejects numbers that are valid but cannot receive a message', function (stri
     'foreign fixed line' => '+442079460958',
 ]);
 
+/**
+ * THE PERMISSIVE FORMATTER'S CONTRACT, stated as a test rather than an intention.
+ *
+ * `00` is rewritten to `+` before parsing, because this column holds STORED CONTACT
+ * DATA rather than a dialling sequence and `00` is simply how people write a foreign
+ * number — libphonenumber would otherwise reject it, correctly knowing Nigeria's
+ * international prefix is `009`.
+ *
+ * That rewrite is deliberately liberal, so it is only as safe as the validity+type
+ * backstop behind it: any `00`-prefixed string that happens to be a valid mobile
+ * SOMEWHERE is accepted as that somewhere's number. What must not happen is a
+ * `00`-prefixed string valid in NO region surviving on the strength of the rewrite
+ * alone. FORMAT LIBERALLY, VALIDATE STRICTLY — and the second half is what this
+ * pins, since the first half is what the datasets above already prove.
+ */
+it('does not let the permissive 00 rewrite smuggle through a number valid in no region', function (string $raw) {
+    expect(AddressNormalizer::phone($raw))->toBeNull();
+})->with([
+    // +999… — a reserved country code assigned to no country.
+    'reserved country code' => '00999123456789',
+    'reserved, short' => '0099912345',
+    'all zeroes, international-looking' => '0000000000000',
+    // +1 888… — a real country code, but a toll-free range, so valid-and-unreachable.
+    'foreign toll-free' => '008885551234',
+]);
+
 it('does not re-home an explicitly international number into the default region', function () {
     // A `+` means the caller already said which country. Treating it as national
     // would produce `+2344479…` — plausible-looking and wrong, which is worse than a

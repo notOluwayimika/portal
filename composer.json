@@ -10,7 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
-        "giggsey/libphonenumber-for-php": "^9.0",
+        "giggsey/libphonenumber-for-php-lite": "^9.0",
         "hashids/hashids": "^5.0",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/fortify": "^1.34",

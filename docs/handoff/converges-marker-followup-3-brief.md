@@ -22,9 +22,14 @@ $count = preg_match_all('/@converges/', git('show', $head.':'.$parts[1]));
 `git show $head:<path>` reads the file as it stands at head. It never compares against base, so the
 notice fires on markers that were **already on the base** and merely happen to sit in a file this
 branch touched for an unrelated reason. The notice's own words — *"a marker added to it declares a
-convergence nothing performed"* — assert an author action the code cannot observe. Reviewer
-reproduced it out-of-tree and it is live on this branch right now: `--diff-filter=M staging...HEAD --
-database/migrations/` returns exactly the two migrations this commit edited for comment-only reasons.
+convergence nothing performed"* — assert an author action the code cannot observe. The evidence is the
+reviewer's out-of-tree reproduction, plus MARKER 9b below.
+
+**CORRECTED 2026-08-04.** This paragraph originally claimed the false accusation was "live on this
+branch right now" over `staging...HEAD`. It is not, and it cannot be: `database/seeders/RbacSeeder.php`
+is not in that diff, so the lint exits at `:447` (*"RbacSeeder.php is unchanged in this diff"*, exit 0)
+before the notice is ever printed. My claim was unreachable; so was the correction offered to it. The
+fix stands on the reproduction and the arm, not on a range measurement.
 
 Count `@converges` on the **added lines of the diff** instead:
 
@@ -100,9 +105,15 @@ Both are stale. My reading puts the guard at `:93-113` and the namespace rationa
 **Re-derive both yourself and do not trust my numbers** — `grep -n` the file at head, cite what you
 see, and say in the report what you derived.
 
-While you are in that test file: `:122` cites `RbacSeeder.php:377-391` for `internal_auditor`, whose
-block actually opens at `:411`. That one is not this commit's doing, but you are already in the file
-correcting citations and leaving the third stale would be perverse. Correct all three.
+While you are in that test file: `:122` cites `RbacSeeder.php:377-391` for `internal_auditor`. That
+one is not this commit's doing, but you are already in the file correcting citations and leaving it
+stale would be perverse. Correct all three.
+
+**CORRECTED 2026-08-04.** This paragraph originally said the block "actually opens at `:411`" and
+asked for that. Wrong: `:411` is the array key; the citation is to the DECIDED/UNIMPLEMENTED *record*,
+which is the comment block opening at `:377` — the block self-references it at `:389`. Only the end
+drifted. `:377-394` is correct, and the implementing agent was right to differ. Also missing from the
+list above and correctly fixed anyway: `:10` (`:147` → `:169`), same drift, same file.
 
 ## 5. Finding 4 — the count is 7, and stop typing it
 

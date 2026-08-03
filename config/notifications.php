@@ -53,6 +53,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Address normalization
+    |--------------------------------------------------------------------------
+    |
+    | The ISO region assumed when a phone number is written in national format
+    | (`08031234567`), which is the ordinary way a number is typed here and is
+    | meaningless without a country.
+    |
+    | A REGION, not a calling code: validity is evaluated against that region's
+    | actual number plan (libphonenumber), so this genuinely makes a second country
+    | a deployment change. The earlier calling-code form could only prefix digits —
+    | it could not tell a real mobile from `+2341234567890`.
+    |
+    */
+
+    'default_region' => env('NOTIFICATIONS_DEFAULT_REGION', 'NG'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Feed
     |--------------------------------------------------------------------------
     |

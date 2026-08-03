@@ -83,11 +83,19 @@ range e6600eb...f871ba8   (the comment-only edits — the false-accusation case)
   2026_08_05_100000_converge_finance_access_grants.php   OLD(at head)=2  NEW(added in patch)=0
 ```
 
-**The brief's expected demonstration, with one correction to its premise.** Over `staging...HEAD` the
-notice still names both files — and that is *right*, because this branch genuinely added those five
-markers to shipped migrations. That is the shape the notice exists for, aimed at me. The false
-accusation lives in the narrower range where the edits were comment-only, and there the count goes
-`3→0` and `2→0`.
+**CORRECTED 2026-08-03 (follow-up 4, reviewer finding 3).** The paragraph that stood here said the
+notice "still names both files" over `staging...HEAD`. It does not, and it cannot: the lint's notice
+is on the failing path only, and over that range `database/seeders/RbacSeeder.php` is not in the diff
+at all, so the run short-circuits at the seeder-unchanged early return —
+`grants-convergence-lint: OK — database/seeders/RbacSeeder.php is unchanged in this diff`, `exit 0` —
+long before `$markersOnModified` is printed. The brief's "live on this branch right now" premise was
+unreachable for the same reason, and so was my correction to it.
+
+**The table above is therefore a measurement of the extracted block, not of a lint run**, and it is
+labelled as such. The evidence for the fix is the reviewer's out-of-tree reproduction plus MARKER 9b,
+which holds the marker byte-identical between base and head and so discriminates the two
+implementations end-to-end through the real script. The counts still stand: over the comment-only
+range the count goes `3→0` and `2→0`, which is the false accusation removed.
 
 **One extra change to make that 0 a real 0.** The first probe returned `1` and `1`, not `0` and `0`.
 The reworded lead-ins I wrote last commit contained the literal marker word — "in

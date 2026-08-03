@@ -117,9 +117,37 @@ chdir($root);
 const SEEDER = 'database/seeders/RbacSeeder.php';
 const ENUM = 'app/Enums/Permission.php';
 
+/**
+ * Every git call this lint makes. Its output is PARSED — `^+` line tests on `git diff` in two places,
+ * `substr($t[1], 1, -1)` on tokenized `git show` output — so it must be byte-plain regardless of the
+ * invoking user's git config, and that has to be forced here rather than remembered at each call site.
+ *
+ * WHY IT WAS GREEN BY LUCK. `shell_exec` gives git no tty, so `color.ui=auto` (the default) leaves
+ * colour off — which is the only reason this ever worked. `color.ui=always` overrides auto, and then
+ * every added line arrives as `\e[32m+…` and the `^+` tests match nothing: measured on `7370e89`, this
+ * lint's own canonical red, the run went from `exit 1` with two findings to `exit 0` with zero. A gate
+ * whose docblock says IF IT CANNOT LOOK, IT IS NOT GREEN, going silently green on one config flag in
+ * one developer's `~/.gitconfig`, with no remote check anywhere to disagree — that is the exact shape
+ * it was written to forbid.
+ *
+ * `-c color.ui=false` beats a config file's `always` (command-line `-c` is applied last) and covers
+ * `color.diff` with it.
+ *
+ * `--no-ext-diff` is the second half, and it goes AFTER the subcommand because it is a diff-family
+ * option, not a main-command one. `diff.external` is worse than colour: it does not garble the output,
+ * it replaces it. Measured against a global config carrying `diff.external = /bin/false`, an unguarded
+ * `git diff` returns `fatal: external diff died` and 0 added lines — which this lint reads as "no
+ * additions", exit 0. Note the fix cannot be spelled `-c diff.external=`: git runs the empty string as
+ * a command and dies. It has to be the flag.
+ */
 function git(string ...$args): string
 {
-    $cmd = 'git '.implode(' ', array_map('escapeshellarg', $args)).' 2>/dev/null';
+    if (in_array($args[0] ?? '', ['diff', 'show', 'log'], true)) {
+        array_splice($args, 1, 0, '--no-ext-diff');
+    }
+
+    $cmd = 'git -c color.ui=false '
+        .implode(' ', array_map('escapeshellarg', $args)).' 2>/dev/null';
 
     return (string) shell_exec($cmd);
 }

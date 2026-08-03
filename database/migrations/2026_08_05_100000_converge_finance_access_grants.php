@@ -33,7 +33,7 @@ use Spatie\Permission\PermissionRegistrar;
  * GRANTS are derived from `grantsMap()` and never hardcoded.
  *
  * `internal_auditor` is deliberately NOT governed and must NOT receive `finance.access`
- * (`RbacSeeder.php:377-391` records the grant as DECIDED and UNIMPLEMENTED — Phase 2, and per-school,
+ * (`RbacSeeder.php:377-394` records the grant as DECIDED and UNIMPLEMENTED — Phase 2, and per-school,
  * not cross-school). If it — or any other global role outside the six — currently holds the row, the
  * offender pre-flight ABORTS rather than this migration silently revoking a human decision.
  *
@@ -50,12 +50,19 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * The pairs this migration converges, in the marker syntax `bin/ci-grants-convergence-lint.php` reads.
  *
- * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
- * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on
- * the base has already run and a marker on it would declare a convergence nothing performed. This
- * file predates the lint and is on `staging`, so no future `base...head` will ever mark it `A`. From
- * here on, a pair needing exemption gets a NEW convergence migration and declares it there; do not
- * copy this file expecting these lines to do work.
+ * WHETHER THE GATE READS THESE LINES IS A PROPERTY OF THE BASE, NOT OF THIS FILE. Exemption 3
+ * collects markers only from migrations the diff ADDS (`--diff-filter=A`), because a migration
+ * already present on the base has already RUN and a marker on it would declare a convergence nothing
+ * performed. So these lines are INERT over any base that already contains this file — the per-push
+ * `staging` base, today — and LIVE over any base that predates it. That is not hypothetical:
+ * `bin/quality-promote:79` runs `./bin/quality origin/main`, a wider range than the per-push one, and
+ * a convergence migration sits on `staging` for a whole milestone before it reaches `main`.
+ *
+ * "Permanently inert" is not a property a file can carry. To know which side of it you are on, ask
+ * the base rather than this comment: `git cat-file -e <base>:<path to this file>`.
+ *
+ * Either way this file is not a template for the marker. A NEW convergence migration is ADDED by its
+ * own diff, so its markers are read on the range where they matter; these were backfilled.
  *
  * They are kept because they state precisely what the prose above cannot: that prose names roles this
  * migration EXCLUDES (`internal_auditor`) and roles it merely mentions (`registrar cache flushed
@@ -155,7 +162,7 @@ return new class extends Migration
             })->implode(', ');
             throw new RuntimeException(
                 'converge-finance-access-grants ABORTED: unexpected global role(s) grant ['.self::PERMISSION.']: '
-                .$detail.'. internal_auditor holding it is a DECIDED-but-UNIMPLEMENTED grant (RbacSeeder.php:377-391) — '
+                .$detail.'. internal_auditor holding it is a DECIDED-but-UNIMPLEMENTED grant (RbacSeeder.php:377-394) — '
                 .'investigate before widening this migration; do not let it silently revoke a human decision.'
             );
         }

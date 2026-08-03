@@ -35,6 +35,34 @@ function gclRun(string ...$args): array
     return ['exit' => $result->exitCode(), 'output' => $result->errorOutput().$result->output()];
 }
 
+/**
+ * The same run, with git config entries injected into the SUBPROCESS's environment.
+ *
+ * `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` is git's own mechanism for "as if
+ * `-c` had been passed", and the lint shells out to git with `shell_exec`, which inherits this
+ * environment — so this reaches every git call the lint makes, which is the point. It models a
+ * developer whose `~/.gitconfig` carries the setting; it does not require writing one.
+ *
+ * @param  array<string, string>  $config
+ * @return array{exit: int, output: string}
+ */
+function gclRunWithGitConfig(array $config, string ...$args): array
+{
+    $env = ['GIT_CONFIG_COUNT' => (string) count($config)];
+    $i = 0;
+    foreach ($config as $key => $value) {
+        $env["GIT_CONFIG_KEY_{$i}"] = $key;
+        $env["GIT_CONFIG_VALUE_{$i}"] = $value;
+        $i++;
+    }
+
+    $result = Process::path(base_path())->env($env)->run(
+        array_merge(['php', 'bin/ci-grants-convergence-lint.php'], $args)
+    );
+
+    return ['exit' => $result->exitCode(), 'output' => $result->errorOutput().$result->output()];
+}
+
 function gclHasCommit(string $ref): bool
 {
     return Process::path(base_path())->run(['git', 'rev-parse', '--verify', '--quiet', $ref.'^{commit}'])->successful();
@@ -1045,6 +1073,43 @@ it('MARKER 9b — a marker ALREADY on the base is not reported when the branch t
         // ...and the notice stays silent, because no marker was added in this diff.
         ->and($r['output'])->not->toContain('sit on a migration that is not new in this diff')
         ->and($r['output'])->not->toContain($migrationPath);
+});
+
+it('MARKER 10 — a hostile git config cannot change the verdict (forced colour, external diff driver)', function () {
+    // THE GATE WAS GREEN BY LUCK. `shell_exec` gives git no tty, so the default `color.ui=auto`
+    // leaves colour off — and that, not any decision, is why the `^+` line tests ever worked.
+    // `color.ui=always` overrides auto and every added line arrives as `\e[32m+…`; `diff.external`
+    // replaces the diff wholesale. Either one silently yields zero added lines, which this lint reads
+    // as "no additions" and reports as OK. Measured before the fix on `7370e89`, its own canonical
+    // red: exit 1 with two findings by default, exit 0 with ZERO under either setting.
+    //
+    // The enforcement floor here is permanently local (CLAUDE.md) — there is no remote check to
+    // disagree — so one line in one developer's `~/.gitconfig` was the whole of it. This arm is the
+    // only thing that keeps `git()`'s guard from being quietly dropped.
+    [$base, $seeder] = gclTwoRoleBase();
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => gclTwoRoleWithGrant($seeder)], $base);
+
+    $plain = gclRun($base, $head);
+
+    expect($plain['exit'])->toBe(1)
+        ->and($plain['output'])->toContain('role: auditor')
+        ->and($plain['output'])->toContain('role: bursar');
+
+    // `/bin/echo` rather than a missing binary on purpose: a driver that FAILS makes git die loudly,
+    // while one that SUCCEEDS and prints something else is the silent-green shape — git exits 0 and
+    // the diff simply is not there.
+    foreach ([
+        ['color.ui' => 'always'],
+        ['diff.external' => '/bin/echo'],
+        ['color.ui' => 'always', 'diff.external' => '/bin/echo'],
+    ] as $config) {
+        $r = gclRunWithGitConfig($config, $base, $head);
+
+        expect($r['exit'])->toBe($plain['exit'])
+            ->and($r['output'])->toContain('role: auditor')
+            ->and($r['output'])->toContain('role: bursar')
+            ->and($r['output'])->not->toContain('OK — no unexempted grant addition');
+    }
 });
 
 it('FAILS rather than passing when it cannot resolve the base — a gate that cannot look must not be green', function () {

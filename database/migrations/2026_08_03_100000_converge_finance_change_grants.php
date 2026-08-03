@@ -35,12 +35,19 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * The pairs this migration converges, in the marker syntax `bin/ci-grants-convergence-lint.php` reads.
  *
- * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
- * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on
- * the base has already run and a marker on it would declare a convergence nothing performed. This
- * file predates the lint and is on `staging`, so no future `base...head` will ever mark it `A`. From
- * here on, a pair needing exemption gets a NEW convergence migration and declares it there; do not
- * copy this file expecting these lines to do work.
+ * WHETHER THE GATE READS THESE LINES IS A PROPERTY OF THE BASE, NOT OF THIS FILE. Exemption 3
+ * collects markers only from migrations the diff ADDS (`--diff-filter=A`), because a migration
+ * already present on the base has already RUN and a marker on it would declare a convergence nothing
+ * performed. So these lines are INERT over any base that already contains this file — the per-push
+ * `staging` base, today — and LIVE over any base that predates it. That is not hypothetical:
+ * `bin/quality-promote:79` runs `./bin/quality origin/main`, a wider range than the per-push one, and
+ * a convergence migration sits on `staging` for a whole milestone before it reaches `main`.
+ *
+ * "Permanently inert" is not a property a file can carry. To know which side of it you are on, ask
+ * the base rather than this comment: `git cat-file -e <base>:<path to this file>`.
+ *
+ * Either way this file is not a template for the marker. A NEW convergence migration is ADDED by its
+ * own diff, so its markers are read on the range where they matter; these were backfilled.
  *
  * They are kept because they record which pairs the author actually converged, which the prose alone
  * does not state precisely: the three ADD-side gaps named above; the other two governed roles

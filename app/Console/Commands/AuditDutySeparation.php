@@ -52,7 +52,10 @@ class AuditDutySeparation extends Command
             foreach (DutySeparation::violations($user, (int) $row->school_id) as $pair) {
                 $findings[] = [
                     'school_id' => (int) $row->school_id,
-                    'user' => $user->email ?? ('user#'.$user->id),
+                    // ids, never credential material. PR #195 stopped email addresses reaching
+                    // activity_log.properties; this output is the same class of leak by another
+                    // route, and an id answers every question a duty-separation finding asks.
+                    'user' => 'user#'.$user->id,
                     'checker' => $pair['checker'],
                     'maker' => $pair['maker'],
                 ];

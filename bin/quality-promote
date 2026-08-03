@@ -90,4 +90,9 @@ fi
 echo "$HEAD_SHA" > "$STAMP"
 printf '\n%s✓ RELEASE GATE PASSED%s for %s\n' "$GREEN" "$OFF" "${HEAD_SHA:0:8}"
 printf '%sstamped %s — the pre-push hook will now allow a push to main at this exact commit.%s\n' "$DIM" "$STAMP" "$OFF"
-printf '\nPromote with:\n  git checkout main && git merge --no-ff staging && git push\n'
+# --ff-only, NOT --no-ff: the stamp above names ONE exact SHA, and a --no-ff merge mints a NEW
+# commit that can never match it, so following a --no-ff instruction always blocks the push
+# (.githooks/pre-push:48 compares the stamp to $local_sha). --ff-only instead fails loudly when a
+# fast-forward is impossible, which is the signal that main has diverged and needs a human — the
+# same reasoning the hook already prints at .githooks/pre-push:52-61.
+printf '\nPromote with:\n  git checkout main && git merge --ff-only staging && git push\n'

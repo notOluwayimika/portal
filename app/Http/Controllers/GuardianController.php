@@ -435,8 +435,14 @@ class GuardianController extends Controller
         //
         // 422 via abort(), not a ValidationException, so this is an HttpException and
         // is NOT affected by the pending 422-vs-400 business-rule convention decision.
+        // PAIRED WITH THE MINT. This gate and GuardianService's synthetic-address mint
+        // are two halves of one mechanism: the mint guarantees a non-null unique value,
+        // this stops the password broker from mailing it. Retiring the mint without
+        // this reader migrated would send resets to `{phone}@no-email.local`, which is
+        // exactly the failure the sentinel was invented to prevent — so they move
+        // together, and routing this through the predicate is what makes that possible.
         abort_unless(
-            $user && $user->email && ! str_ends_with($user->email, '@no-email.local'),
+            $user?->hasDeliverableEmail() ?? false,
             422,
             'This guardian has no valid email address for a password reset.'
         );

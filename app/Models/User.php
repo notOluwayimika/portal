@@ -78,6 +78,57 @@ class User extends Authenticatable
     private bool $paritySoakDone = false;
 
     /**
+     * The domain of the SYNTHETIC placeholder address.
+     *
+     * `users.email` is NOT NULL and UNIQUE, so a guardian created without a real
+     * address still needs one. GuardianService mints `{phone}@no-email.local`, or a
+     * randomised `guardian+{random}@…` when there is no phone — randomised precisely
+     * to clear the unique index. Nothing at that domain can receive mail.
+     *
+     * Defined HERE rather than in the minting service because seven call sites need
+     * to recognise it and only two need to create it.
+     */
+    public const SYNTHETIC_EMAIL_DOMAIN = '@no-email.local';
+
+    /**
+     * Can this account actually be SENT an email?
+     *
+     * DELIBERATELY NARROW: present AND not synthetic. It does NOT consider
+     * `disabled_at`, and that omission is the whole point — "can this address
+     * receive mail" and "is this login active" are different questions, and
+     * GuardiansExport is the only caller that wants both. Folding `disabled_at` in
+     * here would silently change whether disabled guardians receive bulk messages
+     * and password-reset mail, and nothing would surface it until one of them got
+     * something they should not have. Callers that want "active login" keep their
+     * own `disabled_at` check beside this one.
+     *
+     * IT ALSO OWNS THE NULL GUARD. The predicate this replaces took `string $email`
+     * and answered synthetic-ness alone, so every one of its seven call sites paired
+     * it with a separate `! $user->email ||`. Two checks, seven copies, one of which
+     * (GuardiansExport) cast through `(string)` and would therefore read a NULL
+     * address as deliverable. That is unreachable today — the column is NOT NULL —
+     * and becomes reachable the moment the synthetic mint is retired and the column
+     * goes nullable, which is the next PR. Folding the guard in fixes it ahead of
+     * the change that would expose it.
+     */
+    public function hasDeliverableEmail(): bool
+    {
+        // The `(string)` cast is the SAME one that made GuardiansExport wrong — there
+        // it stood alone, so `str_ends_with('', $sentinel)` was false and a null
+        // address read as deliverable. Here it is paired with the emptiness check,
+        // which is precisely what makes it correct: null and '' collapse to one
+        // falsy case instead of slipping past the sentinel test.
+        //
+        // Written this way rather than `!== null` because Larastan types `email` as
+        // non-nullable from the schema and rejects the comparison as always-true —
+        // which is itself the proof that this state is unreachable TODAY and becomes
+        // reachable the moment the mint is retired and the column goes nullable.
+        $email = (string) $this->email;
+
+        return $email !== '' && ! str_ends_with($email, self::SYNTHETIC_EMAIL_DOMAIN);
+    }
+
+    /**
      * super_admin is a GLOBAL role (no team). Check it outside whatever
      * team/school context is currently active, then restore the context.
      */

@@ -6,6 +6,10 @@
 // nothing, that the offender pre-flight bites — and, first, that the planted drift is real, so arm 1
 // cannot pass by running against an already-converged database.
 //
+// ARMS 5 and 6 are the two exits that shipped unproven: the fresh-install QUIET green, and the
+// broken-substrate ABORT that is the only thing keeping that quiet green honest. `:147` (a governed
+// role missing) throws loudly and stays unarmed — a ticket, not a hole.
+//
 // No duty-separation arm, deliberately: `finance.access` terminates in `access` (not approve/reject)
 // and is not a `*.submit`, so `DutySeparation::pairs()` emits no pair containing it and converging it
 // can neither create nor clear a both-sides violation. See the migration docblock.
@@ -136,6 +140,46 @@ it('ARM 2 — idempotent: a second up() changes no grant and writes no activity 
         ->and(DB::table('activity_log')->max('id'))->toBe($maxIdBefore)
         ->and(faHolds('head_of_school'))->toBeTrue()
         ->and(faHolds('principal'))->toBeTrue();
+});
+
+it('ARM 5 — fresh install: no finance.* permission rows at all is a QUIET GREEN — no throw, no grant, no activity row', function () {
+    // The fresh-install guard (`:75-91`). At migrate-from-zero the seeder has not run, so there is
+    // nothing to converge and the seeder will write the correct map directly. Pairs with ARM 6: this
+    // arm pins that the guard returns quietly, ARM 6 pins the boundary of what it returns quietly ON.
+    //
+    // Deleting the permission rows cascades through role_has_permissions (both pivots carry ON DELETE
+    // CASCADE on permissions.id), which is why the grant count is captured AFTER the delete.
+    DB::table('permissions')->where('name', 'like', 'finance.%')->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    $grantsBefore = DB::table('role_has_permissions')->count();
+    $logBefore = DB::table('activity_log')->count();
+    $maxIdBefore = DB::table('activity_log')->max('id');
+
+    // Returning at all is half the assertion: a throw here fails the arm.
+    faConvergeMigration()->up();
+
+    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
+        ->and(DB::table('activity_log')->count())->toBe($logBefore)
+        // MAX(id) unmoved, not just the count — a written-then-deleted row leaves the count equal.
+        ->and(DB::table('activity_log')->max('id'))->toBe($maxIdBefore);
+});
+
+it('ARM 6 — broken substrate: finance.* present but finance.access ABSENT aborts; it does not fall through the fresh-install guard', function () {
+    // THE ARM THAT MATTERS, and the reason ARM 5 is worth having a sibling for. The guard is keyed on
+    // the whole `finance.` namespace deliberately (`:75-84`): `finance.access` missing while the rest
+    // of the namespace exists is not a fresh install, it is a broken substrate. Narrow that guard to
+    // `finance.access` alone — a one-word edit that reads like a tightening — and this database
+    // returns a quiet green with the grant never written, which is the one failure mode of this
+    // migration nobody would ever see.
+    DB::table('permissions')->where('name', 'finance.access')->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // The precondition the arm is about: the rest of the namespace is still there, so the guard has
+    // a real decision to make rather than passing vacuously.
+    expect(DB::table('permissions')->where('name', 'like', 'finance.%')->count())->toBeGreaterThan(0);
+
+    expect(fn () => faConvergeMigration()->up())->toThrow(RuntimeException::class, 'rbac:sync');
 });
 
 it('ARM 3 — offender pre-flight bites: a global role outside the six holding finance.access aborts, no grant changes', function () {

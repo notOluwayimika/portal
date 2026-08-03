@@ -35,14 +35,23 @@
  *   2. THE ROLE IS NEW — the same diff adds the role to `RbacSeeder::ROLES`. Then
  *      `in_array($roleName, $existingRoles, true)` is false and the role receives the FULL
  *      `$permissions` array. No migration needed.
- *   3. A MIGRATION IN THE DIFF CONVERGES THE PAIR — a file ADDED under `database/migrations/`
- *      whose content names the permission AS A WHOLE NAME ({@see namesPermission}, a boundary match
- *      and NOT a substring test — see that docblock for the prefix-pair hole a substring test leaves
- *      open) AND names the ROLE the addition was attributed to ({@see namesRole}, two-sided because
- *      role names DO have suffix pairs). Both halves are required. Not merely "a migration exists
- *      in the diff", which any unrelated migration would satisfy; and not merely "a migration names
- *      the permission", which would have exempted BOTH roles in 7370e89 on a migration converging
- *      one. A null inferred role does not exempt — see the imprecision note below.
+ *   3. A MIGRATION IN THE DIFF DECLARES THE PAIR — a file ADDED under `database/migrations/`
+ *      carrying a line whose whole content is `@converges <role> <permission>`
+ *      ({@see declaredConvergences}). The migration's AUTHOR states each pair it converges; this
+ *      lint reads that declaration and nothing else in the file. Not merely "a migration exists in
+ *      the diff", which any unrelated migration would satisfy; and not "a migration names the
+ *      permission", which would have exempted BOTH roles in 7370e89 on a migration converging one —
+ *      the marker keeps that per-pair by construction rather than by inference. A null inferred role
+ *      does not exempt: there is no pair to look up. See the imprecision note below.
+ *
+ *      IT USED TO READ PROSE, AND PROSE CANNOT ANSWER THIS QUESTION. The previous design asked
+ *      whether the file's raw text named the permission and named the role, both boundary-matched.
+ *      A convergence migration documents the roles it deliberately EXCLUDES — which is the right
+ *      thing for it to do — and an exclusion, a caveat and a grant are the same bytes. Measured on
+ *      the real `2026_08_05_100000_converge_finance_access_grants.php`, those two predicates were
+ *      true together for NINE of the fourteen roles. No rewording fixes that, because every future
+ *      convergence migration has the same property. {@see declaredConvergences} carries the full
+ *      derivation, including the boundary facts the old predicates were built on.
  *   4. THE ADDITION IS INSIDE `RbacSeeder::SUPER_ADMIN_PLATFORM` — `grantsMap()['super_admin']` IS
  *      that const, and the self-heal block at `RbacSeeder.php:506-512` runs
  *      `syncPermissions(self::SUPER_ADMIN_PLATFORM)` UNCONDITIONALLY on every sync, outside the
@@ -165,7 +174,8 @@ function enumValues(string $ref): array
  * ANY reword of an apostrophe-bearing comment into manufactured members: removing the apostrophe
  * from `Primary's` makes head parse correctly while base does not, and `key_stage_coordinator`
  * and `registrar` appear as NEW ROLES. Exemption 2 then exempts a grant addition to either of
- * them — a silent green, the same class the substring hole in {@see namesPermission} was.
+ * them — a silent green, the same class the substring hole in exemption 3 was
+ * ({@see declaredConvergences}, which records it).
  *
  * WHY `token_get_all` RATHER THAN STRIPPING COMMENTS FIRST. Stripping line and block comments with
  * a regex fixes this instance by adding a second scanner that also cannot tell a delimiter from a
@@ -237,63 +247,98 @@ function constMembers(string $ref, string $const): array
 }
 
 /**
- * Does $content name $permission — as a WHOLE permission name, not as a prefix of a longer one?
+ * Every `@converges <role> <permission>` marker declared by the migrations added in this diff.
  *
- * THE BUG THIS EXISTS TO CLOSE. The first version of exemption 3 was `str_contains($content,
- * $permission)`, a raw substring test, and the enum is full of prefix pairs that make that unsound.
- * Nine of them today, re-derived from app/Enums/Permission.php rather than remembered:
+ * THE MARKER IS THE WHOLE OF EXEMPTION 3. A pair is exempt only if some added migration DECLARES
+ * that exact pair. Nothing else in a migration's text can exempt anything, and there is no fallback
+ * to reading the file.
  *
- *   activity_log.view      ⊂ .view_all / .view_own / .view_system / .view_cross_school / .view_sensitive
- *   guardian.view          ⊂ guardian.view_audit
- *   guardian.update        ⊂ guardian.update_credentials
- *   result.view            ⊂ result.view_scores
- *   student_subject.view   ⊂ student_subject.view_history
+ * WHY FREE TEXT WAS REPLACED, AND WHY NO BOUNDARY REGEX COULD HAVE SAVED IT. Exemption 3 used to ask
+ * two questions of a migration's raw text — does it name the permission as a whole name, does it
+ * name the role as a whole name — and both predicates were boundary-matched from DERIVED facts, not
+ * guessed ones. Those facts are kept here, because they are the argument FOR the marker:
  *
- * So a diff adding `activity_log.view` to a pre-existing role, alongside a convergence migration
- * that names only `activity_log.view_all`, was EXEMPTED — with no migration for the permission
- * actually added. A silent green, in exactly the class the gate exists for. That is the worst
- * failure a gate can have: it is indistinguishable from working.
+ *   · PERMISSION values needed a RIGHT boundary only. Of the 79 enum values there are 9 prefix
+ *     pairs, 0 suffix pairs and 0 mid-string pairs:
  *
- * The fix is a right boundary — the permission must not be followed by another permission-name
- * character. Only the RIGHT side is guarded, and that is a derived decision, not an oversight: of
- * the 79 enum values there are 9 prefix pairs, 0 suffix pairs and 0 mid-string pairs, so no enum
- * value can be matched inside the tail of another. A future permission that is a SUFFIX of an
- * existing one would need the mirror lookbehind; there is none today, so adding one now would be
- * guarding nothing and is left out deliberately.
+ *       activity_log.view    ⊂ .view_all / .view_own / .view_system / .view_cross_school / .view_sensitive
+ *       guardian.view        ⊂ guardian.view_audit
+ *       guardian.update      ⊂ guardian.update_credentials
+ *       result.view          ⊂ result.view_scores
+ *       student_subject.view ⊂ student_subject.view_history
  *
- * KNOWN FALSE NEGATIVE, and it is the safe direction: `.` is in the forbidden-following set, so a
- * comment ending "…grants finance.access." does not count as naming it. It could be dropped, since
- * all nine of today's pairs extend with `_` rather than `.` — but a future `finance.access.read`
- * would reopen the hole, and a false negative here means the gate FIRES and a human reads the
- * message, while a false positive means a silent green. Prefer the red.
+ *     Under the original raw `str_contains`, a migration naming only `activity_log.view_all`
+ *     exempted a grant of `activity_log.view` — a silent green, in exactly the class the gate
+ *     exists for (fixed in d08edf0).
+ *   · ROLE names have the OPPOSITE shape and needed BOTH boundaries: `admin` is a suffix of
+ *     `super_admin`, `teacher` of `form_teacher`. A right-boundary-only test would have let a
+ *     migration naming `super_admin` count as naming `admin`.
+ *
+ * Both fixes were correct, and neither was enough. With both boundaries perfectly placed the
+ * predicate still cannot tell an ASSERTION from a MENTION. A convergence migration documents the
+ * roles it deliberately EXCLUDES — which is the right thing for a migration to do — and an
+ * exclusion, a caveat and a grant are the same bytes. Measured on the real
+ * `2026_08_05_100000_converge_finance_access_grants.php`: `namesPermission('finance.access')` was
+ * true, and `namesRole` was true for NINE of the fourteen roles — `internal_auditor` off the
+ * sentences saying it must NOT receive the permission, `registrar` off the words "registrar cache
+ * flushed after". That file was a blanket exemption carrier for 9 roles for as long as it sat inside
+ * a diff range, and rewording it fixes nothing: every future convergence migration has the same
+ * property. Third repair to this one exemption for this one class (d08edf0 substring, dde75e4 silent
+ * greens, now prose), so the MECHANISM was replaced rather than the instance reworded.
+ *
+ * THE PATTERN. Two things in it are load-bearing, and they are load-bearing for DIFFERENT reasons —
+ * measured, because the obvious account of them is wrong:
+ *
+ *   · THE `$` ANCHOR is what stops a trailing smuggle. `@converges auditor activity_log.view and
+ *     also bursar` must declare NOTHING AT ALL — not "declares auditor" — and that is the anchor's
+ *     doing. Drop it and the line declares its first pair while reading to a human as if it declared
+ *     two. Pinned by the TRAILING PROSE arm in GrantsConvergenceLintTest.
+ *
+ *   · `[ \t]` RATHER THAN `\s` keeps the whole marker on ONE LINE. Note what this is NOT: `\s` does
+ *     not open the trailing-smuggle hole, because prose is not whitespace and `\s*$` cannot cross
+ *     it — measured, both forms reject the line above. What `\s` does open is assembly across lines,
+ *     since `\s` matches `\n`:
+ *
+ *          * @converges auditor
+ *            activity_log.view
+ *
+ *     declares the pair under `\s+` separators and declares nothing under `[ \t]+`. A marker must be
+ *     a single deliberate line, so keep it tight. Do not loosen either one.
+ *
+ * The optional `*` / `//` / `#` lead-in lets the marker live in a docblock, a line comment or a hash
+ * comment. Nothing else may precede it on the line, and nothing may follow it.
+ *
+ * KNOWN RESIDUAL: the anchor is LF-shaped. A CRLF-authored migration leaves `\r` before the line
+ * end, which `[ \t]*$` does not match, so the marker declares nothing and the run goes red. That is
+ * the safe direction, and every file in this repository is LF.
+ *
+ * Markers are returned UNVALIDATED. The caller checks the role against `RbacSeeder::ROLES` at head
+ * and the permission against the enum at head, and ECHOES the unrecognised ones rather than gating
+ * on them — a typo already fails the run by not exempting, so the red is there either way.
+ *
+ * @param  array<string, string>  $migrations  path => content
+ * @return list<array{path: string, role: string, permission: string}>
  */
-function namesPermission(string $content, string $permission): bool
+function declaredConvergences(array $migrations): array
 {
-    return (bool) preg_match('/'.preg_quote($permission, '/').'(?![A-Za-z0-9_.\-])/', $content);
-}
+    $out = [];
 
-/**
- * Does $content name $role — as a WHOLE role name?
- *
- * BOTH boundaries here, unlike {@see namesPermission}, and the asymmetry is derived rather than
- * inconsistent. Permission values have 9 prefix pairs, 0 suffix pairs and 0 mid pairs, so a right
- * boundary alone is sufficient there. ROLE names do NOT have that shape — re-derived from
- * `RbacSeeder::ROLES`:
- *
- *   admin    is a SUFFIX of  super_admin
- *   teacher  is a SUFFIX of  form_teacher
- *
- * A right-boundary-only test would therefore let a migration naming `super_admin` count as naming
- * `admin`, and one naming `form_teacher` count as naming `teacher` — over-exemption, the silent
- * direction. The lookbehind is load-bearing here and vacuous there; each side gets what its own
- * data requires.
- */
-function namesRole(string $content, string $role): bool
-{
-    return (bool) preg_match(
-        '/(?<![A-Za-z0-9_.\-])'.preg_quote($role, '/').'(?![A-Za-z0-9_.\-])/',
-        $content
-    );
+    foreach ($migrations as $path => $content) {
+        if (! preg_match_all(
+            '/^[ \t]*(?:\*|\/\/|#)?[ \t]*@converges[ \t]+([A-Za-z0-9_]+)[ \t]+([A-Za-z0-9_.\-]+)[ \t]*$/m',
+            $content,
+            $m,
+            PREG_SET_ORDER
+        )) {
+            continue;
+        }
+
+        foreach ($m as $set) {
+            $out[] = ['path' => $path, 'role' => $set[1], 'permission' => $set[2]];
+        }
+    }
+
+    return $out;
 }
 
 // ---------------------------------------------------------------- arguments
@@ -473,6 +518,32 @@ foreach (explode("\n", git('diff', '--name-status', '--diff-filter=A', $base.'..
     $addedMigrations[$parts[1]] = git('show', $head.':'.$parts[1]);
 }
 
+// The `@converges` declarations those migrations carry. Extracted ONCE, here, next to the migrations
+// themselves, so exemption 3 below is a single array read rather than a rescan of every migration's
+// text per finding.
+//
+// A marker whose role or permission does not exist at head is NOT a declaration — it is recorded
+// separately and echoed on the failing path so a typo is visible, and it exempts nothing. Testing
+// membership of `$headRoles` is sufficient and subsumes `$newRoles`: `$newRoles =
+// array_diff($headRoles, $baseRoles)` is a subset of `$headRoles` by definition of array_diff.
+//
+// First declaration wins on a duplicate pair, matching the `break`-at-first-match the text scan had.
+$declared = [];         // "role\0permission" => 'database/migrations/<file>'
+$unknownMarkers = [];   // markers that matched no role / no permission at head
+
+foreach (declaredConvergences($addedMigrations) as $marker) {
+    $roleKnown = in_array($marker['role'], $headRoles, true);
+    $permissionKnown = isset($headValues[$marker['permission']]);
+
+    if (! $roleKnown || ! $permissionKnown) {
+        $unknownMarkers[] = $marker + ['why' => $roleKnown ? 'no such permission' : 'no such role'];
+
+        continue;
+    }
+
+    $declared[$marker['role']."\0".$marker['permission']] ??= $marker['path'];
+}
+
 /**
  * The nearest preceding `'<role>' => [` above $line in the new file, IF that key is an actual
  * member of `RbacSeeder::ROLES` at head. Inference, not a parse — but inference with a codomain.
@@ -556,31 +627,26 @@ foreach ($added as [$line, $text]) {
 
         $inSuperAdminConst = $sapFrom !== null && $sapTo !== null && $line >= $sapFrom && $line <= $sapTo;
 
-        // Exemption 3 needs the migration to converge THIS PAIR, not merely to mention the
-        // permission. The first version stopped at the first added migration whose content named
-        // the permission, with no role check at all — so 7370e89, this lint's own canonical defect,
-        // would have been exempted on BOTH roles by a migration converging only one of them. A
-        // convergence migration is per (role, permission); the exemption has to be too.
+        // Exemption 3 is a LOOKUP of a declared pair, never a search of a migration's text — see
+        // {@see declaredConvergences} for why prose cannot answer this and what it cost. A
+        // convergence migration is per (role, permission), and so is the declaration: 7370e89, this
+        // lint's own canonical defect, added `finance.access` to two roles, and a migration
+        // declaring one of them exempts exactly that one.
         //
         // THE HONEST CONSTRAINT, stated rather than papered over: the role is INFERRED from source
         // text (see $inferRole). So this check is only as sound as that inference, and when the
-        // inference yields null there is nothing to check against — the pair is unknown, and an
-        // exemption on an unknown pair is a guess in the silent direction. A null role therefore
-        // does NOT exempt. The cost is a false red on a legitimate shared-fragment convergence;
-        // the failure message says which role it could not resolve, and a red a human reads is the
-        // outcome this gate is for.
-        $migration = null;
-        foreach ($addedMigrations as $path => $content) {
-            if ($role !== null && namesPermission($content, $permission) && namesRole($content, $role)) {
-                $migration = $path;
-                break;
-            }
-        }
+        // inference yields null there is no pair to look up — an exemption on an unknown pair is a
+        // guess in the silent direction. A null role therefore does NOT exempt. The cost is a false
+        // red on a legitimate shared-fragment convergence; the failure message says which role it
+        // could not resolve, and a red a human reads is the outcome this gate is for.
+        $migration = $role !== null
+            ? ($declared[$role."\0".$permission] ?? null)
+            : null;
 
         $exemption = match (true) {
             in_array($permission, $newPermissions, true) => 'permission is NEW in this diff (lands in $newPermissions)',
             $role !== null && in_array($role, $newRoles, true) => "role [{$role}] is NEW in this diff (takes the full \$permissions array)",
-            $migration !== null => "migration [{$migration}] in this diff names it AND names role [{$role}]",
+            $migration !== null => "migration [{$migration}] declares @converges {$role} {$permission}",
             $inSuperAdminConst => 'inside SUPER_ADMIN_PLATFORM (self-healed by syncPermissions every run, RbacSeeder.php:506-512)',
             default => null,
         };
@@ -633,6 +699,21 @@ if ($exempted !== []) {
     }
 }
 
+// Markers that matched nothing at head, on the FAILING path only. A typo in a marker already fails
+// the run by not exempting, so the red the author reads is there regardless — this only makes the
+// CAUSE visible, instead of leaving them staring at a migration they believe declares the pair.
+// DELIBERATELY NOT A GATE: hard-failing on an unrecognised marker would also have to fire on diffs
+// this lint legitimately exits early on, and a gate that fires where it has nothing to say is a gate
+// that gets switched off.
+if ($unknownMarkers !== []) {
+    fwrite(STDERR, "\n  ".count($unknownMarkers).' @converges marker(s) matched no role/permission at head'
+        ." (they exempt nothing — check for a typo):\n");
+    foreach ($unknownMarkers as $u) {
+        fwrite(STDERR, '  '."\u{26a0}".' '.$u['path'].' declares @converges '.$u['role'].' '
+            .$u['permission'].' — '.$u['why']."\n");
+    }
+}
+
 fwrite(STDERR, <<<'TXT'
 
   WHY THIS FAILS. The permission already exists, so it is not in $newPermissions
@@ -643,11 +724,16 @@ fwrite(STDERR, <<<'TXT'
   database.
 
   TO RESOLVE, pick the one that is true:
-    · Ship a convergence migration that grants the permission to the role, and make its
-      content name BOTH the permission and the role (that is exemption 3 — both halves,
-      because a migration converging one role must not exempt the same permission added
-      to another). If the role above reads `?`, the addition is in a shared fragment and
-      the migration must converge every pre-existing role that spreads it.
+    · Ship a convergence migration that grants the permission to the role, and DECLARE the
+      pair in it — one line per pair, nothing else on the line (that is exemption 3):
+
+          @converges <role> <permission>
+
+      The marker may sit in a docblock (` * @converges …`), a `//` line or a `#` line.
+      Naming the permission and the role in PROSE is NOT enough and is no longer read: a
+      migration that documents which roles it EXCLUDES would otherwise exempt them. If the
+      role above reads `?`, the addition is in a shared fragment — declare a line for every
+      pre-existing role it spreads to.
     · The permission is genuinely new — add its `case` to app/Enums/Permission.php in the
       same diff (exemption 1).
     · The role is genuinely new — add it to RbacSeeder::ROLES in the same diff (exemption 2).

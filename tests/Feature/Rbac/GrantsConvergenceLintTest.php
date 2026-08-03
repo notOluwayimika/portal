@@ -168,6 +168,85 @@ function gclSeederWithGrant(string $seeder): string
     );
 }
 
+/**
+ * The TWO-role fixture base: `auditor` and `bursar` both pre-existing, both already holding
+ * `activity_log.view_all`, neither holding `activity_log.view`. Exemptions 1 and 2 are unreachable
+ * for both, so the only question left is exemption 3 — and it is asked about TWO pairs at once,
+ * which is what makes "a migration that declares one role must not exempt the other" testable.
+ *
+ * @return array{0: string, 1: string} [base commit sha, seeder source]
+ */
+function gclTwoRoleBase(): array
+{
+    $enum = <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+}
+PHP;
+
+    $seeder = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+            'bursar' => [
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    return [
+        gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]),
+        $seeder,
+    ];
+}
+
+/** The two-role seeder with `activity_log.view` granted to BOTH pre-existing roles. */
+function gclTwoRoleWithGrant(string $seeder): string
+{
+    return str_replace(
+        "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n",
+        "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n                PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
+        $seeder
+    );
+}
+
+/**
+ * Split a FAILING run's output at the exemption header, so an arm can assert what is in the failure
+ * block and what is in the exemption block separately. A bare `toContain('auditor')` over the whole
+ * output cannot tell "flagged" from "exempt", and that distinction is the entire subject of the
+ * marker arms.
+ *
+ * @return array{0: string, 1: string} [failures, exemptions] — exemptions is '' when there are none
+ */
+function gclSplit(string $output): array
+{
+    $at = strpos($output, 'were EXEMPT');
+
+    return $at === false ? [$output, ''] : [substr($output, 0, $at), substr($output, $at)];
+}
+
 it('fires on 7370e89 — a pre-existing permission added to two pre-existing roles, no migration naming it', function () {
     if (! gclHasCommit('7370e89')) {
         $this->markTestSkipped('history not reachable (shallow clone?)');
@@ -229,47 +308,56 @@ it('passes when RbacSeeder.php is not in the diff at all', function () {
         ->and($r['output'])->toContain('is unchanged in this diff');
 });
 
-it('exemption 3 — a migration naming the permission EXACTLY exempts it; one naming only a longer sibling does NOT', function () {
+it('exemption 3 — a migration declaring the pair EXACTLY exempts it; one declaring only a longer sibling does NOT', function () {
     // FIXTURE-DRIVEN, and deliberately so: the sibling shape has never occurred in this repository's
     // history, so there is no commit to replay (unlike every arm above). See the block comment on the
     // fixture helpers for what is and is not real about these commits.
     //
-    // The sibling half is the one that matters. `str_contains($content, $permission)` — the original
-    // test — is a raw substring match, and the enum carries NINE prefix pairs today
+    // THE MECHANISM UNDER THIS ARM CHANGED, and the arm was kept rather than deleted. It used to test
+    // a boundary regex over the migration's free text: the enum carries NINE prefix pairs
     // (activity_log.view ⊂ .view_all/.view_own/.view_system/.view_cross_school/.view_sensitive,
     // guardian.view ⊂ .view_audit, guardian.update ⊂ .update_credentials, result.view ⊂ .view_scores,
-    // student_subject.view ⊂ .view_history). Under that test, a migration naming ONLY
-    // `activity_log.view_all` exempted a grant of `activity_log.view` — a SILENT GREEN in exactly the
-    // class the gate exists for, which is the worst failure a gate can have because it is
-    // indistinguishable from working.
-    [$base, $files] = gclFixtureBase();
+    // student_subject.view ⊂ .view_history), so a raw substring test exempted a grant of
+    // `activity_log.view` on a migration naming only `activity_log.view_all`. Exemption 3 no longer
+    // reads free text at all — it reads an `@converges <role> <permission>` declaration and compares
+    // the pair by EXACT EQUALITY, so the prefix-pair hole is closed by construction rather than by a
+    // boundary. Do not re-derive the prefix-pair argument from this arm; what it now pins is that
+    // equality really is equality, which is the property a future rewrite could still break.
+    [$base, $seeder] = gclTwoRoleBase();
 
-    $migration = fn (string $names): string => "<?php\n\n// converge: grants '{$names}' to auditor\n";
-    $withGrant = ['database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php'])];
+    $migration = fn (string $permission): string => "<?php\n\n// @converges auditor {$permission}\n";
+    $withGrant = ['database/seeders/RbacSeeder.php' => gclTwoRoleWithGrant($seeder)];
 
-    // (i) EXACT — exempt.
+    // (i) EXACT — exempt. (bursar is flagged in the same run; this half is about auditor.)
     $exact = gclCommit(
         $withGrant + ['database/migrations/2099_01_01_000000_converge.php' => $migration('activity_log.view')],
         $base
     );
     $r = gclRun($base, $exact);
+    [$failures, $exemptions] = gclSplit($r['output']);
 
-    expect($r['exit'])->toBe(0)
-        ->and($r['output'])->toContain('activity_log.view @')
-        ->and($r['output'])->toContain('in this diff names it');
+    expect($r['exit'])->toBe(1)   // bursar is unconverged — that is arm 4c's subject, not this one
+        ->and($exemptions)->toContain('declares @converges auditor activity_log.view')
+        ->and($failures)->toContain('role: bursar')
+        ->and($failures)->not->toContain('role: auditor');
 
-    // (ii) SIBLING ONLY — must NOT exempt. Before the boundary fix this returned exit 0.
+    // (ii) SIBLING ONLY — must NOT exempt auditor either. `activity_log.view_all` is a different
+    //      pair, and a declaration of it says nothing about `activity_log.view`.
     $sibling = gclCommit(
         $withGrant + ['database/migrations/2099_01_01_000000_converge.php' => $migration('activity_log.view_all')],
         $base
     );
     $r = gclRun($base, $sibling);
+    [$failures, $exemptions] = gclSplit($r['output']);
 
     expect($r['exit'])->toBe(1)
         ->and($r['output'])->toContain('activity_log.view')
         ->and($r['output'])->toContain('that rbac:sync will NOT apply')
-        // And it must not have been swallowed by the migration exemption on the way past.
-        ->and($r['output'])->not->toContain('in this diff names it');
+        // Nothing was exempted at all — not auditor, not bursar.
+        ->and($exemptions)->toBe('')
+        ->and($r['output'])->not->toContain('declares @converges')
+        ->and($failures)->toContain('role: auditor')
+        ->and($failures)->toContain('role: bursar');
 });
 
 // ── The five holes the cold review of 79798c8...85805da found, armed permanently ─────────────
@@ -474,8 +562,8 @@ PHP;
             "                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n                PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
             $seeder
         ),
-        // Converges the pair (auditor, activity_log.view). Says nothing about bursar.
-        'database/migrations/2099_01_01_000000_converge_auditor.php' => "<?php\n\n// converge: grants 'activity_log.view' to the 'auditor' role\n",
+        // Declares the pair (auditor, activity_log.view). Declares nothing about bursar.
+        'database/migrations/2099_01_01_000000_converge_auditor.php' => "<?php\n\n// @converges auditor activity_log.view\n",
     ], $base);
 
     $r = gclRun($base, $head);
@@ -484,12 +572,12 @@ PHP;
         // bursar is flagged...
         ->and($r['output'])->toContain('bursar')
         ->and($r['output'])->toContain('that rbac:sync will NOT apply')
-        // ...and auditor is still exempt in the same run, by the migration that does converge it.
-        ->and($r['output'])->toContain('names it AND names role [auditor]');
+        // ...and auditor is still exempt in the same run, by the migration that does declare it.
+        ->and($r['output'])->toContain('declares @converges auditor activity_log.view');
 
     // The failure block must name bursar, not auditor — otherwise the arm would pass on a lint that
     // simply flags everything.
-    $failures = substr($r['output'], 0, strpos($r['output'], 'were EXEMPT') ?: strlen($r['output']));
+    [$failures] = gclSplit($r['output']);
     expect($failures)->toContain('role: bursar')
         ->and($failures)->not->toContain('role: auditor');
 });
@@ -612,6 +700,169 @@ it('exemption 4 — an addition inside SUPER_ADMIN_PLATFORM is exempt (cf9d2a2, 
         ->and($r['output'])->toContain('inside SUPER_ADMIN_PLATFORM')
         ->and($r['output'])->toContain('rbac.impersonate')
         ->and($r['output'])->toContain('activity_log.view_cross_school');
+});
+
+// ── The `@converges` marker: exemption 3 reads a DECLARATION, never prose ─────────────
+//
+// The third repair to exemption 3 for one class of defect (d08edf0 substring, dde75e4 silent greens,
+// this one prose). The predicate that was replaced asked whether a migration's raw text named the
+// permission and named the role, both boundary-matched — and it could not tell an ASSERTION from a
+// MENTION. Measured on the real 2026_08_05_100000_converge_finance_access_grants.php, it was true
+// for NINE of the fourteen roles: `internal_auditor` off the sentences saying it must NOT receive
+// the permission, `registrar` off the words "registrar cache flushed after". That is not a wording
+// bug in one migration — documenting the exclusions is the right thing for a migration to do, so
+// every future one carries the same property.
+//
+// Each arm below is written so that REVERTING the marker fix turns it red, not merely changes a
+// message. Arms 1, 2 and 3 all exit 0 under the free-text predicates.
+
+it('MARKER 1 — PROSE IS NOT A DECLARATION: naming a role it EXCLUDES must not exempt that role', function () {
+    [$base, $seeder] = gclTwoRoleBase();
+
+    // Exactly the shape a real convergence migration has: one declared pair, and a docblock that
+    // documents the role deliberately left out. Under the old predicates BOTH roles were exempt and
+    // this returned exit 0 — the migration was a blanket exemption carrier for every role it named.
+    $migration = <<<'PHP'
+<?php
+
+/**
+ * Converges `activity_log.view` onto the auditor seat.
+ *
+ * @converges auditor activity_log.view
+ *
+ * `bursar` deliberately does NOT receive `activity_log.view` — that is a separate decision and this
+ * migration must not grant it. activity_log.view is granted to auditor and to nobody else.
+ */
+PHP;
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclTwoRoleWithGrant($seeder),
+        'database/migrations/2099_01_01_000000_converge_auditor.php' => $migration,
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [$failures, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and($failures)->toContain('role: bursar')
+        ->and($failures)->not->toContain('role: auditor')
+        // ...and the declared pair is still exempt in the same run.
+        ->and($exemptions)->toContain('declares @converges auditor activity_log.view')
+        ->and($exemptions)->not->toContain('bursar');
+});
+
+it('MARKER 2 — NO MARKER AT ALL: a migration that only names the pair in prose exempts nothing', function () {
+    // The direct regression arm for the old behaviour. This exact fixture was exit 0 before.
+    [$base, $files] = gclFixtureBase();
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php']),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// Converges activity_log.view for the auditor role.\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('that rbac:sync will NOT apply')
+        ->and($r['output'])->toContain('activity_log.view')
+        ->and($exemptions)->toBe('')
+        ->and($r['output'])->not->toContain('declares @converges');
+});
+
+it('MARKER 3 — TRAILING PROSE DOES NOT SMUGGLE: a tail on the marker line declares NOTHING, not the first pair', function () {
+    // THE `$` ANCHOR is what this arm pins, and it is worth being exact about which character does
+    // the work. Swapping `[ \t]` for `\s` does NOT open this hole — prose is not whitespace, so
+    // `\s*$` cannot cross it either (measured; `\s` opens a different hole, assembling a marker from
+    // two lines, which is why the pattern stays tight). Drop the `$` and this line declares
+    // (auditor, activity_log.view) while reading to a human as though it declared bursar too. With
+    // the anchor, the whole line fails to match and NEITHER role is exempt — the safe direction.
+    [$base, $seeder] = gclTwoRoleBase();
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclTwoRoleWithGrant($seeder),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges auditor activity_log.view and also bursar\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [$failures, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        // BOTH roles flagged — declaring nothing, not declaring auditor.
+        ->and($failures)->toContain('role: auditor')
+        ->and($failures)->toContain('role: bursar')
+        ->and($exemptions)->toBe('')
+        ->and($r['output'])->not->toContain('2099_01_01_000000_converge.php');
+});
+
+it('MARKER 4 — MULTI-PAIR: one migration declaring two pairs exempts both in a single run', function () {
+    [$base, $seeder] = gclTwoRoleBase();
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclTwoRoleWithGrant($seeder),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges auditor activity_log.view\n// @converges bursar activity_log.view\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('OK — no unexempted grant addition')
+        ->and($r['output'])->toContain('declares @converges auditor activity_log.view')
+        ->and($r['output'])->toContain('declares @converges bursar activity_log.view');
+});
+
+it('MARKER 5 — DOCBLOCK LEAD-IN: ` * @converges …` exempts identically to a `//` line', function () {
+    // The form every real migration will use, since the marker belongs in the file's own docblock.
+    [$base, $files] = gclFixtureBase();
+
+    $migration = <<<'PHP'
+<?php
+
+/**
+ * Converges the auditor read seat.
+ *
+ * @converges auditor activity_log.view
+ */
+PHP;
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php']),
+        'database/migrations/2099_01_01_000000_converge.php' => $migration,
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('declares @converges auditor activity_log.view');
+});
+
+it('MARKER 6 — an unrecognised marker is ECHOED on the failing path, and exempts nothing', function () {
+    // A typo already fails the run by not exempting, so the red is there either way; the echo is what
+    // stops the author staring at a migration they believe declares the pair. It is a MESSAGE, not a
+    // gate — asserted here only because it costs one fixture.
+    [$base, $files] = gclFixtureBase();
+    $withGrant = ['database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php'])];
+
+    // (i) The ROLE is misspelled.
+    $badRole = gclCommit(
+        $withGrant + ['database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges bursor activity_log.view\n"],
+        $base
+    );
+    $r = gclRun($base, $badRole);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('declares @converges bursor activity_log.view — no such role')
+        ->and($r['output'])->toContain('that rbac:sync will NOT apply');
+
+    // (ii) The PERMISSION is misspelled.
+    $badPermission = gclCommit(
+        $withGrant + ['database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges auditor activity_log.viewww\n"],
+        $base
+    );
+    $r = gclRun($base, $badPermission);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('declares @converges auditor activity_log.viewww — no such permission');
 });
 
 it('FAILS rather than passing when it cannot resolve the base — a gate that cannot look must not be green', function () {

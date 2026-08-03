@@ -33,6 +33,16 @@ use Spatie\Permission\PermissionRegistrar;
  * withoutLogs — a governance act); transaction-wrapped; idempotent; fresh-install guarded; down() a
  * deliberate no-op.
  *
+ * The pairs this migration converges, declared for `bin/ci-grants-convergence-lint.php`'s exemption 3.
+ * The lint reads THESE LINES ONLY, never the prose — one line per pair, nothing else on the line.
+ * These are the three ADD-side gaps named above; the other two governed roles (principal,
+ * head_of_school) were already aligned by 2026_08_02_100000 and this migration converges nothing for
+ * them.
+ *
+ * @converges accounts_officer finance.fee-schedule.change.submit
+ * @converges accounts_officer finance.discount-policy.change.submit
+ * @converges accounts_supervisor finance.fee-schedule.change.submit
+ *
  * ONE thing #186 does not have — the check my convergence brief was missing (added by its addendum):
  * a grant-map change RETROACTIVELY turns an already-assigned, previously-legal role pair into a
  * both-sides violation, and nothing re-validates existing users when the map changes (the

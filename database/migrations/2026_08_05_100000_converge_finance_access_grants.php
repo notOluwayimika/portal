@@ -48,6 +48,15 @@ use Spatie\Permission\PermissionRegistrar;
  * reasoned, not forgotten. (2026_08_03_100000 needed it because it moved `*.submit` maker abilities,
  * which do sit inside enforced pairs.)
  *
+ * The pairs this migration converges, declared for `bin/ci-grants-convergence-lint.php`'s exemption 3.
+ * The lint reads THESE LINES ONLY — never the prose above, which names roles it EXCLUDES
+ * (`internal_auditor`) and roles it merely mentions (`registrar cache flushed after`). One line per
+ * pair, nothing else on the line. Only the two that actually drifted are declared; the other four
+ * governed roles were already aligned and this migration converges nothing for them.
+ *
+ * @converges head_of_school finance.access
+ * @converges principal finance.access
+ *
  * Everything else follows 2026_08_03_100000: fresh-install guard keyed on the permission substrate;
  * target DERIVED from `grantsMap()`; school-scoped rows counted, never written (C6 local authority
  * stays put); idempotent, short-circuiting BEFORE any activity row; diff-based revoke+give inside one

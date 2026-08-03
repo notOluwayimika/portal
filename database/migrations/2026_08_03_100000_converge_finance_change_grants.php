@@ -33,11 +33,19 @@ use Spatie\Permission\PermissionRegistrar;
  * withoutLogs — a governance act); transaction-wrapped; idempotent; fresh-install guarded; down() a
  * deliberate no-op.
  *
- * The pairs this migration converges, declared for `bin/ci-grants-convergence-lint.php`'s exemption 3.
- * The lint reads THESE LINES ONLY, never the prose — one line per pair, nothing else on the line.
- * These are the three ADD-side gaps named above; the other two governed roles (principal,
- * head_of_school) were already aligned by 2026_08_02_100000 and this migration converges nothing for
- * them.
+ * The pairs this migration converges, in `bin/ci-grants-convergence-lint.php`'s `@converges` syntax.
+ *
+ * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
+ * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on
+ * the base has already run and a marker on it would declare a convergence nothing performed. This
+ * file predates the lint and is on `staging`, so no future `base...head` will ever mark it `A`. From
+ * here on, a pair needing exemption gets a NEW convergence migration and declares it there; do not
+ * copy this file expecting these lines to do work.
+ *
+ * They are kept because they record which pairs the author actually converged, which the prose alone
+ * does not state precisely: the three ADD-side gaps named above; the other two governed roles
+ * (principal, head_of_school) were already aligned by 2026_08_02_100000 and this migration converges
+ * nothing for them.
  *
  * @converges accounts_officer finance.fee-schedule.change.submit
  * @converges accounts_officer finance.discount-policy.change.submit

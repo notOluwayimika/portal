@@ -28,7 +28,28 @@
  * drifted, against a real database), this lint covers the FUTURE.
  *
  * THE RULE. Fail when the diff `<base>..<head>` adds a permission to `grantsMap()` and NONE of these
- * four exemptions holds:
+ * four exemptions holds.
+ *
+ * READ THIS QUALIFICATION BEFORE TRUSTING THAT SENTENCE. Coverage is per-pair for permissions this
+ * lint can RESOLVE from an added line, and it resolves exactly two forms: `PermissionEnum::X->value`,
+ * and a quoted string that is a real enum value at head (see the resolution block at the findings
+ * loop). It does NOT resolve `...$fragment,`. So an added spread of a PRE-EXISTING fragment into a
+ * PRE-EXISTING role grants every permission in that fragment, `rbac:sync` grants none of them, and
+ * this lint produces no finding and exits 0.
+ *
+ * That is a LIVE BLIND SPOT inside this gate's own defect class — not a shape outside it — and it is
+ * reached by the map's most common line: `grantsMap()['admin']` opens with five consecutive spreads
+ * before its first literal permission. Resolving `...$fragment,` means locating `$fragment = [...]`
+ * in the head seeder and extracting its enum values; that is a behaviour change with its own finding
+ * volume and its own arms, so it is a dated successor to this file rather than a rider on it. It is
+ * disclosed here because the alternative is a reader taking the sentence above at face value, and a
+ * false justification in a comment is worse than none — the next author reasons from it.
+ *
+ * (`$inferRole` resolves a REAL role at a spread line, since the spread sits inside `'<role>' => [`.
+ * Findings from that future work will be attributable and exemption 3 will apply to them normally.
+ * The `?` case is a permission added to the fragment's own DEFINITION, above `return [`.)
+ *
+ * The four exemptions:
  *
  *   1. THE PERMISSION IS NEW — the same diff adds its `case` to `app/Enums/Permission.php`. It then
  *      lands in `$newPermissions` and `rbac:sync` grants it. No migration needed.
@@ -515,6 +536,14 @@ if ($sapFrom !== null && $sapTo === null) {
 }
 
 // Migrations ADDED in this diff, with their content — exemption 3.
+//
+// `A` ONLY, AND THAT IS A RULE RATHER THAN A CONVENIENCE. A migration already present on the base
+// has already RUN on every seeded environment; a marker added to it now declares a convergence that
+// never happened. Collecting `M` here would exempt on a promise nothing kept — a false green of
+// exactly the kind this gate exists to stop. (The range is `base...head`, so a migration added in an
+// EARLIER COMMIT of the same branch is still `A`: the ordinary workflow — lint goes red, author adds
+// the marker to the migration they committed an hour ago — works. The gap needs the migration to
+// predate the base, and that case is reported by $markersOnModified below, never exempted.)
 $addedMigrations = [];
 foreach (explode("\n", git('diff', '--name-status', '--diff-filter=A', $base.'...'.$head)) as $line) {
     $parts = preg_split('/\t/', trim($line));
@@ -522,6 +551,24 @@ foreach (explode("\n", git('diff', '--name-status', '--diff-filter=A', $base.'..
         continue;
     }
     $addedMigrations[$parts[1]] = git('show', $head.':'.$parts[1]);
+}
+
+// Markers on MODIFIED migrations, collected for the NOTICE and nothing else. These exempt nothing
+// (see the rule above) and must never reach $addedMigrations or $declared — but an author who wrote
+// one is owed the reason, and $unparsedMarkers cannot give it because it walks $addedMigrations.
+// Without this, a byte-perfect marker on a pre-existing migration produces a byte-identical red and
+// no explanation: the same dead end the `?`-role remedy was rewritten to remove, reached by a
+// different route.
+$markersOnModified = [];
+foreach (explode("\n", git('diff', '--name-status', '--diff-filter=M', $base.'...'.$head)) as $line) {
+    $parts = preg_split('/\t/', trim($line));
+    if (count($parts) < 2 || ! str_starts_with($parts[1], 'database/migrations/')) {
+        continue;
+    }
+    $count = preg_match_all('/@converges/', git('show', $head.':'.$parts[1]));
+    if ($count > 0) {
+        $markersOnModified[$parts[1]] = $count;
+    }
 }
 
 // The `@converges` declarations those migrations carry. Extracted ONCE, here, next to the migrations
@@ -759,6 +806,20 @@ if ($unparsedMarkers !== []) {
             .'. Check for CRLF endings, a one-line'."\n"
             .'    /** @converges … */ (the closer needs its own line), a wrapped line, or text after'."\n"
             .'    the permission.'."\n");
+    }
+}
+
+// The third notice, and the only one whose author did everything right at the level of syntax — see
+// the rule at the `--diff-filter=A` collection for why it still cannot exempt. Failing path only and
+// not a gate, for the same reasons as the two above.
+if ($markersOnModified !== []) {
+    fwrite(STDERR, "\n  ".array_sum($markersOnModified)
+        .' @converges line(s) sit on a migration that is not new in this diff (they exempt nothing):'."\n");
+    foreach ($markersOnModified as $path => $count) {
+        fwrite(STDERR, '  '."\u{26a0}".' '.$path.' — '.$count.' line'.($count === 1 ? '' : 's')
+            .'. This migration is already on the base,'."\n"
+            .'    so it has already run; a marker added to it declares a convergence nothing'."\n"
+            .'    performed. Write a NEW convergence migration and declare the pair there.'."\n");
     }
 }
 

@@ -48,11 +48,20 @@ use Spatie\Permission\PermissionRegistrar;
  * reasoned, not forgotten. (2026_08_03_100000 needed it because it moved `*.submit` maker abilities,
  * which do sit inside enforced pairs.)
  *
- * The pairs this migration converges, declared for `bin/ci-grants-convergence-lint.php`'s exemption 3.
- * The lint reads THESE LINES ONLY — never the prose above, which names roles it EXCLUDES
- * (`internal_auditor`) and roles it merely mentions (`registrar cache flushed after`). One line per
- * pair, nothing else on the line. Only the two that actually drifted are declared; the other four
- * governed roles were already aligned and this migration converges nothing for them.
+ * The pairs this migration converges, in `bin/ci-grants-convergence-lint.php`'s `@converges` syntax.
+ *
+ * RECORDED FOR THE READER, UNREADABLE BY THE GATE — and permanently so, not pending. Exemption 3
+ * reads markers only on migrations the diff ADDS (`--diff-filter=A`), because a migration already on
+ * the base has already run and a marker on it would declare a convergence nothing performed. This
+ * file predates the lint and is on `staging`, so no future `base...head` will ever mark it `A`. From
+ * here on, a pair needing exemption gets a NEW convergence migration and declares it there; do not
+ * copy this file expecting these lines to do work.
+ *
+ * They are kept because they state precisely what the prose above cannot: that prose names roles this
+ * migration EXCLUDES (`internal_auditor`) and roles it merely mentions (`registrar cache flushed
+ * after`), which is exactly why the gate stopped reading prose. Only the two roles that actually
+ * drifted are listed; the other four governed roles were already aligned and this migration
+ * converges nothing for them.
  *
  * @converges head_of_school finance.access
  * @converges principal finance.access

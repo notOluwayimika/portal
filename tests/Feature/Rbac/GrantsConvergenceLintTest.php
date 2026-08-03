@@ -975,6 +975,43 @@ it('MARKER 8 — a marker the parser cannot READ is reported, not swallowed', fu
         ->and($r['output'])->toContain('2099_01_01_000000_converge.php');
 });
 
+it('MARKER 9 — a marker added to a migration that is NOT new in the diff exempts nothing, and says why', function () {
+    // TWO SEPARATE CLAIMS, and only the second is a defect the lint had.
+    //
+    // (a) It must not exempt. A migration already on the base has already RUN on every seeded
+    //     environment, so a marker added to it declares a convergence nothing performed. Exempting
+    //     on it would be a false green of exactly the class this gate exists to stop — which is why
+    //     $addedMigrations is `--diff-filter=A` and must stay that way. This half is the RULE.
+    // (b) It must say so. The author wrote a byte-perfect marker and got a byte-identical red;
+    //     $unparsedMarkers cannot explain it, because that walks $addedMigrations too. Same dead end
+    //     the `?`-role remedy was rewritten to remove, reached by a different route.
+    //
+    // The fixture is the real workflow: the migration exists on the base WITHOUT a marker, and the
+    // branch edits it to add one. That is what puts it in `--diff-filter=M`.
+    [$base, $files] = gclFixtureBase();
+
+    $migrationPath = 'database/migrations/2098_01_01_000000_already_shipped.php';
+
+    $base = gclCommit($files + [$migrationPath => "<?php\n\n// converges the auditor read seat\n"], null);
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php']),
+        $migrationPath => "<?php\n\n// converges the auditor read seat\n// @converges auditor activity_log.view\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        // (a) not exempt, and not cited as one.
+        ->and($exemptions)->toBe('')
+        ->and($r['output'])->not->toContain('declares @converges')
+        // (b) and the author is told which file and why.
+        ->and($r['output'])->toContain('sit on a migration that is not new in this diff')
+        ->and($r['output'])->toContain($migrationPath)
+        ->and($r['output'])->toContain('Write a NEW convergence migration');
+});
+
 it('FAILS rather than passing when it cannot resolve the base — a gate that cannot look must not be green', function () {
     // The failure mode bin/lint-changed.sh names for unresolvable paths: a green here would mean
     // "I did not look", which is worse than a red.

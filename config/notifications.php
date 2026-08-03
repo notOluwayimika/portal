@@ -53,6 +53,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Address normalization
+    |--------------------------------------------------------------------------
+    |
+    | The calling code assumed when a phone number is written in national format
+    | (`08031234567`), which is the ordinary way a number is typed here and is
+    | meaningless without a country. Config rather than a constant so a school in
+    | another country is a deployment change, not a code change.
+    |
+    */
+
+    'default_calling_code' => env('NOTIFICATIONS_DEFAULT_CALLING_CODE', '234'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Feed
     |--------------------------------------------------------------------------
     |

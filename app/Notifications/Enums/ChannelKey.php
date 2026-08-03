@@ -14,6 +14,14 @@ enum ChannelKey: string
     case IN_APP = 'in_app';
     case EMAIL = 'email';
     case SMS = 'sms';
+    /**
+     * A DISTINCT TRANSPORT TO THE SAME NUMBER. `guardians.whatsapp_number` already
+     * exists and is frequently the same digits as `guardians.phone`, so the backfill
+     * legitimately produces two contact points differing only by channel. That is
+     * not a dedup miss: the two are suppressed independently (a STOP to the SMS
+     * carrier says nothing about WhatsApp), and Termii bills them differently.
+     */
+    case WHATSAPP = 'whatsapp';
 
     /**
      * Is this channel intrusive — does it reach the recipient rather than wait

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\StudentStatusEnum;
 use App\Http\Resources\NoticeCategoryResource;
 use App\Http\Resources\NoticeResource;
 use App\Models\ClassLevel;
@@ -10,7 +9,8 @@ use App\Models\ClassLevelArm;
 use App\Models\Notice;
 use App\Models\NoticeCategory;
 use App\Models\Student;
-use App\Models\StudentCurriculum;
+use App\Services\GuardianService;
+use App\Support\ActiveSchool;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -107,7 +107,7 @@ class NoticeController extends Controller
 
         $notice = DB::transaction(function () use ($data, $category, $request) {
             $notice = Notice::create([
-                'school_id' => \App\Support\ActiveSchool::id(),
+                'school_id' => ActiveSchool::id(),
                 'title' => $data['title'],
                 'body' => $data['body'],
                 'notice_category_id' => $category->id,
@@ -117,17 +117,17 @@ class NoticeController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            if (!empty($data['class_level_ids'])) {
+            if (! empty($data['class_level_ids'])) {
                 $clIds = ClassLevel::whereIn('uuid', $data['class_level_ids'])->pluck('id');
                 $notice->classLevels()->attach($clIds);
             }
 
-            if (!empty($data['class_level_arm_ids'])) {
+            if (! empty($data['class_level_arm_ids'])) {
                 $claIds = ClassLevelArm::whereIn('uuid', $data['class_level_arm_ids'])->pluck('id');
                 $notice->classLevelArms()->attach($claIds);
             }
 
-            if (!empty($data['student_ids'])) {
+            if (! empty($data['student_ids'])) {
                 $studentIds = Student::whereIn('uuid', $data['student_ids'])->pluck('id');
                 $notice->students()->attach($studentIds);
             }
@@ -176,17 +176,17 @@ class NoticeController extends Controller
                 'ends_at' => $data['ends_at'] ?? null,
             ]);
 
-            $clIds = !empty($data['class_level_ids'])
+            $clIds = ! empty($data['class_level_ids'])
                 ? ClassLevel::whereIn('uuid', $data['class_level_ids'])->pluck('id')
                 : [];
             $notice->classLevels()->sync($clIds);
 
-            $claIds = !empty($data['class_level_arm_ids'])
+            $claIds = ! empty($data['class_level_arm_ids'])
                 ? ClassLevelArm::whereIn('uuid', $data['class_level_arm_ids'])->pluck('id')
                 : [];
             $notice->classLevelArms()->sync($claIds);
 
-            $studentIds = !empty($data['student_ids'])
+            $studentIds = ! empty($data['student_ids'])
                 ? Student::whereIn('uuid', $data['student_ids'])->pluck('id')
                 : [];
             $notice->students()->sync($studentIds);
@@ -243,7 +243,7 @@ class NoticeController extends Controller
             'slug' => $slug,
             'color' => $data['color'] ?? 'gray',
             'is_default' => false,
-            'school_id' => \App\Support\ActiveSchool::id(),
+            'school_id' => ActiveSchool::id(),
         ]);
 
         return Response::created(new NoticeCategoryResource($category));
@@ -266,12 +266,18 @@ class NoticeController extends Controller
 
     // --- Guardian endpoint ---
 
-    public function forGuardian(Request $request)
+    public function forGuardian(Request $request, GuardianService $guardianService)
     {
-        $user = $request->user();
-        $guardian = $user->guardian;
+        // NOT `$user->guardian`. That is an unordered hasOne, and
+        // Guardian::applySchoolScope matches on `school_id = active OR user has
+        // access to active` — so for a parent with a Guardian row in more than one
+        // School it can return the OTHER School's row, whose students are then
+        // filtered away by Student's SchoolScope, silently emptying this feed.
+        // Same defect, same page, same request as the ward list; see
+        // GuardianService::forUserInActiveSchool.
+        $guardian = $guardianService->forUserInActiveSchool($request->user());
 
-        if (!$guardian) {
+        if (! $guardian) {
             return Response::success([]);
         }
 
@@ -330,8 +336,8 @@ class NoticeController extends Controller
 
         // Post-filter: for each notice, check that at least one ward matches
         // both the targeting scope AND the gender filter
-        $notices = $candidates->filter(function (Notice $notice) use ($studentProfiles, $studentIds) {
-            if (!$notice->target_gender) {
+        $notices = $candidates->filter(function (Notice $notice) use ($studentProfiles) {
+            if (! $notice->target_gender) {
                 return true;
             }
 

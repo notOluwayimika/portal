@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import {
     User,
@@ -8,6 +8,7 @@ import {
     FileText,
     ChevronRight,
     Star,
+    AlertTriangle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -79,7 +80,6 @@ const formatDob = (dob?: string | null) => {
 // ---------- Component ----------
 export default function Wards() {
     const [wards, setWards] = useState<Ward[]>([]);
-    const { auth } = usePage().props;
     const [activeResultAvailable, setActiveResultAvailable] = useState(true);
     const [latestAvailableResult, setLatestAvailableResult] =
         useState<StudentCurriculum | null>(null);
@@ -113,16 +113,38 @@ export default function Wards() {
 
     const [notices, setNotices] = useState<any[]>([]);
     const [noticesLoading, setNoticesLoading] = useState(true);
-
-    const guardianId = auth.user?.guardian?.uuid;
+    const [wardsLoading, setWardsLoading] = useState(true);
+    const [wardsError, setWardsError] = useState<string | null>(null);
 
     useEffect(() => {
+        // No guardian id in the URL: the server resolves the Guardian record from
+        // the session and the active school. Reading `auth.user.guardian` here was
+        // the bug — for a parent with wards in more than one school that hasOne
+        // could return the other school's guardian row, and the ward list came
+        // back empty with a 200.
         const fetchWards = async () => {
-            const response = await axios.get(
-                `/api/guardians/${guardianId}/students`,
-            );
-            const data = await response.data;
-            setWards(data.data);
+            setWardsLoading(true);
+            setWardsError(null);
+
+            try {
+                const response = await axios.get('/api/parent/wards');
+                setWards(response.data.data ?? []);
+            } catch (err: unknown) {
+                // A failed request is NOT an empty ward list. Rendering the
+                // "no wards linked yet" empty state on a 403/404/500 told
+                // parents their children were not registered.
+                const status = (err as { response?: { status?: number } })
+                    ?.response?.status;
+
+                setWardsError(
+                    status === 403
+                        ? 'Your account does not have access to the parent portal for the school you are signed in to.'
+                        : 'We could not load your wards just now. Please try again.',
+                );
+                setWards([]);
+            } finally {
+                setWardsLoading(false);
+            }
         };
 
         const fetchNotices = async () => {
@@ -165,7 +187,18 @@ export default function Wards() {
         return (primary ?? wards[0]).id;
     }, [wards]);
 
-    const [activeId, setActiveId] = useState<string | null>(initialId);
+    // The parent's explicit choice, if they have made one. This used to be
+    // `useState(initialId)` — but useState only reads its argument on MOUNT, and
+    // the wards arrive after that, so activeId stayed null and the ward detail
+    // panel rendered blank until a card happened to be clicked. Derive instead:
+    // the selection wins while it is still in the list, otherwise fall back to
+    // the computed default.
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+
+    const activeId =
+        selectedId && wards.some((w) => w.id === selectedId)
+            ? selectedId
+            : initialId;
 
     useEffect(() => {
         const checkResultReadiness = async () => {
@@ -183,6 +216,34 @@ export default function Wards() {
 
     const active = wards.find((w) => w.id === activeId) ?? null;
 
+    if (wardsLoading) {
+        return (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+                <p className="text-sm text-gray-500">Loading your wards…</p>
+            </div>
+        );
+    }
+
+    // Distinct from the empty state below on purpose: "we could not ask" must
+    // never be shown as "you have no children here".
+    if (wardsError) {
+        return (
+            <div className="rounded-xl border border-dashed border-red-300 bg-white p-10 text-center">
+                <AlertTriangle className="mx-auto h-10 w-10 text-red-400" />
+                <h3 className="mt-3 text-lg font-semibold text-gray-900">
+                    We could not load your wards
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">{wardsError}</p>
+                <Button
+                    onClick={() => window.location.reload()}
+                    className="mt-4"
+                >
+                    Try again
+                </Button>
+            </div>
+        );
+    }
+
     if (!wards.length) {
         return (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
@@ -192,7 +253,8 @@ export default function Wards() {
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">
                     Once the school links a student to your account, they will
-                    appear here.
+                    appear here. If your child attends another Brookstone
+                    school, switch to that school to see them.
                 </p>
             </div>
         );
@@ -224,7 +286,7 @@ export default function Wards() {
                             <button
                                 key={w.id}
                                 type="button"
-                                onClick={() => setActiveId(w.id)}
+                                onClick={() => setSelectedId(w.id)}
                                 className={[
                                     'group flex min-w-[220px] items-center gap-3 rounded-xl border px-4 py-3 text-left transition',
                                     isActive

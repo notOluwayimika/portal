@@ -246,11 +246,6 @@ parameters:
 			count: 1
 			path: app/Http/Controllers/MarkingComponentController.php
 
-		-
-			message: '#^Anonymous function has an unused use \$studentIds\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: app/Http/Controllers/NoticeController.php
 
 		-
 			message: '#^Using nullsafe property access "\?\-\>color" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'

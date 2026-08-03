@@ -678,6 +678,42 @@ class GuardianService
         return $guardian->students()->withPivot(['relationship', 'is_primary', 'can_login'])->get();
     }
 
+    /**
+     * The Guardian record for this User in the ACTIVE School, or null when the
+     * User has no Guardian row there.
+     *
+     * `$user->guardian` cannot be used for this. It is an unordered `hasOne`, and
+     * Guardian::applySchoolScope matches on `school_id = active OR user_id has
+     * access to active` — so for a parent with a Guardian row in more than one
+     * School (the per-School Guardian record, §6.2) the OR branch makes EVERY one
+     * of their rows visible and the relation returns whichever the database
+     * returns first. Both predicates are pinned explicitly here instead, and the
+     * global scopes dropped, so the row is the active School's or there is none.
+     *
+     * `orderBy('id')` because nothing at the schema level enforces one Guardian
+     * row per (user, school): `guardians` has only non-unique indexes on
+     * `user_id` and `school_id`. resolveOrCreateGuardianForUserInSchool is the
+     * one creation path that guards it, in code. Narrowing the candidate set
+     * would silently inherit the same nondeterminism this method exists to
+     * remove if a second row ever appeared, so the choice is stated, not left to
+     * the database.
+     */
+    public function forUserInActiveSchool(User $user): ?Guardian
+    {
+        $schoolId = ActiveSchool::id();
+
+        if (! $schoolId) {
+            return null;
+        }
+
+        return Guardian::withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->where('school_id', $schoolId)
+            ->whereNull('deleted_at')
+            ->orderBy('id')
+            ->first();
+    }
+
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void
     {
         activity('guardian')

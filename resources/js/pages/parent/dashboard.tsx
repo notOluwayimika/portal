@@ -1,4 +1,3 @@
-import React, { useState, useRef, useEffect } from 'react';
 import { Head } from '@inertiajs/react';
 import {
     AlertCircle,
@@ -20,13 +19,20 @@ import {
     User,
     X,
 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
 import { toast } from 'react-toastify';
 
 // =======================================================
 // MOCK DATA
 // =======================================================
 
-const PARENT_DATA = {
+const PARENT_DATA: {
+    name: string;
+    email: string;
+    phone: string;
+    avatar_initials: string;
+    children: Child[];
+} = {
     name: 'Mrs. Nneka Adeyemi',
     email: 'nneka.adeyemi@gmail.com',
     phone: '+234 803 456 7890',
@@ -231,14 +237,14 @@ const PARENT_DATA = {
     ],
 };
 
-const CONTACTS = [
+const CONTACTS: Contact[] = [
     { office: 'Form Office (Yr 10)', phone: '+234 801 234 5678' },
     { office: 'Finance Office', phone: '+234 802 345 6789' },
     { office: 'Medical Centre', phone: '+234 803 456 7890' },
     { office: 'Head of School', phone: '+234 804 567 8901' },
 ];
 
-const NOTIFICATIONS = [
+const NOTIFICATIONS: Notification[] = [
     {
         id: 1,
         title: 'New result available for Sarah',
@@ -269,10 +275,105 @@ const NOTIFICATIONS = [
     },
 ];
 
+// =======================================================
+// TYPES
+// =======================================================
+// Derived from the mock data rather than hand-written, so the two cannot drift:
+// if a field is added to PARENT_DATA the components see it immediately, and if
+// one is removed they stop compiling.
 
+// Written out rather than derived with `typeof PARENT_DATA`: the mock rows are
+// not uniform (one child carries `results`, one `boarding_house` is null, only
+// some contacts have an email), so a derived type is a union the components then
+// cannot index. These say what the shape IS.
 
-const DebtBanner = ({ child, onDismiss, onPay }) => {
-    if (!child.has_fee_debt) return null;
+export interface ChildNotice {
+    type: string;
+    title: string;
+    description: string;
+    time: string;
+    sender: string;
+    badge_colour: string;
+}
+
+export interface TimetableEntry {
+    time: string;
+    subject: string;
+    teacher: string;
+    room: string;
+    status: string;
+}
+
+export interface ChildResult {
+    subject: string;
+    score: number;
+    grade: string;
+    gp: number;
+}
+
+export interface Child {
+    id: number;
+    first_name: string;
+    last_name: string;
+    initials: string;
+    avatar_colour: string;
+    section: string;
+    year_group: string;
+    class_arm: string;
+    boarding: boolean;
+    boarding_house: string | null;
+    admission_number: string;
+    has_fee_debt: boolean;
+    outstanding_balance: number;
+    result_locked: boolean;
+    attendance_percent: number;
+    current_term: string;
+    current_session: string;
+    notices: ChildNotice[];
+    timetable: TimetableEntry[];
+    results?: ChildResult[];
+}
+
+export interface Contact {
+    office: string;
+    phone: string;
+    email?: string;
+}
+
+export interface Notification {
+    id: number;
+    title: string;
+    time: string;
+    unread: boolean;
+    color: string;
+}
+
+/** Card actions are routed through the page-level handler, keyed by action type. */
+type ActionHandler = (
+    type: string,
+    data?: { to?: string; msg?: string },
+) => void;
+
+/**
+ * Cards whose "see more" button is a plain jump take no argument — the parent
+ * already knows which action it means. Distinguished from ActionHandler so the
+ * button can be wired straight to onClick without swallowing the MouseEvent as
+ * an action type.
+ */
+type JumpHandler = () => void;
+
+const DebtBanner = ({
+    child,
+    onDismiss,
+    onPay,
+}: {
+    child: Child;
+    onDismiss: () => void;
+    onPay: () => void;
+}) => {
+    if (!child.has_fee_debt) {
+        return null;
+    }
 
     return (
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-red-200 bg-red-50 p-4 transition-all hover:shadow-md sm:flex-row">
@@ -307,10 +408,16 @@ const DebtBanner = ({ child, onDismiss, onPay }) => {
     );
 };
 
-const ChildHeroCard = ({ child }) => {
-    const getAttendanceColor = (pct) => {
-        if (pct >= 90) return 'text-green-600 bg-green-50';
-        if (pct >= 75) return 'text-amber-600 bg-amber-50';
+const ChildHeroCard = ({ child }: { child: Child }) => {
+    const getAttendanceColor = (pct: number) => {
+        if (pct >= 90) {
+            return 'text-green-600 bg-green-50';
+        }
+
+        if (pct >= 75) {
+            return 'text-amber-600 bg-amber-50';
+        }
+
         return 'text-red-600 bg-red-50';
     };
 
@@ -431,6 +538,7 @@ export const NoticesCard = ({
             gray: 'bg-gray-50 text-gray-700 border-gray-100',
             blue: 'bg-blue-50 text-blue-700 border-blue-100',
         };
+
         return styles[color] || styles.gray;
     };
 
@@ -521,8 +629,7 @@ export const NoticesCard = ({
                                             <span
                                                 className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${getBadgeStyles(notice.badge_colour)}`}
                                             >
-                                                {notice.category ??
-                                                    notice.type}
+                                                {notice.category ?? notice.type}
                                             </span>
                                         </div>
                                         <div
@@ -557,7 +664,13 @@ export const NoticesCard = ({
     );
 };
 
-const FeeSummaryCard = ({ child, onAction }) => {
+const FeeSummaryCard = ({
+    child,
+    onAction,
+}: {
+    child: Child;
+    onAction: ActionHandler;
+}) => {
     return (
         <div className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-gray-900">
@@ -625,15 +738,27 @@ const FeeSummaryCard = ({ child, onAction }) => {
     );
 };
 
-const AttendanceCard = ({ child, onAction }) => {
+const AttendanceCard = ({
+    child,
+    onAction,
+}: {
+    child: Child;
+    onAction: JumpHandler;
+}) => {
     const pct = child.attendance_percent;
     const radius = 35;
     const circumference = 2 * Math.PI * radius;
     const offset = circumference - (pct / 100) * circumference;
 
-    const getColor = (p) => {
-        if (p >= 90) return '#10b981';
-        if (p >= 75) return '#f59e0b';
+    const getColor = (p: number) => {
+        if (p >= 90) {
+            return '#10b981';
+        }
+
+        if (p >= 75) {
+            return '#f59e0b';
+        }
+
         return '#ef4444';
     };
 
@@ -643,7 +768,7 @@ const AttendanceCard = ({ child, onAction }) => {
         ['P', 'P', 'P', 'L', 'P'],
     ];
 
-    const getStatusColor = (s) => {
+    const getStatusColor = (s: string) => {
         switch (s) {
             case 'P':
                 return 'bg-green-500';
@@ -753,7 +878,13 @@ const AttendanceCard = ({ child, onAction }) => {
     );
 };
 
-const ResultsCard = ({ child, onAction }) => {
+const ResultsCard = ({
+    child,
+    onAction,
+}: {
+    child: Child;
+    onAction: ActionHandler;
+}) => {
     const results = child.results || [];
 
     if (child.result_locked) {
@@ -925,7 +1056,13 @@ const ResultsCard = ({ child, onAction }) => {
     );
 };
 
-const TimetableCard = ({ timetable, onAction }) => {
+const TimetableCard = ({
+    timetable,
+    onAction,
+}: {
+    timetable: TimetableEntry[];
+    onAction: JumpHandler;
+}) => {
     return (
         <div className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="mb-6 flex items-center justify-between">
@@ -997,18 +1134,9 @@ const TimetableCard = ({ timetable, onAction }) => {
     );
 };
 
-export const QuickContactCard = ({ contacts, onAction }) => {
-    const [msg, setMsg] = useState('');
-    const [to, setTo] = useState('Finance Office');
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (msg.trim()) {
-            onAction('send_message', { to, msg });
-            setMsg('');
-        }
-    };
-
+// No onAction: the card's only action was the composer that was removed above.
+// The contact rows are plain tel:/mailto: links.
+export const QuickContactCard = ({ contacts }: { contacts: Contact[] }) => {
     return (
         <div className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-gray-900">
@@ -1052,58 +1180,46 @@ export const QuickContactCard = ({ contacts, onAction }) => {
                 ))}
             </div>
 
-            {/* <div className="flex-1 rounded-3xl bg-purple-50 p-5">
-                <h3 className="mb-4 text-xs font-bold tracking-widest text-purple-900 uppercase">
-                    Message the school
-                </h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <select
-                        value={to}
-                        onChange={(e) => setTo(e.target.value)}
-                        className="w-full rounded-xl border border-purple-100 bg-white px-4 py-2 text-sm text-gray-700 transition-all focus:border-transparent focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                    >
-                        {contacts.map((c) => (
-                            <option key={c.office}>{c.office}</option>
-                        ))}
-                    </select>
-                    <textarea
-                        value={msg}
-                        onChange={(e) => setMsg(e.target.value)}
-                        placeholder="Write a message to the school..."
-                        rows={3}
-                        className="w-full resize-none rounded-xl border border-purple-100 bg-white px-4 py-3 text-sm text-gray-700 transition-all focus:border-transparent focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                    />
-                    <button
-                        disabled
-                        type="submit"
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#185FA5] py-3 font-bold text-white shadow-lg shadow-blue-100 transition-all hover:bg-[#0f4a82] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        Send Message <Mail className="h-4 w-4" />
-                    </button>
-                </form>
-            </div> */}
+            {/* The "Message the school" composer lived here, commented out with a
+                disabled submit button. Removed with its dead state and handler
+                (they were its only readers); recover from git history when the
+                feature is actually wired to an endpoint. */}
         </div>
     );
 };
 
-const NotificationDropdown = ({ isOpen, onClose, notifications }) => {
-    const dropdownRef = useRef(null);
+const NotificationDropdown = ({
+    isOpen,
+    onClose,
+    notifications,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    notifications: Notification[];
+}) => {
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const handleClickOutside = (e) => {
+        const handleClickOutside = (e: MouseEvent) => {
             if (
                 dropdownRef.current &&
-                !dropdownRef.current.contains(e.target)
+                !dropdownRef.current.contains(e.target as Node)
             ) {
                 onClose();
             }
         };
-        if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
         return () =>
             document.removeEventListener('mousedown', handleClickOutside);
     }, [isOpen, onClose]);
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
     return (
         <div
@@ -1162,9 +1278,16 @@ export default function ParentDashboard() {
         (c) => c.id === activeChildId,
     );
 
+    // find() is partial: every card below dereferences the active child, so a
+    // missing id must stop here rather than blow up in six places.
+    if (!activeChild) {
+        return null;
+    }
 
-
-    const handleAction = (type, data) => {
+    const handleAction = (
+        type: string,
+        data?: { to?: string; msg?: string },
+    ) => {
         switch (type) {
             case 'payment':
             case 'unlock':
@@ -1177,7 +1300,7 @@ export default function ParentDashboard() {
                 toast.info('Preparing PDF download...');
                 break;
             case 'send_message':
-                toast.info(`Message sent to ${data.to}`);
+                toast.info(`Message sent to ${data?.to}`);
                 break;
             case 'analysis':
             case 'attendance':
@@ -1258,9 +1381,7 @@ export default function ParentDashboard() {
 
                 {/* Main Grid */}
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    <NoticesCard
-                        notices={activeChild.notices}
-                    />
+                    <NoticesCard notices={activeChild.notices} />
                     <FeeSummaryCard
                         child={activeChild}
                         onAction={(type) => handleAction(type)}
@@ -1279,10 +1400,7 @@ export default function ParentDashboard() {
                         timetable={activeChild.timetable}
                         onAction={() => handleAction('timetable')}
                     />
-                    <QuickContactCard
-                        contacts={CONTACTS}
-                        onAction={(type, data) => handleAction(type, data)}
-                    />
+                    <QuickContactCard contacts={CONTACTS} />
                 </div>
 
                 {/* Footer */}

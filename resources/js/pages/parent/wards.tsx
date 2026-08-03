@@ -447,10 +447,7 @@ export default function Wards() {
             )}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <NoticesCard notices={notices} loading={noticesLoading} />
-                <QuickContactCard
-                    contacts={CONTACTS}
-                    onAction={() => toast.info('Feature coming soon!')}
-                />
+                <QuickContactCard contacts={CONTACTS} />
             </div>
         </div>
     );

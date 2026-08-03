@@ -144,6 +144,15 @@ it exists to catch and watching the exit code. Reading a script and concluding "
 looks like it exits 1" is not the audit; two of the three defects looked fine and
 `exit 0`'d in practice.
 
+**A regression arm written AFTER its fix defaults to passing under the revert, and only
+the watched red catches it.** You write the fixture from the fixed code's point of view,
+so it exercises the property you already believe; the old code frequently satisfies it
+too, for a different reason. Bit once, 2026-08-03: a `@converges` arm meant to prove
+"prose naming an excluded role must not exempt it" was written with the role described
+rather than named, so the predicate it was pinning never saw the role at all — green
+before the fix and after it. Plant the revert and watch the arm go red, every time, even
+when the arm is new and the fix is obviously correct.
+
 | gate                                | clean | new violation     | stale baseline entry         |
 | ----------------------------------- | ----- | ----------------- | ---------------------------- |
 | lint-changed (Pint/Prettier/ESLint) | 0     | **1**             | n/a (no baseline)            |

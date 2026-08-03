@@ -92,6 +92,10 @@ return new class extends Migration
             ->where('name', 'like', 'finance.%')
             ->exists();
 
+        // AND IT IS LOAD-BEARING FOR THE WHOLE SUITE, not for one arm: `RefreshDatabase` migrates an
+        // empty database on every run, so this guard is the only reason `migrate` succeeds there.
+        // Disabling it errors all six arms of FinanceAccessGrantConvergenceTest, not just the
+        // fresh-install one. Touch it with that in mind.
         if (! $financeSubstrate) {
             echo "  converge-finance-access-grants: finance RBAC substrate unseeded (no finance.* permissions) — nothing to converge.\n";
             app(PermissionRegistrar::class)->forgetCachedPermissions();

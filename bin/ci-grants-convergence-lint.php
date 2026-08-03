@@ -308,9 +308,15 @@ function constMembers(string $ref, string $const): array
  * The optional `*` / `//` / `#` lead-in lets the marker live in a docblock, a line comment or a hash
  * comment. Nothing else may precede it on the line, and nothing may follow it.
  *
- * KNOWN RESIDUAL: the anchor is LF-shaped. A CRLF-authored migration leaves `\r` before the line
- * end, which `[ \t]*$` does not match, so the marker declares nothing and the run goes red. That is
- * the safe direction, and every file in this repository is LF.
+ * WHAT THE PATTERN DELIBERATELY REJECTS, and how the author finds out. Four good-faith shapes yield
+ * ZERO matches — a CRLF line ending (`\r` is not `[ \t]`, so the anchor never lands), a marker
+ * written on the same line as its docblock opener AND closer (the closer is not whitespace), a line
+ * wrapped between the role and the permission, and any tail after the permission. (The middle one
+ * cannot be shown here: its closer would end this docblock. The failure notice spells it out, and
+ * MARKER 8 in GrantsConvergenceLintTest carries it verbatim.) Every one is safe: it declares nothing and
+ * the run goes red. But a red with no explanation is how a gate loses its author, so the CALLER
+ * counts `@converges` mentions against parses and prints a notice naming the file. That notice, not
+ * a looser pattern, is the answer to "my marker did not work" — see $unparsedMarkers.
  *
  * Markers are returned UNVALIDATED. The caller checks the role against `RbacSeeder::ROLES` at head
  * and the permission against the enum at head, and ECHOES the unrecognised ones rather than gating
@@ -531,7 +537,9 @@ foreach (explode("\n", git('diff', '--name-status', '--diff-filter=A', $base.'..
 $declared = [];         // "role\0permission" => 'database/migrations/<file>'
 $unknownMarkers = [];   // markers that matched no role / no permission at head
 
-foreach (declaredConvergences($addedMigrations) as $marker) {
+$allMarkers = declaredConvergences($addedMigrations);
+
+foreach ($allMarkers as $marker) {
     $roleKnown = in_array($marker['role'], $headRoles, true);
     $permissionKnown = isset($headValues[$marker['permission']]);
 
@@ -542,6 +550,31 @@ foreach (declaredConvergences($addedMigrations) as $marker) {
     }
 
     $declared[$marker['role']."\0".$marker['permission']] ??= $marker['path'];
+}
+
+// A marker the author WROTE but the parser could not READ produces no ⚠ below — it never became a
+// marker, so it is not in $unknownMarkers, which only holds markers that PARSED and then named a
+// role or permission absent at head. Measured against the pattern: CRLF line endings, a one-line
+// `/** @converges … */`, a line wrapped between the role and the permission, and a tail after the
+// permission all yield ZERO matches, and every one of them is an author who believes they declared
+// the pair and gets no signal at all.
+//
+// COUNTING MENTIONS AGAINST PARSES covers that class instead of chasing each shape into the regex.
+// Chasing shapes is how the prose predicates this exemption just replaced grew in the first place —
+// each accommodation looked local and the sum could not tell an assertion from a mention.
+//
+// KNOWN FALSE POSITIVE, accepted: prose containing the literal `@converges` (a migration explaining
+// the convention) inflates the mention count and fires the notice. The cost is one noise line on an
+// already-red run. Deliberately NOT suppressed — a notice that is occasionally chatty is cheaper
+// than a second parser, and a second parser is the road this change exists to close.
+$unparsedMarkers = [];
+foreach ($addedMigrations as $path => $content) {
+    $mentions = preg_match_all('/@converges/', $content);
+    $parsed = count(array_filter($allMarkers, fn (array $m): bool => $m['path'] === $path));
+
+    if ($mentions > $parsed) {
+        $unparsedMarkers[$path] = $mentions - $parsed;
+    }
 }
 
 /**
@@ -714,6 +747,21 @@ if ($unknownMarkers !== []) {
     }
 }
 
+// The syntax half of the same signal — see the derivation at $unparsedMarkers. Failing path only,
+// staying symmetric with $unknownMarkers above (the green path already prints its exemptions), and
+// NOT a gate, for the same reason: a marker the parser cannot read already fails the run by
+// exempting nothing.
+if ($unparsedMarkers !== []) {
+    fwrite(STDERR, "\n  ".array_sum($unparsedMarkers)
+        .' line(s) mention @converges but did not parse as a declaration (they exempt nothing):'."\n");
+    foreach ($unparsedMarkers as $path => $count) {
+        fwrite(STDERR, '  '."\u{26a0}".' '.$path.' — '.$count.' line'.($count === 1 ? '' : 's')
+            .'. Check for CRLF endings, a one-line'."\n"
+            .'    /** @converges … */ (the closer needs its own line), a wrapped line, or text after'."\n"
+            .'    the permission.'."\n");
+    }
+}
+
 fwrite(STDERR, <<<'TXT'
 
   WHY THIS FAILS. The permission already exists, so it is not in $newPermissions
@@ -731,9 +779,15 @@ fwrite(STDERR, <<<'TXT'
 
       The marker may sit in a docblock (` * @converges …`), a `//` line or a `#` line.
       Naming the permission and the role in PROSE is NOT enough and is no longer read: a
-      migration that documents which roles it EXCLUDES would otherwise exempt them. If the
-      role above reads `?`, the addition is in a shared fragment — declare a line for every
-      pre-existing role it spreads to.
+      migration that documents which roles it EXCLUDES would otherwise exempt them.
+
+      If the role above reads `?`, a marker CANNOT clear this: exemption 3 is a lookup on
+      (role, permission) and there is no role to look up. The addition sits in a shared
+      fragment above `return [`, so it lands on every pre-existing role that splices it and
+      this lint cannot tell which. ATTRIBUTE IT — move the addition under a `'<role>' => [`
+      key, or regroup the fragments beneath one (see $inferRole in this file, which carries
+      the shape). Re-run; the findings then name real roles, and you declare a marker for
+      each.
     · The permission is genuinely new — add its `case` to app/Enums/Permission.php in the
       same diff (exemption 1).
     · The role is genuinely new — add it to RbacSeeder::ROLES in the same diff (exemption 2).

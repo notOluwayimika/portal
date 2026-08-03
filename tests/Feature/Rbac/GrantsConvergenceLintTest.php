@@ -792,7 +792,11 @@ it('MARKER 3 — TRAILING PROSE DOES NOT SMUGGLE: a tail on the marker line decl
         ->and($failures)->toContain('role: auditor')
         ->and($failures)->toContain('role: bursar')
         ->and($exemptions)->toBe('')
-        ->and($r['output'])->not->toContain('2099_01_01_000000_converge.php');
+        ->and($r['output'])->not->toContain('declares @converges')
+        // The line is not silently dropped either: it mentions @converges and parsed as nothing, so
+        // the unparsed-marker notice names it. See MARKER 8 for the mechanism.
+        ->and($r['output'])->toContain('did not parse as a declaration')
+        ->and($r['output'])->toContain('2099_01_01_000000_converge.php');
 });
 
 it('MARKER 4 — MULTI-PAIR: one migration declaring two pairs exempts both in a single run', function () {
@@ -863,6 +867,112 @@ it('MARKER 6 — an unrecognised marker is ECHOED on the failing path, and exemp
 
     expect($r['exit'])->toBe(1)
         ->and($r['output'])->toContain('declares @converges auditor activity_log.viewww — no such permission');
+});
+
+it('MARKER 7 — a `?` role is NOT exemptible by any marker, and the failure says so', function () {
+    // THE INVARIANT: exemption 3 is a lookup on (role, permission), so a finding whose role could not
+    // be inferred has nothing to look up and no marker can clear it. The failure text must therefore
+    // send the author to ATTRIBUTION, not to more markers.
+    //
+    // The assertion on the literal `ATTRIBUTE IT` is the only thing stopping the wrong instruction
+    // from creeping back. An earlier revision of the heredoc told a `?`-role author to "declare a
+    // line for every pre-existing role it spreads to" — faithful-sounding, and unfollowable: they
+    // ship the markers, re-run, and get a byte-identical red with no feedback at all. Do not soften
+    // this assertion into `toContain('shared fragment')`; that phrase survives the bad wording too.
+    $enum = <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+}
+PHP;
+
+    // The shape `$inferRole` reports `?` for: a fragment defined ABOVE `return [`, spliced into two
+    // pre-existing roles. Scanning backwards from the added line reaches neither a `'<role>' => [`
+    // key nor `return [`, so the role is null.
+    $seeder = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityAdmin = [
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => $activityAdmin,
+            'bursar' => $activityAdmin,
+        ];
+    }
+}
+PHP;
+
+    $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]);
+
+    // The migration does everything the author could be asked to do: two syntactically valid markers,
+    // one per pre-existing role that splices the fragment. It still exempts nothing.
+    $migration = <<<'PHP'
+<?php
+
+/**
+ * @converges auditor activity_log.view
+ * @converges bursar activity_log.view
+ */
+PHP;
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => str_replace(
+            "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n",
+            "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
+            $seeder
+        ),
+        'database/migrations/2099_01_01_000000_converge_fragment.php' => $migration,
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('role: ?')
+        // The markers are valid, so they are neither exempt nor flagged as unrecognised — the
+        // migration is not cited anywhere in the run.
+        ->and($r['output'])->not->toContain('2099_01_01_000000_converge_fragment.php')
+        ->and($r['output'])->not->toContain('were EXEMPT')
+        // ...and the remedy the author is given is attribution.
+        ->and($r['output'])->toContain('ATTRIBUTE IT');
+});
+
+it('MARKER 8 — a marker the parser cannot READ is reported, not swallowed', function () {
+    // $unknownMarkers covers typo'd OPERANDS (a role or permission absent at head). It cannot cover
+    // typo'd SYNTAX: a line that fails the pattern never becomes a marker at all. Measured, four
+    // good-faith shapes fail that way — CRLF endings, a one-line `/** … */`, a wrapped line, and a
+    // tail after the permission — so the notice counts `@converges` MENTIONS against PARSES rather
+    // than special-casing each shape. One arm per mechanism: the one-line docblock stands for the
+    // class, and MARKER 3 already pins the tail.
+    [$base, $files] = gclFixtureBase();
+
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclSeederWithGrant($files['database/seeders/RbacSeeder.php']),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n/** @converges auditor activity_log.view */\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        // It declared nothing...
+        ->and($r['output'])->toContain('that rbac:sync will NOT apply')
+        ->and($r['output'])->not->toContain('declares @converges')
+        // ...and the author is told that, rather than left staring at a file they believe declares it.
+        ->and($r['output'])->toContain('did not parse as a declaration')
+        ->and($r['output'])->toContain('2099_01_01_000000_converge.php');
 });
 
 it('FAILS rather than passing when it cannot resolve the base — a gate that cannot look must not be green', function () {

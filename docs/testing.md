@@ -320,3 +320,53 @@ it; it is not a regression the merge introduced.
 The full gate list (including the commented-authz lint, boundary lint,
 architecture tests and Larastan) and every baseline's mechanics live in
 [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+---
+
+## Two silent-failure classes found while fixing the audit-log password exposure (2026-08-03)
+
+Both belong with the `--step=N` and corrupt-`node_modules` stories above: in every
+case the check ran, reported nothing, and was testing something other than what the
+author believed. A hook that never fires and a hook that fires and finds nothing are
+indistinguishable from the outside — only an assertion that the effect HAPPENED tells
+them apart.
+
+### ⚠️ A model-event hook on a PARENT class fires for nothing
+
+Eloquent keys model events by **concrete class name** (`eloquent.creating:
+App\Models\Activity`). Registering a hook on a base class the app has subclassed
+therefore registers it against a name nothing ever dispatches.
+
+The redaction in PR #195 was first registered on `Spatie\Activitylog\Models\Activity`.
+The bound model is `App\Models\Activity` (`config/activitylog.php` →
+`'activity_model' => Activity::class`, which imports the app class). The hook fired
+**zero times**, silently: no error, no warning, the app behaved exactly as before, and
+a test that only asserted "the app still works" would have passed.
+
+**Rule.** Register lifecycle hooks against the class the container actually resolves —
+for a swappable vendor model, read the config rather than the vendor namespace. And
+write the test so it asserts the hook's EFFECT on the stored row, not merely that the
+operation succeeded.
+
+**How it was caught:** the test read the `properties` COLUMN directly with
+`DB::table(...)->value(...)` instead of going through Eloquent. Reading through the
+model would have passed either way — the read-time masker in
+`ActivitySensitiveService` produces the same visible result whether or not the value
+was ever redacted at write time. The test has to distrust the layer it is verifying.
+
+### ⚠️ On an append-only table, `saving` is fatal — use `creating`
+
+`activity_log` is insert-only, enforced by BEFORE UPDATE / BEFORE DELETE triggers
+(Constitution §15C). Spatie's logger saves the activity row a SECOND time after the
+insert. A `saving` hook that re-assigns an attribute marks that already-persisted row
+dirty, Eloquent issues an `UPDATE`, and the trigger rejects it — taking out **all 39
+activity-log tests at once**, with an error naming the trigger rather than the hook.
+
+**Rule.** On any append-only / trigger-protected table, a lifecycle hook that
+re-persists is a hard failure. Use `creating` only — never `saving`, `saved` or
+`updating` — and treat "a hook that writes on every save" as a defect on those tables
+even when it appears to work, because it works only until the row is saved twice.
+
+This generalises past `activity_log`: the same shape applies to the finance guard
+triggers (`finance_discount_policies_update_guard` and siblings), where a hook that
+re-persists an immutable column would fail the same way and blame the trigger.

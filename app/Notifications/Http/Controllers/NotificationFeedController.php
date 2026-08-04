@@ -33,7 +33,10 @@ class NotificationFeedController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = $this->scoped($request)->with('notification');
+        // `notification.subject` too: the resource emits the subject's uuid for the
+        // deep link, and a lazy morphTo would be one query PER ROW — the same N+1 the
+        // hydrator exists to avoid for names.
+        $query = $this->scoped($request)->with(['notification', 'notification.subject']);
 
         if ($request->query('filter') === 'unread') {
             $query->whereNull('read_at');

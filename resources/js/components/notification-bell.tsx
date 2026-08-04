@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { Bell, CheckCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -10,7 +10,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import type { NotificationRow } from '@/hooks/use-notifications';
-import { useUnreadCount } from '@/hooks/use-notifications';
+import {
+    notificationDeepLink,
+    useUnreadCount,
+} from '@/hooks/use-notifications';
 
 /**
  * The in-app feed, in the header.
@@ -88,6 +91,24 @@ export function NotificationBell() {
             setCount(data.unread_count ?? 0);
         } catch {
             void refresh();
+        }
+    };
+
+    /**
+     * Open a row: mark it read, then navigate if it has somewhere to go.
+     *
+     * MARKING READ IS UNCONDITIONAL, NAVIGATION IS NOT. A row whose subject has been
+     * withdrawn still gets read — the parent has seen it — but it is not a link to a
+     * 404. Reading and navigating are separate outcomes of one tap.
+     */
+    const openRow = async (row: NotificationRow) => {
+        const href = notificationDeepLink(row);
+
+        await markRead(row);
+
+        if (href !== null) {
+            setOpen(false);
+            router.visit(href);
         }
     };
 
@@ -173,7 +194,7 @@ export function NotificationBell() {
                             <button
                                 key={row.id}
                                 type="button"
-                                onClick={() => void markRead(row)}
+                                onClick={() => void openRow(row)}
                                 className={`flex w-full flex-col items-start gap-0.5 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-50 ${
                                     row.read_at === null
                                         ? 'bg-indigo-50/40'

@@ -277,6 +277,50 @@ class GuardianService
     }
 
     /**
+     * `can_login = true` REQUIRES a deliverable email. The single enforcement point.
+     *
+     * WHY THIS IS AN INVARIANT AND NOT A PREFERENCE. Login is email-only —
+     * FortifyServiceProvider authenticates with `User::where('email', …)` and there is
+     * no phone or username path — so `users.email` is the sole auth key. A guardian
+     * flagged `can_login` without a deliverable address is an account that CANNOT be
+     * logged into and CANNOT be told its password: enableLogin regenerates the
+     * password, notifyGuardian early-returns on the undeliverable address, and the
+     * flip reports success. A parent is recorded as having portal access they do not
+     * have, silently.
+     *
+     * IT WAS ENFORCED AT CREATION ONLY. GuardianController's store rules require an
+     * email when `can_login` is true for a NEW guardian, and PivotUpdateRequest
+     * validates `can_login` as a bare boolean — so the false→true TRANSITION had no
+     * check at all, and has been producing violations in production.
+     *
+     * THE CHECK LIVES AT THE PIVOT WRITE, not in the side-effect handlers, because
+     * `can_login` is a column on `guardian_student` rather than on `users`: "is a
+     * login account" is an aggregate over pivots, so no CHECK constraint on `users`
+     * can express it. Both writers (attachToStudent, updatePivot) call this, and
+     * GuardianLoginInvariantTest pins that no third writer appears elsewhere.
+     *
+     * It also underwrites the password-reset path. `Password::broker()->sendResetLink`
+     * uses the address as an IDENTITY KEY before it is ever a delivery target, so a
+     * login account without a real email is the one row where the broker resolves
+     * nobody. This invariant is what makes that state unreachable.
+     */
+    private function assertLoginRequiresDeliverableEmail(Guardian $guardian, bool $canLogin): void
+    {
+        if (! $canLogin) {
+            return;
+        }
+
+        if ($guardian->user?->hasDeliverableEmail()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'can_login' => 'This guardian has no deliverable email address, so login cannot be enabled. '
+                .'Add a real email address for them first.',
+        ]);
+    }
+
+    /**
      * Attach a guardian to a student via the pivot. Idempotent on (guardian_id, student_id).
      * If can_login is being raised from false to true and the guardian has a real email,
      * re-issue credentials (generate a fresh password and notify).
@@ -288,6 +332,8 @@ class GuardianService
         bool $isPrimary,
         bool $canLogin,
     ): void {
+        $this->assertLoginRequiresDeliverableEmail($guardian, $canLogin);
+
         $existingPivot = DB::table('guardian_student')
             ->where('guardian_id', $guardian->id)
             ->where('student_id', $student->id)
@@ -432,6 +478,8 @@ class GuardianService
                 'can_login' => array_key_exists('can_login', $changes) ? (bool) $changes['can_login'] : (bool) $existing->can_login,
             ];
 
+            $this->assertLoginRequiresDeliverableEmail($guardian, $merged['can_login']);
+
             $student->guardians()->updateExistingPivot($guardian->id, $merged);
 
             if ($merged['is_primary']) {
@@ -544,33 +592,23 @@ class GuardianService
     {
         $user = $guardian->user;
 
-        // Scenario 1: shouldn't happen with current schema (user_id is NOT NULL),
-        // but guard anyway in case of future changes.
+        // SCENARIO 1 DELETED (was: mint a synthetic email and create the account).
+        //
+        // It was guarded by `if (! $user)` and labelled "shouldn't happen with current
+        // schema" — `guardians.user_id` is NOT NULL and production holds none. But it
+        // MINTED A SYNTHETIC EMAIL FOR A LOGIN-ENABLED ACCOUNT, which is a direct,
+        // executable contradiction of the invariant this method now upholds, parked in
+        // a branch that reads as an intended fallback.
+        //
+        // An exception cannot live inside the method whose job is to have none. A dead
+        // branch that would be wrong if it ran is worse than an absent one, because the
+        // next reader takes it as the designed behaviour for that case. If a null
+        // user_id ever becomes reachable, the correct response is to fail loudly here,
+        // not to manufacture an account nobody can log into.
         if (! $user) {
-            // The two MINT sites are all that remain of the sentinel. Both now name the
-            // domain from User so there is one definition of the string, not three.
-            $email = $guardian->phone
-                ? $guardian->phone.User::SYNTHETIC_EMAIL_DOMAIN
-                : sprintf('guardian+%s%s', Str::random(12), User::SYNTHETIC_EMAIL_DOMAIN);
-            $plainPassword = $this->passwordGenerator->generate();
-            $newUser = User::create([
-                'first_name' => $guardian->first_name,
-                'last_name' => $guardian->last_name,
-                'email' => $email,
-                'school_id' => $guardian->school_id,
-                'password' => $plainPassword,
+            throw ValidationException::withMessages([
+                'guardian_id' => 'This guardian has no user account, so login cannot be enabled.',
             ]);
-            $newUser->assignRole('guardian');
-            $guardian->update(['user_id' => $newUser->id]);
-            $this->notifyGuardian($newUser, $plainPassword, $studentNames);
-
-            activity('guardian')
-                ->performedOn($guardian)
-                ->causedBy(auth()->user())
-                ->event('login_enabled')
-                ->log('Login enabled by admin (new account created)');
-
-            return;
         }
 
         // Scenario 2: user exists but disabled — re-enable + regenerate password + notify.

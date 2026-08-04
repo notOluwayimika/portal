@@ -154,6 +154,40 @@ it('keeps SMS and WhatsApp on one number as two contact points', function () {
     expect(ContactPoint::query()->where('normalized_address', '+2348035555555')->count())->toBe(2);
 });
 
+/**
+ * THE BACKFILL MUST NOT DEPEND ON A PREDICATE WHOSE MEANING IS ABOUT TO INVERT.
+ *
+ * `User::hasDeliverableEmail()` answers "does users.email hold a real address"
+ * today, and after the cutover it will answer "does this person have an email
+ * CONTACT POINT". A backfill that asks it is circular the moment the flip lands:
+ * re-run against flipped code and every guardian without a contact point is judged
+ * to have no email, so the run that exists to create them mints zero.
+ *
+ * IT FAILS SILENTLY, which is why this is worth pinning rather than remembering.
+ * "No email to migrate" and "no email points created" are the same observation —
+ * the command reports success, the stats look plausible, and the email channel is
+ * simply empty.
+ *
+ * A SOURCE ASSERTION, deliberately. The property here is a COUPLING, not a
+ * behaviour: today the two definitions agree, so no behavioural test can separate
+ * them, and by the time they disagree the damage is done. Asserting the absence of
+ * the call is the direct expression of the rule, not a proxy for it.
+ */
+it('reads the email column directly, never the predicate that is about to change meaning', function () {
+    $source = (string) file_get_contents(
+        dirname(__DIR__, 3).'/app/Console/Commands/BackfillContactPoints.php'
+    );
+
+    $callSites = collect(explode("\n", $source))
+        ->reject(fn (string $line) => preg_match('/^\s*(\/\/|\*|\/\*)/', $line) === 1)
+        ->filter(fn (string $line) => str_contains($line, 'hasDeliverableEmail'));
+
+    expect($callSites)->toBeEmpty(
+        'BackfillContactPoints calls hasDeliverableEmail(); it must read users.email '
+        .'directly, because the predicate\'s meaning inverts at the cutover.'
+    );
+});
+
 /*
 |--------------------------------------------------------------------------
 | The resumable design — the partial run is what this is built against

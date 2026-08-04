@@ -120,17 +120,7 @@ class BackfillContactPoints extends Command
 
                 $before = $this->stats['created'] + $this->stats['existing'];
 
-                // EMAIL — but never the synthetic sentinel, which is structurally a
-                // valid address and would sail through the normalizer.
-                if ($user->hasDeliverableEmail()) {
-                    $this->store($user, ChannelKey::EMAIL, (string) $user->email, 'backfill:users.email', $dryRun);
-                } elseif ((string) $user->email !== '') {
-                    // The `(string)` cast, not `!== null`: Larastan types `email` as
-                    // non-nullable from the schema and rejects the null comparison as
-                    // always-true. Same form as User::hasDeliverableEmail(), and it
-                    // stays correct when the mint retirement makes the column nullable.
-                    $this->stats['skipped_synthetic_email']++;
-                }
+                $this->storeEmailFromColumn($user, $dryRun);
 
                 // PHONE — from the COLUMN. Both channels, because SMS and WhatsApp
                 // are different transports to the same number and are suppressed
@@ -161,9 +151,7 @@ class BackfillContactPoints extends Command
                     return;
                 }
 
-                if ($user->hasDeliverableEmail()) {
-                    $this->store($user, ChannelKey::EMAIL, (string) $user->email, 'backfill:users.email', $dryRun);
-                }
+                $this->storeEmailFromColumn($user, $dryRun);
 
                 $this->store($user, ChannelKey::SMS, (string) $teacher->phone, 'backfill:teachers.phone', $dryRun);
             },
@@ -183,6 +171,43 @@ class BackfillContactPoints extends Command
                 $handler($row);
             }
         });
+    }
+
+    /**
+     * The email pass — reading the COLUMN, never `hasDeliverableEmail()`.
+     *
+     * ⚠️ THE PREDICATE'S MEANING IS ABOUT TO INVERT. Today it answers "does
+     * `users.email` hold a real address"; after the cutover it answers "does this
+     * person have an email CONTACT POINT". A backfill that asks it is circular the
+     * moment the flip lands: re-run against flipped code and every guardian without a
+     * contact point is judged to have no email, so the run that was supposed to
+     * create them mints zero — and it fails silently, because "no email to migrate"
+     * and "no email points created" are the same observation.
+     *
+     * A backfill must read the source it is migrating FROM. That is the column, plus
+     * the sentinel exclusion stated here rather than borrowed. The duplication with
+     * the predicate is deliberate and temporary: the predicate is on its way to
+     * meaning something else, and coupling to it would tie this command to a
+     * definition that no longer describes its input.
+     */
+    private function storeEmailFromColumn(User $user, bool $dryRun): void
+    {
+        $raw = (string) $user->email;
+
+        if ($raw === '') {
+            return;
+        }
+
+        // The sentinel is STRUCTURALLY VALID, so the normalizer accepts it — the
+        // exclusion has to be explicit or every phone-only guardian gains a
+        // real-looking email contact point.
+        if (str_ends_with($raw, User::SYNTHETIC_EMAIL_DOMAIN)) {
+            $this->stats['skipped_synthetic_email']++;
+
+            return;
+        }
+
+        $this->store($user, ChannelKey::EMAIL, $raw, 'backfill:users.email', $dryRun);
     }
 
     private function store(User $user, ChannelKey $channel, string $rawAddress, string $source, bool $dryRun): void

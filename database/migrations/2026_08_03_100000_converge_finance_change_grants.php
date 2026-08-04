@@ -83,7 +83,6 @@ return new class extends Migration
         'finance.fee-schedule.change.',
     ];
 
-    /** @var list<string> All five global finance roles (the set #186's pre-flight 1 already allows). */
     /**
      * The grants this migration was written to establish, FROZEN at the commit that added it:
      * `01fdeda876c88f91f8f362a24d475afd0d03de75`, 2026-08-02. Transcribed from

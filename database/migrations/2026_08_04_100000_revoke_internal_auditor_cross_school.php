@@ -41,8 +41,11 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * A MIGRATION IS A DATED ACT, NOT A LIVE QUERY (ADR 0052). The target below is FROZEN at the commit
  * that added this file; it used to be read from the seeder's map at run time, which made an
- * already-shipped migration re-shape itself on every later map edit. The corollary applies too: this
- * migration aborts only on a condition its own writes would create, and reports everything else.
+ * already-shipped migration re-shape itself on every later map edit. The corollary applies too, and
+ * in this file it applies totally: NOTHING here aborts. There is no condition this migration's own
+ * writes could create — it revokes one permission from one role and creates no both-sides state — so
+ * every surprise it meets is reported and stepped past. `grep -c "throw new" ` on this file is 0, and
+ * that is the intended state, not an omission.
  *
  * This is a governance act, not seeding: the revoke goes through Spatie's event so LogRbacChange
  * records it in activity_log (NOT wrapped in withoutLogs, unlike RbacSeeder::sync). Diff-based
@@ -57,19 +60,6 @@ return new class extends Migration
 
     /** The one global role that legitimately holds the permission (ADR 0045 A3). */
     private const SANCTIONED = 'super_admin';
-
-    /**
-     * The grants this migration was written to establish, FROZEN at the commit that added it:
-     * `4d4c9c51db7850f9851f8f65319829f2fb07d2b1`, 2026-08-02. Transcribed from
-     * `git show 4d4c9c5:database/seeders/RbacSeeder.php`: `internal_auditor` holds NOTHING of
-     * {@see self::PERMISSION} — which is the whole act.
-     *
-     * PLAIN STRINGS, not `PermissionEnum::` constants: an enum case can be renamed or deleted, and a
-     * frozen historical act must not depend on today's enum any more than on today's map (ADR 0052).
-     *
-     * @var array<string, list<string>>
-     */
-    private const TARGET = ['internal_auditor' => []];
 
     public function up(): void
     {
@@ -105,11 +95,14 @@ return new class extends Migration
 
         // Whether TODAY's seeder map re-grants this permission is `php artisan rbac:diff-grants`'s
         // question, not this migration's: a 2026-08-02 act cannot be conditioned on a map that moves.
-        // The frozen target is {@see self::TARGET} — IA holds nothing of this permission — and what
-        // the live map says is reported for the operator, never acted on.
+        // This file needs no frozen TARGET const and does not have one: its act is already a pair of
+        // literals — revoke {@see self::PERMISSION} from {@see self::ROLE} — and adding a const that
+        // no code reads would assert a wiring that does not exist (ADR 0052).
 
-        // Pre-flight 1: the governed role must exist as a global row. We are past the fresh guard, so
-        // the substrate is seeded; a missing role row here is a real anomaly, not a fresh DB.
+        // The governed role should exist as a global row: we are past the fresh guard, so the
+        // substrate is seeded and a missing row here is a real anomaly rather than a fresh DB. It is
+        // still only an anomaly — a role that does not exist cannot hold a grant that needs revoking —
+        // so it is reported and skipped, not fatal (ADR 0052).
         $role = Role::query()
             ->where('name', self::ROLE)
             ->where('guard_name', RbacSeeder::GUARD)
@@ -123,9 +116,11 @@ return new class extends Migration
             return;
         }
 
-        // Pre-flight 2: report, do not act on, any OTHER global role holding the permission. Expected
-        // and sanctioned: `super_admin`, alone. A third holder is a grant nobody has accounted for and
-        // is worth more than this migration — abort naming it rather than quietly narrowing to IA.
+        // Report, do not act on, any OTHER global role holding the permission. Expected and
+        // sanctioned: `super_admin`, alone. A third holder is a grant nobody has accounted for and is
+        // worth more than this migration — but this migration governs [internal_auditor] and cannot
+        // touch it, so naming it with its holder count is the whole of what it can honestly do
+        // (ADR 0052). It used to abort here; that turned an unaccounted grant into a permanent brick.
         $otherHolders = DB::table('roles as r')
             ->join('role_has_permissions as rhp', 'rhp.role_id', '=', 'r.id')
             ->whereNull('r.school_id')

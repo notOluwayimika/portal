@@ -35,8 +35,10 @@ use Spatie\Permission\PermissionRegistrar;
  * docblock described that split as a design. It was the defect: the two halves moved in opposite
  * directions, so every later map edit silently rewrote what this already-shipped migration does on
  * replay — and the 2026-08-04 seat move turned it into a hard stop on every `migrate:fresh`. The
- * target below is frozen, and the corollary applies: this migration aborts only on a condition its
- * own writes would create. Everything else it reports and continues past.
+ * target below is frozen, and the corollary applies: a convergence migration aborts only on a
+ * condition its own writes would create. This file has no such condition — it moves grants between
+ * two roles and creates no both-sides state — so NOTHING here aborts. Every surprise it meets is
+ * reported or skipped by name and stepped past.
  *
  * This is a governance act, not seeding: the revoke/give go through Spatie's events so LogRbacChange
  * records them in activity_log (NOT wrapped in withoutLogs, unlike RbacSeeder::sync). Diff-based

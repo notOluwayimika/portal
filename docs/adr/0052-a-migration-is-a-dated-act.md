@@ -53,9 +53,18 @@ And the corollary, which is the part that is easy to get wrong:
 > **A convergence migration aborts only on a condition its own writes would create. Every other
 > surprise it reports and continues past.**
 
-The only condition that qualifies today is `2026_08_03`'s post-write, user-scoped duty-separation
-walk: that migration's own grant is what puts a user on both sides of a maker–checker pair, so it
-throws and rolls the transaction back. It is untouched by this ADR.
+The only surviving abort is `2026_08_03`'s post-write, user-scoped duty-separation walk: that
+migration's own grant is what puts a user on both sides of a maker–checker pair, so it throws and
+rolls the transaction back. It is untouched by this ADR.
+
+**And it is deliberately broader than the corollary, which is worth stating rather than glossing.**
+The walk calls `DutySeparation::violations` over the user's *combined* roles and filters the result to
+`enforcedPairs()` — the finance checkers — but never to the permissions this migration actually wrote
+in this run. So a both-sides state assembled entirely from roles it does not govern would also throw.
+That is a known overstatement of the rule above, ticketed rather than fixed: it cannot bite today, and
+scoping the walk to this run's writes is a behaviour change that needs its own proof. The concrete
+future case is on the `executive_director` branch — a user holding ED plus any `*.change.submit` maker
+role is a violation this 2026-08-02 migration did not create and would roll back for.
 
 Everything else — a permission row that no longer exists, a governed role that no longer exists, a
 non-governed role that now holds the permission — is *the world moving on*. A migration cannot touch a
@@ -81,15 +90,19 @@ having moved on every single time, and its cost when wrong is that nobody can mi
 
 Four files converted, each frozen at the commit that added it:
 
-| file | frozen at | date |
-| --- | --- | --- |
-| `2026_08_02_100000_realign_finance_governance_grants.php` | `f143b40` | 2026-08-01 |
-| `2026_08_03_100000_converge_finance_change_grants.php` | `01fdeda` | 2026-08-02 |
-| `2026_08_04_100000_revoke_internal_auditor_cross_school.php` | `4d4c9c5` | 2026-08-02 |
-| `2026_08_05_100000_converge_finance_access_grants.php` | `af9db7a` | 2026-08-03 |
+| file | what changed | frozen at | date |
+| --- | --- | --- | --- |
+| `2026_08_02_100000_realign_finance_governance_grants.php` | target frozen; three aborts → report/skip | `f143b40` | 2026-08-01 |
+| `2026_08_03_100000_converge_finance_change_grants.php` | target frozen; three aborts → report/skip (the duty-separation walk keeps its throw) | `01fdeda` | 2026-08-02 |
+| `2026_08_04_100000_revoke_internal_auditor_cross_school.php` | **already frozen** — its act is `PERMISSION` + `ROLE`, literals before this branch. Its live-map assertion deleted; three aborts → report/skip | — | 2026-08-02 |
+| `2026_08_05_100000_converge_finance_access_grants.php` | target frozen; three aborts → report/skip | `af9db7a` | 2026-08-03 |
 
-All four commits agree on the relevant map slices, which is what makes this edit behaviour-preserving
-on every environment that has already applied them.
+`2026_08_04` gets no `TARGET` const, deliberately: it revokes one named permission from one named
+role, both already literals, so a const no code reads would assert a wiring that does not exist. An
+ADR that overstates its own coverage is the same failure as a green test that scanned zero files.
+
+The three adding commits agree with their frozen literals on the relevant map slices, which is what
+makes this edit behaviour-preserving on every environment that has already applied them.
 
 `2026_08_06_100000_move_head_of_school_finance_to_executive_director.php` carries the identical defect
 and is converted on its own branch, after this merges. The gate below forces it.
@@ -104,11 +117,51 @@ gate is diff-based and reads only the files a branch ADDS, by a rule that is cor
 so a migration already on the base is structurally invisible to it, and files already on the base are
 exactly the population this invariant governs.
 
-**Remainder, ticketed not worked.** `grep -rhoE "RbacSeeder::[A-Za-z_]+|PermissionEnum::[A-Za-z_]+"
-database/migrations/` also returns `sync`, `ROLES`, `SUPER_ADMIN_PLATFORM`, `ISOLATION_CROSSING` and
-`FINANCE_ACCESS`. `RbacSeeder::sync` in a migration is the extreme form of the same defect — a
-migration that re-runs the seeder re-shapes itself completely. The rest are milder instances of it.
+**Remainder, ticketed not worked.** Re-derived on this branch, not carried:
 
-The line is drawn at the grants map for one reason: it is the only one whose value is a **business
-decision that moves every time Brookstone changes their mind**, and the only one that has actually
-bitten. Widening the gate to the others is a separate decision with a separate blast radius.
+```
+$ grep -rhoE "RbacSeeder::[A-Za-z_]+|PermissionEnum::[A-Za-z_]+" database/migrations/ | sort | uniq -c | sort -rn
+  23 RbacSeeder::GUARD
+   5 RbacSeeder::sync
+   2 PermissionEnum::ISOLATION_CROSSING
+   1 RbacSeeder::syncLogged
+   1 RbacSeeder::SUPER_ADMIN_PLATFORM
+```
+
+**All five `RbacSeeder::sync` occurrences are PROSE IN DOCBLOCKS**, not calls — `2026_08_02:17`,
+`:42`, `2026_08_03:16`, `2026_08_04:48`, `2026_08_05:16`, each explaining why non-destructive sync
+made the migration necessary. So does the single `syncLogged` (`2026_08_04:30`). `RbacSeeder::GUARD`
+is a guard-name constant, not a decision that moves. There is no `::ROLES` and no
+`PermissionEnum::FINANCE_ACCESS` in `database/migrations/` on this branch at all.
+
+An earlier draft of this ADR said *"`RbacSeeder::sync` in a migration is the extreme form of the same
+defect — a migration that re-runs the seeder re-shapes itself completely."* That sentence described
+**zero lines of executable code**, and it is withdrawn. The claim was asserted from a grep whose hits
+were never read, on a different branch, and carried forward — which is the same failure this ADR is
+written against, committed inside it.
+
+**The class it described is real, and there is one live instance.**
+`database/migrations/2026_05_06_085734_update_terms_and_curricula_tables.php:48`:
+
+```php
+Artisan::call('db:seed', ['--class' => 'TermSeeder', '--force' => true]);
+```
+
+A migration that re-runs a seeder inside `up()`. It is invisible to the gate below, because it
+carries no `RbacSeeder::` token at all — the gate scans for one string and this instance does not
+contain it. The file documents itself honestly and at length (`:27-48`): `TermSeeder` computes every
+term window from `now()->startOfYear()`, so *"the rows this migration writes DEPEND ON THE DAY IT
+RUNS"*, and its `updateOrCreate` re-run *"OVERWRITES the dates of terms that already exist"*. Its own
+paragraph records **NOT REPAIRED, DELIBERATELY** — it has already run everywhere, and rewriting it
+would change only what a future `migrate:fresh` produces. The same comment records the cost: term
+dates are load-bearing for money through the `finance_fee_schedules.term_id` RESTRICT FK.
+
+That decision stands and this branch does not disturb it. It is named here so the class has a real
+address instead of a wrong one, and ticketed: *stop seeding from a migration at all*, which the file
+itself names as the correct fix and as a separate change with its own data question.
+
+The line for THIS gate is drawn at the grants map for one reason: it is the only source whose value is
+a **business decision that moves every time Brookstone changes their mind**, and the only one that has
+actually bitten. Widening the gate — to seeder invocation, to `Artisan::call`, to the enum — is a
+separate decision with a separate blast radius, and the census above is what it should be sized
+against.

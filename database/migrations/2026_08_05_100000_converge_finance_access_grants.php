@@ -116,9 +116,16 @@ return new class extends Migration
         // Fresh-install guard, keyed on the PERMISSION substrate (seeder-owned, absent at
         // migrate-from-zero). No finance permission rows at all ⇒ the seeder has not run here and
         // will write the correct map directly — there is nothing to converge. Deliberately keyed on
-        // the whole `finance.` namespace rather than on `finance.access` alone: `finance.access`
-        // missing while the rest of the namespace exists is NOT a fresh install, it is a broken
-        // substrate, and the pre-flight below must abort on it instead of returning a quiet green.
+        // the whole `finance.` namespace rather than on `finance.access` alone, AND THAT MATTERS MORE
+        // THAN IT LOOKS. `finance.access` missing while the rest of the namespace exists is NOT a
+        // fresh install — it is a broken substrate, and it must reach the target logic below, which
+        // names the absent permission in a `SKIPPED:` line and converges everything else.
+        //
+        // Narrow this to `finance.access` alone — a one-word edit that reads like a tightening — and
+        // that database takes THIS branch instead: a silent green return, no `SKIPPED:` line, nothing
+        // converged and nothing said. The check below used to abort, and does not any more (ADR 0052);
+        // the reason for the wide key survived that change unaltered, because it was never about the
+        // abort. It is about which of these two paths a broken substrate reaches.
         $financeSubstrate = Permission::query()
             ->where('guard_name', RbacSeeder::GUARD)
             ->where('name', 'like', 'finance.%')

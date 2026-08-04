@@ -188,3 +188,184 @@ cannot be skimmed past. All four migrations and the gate test reference it.
 - **`migrate:fresh` on a database seeded with `executive_director` is not re-proved here**, because
   this branch has no such role. That verification belongs to the ED rebase, and it is the one that
   closes failure mode B end to end.
+
+---
+
+# Addendum — fix pass (reviewer findings 1–6)
+
+`bin/quality` 13/13 again. Not pushed, not rebased. All four fixes were comments, one const, one
+docblock and one ADR section; **none needed a code change**, so nothing was stopped for.
+
+## FIX 1 — the census, and the claim under it
+
+**The correction is yours to own and I am recording it as you asked.** The census came from brief §5,
+taken on the ED branch, and the `::sync` sentence was asserted from a grep whose hits were never read.
+I transcribed both into the ADR and my report without re-running either. Filing it as a transcription
+slip would be wrong: the source was a bad assertion, and my failure was accepting it — the same "never
+carry a number" rule I have been enforcing all arc, broken inside the ADR written against it.
+
+Re-derived on this branch, now pasted into `docs/adr/0052:107-116` next to the numbers:
+
+```
+$ grep -rhoE "RbacSeeder::[A-Za-z_]+|PermissionEnum::[A-Za-z_]+" database/migrations/ | sort | uniq -c | sort -rn
+  23 RbacSeeder::GUARD
+   5 RbacSeeder::sync
+   2 PermissionEnum::ISOLATION_CROSSING
+   1 RbacSeeder::syncLogged
+   1 RbacSeeder::SUPER_ADMIN_PLATFORM
+```
+
+No `::ROLES`, no `PermissionEnum::FINANCE_ACCESS` on this branch at all. And every hit is prose:
+
+```
+$ grep -rn "RbacSeeder::sync" database/migrations/
+2026_08_05_100000_converge_finance_access_grants.php:16: * `RbacSeeder::sync()` is non-destructive for GRANTS in both directions: for a role that already
+2026_08_04_100000_revoke_internal_auditor_cross_school.php:30: * Why a migration at all: `rbac:sync` is non-destructive (RbacSeeder::syncLogged) — for a role that
+2026_08_04_100000_revoke_internal_auditor_cross_school.php:48: * records it in activity_log (NOT wrapped in withoutLogs, unlike RbacSeeder::sync). Diff-based
+2026_08_03_100000_converge_finance_change_grants.php:16: * `rbac:sync` is non-destructive in BOTH directions (RbacSeeder::sync, ~L462): for a role that
+2026_08_02_100000_realign_finance_governance_grants.php:17: * in that same run and revokes NOTHING (RbacSeeder::sync, ~L462). So a grant REMOVED from
+2026_08_02_100000_realign_finance_governance_grants.php:42: * records them in activity_log (NOT wrapped in withoutLogs, unlike RbacSeeder::sync). Diff-based
+```
+
+The "extreme form of the same defect" sentence is **withdrawn in the ADR by name**, not quietly
+edited — it described zero lines of executable code, and the withdrawal says why it was there.
+
+**The real instance is now named**: `2026_05_06_085734_update_terms_and_curricula_tables.php:48`,
+`Artisan::call('db:seed', ['--class' => 'TermSeeder', '--force' => true])` inside `up()`. Invisible to
+the new gate because it carries no `RbacSeeder::` token — the gate scans for one string and this
+instance does not contain it. The ADR cites the file's own paragraph, which is more honest than
+anything I would have written for it:
+
+```
+// ⚠ HAZARD — NON-DETERMINISTIC MIGRATION. DO NOT COPY THIS PATTERN.
+// TermSeeder computes every term window from `now()->startOfYear()`, so the rows this
+// migration writes DEPEND ON THE DAY IT RUNS…
+// NOT REPAIRED, DELIBERATELY: it has already run on every environment…
+// WHAT THIS COSTS TODAY: term dates are now load-bearing for money —
+// `finance_fee_schedules.term_id` is a RESTRICT FK…
+```
+
+Not repaired here. Ticketed as the file itself frames it: *stop seeding from a migration at all*, a
+separate change with its own data question. Report ticket 1 below is corrected to these numbers.
+
+## FIX 2 — stale abort comments, swept across all four
+
+Priority first. `2026_08_05`'s fresh-install guard comment was the only record of why the guard is
+keyed on `finance.%`, and its stated reason was the abort. Rewritten so the reason survives the
+mechanism — a reader who narrows it to `finance.access` now learns what they break:
+
+```php
+// the whole `finance.` namespace rather than on `finance.access` alone, AND THAT MATTERS MORE
+// THAN IT LOOKS. `finance.access` missing while the rest of the namespace exists is NOT a
+// fresh install — it is a broken substrate, and it must reach the target logic below, which
+// names the absent permission in a `SKIPPED:` line and converges everything else.
+//
+// Narrow this to `finance.access` alone — a one-word edit that reads like a tightening — and
+// that database takes THIS branch instead: a silent green return, no `SKIPPED:` line, nothing
+// converged and nothing said. The check below used to abort, and does not any more (ADR 0052);
+// the reason for the wide key survived that change unaltered, because it was never about the
+// abort. It is about which of these two paths a broken substrate reaches.
+```
+
+Then the sweep, not just the two you named — five sites in three files:
+
+| site | was | now |
+| --- | --- | --- |
+| `2026_08_04:45` | "aborts only on a condition its own writes would create" | states plainly that **nothing** in the file aborts, and that `grep -c "throw new"` is 0 by intent |
+| `2026_08_04:115-117` | "abort naming it rather than quietly narrowing to IA" | reports with holder counts; says the abort turned an unaccounted grant into a permanent brick |
+| `2026_08_04:100-101` | "Pre-flight 1: the governed role **must** exist" | still an anomaly, now reported and skipped — a role that does not exist cannot hold a grant that needs revoking |
+| `2026_08_02:38` | same "aborts only on a condition…" sentence | same correction: this file creates no both-sides state, so nothing aborts |
+| `2026_08_05:121` | above | above |
+
+`2026_08_03` swept and clean: its only remaining `abort` mentions are `:141`, which correctly
+describes the conversion, and `:277`, the surviving walk's own message. No stale `Pre-flight N` labels
+remain in any of the four.
+
+## FIX 3 — `2026_08_04`'s unread const deleted, ADR table corrected
+
+`private const TARGET = ['internal_auditor' => []];` is gone, along with the `{@see self::TARGET}`
+that pointed at it. The file says instead why it needs none: its act is already a pair of literals,
+`self::PERMISSION` and `self::ROLE`, both there before this branch, and a const no code reads asserts
+a wiring that does not exist.
+
+The ADR's Consequences table now carries a **what changed** column rather than implying four identical
+freezes:
+
+| file | what changed | frozen at |
+| --- | --- | --- |
+| `2026_08_02…` | target frozen; three aborts → report/skip | `f143b40` |
+| `2026_08_03…` | target frozen; three aborts → report/skip (walk keeps its throw) | `01fdeda` |
+| `2026_08_04…` | **already frozen** — `PERMISSION` + `ROLE`, literals before this branch. Live-map assertion deleted; three aborts → report/skip | — |
+| `2026_08_05…` | target frozen; three aborts → report/skip | `af9db7a` |
+
+"All four commits agree" became "the three adding commits agree", since one row no longer has one.
+
+## FIX 4 — orphaned docblock
+
+`2026_08_03:86`, the `@var list<string>` left over from the deleted `$governed` property, sitting
+above a const whose real type is `array<string, list<string>>`. Deleted.
+
+## One deviation
+
+**I also qualified ADR `:56-58`, which you ticketed rather than asked me to fix.** The sentence said
+the surviving walk aborts only on a condition its own writes create; reviewer 4 is right that it does
+not. Leaving a sentence I know to be false inside the ADR I had just corrected *for containing a
+sentence I did not check* was not defensible. The fix is documentation only — the walk's code is
+untouched — and it states the overstatement, says it is ticketed rather than fixed, says why it cannot
+bite today, and names the ED case. If you wanted the ADR left alone until the ticket is worked, revert
+that paragraph; nothing else depends on it.
+
+## Tickets
+
+1. **`Artisan::call('db:seed')` inside a migration** —
+   `2026_05_06_085734_update_terms_and_curricula_tables.php:48`. The one live instance of "a migration
+   that re-runs a seeder". Invisible to the new gate (no `RbacSeeder::` token). Deliberately not
+   repaired, per the file's own reasoning; the fix it names is to stop seeding from migrations at all.
+   Census above is the sizing.
+2. **`RbacSeeder::GUARD` ×23, `::sync` ×5, `::syncLogged` ×1, `::SUPER_ADMIN_PLATFORM` ×1,
+   `PermissionEnum::ISOLATION_CROSSING` ×2** in `database/migrations/`. All prose except `GUARD` and
+   `ISOLATION_CROSSING`, which are constants that do not encode a moving business decision. Widening
+   the gate to any of them is a separate decision with a separate blast radius.
+3. **`finance:check-staffing-readiness` returns FAILURE and no `bin/quality` step runs it.** Carried
+   from the ED branch, correct there and here.
+4. **The under-convergence the trade permits has no detector wired to it.** `rbac:diff-grants` finds
+   it; nothing runs `rbac:diff-grants` automatically.
+5. **`2026_08_03`'s surviving walk is broader than ADR `:56-58`'s rule** (reviewer 4). It filters to
+   `enforcedPairs()` but never to what this migration wrote, so a both-sides state built from roles it
+   does not govern would throw and roll back. Cannot bite today: no user holds `executive_director`,
+   and `assertAssignmentAllowed` refuses the pairing at assignment time. **Record it as an ED-branch
+   hazard**: after the rebase, a user holding ED plus any `*.change.submit` maker role is a violation
+   this 2026-08-02 migration did not create and would roll back for.
+
+   **And note it as a pattern, not a line.** This is the second time this branch has found a
+   2026-08-02 file reaching forward to a 2026-08-04 decision. The first was the frozen-target defect
+   itself; this is the same shape in the one abort the freeze deliberately left standing. Freezing the
+   *target* did not freeze the *guard*, and a guard that reads live state is a live query wearing a
+   different hat.
+
+---
+
+# ED rebase debt
+
+One place to work from. **Re-derive every number here at rebase time; none of them carry.**
+
+1. **Freeze `2026_08_06_100000_move_head_of_school_finance_to_executive_director.php`.** The new gate
+   forces it — it carries `RbacSeeder::grantsMap`, and its docblock advertises the defect as a design.
+   Frozen at ED's own commit, its target is `head_of_school => []`,
+   `accounts_supervisor => ['finance.access', 'finance.fee-schedule.change.submit']`, and
+   `executive_director =>` its nine. Its aborts get the same ADR 0052 treatment, except any that
+   qualify under the corollary — check the ED-role-missing abort against the rule rather than assuming
+   it converts: it guards a condition that would leave HoS stripped with no seat able to approve, and
+   that may be the second legitimate abort on this project.
+2. **The six arms in `FinanceChangeGrantConvergenceTest` and `FinanceAccessGrantConvergenceTest`** —
+   brief §6.2, correct as written and wrong as scheduled. They are red on ED, not here, so the rewrite
+   is rebase work. §6.2's prescriptions still apply: assert the frozen literal for every governed
+   role, and rewrite `FinanceAccessGrantConvergenceTest` ARM 4 to prove both drift shapes at once.
+3. **`RealignFinanceGovernanceGrantsTest` ARM 0** (reviewer 6). Its first block asserts the fresh
+   seed's absolute content equals the frozen literal — a live-map read wearing a test's clothes, and
+   it goes red on ED where `head_of_school` holds no finance change grants. Rewrite it
+   map-independently: capture the slice, plant, assert it CHANGED and now equals the planted shape.
+   That is what bite-proofing needs and it survives every future map edit. This branch added that
+   debt; it is mine, not inherited.
+4. **Reviewer 4's ED hazard**, ticket 5 above: ED + any `*.change.submit` holder trips `2026_08_03`'s
+   walk. Decide at rebase time whether to scope the walk or accept it, with the pattern note in mind.

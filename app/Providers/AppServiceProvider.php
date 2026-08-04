@@ -11,6 +11,7 @@ use App\Notifications\Contracts\CallbackTransport;
 use App\Notifications\Contracts\Notifier as NotifierContract;
 use App\Notifications\Services\HttpCallbackTransport;
 use App\Notifications\Services\Notifier as NotifierService;
+use App\Notifications\Services\PayloadHydrator;
 use App\Notifications\Services\ServiceCallbackSigner;
 use App\Observers\StudentCurriculumObserver;
 use App\Policies\SubjectResultPolicy;
@@ -47,6 +48,23 @@ class AppServiceProvider extends ServiceProvider
         // Contracts interface so module internals stay private (blueprint §9/§10,
         // held by tests/Arch/NotificationsArchTest.php); the binding lives here in
         // the composition root rather than in either module.
+        // ⚠️ THE FEED'S NAMES DEPENDED ON THIS BINDING EXISTING, AND IT DID NOT.
+        //
+        // NotificationFeedController INJECTS a PayloadHydrator and calls hydrate() on
+        // it; NotificationFeedResource resolved `app(PayloadHydrator::class)` when
+        // rendering each row. Unbound, the container built a FRESH instance for each —
+        // so the resource asked an empty map for every name, and every row fell back to
+        // the generic string. Nothing threw. The feed simply never said a child's name.
+        //
+        // `scoped`, NOT `singleton`, because the lifetime of the hydrated map is one
+        // request. Stated precisely rather than dramatically: a singleton is not
+        // currently a cross-user name leak, because hydrate() now resets its maps
+        // unconditionally, so each page's resolution replaces the last. Attempting to
+        // bite-prove a leak is what showed that — `singleton` passed every test. What
+        // `scoped` buys is that the lifetime matches the data by construction rather
+        // than by hydrate()'s internals continuing to reset; the two are one edit apart.
+        $this->app->scoped(PayloadHydrator::class);
+
         $this->app->bind(NotifierContract::class, NotifierService::class);
 
         // The callback transport, bound in the composition root so production gets the

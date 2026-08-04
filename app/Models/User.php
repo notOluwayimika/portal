@@ -113,19 +113,44 @@ class User extends Authenticatable
      */
     public function hasDeliverableEmail(): bool
     {
-        // The `(string)` cast is the SAME one that made GuardiansExport wrong — there
-        // it stood alone, so `str_ends_with('', $sentinel)` was false and a null
-        // address read as deliverable. Here it is paired with the emptiness check,
-        // which is precisely what makes it correct: null and '' collapse to one
-        // falsy case instead of slipping past the sentinel test.
+        // TRIMMED ONCE, then both questions asked of the trimmed value. Untrimmed,
+        // this predicate called pure whitespace DELIVERABLE — `'   ' !== ''` is true
+        // and `str_ends_with('   ', $sentinel)` is false — and called a padded
+        // sentinel deliverable for the same reason.
         //
-        // Written this way rather than `!== null` because Larastan types `email` as
+        // The `(string)` cast is the SAME one that made GuardiansExport wrong; there
+        // it stood alone, so a null address read as deliverable. Paired with the
+        // emptiness check it is correct: null, '' and '   ' collapse to one falsy
+        // case instead of slipping past the sentinel test.
+        //
+        // Written as a cast rather than `!== null` because Larastan types `email` as
         // non-nullable from the schema and rejects the comparison as always-true —
-        // which is itself the proof that this state is unreachable TODAY and becomes
-        // reachable the moment the mint is retired and the column goes nullable.
-        $email = (string) $this->email;
+        // which is itself the proof that the null state is unreachable TODAY and
+        // becomes reachable the moment the mint is retired and the column goes
+        // nullable.
+        $email = trim((string) $this->email);
 
-        return $email !== '' && ! str_ends_with($email, self::SYNTHETIC_EMAIL_DOMAIN);
+        return $email !== '' && ! self::isSyntheticEmail($email);
+    }
+
+    /**
+     * Is this a MINTED PLACEHOLDER rather than a real address?
+     *
+     * ONE DEFINITION, because two inlined copies drift — and this one already had.
+     * The backfill and this predicate each carried their own
+     * `str_ends_with($email, SYNTHETIC_EMAIL_DOMAIN)`, and a fix that added a trim to
+     * the backfill's copy alone left them DISAGREEING about a padded sentinel: the
+     * migration excluded it while the predicate called it deliverable. That is the
+     * same inlined-copy drift the lift removed at five sites, recreated at two by
+     * repairing one of them.
+     *
+     * IT TRIMS, because every caller is reading a stored column that may carry
+     * whitespace from an import or an edit, and the two views of one value must not
+     * disagree about which characters count.
+     */
+    public static function isSyntheticEmail(string $email): bool
+    {
+        return str_ends_with(trim($email), self::SYNTHETIC_EMAIL_DOMAIN);
     }
 
     /**

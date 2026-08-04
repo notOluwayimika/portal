@@ -212,7 +212,11 @@ class BackfillContactPoints extends Command
         // The sentinel is STRUCTURALLY VALID, so the normalizer accepts it — the
         // exclusion has to be explicit or every phone-only guardian gains a
         // real-looking email contact point.
-        if (str_ends_with($raw, User::SYNTHETIC_EMAIL_DOMAIN)) {
+        //
+        // THE SHARED PREDICATE, not a second inlined str_ends_with. This command and
+        // User::hasDeliverableEmail() previously carried one each, and adding a trim
+        // to only this one left them disagreeing about a padded sentinel.
+        if (User::isSyntheticEmail($raw)) {
             $this->stats['skipped_synthetic_email']++;
 
             return;

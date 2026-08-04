@@ -196,13 +196,18 @@ them. Counts only.
 
 ## 6. What I found that the decision does not cover — raise these, do not solve them
 
-**a. Stripping HoS achieves nothing for the person who is also Principal.** `principal`
-(`RbacSeeder.php:281-298`) holds `finance.access`. Brookstone told us *"the principal is also the HoS
-in secondary school — it can just have the two roles."* So in secondary, removing finance from
-`head_of_school` leaves that same human still seeing the finance area through `principal`. If
-*"HoS doesn't have access to finance"* means the person, not the role, then `principal` loses
-`finance.access` too and that is a fifth grant to move. **Do not decide this. Report it with the two
-line numbers and stop on it** — I am putting it to Segun separately.
+**a. The Principal keeps finance view — ANSWERED 4 August, do not change it.** `principal`
+(`RbacSeeder.php:281-298`) holds `finance.access` and **keeps it**. Segun: *"The Principal role should
+be able to view finance."*
+
+This was worth asking because Brookstone told us the principal is also the HoS in secondary — *"it
+can just have the two roles"* — so a secondary Principal will still see the finance area after HoS is
+stripped. That is now the intended behaviour, not a leak. **`head_of_school` is the only role losing
+`finance.access`; `principal` is untouched.**
+
+Say so explicitly in the `head_of_school` comment you write, in one line, naming `principal` — the
+next author who greps for who can still see finance after this migration will otherwise read it as a
+miss and "fix" it. `finance.access` alone is view: no record, no generate, no approve.
 
 **b. "Sees every school" is assignment, not a screen.** Assigning ED to all schools gives him every
 school one at a time, through whatever school-switching the app already does. A single combined
@@ -250,7 +255,8 @@ it, do not reason about it.
 - Do not grant ED any `*.submit`.
 - Do not assign any user to the ED role. This branch moves grants between roles, never roles between
   people.
-- Do not remove `finance.access` from `principal` — §6a is a question, not an instruction.
+- Do not remove `finance.access` from `principal`. Answered 4 August: the Principal keeps finance
+  view. See §6a.
 - Do not build rows 14, 17, 18 or 19.
 - Do not touch discount-policy eligibility / guest lists. Still being sized separately.
 - Do not add a `down()` that restores the old grants.
@@ -268,7 +274,8 @@ it, do not reason about it.
 - `rbac:diff-grants` after migrating, specifically whether `MAP_REMOVAL_GAP` is reported for the nine
   removals
 - the new arm red-before / green-after, proven by reverting the map edit
-- §6a with the two line numbers, unresolved
+- confirmation that `principal` still holds `finance.access` after the migration (§6a), derived from
+  the DB, not from the map
 - whether ED belongs in `TWO_FACTOR_REQUIRED`, derived
 - commit count as the output of `git rev-list --count $(git merge-base staging HEAD)..HEAD`, command
   pasted beside the number

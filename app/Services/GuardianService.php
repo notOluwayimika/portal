@@ -239,7 +239,17 @@ class GuardianService
         $email = $email ? Str::lower($email) : null;
 
         return DB::transaction(function () use ($attributes, $schoolId, $canLogin, $email, $plainPassword) {
-            $userEmail = $email ?: $this->syntheticEmail($schoolId);
+            // THE SYNTHETIC MINT IS RETIRED. `users.email` is nullable for accounts
+            // that cannot log in, so a guardian on record with no address simply has
+            // none — rather than a `{phone}@no-email.local` placeholder that is
+            // structurally a valid address, needs a predicate to recognise, and was
+            // minted solely to satisfy a NOT NULL + UNIQUE column.
+            //
+            // #203's invariant is what keeps this safe: `can_login ⟹ deliverable
+            // email`, enforced at every transition, so a LOGIN account can never
+            // reach here with a null address — which matters because
+            // Password::sendResetLink resolves the user BY that column.
+            $userEmail = $email ?: null;
 
             // One human = one User (§6.2). Reuse the existing account when the same
             // email is already registered (e.g. this guardian exists at another
@@ -767,15 +777,5 @@ class GuardianService
             ], $properties))
             ->event($event)
             ->log("Guardian {$event} for student {$student->full_name}");
-    }
-
-    /**
-     * Build a synthetic email when an admin creates a guardian without can_login (no email provided).
-     * Required because users.email is unique-not-null. The local part is unguessable and the domain
-     * is not deliverable.
-     */
-    private function syntheticEmail(int $schoolId): string
-    {
-        return sprintf('guardian+%s+%d%s', Str::random(12), $schoolId, User::SYNTHETIC_EMAIL_DOMAIN);
     }
 }

@@ -29,7 +29,7 @@ class GuardiansExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMa
                 });
             })
             ->when($this->request->status, fn ($q) => $q->where('guardians.status', $this->request->status))
-            ->with('user')
+            ->with('user.contactPoints')
             ->latest('guardians.created_at');
     }
 
@@ -50,16 +50,25 @@ class GuardiansExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMa
     public function map($guardian): array
     {
         $user = $guardian->user;
+
+        // RESOLVED ONCE. This used to call the predicate TWICE per row — line 56 for
+        // "has login" and line 62 for the email cell — which was free while it was a
+        // string test and is 2N queries the moment it resolves through a contact
+        // point. One resolution, two consumers.
+        $deliverableEmail = $user?->deliverableEmailAddress();
+
         // `disabled_at` stays HERE. This asks "has an active login", which is
-        // deliverability AND enabled — two questions. hasDeliverableEmail() owns only
-        // the first; folding the second into it would change who receives bulk mail.
-        $hasLogin = $user && $user->disabled_at === null && $user->hasDeliverableEmail();
+        // deliverability AND enabled — two questions. The deliverability half owns
+        // only the first; folding the second in would change who receives bulk mail.
+        $hasLogin = $user && $user->disabled_at === null && $deliverableEmail !== null;
 
         return [
             $guardian->full_name,
             $guardian->phone ?? '',
             $guardian->whatsapp_number ?? '',
-            $user?->hasDeliverableEmail() ? $user->email : '',
+            // The address we would ACTUALLY send to — post-cutover that is the
+            // contact point, and `users.email` may be null.
+            $deliverableEmail ?? '',
             $guardian->status ?? '',
             $hasLogin ? 'Yes' : 'No',
             $guardian->students_count ?? 0,

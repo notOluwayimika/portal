@@ -17,6 +17,7 @@ use App\Policies\SubjectResultPolicy;
 use App\Services\ActivityLog\ActivitySensitiveService;
 use App\Services\ActivityLog\ActivitySeverityService;
 use App\Support\ApprovalAbility;
+use App\Support\ContactPointAuthority;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -48,6 +49,11 @@ class AppServiceProvider extends ServiceProvider
         // held by tests/Arch/NotificationsArchTest.php); the binding lives here in
         // the composition root rather than in either module.
         $this->app->bind(NotifierContract::class, NotifierService::class);
+
+        // Per-request memo of "is contact_points authoritative yet". `scoped`, not
+        // `singleton`: the marker cannot change mid-request, and a process-lifetime
+        // memo would leak the first test's answer into every later test.
+        $this->app->scoped(ContactPointAuthority::class);
 
         // The callback transport, bound in the composition root so production gets the
         // signed HTTP path and tests bind a counting double. The signer refuses to

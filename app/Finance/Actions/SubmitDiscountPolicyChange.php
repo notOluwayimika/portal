@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Approval\ApprovalRequirement;
+use App\Finance\Approval\NotifiesApprovalCheckers;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
 use App\Finance\Models\DiscountPolicy;
@@ -23,6 +24,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class SubmitDiscountPolicyChange
 {
+    use NotifiesApprovalCheckers;
+
     public function handle(DiscountPolicyChangeKind $kind, ?DiscountPolicy $target, array $terms, string $reason, User $maker): DiscountPolicyChange
     {
         $schoolId = ActiveSchool::id();
@@ -69,7 +72,7 @@ final class SubmitDiscountPolicyChange
                 'requires_approval' => $terms['requires_approval'] ?? false,
             ];
 
-        return DB::transaction(fn () => DiscountPolicyChange::create([
+        $submitted = DB::transaction(fn () => DiscountPolicyChange::create([
             'school_id' => $schoolId,
             'kind' => $kind,
             'target_policy_id' => $target?->id,
@@ -78,5 +81,15 @@ final class SubmitDiscountPolicyChange
             'submitted_by' => $maker->id,
             ...$proposed,
         ]));
+
+        // AFTER the commit, never inside it.
+        $this->notifyApprovalCheckers(
+            subject: $submitted,
+            checkerAbility: Permission::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
+            submittedBy: (int) $maker->id,
+            summary: 'Discount policy change ('.$kind->value.') awaiting approval',
+        );
+
+        return $submitted;
     }
 }

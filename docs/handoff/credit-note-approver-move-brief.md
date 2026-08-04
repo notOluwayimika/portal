@@ -1,3 +1,25 @@
+# ⛔ HALTED 4 August 2026 — DO NOT IMPLEMENT ANY PART OF THIS BRIEF
+
+**Do not start this branch. If it is started, stop and revert.**
+
+Brookstone introduced an **Executive Director (ED)** on 4 August, and with it: *"The heads of school
+have never approved any of the items listed — they initiate it for my approval."* The listed items
+include invoice cancellations and (via credit note) discounts, concessions, refunds and write-offs.
+
+This brief moves exactly those two checker seats **to `head_of_school`**. The destination is now
+`executive_director`, a role that does not exist yet — it is not in `RbacSeeder::ROLES` (14 roles,
+no ED). Segun then confirmed: *"nothing changed except switching every permission and ability held
+by HoS to ED. HoS doesn't have access to finance."* So HoS is not gaining these two seats; it is
+losing the ones it already has.
+
+Do not salvage this by editing the destination name in place. The replacement covers the same
+ground and more, and the two would drift.
+
+**Replaced by `docs/handoff/executive-director-role-brief.md`.** Its §1 and §4–§7 carry forward this
+brief's `rbac:sync` argument, migration shape, pre-flights and oracle list, re-pointed and widened.
+
+---
+
 # Brief — move credit-note and invoice-void approval from `accounts_supervisor` to `head_of_school`
 
 Business decision, 3 August 2026: **the Head of School approves a credit note and an invoice

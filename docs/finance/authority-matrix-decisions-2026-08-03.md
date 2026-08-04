@@ -1,9 +1,49 @@
+# ⚠️ SUPERSEDED 4 August 2026 — the approver column is void. Read this banner before anything below.
+
+**Nothing in this file that names an approver may be built.** The Executive Director came back on
+4 August, and it takes the approval column with it:
+
+> *"The executive director approves scholarships and discounts, concessions, refunds, write offs and
+> other high impact financial decisions. The finance lead and supervisors cannot process refunds,
+> write-offs, invoice cancelations, opening balance adjustments without approval from the ED. The
+> executive director also has access across schools. The heads of school have never approved any of
+> the items listed — they initiate it for my approval."*
+
+Line by line, what that voids:
+
+- **The opening sentence below is now FALSE.** It says the Executive Director is "GONE… do not build
+  it." It is back and it is the centre of the design.
+- **Decision 2 (row 18, HoS approves) — void.** HoS approves nothing.
+- **Decision 4 (row 11 non-policy, HoS approves) — void.** Same reason.
+- **Decision 5 / §4 (rows 15 and 16 move to HoS) — void, and its brief is HALTED** at
+  `docs/handoff/credit-note-approver-move-brief.md`.
+- **Decision 3 (row 17, `D | D | D`, no approval, switch off) — directly CONTRADICTED.** Opening
+  balance adjustment is named in the ED list as requiring approval. The switch is not off; there is
+  no switch. This is also the one we put in writing to Brookstone as "a switch that is off" — that
+  note was never sent, and must not be.
+- **Decision 1 (rows 14 and 19, AS approves) — UNRESOLVED.** Receipt reversal and posted-transaction
+  correction are not named in the ED list; they may or may not be "other high impact financial
+  decisions". Open question, being asked.
+- **§2's grid: every `A` in the HoS column is void.** The `D`/`P`/`V` letters still describe who
+  *does* and who *prepares*, and those survive.
+- **§5 and §6 survive unchanged** — discount-policy eligibility is still open and still unsized, and
+  the bank-confirmation risk is still declined.
+
+Rows 1–10 are not touched by the ED statement and stand as returned.
+
+**Read `docs/handoff/executive-director-role-brief.md` instead.** It carries the 4 August decision,
+the four answers taken on it, and the change it implies. Everything below this line is kept as the
+dated record of what was decided on 3 August — not as an instruction.
+
+---
+
 # Finance authority matrix — Brookstone's decisions, 3 August 2026
 
 Supersedes the version placed earlier today, which was written from the first answered sheet.
 Brookstone withdrew that sheet ("forget about the previous answered questions I sent earlier").
 **Executive Director, delegation of the Head's authority, and restoring the Principal's finance
 approvals are all GONE. None of them is in scope. Do not build them.**
+*(↑ FALSE as of 4 August. See the banner above.)*
 
 Source: the second returned `financeauthoritymatrixforcorrection.docx`, plus four decisions taken
 3 August in answer to our checks. Letters below are read from the returned grid, not from prose.

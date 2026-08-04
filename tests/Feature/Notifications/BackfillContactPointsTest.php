@@ -80,6 +80,34 @@ it('mints no email contact point for a synthetic address', function () {
         ->and(ContactPoint::query()->where('channel', ChannelKey::SMS->value)->count())->toBe(1);
 });
 
+/**
+ * THE TRIM MISMATCH — one view trims, the other does not.
+ *
+ * AddressNormalizer::email() trims before validating; the sentinel exclusion did
+ * not. So a PADDED sentinel failed str_ends_with, escaped the exclusion, and was
+ * then trimmed back into a valid address by the normalizer — minting an email
+ * contact point for exactly the phone-only guardian the exclusion protects.
+ *
+ * The mint never writes padding, so this only occurs where an import or an edit
+ * added it. But it also hides those rows from the census: `LIKE '%@no-email.local'`
+ * is end-anchored, so a padded sentinel escapes the count as well as the check, and
+ * the two failures conceal each other.
+ *
+ * Post-cutover the consequence compounds: hasDeliverableEmail() reads contact points,
+ * flips TRUE for that guardian, and bulk mail plus the password-reset broker aim at
+ * an address that can never receive — permanently.
+ */
+it('excludes a synthetic address even when it carries whitespace', function () {
+    $school = al_makeSchool();
+
+    bcp_guardian($school->id, email: '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN.' ', phone: '08031234567');
+
+    $this->artisan('contacts:backfill')->assertSuccessful();
+
+    expect(ContactPoint::query()->where('channel', ChannelKey::EMAIL->value)->exists())->toBeFalse()
+        ->and(ContactPoint::query()->where('channel', ChannelKey::SMS->value)->count())->toBe(1);
+});
+
 it('reroutes a phone added after creation, with no phone-bearing localpart', function () {
     $school = al_makeSchool();
 

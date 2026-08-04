@@ -47,6 +47,22 @@ class Notification extends Model
         return $this->hasMany(NotificationRecipient::class);
     }
 
+    /**
+     * @return HasMany<NotificationAction, $this>
+     *
+     * Also what Laravel's implicit SCOPED binding resolves the nested
+     * `{notification:uuid}/actions/{action:uuid}` route through — so a mismatched
+     * pair 404s at the router before the controller runs.
+     *
+     * The controller re-asserts the parentage anyway. That is not redundant: routing
+     * behaviour is configuration (one `withoutScopedBindings()` away from absent),
+     * and this is a trust boundary with no database backstop under it.
+     */
+    public function actions(): HasMany
+    {
+        return $this->hasMany(NotificationAction::class);
+    }
+
     /** @return BelongsTo<User, $this> */
     public function actor(): BelongsTo
     {

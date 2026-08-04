@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    /*
+     * The service that owns the pickup decision. The secret signs outbound callbacks;
+     * ServiceCallbackSigner REFUSES to construct without it rather than falling back
+     * to an empty key, because a signature over a known secret authenticates nothing
+     * while appearing to.
+     */
+    'pickup_authorization' => [
+        'callback_secret' => env('PICKUP_AUTHORIZATION_CALLBACK_SECRET'),
+    ],
+
 ];

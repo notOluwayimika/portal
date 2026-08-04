@@ -7,8 +7,11 @@ use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Models\StudentCurriculum;
 use App\Models\SubjectResultStatus;
 use App\Models\User;
+use App\Notifications\Contracts\CallbackTransport;
 use App\Notifications\Contracts\Notifier as NotifierContract;
+use App\Notifications\Services\HttpCallbackTransport;
 use App\Notifications\Services\Notifier as NotifierService;
+use App\Notifications\Services\ServiceCallbackSigner;
 use App\Observers\StudentCurriculumObserver;
 use App\Policies\SubjectResultPolicy;
 use App\Services\ActivityLog\ActivitySensitiveService;
@@ -45,6 +48,17 @@ class AppServiceProvider extends ServiceProvider
         // held by tests/Arch/NotificationsArchTest.php); the binding lives here in
         // the composition root rather than in either module.
         $this->app->bind(NotifierContract::class, NotifierService::class);
+
+        // The callback transport, bound in the composition root so production gets the
+        // signed HTTP path and tests bind a counting double. The signer refuses to
+        // construct without a secret — misconfiguration must stop the request, not
+        // silently downgrade it to signatures anyone can forge.
+        $this->app->bind(
+            CallbackTransport::class,
+            fn () => new HttpCallbackTransport(
+                new ServiceCallbackSigner(config('services.pickup_authorization.callback_secret')),
+            ),
+        );
 
         // ACL wiring (composition root): Finance owns the port; the Academics side
         // adapts to it. Binding lives here — not in Finance — so Finance never names

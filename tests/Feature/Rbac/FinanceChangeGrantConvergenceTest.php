@@ -77,9 +77,6 @@ function ccStaff(School $school, string $role): User
 }
 
 it('ARM 1 — converges the drift, leaves principal/head_of_school untouched, closes the GAP', function () {
-    $principalBefore = ccNsGrants('principal');
-    $hosBefore = ccNsGrants('head_of_school');
-
     // Staff a maker seat (AO) and a checker seat (HoS) in one school — distinct users.
     $school = School::factory()->create();
     ccStaff($school, 'accounts_officer');
@@ -99,9 +96,28 @@ it('ARM 1 — converges the drift, leaves principal/head_of_school untouched, cl
         ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue()
         ->and(ccGlobalRole('accounts_supervisor')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 
-    // #186's settlement is byte-identical — widening $governed to five disturbed nothing.
-    expect(ccNsGrants('principal'))->toBe($principalBefore)
-        ->and(ccNsGrants('head_of_school'))->toBe($hosBefore);
+    // STRONGER THAN THE ASSERTION THIS REPLACED, and map-independent. It used to say principal and
+    // head_of_school came out "untouched" — a comparison against whatever the live seeder map had put
+    // there, which stopped being true when the 2026-08-04 seat move emptied HoS's finance slice while
+    // this 2026-08-02 migration's behaviour did not change at all.
+    //
+    // Under the freeze the honest claim is the whole target: after up(), EVERY governed role's
+    // namespace slice equals the frozen literal. Written out here as literals rather than read from
+    // the migration's const — two copies is the point; a test that reads the constant it checks
+    // proves only that PHP can read a constant.
+    expect(ccNsGrants('principal'))->toBe([])
+        ->and(ccNsGrants('head_of_school'))->toBe([
+            'finance.discount-policy.change.approve',
+            'finance.discount-policy.change.reject',
+            'finance.fee-schedule.change.approve',
+            'finance.fee-schedule.change.reject',
+        ])
+        ->and(ccNsGrants('accounts_officer'))->toBe([
+            'finance.discount-policy.change.submit',
+            'finance.fee-schedule.change.submit',
+        ])
+        ->and(ccNsGrants('accounts_supervisor'))->toBe(['finance.fee-schedule.change.submit'])
+        ->and(ccNsGrants('finance_lead'))->toBe(['finance.discount-policy.change.submit']);
 
     // GAP is gone.
     expect(ccPairCovered($school->id, 'finance.discount-policy.change.submit', 'finance.discount-policy.change.approve'))->toBeTrue()

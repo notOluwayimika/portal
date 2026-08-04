@@ -35,7 +35,7 @@ use Spatie\Permission\PermissionRegistrar;
  *     seeded environment, so it takes the `: $permissions` branch and receives all nine even though
  *     none of the permissions is new. No migration needed for that half.
  *   · The REMOVALS land nowhere, ever. `rbac:sync` revokes nothing. Deleting five lines from
- *     `grantsMap()['head_of_school']` and four from `['accounts_supervisor']` changes no seeded
+ *     the seeder map's `head_of_school` slice and four from `accounts_supervisor` changes no seeded
  *     database, on any environment, at any point in the future.
  *
  * So the entire reason this file exists is the revoke half. Every prior convergence migration was
@@ -57,7 +57,8 @@ use Spatie\Permission\PermissionRegistrar;
  * that AS lost and regained the grant.
  *
  * AND NOTE WHAT THE LINT DID NOT SAY: it reported nothing at all about the nine REMOVALS. It is
- * structurally blind to them — it walks added lines in `grantsMap()` and has no removal path. A
+ * structurally blind to them — it walks added lines in the seeder's grants map and has no removal
+ * path. A
  * removal-only convergence therefore passes that gate with zero findings. Recorded here because the
  * gate's silence is not agreement.
  *
@@ -74,8 +75,28 @@ use Spatie\Permission\PermissionRegistrar;
  * The abort runs with the other pre-flights, BEFORE any write, and the writes are in one transaction
  * besides — the failure mode worth designing against is HoS stripped with ED not yet able to receive.
  *
+ * WHY THIS FILE'S ABORTS SURVIVED THE CONVERSION ITS FOUR PREDECESSORS DID NOT (ADR 0052's two-part
+ * test). Every abort in 2026_08_02 / 08_03 / 08_04 / 08_05 became a report or a skip. Both of this
+ * migration's aborts stay, and the difference is not seniority — it is the shape of the act:
+ *
+ *   1. WOULD CONTINUING LEAVE A HOLE THIS MIGRATION'S OWN WRITES DUG? YES. Its predecessors each
+ *      converge ONE role toward ITS OWN frozen slice, so skipping a role or a permission costs
+ *      coverage and never coherence. This one is a TRANSFER: it strips five grants from
+ *      `head_of_school` and four from `accounts_supervisor` and grants nine to `executive_director`.
+ *      Half-applying it — the strip running, the grant skipped — leaves the fee-schedule and
+ *      discount-policy approve/reject sides and both credit-note/void checker pairs held by NOBODY.
+ *      With the `Gate::before` maker-checker exclusion (ADR 0040), no seat on the platform,
+ *      `super_admin` included, could then approve anything financial. That is not the world moving
+ *      on; it is this migration digging the hole.
+ *   2. DOES THE MESSAGE NAME A COMMAND THAT CLEARS IT AND LETS THE MIGRATION PASS? YES, both times:
+ *      `php artisan rbac:sync`. A precondition with a one-command exit is not a brick.
+ *
+ * Both yes, so both aborts stand — the missing ED role row above, and the missing target permission
+ * row below. Do not convert them to reports by analogy with the other four.
+ *
  * Everything else follows 2026_08_03_100000 / 2026_08_05_100000: fresh-install guard keyed on the
- * permission substrate; target DERIVED from `grantsMap()` and never hardcoded; global rows only,
+ * permission substrate; target FROZEN as a literal (ADR 0052) and never read from a live source;
+ * global rows only,
  * school-scoped rows counted and never written; diff-based revoke+give inside one transaction so both
  * Spatie events reach `LogRbacChange` (NOT `syncPermissions`, which detaches RAW with no event);
  * idempotent, short-circuiting before any activity row; a post-write duty-separation walk over users;
@@ -87,21 +108,40 @@ return new class extends Migration
     private const NAMESPACE = 'finance.';
 
     /**
-     * The roles whose `finance.` grants are forced to match `grantsMap()`.
+     * The grants this migration was written to establish, FROZEN — role set AND grants together.
      *
-     * Written out here rather than derived: a migration is a fixed historical act and must not
-     * re-shape itself if the map moves later. The GRANTS are derived; the SET is not.
+     * Its predecessors froze the role SET and read the GRANTS from the seeder map at run time, and
+     * called that split a design. It was the defect (ADR 0052): the two halves move in opposite
+     * directions, so a later map edit silently rewrites what an already-shipped migration does on
+     * replay. This file shipped carrying the identical split and is frozen here at its own commit,
+     * on the branch that introduced it.
      *
-     * `principal` is deliberately absent — it keeps `finance.access` (§6a of the brief). So are
-     * `admin`, `accounts_officer`, `finance_lead` and `internal_auditor`: this change does not touch
-     * them, and governing a role means forcing it, which is not something to do by accident.
+     * PLAIN STRINGS, not `PermissionEnum::` constants: an enum case can be renamed or deleted, and a
+     * frozen historical act must not depend on today's enum any more than on today's map.
      *
-     * @var list<string>
+     * `principal` is deliberately absent — it keeps `finance.access` (2026-08-04). So are `admin`,
+     * `accounts_officer`, `finance_lead` and `internal_auditor`: this change does not touch them, and
+     * governing a role means FORCING it, which is not something to do by accident.
+     *
+     * @var array<string, list<string>>
      */
-    private array $governed = [
-        'head_of_school',
-        'accounts_supervisor',
-        'executive_director',
+    private const TARGET = [
+        'head_of_school' => [],
+        'accounts_supervisor' => [
+            'finance.access',
+            'finance.fee-schedule.change.submit',
+        ],
+        'executive_director' => [
+            'finance.access',
+            'finance.credit-note.approve',
+            'finance.credit-note.reject',
+            'finance.discount-policy.change.approve',
+            'finance.discount-policy.change.reject',
+            'finance.fee-schedule.change.approve',
+            'finance.fee-schedule.change.reject',
+            'finance.invoice.void-request.approve',
+            'finance.invoice.void-request.reject',
+        ],
     ];
 
     public function up(): void
@@ -126,15 +166,12 @@ return new class extends Migration
             return;
         }
 
-        // Target per governed role, DERIVED from the seeder map and sliced to the namespace. After
-        // this runs, each governed role's `finance.` grants equal exactly this — head_of_school's
-        // slice is EMPTY, which is the whole point of the change.
-        $map = RbacSeeder::grantsMap();
+        // Target per governed role, read from the FROZEN literal. After this runs, each governed
+        // role's `finance.` grants equal exactly this — head_of_school's slice is EMPTY, which is the
+        // whole point of the change.
         $target = [];
-        foreach ($this->governed as $roleName) {
-            $target[$roleName] = collect($map[$roleName] ?? [])
-                ->filter(fn (string $p): bool => str_starts_with($p, self::NAMESPACE))
-                ->sort()->values()->all();
+        foreach (self::TARGET as $roleName => $permissions) {
+            $target[$roleName] = collect($permissions)->sort()->values()->all();
         }
 
         // Pre-flight: every permission we must GRANT has to exist as a row (run rbac:sync otherwise).
@@ -153,7 +190,7 @@ return new class extends Migration
         // message because its absence is the ORDERING case, not a broken database — see the docblock
         // for why this aborts rather than creating the row.
         $roles = [];
-        foreach ($this->governed as $roleName) {
+        foreach (array_keys($target) as $roleName) {
             $role = Role::query()->where('name', $roleName)
                 ->where('guard_name', RbacSeeder::GUARD)->whereNull('school_id')->first();
 
@@ -175,15 +212,15 @@ return new class extends Migration
             ->join('role_has_permissions as rhp', 'rhp.role_id', '=', 'r.id')
             ->join('permissions as p', 'p.id', '=', 'rhp.permission_id')
             ->whereNotNull('r.school_id')->where('r.guard_name', RbacSeeder::GUARD)
-            ->whereIn('r.name', $this->governed)
+            ->whereIn('r.name', array_keys(self::TARGET))
             ->where('p.name', 'like', self::NAMESPACE.'%')
             ->distinct()->count(DB::raw('CONCAT(r.id, "-", p.id)'));
         echo '  move-hos-finance-to-ed: school-scoped role rows carrying '.self::NAMESPACE."* (UNTOUCHED): {$schoolScoped}\n";
 
         // Idempotency: already converged ⇒ clean no-op, no second batch of activity rows.
         $needsWork = false;
-        foreach ($this->governed as $roleName) {
-            if ($this->currentGrants($roles[$roleName]) !== $target[$roleName]) {
+        foreach ($target as $roleName => $wantedForRole) {
+            if ($this->currentGrants($roles[$roleName]) !== $wantedForRole) {
                 $needsWork = true;
             }
         }
@@ -200,11 +237,11 @@ return new class extends Migration
         // Diff-based revoke + give, atomically. revoke fires PermissionDetachedEvent, give fires
         // PermissionAttachedEvent — both reach LogRbacChange. (syncPermissions detaches RAW, no event.)
         DB::transaction(function () use ($roles, $target) {
-            foreach ($this->governed as $roleName) {
+            foreach ($target as $roleName => $wantedForRole) {
                 $role = $roles[$roleName];
                 $current = $this->currentGrants($role);
-                $revoke = array_values(array_diff($current, $target[$roleName]));
-                $grant = array_values(array_diff($target[$roleName], $current));
+                $revoke = array_values(array_diff($current, $wantedForRole));
+                $grant = array_values(array_diff($wantedForRole, $current));
 
                 foreach ($revoke as $perm) {
                     $role->revokePermissionTo($perm);

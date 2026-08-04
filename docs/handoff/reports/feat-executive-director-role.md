@@ -586,3 +586,145 @@ and nothing in the previously-passing suite regressed.
 `finance:check-staffing-readiness` returns `FAILURE` with 16 GAPs and **no `bin/quality` step runs
 it**. The detector exists; the enforcement does not — the same shape as the convergence lint's
 blindness to removals, and now the same shape twice in one branch.
+
+---
+
+# Addendum 2 — rebased onto the target freeze; four debt items worked
+
+`feat/executive-director-role` rebased onto `staging` @ `8e8a92d` (the `--no-ff` merge of
+`fix/convergence-migration-target-freeze`). **`bin/quality` 13/13.** Neither branch pushed.
+
+```
+$ git rev-list --count $(git merge-base staging HEAD)..HEAD
+2
+```
+
+**The new gate did its job on arrival.** Before any edit, on the freshly rebased branch:
+
+```
+RED    0p/1r
+    these migrations read the seeder grants map at run time; freeze their target as a literal instead — see ADR 0052
+```
+
+That is the mechanism working as designed: ED could not go green until `2026_08_06` was frozen too,
+and nobody had to remember to do it.
+
+## Debt 1 — `2026_08_06` frozen; both aborts KEPT
+
+Target frozen as a `private const TARGET` of plain strings — role set and grants together, which is
+the split its four predecessors got wrong. `head_of_school => []`,
+`accounts_supervisor => ['finance.access', 'finance.fee-schedule.change.submit']`,
+`executive_director =>` its nine. `grantsMap` hits in the file: **0**. The docblock line that
+advertised *"target DERIVED from `grantsMap()` and never hardcoded"* as a virtue is gone.
+
+**Its two aborts do not convert**, and the reasoning is now written into the file rather than left to
+the next reader's judgement:
+
+```
+ * WHY THIS FILE'S ABORTS SURVIVED THE CONVERSION ITS FOUR PREDECESSORS DID NOT (ADR 0052's two-part
+ * test). … the difference is not seniority — it is the shape of the act:
+ *
+ *   1. WOULD CONTINUING LEAVE A HOLE THIS MIGRATION'S OWN WRITES DUG? YES. Its predecessors each
+ *      converge ONE role toward ITS OWN frozen slice… This one is a TRANSFER… Half-applying it —
+ *      the strip running, the grant skipped — leaves the fee-schedule and discount-policy
+ *      approve/reject sides and both credit-note/void checker pairs held by NOBODY. With the
+ *      `Gate::before` maker-checker exclusion (ADR 0040), no seat on the platform, `super_admin`
+ *      included, could then approve anything financial.
+ *   2. DOES THE MESSAGE NAME A COMMAND THAT CLEARS IT AND LETS THE MIGRATION PASS? YES, both times:
+ *      `php artisan rbac:sync`.
+```
+
+Three throws survive in the file: the missing-ED-row abort, the missing-target-permission abort, and
+the duty-separation walk's rollback.
+
+## Debt 2 — the convergence arms
+
+The rebase left **four** red, not the six the brief predicted — two of them mine from debt 3.
+
+| arm | why it was red | what it says now |
+| --- | --- | --- |
+| `FinanceChangeGrantConvergenceTest` ARM 1 | asserted principal/HoS came out *"untouched"* — a comparison against whatever the live map had put there, false once the seat move emptied HoS's slice | asserts **every** governed role's namespace slice equals the frozen literal, written out in the test as literals. Strictly stronger and map-independent |
+| `FinanceAccessGrantConvergenceTest` ARM 4 | asserted a fresh seed leaves HoS holding `finance.access`. It does not and will not again | proves **both drift shapes at once**: `principal` still holds it after a seed so the drift is PLANTED; `head_of_school` does not, so it is a LIVE divergence between the frozen 2026-08-03 target and today's map, needing no plant. ARM 1 converges both |
+
+## Debt 3 — my own map coupling, removed
+
+`RealignFinanceGovernanceGrantsTest` ARM 0 asserted the fresh seed's **absolute** content. That is a
+live-map read wearing a test's clothes, in the test file written to prove live-map reads were removed
+— and it went red on a migration whose behaviour had not changed at all. Rewritten the way
+bite-proofing actually needs: capture the slice, plant, assert it **changed** and now equals the
+planted shape. Survives every future map edit.
+
+ARM 1 carried the same coupling in a second place (`expect(HoS)->hasPermissionTo('finance.access')`).
+Now a before/after comparison of the grants **outside** the governed namespaces, via a new
+`rfgOtherFinanceGrants()` helper — "this migration moved nothing it does not govern" without asserting
+what the map happens to say today.
+
+## Debt 4 — the ED hazard, and the census you asked for
+
+Reviewer 4's hazard is recorded and **not fixed**, per your ticket: `2026_08_03`'s surviving walk
+filters to `enforcedPairs()` but never to what that migration wrote, so after this rebase a user
+holding `executive_director` plus any `*.change.submit` maker role is a violation the 2026-08-02
+migration did not create and would roll back for. It cannot bite today — no user holds ED, and
+`assertAssignmentAllowed` refuses the pairing at assignment.
+
+**On your standing instruction — I found more than three, and I have frozen nothing.** Full census,
+every `DutySeparation` consumer outside the class itself:
+
+```
+$ grep -rn "DutySeparation::violations\|DutySeparation::enforcedPairs\|DutySeparation::pairs\|::violationsFromRolePermissionSync\|::assertAssignmentAllowed" app database routes bin | grep -v "^app/Support/DutySeparation.php"
+app/Models/User.php:412:            DutySeparation::assertAssignmentAllowed($this, (int) $teamId, $roles);
+app/Support/SchoolRbacOverview.php:95:            'sodPairs' => DutySeparation::pairs(),
+app/Support/SchoolRbacOverview.php:308:        foreach (DutySeparation::pairs() as $pair) {
+app/Support/RbacOverview.php:67:            'sodPairs' => DutySeparation::pairs(),
+app/Support/RbacOverview.php:207:        foreach (DutySeparation::pairs() as $pair) {
+app/Http/Requests/SyncRolePermissionsRequest.php:112:            foreach (DutySeparation::violationsFromRolePermissionSync($roleName, $requested) as $violation) {
+app/Console/Commands/CheckStaffingReadiness.php:37:        $pairs = DutySeparation::pairs();
+app/Console/Commands/AuditDutySeparation.php:34:        $pairs = DutySeparation::pairs();
+app/Console/Commands/AuditDutySeparation.php:52:            foreach (DutySeparation::violations($user, (int) $row->school_id) as $pair) {
+database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php:269:            $enforced = collect(DutySeparation::enforcedPairs())
+database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php:280:                    foreach (DutySeparation::violations($user, (int) $school->id) as $pair) {
+database/migrations/2026_08_03_100000_converge_finance_change_grants.php:255:            $enforced = collect(DutySeparation::enforcedPairs());
+database/migrations/2026_08_03_100000_converge_finance_change_grants.php:262:                    foreach (DutySeparation::violations($user, (int) $school->id) as $pair) {
+```
+
+**Nine call sites, not three** — and `AuditDutySeparation` calls `violations()` live, which your list
+did not name.
+
+**But the census answers your open question rather than widening it, and I think it decides it.** Sort
+those nine by *what kind of thing is doing the calling*:
+
+- **Runtime guards and readers** — `User::assignRole`, `SyncRolePermissionsRequest`, both RBAC
+  overviews, `CheckStaffingReadiness`, `AuditDutySeparation`. Seven of the nine. Every one is a
+  question asked *now* about the state *now*: may this assignment proceed, is this school staffed,
+  who currently holds both sides. **A live answer is the only correct answer for all of them.**
+  Freezing any would be the defect in reverse.
+- **Dated acts** — `2026_08_03:255,262` and `2026_08_06:269,280`. Exactly two, and both are the same
+  post-write walk in the same shape.
+
+So the boundary that predicts the set is not *which primitive is called* but **whether the caller is a
+dated act or a runtime question**. That is the same boundary ADR 0052 already draws for the grants
+map, and it says the same thing about duty separation: a migration must not read live authority state
+to decide whether to abort; everything else must.
+
+Which leaves the real question narrower than "are duty-separation guards correctly live". It is: **the
+two migration walks read live pair definitions AND live user-role assignments to decide whether to
+roll back a dated act.** `2026_08_03`'s is the one reviewer 4 found overstated. `2026_08_06`'s has the
+same shape and I did not touch it either.
+
+I have frozen nothing and am not proposing wording. Two shapes a decision could take, so the choice is
+concrete:
+
+1. **Scope each walk to what its own run wrote** — keeps the abort, removes the reach-forward, and
+   makes ADR `:56-58` true as written. Behaviour change; needs its own arms.
+2. **Accept both walks as deliberately broader** and say so in the ADR — they are the last line before
+   a both-sides state reaches production, and firing on a violation the migration did not create is a
+   false positive that costs a rollback, not a hole.
+
+I have no strong preference and deliberately did not act. Your call, once.
+
+## Not done
+
+- Neither branch pushed. `staging` is 6 commits ahead of `origin/staging`.
+- Nothing driven against the dev database on this pass; the four migrations already applied there, and
+  every arm ran against `portal_testing`.
+- `finance:check-staffing-readiness` still FAILURE with 16 GAPs, correct and expected.

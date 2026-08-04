@@ -73,19 +73,36 @@ function faPlantDrift(): array
     return $drifted;
 }
 
-it('ARM 4 (bite-proof, runs first) — the planted drift is real: without the migration the roles genuinely lack the grant', function () {
-    // A fresh seed takes the `: $permissions` branch, so all six start aligned — assert that, or the
-    // revoke below could be a no-op and arm 1 would prove nothing.
-    expect(faHolds('head_of_school'))->toBeTrue()
-        ->and(faHolds('principal'))->toBeTrue();
+it('ARM 4 (bite-proof, runs first) — BOTH drift shapes are real: one planted, one live', function () {
+    // TWO DIFFERENT DRIFTS, and the arm proves each the way it actually arises. It used to assert that
+    // a fresh seed leaves BOTH head_of_school and principal holding finance.access, then revoke both.
+    // That stopped being true on 2026-08-04: the seat move took finance.access off head_of_school, so
+    // the arm was asserting the live map rather than the migration.
+    //
+    //   · `principal` — still a holder after a seed, so the drift has to be PLANTED. Assert it holds
+    //     it, revoke, assert it does not: that is what makes ARM 1's convergence non-vacuous.
+    //   · `head_of_school` — a GENUINE live divergence between this migration's frozen 2026-08-03
+    //     target (which grants it) and today's map (which does not). Nothing to plant; the gap is
+    //     already there, and it is the clearest possible demonstration of why the target is frozen.
+    //
+    // ARM 1 converges both.
+    expect(faHolds('principal'))->toBeTrue();
+
+    $hosHoldsAfterSeed = faHolds('head_of_school');
 
     faPlantDrift();
 
-    // Migration NOT run.
-    expect(faHolds('head_of_school'))->toBeFalse()
-        ->and(faHolds('principal'))->toBeFalse()
-        ->and(faGlobalRole('head_of_school')->fresh()->hasPermissionTo('finance.access'))->toBeFalse()
+    // The planted half: principal genuinely lost it, so the revoke was not a no-op.
+    expect(faHolds('principal'))->toBeFalse()
         ->and(faGlobalRole('principal')->fresh()->hasPermissionTo('finance.access'))->toBeFalse();
+
+    // The live half: head_of_school does not hold it either — whether that was the seed's doing or
+    // the plant's, it is absent, and the frozen target says it should be there.
+    expect(faHolds('head_of_school'))->toBeFalse();
+
+    // Recorded, not asserted either way: which of the two produced the head_of_school gap is a fact
+    // about today's map, and this arm is deliberately indifferent to it.
+    expect($hosHoldsAfterSeed)->toBeBool();
 
     // The four aligned roles are untouched by the planting itself.
     foreach (['admin', 'accounts_officer', 'accounts_supervisor', 'finance_lead'] as $role) {

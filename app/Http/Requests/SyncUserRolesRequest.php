@@ -88,8 +88,21 @@ class SyncUserRolesRequest extends FormRequest
             $assignable = self::SCHOOL_ROLES;
 
             // D2 — elevating someone to admin is a super-admin act.
+            //
+            // `executive_director` joins on the same footing (2026-08-04). It is NOT in
+            // SCHOOL_ROLES and must not be: that list is gated on `rbac.manage_users`, which a
+            // school admin holds, so putting ED there would let a school admin grant themselves
+            // the top financial approver — sole checker on all four built finance pairs. Before
+            // this line ED was assignable through no surface at all, which was worse: the seat
+            // move left the platform unable to approve anything financial with no in-app remedy.
+            //
+            // DutySeparation::assertAssignmentAllowed still runs underneath, on every path:
+            // spatie's syncRoles ends in `$this->assignRole($roles)`
+            // (vendor HasRoles.php:313), which is overridden at User.php:412. So widening this
+            // allowlist widens WHO may assign, never WHICH combinations are legal.
             if ($this->user()?->isSuperAdmin()) {
                 $assignable[] = 'admin';
+                $assignable[] = 'executive_director';
             }
 
             foreach ((array) $this->input('roles', []) as $role) {

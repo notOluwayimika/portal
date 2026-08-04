@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsureTwoFactorEnrolled;
 use App\Http\Middleware\SetSchoolContext;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -152,14 +153,35 @@ it('toggles a role\'s requirement (audited), and the super_admin flag is immutab
 
 // ── Seeded defaults ────────────────────────────────────────────────────────
 
-it('seeds super_admin and admin as 2FA-required; ordinary roles not (Finance roles held for I6)', function () {
+it('seeds super_admin, admin and executive_director as 2FA-required; ordinary and operational finance roles not', function () {
+    // The title used to say "(Finance roles held for I6)". That stopped being true on 2026-08-04:
+    // executive_director is a finance seat and it IS flagged, deliberately. The OPERATIONAL finance
+    // seats stay unflagged — they propose and view; ED is the sole checker on all four built pairs.
     $flags = DB::table('roles')->where('guard_name', 'web')->whereNull('school_id')
         ->pluck('two_factor_required', 'name');
 
     expect((bool) $flags['super_admin'])->toBeTrue()
         ->and((bool) $flags['admin'])->toBeTrue()
+        ->and((bool) $flags['executive_director'])->toBeTrue()
         ->and((bool) $flags['teacher'])->toBeFalse()
-        ->and((bool) $flags['guardian'])->toBeFalse();
+        ->and((bool) $flags['guardian'])->toBeFalse()
+        // Named individually rather than as a loop: the asymmetry between ED and the other four
+        // finance seats is the decision, and a reader must be able to see all five at once.
+        ->and((bool) $flags['accounts_officer'])->toBeFalse()
+        ->and((bool) $flags['accounts_supervisor'])->toBeFalse()
+        ->and((bool) $flags['finance_lead'])->toBeFalse()
+        ->and((bool) $flags['internal_auditor'])->toBeFalse();
+});
+
+it('pins executive_director in RbacSeeder::TWO_FACTOR_REQUIRED itself, not only in the seeded row', function () {
+    // The seeded-row arm above is necessary and not sufficient. `two_factor_required` is applied ONLY
+    // at role creation (firstOrCreate defaults, or --fresh), so on any environment where the ED role
+    // row already exists, deleting the constant entry changes NOTHING observable — the row keeps the
+    // flag and every later rbac:sync leaves it alone. This arm is what makes the constant a rule
+    // rather than a wish: it is the exact failure mode 2026_08_06_100000 refuses to create the role
+    // row in order to avoid, and without it that migration guards the back door and leaves the front
+    // door open.
+    expect(RbacSeeder::TWO_FACTOR_REQUIRED)->toContain('executive_director');
 });
 
 // ── D5/D6: the platform flag is the master switch ──────────────────────────

@@ -279,6 +279,7 @@ final class SchoolRbacOverview
 
         if ($actor?->isSuperAdmin()) {
             $roles[] = 'admin';
+            $roles[] = 'executive_director';
         }
 
         return $roles;

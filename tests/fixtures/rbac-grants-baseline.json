@@ -12,11 +12,7 @@
     ],
     "accounts_supervisor": [
         "finance.access",
-        "finance.credit-note.approve",
-        "finance.credit-note.reject",
-        "finance.fee-schedule.change.submit",
-        "finance.invoice.void-request.approve",
-        "finance.invoice.void-request.reject"
+        "finance.fee-schedule.change.submit"
     ],
     "admin": [
         "academic_data.view",
@@ -86,6 +82,17 @@
         "view_behavioral_assessments",
         "view_psychomotor_skills"
     ],
+    "executive_director": [
+        "finance.access",
+        "finance.credit-note.approve",
+        "finance.credit-note.reject",
+        "finance.discount-policy.change.approve",
+        "finance.discount-policy.change.reject",
+        "finance.fee-schedule.change.approve",
+        "finance.fee-schedule.change.reject",
+        "finance.invoice.void-request.approve",
+        "finance.invoice.void-request.reject"
+    ],
     "finance_lead": [
         "finance.access",
         "finance.credit-note.submit",
@@ -127,11 +134,6 @@
         "dashboard.view",
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
-        "finance.access",
-        "finance.discount-policy.change.approve",
-        "finance.discount-policy.change.reject",
-        "finance.fee-schedule.change.approve",
-        "finance.fee-schedule.change.reject",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",

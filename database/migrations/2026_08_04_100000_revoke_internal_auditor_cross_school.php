@@ -15,7 +15,7 @@ use Spatie\Permission\PermissionRegistrar;
  * Revoke `activity_log.view_cross_school` from `internal_auditor` — the REVOCATION side the seeder
  * map cannot deliver.
  *
- * a0ab3d7 granted it in RbacSeeder::grantsMap(). v10 §7.2
+ * a0ab3d7 granted it in the seeder's grants map. v10 §7.2
  * (docs/Finance Module — Implementation Master Plan - v10.md:375, DECIDED 2026-07-29) says of that
  * exact permission that it "is read-shaped, is in scope, and must not be granted": it is a
  * CROSS-School read, and ADR 0036 makes isolation un-bypassable by role.
@@ -29,7 +29,7 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * Why a migration at all: `rbac:sync` is non-destructive (RbacSeeder::syncLogged) — for a role that
  * already exists it grants only permissions created in that same run and revokes NOTHING. So
- * deleting the line from grantsMap() lands on fresh installs and changes nothing on any environment
+ * deleting the line from the seeder map lands on fresh installs and changes nothing on any environment
  * where the `internal_auditor` role row already exists, including the production copy. Same shape as
  * 2026_08_02_100000_realign_finance_governance_grants, which this follows closely.
  *
@@ -39,8 +39,10 @@ use Spatie\Permission\PermissionRegistrar;
  * every school-scoped (school_id IS NOT NULL) row is untouched; school-scoped rows are C6 per-school
  * configuration (deliberate local authority, not drift) and are counted and reported, never written.
  *
- * The target is DERIVED from grantsMap() sliced to the one permission name, so IA's intended grant
- * set is not hardcoded a second time.
+ * A MIGRATION IS A DATED ACT, NOT A LIVE QUERY (ADR 0052). The target below is FROZEN at the commit
+ * that added this file; it used to be read from the seeder's map at run time, which made an
+ * already-shipped migration re-shape itself on every later map edit. The corollary applies too: this
+ * migration aborts only on a condition its own writes would create, and reports everything else.
  *
  * This is a governance act, not seeding: the revoke goes through Spatie's event so LogRbacChange
  * records it in activity_log (NOT wrapped in withoutLogs, unlike RbacSeeder::sync). Diff-based
@@ -56,15 +58,29 @@ return new class extends Migration
     /** The one global role that legitimately holds the permission (ADR 0045 A3). */
     private const SANCTIONED = 'super_admin';
 
+    /**
+     * The grants this migration was written to establish, FROZEN at the commit that added it:
+     * `4d4c9c51db7850f9851f8f65319829f2fb07d2b1`, 2026-08-02. Transcribed from
+     * `git show 4d4c9c5:database/seeders/RbacSeeder.php`: `internal_auditor` holds NOTHING of
+     * {@see self::PERMISSION} — which is the whole act.
+     *
+     * PLAIN STRINGS, not `PermissionEnum::` constants: an enum case can be renamed or deleted, and a
+     * frozen historical act must not depend on today's enum any more than on today's map (ADR 0052).
+     *
+     * @var array<string, list<string>>
+     */
+    private const TARGET = ['internal_auditor' => []];
+
     public function up(): void
     {
-        // Guard the constant against an enum rename: the string above must still name a real
-        // permission case, and must still be the isolation-crossing member this migration is about.
+        // The premise check: the string above should still be an isolation-crossing member. If the
+        // enum has moved on, that is the world moving on — reported, not fatal. The act itself is
+        // unchanged either way: revoke this permission from this role (ADR 0052).
         if (! in_array(self::PERMISSION, PermissionEnum::ISOLATION_CROSSING, true)) {
-            throw new RuntimeException(
-                'revoke-ia-cross-school ABORTED: ['.self::PERMISSION.'] is no longer a member of '
-                .'PermissionEnum::ISOLATION_CROSSING — the premise of this migration has changed.'
-            );
+            echo '  revoke-ia-cross-school REPORT: ['.self::PERMISSION.'] is no longer a member of '
+                ."PermissionEnum::ISOLATION_CROSSING — the premise has changed since 2026-08-02. The\n"
+                ."    revocation below still runs; whether it is still the right act is a question for a\n"
+                ."    new migration, not this one.\n";
         }
 
         // Fresh-install guard, keyed on the PERMISSION substrate (not the role row). `migrate` runs
@@ -87,20 +103,10 @@ return new class extends Migration
             return;
         }
 
-        // Assert the derivation the whole change rests on: grantsMap() must no longer offer this
-        // permission to IA. If it does, the seeder edit did not land and rbac:sync would simply put
-        // it back on the next fresh install — revoking here would be theatre.
-        $target = collect(RbacSeeder::grantsMap()[self::ROLE] ?? [])
-            ->filter(fn (string $p): bool => $p === self::PERMISSION)
-            ->values()->all();
-
-        if ($target !== []) {
-            throw new RuntimeException(
-                'revoke-ia-cross-school ABORTED: RbacSeeder::grantsMap() still grants ['.self::PERMISSION
-                .'] to ['.self::ROLE.'] — the seeder edit is missing, so a revocation here would be undone '
-                .'by the next fresh sync.'
-            );
-        }
+        // Whether TODAY's seeder map re-grants this permission is `php artisan rbac:diff-grants`'s
+        // question, not this migration's: a 2026-08-02 act cannot be conditioned on a map that moves.
+        // The frozen target is {@see self::TARGET} — IA holds nothing of this permission — and what
+        // the live map says is reported for the operator, never acted on.
 
         // Pre-flight 1: the governed role must exist as a global row. We are past the fresh guard, so
         // the substrate is seeded; a missing role row here is a real anomaly, not a fresh DB.
@@ -111,7 +117,10 @@ return new class extends Migration
             ->first();
 
         if ($role === null) {
-            throw new RuntimeException('revoke-ia-cross-school ABORTED: global role ['.self::ROLE.'] is missing.');
+            echo '  revoke-ia-cross-school SKIPPED: global role ['.self::ROLE.'] does not exist — nothing to revoke.'."\n";
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+            return;
         }
 
         // Pre-flight 2: report, do not act on, any OTHER global role holding the permission. Expected
@@ -137,11 +146,10 @@ return new class extends Migration
                 return "{$name} (holders={$holders})";
             })->implode(', ');
 
-            throw new RuntimeException(
-                'revoke-ia-cross-school ABORTED: unexpected global role(s) hold ['.self::PERMISSION.']: '
-                .$detail.'. Only ['.self::SANCTIONED.'] is sanctioned (ADR 0045 A3) — investigate that grant '
-                .'before widening this migration.'
-            );
+            echo '  revoke-ia-cross-school REPORT: global role(s) outside this migration\'s scope also hold ['
+                .self::PERMISSION."]: {$detail}. Not an error — this migration governs [".self::ROLE
+                .'] only and cannot touch them. Only ['.self::SANCTIONED.'] is sanctioned (ADR 0045 A3); '
+                ."anything else here is `php artisan rbac:diff-grants`'s question.\n";
         }
 
         // The school-scoped footprint: C6 per-school configuration, reported and left alone.

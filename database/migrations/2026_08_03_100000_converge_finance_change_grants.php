@@ -25,10 +25,10 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * This migration forces the grants of the GLOBAL (school_id IS NULL) rows of ALL FIVE finance roles,
  * within the two namespaces (finance.discount-policy.change.*, finance.fee-schedule.change.*), to
- * match grantsMap() exactly. Governing all five (not just the three that drifted) makes the two
+ * match {@see self::TARGET} exactly. Governing all five (not just the three that drifted) makes the two
  * namespaces CONVERGE to the map for every global finance role, so no drift in either direction can
  * hide — principal/head_of_school are already aligned by #186 and contribute nothing, which is the
- * point. Same shape as #186: target DERIVED from grantsMap(); school-scoped rows counted, never
+ * point. Same shape as #186: target FROZEN at the adding commit; school-scoped rows counted, never
  * written; diff-based revoke+give through Spatie events so LogRbacChange audits every delta (NOT
  * withoutLogs — a governance act); transaction-wrapped; idempotent; fresh-install guarded; down() a
  * deliberate no-op.
@@ -69,7 +69,7 @@ use Spatie\Permission\PermissionRegistrar;
  * naming each as user#<id> @ school#<id>. A role-scoped check (violationsFromRolePermissionSync) was
  * considered and dropped. NOT because the user-scoped check subsumes it — it does not: violations() is
  * holder-scoped, so a role granting both sides but held by nobody is invisible to it. The role-scoped
- * check is redundant *here* only because this migration writes a FIXED target derived from grantsMap(),
+ * check is redundant *here* only because this migration writes a FIXED target frozen at its adding commit,
  * which carries no both-sides role (a one-shot over a known-clean map). The general "the seeded map has
  * no both-sides role" invariant — the real hole, since violationsFromRolePermissionSync's only caller is
  * the C6 matrix-edit request, never the seeder — is pinned separately by
@@ -84,7 +84,35 @@ return new class extends Migration
     ];
 
     /** @var list<string> All five global finance roles (the set #186's pre-flight 1 already allows). */
-    private array $governed = ['principal', 'head_of_school', 'accounts_officer', 'accounts_supervisor', 'finance_lead'];
+    /**
+     * The grants this migration was written to establish, FROZEN at the commit that added it:
+     * `01fdeda876c88f91f8f362a24d475afd0d03de75`, 2026-08-02. Transcribed from
+     * `git show 01fdeda:database/seeders/RbacSeeder.php`, sliced to the two governed namespaces.
+     *
+     * PLAIN STRINGS, not `PermissionEnum::` constants: an enum case can be renamed or deleted, and a
+     * frozen historical act must not depend on today's enum any more than on today's map (ADR 0052).
+     *
+     * @var array<string, list<string>>
+     */
+    private const TARGET = [
+        'principal' => [],
+        'head_of_school' => [
+            'finance.discount-policy.change.approve',
+            'finance.discount-policy.change.reject',
+            'finance.fee-schedule.change.approve',
+            'finance.fee-schedule.change.reject',
+        ],
+        'accounts_officer' => [
+            'finance.discount-policy.change.submit',
+            'finance.fee-schedule.change.submit',
+        ],
+        'accounts_supervisor' => [
+            'finance.fee-schedule.change.submit',
+        ],
+        'finance_lead' => [
+            'finance.discount-policy.change.submit',
+        ],
+    ];
 
     public function up(): void
     {
@@ -107,31 +135,32 @@ return new class extends Migration
             return;
         }
 
-        // Target per governed role, DERIVED from the seeder map, sliced to the two namespaces.
-        $map = RbacSeeder::grantsMap();
-        $target = [];
-        foreach ($this->governed as $roleName) {
-            $target[$roleName] = collect($map[$roleName] ?? [])->filter($inNs)->sort()->values()->all();
-        }
+        $skipped = 0;
 
-        // Pre-flight: every permission we must GRANT has to exist (run rbac:sync first otherwise).
-        $mustGrant = collect($target)->flatten()->unique()->values()->all();
-        $present = Permission::query()->whereIn('name', $mustGrant)
+        // Target per governed role, read from the FROZEN literal. A frozen target may name a
+        // permission row that no longer exists; that is the world moving on, not a danger, so the
+        // permission is skipped with a line naming it rather than aborting the run (ADR 0052).
+        $wanted = collect(self::TARGET)->flatten()->unique()->values()->all();
+        $present = Permission::query()->whereIn('name', $wanted)
             ->where('guard_name', RbacSeeder::GUARD)->pluck('name')->all();
-        $missing = array_values(array_diff($mustGrant, $present));
-        if ($missing !== []) {
-            throw new RuntimeException(
-                'converge-finance-change-grants ABORTED: target permission(s) absent from the permissions table — '
-                .'run `php artisan rbac:sync` first, then re-migrate: '.implode(', ', $missing)
-            );
+
+        $target = [];
+        foreach (self::TARGET as $roleName => $permissions) {
+            foreach (array_diff($permissions, $present) as $absent) {
+                echo "  converge-finance-change-grants SKIPPED: permission [{$absent}] has no row — not granted to [{$roleName}].\n";
+                $skipped++;
+            }
+            $target[$roleName] = collect($permissions)->intersect($present)->sort()->values()->all();
         }
 
-        // Pre-flight: no OTHER global role (outside the five) grants any of the six.
+        // A global role outside the frozen five holding one of the six is INFORMATION, never danger:
+        // this migration cannot touch a role it does not govern, so a grant it reports here is not one
+        // it could have written (ADR 0052's corollary).
         $offenders = DB::table('roles as r')
             ->join('role_has_permissions as rhp', 'rhp.role_id', '=', 'r.id')
             ->join('permissions as p', 'p.id', '=', 'rhp.permission_id')
             ->whereNull('r.school_id')->where('r.guard_name', RbacSeeder::GUARD)
-            ->whereIn('p.name', $sixNames)->whereNotIn('r.name', $this->governed)
+            ->whereIn('p.name', $sixNames)->whereNotIn('r.name', array_keys(self::TARGET))
             ->distinct()->pluck('r.name')->all();
         if ($offenders !== []) {
             $detail = collect($offenders)->map(function (string $name) {
@@ -143,20 +172,26 @@ return new class extends Migration
 
                 return "{$name} (holders={$holders})";
             })->implode(', ');
-            throw new RuntimeException(
-                'converge-finance-change-grants ABORTED: unexpected global role(s) grant the governed permissions: '
-                .$detail.'. Investigate before widening this migration.'
-            );
+            echo '  converge-finance-change-grants REPORT: global role(s) outside this migration\'s scope also '
+                ."grant the governed permissions: {$detail}. Not an error — this migration governs "
+                .implode(', ', array_keys(self::TARGET))." only and cannot touch them.\n";
         }
 
-        // Pre-flight: every governed role exists as a global row.
+        // A governed role row that does not exist cannot hold a grant that needs converging. Skip it,
+        // say so, continue.
         $roles = [];
-        foreach ($this->governed as $roleName) {
+        foreach (array_keys($target) as $roleName) {
             $role = Role::query()->where('name', $roleName)
                 ->where('guard_name', RbacSeeder::GUARD)->whereNull('school_id')->first();
+
             if ($role === null) {
-                throw new RuntimeException("converge-finance-change-grants ABORTED: global role [{$roleName}] is missing.");
+                echo "  converge-finance-change-grants SKIPPED: global role [{$roleName}] does not exist — nothing to converge for it.\n";
+                $skipped++;
+                unset($target[$roleName]);
+
+                continue;
             }
+
             $roles[$roleName] = $role;
         }
 
@@ -171,14 +206,14 @@ return new class extends Migration
 
         // Idempotency: already converged ⇒ clean no-op, no second batch of activity rows.
         $needsWork = false;
-        foreach ($this->governed as $roleName) {
+        foreach ($target as $roleName => $wantedForRole) {
             $current = $roles[$roleName]->permissions->pluck('name')->filter($inNs)->sort()->values()->all();
-            if ($current !== $target[$roleName]) {
+            if ($current !== $wantedForRole) {
                 $needsWork = true;
             }
         }
 
-        $this->report('BEFORE', $sixNames);
+        $this->report('BEFORE', $sixNames, $skipped);
 
         if (! $needsWork) {
             echo "  converge-finance-change-grants: already aligned — no grants changed, no activity rows written.\n";
@@ -190,11 +225,11 @@ return new class extends Migration
         // Diff-based revoke + give, atomically. revoke fires PermissionDetachedEvent, give fires
         // PermissionAttachedEvent — both reach LogRbacChange. (syncPermissions detaches RAW, no event.)
         DB::transaction(function () use ($roles, $target, $inNs) {
-            foreach ($this->governed as $roleName) {
+            foreach ($target as $roleName => $wantedForRole) {
                 $role = $roles[$roleName];
                 $current = $role->permissions->pluck('name')->filter($inNs)->values()->all();
-                $revoke = array_values(array_diff($current, $target[$roleName]));
-                $grant = array_values(array_diff($target[$roleName], $current));
+                $revoke = array_values(array_diff($current, $wantedForRole));
+                $grant = array_values(array_diff($wantedForRole, $current));
 
                 foreach ($revoke as $perm) {
                     $role->revokePermissionTo($perm);
@@ -249,7 +284,7 @@ return new class extends Migration
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->report('AFTER', $sixNames);
+        $this->report('AFTER', $sixNames, $skipped);
     }
 
     /**
@@ -268,9 +303,9 @@ return new class extends Migration
      *
      * @param  list<string>  $sixNames
      */
-    private function report(string $label, array $sixNames): void
+    private function report(string $label, array $sixNames, int $skipped): void
     {
-        echo "  converge-finance-change-grants [{$label}] holders per school per governed permission:\n";
+        echo "  converge-finance-change-grants [{$label}] holders per school per governed permission (skipped={$skipped}):\n";
 
         foreach (School::query()->orderBy('id')->get() as $school) {
             $userIds = DB::table('model_has_roles')

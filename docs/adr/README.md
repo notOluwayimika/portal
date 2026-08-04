@@ -61,3 +61,4 @@ implementing phase starts.
 | [0049](0049-governing-the-pricing-catalog.md) | Governing the pricing catalog: approve the change (create/amend/retire), not the record; two axes | 1 | **Accepted** |
 | [0050](0050-governing-fee-schedule-publication.md) | Governing fee-schedule publication: a draft lifecycle state, not a proposed-terms payload; two change tables, not one polymorphic | 1 | **Accepted** |
 | [0051](0051-approval-requirement-is-configuration.md) | "Does this need a second signature" is configuration behind one seam (`ApprovalRequirement`); fails closed, changes no behaviour; not a polymorphic engine | 1 | **Accepted** |
+| [0052](0052-a-migration-is-a-dated-act.md) | A migration is a dated act, not a live query: grant targets are frozen literals, never read from the seeder map; a convergence migration aborts only on a condition its own writes would create | 1 | **Accepted** |

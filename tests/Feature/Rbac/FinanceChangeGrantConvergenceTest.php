@@ -6,6 +6,7 @@
 // the production hazard a grant-map change creates by retroactively turning a legal role pair into a
 // both-sides violation with no assignment-time guard to catch it).
 
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
@@ -120,19 +121,30 @@ it('ARM 2 — idempotent: a second up() changes no grant and writes no activity 
         ->and(DB::table('activity_log')->where('log_name', 'rbac')->count())->toBe($rbacBefore);
 });
 
-it('ARM 3 — role-scoped pre-flight bites: a global role outside the five granting one of the six aborts, no grant changes', function () {
+it('ARM 3 — a global role outside the five holding one of the six is REPORTED, not fatal, and the convergence still runs', function () {
+    // This arm used to assert a throw, and it was GREEN BY ACCIDENT once `executive_director` existed:
+    // it matched on 'rogue_finance' while the abort message also named ED, so it would have passed on
+    // a migration that was bricking every migrate:fresh for an entirely different reason.
+    //
+    // Under ADR 0052's corollary it must not throw. This migration governs five named roles and cannot
+    // touch a sixth, so an outside holder is INFORMATION. The arm asserts the report names the role AND
+    // that the convergence completed — the second half is what stops a "report" that returns early.
     ccPlantDrift();
     $rogue = Role::create(['name' => 'rogue_finance', 'guard_name' => 'web']);
     $rogue->givePermissionTo('finance.fee-schedule.change.submit');
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    $grantsBefore = DB::table('role_has_permissions')->count();
+    ob_start();
+    convergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    expect(fn () => convergeMigration()->up())->toThrow(RuntimeException::class, 'rogue_finance');
-
-    // Aborted before any write.
-    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
-        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeFalse();
+    expect($output)->toContain('REPORT')
+        ->and($output)->toContain('rogue_finance')
+        // ...and the drift was converged anyway.
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue()
+        // The outside role keeps its grant — this migration cannot and must not touch it.
+        ->and($rogue->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 });
 
 it('ARM 4 — user-scoped pre-flight bites: a user holding accounts_supervisor + head_of_school aborts the convergence, then converges once resolved', function () {
@@ -172,4 +184,40 @@ it('ARM 4 — user-scoped pre-flight bites: a user holding accounts_supervisor +
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     expect(ccGlobalRole('accounts_supervisor')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
+});
+
+it('ARM 5 — a target permission with no row is SKIPPED and reported; the rest still converge', function () {
+    // A frozen target names permissions by string, so an enum case dropped later takes its row with
+    // it. A 2026-08-02 act must not die because a later release renamed something (ADR 0052).
+    ccPlantDrift();
+
+    Permission::query()->where('name', 'finance.fee-schedule.change.submit')->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    ob_start();
+    convergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('SKIPPED')
+        ->and($output)->toContain('finance.fee-schedule.change.submit')
+        // The skip is per-permission: accounts_officer's OTHER submit still landed.
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.discount-policy.change.submit'))->toBeTrue();
+});
+
+it('ARM 6 — a missing governed role is SKIPPED and reported; the other governed roles still converge', function () {
+    ccPlantDrift();
+
+    ccGlobalRole('finance_lead')->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    ob_start();
+    convergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('SKIPPED')
+        ->and($output)->toContain('finance_lead')
+        // Per-role, not a bail-out — which is the whole difference from the abort this replaced.
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 });

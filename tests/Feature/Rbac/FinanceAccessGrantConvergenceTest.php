@@ -165,13 +165,15 @@ it('ARM 5 — fresh install: no finance.* permission rows at all is a QUIET GREE
         ->and(DB::table('activity_log')->max('id'))->toBe($maxIdBefore);
 });
 
-it('ARM 6 — broken substrate: finance.* present but finance.access ABSENT aborts; it does not fall through the fresh-install guard', function () {
-    // THE ARM THAT MATTERS, and the reason ARM 5 is worth having a sibling for. The guard is keyed on
-    // the whole `finance.` namespace deliberately (`:93-98`): `finance.access` missing while the rest
-    // of the namespace exists is not a fresh install, it is a broken substrate. Narrow that guard to
-    // `finance.access` alone — a one-word edit that reads like a tightening — and this database
-    // returns a quiet green with the grant never written, which is the one failure mode of this
-    // migration nobody would ever see.
+it('ARM 6 — broken substrate: finance.access absent is SKIPPED and reported, and nothing is written', function () {
+    // The guard is keyed on the whole `finance.` namespace deliberately: `finance.access` missing
+    // while the rest of the namespace exists is not a fresh install, it is a broken substrate, so the
+    // fresh-install path must NOT swallow it.
+    //
+    // It used to abort here. Under ADR 0052 it reports and continues: a frozen target naming a
+    // permission row that no longer exists is the world moving on, not a condition this migration's
+    // own writes could create. What still matters — and is what this arm asserts — is that nothing is
+    // written and the operator is told which permission was skipped, by name.
     DB::table('permissions')->where('name', 'finance.access')->delete();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -179,22 +181,69 @@ it('ARM 6 — broken substrate: finance.* present but finance.access ABSENT abor
     // a real decision to make rather than passing vacuously.
     expect(DB::table('permissions')->where('name', 'like', 'finance.%')->count())->toBeGreaterThan(0);
 
-    expect(fn () => faConvergeMigration()->up())->toThrow(RuntimeException::class, 'rbac:sync');
+    $grantsBefore = DB::table('role_has_permissions')->count();
+    $logMaxBefore = DB::table('activity_log')->max('id');
+
+    ob_start();
+    faConvergeMigration()->up();
+    $output = (string) ob_get_clean();
+
+    expect($output)->toContain('SKIPPED')
+        ->and($output)->toContain('finance.access')
+        ->and(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
+        ->and(DB::table('activity_log')->max('id'))->toBe($logMaxBefore);
 });
 
-it('ARM 3 — offender pre-flight bites: a global role outside the six holding finance.access aborts, no grant changes', function () {
-    faPlantDrift();
+it('ARM 3 — a global role outside the six holding finance.access is REPORTED, not fatal, and the convergence still runs', function () {
+    // This arm used to assert a throw, and it was GREEN BY ACCIDENT once `executive_director` existed:
+    // it matched on 'rogue_finance' while the abort message also named ED, so it would have passed on
+    // a migration that was bricking every migrate:fresh for an entirely different reason.
+    //
+    // Under ADR 0052's corollary it must not throw at all. This migration governs six named roles and
+    // cannot touch a seventh, so an outside holder is INFORMATION: report it with its holder count and
+    // carry on. The arm asserts the report names the role AND that the convergence completed — the
+    // second half is what stops a future "report" that quietly returns early.
+    $drifted = faPlantDrift();
 
     $rogue = Role::create(['name' => 'rogue_finance', 'guard_name' => 'web']);
     $rogue->givePermissionTo('finance.access');
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    $grantsBefore = DB::table('role_has_permissions')->count();
+    ob_start();
+    faConvergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    expect(fn () => faConvergeMigration()->up())->toThrow(RuntimeException::class, 'rogue_finance');
+    expect($output)->toContain('REPORT')
+        ->and($output)->toContain('rogue_finance');
 
-    // Aborted before any write — the drift is still there.
-    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
-        ->and(faHolds('head_of_school'))->toBeFalse()
-        ->and(faHolds('principal'))->toBeFalse();
+    // ...and the drift was converged anyway, which is the half a silent early return would break.
+    foreach ($drifted as $role) {
+        expect(faHolds($role))->toBeTrue();
+    }
+
+    // The outside role keeps its grant — this migration cannot and must not touch it.
+    expect(DB::table('role_has_permissions as rhp')
+        ->join('permissions as p', 'p.id', '=', 'rhp.permission_id')
+        ->where('rhp.role_id', $rogue->id)->where('p.name', 'finance.access')->exists())->toBeTrue();
+});
+
+it('ARM 7 — a missing governed role is SKIPPED and reported; the other governed roles still converge', function () {
+    $drifted = faPlantDrift();
+
+    Role::where('name', 'finance_lead')->where('guard_name', 'web')->whereNull('school_id')->first()->delete();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    ob_start();
+    faConvergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('SKIPPED')
+        ->and($output)->toContain('finance_lead');
+
+    // Per-role, not a bail-out — the drifted roles still converged.
+    foreach ($drifted as $role) {
+        expect(faHolds($role))->toBeTrue();
+    }
 });

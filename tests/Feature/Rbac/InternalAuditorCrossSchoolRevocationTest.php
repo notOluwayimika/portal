@@ -100,23 +100,29 @@ it('ARM B — idempotent: a second up() changes no grant and writes no activity 
         ->and(iaRbacRows())->toBe($rbacBefore);
 });
 
-it('ARM C — the third-holder pre-flight bites: an unaccounted global holder aborts, no grant changes', function () {
+it('ARM C — an unaccounted global holder is REPORTED, not fatal, and the revocation still runs', function () {
     iaPlantGrant();
 
     // A global role outside {internal_auditor, super_admin} holding the permission is a grant nobody
-    // has accounted for — worth more than this migration, so it aborts rather than narrowing to IA.
+    // has accounted for. It used to abort. Under ADR 0052's corollary it must not: this migration
+    // governs `internal_auditor` alone and cannot touch another role, so an outside holder is
+    // INFORMATION — reported with its holder count, and the revocation carries on.
     $rogue = Role::create(['name' => 'rogue_platform', 'guard_name' => 'web']);
     $rogue->givePermissionTo(IA_CROSS);
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    $grantsBefore = DB::table('role_has_permissions')->count();
+    ob_start();
+    revokeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-    expect(fn () => revokeMigration()->up())->toThrow(RuntimeException::class, 'rogue_platform');
-
-    // Aborted before any write: IA still holds it, and no grant row moved.
-    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
-        ->and(iaGrants('internal_auditor'))->toContain(IA_CROSS)
-        ->and(iaGrants('super_admin'))->toContain(IA_CROSS);
+    expect($output)->toContain('REPORT')
+        ->and($output)->toContain('rogue_platform')
+        // ...and the act completed: IA lost it, while the two roles this migration does not govern
+        // kept it. A "report" that quietly returned early would fail the second line.
+        ->and(iaGrants('internal_auditor'))->not->toContain(IA_CROSS)
+        ->and(iaGrants('super_admin'))->toContain(IA_CROSS)
+        ->and(iaGrants('rogue_platform'))->toContain(IA_CROSS);
 });
 
 it('ARM D — the revocation is AUDITED: exactly one rbac row, a permission_detached naming it', function () {
@@ -143,53 +149,46 @@ it('ARM D — the revocation is AUDITED: exactly one rbac row, a permission_deta
 it('ARM E — the permission this migration governs is the isolation-crossing member all three consumers share', function () {
     // The migration, the seeded-map pin (GrantsMapSeparationTest) and the runtime matrix guard
     // (SyncRolePermissionsRequest) all read PermissionEnum::ISOLATION_CROSSING rather than the
-    // string. This pins that wiring: if the constant stopped naming this permission, the migration's
-    // own opening guard would abort and both other consumers would silently stop guarding it.
+    // string. This arm pins that wiring: if the constant stopped naming this permission, both other
+    // consumers would silently stop guarding it.
     //
-    // The migration's second guard — which aborts if RbacSeeder::grantsMap() still grants the
-    // permission to internal_auditor — is NOT pinned by any arm in this file, and that is a
-    // deliberate limit rather than an unexamined one. It HAS been watched red: restoring the map
-    // line in RbacSeeder.php and running ARM A aborts with "RbacSeeder::grantsMap() still grants
-    // [activity_log.view_cross_school] to [internal_auditor]" (report §"The watched red", red 3).
-    // The reason it is not a committed test is not that grantsMap() lacks a seam — the mutation is
-    // an on-disk edit to the seeder, exactly like the two other watched reds, and a test cannot
-    // carry it: a committed arm would have to rewrite a source file mid-run, and the map edit it
-    // would have to undo is the very thing this change ships. So the guard is proven on scratch and
-    // recorded in the report, not asserted here.
+    // WHAT CHANGED UNDER ADR 0052, because this comment described two aborts that no longer exist.
+    // The migration used to carry a second guard that ABORTED if the seeder's live map still granted
+    // the permission to internal_auditor. That guard is gone: whether TODAY's map re-grants it is
+    // `php artisan rbac:diff-grants`'s question, not a 2026-08-02 act's, and conditioning a dated
+    // act on a map that moves is the defect the ADR names. Its premise check on
+    // ISOLATION_CROSSING now REPORTS rather than aborts, for the same reason — the act it performs
+    // is unchanged either way.
     //
-    // The migration's FIRST guard (:64, the one this arm's subject feeds) is the stricter case: it
-    // compares two SOURCE constants — the migration's own self::PERMISSION against
-    // PermissionEnum::ISOLATION_CROSSING — so NO database state reaches it and no committed test
-    // ever can. This assertion is the closest a test gets: it pins the premise, so a change that
-    // would arm that guard fails HERE, by name, instead of surfacing as an abort mid-migrate.
+    // So this assertion no longer backstops an abort. It pins something narrower and still worth
+    // pinning: the constant the OTHER two consumers depend on still names this permission. A change
+    // that unwires them fails HERE, by name, rather than surfacing as a silent loss of guarding.
     expect(PermissionEnum::ISOLATION_CROSSING)->toContain(IA_CROSS);
 });
 
-it('ARM F — the missing-role pre-flight bites: no global internal_auditor row aborts, no grant changes', function () {
-    // Pre-flight 1 (migration:113-115). Past the fresh-install guard the RBAC substrate IS seeded, so
-    // a missing global role row is a real anomaly, not a fresh database — the migration names it
-    // rather than dereferencing null.
+it('ARM F — a missing global internal_auditor row is SKIPPED and reported, and nothing is written', function () {
+    // A role row that does not exist cannot hold a grant that needs revoking. It used to abort; under
+    // ADR 0052 it reports and returns cleanly. The property that actually matters is unchanged and is
+    // what this arm asserts: nothing is written, and super_admin's sanctioned holding (ADR 0045 A3) is
+    // untouched — a skip is not a partial run.
     //
-    // This is the ONLY throw in the migration reachable by pure database state that ARM C does not
-    // already cover: :64 and :98 both compare source constants or read grantsMap(), so they need an
-    // on-disk edit (see ARM E). No plant here — the arm deletes the very role a plant would grant
-    // to, and reaching :113 does not depend on IA holding anything.
+    // Watched red for the underlying guard is still available: removing the null check fails this arm
+    // with `Attempt to read property "permissions" on null` rather than a clean skip.
     iaGlobalRole('internal_auditor')->delete();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     // Snapshot AFTER the delete: the cascade that removes the role's own grant rows is the arm's
     // setup, not the migration's doing. What is asserted is that up() moved nothing further.
     $grantsBefore = DB::table('role_has_permissions')->count();
+    $logMaxBefore = DB::table('activity_log')->max('id');
 
-    // Named by role, so a failure reads as "the missing row was not caught" rather than
-    // "RuntimeException was not thrown". Watched red: commenting the null check out fails this line
-    // with `Attempt to read property "permissions" on null` — exactly the dereference at :160 that
-    // the guard exists to convert into a named abort.
-    expect(fn () => revokeMigration()->up())
-        ->toThrow(RuntimeException::class, 'global role [internal_auditor] is missing');
+    ob_start();
+    revokeMigration()->up();
+    $output = (string) ob_get_clean();
 
-    // Aborted before any write, and super_admin's sanctioned holding (ADR 0045 A3) is untouched —
-    // the abort is not a partial run.
-    expect(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
+    expect($output)->toContain('SKIPPED')
+        ->and($output)->toContain('internal_auditor')
+        ->and(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
+        ->and(DB::table('activity_log')->max('id'))->toBe($logMaxBefore)
         ->and(iaGrants('super_admin'))->toContain(IA_CROSS);
 });

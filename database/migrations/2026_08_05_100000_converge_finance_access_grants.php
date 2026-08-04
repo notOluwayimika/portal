@@ -16,26 +16,33 @@ use Spatie\Permission\PermissionRegistrar;
  * `RbacSeeder::sync()` is non-destructive for GRANTS in both directions: for a role that already
  * exists it applies only the permissions CREATED in that same run (`RbacSeeder.php:478`, `:494-496`).
  * `finance.access` (permission row created 2026-07-23) and all six role rows pre-date every
- * environment on which the seeder has run, so any role added to `grantsMap()['<role>']` afterwards
+ * environment on which the seeder has run, so any role added to the seeder's grants map afterwards
  * never receives it and no later `rbac:sync` closes the gap. `php artisan rbac:diff-grants` diagnoses
  * exactly this as SYNC_ADD_GAP, and reported it on the live copy for `head_of_school` (role#2) and
- * `principal` (role#10): both are listed as holders in `grantsMap()` (`RbacSeeder.php:230`, `:286`)
+ * `principal` (role#10): both were listed as holders in the seeder's grants map at the time
  * and neither holds the pivot row. `finance.access` is the group gate on the finance page shells and
  * the six GET reads in `routes/endpoints/finance.php`, so the effect is that the approver seat (HoS)
  * cannot reach the surface it approves on.
  *
- * GOVERNED SET — all six holders per `grantsMap()` (`RbacSeeder.php:199`, `:230`, `:286`, `:336`,
- * `:359`, `:373`): admin, head_of_school, principal, accounts_officer, accounts_supervisor,
+ * GOVERNED SET — all six holders per the seeder's grants map as it stood on 2026-08-03:
+ * admin, head_of_school, principal, accounts_officer, accounts_supervisor,
  * finance_lead. Governing all six rather than only the two that drifted makes the permission CONVERGE
  * to the map for every global finance role, so drift in EITHER direction cannot hide: the four
- * already-aligned roles contribute nothing, which is the point. The role SET is written out here (a
- * migration is a fixed historical act and must not re-shape itself if the map moves later); the
- * GRANTS are derived from `grantsMap()` and never hardcoded.
+ * already-aligned roles contribute nothing, which is the point.
+ *
+ * A MIGRATION IS A DATED ACT, NOT A LIVE QUERY (ADR 0052). This file used to say that the role SET
+ * was written out here while the GRANTS were read from the seeder's map at run time — and called
+ * that a design.
+ * It was the defect: the two halves moved in opposite directions, so a later map edit silently
+ * rewrote what this already-shipped migration does on replay. Authored to GRANT `finance.access` to
+ * `head_of_school`, it would, against the 2026-08-04 map, REVOKE it — same filename, same batch row,
+ * opposite act. Both halves are frozen now; see {@see self::TARGET}.
  *
  * `internal_auditor` is deliberately NOT governed and must NOT receive `finance.access`
  * (`RbacSeeder.php:377-394` records the grant as DECIDED and UNIMPLEMENTED — Phase 2, and per-school,
- * not cross-school). If it — or any other global role outside the six — currently holds the row, the
- * offender pre-flight ABORTS rather than this migration silently revoking a human decision.
+ * not cross-school). If it — or any other global role outside the six — holds the row, that is
+ * REPORTED and the migration continues: it governs six named roles and cannot touch a seventh, so an
+ * "offender" is information, never danger (ADR 0052's corollary).
  *
  * WHY THERE IS NO POST-WRITE DutySeparation WALK (the one deliberate deviation from
  * 2026_08_03_100000, which carries one). `DutySeparation::pairs()` emits a pair only for an ability
@@ -74,7 +81,7 @@ use Spatie\Permission\PermissionRegistrar;
  * @converges principal finance.access
  *
  * Everything else follows 2026_08_03_100000: fresh-install guard keyed on the permission substrate;
- * target DERIVED from `grantsMap()`; school-scoped rows counted, never written (C6 local authority
+ * target FROZEN at the adding commit; school-scoped rows counted, never written (C6 local authority
  * stays put); idempotent, short-circuiting BEFORE any activity row; diff-based revoke+give inside one
  * transaction so both Spatie events reach `LogRbacChange` and every delta is audited (NOT
  * `syncPermissions`, which detaches RAW with no event); registrar cache flushed after; BEFORE/AFTER
@@ -85,14 +92,23 @@ return new class extends Migration
     /** The single governed permission. Matched by EQUALITY everywhere — never a substring test. */
     private const PERMISSION = 'finance.access';
 
-    /** @var list<string> All six `grantsMap()` holders of {@see self::PERMISSION}. */
-    private array $governed = [
-        'admin',
-        'head_of_school',
-        'principal',
-        'accounts_officer',
-        'accounts_supervisor',
-        'finance_lead',
+    /**
+     * The grants this migration was written to establish, FROZEN at the commit that added it:
+     * `af9db7ac395bb5891d99e4392e7af0b69092be4f`, 2026-08-03. Transcribed from
+     * `git show af9db7a:database/seeders/RbacSeeder.php`.
+     *
+     * PLAIN STRINGS, not `PermissionEnum::` constants: an enum case can be renamed or deleted, and a
+     * frozen historical act must not depend on today's enum any more than on today's map.
+     *
+     * @var array<string, list<string>>
+     */
+    private const TARGET = [
+        'admin' => ['finance.access'],
+        'head_of_school' => ['finance.access'],
+        'principal' => ['finance.access'],
+        'accounts_officer' => ['finance.access'],
+        'accounts_supervisor' => ['finance.access'],
+        'finance_lead' => ['finance.access'],
     ];
 
     public function up(): void
@@ -119,36 +135,32 @@ return new class extends Migration
             return;
         }
 
-        // Target per governed role, DERIVED from the seeder map. Equality, not str_starts_with: of
-        // the 79 enum values `finance.access` is a prefix of nothing today, but a future
-        // `finance.access_audit` would silently join the governed set under a prefix test.
-        $map = RbacSeeder::grantsMap();
-        $target = [];
-        foreach ($this->governed as $roleName) {
-            $target[$roleName] = in_array(self::PERMISSION, $map[$roleName] ?? [], true)
-                ? [self::PERMISSION]
-                : [];
-        }
+        $skipped = 0;
 
-        // Pre-flight: the permission we must GRANT has to exist (run rbac:sync first otherwise).
-        $mustGrant = collect($target)->flatten()->unique()->values()->all();
-        $present = Permission::query()->whereIn('name', $mustGrant)
+        // Target per governed role, read from the FROZEN literal. A frozen target may name a
+        // permission row that no longer exists; that is the world moving on, not a danger, so the
+        // permission is skipped with a line naming it rather than aborting the run (ADR 0052).
+        $wanted = collect(self::TARGET)->flatten()->unique()->values()->all();
+        $present = Permission::query()->whereIn('name', $wanted)
             ->where('guard_name', RbacSeeder::GUARD)->pluck('name')->all();
-        $missing = array_values(array_diff($mustGrant, $present));
-        if ($missing !== []) {
-            throw new RuntimeException(
-                'converge-finance-access-grants ABORTED: target permission(s) absent from the permissions table — '
-                .'run `php artisan rbac:sync` first, then re-migrate: '.implode(', ', $missing)
-            );
+
+        $target = [];
+        foreach (self::TARGET as $roleName => $permissions) {
+            foreach (array_diff($permissions, $present) as $absent) {
+                echo "  converge-finance-access-grants SKIPPED: permission [{$absent}] has no row — not granted to [{$roleName}].\n";
+                $skipped++;
+            }
+            $target[$roleName] = collect($permissions)->intersect($present)->sort()->values()->all();
         }
 
-        // Pre-flight: no OTHER global role (outside the six) grants it — internal_auditor above all.
-        // Reported with each offender's holder count so the operator knows what a revoke would cost.
+        // A global role outside the frozen six holding it is INFORMATION, never danger: this
+        // migration governs six named roles and cannot touch a seventh, so a grant it reports here is
+        // not one it could have written. Holder counts kept — they are the useful part.
         $offenders = DB::table('roles as r')
             ->join('role_has_permissions as rhp', 'rhp.role_id', '=', 'r.id')
             ->join('permissions as p', 'p.id', '=', 'rhp.permission_id')
             ->whereNull('r.school_id')->where('r.guard_name', RbacSeeder::GUARD)
-            ->where('p.name', self::PERMISSION)->whereNotIn('r.name', $this->governed)
+            ->where('p.name', self::PERMISSION)->whereNotIn('r.name', array_keys(self::TARGET))
             ->distinct()->pluck('r.name')->all();
         if ($offenders !== []) {
             $detail = collect($offenders)->map(function (string $name) {
@@ -160,21 +172,28 @@ return new class extends Migration
 
                 return "{$name} (holders={$holders})";
             })->implode(', ');
-            throw new RuntimeException(
-                'converge-finance-access-grants ABORTED: unexpected global role(s) grant ['.self::PERMISSION.']: '
-                .$detail.'. internal_auditor holding it is a DECIDED-but-UNIMPLEMENTED grant (RbacSeeder.php:377-394) — '
-                .'investigate before widening this migration; do not let it silently revoke a human decision.'
-            );
+            echo '  converge-finance-access-grants REPORT: global role(s) outside this migration\'s scope also '
+                .'grant ['.self::PERMISSION."]: {$detail}. Not an error — this migration governs "
+                .implode(', ', array_keys(self::TARGET)).' only and cannot touch them. '
+                ."internal_auditor holding it would be a DECIDED-but-UNIMPLEMENTED grant; that is \n"
+                ."    `php artisan rbac:diff-grants`'s question, not this migration's.\n";
         }
 
-        // Pre-flight: every governed role exists as a global row.
+        // A governed role row that does not exist cannot hold a grant that needs converging. Skip it,
+        // say so, continue.
         $roles = [];
-        foreach ($this->governed as $roleName) {
+        foreach (array_keys($target) as $roleName) {
             $role = Role::query()->where('name', $roleName)
                 ->where('guard_name', RbacSeeder::GUARD)->whereNull('school_id')->first();
+
             if ($role === null) {
-                throw new RuntimeException("converge-finance-access-grants ABORTED: global role [{$roleName}] is missing.");
+                echo "  converge-finance-access-grants SKIPPED: global role [{$roleName}] does not exist — nothing to converge for it.\n";
+                $skipped++;
+                unset($target[$roleName]);
+
+                continue;
             }
+
             $roles[$roleName] = $role;
         }
 
@@ -189,14 +208,13 @@ return new class extends Migration
 
         // Idempotency: already converged ⇒ clean no-op, no second batch of activity rows.
         $needsWork = false;
-        foreach ($this->governed as $roleName) {
-            $current = $this->currentGrant($roles[$roleName]);
-            if ($current !== $target[$roleName]) {
+        foreach ($target as $roleName => $wantedForRole) {
+            if ($this->currentGrant($roles[$roleName]) !== $wantedForRole) {
                 $needsWork = true;
             }
         }
 
-        $this->report('BEFORE');
+        $this->report('BEFORE', $skipped);
 
         if (! $needsWork) {
             echo "  converge-finance-access-grants: already aligned — no grants changed, no activity rows written.\n";
@@ -208,11 +226,11 @@ return new class extends Migration
         // Diff-based revoke + give, atomically. revoke fires PermissionDetachedEvent, give fires
         // PermissionAttachedEvent — both reach LogRbacChange. (syncPermissions detaches RAW, no event.)
         DB::transaction(function () use ($roles, $target) {
-            foreach ($this->governed as $roleName) {
+            foreach ($target as $roleName => $wantedForRole) {
                 $role = $roles[$roleName];
                 $current = $this->currentGrant($role);
-                $revoke = array_values(array_diff($current, $target[$roleName]));
-                $grant = array_values(array_diff($target[$roleName], $current));
+                $revoke = array_values(array_diff($current, $wantedForRole));
+                $grant = array_values(array_diff($wantedForRole, $current));
 
                 foreach ($revoke as $perm) {
                     $role->revokePermissionTo($perm);
@@ -225,7 +243,7 @@ return new class extends Migration
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->report('AFTER');
+        $this->report('AFTER', $skipped);
     }
 
     /**
@@ -257,9 +275,9 @@ return new class extends Migration
      * name only, no user names/emails. Holders derived as CheckStaffingReadiness does (raw grant, so
      * super_admin's Gate::before bypass never inflates the count).
      */
-    private function report(string $label): void
+    private function report(string $label, int $skipped): void
     {
-        echo "  converge-finance-access-grants [{$label}] holders per school:\n";
+        echo "  converge-finance-access-grants [{$label}] holders per school (skipped={$skipped}):\n";
 
         foreach (School::query()->orderBy('id')->get() as $school) {
             $userIds = DB::table('model_has_roles')

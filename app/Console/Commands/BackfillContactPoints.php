@@ -192,7 +192,18 @@ class BackfillContactPoints extends Command
      */
     private function storeEmailFromColumn(User $user, bool $dryRun): void
     {
-        $raw = (string) $user->email;
+        // ⚠️ TRIMMED FIRST, AND THE TRIM IS LOAD-BEARING. AddressNormalizer::email()
+        // trims before it validates; this check did not. The two therefore disagreed
+        // on a PADDED sentinel: `"…@no-email.local "` failed str_ends_with, escaped
+        // the exclusion, and was then trimmed back into a valid address by the
+        // normalizer — minting an email contact point for exactly the phone-only
+        // guardian the exclusion exists to protect. Post-cutover that flips
+        // hasDeliverableEmail() true for them, and bulk mail plus the reset broker
+        // aim at an address that can never receive.
+        //
+        // Same trim-mismatch class as the phone column: one view trims, the other
+        // does not, and the disagreement is invisible until a row lands in the gap.
+        $raw = trim((string) $user->email);
 
         if ($raw === '') {
             return;

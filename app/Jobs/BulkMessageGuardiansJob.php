@@ -32,7 +32,11 @@ class BulkMessageGuardiansJob implements ShouldQueue
     {
         Guardian::whereIn('id', $this->guardianIds)
             ->where('school_id', $this->schoolId)
-            ->with('user')
+            // `user.contactPoints`, not just `user`: post-cutover the deliverability
+            // predicate resolves through the contact point, so loading the user alone
+            // leaves one query per guardian — the N+1 this cutover would otherwise
+            // introduce rather than remove.
+            ->with('user.contactPoints')
             ->get()
             ->each(function (Guardian $guardian) {
                 $user = $guardian->user;

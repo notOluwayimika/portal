@@ -6,6 +6,8 @@ namespace App\Models;
 
 use App\Concerns\BelongsToSchool;
 use App\Exceptions\NullTeamRoleAssignmentException;
+use App\Notifications\Enums\ChannelKey;
+use App\Support\ContactPointAuthority;
 use App\Support\DutySeparation;
 use App\Support\SchoolAccessParity;
 use Database\Factories\UserFactory;
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -111,26 +114,95 @@ class User extends Authenticatable
      * goes nullable, which is the next PR. Folding the guard in fixes it ahead of
      * the change that would expose it.
      */
+    /**
+     * THE ONE RESOLUTION. Gate, mail router and export all read this.
+     *
+     * Returning the ADDRESS rather than a boolean is what makes the deliverability
+     * GATE and the send ACTION the same source by construction rather than by
+     * coincidence. They used to be two: `hasDeliverableEmail()` answered from
+     * `users.email` while `Password::sendResetLink → ResetPassword` routed through
+     * `routeNotificationForMail()`, which Laravel defaults to `$this->email`. Those
+     * agree today only because contact points were backfilled FROM that column — an
+     * accident of provenance. The moment an email edit lands in `contact_points`
+     * instead, a gate that says yes and a router that mails the old address is a
+     * password reset that silently goes nowhere.
+     *
+     * GATED ON THE BACKFILL MARKER, failing safe to the legacy string. Between
+     * code-live and backfill-complete every flipped reader would otherwise mis-answer
+     * for the WHOLE populated database: bulk messaging no-ops school-wide, password
+     * reset refuses everyone. The gate is not co-deploy timing; it is the data's own
+     * completion marker.
+     */
+    public function deliverableEmailAddress(): ?string
+    {
+        if (! app(ContactPointAuthority::class)->isAuthoritative()) {
+            // LEGACY, unchanged: trimmed, non-empty, not the minted sentinel.
+            $email = trim((string) $this->email);
+
+            return ($email !== '' && ! self::isSyntheticEmail($email)) ? $email : null;
+        }
+
+        return $this->emailContactPoint()?->normalized_address;
+    }
+
     public function hasDeliverableEmail(): bool
     {
-        // TRIMMED ONCE, then both questions asked of the trimmed value. Untrimmed,
-        // this predicate called pure whitespace DELIVERABLE — `'   ' !== ''` is true
-        // and `str_ends_with('   ', $sentinel)` is false — and called a padded
-        // sentinel deliverable for the same reason.
-        //
-        // The `(string)` cast is the SAME one that made GuardiansExport wrong; there
-        // it stood alone, so a null address read as deliverable. Paired with the
-        // emptiness check it is correct: null, '' and '   ' collapse to one falsy
-        // case instead of slipping past the sentinel test.
-        //
-        // Written as a cast rather than `!== null` because Larastan types `email` as
-        // non-nullable from the schema and rejects the comparison as always-true —
-        // which is itself the proof that the null state is unreachable TODAY and
-        // becomes reachable the moment the mint is retired and the column goes
-        // nullable.
-        $email = trim((string) $this->email);
+        return $this->deliverableEmailAddress() !== null;
+    }
 
-        return $email !== '' && ! self::isSyntheticEmail($email);
+    /**
+     * Where Laravel actually sends mail — INCLUDING the password-reset broker.
+     *
+     * ⚠️ THIS MUST LAND WITH OR BEFORE `users.email` GOES NULLABLE. Laravel's default
+     * routes mail to `$this->email`; once that column can be null, an unoverridden
+     * router turns every `notify()` and every reset into a send-to-null by accident.
+     * The override is what converts "email is nullable" from a latent null-route into
+     * a defined skip.
+     *
+     * NULL IS A DELIBERATE SKIP, not an error: MailChannel declines to send when the
+     * route is empty, which is the correct behaviour for a guardian on record with no
+     * address — the population the synthetic sentinel used to serve.
+     */
+    public function routeNotificationForMail(): ?string
+    {
+        return $this->deliverableEmailAddress();
+    }
+
+    /**
+     * @return HasMany<ContactPoint, $this>
+     *
+     * NOT scoped by school, and that is not an omission — `contact_points` has no
+     * `school_id` column BY DESIGN (#199): an address belongs to a human, not a
+     * tenancy, because one person is a parent at one school and staff at another with
+     * one phone. The tenancy boundary for this read is the USER, enforced wherever
+     * that user was fetched; a contact-point query is already person-scoped and
+     * cannot cross tenants on its own.
+     */
+    public function contactPoints(): HasMany
+    {
+        return $this->hasMany(ContactPoint::class);
+    }
+
+    /**
+     * This person's email contact point.
+     *
+     * READS THE LOADED RELATION WHEN PRESENT, which is the entire reason eager
+     * loading works at the loop call sites. A `->contactPoints()->where(...)->first()`
+     * that always queries would make `with('user.contactPoints')` decorative and leave
+     * the N+1 exactly where it was — the flip turns an O(1) string test into a
+     * per-row query, and the export asks twice per row.
+     */
+    public function emailContactPoint(): ?ContactPoint
+    {
+        if ($this->relationLoaded('contactPoints')) {
+            return $this->contactPoints
+                ->firstWhere('channel', ChannelKey::EMAIL);
+        }
+
+        return $this->contactPoints()
+            ->where('channel', ChannelKey::EMAIL->value)
+            ->orderByDesc('is_primary')
+            ->first();
     }
 
     /**

@@ -16,32 +16,47 @@ export type NotificationRow = {
 };
 
 /**
- * subject_type → deep link.
+ * NOTIFICATION TYPE → deep link.
  *
- * EXTENSIBLE BUT ONLY POPULATED FOR WHAT IS BUILT. An entry here is a promise that
- * the target page exists and the row's identifiers can reach it; adding speculative
- * ones would produce links to routes nobody has written.
+ * ⚠️ RE-KEYED FROM subject_type, AND THE TWO GENUINELY DIVERGE. ResultReady navigates
+ * by SUBJECT — it needs the student and enrolment uuids to reach one specific result
+ * page. ApprovalRequested navigates by TYPE — all four approval families land on the
+ * same checker queue, and the subject plays no part in the URL.
  *
- * RETURNS NULL RATHER THAN A BEST GUESS. Payload ids are not foreign keys — a student
- * withdrawn after the notification was raised leaves a row that must render as
- * readable history and navigate NOWHERE. A link to a 404 is worse than no link,
- * because the parent taps it and is told the child does not exist.
+ * A subject-keyed map cannot express the second without four identical entries, one per
+ * Finance subject class, each ignoring its own key. Keying on type lets each builder
+ * decide what it consumes: some read subject uuids, some read nothing.
+ *
+ * EXTENSIBLE, POPULATED ONLY FOR WHAT IS BUILT — an entry here is a promise that the
+ * target route exists, and NotificationDeepLinkRouteTest checks that promise against
+ * Laravel's route table rather than trusting it. That check is why the map reaching two
+ * entries is the right moment to add it.
+ *
+ * RETURNS NULL RATHER THAN A BEST GUESS. Payload ids are not foreign keys, so a
+ * withdrawn subject leaves a row that must render as readable history and navigate
+ * NOWHERE. A link to a 404 is worse than no link — the parent taps it and is told their
+ * child does not exist.
  */
 const DEEP_LINKS: Record<string, (row: NotificationRow) => string | null> = {
-    // The result page is keyed on (student, enrolment), so BOTH uuids are required.
-    // Either missing means the subject is gone: no link.
-    'App\\Models\\StudentCurriculum': (row) =>
+    // Per-SUBJECT: the result page is keyed on (student, enrolment), so BOTH uuids are
+    // required. Either missing means the subject is gone — no link.
+    'result.ready': (row) =>
         row.student_uuid && row.subject_uuid
             ? `/students/${row.student_uuid}/results/${row.subject_uuid}`
             : null,
+
+    // Per-TYPE: the checker's QUEUE. No subject uuid in the URL at all — a void request,
+    // a credit note, a discount-policy change and a fee-schedule change all land here,
+    // which is precisely why this map cannot be keyed on subject.
+    'approval.requested': () => '/finance/approvals',
 };
 
 export function notificationDeepLink(row: NotificationRow): string | null {
-    if (row.subject_type === null) {
+    if (row.type === null) {
         return null;
     }
 
-    return DEEP_LINKS[row.subject_type]?.(row) ?? null;
+    return DEEP_LINKS[row.type]?.(row) ?? null;
 }
 
 /**

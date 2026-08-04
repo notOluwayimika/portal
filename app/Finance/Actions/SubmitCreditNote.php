@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Approval\ApprovalRequirement;
+use App\Finance\Approval\NotifiesApprovalCheckers;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Models\CreditNote;
@@ -27,6 +28,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class SubmitCreditNote
 {
+    use NotifiesApprovalCheckers;
+
     public function handle(Invoice $invoice, Money $amount, CreditNoteKind $kind, ?string $note, User $maker): CreditNote
     {
         if ($amount->isZero() || $amount->isNegative()) {
@@ -50,7 +53,7 @@ final class SubmitCreditNote
             throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
-        return DB::transaction(function () use ($invoice, $amount, $kind, $note, $maker) {
+        $submitted = DB::transaction(function () use ($invoice, $amount, $kind, $note, $maker) {
             $number = Sequences::next('finance_credit_note', (string) $invoice->school_id);
 
             // Created directly in `submitted` — no ledger post. The DB insert_guard still
@@ -69,5 +72,21 @@ final class SubmitCreditNote
                 'created_by_user_id' => $maker->id,
             ]);
         });
+
+        // AFTER the commit, never inside it.
+        $this->notifyApprovalCheckers(
+            subject: $submitted,
+            checkerAbility: Permission::FINANCE_CREDIT_NOTE_APPROVE->value,
+            submittedBy: (int) $maker->id,
+            // Every identifier here was verified against the schema rather than assumed.
+            // The first draft used Money::format() and Invoice::$display_number — neither
+            // exists; Larastan caught both, and the Finance suite caught the first as 30
+            // red tests. Plausible-looking attribute names are exactly what static
+            // analysis is for.
+            summary: 'Credit note of '.$amount->currency.' '.$amount->toNaira()
+                .' on invoice '.$invoice->number,
+        );
+
+        return $submitted;
     }
 }

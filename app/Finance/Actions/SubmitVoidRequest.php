@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Approval\ApprovalRequirement;
+use App\Finance\Approval\NotifiesApprovalCheckers;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\VoidRequest;
@@ -37,6 +38,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class SubmitVoidRequest
 {
+    use NotifiesApprovalCheckers;
+
     public function handle(Invoice $invoice, string $reason, User $maker): VoidRequest
     {
         if (trim($reason) === '') {
@@ -66,12 +69,23 @@ final class SubmitVoidRequest
             throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
-        return DB::transaction(fn () => VoidRequest::create([
+        $submitted = DB::transaction(fn () => VoidRequest::create([
             'school_id' => $invoice->school_id,
             'invoice_id' => $invoice->id,
             'reason' => trim($reason),
             'status' => VoidRequestStatus::Submitted,
             'submitted_by' => $maker->id,
         ]));
+
+        // AFTER the commit, never inside it: a notification for a submission that
+        // rolled back would tell checkers to decide something that does not exist.
+        $this->notifyApprovalCheckers(
+            subject: $submitted,
+            checkerAbility: Permission::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
+            submittedBy: (int) $maker->id,
+            summary: 'Void requested for invoice '.$invoice->number,
+        );
+
+        return $submitted;
     }
 }

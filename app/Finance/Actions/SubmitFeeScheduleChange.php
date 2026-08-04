@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Approval\ApprovalRequirement;
+use App\Finance\Approval\NotifiesApprovalCheckers;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleChangeStatus;
 use App\Finance\Enums\FeeScheduleStatus;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class SubmitFeeScheduleChange
 {
+    use NotifiesApprovalCheckers;
+
     public function handle(FeeScheduleChangeKind $kind, FeeSchedule $target, string $reason, User $maker): FeeScheduleChange
     {
         $schoolId = ActiveSchool::id();
@@ -57,7 +60,7 @@ final class SubmitFeeScheduleChange
             throw new \LogicException('Straight-through submission is not implemented — see ADR 0051.');
         }
 
-        return DB::transaction(function () use ($schoolId, $kind, $target, $reason, $maker) {
+        $submitted = DB::transaction(function () use ($schoolId, $kind, $target, $reason, $maker) {
             // 4a: a publish FREEZES the target by moving it draft → pending_approval, so the numbers the ED
             // sees cannot change under approval (the item guards refuse every write once it leaves draft).
             // Re-read the target status UNDER LOCK first: the maker-side check above read a model loaded
@@ -81,5 +84,15 @@ final class SubmitFeeScheduleChange
                 'submitted_by' => $maker->id,
             ]);
         });
+
+        // AFTER the commit, never inside it.
+        $this->notifyApprovalCheckers(
+            subject: $submitted,
+            checkerAbility: Permission::FINANCE_FEE_SCHEDULE_CHANGE_APPROVE->value,
+            submittedBy: (int) $maker->id,
+            summary: 'Fee schedule change ('.$kind->value.') on '.$target->label,
+        );
+
+        return $submitted;
     }
 }

@@ -63,6 +63,81 @@ it('ignores disabled_at, which is a different question', function () {
 });
 
 /**
+ * WHITESPACE IS NOT AN ADDRESS — and until this fix the predicate said it was.
+ *
+ * `'   ' !== ''` is true and `str_ends_with('   ', $sentinel)` is false, so the
+ * untrimmed form returned DELIVERABLE for pure whitespace. Live at all seven sites
+ * the lift routed through here: bulk mail, the export's "has login" column, and the
+ * password-reset gate.
+ */
+it('treats a whitespace-only address as undeliverable', function () {
+    $user = dep_user('parent@example.test');
+    $user->email = '   ';
+
+    expect($user->hasDeliverableEmail())->toBeFalse();
+});
+
+/**
+ * THE PADDED SENTINEL — the same trim mismatch that #201 fixed in the backfill,
+ * living in the predicate too.
+ *
+ * Fixing one copy CREATED the divergence: the migration excluded a padded sentinel
+ * while this predicate called it deliverable. Two views of one value disagreeing
+ * about which characters count — the inlined-copy drift the lift removed at five
+ * sites, recreated at two by repairing one of them. Both now call
+ * User::isSyntheticEmail(), which trims.
+ */
+it('rejects a synthetic address that carries whitespace', function () {
+    $user = dep_user('parent@example.test');
+    $user->email = '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN.' ';
+
+    expect($user->hasDeliverableEmail())->toBeFalse()
+        ->and(User::isSyntheticEmail($user->email))->toBeTrue();
+});
+
+it('accepts a real address that carries whitespace', function () {
+    // The trim must not make a genuine address undeliverable — the fix has to be a
+    // narrowing of the sentinel test, not of deliverability.
+    $user = dep_user('parent@example.test');
+    $user->email = '  parent@example.test  ';
+
+    expect($user->hasDeliverableEmail())->toBeTrue();
+});
+
+/**
+ * ONE DEFINITION OF THE SENTINEL TEST, asserted structurally.
+ *
+ * The literal is already pinned to one occurrence; this pins the CHECK. Two inlined
+ * `str_ends_with(..., SYNTHETIC_EMAIL_DOMAIN)` copies is exactly the state that let
+ * a one-place trim fix produce a two-place disagreement.
+ */
+it('keeps the synthetic check in exactly one place', function () {
+    $appFiles = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(dirname(__DIR__, 3).'/app', FilesystemIterator::SKIP_DOTS)
+    );
+
+    $checks = 0;
+
+    foreach ($appFiles as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        foreach (file($file->getPathname(), FILE_IGNORE_NEW_LINES) as $line) {
+            if (preg_match('/^\s*(\/\/|\*|\/\*)/', $line)) {
+                continue;
+            }
+
+            if (str_contains($line, 'str_ends_with') && str_contains($line, 'SYNTHETIC_EMAIL_DOMAIN')) {
+                $checks++;
+            }
+        }
+    }
+
+    expect($checks)->toBe(1, 'the synthetic check must live only in User::isSyntheticEmail()');
+});
+
+/**
  * THE ONE INTENTIONAL BEHAVIOUR CHANGE, and it is unreachable today.
  *
  * `users.email` is NOT NULL, so no user can currently have a null address. But

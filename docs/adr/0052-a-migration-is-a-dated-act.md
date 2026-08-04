@@ -73,6 +73,40 @@ harmless surprise into a permanent brick on every future `migrate:fresh`.
 
 Targets are frozen as **plain strings**, not `PermissionEnum::` constants. An enum case can be renamed
 or deleted; a frozen historical act must not depend on today's enum any more than on today's map.
+### The corollary is a two-part test, not a slogan
+
+The corollary as first written — *"aborts only on a condition its own writes would create"* — could not
+decide the next case that came to it, and a rule that cannot decide the next case is not yet a rule.
+Before converting an abort to a report, ask two questions.
+
+1. **Would continuing leave a hole this migration's own writes dug?** A migration whose act is a
+   TRANSFER — strip one role, grant another — cannot half-apply. Skipping the grant half while the
+   strip half runs is not the world moving on; it is the migration digging the hole itself.
+2. **Does the abort message name a command that clears the condition and lets the migration pass?**
+
+**Both yes → the abort stands.** It is a precondition, not a brick, and the operator has a one-command
+exit.
+
+**(1) no → report and continue, regardless of (2).** A migration cannot touch a role it does not
+govern, so an offender is information.
+
+**(1) yes and (2) no → do not convert and do not leave it.** The migration is unsafe to continue AND
+unsafe to stop, which is a design problem, not a comment problem. Escalate it.
+
+**Against the four files this branch converted, part 1 is NO for every converted abort.** Each
+converges one role toward its own frozen slice, so a missing role or a missing permission costs
+coverage, never coherence. That is why they became reports and skips, and why that stays correct.
+
+**Against `2026_08_06_100000_move_head_of_school_finance_to_executive_director` — the next migration to
+meet this rule — part 1 is YES.** Its act is a transfer: it strips five finance grants from
+`head_of_school` and four from `accounts_supervisor` and grants nine to `executive_director`. Skipping
+the grant half while the strip half runs leaves the four `*.change.approve/.reject` and the two
+credit-note/void checker pairs held by **nobody** — and combined with the `Gate::before` maker–checker
+exclusion (ADR 0040), no seat on the platform, `super_admin` included, could approve anything
+financial. Part 2 is YES: `php artisan rbac:sync` creates the missing role row and the migration then
+passes. **So it aborts, and its sibling abort on a missing target permission row aborts for the same
+reason. Neither converts.**
+
 
 ## The trade, stated rather than buried
 

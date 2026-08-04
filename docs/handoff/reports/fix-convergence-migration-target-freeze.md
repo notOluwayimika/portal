@@ -349,14 +349,30 @@ that paragraph; nothing else depends on it.
 
 One place to work from. **Re-derive every number here at rebase time; none of them carry.**
 
-1. **Freeze `2026_08_06_100000_move_head_of_school_finance_to_executive_director.php`.** The new gate
-   forces it — it carries `RbacSeeder::grantsMap`, and its docblock advertises the defect as a design.
-   Frozen at ED's own commit, its target is `head_of_school => []`,
+1. **Freeze `2026_08_06_100000_move_head_of_school_finance_to_executive_director.php`'s TARGET and
+   correct its docblock — but KEEP both of its aborts.** The new gate forces the freeze; it carries
+   `RbacSeeder::grantsMap`, and its docblock advertises the defect as a design. Frozen at ED's own
+   commit, its target is `head_of_school => []`,
    `accounts_supervisor => ['finance.access', 'finance.fee-schedule.change.submit']`, and
-   `executive_director =>` its nine. Its aborts get the same ADR 0052 treatment, except any that
-   qualify under the corollary — check the ED-role-missing abort against the rule rather than assuming
-   it converts: it guards a condition that would leave HoS stripped with no seat able to approve, and
-   that may be the second legitimate abort on this project.
+   `executive_director =>` its nine.
+
+   **Its two aborts do NOT convert**, and this is settled rather than left to judgement at rebase
+   time. Run against ADR 0052's two-part test:
+
+   - **Part 1 — would continuing leave a hole this migration's own writes dug? YES.** Its act is a
+     TRANSFER, not a convergence-per-role: it strips five grants from `head_of_school` and four from
+     `accounts_supervisor` and grants nine to `executive_director`. Skipping the grant half while the
+     strip half runs leaves four `*.change.approve/.reject` plus the credit-note and void checker
+     pairs held by nobody — and with the `Gate::before` maker–checker exclusion (ADR 0040), no seat on
+     the platform including `super_admin` can approve anything financial.
+   - **Part 2 — does the message name a command that clears it? YES.** `php artisan rbac:sync` creates
+     the ED role row; the migration then passes. Precondition, not brick, one-command exit.
+
+   Both yes → the abort stands. The sibling abort on a missing target **permission** row stands for
+   the same reason. This was my item-1 flag on the previous pass and it was right: the corollary as
+   originally written could not decide this case, which is what turned it into the two-part test now
+   in the ADR.
+
 2. **The six arms in `FinanceChangeGrantConvergenceTest` and `FinanceAccessGrantConvergenceTest`** —
    brief §6.2, correct as written and wrong as scheduled. They are red on ED, not here, so the rewrite
    is rebase work. §6.2's prescriptions still apply: assert the frozen literal for every governed

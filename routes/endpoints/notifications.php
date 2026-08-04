@@ -1,5 +1,6 @@
 <?php
 
+use App\Notifications\Http\Controllers\NotificationActionController;
 use App\Notifications\Http\Controllers\NotificationFeedController;
 use App\Notifications\Http\Controllers\NotificationQueueHealthController;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +28,23 @@ Route::middleware(['auth:sanctum', 'tenant'])->prefix('notifications')->group(fu
     Route::post('/seen', [NotificationFeedController::class, 'markSeen']);
     Route::post('/read-all', [NotificationFeedController::class, 'markAllRead']);
     Route::patch('/{uuid}/read', [NotificationFeedController::class, 'markRead']);
+
+    /*
+     * The tap. Route-model-bound by uuid on BOTH segments, so the action is resolved
+     * against the notification named in the URL and the controller can assert they
+     * belong together — a valid action uuid must not be tappable through a
+     * notification the caller merely happens to receive.
+     *
+     * Deliberately inside the same auth+tenant group and behind NO `permission:`
+     * middleware: acting on your own notification is not an ability a role grants,
+     * and gating it on one would let a role be configured to lock a parent out of
+     * revoking their own child's pickup. Authorization is the ownership predicate in
+     * the controller — tenant + recipient, 404 on either.
+     */
+    Route::post(
+        '/{notification:uuid}/actions/{action:uuid}',
+        [NotificationActionController::class, 'store'],
+    );
 });
 
 /*

@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Notifications\Contracts\Notifier;
+use App\Notifications\Enums\ChannelKey;
 use App\Notifications\Enums\DeliveryStatus;
 use App\Notifications\Enums\NotificationType;
 use App\Notifications\Jobs\FanOutNotificationJob;
@@ -175,6 +176,13 @@ it('is idempotent when the fan-out job runs twice', function () {
         new ResultReady($family['enrolments']->first(), $school->id)
     ));
 
+    // COUNTED, NOT HARD-CODED. This asserted `1` when in-app was the only channel,
+    // so wiring email turned a passing idempotency test into a failing one that was
+    // reporting a channel count, not a duplicate. The property is "re-running adds
+    // NOTHING" — expressed against the first run's own total, it survives every
+    // future channel.
+    $afterFirst = NotificationDelivery::query()->count();
+
     // Re-running is exactly what happens when shared hosting kills the worker
     // mid-chunk and cron picks the job up again a minute later.
     (new FanOutNotificationJob($record->id, $school->id))->handle(
@@ -183,8 +191,11 @@ it('is idempotent when the fan-out job runs twice', function () {
         app(PreferenceGate::class),
     );
 
-    expect(NotificationDelivery::query()->count())->toBe(1)
-        ->and(NotificationDelivery::query()->first()->status)->toBe(DeliveryStatus::DELIVERED);
+    expect(NotificationDelivery::query()->count())->toBe($afterFirst)
+        ->and($afterFirst)->toBeGreaterThan(0)
+        // The in-app row still completes inline; email is transmitted by the send job.
+        ->and(NotificationDelivery::query()->where('channel', ChannelKey::IN_APP->value)->first()->status)
+        ->toBe(DeliveryStatus::DELIVERED);
 });
 
 it('writes a skipped delivery row with a reason rather than dropping a refused send', function () {

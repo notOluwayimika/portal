@@ -152,8 +152,8 @@ return [
          */
         'academic-anomalies' => [
             'driver' => 'single',
-            'path'   => storage_path('logs/academic-anomalies.log'),
-            'level'  => 'warning',
+            'path' => storage_path('logs/academic-anomalies.log'),
+            'level' => 'warning',
             'replace_placeholders' => true,
         ],
 

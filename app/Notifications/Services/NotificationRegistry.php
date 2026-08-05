@@ -59,7 +59,10 @@ class NotificationRegistry
             new TypeDefinition(
                 type: NotificationType::APPROVAL_REQUESTED,
                 resolver: CheckerAbilityResolver::class,
-                defaultChannels: [ChannelKey::IN_APP],
+                // EMAIL joins IN_APP now the channel exists. A checker is not
+                // sitting in the portal waiting; the whole point of notifying them
+                // is to reach them where they are.
+                defaultChannels: [ChannelKey::IN_APP, ChannelKey::EMAIL],
                 // An approval request is an obligation of the role, not a
                 // subscription — a checker cannot opt out of being asked.
                 userConfigurable: false,
@@ -71,7 +74,7 @@ class NotificationRegistry
             new TypeDefinition(
                 type: NotificationType::RESULT_READY,
                 resolver: GuardiansOfStudentResolver::class,
-                defaultChannels: [ChannelKey::IN_APP],
+                defaultChannels: [ChannelKey::IN_APP, ChannelKey::EMAIL],
                 userConfigurable: true,
                 excludeActor: true,
             ),

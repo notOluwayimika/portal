@@ -314,3 +314,55 @@ it('ARM 7 — the duty-separation walk rolls the whole migration back on an enfo
         ->and(edFinanceGrants('head_of_school'))->toHaveCount(5)
         ->and(edFinanceGrants('executive_director'))->toBe([]);
 });
+
+it('ARM 8 — a both-sides user this run did NOT create is REPORTED, not rolled back', function () {
+    // THE NARROWING, ARMED. Here the run grants NOTHING: ED already holds its nine and AS its two, so
+    // the only work left is stripping head_of_school. A revoke can only CLEAR a both-sides state,
+    // never create one, so nothing this run writes can be a side of any violation — every finding is
+    // out of scope by construction, which is the cleanest possible statement of the rule.
+    //
+    // ARM 7 is the other half and must stay green: there the run grants ED's nine, so a violation
+    // involving one of them still throws and still rolls back.
+    edPlantPreMoveState();
+
+    // Put ED and AS back at their frozen target, leaving only the HoS strip to do.
+    edGlobalRole('executive_director')->givePermissionTo([
+        'finance.access',
+        'finance.credit-note.approve', 'finance.credit-note.reject',
+        'finance.discount-policy.change.approve', 'finance.discount-policy.change.reject',
+        'finance.fee-schedule.change.approve', 'finance.fee-schedule.change.reject',
+        'finance.invoice.void-request.approve', 'finance.invoice.void-request.reject',
+    ]);
+    edGlobalRole('accounts_supervisor')->revokePermissionTo([
+        'finance.credit-note.approve', 'finance.credit-note.reject',
+        'finance.invoice.void-request.approve', 'finance.invoice.void-request.reject',
+    ]);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    $school = School::factory()->create();
+    $dual = User::factory()->create(['school_id' => $school->id]);
+    $dual->grantSchoolAccess($school, 'accounts_officer');
+    DB::table('model_has_roles')->insert([
+        'role_id' => edGlobalRole('executive_director')->id,
+        'model_type' => User::class,
+        'model_id' => $dual->id,
+        'school_id' => $school->id,
+    ]);
+    $dual->flushSchoolAccessCache();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // Precondition: head_of_school still has finance to strip, so the run has real work.
+    expect(edFinanceGrants('head_of_school'))->toHaveCount(5);
+
+    ob_start();
+    edMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('did NOT create')
+        ->and($output)->toContain("user#{$dual->id} @ school#{$school->id}")
+        ->and($output)->toContain('finance:audit-duty-separation')
+        // ...and the migration COMMITTED: head_of_school was stripped. A rollback would leave it
+        // holding the checker sides ED now owns, which is the regression this arm exists to catch.
+        ->and(edFinanceGrants('head_of_school'))->toBe([]);
+});

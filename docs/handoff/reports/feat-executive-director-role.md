@@ -728,3 +728,85 @@ I have no strong preference and deliberately did not act. Your call, once.
 - Nothing driven against the dev database on this pass; the four migrations already applied there, and
   every arm ran against `portal_testing`.
 - `finance:check-staffing-readiness` still FAILURE with 16 GAPs, correct and expected.
+
+---
+
+# Addendum 3 — both walks scoped to what their own run wrote
+
+`bin/quality` 13/13. One commit on this branch; the ADR change rides with it because the taxonomy it
+records is the reasoning for the code.
+
+## The narrowing
+
+`2026_08_03` and `2026_08_06` now accumulate `$grantedThisRun` — the permissions the diff actually
+granted on this run, not the frozen target and not the revokes — and the walk flags a pair only when
+at least one of its sides is in that set. The population is unchanged: every user, every school. What
+narrowed is which findings roll the migration back.
+
+Out-of-scope findings are echoed as `user#<id> @ school#<id>`, counted, and the count is repeated in
+the `AFTER` report line. The echo names their owner:
+
+```
+  converge-finance-change-grants REPORT: 1 both-sides finding(s) this run did NOT create — not blocked on:
+    user#<id> @ school#<id> finance.credit-note.submit<>finance.credit-note.approve
+    These are real and they matter. They belong to `php artisan finance:audit-duty-separation`, not to a migration.
+```
+
+For `2026_08_06` the scope is the granted side of the transfer only, exactly as the file's own comment
+already said about revokes. Inside scope, both throws and both rollbacks are untouched.
+`2026_08_03:61-76`'s argument is unchanged — the narrowing made none of it false.
+
+## Arm 1 — `FinanceChangeGrantConvergenceTest` ARM 4, green and unchanged
+
+```
+{"tool":"pest","result":"passed","tests":6,"passed":6,"assertions":...}
+```
+
+Its planted user holds `accounts_supervisor` + `head_of_school`, and the violation is created **by
+this run's own grant** of the fee-schedule maker — squarely in scope, so it still throws and still
+rolls back. Not edited, not adjusted.
+
+## Arm 2 — one new arm per walk, mutation-checked
+
+**`FinanceChangeGrantConvergenceTest` ARM 7.** A user in a both-sides state on the CREDIT-NOTE pair —
+neither side is one of the three `*.change.submit` this run grants.
+
+**One thing I had to correct mid-build, and it is the interesting part.** My first plant gave the user
+`accounts_officer`, which holds *both* granted submits — so the user was in scope through a second
+pair and the arm errored with the throw. That would have been a false red suggesting the filter was
+wrong; the filter was right and the fixture was. Replaced with a bespoke role holding **only**
+`finance.credit-note.submit`, which is the pair this migration touches neither side of. Neither
+`accounts_officer` nor `finance_lead` can serve — both hold a `*.change.submit` this run grants.
+
+**`MoveHosFinanceToEdConvergenceTest` ARM 8.** The cleanest possible statement of the rule: ED and AS
+are put at their frozen target first, so the run grants **nothing** and only strips `head_of_school`.
+Every finding is then out of scope by construction, which demonstrates the revokes-cannot-create rule
+directly rather than by argument.
+
+Both assert the migration **committed** — the grants landed / HoS was stripped — because a rollback is
+the regression they exist to catch, not just a missing message.
+
+**Mutation-checked**, `$thisRunWroteASide = true` (scope widened back to all enforced pairs):
+
+```
+=== GREEN (scoped) ===
+{"tool":"pest","result":"passed","tests":3,"passed":3,"assertions":16}
+=== RED expected (scope widened back) ===
+RED    1p/2r
+    ARM_7… :: converge-finance-change-grants ABORTED (rolled back): 2 user(s) would hold both sides of a finance maker-check
+    ARM_8… :: move-hos-finance-to-ed ABORTED and ROLLED BACK: the new seat assignment would leave 8 user(s) holding both sid
+=== restored ===
+{"tool":"pest","result":"passed","tests":16,"passed":16,"assertions":73}
+```
+
+## ADR 0052 — the taxonomy
+
+New section, *"The same boundary, applied to `DutySeparation`"*, recording all three populations —
+RUNTIME (7, leave live), DATED ACTS THAT REPORT (4 `holdsViaGrant` calls in the `report()` methods,
+leave live), DATED ACTS THAT DECIDE (2, scoped) — so the next call site does not re-litigate it. It
+states that this answers part 1 of the two-part test rather than amending it: a violation the run did
+not create is not a hole the run's own writes dug.
+
+The attribution line is in the ADR as you asked: the finding is recorded as the implementing agent's,
+after the freeze shipped, with the note that the advisor specified the preservation of that abort and
+never looked inside it.

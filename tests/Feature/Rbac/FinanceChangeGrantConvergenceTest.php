@@ -237,3 +237,52 @@ it('ARM 6 — a missing governed role is SKIPPED and reported; the other governe
         // Per-role, not a bail-out — which is the whole difference from the abort this replaced.
         ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 });
+
+it('ARM 7 — a both-sides user this run did NOT create is REPORTED, not rolled back', function () {
+    // THE NARROWING, ARMED. This migration grants the three `*.change.submit` maker sides. A user
+    // holding both sides of the CREDIT-NOTE pair involves neither of them — it is a both-sides state
+    // that existed before this run and that this run cannot have caused. Under ADR 0052 the walk
+    // reports it and commits; before the narrowing it rolled the whole migration back for it.
+    //
+    // ARM 4 is the other half of this pair of arms and must stay green: there the violation IS created
+    // by this run's own grant of the fee-schedule maker, so it still throws and still rolls back.
+    ccPlantDrift();
+
+    $school = School::factory()->create();
+    $dual = User::factory()->create(['school_id' => $school->id]);
+
+    // A bespoke maker seat holding ONLY finance.credit-note.submit. Deliberately not
+    // accounts_officer or finance_lead: both of those also hold a `*.change.submit` that THIS RUN
+    // grants, which would make the user in-scope through a second pair and prove nothing about the
+    // narrowing. The credit-note pair is the one this migration touches neither side of.
+    $maker = Role::create(['name' => 'credit_note_maker_only', 'guard_name' => 'web']);
+    $maker->givePermissionTo('finance.credit-note.submit');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // Both assigned RAW: grant-time enforcement refuses this pairing through the spatie API, which is
+    // exactly why a migration is the only thing that can meet it already in place.
+    foreach ([$maker->id, ccGlobalRole('executive_director')->id] as $roleId) {
+        DB::table('model_has_roles')->insert([
+            'role_id' => $roleId,
+            'model_type' => User::class,
+            'model_id' => $dual->id,
+            'school_id' => $school->id,
+        ]);
+    }
+    $dual->flushSchoolAccessCache();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    ob_start();
+    convergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('did NOT create')
+        ->and($output)->toContain("user#{$dual->id} @ school#{$school->id}")
+        ->and($output)->toContain('finance:audit-duty-separation')
+        // ...and the migration COMMITTED: the three maker grants landed. A rollback would leave them
+        // stripped, which is the regression this arm exists to catch.
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue()
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.discount-policy.change.submit'))->toBeTrue()
+        ->and(ccGlobalRole('accounts_supervisor')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
+});

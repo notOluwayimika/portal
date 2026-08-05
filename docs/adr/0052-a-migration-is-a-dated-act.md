@@ -108,6 +108,49 @@ passes. **So it aborts, and its sibling abort on a missing target permission row
 reason. Neither converts.**
 
 
+### The same boundary, applied to `DutySeparation`
+
+Freezing the target did not freeze the guard. The four converted migrations stopped reading the
+seeder map for their **target** and went on reading live authority state for their **abort** — and a
+2026-08-02 migration would still roll back for a both-sides state assembled entirely from roles it
+does not govern. *(Found by the implementing agent after the freeze shipped; the advisor specified the
+preservation of that abort and never looked inside it. This section exists because of that finding.)*
+
+The boundary is **dated act vs runtime question**, not which primitive is called. `DutySeparation` has
+three populations of caller, and only one of them needed narrowing.
+
+**RUNTIME — 7 call sites. Leave live.** `User::assignRole` (`app/Models/User.php`),
+`SyncRolePermissionsRequest`, `RbacOverview`, `SchoolRbacOverview`, `CheckStaffingReadiness`,
+`AuditDutySeparation`. Each asks a question about NOW: may this assignment proceed, is this school
+staffed, who currently holds both sides. A live answer is the only correct one, and freezing any of
+them would be this ADR's defect in reverse.
+
+**DATED ACTS THAT REPORT — 4 call sites. Leave live.** `DutySeparation::holdsViaGrant` in the
+`report()` methods of `2026_08_02`, `2026_08_04`, `2026_08_05` and `2026_08_06`. A report of current
+state is exactly what they are; a frozen holder count would be a lie about the database in front of
+you. Do not freeze these either.
+
+**DATED ACTS THAT DECIDE — 2 call sites. Scoped.** The post-write walks in `2026_08_03` and
+`2026_08_06`. These read live state to decide whether to **roll back a dated act**, which is the one
+place the distinction bites. Both are now scoped to what their own run WROTE:
+
+- The filter is by PERMISSION, not by user. The walk still visits every user in every school; what
+  narrowed is which findings it will roll back for. A pair is the migration's to block on only when at
+  least one of its two sides is a permission **this run actually granted** — not the frozen target,
+  the grants the diff wrote on this run.
+- **Revocations are out of scope in both directions**: a revoke can only CLEAR a both-sides state,
+  never create one. For `2026_08_06`, whose act is a transfer, that means the scope is the granted
+  side only.
+- A second, idempotent run grants nothing and therefore flags nothing — correct, because it wrote
+  nothing.
+- Violations outside that scope are **reported and continued past**: `user#<id> @ school#<id>`,
+  counted, and the count repeated in the `AFTER` report, with the echo naming
+  `php artisan finance:audit-duty-separation` as their owner. They are real and they matter; they are
+  not a migration's to block on.
+
+This answers part 1 of the two-part test rather than amending it. A violation the run did not create
+is not a hole the run's own writes dug.
+
 ## The trade, stated rather than buried
 
 This is the honest cost and it is not hypothetical. An environment that genuinely has **not** run

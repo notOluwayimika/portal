@@ -225,7 +225,7 @@ return new class extends Migration
             }
         }
 
-        $this->report('BEFORE');
+        $this->report('BEFORE', 0);
 
         if (! $needsWork) {
             echo "  move-hos-finance-to-ed: already aligned — no grants changed, no activity rows written.\n";
@@ -236,7 +236,13 @@ return new class extends Migration
 
         // Diff-based revoke + give, atomically. revoke fires PermissionDetachedEvent, give fires
         // PermissionAttachedEvent — both reach LogRbacChange. (syncPermissions detaches RAW, no event.)
-        DB::transaction(function () use ($roles, $target) {
+        $outOfScope = 0;
+
+        DB::transaction(function () use ($roles, $target, &$outOfScope) {
+            // The permissions THIS RUN actually grants — the granted side of the transfer only, not
+            // the frozen target and not the revokes. This is the scope of the walk below.
+            $grantedThisRun = [];
+
             foreach ($target as $roleName => $wantedForRole) {
                 $role = $roles[$roleName];
                 $current = $this->currentGrants($role);
@@ -248,8 +254,11 @@ return new class extends Migration
                 }
                 if ($grant !== []) {
                     $role->givePermissionTo($grant);
+                    $grantedThisRun = array_merge($grantedThisRun, $grant);
                 }
             }
+
+            $grantedThisRun = array_values(array_unique($grantedThisRun));
 
             app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -262,14 +271,22 @@ return new class extends Migration
             // The reachable direction is the ED one: four maker-checker pairs now terminate on a single
             // role, so any user who ends up holding executive_director alongside accounts_officer,
             // finance_lead or accounts_supervisor is a both-sides holder. Removals from HoS and AS can
-            // only CLEAR violations, never create them. Uses DutySeparation::violations — the audit
-            // command's own primitive, so this cannot disagree with finance:audit-duty-separation —
-            // filtered to ENFORCED (finance) pairs, which is why the pre-existing result.* findings on
-            // the live copy do not abort a finance migration.
+            // only CLEAR violations, never create them, so the scope below is the GRANTED side of the
+            // transfer only. Uses DutySeparation::violations — the audit command's own primitive, so
+            // this cannot disagree with finance:audit-duty-separation — filtered to ENFORCED (finance)
+            // pairs, which is why pre-existing result.* findings do not abort a finance migration.
+            //
+            // SCOPED TO WHAT THIS RUN WROTE (ADR 0052). The walk still visits every user in every
+            // school; what narrowed is which findings it will ROLL BACK for. A pair is this
+            // migration's to block on only when one of its sides is a permission this run actually
+            // granted. Anything else is a both-sides state the run did not create — reported, not
+            // thrown on. A second, idempotent run grants nothing and so flags nothing, which is
+            // correct, because it wrote nothing.
             $enforced = collect(DutySeparation::enforcedPairs())
                 ->map(fn (array $pair): string => $pair['checker'].'|'.$pair['maker'])->all();
 
             $findings = [];
+            $outOfScopeUsers = [];
             foreach (School::query()->orderBy('id')->get() as $school) {
                 $userIds = DB::table('model_has_roles')
                     ->where('model_type', User::class)
@@ -278,15 +295,38 @@ return new class extends Migration
 
                 foreach (User::query()->whereIn('id', $userIds)->get() as $user) {
                     foreach (DutySeparation::violations($user, (int) $school->id) as $pair) {
-                        if (in_array($pair['checker'].'|'.$pair['maker'], $enforced, true)) {
-                            $findings[] = "user#{$user->id} @ school#{$school->id} "
-                                ."[{$pair['checker']} + {$pair['maker']}]";
+                        if (! in_array($pair['checker'].'|'.$pair['maker'], $enforced, true)) {
+                            continue;
+                        }
+
+                        $entry = "user#{$user->id} @ school#{$school->id} "
+                            ."[{$pair['checker']} + {$pair['maker']}]";
+
+                        $thisRunWroteASide = in_array($pair['checker'], $grantedThisRun, true)
+                            || in_array($pair['maker'], $grantedThisRun, true);
+
+                        if ($thisRunWroteASide) {
+                            $findings[] = $entry;
+                        } else {
+                            $outOfScopeUsers[] = $entry;
                         }
                     }
                 }
             }
 
             setPermissionsTeamId(null);
+
+            // Out of scope: real, and not this migration's to block on. Reported so an operator sees
+            // them and knows where they are owned.
+            $outOfScopeUsers = array_values(array_unique($outOfScopeUsers));
+            $outOfScope = count($outOfScopeUsers);
+            if ($outOfScope > 0) {
+                echo "  move-hos-finance-to-ed REPORT: {$outOfScope} both-sides finding(s) this run did NOT create — not blocked on:\n";
+                foreach ($outOfScopeUsers as $entry) {
+                    echo "    {$entry}\n";
+                }
+                echo "    These are real and they matter. They belong to `php artisan finance:audit-duty-separation`, not to a migration.\n";
+            }
 
             if ($findings !== []) {
                 throw new RuntimeException(
@@ -299,7 +339,7 @@ return new class extends Migration
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->report('AFTER');
+        $this->report('AFTER', $outOfScope);
     }
 
     /**
@@ -331,9 +371,9 @@ return new class extends Migration
      * names only, no user names/emails. Holders derived as CheckStaffingReadiness does (raw grant, so
      * super_admin's Gate::before bypass never inflates the count).
      */
-    private function report(string $label): void
+    private function report(string $label, int $outOfScope): void
     {
-        echo "  move-hos-finance-to-ed [{$label}] holders per school:\n";
+        echo "  move-hos-finance-to-ed [{$label}] holders per school (out-of-scope both-sides findings={$outOfScope}):\n";
 
         $watched = [
             'finance.access',

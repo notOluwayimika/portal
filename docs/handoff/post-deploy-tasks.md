@@ -57,6 +57,38 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
   not resting on the config default).
 - [ ] `audit:verify-immutability` after `migrate` — confirms the `activity_log`
   triggers survived the deploy.
+- [ ] Set `MONITORING_ALERT_RECIPIENTS` in the prod env (comma-separated; see
+  `config/monitoring.php`) **before `php artisan optimize` below**. Empty is a
+  SUPPORTED state — with none set, the unconditional `Log::error` in
+  `routes/console.php` is the whole channel and a failure is still findable, just not
+  pushed. There is no default address on purpose: one that arrives somewhere nobody
+  reads looks like coverage.
+  **The ordering is not optional.** `optimize` runs `config:cache`
+  (vendor `OptimizeCommand.php:62`), so a value set *after* it is invisible until
+  `optimize` or `config:cache` is re-run — `schedule:run` being a fresh process per
+  tick does not help, because a fresh process reads the cached config too. Set it
+  first, or re-cache after.
+- [ ] **Prove the alert channel, do not assume it.** Same rule as `phase1-deploy.md`
+  Step 5: registration proves the wrong thing. Mail fires only on failure, so silence
+  after setting the address is indistinguishable from a dead channel — the exact state
+  that hid `finance:audit-duty-separation` exiting non-zero nightly from 2026-07-25 to
+  2026-08-05. `php artisan schedule:test` runs the selected event through
+  `Event::run()` → `finish()` → `callAfterCallbacks()`
+  (vendor `ScheduleTestCommand.php:83`), so the onFailure hooks fire for real;
+  `schedule:list` does not. Force a genuine failure by moving
+  `duty-separation-baseline.txt` aside for the duration — the command then exits 1 down
+  the `NOT AUDITED` path — and **move it back immediately after**, or the real 00:00 run
+  alerts on a file you moved.
+  PASS is all three: the mail arrives, `Scheduled detector failed` with `exit_code` 1 is
+  in the application log, AND `storage/logs/schedule-*.log` now exists.
+
+  That third one is not a bonus check, it is the disclosure. `emailOutputOnFailure`
+  calls `ensureOutputIsBeingCaptured()` (vendor `Event.php:435`), so the mail BODY IS
+  that file — you cannot have the mail content without the file on disk. Two surfaces,
+  one switch, and structurally so; it is not a defect that can be fixed separately.
+  `finance:check-staffing-readiness` prints school display names, so those names are now
+  on the server's disk (five files, overwritten daily — `sendOutputTo`'s `$append`
+  defaults to false, vendor `Event.php:375-382`) as well as in the inbox.
 - [ ] Every FK-dropping migration's `down()` verified for **re-upgrade**, not just
   rollback (the found-once MySQL leftover-index bug).
 - [ ] `npm ci && npm run build` **before** `artisan optimize` — `resources/js/routes`

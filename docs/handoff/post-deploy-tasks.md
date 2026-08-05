@@ -68,27 +68,65 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
   `optimize` or `config:cache` is re-run — `schedule:run` being a fresh process per
   tick does not help, because a fresh process reads the cached config too. Set it
   first, or re-cache after.
-- [ ] **Prove the alert channel, do not assume it.** Same rule as `phase1-deploy.md`
-  Step 5: registration proves the wrong thing. Mail fires only on failure, so silence
-  after setting the address is indistinguishable from a dead channel — the exact state
-  that hid `finance:audit-duty-separation` exiting non-zero nightly from 2026-07-25 to
-  2026-08-05. `php artisan schedule:test` runs the selected event through
-  `Event::run()` → `finish()` → `callAfterCallbacks()`
-  (vendor `ScheduleTestCommand.php:83`), so the onFailure hooks fire for real;
-  `schedule:list` does not. Force a genuine failure by moving
-  `duty-separation-baseline.txt` aside for the duration — the command then exits 1 down
-  the `NOT AUDITED` path — and **move it back immediately after**, or the real 00:00 run
-  alerts on a file you moved.
-  PASS is all three: the mail arrives, `Scheduled detector failed` with `exit_code` 1 is
-  in the application log, AND `storage/logs/schedule-*.log` now exists.
+- [ ] **Prove the alert channel on a SANDBOX first — pre-deploy, not on production.**
+  Same rule as `phase1-deploy.md` Step 5: registration proves the wrong thing. Mail
+  fires only on failure, so silence after setting the address is indistinguishable from
+  a dead channel — the exact state that hid `finance:audit-duty-separation` exiting
+  non-zero nightly from 2026-07-25 to 2026-08-05.
 
-  That third one is not a bonus check, it is the disclosure. `emailOutputOnFailure`
-  calls `ensureOutputIsBeingCaptured()` (vendor `Event.php:435`), so the mail BODY IS
-  that file — you cannot have the mail content without the file on disk. Two surfaces,
-  one switch, and structurally so; it is not a defect that can be fixed separately.
-  `finance:check-staffing-readiness` prints school display names, so those names are now
-  on the server's disk (five files, overwritten daily — `sendOutputTo`'s `$append`
-  defaults to false, vendor `Event.php:375-382`) as well as in the inbox.
+  **This step comes first because it proves strictly more than the production one and
+  costs strictly less.** Everything about the wiring — subject, body, which runs send at
+  all — is identical on a local or staging copy, and getting it wrong there costs a
+  re-run rather than a bad first impression in the real inbox.
+
+  On a local or staging copy, pointed at a sandbox SMTP relay (Mailtrap or equivalent):
+  move `duty-separation-baseline.txt` aside, run `php artisan schedule:test`, and choose
+  `finance:audit-duty-separation` — it then exits 1 down the `NOT AUDITED` path.
+  `schedule:test` runs the selected event through `Event::run()` → `finish()` →
+  `callAfterCallbacks()` (vendor `ScheduleTestCommand.php:83`), so the onFailure hooks
+  fire for real; `schedule:list` does not. **Put the baseline back afterwards.**
+
+  **Move it — do not copy it.** A copy leaves the original in place, the command finds
+  its baseline, exits 0, and `onFailure` never fires. The step then fails loudly (no mail
+  arrives, which is a PASS condition), but the operator's first instinct will be to
+  suspect the mail wiring rather than the file they thought they had moved.
+
+  Confirm three things on the received message:
+  - **the subject is the event's `description` string** — `Event::getEmailSubject()`
+    returns `$this->description` when one is set (vendor `Event.php:483-487`), and every
+    task in `routes/console.php` sets one, so the subject is the FAILURE MEANS sentence
+    rather than a command name;
+  - **the body is byte-identical to `storage/logs/schedule-*.log`** — vendor
+    `Event.php:467` is `file_get_contents($this->output)`, so the mail is that file and
+    nothing else;
+  - **a PASSING detector sends nothing** — re-run the same event with the baseline back
+    in place and confirm no message arrives. Not because the body is empty, but because
+    the callback is registered via `onFailure` and never fires on exit 0.
+
+  Also confirm locally that `Scheduled detector failed` with `exit_code` 1 reached the
+  application log, and that `storage/logs/schedule-*.log` now exists.
+
+  That last one is not a bonus check, it is the disclosure, and the sandbox is where an
+  operator first sees it. `emailOutputOnFailure` calls `ensureOutputIsBeingCaptured()`
+  (vendor `Event.php:435`), so the mail BODY IS that file — you cannot have the mail
+  content without the file on disk. Two surfaces, one switch, and structurally so; it is
+  not a defect that can be fixed separately. `finance:check-staffing-readiness` prints
+  school display names, so those names land on the server's disk (five files, overwritten
+  daily — `sendOutputTo`'s `$append` defaults to false, vendor `Event.php:375-382`) as
+  well as in the inbox.
+
+- [ ] **Then ONE send from production to the real recipient.** This proves only the three
+  things the sandbox structurally cannot: that mail egresses the production host at all,
+  that the real relay's credentials work, and that the real inbox accepts and does not
+  filter the message. The wiring itself was already proven above; do not re-prove it here.
+
+  **Do NOT move `duty-separation-baseline.txt` on production.** A live cron reads it at
+  00:00, and a window where it is absent turns the real nightly run into a `NOT AUDITED`
+  alert about a file you moved. Use whichever detector is genuinely failing, or accept
+  that this step is deferred until one is — an unproven production channel is a known
+  gap, and moving the baseline to manufacture a failure trades a known gap for a real
+  false alert.
+
 - [ ] Every FK-dropping migration's `down()` verified for **re-upgrade**, not just
   rollback (the found-once MySQL leftover-index bug).
 - [ ] `npm ci && npm run build` **before** `artisan optimize` — `resources/js/routes`

@@ -220,3 +220,51 @@ it('attaches NO mail callback at all when no recipients are configured, and stil
         ->withArgs(fn (string $message): bool => $message === 'Scheduled detector failed')
         ->times(5);
 });
+
+it('keeps the log line when the mailer THROWS — the attach order is what makes the log a floor', function () {
+    // WHY THIS ARM EXISTS. `Event::callAfterCallbacks` (vendor Event.php:251-256) is a bare foreach
+    // with no try/catch, so an exception in one callback aborts every callback registered AFTER it.
+    // In $observed, Log::error's onFailure is attached BEFORE emailOutputOnFailure. That ordering —
+    // two statements, in that sequence, and nothing else — is the entire reason a throwing mailer
+    // cannot take the log line with it.
+    //
+    // It is not hypothetical: MUTANT I (emailOutputOnFailure attached unconditionally, so it ran with
+    // an empty list) produced a real escaping exception, `An email must have a "To", "Cc", or "Bcc"
+    // header`. A misconfigured mailer on the server does the same thing every night. Mail is
+    // escalation; the log is the floor; swap the two lines and the floor is gone precisely when it is
+    // needed most — the run that was already failing.
+    $events = sch_rebuild(['ops@example.test']);
+
+    $event = collect($events)->first(fn ($e) => str_contains($e->command ?? '', 'finance:audit-duty-separation'));
+    expect($event)->not->toBeNull();
+
+    $mailerCalled = false;
+    $mailer = Mockery::mock(Mailer::class);
+    $mailer->shouldReceive('raw')->andReturnUsing(function () use (&$mailerCalled): void {
+        $mailerCalled = true;
+
+        throw new RuntimeException('mailer is misconfigured');
+    });
+    app()->instance(Mailer::class, $mailer);
+
+    Log::spy();
+
+    $event->exitCode = 1;
+
+    // The exception escapes callAfterCallbacks — that is the vendor behaviour this arm is about, so
+    // it is caught here rather than papered over.
+    try {
+        $event->callAfterCallbacks(app());
+    } catch (RuntimeException $e) {
+        expect($e->getMessage())->toBe('mailer is misconfigured');
+    }
+
+    // The mail path really ran, so this arm cannot pass by the mailer having been skipped...
+    expect($mailerCalled)->toBeTrue('the mailer was never called — this arm would pass vacuously');
+
+    // ...and the log line survived it, because it was attached first.
+    Log::shouldHaveReceived('error')
+        ->withArgs(fn (string $message, array $context): bool => $message === 'Scheduled detector failed'
+            && ($context['command'] ?? null) === 'finance:audit-duty-separation')
+        ->once();
+});

@@ -59,6 +59,26 @@ Artisan::command('inspire', function () {
 | `.env.example` still points MAIL_HOST at smtp.mailtrap.io, so "misconfigured" is the state a fresh
 | deployment starts in. A channel that can vanish without saying so cannot be the only one.
 |
+| AND THE ATTACH ORDER BELOW IS LOAD-BEARING, not stylistic. `Event::callAfterCallbacks` (vendor
+| Event.php:251-256) is a bare foreach with no try/catch, so an exception in one callback aborts every
+| callback registered AFTER it. Log::error is attached FIRST for that reason alone: a mailer that
+| throws — misconfigured host, refused connection, empty recipient list — must not be able to take the
+| log line with it on the one run that was already failing. Swap the two statements and the floor
+| disappears exactly when it is needed. ScheduleTest pins the order with a throwing mailer.
+|
+| SETTING A RECIPIENT ALSO WRITES TO DISK, which is a second surface behind one switch and is easy to
+| miss. `emailOutputOnFailure` calls `ensureOutputIsBeingCaptured()` (vendor Event.php:435), which
+| calls `sendOutputTo(storage_path('logs/schedule-'.sha1($mutexName).'.log'))` — one file per event,
+| named by the sha1 of its mutex, and written on EVERY run including the successful ones, not only on
+| failure and not only to the inbox. `sendOutputTo`'s `$append` defaults to false (vendor
+| Event.php:375-382), so it is five files overwritten daily rather than unbounded growth.
+|
+| What lands in them matters: `finance:audit-duty-separation` prints ids only (`user#<id>`,
+| `school#<id>`), but `finance:check-staffing-readiness` prints school DISPLAY NAMES in its first
+| column. So configuring a recipient puts those names on the server's disk as well as in someone's
+| mail — two surfaces, one switch. Recorded here rather than changed; the disclosure decision is the
+| project lead's.
+|
 | The Event parameter is injected by name (`Event::eventParametersForCallback`), and `$event->exitCode`
 | is public and set in `finish()` — so the log line carries WHAT failed and HOW, not just that
 | something did.

@@ -213,10 +213,19 @@ it('ARM 7 — the COMMITTED baseline file is well-formed and contains no finance
         ->reject(fn (string $l): bool => $l === '' || str_starts_with($l, '#'))
         ->values();
 
-    expect($lines)->not->toBeEmpty('an empty baseline should be deleted, not committed');
+    // THE DAY THIS FILE SHOULD BE EMPTY, DELETE IT — do not commit an empty one, and do not let this
+    // assertion turn the correct act into a red gate. When the last result.* finding is resolved,
+    // remove `duty-separation-baseline.txt` AND the `--baseline=` argument in routes/console.php
+    // together, in one diff. That is safe while the database is clean: the command short-circuits to
+    // SUCCESS before the baseline is ever read, so an unfiltered run on a clean database exits 0.
+    // The next new finding then fails as an ordinary non-zero rather than as NOT AUDITED, which is
+    // the right failure — nothing has been accepted, so there is nothing to compare against.
+    expect($lines)->not->toBeEmpty('an empty baseline should be deleted along with the --baseline= argument, not committed empty');
 
-    $malformed = $lines->reject(fn (string $l): bool => (bool) preg_match('/^\d+\|\d+\|\S+\|\S+$/', $l))->values();
-    expect($malformed->all())->toBe([], 'every line must be school_id|user_id|checker|maker with integer ids');
+    $malformed = $lines->reject(fn (string $l): bool => (bool) preg_match('/^\d+\|\d+\|[^|\s]+\|[^|\s]+$/', $l))->values();
+    expect($malformed->all())->toBe([],
+        'every line must be exactly school_id|user_id|checker|maker with integer ids and no extra field — '
+        .'a five-field line is not a key and can never match a finding, so it accepts nothing while reading as accepted');
 
     $finance = $lines->filter(function (string $l): bool {
         [, , $checker, $maker] = explode('|', $l, 4);

@@ -11,6 +11,14 @@
 # command; adding such a line to this file will not silence it. Zero finance findings is the
 # invariant, and this file is only ever an amnesty for `result.*`.
 #
+# WHEN THIS FILE SHOULD BE EMPTY, DELETE IT — do not commit it empty. Remove this file AND the
+# `--baseline=` argument in routes/console.php together, in one diff. That is safe while the database
+# is clean: the command short-circuits to SUCCESS before the baseline is ever read, so an unfiltered
+# run on a clean database exits 0. The next new finding then fails as an ordinary non-zero instead of
+# as NOT AUDITED, which is the right failure — nothing has been accepted, so there is nothing to
+# compare against. DutySeparationBaselineTest ARM 7 asserts this file is non-empty, so committing it
+# empty turns the correct act into a red gate.
+#
 # Lowering the bar is a diff somebody reads. Baselines only shrink (ADR 0041) — the command prints
 # entries that no longer occur so they can be pruned.
 #

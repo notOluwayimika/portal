@@ -40,10 +40,16 @@ Artisan::command('inspire', function () {
 | failure is findable in the log the app already keeps. It is applied to ALL of them — fixing it for
 | the two RBAC ones and leaving the finance ones silent would be arbitrary.
 |
-| DELIBERATELY NOT emailOutputOnFailure. That needs a real recipient, and inventing one is how an
-| alert arrives somewhere nobody reads. The address is the project lead's to give; when it exists,
-| add `->emailOutputOnFailure($address)` here — the hook is one line and the reasoning is already
-| written down.
+| THESE RUN IN PRODUCTION. `schedule:run` is in the production cron — confirmed by the project lead,
+| 2026-08-05. So the exit codes below and the onFailure log lines they trigger are live signal from
+| the server, not something that only fires on a developer machine when someone happens to run
+| `schedule:work`. That is what makes the baseline worth having: a nightly non-zero on the real
+| database now means something, and it reaches a real log.
+|
+| DELIBERATELY NOT emailOutputOnFailure. It needs a real recipient, and inventing one is how an alert
+| arrives somewhere nobody reads. Until an address exists the channel is the Log::error below — a
+| failure is findable, not pushed. The address is the project lead's to give, and the hook is one
+| line the day it is given.
 |
 | The Event parameter is injected by name (`Event::eventParametersForCallback`), and `$event->exitCode`
 | is public and set in `finish()` — so the log line carries WHAT failed and HOW, not just that

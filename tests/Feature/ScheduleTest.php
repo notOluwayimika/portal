@@ -3,6 +3,7 @@
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Mail\Mailer;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule as ScheduleFacade;
 
@@ -219,6 +220,107 @@ it('attaches NO mail callback at all when no recipients are configured, and stil
     Log::shouldHaveReceived('error')
         ->withArgs(fn (string $message): bool => $message === 'Scheduled detector failed')
         ->times(5);
+});
+
+// ── config/monitoring.php itself ─────────────────────────────────────────────
+//
+// The two mail arms above are BLIND to this file. They call `config()->set(…)`, which writes the key
+// into the runtime repository whether or not `config/monitoring.php` exists — so deleting the file
+// leaves them green while routes/console.php:87 falls through to its `[]` default and the mail
+// channel is dead in production with no red anywhere.
+//
+// Nothing else reaches this file either: not bin/quality, not a lint, not another test. Its docblock
+// argues the parsing rules — trim, drop empties, no default, empty-is-legitimate — at length, and
+// two statements being in a file is not a gate. Same failure mode as the attach order pinned below.
+//
+// These arms therefore do NOT use config()->set. They read the real file.
+
+/**
+ * Snapshot the three places an env var can live, so a restore is total rather than best-effort.
+ *
+ * All three are set/read because the arm must not depend on which Dotenv adapter is active, and all
+ * three are restored because a leaked MONITORING_ALERT_RECIPIENTS would silently change what every
+ * later arm in this file sees.
+ *
+ * @return array{env: ?string, server: ?string, put: string|false}
+ */
+function sch_envSnapshot(string $key): array
+{
+    return [
+        'env' => array_key_exists($key, $_ENV) ? $_ENV[$key] : null,
+        'server' => array_key_exists($key, $_SERVER) ? $_SERVER[$key] : null,
+        'put' => getenv($key),
+    ];
+}
+
+/** @param  array{env: ?string, server: ?string, put: string|false}  $snapshot */
+function sch_envRestore(string $key, array $snapshot): void
+{
+    $snapshot['env'] === null ? ($_ENV = array_diff_key($_ENV, [$key => null])) : $_ENV[$key] = $snapshot['env'];
+    $snapshot['server'] === null ? ($_SERVER = array_diff_key($_SERVER, [$key => null])) : $_SERVER[$key] = $snapshot['server'];
+    $snapshot['put'] === false ? putenv($key) : putenv($key.'='.$snapshot['put']);
+}
+
+function sch_envSet(string $key, string $value): void
+{
+    $_ENV[$key] = $_SERVER[$key] = $value;
+    putenv($key.'='.$value);
+}
+
+function sch_envUnset(string $key): void
+{
+    unset($_ENV[$key], $_SERVER[$key]);
+    putenv($key);
+}
+
+it('loads config/monitoring.php under the exact key the consumer reads', function () {
+    // routes/console.php:87 is `config('monitoring.alerts.recipients', [])`. That `[]` default is
+    // what makes a rename SILENT: a moved file or a renamed key degrades into "no recipients
+    // configured", which is a SUPPORTED state — the scheduler simply attaches no mail callback and
+    // logs as usual. Nothing is broken-looking. This arm is the only thing that can tell a
+    // deliberate empty config from a config that is no longer being read at all.
+    expect(File::exists(base_path('config/monitoring.php')))->toBeTrue();
+    expect(config()->has('monitoring.alerts.recipients'))->toBeTrue();
+});
+
+it('parses MONITORING_ALERT_RECIPIENTS: trimmed, empties dropped, re-indexed', function () {
+    // Asserted as an exact list, never a count. The point is that the empty middle field and the
+    // trailing comma are GONE and the survivors are trimmed and re-indexed by array_values — an
+    // empty string surviving into emailOutputOnFailure produces the same
+    // `An email must have a "To", "Cc", or "Bcc" header` throw MUTANT I produced on commit 4, which
+    // (per the attach-order arm below) escapes callAfterCallbacks for real.
+    //
+    // All three of $_ENV, $_SERVER and putenv() are set so the arm does not depend on which Dotenv
+    // adapter is active, and all three are restored in a finally so no later arm inherits the value.
+    $key = 'MONITORING_ALERT_RECIPIENTS';
+    $snapshot = sch_envSnapshot($key);
+
+    try {
+        sch_envSet($key, 'a@x.test, ,b@x.test,');
+
+        $config = require base_path('config/monitoring.php');
+
+        expect($config['alerts']['recipients'])->toBe(['a@x.test', 'b@x.test']);
+    } finally {
+        sch_envRestore($key, $snapshot);
+    }
+});
+
+it('treats an UNSET env var as empty — there is no default address', function () {
+    // A default address is worse than none: it looks like coverage while arriving somewhere nobody
+    // reads. The config docblock says so; this arm is what makes it true.
+    $key = 'MONITORING_ALERT_RECIPIENTS';
+    $snapshot = sch_envSnapshot($key);
+
+    try {
+        sch_envUnset($key);
+
+        $config = require base_path('config/monitoring.php');
+
+        expect($config['alerts']['recipients'])->toBe([]);
+    } finally {
+        sch_envRestore($key, $snapshot);
+    }
 });
 
 it('keeps the log line when the mailer THROWS — the attach order is what makes the log a floor', function () {

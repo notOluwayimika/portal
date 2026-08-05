@@ -46,22 +46,39 @@ Artisan::command('inspire', function () {
 | `schedule:work`. That is what makes the baseline worth having: a nightly non-zero on the real
 | database now means something, and it reaches a real log.
 |
-| DELIBERATELY NOT emailOutputOnFailure. It needs a real recipient, and inventing one is how an alert
-| arrives somewhere nobody reads. Until an address exists the channel is the Log::error below — a
-| failure is findable, not pushed. The address is the project lead's to give, and the hook is one
-| line the day it is given.
+| THE MAIL RECIPIENT IS CONFIGURATION, not a hard-coded address: `monitoring.alerts.recipients`, from
+| the comma-separated `MONITORING_ALERT_RECIPIENTS`. There is no default, deliberately — inventing an
+| address is how an alert arrives somewhere nobody reads, which is worse than no alert because it
+| looks like coverage.
+|
+| WITH NONE SET, Log::error is the whole channel, and that is a SUPPORTED state rather than a broken
+| one: a failure stays findable in the log the app already keeps, it is simply not pushed to anyone.
+|
+| Log::error IS THE FLOOR AND IS ATTACHED UNCONDITIONALLY, mail only on top of it. That asymmetry is
+| deliberate: `emailOutputOnFailure` fails SILENTLY when the mailer is misconfigured — and
+| `.env.example` still points MAIL_HOST at smtp.mailtrap.io, so "misconfigured" is the state a fresh
+| deployment starts in. A channel that can vanish without saying so cannot be the only one.
 |
 | The Event parameter is injected by name (`Event::eventParametersForCallback`), and `$event->exitCode`
 | is public and set in `finish()` — so the log line carries WHAT failed and HOW, not just that
 | something did.
 */
-$observed = function (Event $event, string $command): Event {
-    return $event->onFailure(function (Event $event) use ($command): void {
+/** @var list<string> $alertRecipients Read ONCE — this file is evaluated at boot, not per run. */
+$alertRecipients = (array) config('monitoring.alerts.recipients', []);
+
+$observed = function (Event $event, string $command) use ($alertRecipients): Event {
+    $event->onFailure(function (Event $event) use ($command): void {
         Log::error('Scheduled detector failed', [
             'command' => $command,
             'exit_code' => $event->exitCode,
         ]);
     });
+
+    if ($alertRecipients !== []) {
+        $event->emailOutputOnFailure($alertRecipients);
+    }
+
+    return $event;
 };
 
 $observed(

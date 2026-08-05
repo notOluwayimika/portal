@@ -13,9 +13,11 @@
 // passes on the day one result.* finding is resolved and one finance finding appears — precisely the
 // event this control exists to catch, and the reason these arms plant one of each.
 
+use App\Console\Commands\AuditDutySeparation;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
+use App\Support\DutySeparation;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -153,11 +155,32 @@ it('ARM 4 — the resolved-one-appeared-one case a COUNT ratchet would pass', fu
     }
 });
 
-it('ARM 5 — a MISSING baseline file does not pass; a control that cannot look is not green', function () {
+it('ARM 5 — a MISSING baseline file says NOT AUDITED and names the path', function () {
+    // THIS IS A MESSAGE GUARD, NOT AN EXIT-CODE CONTROL, and the arm's first version overstated it.
+    //
+    // Measured: the guard never changes the exit code in any reachable state. With no findings the
+    // command short-circuits to SUCCESS before the baseline is read, so the guard is not reached at
+    // all. With findings present, a missing file treated as an EMPTY baseline would leave every
+    // finding unaccepted and exit 1 through that branch anyway — the same 1. So asserting only the
+    // code proves nothing about the guard.
+    //
+    // What the guard is actually for is the operator's ability to tell the two 1s apart: "these
+    // findings are not accepted" and "I could not read the file you named" demand different actions,
+    // and a control that cannot look must say so rather than looking like a clean refusal. Hence the
+    // assertion is on the OUTPUT.
     dsbPlant('teacher', 'admin');
 
-    expect(dsbRun(['--baseline' => storage_path('framework/testing/no-such-baseline.txt')]))
-        ->toBe(1);
+    $path = storage_path('framework/testing/no-such-baseline.txt');
+    expect(File::exists($path))->toBeFalse();
+
+    expect(dsbRun(['--baseline' => $path]))->toBe(1);
+
+    $output = Artisan::output();
+    expect($output)->toContain('NOT AUDITED')
+        ->and($output)->toContain($path)
+        // ...and it must NOT read as an ordinary unaccepted-findings failure, which is the confusion
+        // the guard exists to prevent.
+        ->and($output)->not->toContain('this is the regression');
 });
 
 it('ARM 6 — with no findings at all, the baseline path is still not required to exist for a clean DB… but it is', function () {
@@ -166,4 +189,65 @@ it('ARM 6 — with no findings at all, the baseline path is still not required t
     // than discovered: a clean database exits 0 whether or not --baseline points anywhere.
     expect(dsbRun())->toBe(0)
         ->and(dsbRun(['--baseline' => 'nowhere.txt']))->toBe(0);
+});
+
+// ── The committed baseline itself, and the constant it depends on ─────────────
+
+it('ARM 7 — the COMMITTED baseline file is well-formed and contains no finance line', function () {
+    // ADR 0041's rule — a baseline is only a control if a gate reads it — was true of the other five
+    // *-baseline.txt files and not of this one: duty-separation-baseline.txt is read by the nightly
+    // scheduled task and by nothing in bin/quality or CI. This arm is what makes it a sixth gated
+    // baseline rather than a file nobody validates.
+    //
+    // Two properties, and the second is the one that matters. A malformed line silently accepts
+    // nothing (it can never equal a real key), which is a hole that reads as a passing baseline. And
+    // a finance line in the file would be inert — the command hard-codes the refusal ahead of the
+    // read — but its PRESENCE would tell the next reader that finance findings are baselineable,
+    // which is exactly the belief this design exists to prevent.
+    $path = base_path('duty-separation-baseline.txt');
+
+    expect(File::exists($path))->toBeTrue("the committed baseline [{$path}] is missing");
+
+    $lines = collect(explode("\n", (string) File::get($path)))
+        ->map(fn (string $l): string => trim($l))
+        ->reject(fn (string $l): bool => $l === '' || str_starts_with($l, '#'))
+        ->values();
+
+    expect($lines)->not->toBeEmpty('an empty baseline should be deleted, not committed');
+
+    $malformed = $lines->reject(fn (string $l): bool => (bool) preg_match('/^\d+\|\d+\|\S+\|\S+$/', $l))->values();
+    expect($malformed->all())->toBe([], 'every line must be school_id|user_id|checker|maker with integer ids');
+
+    $finance = $lines->filter(function (string $l): bool {
+        [, , $checker, $maker] = explode('|', $l, 4);
+
+        return str_starts_with($checker, AuditDutySeparation::NEVER_BASELINEABLE)
+            || str_starts_with($maker, AuditDutySeparation::NEVER_BASELINEABLE);
+    })->values();
+
+    expect($finance->all())->toBe([], 'a finance finding can never be accepted here — it is inert in the command and misleading in the file');
+});
+
+it('ARM 8 — every ENFORCED pair is in the namespace the baseline can never amnesty', function () {
+    // THE DUPLICATION, PINNED RATHER THAN REMOVED. `AuditDutySeparation::NEVER_BASELINEABLE` and the
+    // literal inside `DutySeparation::enforcedPairs()` are the same string and are deliberately
+    // independent: that method's docblock keeps its scope boundary as "one obvious, commented line so
+    // widening the blast radius later is a one-line change and is visibly a one-line change". Deriving
+    // one from the other would collapse two separate decisions into one.
+    //
+    // So the risk is not duplication, it is DRIFT: rename the namespace on the enforcement side and
+    // the baseline's refusal quietly stops covering the pairs that are actually enforced — finance
+    // findings become baselineable without anyone editing the baseline. This assertion makes that
+    // rename red on the spot.
+    $enforced = DutySeparation::enforcedPairs();
+
+    expect($enforced)->not->toBeEmpty('no enforced pairs at all would make this arm vacuous');
+
+    $outside = collect($enforced)
+        ->reject(fn (array $p): bool => str_starts_with($p['checker'], AuditDutySeparation::NEVER_BASELINEABLE))
+        ->map(fn (array $p): string => $p['checker'])
+        ->values();
+
+    expect($outside->all())->toBe([],
+        'an enforced pair outside ['.AuditDutySeparation::NEVER_BASELINEABLE.'] would be silently baselineable');
 });

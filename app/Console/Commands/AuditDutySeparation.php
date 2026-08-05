@@ -37,8 +37,16 @@ class AuditDutySeparation extends Command
      * strong as whoever last edited the file — which is not a control.
      *
      * Zero finance findings is the invariant. The baseline is only ever an amnesty for `result.*`.
+     *
+     * PUBLIC because it is pinned from outside. This string is duplicated in
+     * {@see DutySeparation::enforcedPairs()}, and that duplication is DELIBERATE —
+     * that method's docblock explains why its scope boundary is one obvious literal rather than a
+     * shared constant. Deriving one from the other would collapse two decisions into one. Instead
+     * DutySeparationBaselineTest asserts every enforced pair's checker starts with this value, so
+     * renaming the namespace on either side goes red rather than silently making finance findings
+     * baselineable.
      */
-    private const NEVER_BASELINEABLE = 'finance.';
+    public const NEVER_BASELINEABLE = 'finance.';
 
     public function handle(): int
     {

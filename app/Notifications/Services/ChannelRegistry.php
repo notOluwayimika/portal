@@ -4,6 +4,7 @@ namespace App\Notifications\Services;
 
 use App\Notifications\Contracts\Channel;
 use App\Notifications\Enums\ChannelKey;
+use App\Notifications\Services\Channels\EmailChannel;
 use App\Notifications\Services\Channels\InAppChannel;
 use RuntimeException;
 
@@ -25,7 +26,8 @@ class ChannelRegistry
     {
         return $this->channels ??= [
             ChannelKey::IN_APP->value => app(InAppChannel::class),
-            // EMAIL → v2, SMS → v3.
+            ChannelKey::EMAIL->value => app(EmailChannel::class),
+            // SMS → v3.
         ];
     }
 

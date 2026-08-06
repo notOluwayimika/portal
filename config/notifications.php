@@ -32,6 +32,10 @@ return [
     'queue' => [
         'connection' => env('NOTIFICATIONS_QUEUE_CONNECTION', 'notifications'),
         'fanout' => env('NOTIFICATIONS_QUEUE_FANOUT', 'default'),
+        // The per-delivery send queue. Defaults to the fan-out queue so ONE worker
+        // covers both — splitting them is an option, not a requirement, and a second
+        // queue nobody drains is worse than a shared one that works.
+        'send' => env('NOTIFICATIONS_QUEUE_SEND', env('NOTIFICATIONS_QUEUE_FANOUT', 'default')),
     ],
 
     /*

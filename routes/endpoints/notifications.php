@@ -3,6 +3,7 @@
 use App\Notifications\Http\Controllers\NotificationActionController;
 use App\Notifications\Http\Controllers\NotificationFeedController;
 use App\Notifications\Http\Controllers\NotificationQueueHealthController;
+use App\Notifications\Http\Controllers\SesEventController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -53,3 +54,21 @@ Route::middleware(['auth:sanctum', 'tenant'])->prefix('notifications')->group(fu
 */
 Route::middleware(['auth:sanctum', 'tenant', 'permission:activity_log.view_system'])
     ->get('notifications-queue-health', [NotificationQueueHealthController::class, 'show']);
+
+/*
+|--------------------------------------------------------------------------
+| SES bounce loop — an SNS subscription endpoint
+|--------------------------------------------------------------------------
+|
+| ⚠️ DELIBERATELY OUTSIDE `auth` AND `tenant`, and that is not an oversight. AWS
+| cannot present a session or a token, so the SNS CERTIFICATE SIGNATURE is the entire
+| security boundary — verified in the controller before a single field is read. A
+| bounce is also a fact about an ADDRESS, which belongs to no tenant, so there is no
+| school context for it to run in.
+|
+| Throttled because it is a public POST endpoint: a flood of unverifiable messages
+| should cost rejections, not database work.
+*/
+Route::post('/notifications/ses-events', SesEventController::class)
+    ->middleware('throttle:120,1')
+    ->name('notifications.ses-events');

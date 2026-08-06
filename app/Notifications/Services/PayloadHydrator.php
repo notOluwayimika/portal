@@ -4,6 +4,7 @@ namespace App\Notifications\Services;
 
 use App\Models\Student;
 use App\Notifications\Enums\NotificationType;
+use App\Notifications\Models\Notification;
 use App\Notifications\Models\NotificationRecipient;
 use Illuminate\Support\Collection;
 
@@ -89,6 +90,52 @@ class PayloadHydrator
                 ?? 'A request is awaiting your approval',
             default => $notification->rendered_fallback ?? 'Notification',
         };
+    }
+
+    /**
+     * The in-app URL this notification points at, or null.
+     *
+     * ⚠️ A SECOND DEFINITION OF THE DEEP LINK, and that is a real risk rather than a
+     * convenience. The feed's map lives in TypeScript (use-notifications.ts); this is
+     * PHP, because an email has to carry an absolute URL and cannot ask the browser
+     * to build one. Two maps for one concept is precisely the inlined-copy drift this
+     * codebase has been bitten by twice.
+     *
+     * So they are PINNED TO EACH OTHER: NotificationDeepLinkRouteTest asserts the PHP
+     * and TypeScript maps produce the SAME set of route shapes, and that every shape
+     * resolves to a registered route. Add an entry to one and the test names the
+     * other.
+     *
+     * KEYED ON NOTIFICATION TYPE, matching the TS map — result.ready navigates by
+     * SUBJECT (one page, two uuids), approval.requested navigates by TYPE (one queue,
+     * no uuids).
+     */
+    public function deepLinkFor(NotificationRecipient $recipient): ?string
+    {
+        $notification = $recipient->notification;
+
+        if ($notification === null) {
+            return null;
+        }
+
+        return match ($notification->type) {
+            NotificationType::RESULT_READY => $this->resultReadyLink($recipient, $notification),
+            NotificationType::APPROVAL_REQUESTED => url('/finance/approvals'),
+            default => null,
+        };
+    }
+
+    private function resultReadyLink(NotificationRecipient $recipient, Notification $notification): ?string
+    {
+        $studentUuid = $this->navigationStudentUuid($recipient);
+        $subjectUuid = $notification->subject?->getAttribute('uuid');
+
+        // BOTH or nothing. A withdrawn student leaves history that renders and
+        // navigates nowhere — an email linking to a 404 is worse than an email with
+        // no link, because the parent taps it and is told their child does not exist.
+        return ($studentUuid && $subjectUuid)
+            ? url("/students/{$studentUuid}/results/{$subjectUuid}")
+            : null;
     }
 
     /**

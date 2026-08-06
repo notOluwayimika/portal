@@ -21,14 +21,14 @@ class GuardianImportCompletedNotification extends Notification implements Should
 
     public function toMail(object $notifiable): MailMessage
     {
-        $reportUrl    = url("/api/guardians/import/{$this->import->uuid}/report");
+        $reportUrl = url("/api/guardians/import/{$this->import->uuid}/report");
         $guardiansUrl = url('/admin/guardians');
 
         return (new MailMessage)
             ->subject('Guardian Import Completed')
             ->greeting("Hello {$notifiable->full_name},")
             ->line("Your guardian import \"{$this->import->file_name}\" has finished processing.")
-            ->line("**Summary**")
+            ->line('**Summary**')
             ->line("Succeeded: {$this->import->succeeded}")
             ->line("Failed: {$this->import->failed}")
             ->line("Skipped: {$this->import->skipped}")

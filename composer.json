@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "aws/aws-php-sns-message-validator": "^1.10",
         "giggsey/libphonenumber-for-php": "^9.0",
         "hashids/hashids": "^5.0",
         "inertiajs/inertia-laravel": "^3.0",

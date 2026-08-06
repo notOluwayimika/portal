@@ -32,6 +32,12 @@ return [
         // NO events — so the suppression table stays empty and the channel is
         // send-only wearing a safety label.
         'configuration_set' => env('AWS_SES_CONFIGURATION_SET'),
+        // ⚠️ THE SNS ENDPOINT'S REAL SECURITY BOUNDARY, alongside the signature.
+        // MessageValidator proves a message was signed by AWS SNS — it does NOT prove
+        // it came from OUR topic. Anyone with an AWS account can create a topic and
+        // send a genuinely-signed message to a public endpoint. Unset, the handler
+        // FAILS CLOSED rather than trusting any signed message.
+        'sns_topic_arn' => env('AWS_SES_SNS_TOPIC_ARN'),
     ],
 
     'slack' => [

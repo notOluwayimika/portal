@@ -32,10 +32,18 @@ use Throwable;
  *  3. REPLAYS ARE ROUTINE. SNS redelivers on any non-2xx and sometimes anyway, so
  *     every effect here has to be idempotent.
  *
- * ⚠️ UNAUTHENTICATED BY NECESSITY, which is why the signature check is the whole
- * security boundary. AWS cannot present a session or a token; the certificate
- * signature IS the proof this came from SNS. An unverified message is rejected before
- * anything is read from it.
+ * ⚠️ UNAUTHENTICATED BY NECESSITY — AWS cannot present a session or a token — so the
+ * security boundary is TWO checks, not one, and the second is the one that is easy to
+ * miss:
+ *
+ *   SIGNATURE  proves AWS SNS signed this message.
+ *   TOPIC ARN  proves it came from OUR topic.
+ *
+ * The signature alone is NOT sufficient. Anyone with an AWS account can create their
+ * own SNS topic and post a genuinely-signed message to a public endpoint, and a forged
+ * `Bounce` naming one guardian's address would permanently suppress that parent's
+ * notifications — a targeted denial-of-delivery the validator waves through precisely
+ * because the message is authentic. Both checks run before a single field is read.
  *
  * NO `school_id` ANYWHERE. A bounce is a fact about an address, and this endpoint has
  * no tenant context to run in — correlation is by provider message id, and
@@ -56,6 +64,25 @@ class SesEventController extends Controller
             return response('invalid signature', 403);
         }
 
+        // ⚠️ SIGNATURE IS NECESSARY, NOT SUFFICIENT. MessageValidator proves AWS SNS
+        // signed this; it proves NOTHING about WHOSE topic it came from. Anyone with
+        // an AWS account can stand up a topic and post a genuinely-signed message
+        // here — and a forged `Bounce` naming one guardian's address would
+        // permanently suppress their notifications. A targeted denial-of-delivery
+        // that the validator waves through because it IS authentic.
+        //
+        // FAILS CLOSED when unconfigured: no expected topic means no way to establish
+        // provenance, and accepting anything signed would be the whole hole. Nothing
+        // flows before the SNS pipeline exists anyway, so there is no window this
+        // costs us.
+        if (! $this->isExpectedTopic($message)) {
+            Log::warning('SNS message rejected: unexpected topic', [
+                'topic' => $message['TopicArn'] ?? null,
+            ]);
+
+            return response('unexpected topic', 403);
+        }
+
         return match ($message['Type'] ?? null) {
             'SubscriptionConfirmation' => $this->confirmSubscription($message),
             'Notification' => $this->handleNotification($message),
@@ -63,6 +90,23 @@ class SesEventController extends Controller
             'UnsubscribeConfirmation' => response('ok', 200),
             default => response('ignored', 200),
         };
+    }
+
+    /**
+     * Is this message from the topic we expect?
+     *
+     * Checked BEFORE the type switch, so it guards the SubscriptionConfirmation as
+     * well as the notifications — otherwise an attacker's topic could get this
+     * endpoint to confirm a subscription to it, and every later forged event would
+     * arrive through a subscription we ourselves established.
+     */
+    private function isExpectedTopic(SnsMessage $message): bool
+    {
+        $expected = config('services.ses.sns_topic_arn');
+
+        return is_string($expected)
+            && $expected !== ''
+            && ($message['TopicArn'] ?? null) === $expected;
     }
 
     /**

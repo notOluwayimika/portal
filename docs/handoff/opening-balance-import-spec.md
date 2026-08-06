@@ -386,6 +386,8 @@ re-worded — a rule about a column that no longer exists is the decoration R10 
 | L1 fails for a student | Reject that student's whole row-group with both sides in the finding. Not a partial post — posting three of four lines is worse than posting none. |
 | L2 fails for the batch | A finding on the BATCH. Every line may be internally consistent and the file still be missing a student. |
 | Student in WCBS, absent from the portal | Reject the row and name it. **Never create a student from a finance import** — unchanged, and the one rule that has survived every revision. |
+| Student exists but is SOFT-DELETED | Rejected, but under **its own finding code**. `admissionNumberIndex()` excludes soft-deleted students by the Student model's default scope (`app/Finance/Contracts/BillableEnrollmentProvider.php:72-75`). Today that path emits `student_not_found` with the text *"No student in this School has admission number [X]"* (`app/Finance/Console/ImportOpeningBalances.php:311-312`), which is **false** for a trashed student and hides the one case an operator must decide by hand. Commit 4 splits it: a distinct `student_soft_deleted` code with its own message (§9). Both still reject; the operator is told which. |
+| A student has no active enrollment | **Their lines post anyway.** Under R6 the import resolves a **student**, not an episode — `admissionNumberIndex()` is a Student roster (`app/Academics/BillableEnrollmentAdapter.php:128-138`), and the contract states the boundary: *"Withdrawn and graduated students ARE included: §7 imports their arrears and payments — their balance stays chaseable"* (`app/Finance/Contracts/BillableEnrollmentProvider.php:72-75`). This is **deliberate, not an oversight of R5**. Rev 3's `no_active_enrollment` rejection was §5's precondition — the comparison needed an episode to reach a fee schedule — not a rule about who may hold a balance, and it retired with §5. **DO NOT RE-ADD AN ENROLLMENT CHECK TO THE IMPORT**: it would reject exactly the debtors the cutover exists to carry. |
 | Student in the portal, absent from the file | Report as unimported. Their opening position is zero, which is a claim someone must make deliberately. |
 | Duplicate `(admission_number, fee_type_label)` in one file | Refused at the DB by the R9 key. Two lines for the same fee type are an extract defect, not a rule for the import to decide. |
 | Import posted in error | **R3 (2026-08-06): no live reversal instrument, and there will not be one.** A wrong imported balance found before go-live is corrected by **restoring the database** and re-running a corrected batch. See below. |
@@ -447,6 +449,22 @@ scratch: `finance_opening_balance_rows` is CASCADE-deleted from its batch by
 `finance_opening_balance_rows_batch_school_foreign`, the tables carry no immutability trigger, and
 **nothing has ever posted from them** — the posting Action does not exist yet. There is no migration
 of existing rows to design, because there are no rows worth keeping.
+
+### Split `student_not_found` — commit-4 code scope
+
+A soft-deleted student is excluded from `admissionNumberIndex()` by the Student model's default
+scope, so the import's join misses them and reports `student_not_found`:
+*"No student in this School has admission number [X]"*
+(`app/Finance/Console/ImportOpeningBalances.php:311-312`). **That message is false for a trashed
+student**, and it collapses two cases an operator must handle differently — "this person was never
+here, check the extract" versus "this person was deleted, decide whether to restore them before the
+cutover carries their balance". The second is the one that needs a human, and it is currently
+invisible.
+
+Commit 4 splits it into a distinct **`student_soft_deleted`** finding with its own message. Both
+still reject — nothing posts against a trashed student — but the operator is told which. Reaching the
+distinction means asking the port for the trashed roster too; keep that behind the ACL port rather
+than reaching for `withTrashed()` from inside Finance, which the boundary forbids.
 
 ### G1 — at most one posted batch per school, at INSERT
 
@@ -544,6 +562,15 @@ exists, §11 must state the weaker, true claim.
 - **The reserved receipt band at 900,000,000** is arbitrary. Any scheme that provably cannot collide with the live sequence is equivalent.
 - ~~**§5's comparison assumes the portal's fee schedule reproduces WCBS's bill.**~~ — **moot**, §5 is
   withdrawn.
+- **Per-fee-type is a CUTOVER-MOMENT rendering, and it decays immediately.**
+  `finance_student_accounts.balance_minor` is a single scalar, and allocations settle **invoices**,
+  not fee types — `fee_payment_allocations` carries `payment_id`, `invoice_id` and an amount, and no
+  fee dimension at all (`2026_07_19_100002_create_fee_payments_tables.php:44-57`). So the
+  per-fee-type breakdown exists as **N narrated ledger rows dated D, and nowhere else**. After D the
+  portal **cannot** answer *"how much of this student's outstanding is tuition"* — the first payment
+  that lands settles an invoice, not a fee type, and the split stops being derivable. That is a limit
+  of the design, not of the import, and it is recorded here so nobody promises a per-fee-type ageing
+  report on the strength of R5's file.
 - **The batch control total's delivery mechanism is unspecified.** §2 requires the figure; where it
   arrives from — an operator option, a control row in the file, a sidecar — is left to commit 4 and
   recorded in §12. I would rather name it as open than invent a file convention the data team has

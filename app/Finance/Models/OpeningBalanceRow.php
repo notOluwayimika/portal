@@ -9,6 +9,7 @@ use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One student's line in a staged WCBS extract (§9 commit 1) — the file as it arrived, plus what
@@ -38,7 +39,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property Money|null $paid_to_date
  * @property Money|null $wcbs_total_balance
  * @property string|null $wcbs_bill_reference
- * @property \Illuminate\Support\Carbon|null $last_payment_date
+ * @property Carbon|null $last_payment_date
  * @property int|null $student_id
  * @property OpeningBalanceRowStatus $status
  * @property array<int, array<string, mixed>>|null $findings

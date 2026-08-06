@@ -15,6 +15,7 @@
  */
 
 use App\Enums\TermStatusEnum;
+use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Finance\Models\FeeItem;
@@ -449,7 +450,7 @@ it('resolves the enrollment term and class level through the port, one hop each'
     $student = obStudent($ctx, 'ADM-PORT');
 
     $enrollment = ActiveSchool::runFor($ctx['school']->id,
-        fn () => app(App\Finance\Contracts\BillableEnrollmentProvider::class)->currentForStudent($student->id));
+        fn () => app(BillableEnrollmentProvider::class)->currentForStudent($student->id));
 
     expect($enrollment)->not->toBeNull()
         ->and($enrollment->termId)->toBe($ctx['term']->id)

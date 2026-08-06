@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Console\ImportOpeningBalances;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * §9 commit 1 of the WCBS opening-balance import (docs/handoff/opening-balance-import-spec.md Rev 2) —
  * the STAGING tables only. Nothing here posts: no ledger row, no payment, no invoice, no account
  * balance movement. The only writer is the read-only validator `finance:import-opening-balances
- * --dry-run` ({@see App\Finance\Console\ImportOpeningBalances}), which parses a WCBS extract, checks
+ * --dry-run` ({@see ImportOpeningBalances}), which parses a WCBS extract, checks
  * §1's identity per row, runs §5's fee-schedule comparison and records what it found.
  *
  * DELIBERATELY ABSENT (they ship with the commits that WRITE them, per §9 — a column ahead of its

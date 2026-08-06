@@ -9,6 +9,7 @@ use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * One staged WCBS opening-balance extract (§9 commit 1). A batch is the unit of approval (§8) and,
@@ -36,7 +37,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property Money|null $total_prior_arrears
  * @property Money|null $total_paid_to_date
  * @property Money|null $total_wcbs_billed
- * @property \Illuminate\Support\Carbon $cutover_date
+ * @property Carbon $cutover_date
  * @property int $term_id
  * @property int|null $uploaded_by_user_id
  * @property array<int, array<string, mixed>>|null $findings

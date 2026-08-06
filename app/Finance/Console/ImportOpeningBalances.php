@@ -232,8 +232,9 @@ class ImportOpeningBalances extends Command
 
             // ── Amounts: naira-with-2dp → integer kobo, by integer string arithmetic. ──
             // Money::fromNaira parses the digits itself (Money.php:74-77); no float multiplication
-            // is involved, so a value like "8.07" — which (int) round(8.07 * 100) reads as 806 —
-            // parses to exactly 807.
+            // is involved, so a value like "80000.15" — which (int) ((float) '80000.15' * 100)
+            // reads as 8000014 — parses to exactly 8000015. (Measured, not assumed: 8.07 is the
+            // usual example and it does NOT break — 8.07 * 100 is exactly float(807).)
             $amounts = [];
             foreach (['prior_arrears', 'wcbs_billed_total', 'paid_to_date', 'wcbs_total_balance'] as $column) {
                 $raw = trim($values[$column] ?? '');

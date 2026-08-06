@@ -16,6 +16,7 @@ use App\Notifications\Models\NotificationRecipient;
 use App\Notifications\Models\NotificationSuppression;
 use App\Notifications\Services\ChannelRegistry;
 use App\Support\AddressNormalizer;
+use Aws\Sns\Message;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -284,4 +285,57 @@ it('skips a second send to an address that has hard-bounced', function () {
     // The fan-out's own question, asked the way the fan-out asks it.
     expect(NotificationSuppression::suppresses(ChannelKey::EMAIL, $user->deliverableEmailAddress()))
         ->toBeTrue();
+});
+
+/*
+|--------------------------------------------------------------------------
+| ⚠️ The SNS endpoint's SECOND boundary — signature is not provenance
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A validly-signed message from SOMEONE ELSE'S topic must be refused.
+ *
+ * MessageValidator proves AWS SNS signed a message. It proves nothing about WHOSE
+ * topic it came from — anyone with an AWS account can stand one up. Without the
+ * TopicArn check, a forged `Bounce` naming one guardian's address permanently
+ * suppresses that parent's notifications, and the validator passes it because it IS
+ * authentic. A targeted denial-of-delivery on a school.
+ *
+ * Asserted at the predicate rather than over HTTP: reaching the controller requires a
+ * real AWS signature, and a test that faked one would be testing the fake.
+ */
+it('refuses a message from a topic that is not ours', function () {
+    config(['services.ses.sns_topic_arn' => 'arn:aws:sns:eu-west-1:111111111111:portal-ses-events']);
+
+    $controller = new ReflectionMethod(SesEventController::class, 'isExpectedTopic');
+
+    $ours = new Message(['TopicArn' => 'arn:aws:sns:eu-west-1:111111111111:portal-ses-events',
+        'Message' => '', 'MessageId' => 'm', 'Timestamp' => 't', 'TopicArn' => 'arn:aws:sns:eu-west-1:111111111111:portal-ses-events',
+        'Type' => 'Notification', 'Signature' => 's', 'SigningCertURL' => 'u', 'SignatureVersion' => '1']);
+    $theirs = new Message(['TopicArn' => 'arn:aws:sns:eu-west-1:999999999999:attacker-topic',
+        'Message' => '', 'MessageId' => 'm', 'Timestamp' => 't',
+        'Type' => 'Notification', 'Signature' => 's', 'SigningCertURL' => 'u', 'SignatureVersion' => '1']);
+
+    expect($controller->invoke(app(SesEventController::class), $ours))->toBeTrue()
+        ->and($controller->invoke(app(SesEventController::class), $theirs))->toBeFalse();
+});
+
+/**
+ * FAILS CLOSED when no topic is configured.
+ *
+ * An unset ARN means provenance cannot be established at all, so accepting anything
+ * signed would be the entire hole. Nothing flows before the SNS pipeline exists, so
+ * closed costs nothing and open costs everything.
+ */
+it('refuses every message when no expected topic is configured', function () {
+    config(['services.ses.sns_topic_arn' => null]);
+
+    $method = new ReflectionMethod(SesEventController::class, 'isExpectedTopic');
+
+    $signed = new Message(['TopicArn' => 'arn:aws:sns:eu-west-1:111111111111:portal-ses-events',
+        'Message' => '', 'MessageId' => 'm', 'Timestamp' => 't',
+        'Type' => 'Notification', 'Signature' => 's', 'SigningCertURL' => 'u', 'SignatureVersion' => '1']);
+
+    expect($method->invoke(app(SesEventController::class), $signed))->toBeFalse();
 });

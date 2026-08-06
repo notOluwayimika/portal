@@ -140,7 +140,19 @@ For each student, the import computes the invoice total the portal **would** iss
 
 Every discount, scholarship and exemption already applied off-platform surfaces here as a difference. That is the point: a mismatch means the parent's paper bill and the portal's bill disagree, and the bursar finds out now rather than from a phone call.
 
-**The batch also carries control totals** — Σ`prior_arrears`, Σ`paid_to_date`, Σ`wcbs_billed_total`, row count — displayed before approval and re-asserted at post time. If the numbers moved between staging and posting, the post refuses.
+**The batch carries two different controls, and they are not the same number.**
+*Ingest completeness* is `file_row_count` (data lines read) against `row_count` (rows
+staged); a difference means the file was not fully ingested and is a batch-level finding.
+*Drift* is the three Money totals plus `row_count`, re-asserted at post time — and it
+defends the STAGING TABLE, not the file, because at post time the file is gone: one
+upload, one validation, a second person's approval, then posting reads staged rows.
+As built, the Money totals mean **what parsed** — they include rows rejected for a failed
+identity or an unresolved student, and exclude rows whose amounts did not parse. That is
+neither "what the file said" nor "what will post". The drift control wants **what will
+post**. Resolving that is a commit-4 decision, deliberately deferred: posting does not
+exist yet, and a number defined against a consumer that has not been built is defined
+against nothing. Whoever builds commit 4 must pick the meaning explicitly and say so in
+the migration's docblock.
 
 ---
 

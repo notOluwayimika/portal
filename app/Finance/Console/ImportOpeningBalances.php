@@ -188,7 +188,9 @@ class ImportOpeningBalances extends Command
                 "{$duplicateAfterTrim} admission number(s) in this School are duplicated after trimming — the join key is unsafe.");
         }
 
-        $rowCount = 0;
+        $rowCount = 0;      // rows STAGED
+        $fileRowCount = 0;  // data lines READ — incremented before any skip, never conditioned
+        $skipReasons = [];  // reason → count, for the ingest-completeness breakdown
         $rejected = [];
         $exceptions = [];
         $notComparable = [];
@@ -206,6 +208,12 @@ class ImportOpeningBalances extends Command
         $scheduleTotals = []; // class_level_id → Money|null (null = no active schedule)
 
         foreach ($records as $record) {
+            // FIRST statement in the body, before every `continue` below and before any added
+            // later. This is "what the file contained" and it is never conditioned on a row being
+            // valid, resolvable or parseable — the moment it is, it stops being able to detect
+            // that a row went missing.
+            $fileRowCount++;
+
             $line = $record['line'];
             $values = $record['values'];
             $findings = [];
@@ -219,6 +227,9 @@ class ImportOpeningBalances extends Command
             // Nothing is dropped silently — the count and the lines are printed.
             if ($key !== '' && isset($seenInFile[$key])) {
                 $duplicateInFile[] = ['line' => $line, 'admission_number' => $key, 'first' => $seenInFile[$key]];
+                // Every skip must register a reason here. An unregistered one still shows up —
+                // as `unattributed` in the ingest-completeness finding — which is the point.
+                $skipReasons['duplicate_admission_number_in_file'] = ($skipReasons['duplicate_admission_number_in_file'] ?? 0) + 1;
 
                 continue;
             }
@@ -405,6 +416,33 @@ class ImportOpeningBalances extends Command
                 count($duplicateInFile).' row(s) repeat an admission number already staged in this batch and were NOT staged.');
         }
 
+        // INGEST COMPLETENESS — read vs staged. This is a different control from the Money totals:
+        // those defend the staging table against drift between validation and posting, and they can
+        // be perfectly self-consistent over a batch that is short of the file. Nothing measured
+        // that until now, so a dropped row was only ever visible in console output.
+        //
+        // The breakdown must account for the WHOLE difference. Anything it cannot explain is named
+        // `unattributed`, which is what makes a future skip that forgets to register a reason
+        // surface as an unexplained gap rather than as silence.
+        if ($fileRowCount !== $rowCount) {
+            $attributed = array_sum($skipReasons);
+            $unattributed = ($fileRowCount - $rowCount) - $attributed;
+            $breakdown = $skipReasons;
+            if ($unattributed !== 0) {
+                $breakdown['unattributed'] = $unattributed;
+            }
+
+            $parts = [];
+            foreach ($breakdown as $reason => $count) {
+                $parts[] = "{$reason}={$count}";
+            }
+
+            $batchFindings[] = $this->finding('ingest_incomplete', sprintf(
+                'Read %d data line(s) but staged %d — %d not ingested (%s).',
+                $fileRowCount, $rowCount, $fileRowCount - $rowCount, implode(', ', $parts),
+            ));
+        }
+
         // §7's other side: a student in the portal and absent from the file has an opening position
         // of zero, and that is a claim somebody has to make deliberately rather than inherit from a
         // missing line.
@@ -423,6 +461,7 @@ class ImportOpeningBalances extends Command
 
         $batch->update([
             'row_count' => $rowCount,
+            'file_row_count' => $fileRowCount,
             'total_prior_arrears' => $totals['prior_arrears'],
             'total_paid_to_date' => $totals['paid_to_date'],
             'total_wcbs_billed' => $totals['wcbs_billed_total'],
@@ -432,8 +471,8 @@ class ImportOpeningBalances extends Command
                 : OpeningBalanceBatchStatus::Rejected,
         ]);
 
-        return $this->report($batch, $rowCount, $rejected, $exceptions, $notComparable, $unresolved,
-            $absent, $duplicateInFile, $nullAdmissions, $duplicateAfterTrim, $batchFindings);
+        return $this->report($batch, $rowCount, $fileRowCount, $rejected, $exceptions, $notComparable,
+            $unresolved, $absent, $duplicateInFile, $nullAdmissions, $duplicateAfterTrim, $batchFindings);
     }
 
     /**
@@ -452,6 +491,7 @@ class ImportOpeningBalances extends Command
     private function report(
         OpeningBalanceBatch $batch,
         int $rowCount,
+        int $fileRowCount,
         array $rejected,
         array $exceptions,
         array $notComparable,
@@ -464,6 +504,9 @@ class ImportOpeningBalances extends Command
     ): int {
         $this->info("Batch [{$batch->batch_reference}] staged from [{$batch->filename}] — READ-ONLY, nothing was posted.");
         $this->table(['Measure', 'Count'], [
+            // Read vs staged, adjacent on purpose: the pair IS the ingest-completeness control, and
+            // a reader who sees only one of them cannot tell a complete batch from a short one.
+            ['data lines read', $fileRowCount],
             ['rows staged', $rowCount],
             ['rejected rows', count($rejected)],
             ['comparison exceptions (§5 different)', count($exceptions)],

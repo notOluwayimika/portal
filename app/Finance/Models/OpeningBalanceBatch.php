@@ -33,7 +33,8 @@ use Illuminate\Support\Carbon;
  * @property string $batch_reference
  * @property string $filename
  * @property OpeningBalanceBatchStatus $status
- * @property int $row_count
+ * @property int $row_count rows STAGED
+ * @property int $file_row_count data lines READ — the ingest-completeness counterpart
  * @property Money|null $total_prior_arrears
  * @property Money|null $total_paid_to_date
  * @property Money|null $total_wcbs_billed

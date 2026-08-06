@@ -443,6 +443,72 @@ it('persists the control totals and validates a clean file with exit 0', functio
         ->and(obRows($ctx)[2]->last_payment_date->format('Y-m-d'))->toBe('2026-07-31');
 });
 
+// ── Ingest completeness — read vs staged ──
+//
+// The control the batch was missing: the Money totals sum the STAGED rows, so a batch can be
+// perfectly self-consistent and short of the file. Only file_row_count vs row_count can see that.
+
+it('counts every data line read, including one dropped as an in-file duplicate', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-A');
+    obStudent($ctx, 'ADM-B');
+
+    // Three data lines; line 4 repeats line 2's key and is never staged.
+    obRun($ctx, obCsv([
+        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
+        'ADM-B,W2,0.00,100000.00,100000.00,0.00,BILL-2,',
+        'ADM-A,W3,0.00,50000.00,50000.00,0.00,BILL-3,',
+    ]));
+
+    $batch = obBatch($ctx);
+    expect($batch->file_row_count)->toBe(3)   // what the file contained
+        ->and($batch->row_count)->toBe(2)     // what got staged
+        ->and(obRows($ctx))->toHaveCount(2);
+});
+
+it('raises an ingest_incomplete batch finding naming the difference and its reason breakdown', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-A');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
+        'ADM-A,W2,0.00,50000.00,50000.00,0.00,BILL-2,',
+    ]));
+
+    $batch = obBatch($ctx);
+    expect(array_column($batch->findings ?? [], 'code'))->toContain('ingest_incomplete')
+        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Rejected)
+        ->and($exit)->toBe(1);
+
+    // The numbers, not just the code — a finding that says "something was dropped" without saying
+    // how many or why is the same as no finding to whoever has to act on it.
+    $message = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
+    expect($message)->toContain('Read 2 data line(s) but staged 1')
+        ->and($message)->toContain('1 not ingested')
+        ->and($message)->toContain('duplicate_admission_number_in_file=1')
+        // The breakdown accounts for the WHOLE gap, so nothing is left unexplained here.
+        ->and($message)->not->toContain('unattributed');
+});
+
+it('leaves file_row_count equal to row_count with no ingest finding on a clean file', function () {
+    $ctx = obSchool();
+    obSchedule($ctx, 10000000);
+    obStudent($ctx, 'ADM-A');
+    obStudent($ctx, 'ADM-B');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
+        'ADM-B,W2,25000.00,100000.00,60000.00,65000.00,BILL-2,',
+    ]));
+
+    $batch = obBatch($ctx);
+    expect($batch->file_row_count)->toBe(2)
+        ->and($batch->row_count)->toBe(2)
+        ->and($batch->findings)->toBeNull()
+        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Validated)
+        ->and($exit)->toBe(0);
+});
+
 // ── The ACL port extension, exercised through its own consumer ──
 
 it('resolves the enrollment term and class level through the port, one hop each', function () {

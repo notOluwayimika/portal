@@ -11,6 +11,29 @@ and `student_curricula` is per-term (`curricula.term` is 1|2|3), so an opening i
 cutover episode would occupy the slot the re-bill needs and the bulk job would fail on every
 student who has arrears. §3 now posts arrears as a ledger charge. §4, §7 and §10 follow.
 
+**Rev 3** — 2026-08-06. **The project lead has ruled on every question §6 and §7 left open.** These
+are decisions, not inferences, and they are recorded here as decided rather than as things a reader
+should weigh:
+
+- **R1 — WCBS can cleanly split its extract by term.** Every WCBS financial transaction carries an
+  academic term identifier. §1's identity is evaluable per term, and §6.2 is closed.
+- **R2 — all four money columns will be extracted**: `prior_arrears`, `wcbs_billed_total`,
+  `paid_to_date`, `wcbs_total_balance`. §1's checksum stands exactly as written. §2 carries no
+  unconfirmed column.
+- **R3 — there is no live reversal instrument, and there will not be one.** A wrong imported balance
+  found before go-live is corrected by **restoring the database** and re-running a corrected batch.
+  §7's last row and §11 say what that costs and when it expires.
+
+Rev 3 also adds two guards to the posting commit's scope — **G1** (at most one posted batch per
+school, in the database) and **G2** (posting refuses once a payment is attributed against imported
+arrears). Their shapes are specified in §9 and they are what make R3 honest. Neither is built by the
+staging commit.
+
+One correction of fact carried in from the implementation, since two sections argued from it: **`students.admission_number` has been NOT NULL since
+`2026_07_18_100000_make_identifier_columns_not_null.php:36`.** It was nullable when Rev 1 was
+written. §2 and §6.1 are corrected below; the duplicate-after-trim half of that pre-flight is
+unaffected and still bites.
+
 ---
 
 ## 0. What was decided, and one thing I got wrong
@@ -48,7 +71,11 @@ prior_arrears + wcbs_billed_total − paid_to_date == wcbs_total_balance
 
 A row that fails it is rejected, not corrected. This one line is the whole defence against a mis-split extract, and it costs Brookstone one extra column they already have.
 
-**If WCBS cannot split by term, the import cannot proceed.** That is a data question for Brookstone, not an engineering one, and it should be answered before any code is written.
+**R1 (project lead, 2026-08-06): WCBS can split by term, so the identity above is live.** Every WCBS
+financial transaction carries an academic term identifier. This was the one open data question that
+could have invalidated the whole design; it is answered, and the answer is yes. The consequence — one
+batch is one term, and `prior_arrears` therefore already contains every earlier term's balance — is
+in §6.2, and G1 (§9) is what keeps it structural.
 
 ---
 
@@ -58,7 +85,7 @@ UTF-8 CSV, one row per student, header row required. All amounts in **naira with
 
 | Column | Required | Notes |
 |---|---|---|
-| `admission_number` | yes | The join key. `students.admission_number` is unique per School — but it is **nullable**, so see §6 pre-flight. |
+| `admission_number` | yes | The join key. `students.admission_number` is unique per School and **NOT NULL** (`2026_07_18_100000_make_identifier_columns_not_null.php:36`; it was nullable when Rev 1 was written). Duplicate-after-trim is still possible and is still §6.1's pre-flight. |
 | `wcbs_student_ref` | yes | WCBS's own id, stored for traceability. Never used to join. |
 | `prior_arrears` | yes | ≥ 0. Zero is a normal value, not a blank. |
 | `wcbs_billed_total` | yes | ≥ 0. |
@@ -68,6 +95,11 @@ UTF-8 CSV, one row per student, header row required. All amounts in **naira with
 | `last_payment_date` | no | If WCBS has it, use it. If absent the payment records the cutover date **and says so** — see §4. |
 
 Blank ≠ zero. A blank in any required column rejects the row.
+
+**R2 (project lead, 2026-08-06): all four money columns will be extracted, so nothing in this table
+is provisional.** §1's identity is therefore live, not conditional — it is evaluated on every row
+from the first batch, and a row that fails it is rejected rather than corrected. There is no reduced
+file format to design for and no "if WCBS can only give us three of these" branch anywhere below.
 
 ---
 
@@ -158,11 +190,23 @@ the migration's docblock.
 
 ## 6. Pre-flight, before any of this is built
 
-Three checks, all of which can invalidate the plan:
+Two checks remain open; the third is closed by R1.
 
-1. **`students.admission_number` is nullable.** Count the students in the target School with a null or duplicate-after-trim admission number. Any at all and the join key needs a decision before the file format is frozen.
-2. **Can WCBS split by term?** §1's three figures, separately. If not, §1's identity cannot be evaluated and the import must not proceed.
-3. **Are the T fee schedules configured and active** for every class level in the School? Without them §5's comparison is blind and V2 has nothing to bill from.
+1. **Duplicate-after-trim admission numbers.** `students.admission_number` is NOT NULL
+   (`2026_07_18_100000_make_identifier_columns_not_null.php:36`), so the null half of this check can
+   only ever answer zero — the validator still computes it, cheaply, in case that is ever relaxed.
+   The half that bites is duplicate-after-trim: `'ADM1'` and `' ADM1'` are distinct rows at
+   `students_school_id_admission_number_unique` and identical as a join key. Any at all and the key
+   is unsafe; the validator raises it as a finding on the batch, not on a row.
+2. **CLOSED by R1 (project lead, 2026-08-06). WCBS can cleanly split by term** — every WCBS
+   financial transaction carries an academic term identifier, so §1's three figures are separable
+   and its identity is evaluable. **The consequence is a scope rule, and it is load-bearing: one
+   batch is one term.** `prior_arrears` means everything owed **before that batch's term**, so it
+   already contains every earlier term's unpaid balance. Importing two terms' extracts as two
+   batches would therefore bring the same history forward twice — the earlier term's arrears once
+   as its own `prior_arrears`, and again inside the later term's. That is not a procedure to be
+   careful about; **G1 (§9) makes a second posted batch impossible at the database.**
+3. **Are the T fee schedules configured and active** for every class level in the School? Without them §5's comparison is blind and V2 has nothing to bill from. Still open: as at 2026-08-06 the production copy carries zero active fee schedules, so §5's comparison reports `not_comparable` for every row until U1 prices the class levels.
 
 ---
 
@@ -177,7 +221,24 @@ Three checks, all of which can invalidate the plan:
 | All three figures zero | Skip. Nothing to post. |
 | Negative figure in `prior_arrears`, `wcbs_billed_total` or `paid_to_date` | Reject. Credit belongs in `wcbs_total_balance` as a negative, derived from the other three. |
 | Re-running the import | Idempotent on `(school_id, batch_reference, admission_number)`. A second run of the same batch posts nothing. A *different* batch against a student who already has imported rows is refused. |
-| Import posted in error | No delete. The payment reverses through the existing correction instruments (refund or credit note), approval-gated, leaving a trail. **The arrears charge has no reversal instrument today** — `LedgerEntryType::Reversal` exists but nothing raises one for a bare charge, so a wrong arrears figure is currently uncorrectable except by a compensating charge. Decide this with the posting commit, not after it; it is the one open hole the Rev 2 change opens. Say the whole of it out loud to the operator on the approval screen. |
+| Import posted in error | **R3 (project lead, 2026-08-06): there is no live reversal instrument, and there will not be one.** A wrong imported balance found before go-live is corrected by **restoring the database** and re-running a corrected batch. See below for what that costs and when it stops being available. |
+
+**R3, and exactly what it costs.** A post cannot be undone by deleting rows, and that is a property
+of the design rather than a missing feature. `SubledgerPoster::post` is the single writer that
+maintains `finance_student_accounts.balance_minor`, and it does so by an **atomic delta** at write
+time, not by re-summing the ledger. Deleting the ledger rows therefore leaves the projection holding
+the movement they caused: the balance stays wrong and now disagrees with its own ledger, which is the
+one condition `finance:reconcile-accounts` exists to detect. The `finance_*` tables are additionally
+append-only by trigger. So "undo the import" is not a smaller version of "restore the database" — it
+is a different and worse outcome, and the restore is the correction path precisely because it is the
+only one that returns every table to a coherent state together.
+
+**R3 expires, and the expiry has a name.** It is available only while the imported figures are the
+newest money in the school — the moment a payment is attributed against imported arrears, a restore
+would destroy a real receipt that a parent holds, which is not a correction but a second error.
+**G2 (§9) is what enforces that expiry**: posting refuses once such an attribution exists, so R3
+cannot be relied on past the point where it stops being true. Without G2, R3 is merely convenient;
+with it, R3 is honest.
 
 ---
 
@@ -192,16 +253,168 @@ Per S9 the import is maker–checker, and the batch is the unit of approval, not
 1. **Pre-flight** (§6) — answers, not code. Some of it can invalidate what follows.
 2. **Staging table + read-only validator** — parses, validates §1's identity, runs §5's comparison, posts nothing. Brookstone can iterate the extract against it immediately. *This is the first commit.*
 3. **Provenance shapes** (§4) — columns, enum values, receipt band, receipt refusal. Shipped with the thing that writes them, not ahead of it.
-4. **Posting + approval gate** (§3, §8).
+4. **Posting + approval gate** (§3, §8), **and G1 and G2 below**. Both are approved and both ship in
+   this commit — G1 because it is what makes "one batch is one term" (§6.2) structural rather than
+   procedural, and G2 because it is what makes R3 (§7) honest rather than merely convenient. Neither
+   is built by the staging commit; both are shapes here, not code.
 5. **U12b** — the operator screen.
 
 Steps 2–5 do **not** displace S1 and V7 from the front of August. The import cannot post until the fee schedules exist (U1) and it should not post onto a balance projection whose lock anchor is still unexercised.
+
+### G1 — at most one posted batch per school, ever
+
+**In the DATABASE, not the job.** A job-level "has this school already posted?" check reads, decides,
+and then writes, and two approvals landing together both read `false`. A unique index does not lose
+that race. This project already carries the shape, at
+`2026_07_19_120000_slice2_invoice_total_immutable_and_active_enrollment_guard.php:76-81`:
+
+```sql
+ALTER TABLE finance_invoices
+    ADD COLUMN active_enrollment_key BIGINT UNSIGNED
+        GENERATED ALWAYS AS (IF(status = 'issued', student_curriculum_id, NULL)) STORED;
+ALTER TABLE finance_invoices
+    ADD UNIQUE finance_invoices_active_enrollment_unique (school_id, active_enrollment_key);
+```
+
+The batches equivalent — a key that **is** the school when posted and NULL otherwise, so MySQL
+exempts every non-posted row from the index and unlimited draft, validated and rejected batches
+coexist:
+
+```sql
+ALTER TABLE finance_opening_balance_batches
+    ADD COLUMN posted_school_key BIGINT UNSIGNED
+        GENERATED ALWAYS AS (IF(status = 'posted', school_id, NULL)) STORED;
+ALTER TABLE finance_opening_balance_batches
+    ADD UNIQUE ob_batches_posted_school_unique (posted_school_key);
+```
+
+Four things the implementer must not discover the hard way:
+
+- **The unique index is on the generated column ALONE**, not on `(school_id, posted_school_key)` as
+  the invoice precedent has it. There the key was the *enrollment* and the school was the partition;
+  here the key already **is** the school, so adding `school_id` would be redundant — and, worse,
+  reads as though the constraint were per-something-else.
+- **No new base column is needed.** `status` (varchar(255) NOT NULL) and `school_id` (bigint
+  unsigned NOT NULL) both exist on the table as built, so the generated column has everything it
+  references. See §9's answer in the implementation report for the derivation.
+- **The `'posted'` VALUE does not exist yet.** `OpeningBalanceBatchStatus` is `draft | validated |
+  rejected`; commit 4 adds `posted` (and whatever approval state precedes it). The index is
+  therefore inert until the enum grows, which is correct — it must ship in the same commit as the
+  transition it guards, or it guards nothing.
+- **`status` collates `utf8mb4_unicode_ci`**, so `status = 'posted'` also matches `'Posted'` and
+  `'POSTED'`. That is the safe direction — a case-variant status cannot slip past the guard — but it
+  should be stated rather than found.
+
+Bite-proof it the way the index deserves: post one batch, attempt a second, and assert **driver code
+1062** rather than an exit code or a message. A PHP guard cannot produce 1062, so the assertion is
+what proves the refusal is the index.
+
+### G2 — posting refuses once a payment is attributed against imported arrears
+
+This is the expiry of R3 (§7). It exists because a restore after a real receipt has landed is not a
+correction; it destroys money a parent actually paid.
+
+**The check as first phrased cannot be written, and the schema is why.** "Any
+`finance_payment_allocation` pointing at a ledger charge whose `source_type` is an opening-balance
+row" describes a join that does not exist: `finance_payment_allocations` carries
+`invoice_id BIGINT UNSIGNED NOT NULL` and **no ledger reference of any kind** — no
+`ledger_transaction_id`, no `source_type`/`source_id`. Allocations settle *invoices*. §3 already
+states the consequence from the other side ("a later payment aimed at arrears cannot be allocated to
+them; it banks as unallocated credit"), so an allocation against the arrears charge is not merely
+absent — it is unrepresentable.
+
+So G2 must read the thing that IS representable. The imported money that can be *attributed* is the
+imported **payment**, which `applyCreditForward` allocates to the first issued invoice at V2. The
+check, therefore:
+
+```sql
+SELECT EXISTS (
+    SELECT 1
+    FROM finance_payment_allocations a
+    JOIN finance_payments p ON p.id = a.payment_id AND p.school_id = a.school_id
+    WHERE a.school_id = ?
+      AND p.origin = 'migrated'
+);
+```
+
+It reads exactly two things: the allocation rows for the school, and `finance_payments.origin` — the
+§4 provenance column, which ships in commit 3, one commit *before* the guard needs it. That ordering
+is not a coincidence to be preserved by luck; **if §4's `origin` is ever descoped or deferred, G2
+becomes unwritable and R3 becomes unenforceable with it.** Say so in commit 3's brief.
+
+Two costs, stated so nobody re-derives them under time pressure:
+
+- The join is on `finance_payment_allocations_payment_school_foreign (payment_id, school_id)`, which
+  exists, so the read is indexed. `a.school_id` alone is also indexed.
+- The check is *narrower* than "has anything happened since the post". It cannot see, for example, a
+  brand-new unallocated payment banked after the post. Widening it to that would need a `posted_at`
+  on `finance_opening_balance_batches`, which **does not exist today**. Decide in commit 4 whether
+  the narrow reading is enough; do not assume it is.
 
 ---
 
 ## 10. What I am least sure of
 
 - **I got the arrears instrument wrong in Rev 1 and the schema caught me, not my reasoning.** I argued from `fee_payment_allocations.invoice_id` being NOT NULL and never checked whether a second issued invoice on the same episode was permitted. It is not. The general lesson, which applies to the rest of this document: an argument from one constraint is not a design, and I did not read the invoice table's own uniqueness before prescribing a second invoice against it.
-- **The arrears reversal gap** (§7, last row) is real and unclosed. I am recording it rather than inventing an instrument for it here, because the right answer depends on whether Brookstone ever expects to correct an imported arrears figure or would simply re-run a corrected batch before go-live. Ask before building.
+- ~~**The arrears reversal gap** (§7, last row) is real and unclosed.~~ **Closed by R3** (project
+  lead, 2026-08-06): no live reversal instrument; a database restore and a corrected batch. The
+  question I said depended on Brookstone has been answered — they would re-run before go-live. What
+  remains is not uncertainty but a dependency: R3 holds only until money is attributed against the
+  import, and **G2 (§9) is what stops it being relied on after that**. §11 says which half of the
+  cutover a machine can hold and which half it cannot.
 - **The reserved receipt band at 900,000,000** is arbitrary. Any scheme that provably cannot collide with the live sequence is equivalent.
 - **§5's comparison assumes the portal's fee schedule reproduces WCBS's bill.** If Brookstone's off-platform bills carry per-student ad-hoc adjustments that no schedule can express, the mismatch report will be mostly noise and the check needs a per-student expected-total column in the file instead. I do not know which it is.
+
+---
+
+## 11. Cutover preconditions — split by who enforces them
+
+These are grouped by **enforcer, not by importance**, because they fail differently and a single
+checklist hides that. A reader who cannot tell which of these a machine will hold and which needs a
+named person will assume all of them are held, and the ones that are not are exactly the ones whose
+failure is unrecoverable.
+
+### Enforced by the DATABASE
+
+**G1 — at most one posted batch per school, ever** (§9). A unique index on a generated key.
+Nothing an operator, a job, a race or a second approval can do produces two posted batches; the
+second write fails with 1062 and the transaction rolls back. This is the guarantee behind §6.2's
+"one batch is one term" — without it, the rule is a sentence in a document and double-counted
+arrears is one mis-click away.
+
+### Enforced by the JOB
+
+**G2 — posting refuses once a payment is attributed against imported arrears** (§9). A read the
+posting Action performs before it writes. Strong, but not as strong as G1: it is a check-then-act, so
+its guarantee is bounded by the transaction it runs in, and it is only as good as the predicate
+(§9 records that the predicate is narrower than "anything has happened since the post"). It is
+enforcement, and it belongs to the job — not to the schema, and not to a human.
+
+### PROCEDURAL — not enforceable, and must not be written up as if it were
+
+Two things, and neither has a mechanism:
+
+1. **The pre-post snapshot.** R3's entire correction path is a restore, and a restore is only
+   available if somebody took a snapshot first.
+2. **No other write to that school's finance tables between the post and the go/no-go call.**
+   Every such write is destroyed by the restore that R3 depends on.
+
+**Why these cannot be automated, stated plainly so nobody proposes a checkbox for them.** A restore
+happens **below the application**. The portal is not running when it occurs, it is not consulted, and
+afterwards it cannot tell that it happened — there is no row to read, no event to observe, no
+invariant to violate. The application cannot see a restore, cannot refuse one, and cannot verify that
+a snapshot preceded one. Any control claiming otherwise would be a control that reports green in the
+one scenario it was built for.
+
+So these two need **a named person at cutover time, holding them for the duration of the window** —
+not a line in a runbook that someone ticks. Name that person in the cutover plan, and give them the
+window's start and end explicitly. A procedural control with no owner is not weaker than an enforced
+one; it is absent.
+
+### The thing that connects them
+
+R3 (§7) — restore-and-re-run — is the correction path for a wrong imported balance, and it is
+**available only inside this window**. G2 is what closes the window when it should close: the moment
+imported money is attributed, a restore stops being a correction and becomes destruction of a real
+receipt. So the enforced half (G1, G2) and the procedural half are not two lists; the procedural half
+is what makes R3 usable, and G2 is what stops it being used once it is no longer true.

@@ -55,4 +55,26 @@ interface BillableEnrollmentProvider
      * @return list<int>
      */
     public function matchingStudentIds(string $term): array;
+
+    /**
+     * The active School's admission-number roster — every student id paired with the admission
+     * number as stored. The join key for an off-platform import, and the ONLY thing that can
+     * answer §6's pre-flight ("how many NULL, how many duplicate-after-trim") and §7's other
+     * side ("who is in the portal but absent from the file").
+     *
+     * WHY NOT THE TWO METHODS ABOVE, which is the obvious question. {@see displayFor()} runs the
+     * wrong way — ids in, display out — and an import has admission numbers, not ids.
+     * {@see matchingStudentIds()} is a `LIKE %term%` search box: it would resolve "A1" onto
+     * "A100" and silently import one student's arrears against another. Neither is a join, so
+     * neither is safe as one, and a fuzzy join key is the single worst failure available to a
+     * money import. Hence an exact roster the caller matches against itself.
+     *
+     * LIVE, School-scoped by the Academics model's SchoolScope, and soft-deleted students are
+     * excluded by its default scope (the same boundary displayFor() has). Withdrawn and
+     * graduated students ARE included: §7 imports their arrears and payments — their balance
+     * stays chaseable — and only excludes them from being invoiced, which is V2's concern.
+     *
+     * @return list<array{student_id: int, admission_number: ?string}>
+     */
+    public function admissionNumberIndex(): array;
 }

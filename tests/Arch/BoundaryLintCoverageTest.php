@@ -21,9 +21,18 @@ uses()->group('arch');
 
 /**
  * Write $body to a temp PHP file under app/Finance/, run the real lint, delete the file, and return
- * [exitCode, stderr+stdout]. The finally is load-bearing: a leaked fixture would fail bin/quality
- * step 6 for everyone afterwards, and it would fail it for a reason that has nothing to do with
- * their change.
+ * [exitCode, stderr+stdout, basename]. The finally is load-bearing: a leaked fixture would fail
+ * bin/quality step 6 for everyone afterwards, and it would fail it for a reason that has nothing to
+ * do with their change. `.gitignore` covers the residue the finally cannot — a SIGKILL or a crashed
+ * host leaves an UNTRACKED file, which is the one outcome that outlives the run and is committable.
+ *
+ * ⚠️ THIS PLANTS INTO THE REAL TREE, SO IT IS SAFE ONLY WHILE PEST RUNS SEQUENTIALLY. Verified at
+ * this commit: `bin/quality:153` is `pest --group=arch` and `:161` is plain `pest`; `--parallel`
+ * appears only on Pint (`composer.json:67,70`). If you are adding `--parallel` to step 13, THIS FILE
+ * BREAKS FIRST — test 3 asserts the lint is GREEN over the tree while tests 1 and 2 have violations
+ * planted in it, so the three tests contradict each other the moment they overlap in time. Give the
+ * lint a root argument and point the fixtures at a temp dir before you parallelise, or exclude this
+ * file from the parallel run.
  */
 function lintWithFinanceFixture(string $body): array
 {
@@ -68,11 +77,10 @@ PHP);
         ->and($output)->toContain('withTrashed');
 });
 
-it('reports withoutTrashed() and SoftDeletingScope by the same rule', function () {
-    // The other two spellings of the same escape. `withoutTrashed()` is the inverse call on the same
-    // scope, and naming SoftDeletingScope directly is how you would reach it via
-    // withoutGlobalScope(...) without writing the banned token.
-    [$exitA, $outputA] = lintWithFinanceFixture(<<<'PHP'
+it('reports withoutTrashed() and a bare SoftDeletingScope reference by the same rule', function () {
+    // Arm A — `withoutTrashed()`, the inverse call on the same scope. No other token in the pattern
+    // matches this line, so deleting `withoutTrashed\(` alone makes this arm red.
+    [$exitA, $outputA, $fileA] = lintWithFinanceFixture(<<<'PHP'
 <?php
 
 namespace App\Finance;
@@ -88,25 +96,46 @@ final class BoundaryLintFixture
 }
 PHP);
 
-    [$exitB, $outputB] = lintWithFinanceFixture(<<<'PHP'
+    // Arm B — a BARE `SoftDeletingScope` reference, and the bareness is the entire point.
+    //
+    // This arm previously read `withoutGlobalScope(SoftDeletingScope::class)`, which the pattern's
+    // ORIGINAL `withoutGlobalScopes?\(` token already matched before the soft-delete tokens were
+    // added — so it passed with all three new tokens deleted and the `SoftDeletingScope` token had
+    // ZERO coverage. A test that is satisfied by a rule other than the one it names is worse than no
+    // test: it reports as coverage.
+    //
+    // So this fixture writes `withoutGlobalScope(` NOWHERE and `withTrashed(` NOWHERE. The only
+    // banned token anywhere in it is the class name itself, on the `use` line and on the constant —
+    // which is exactly the shape that reaches the scope by an alias: hold the class, hand it to
+    // something else, and the call site that peels the scope off lives in another file the grep is
+    // not looking at. Delete `|SoftDeletingScope` from the pattern and this arm, alone, goes red.
+    [$exitB, $outputB, $fileB] = lintWithFinanceFixture(<<<'PHP'
 <?php
 
 namespace App\Finance;
 
-use App\Models\Student;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 final class BoundaryLintFixture
 {
-    public function leak(): mixed
+    private const SCOPE = SoftDeletingScope::class;
+
+    public function scope(): string
     {
-        return Student::query()->withoutGlobalScope(SoftDeletingScope::class)->get();
+        return self::SCOPE;
     }
 }
 PHP);
 
-    expect($exitA)->toBe(1)->and($outputA)->toContain('finance-escape-hatches')
-        ->and($exitB)->toBe(1)->and($outputB)->toContain('finance-escape-hatches');
+    expect($exitA)->toBe(1)
+        ->and($outputA)->toContain('finance-escape-hatches')
+        ->and($outputA)->toContain($fileA)
+        ->and($outputA)->toContain('withoutTrashed');
+
+    expect($exitB)->toBe(1)
+        ->and($outputB)->toContain('finance-escape-hatches')
+        ->and($outputB)->toContain($fileB)
+        ->and($outputB)->toContain('SoftDeletingScope');
 });
 
 it('does not report the same call OUTSIDE app/Finance, and is clean on the tree as it stands', function () {

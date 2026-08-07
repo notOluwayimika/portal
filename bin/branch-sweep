@@ -18,16 +18,45 @@
 # fresh clone with no local branches the set is already empty and the gate is vacuous
 # — it protects the machine that has the branches, which is the machine at risk.)
 #
-# THE SECOND GATE IS AN EXPLICIT ANCESTRY ASSERT, NOT `git branch -d`. `-d` looks like
-# a containment check and is not one: git's branch_merged() tests containment in the
-# branch's UPSTREAM when it has one, falling back to HEAD only when it does not, and
-# origin/staging is never consulted. Every branch here is tracked, so `-d` on a branch
-# whose remote is ahead of staging prints "warning: ... merged to refs/remotes/origin/X,
-# but not yet merged to HEAD" and DELETES IT, exit 0. So before each delete, local and
-# remote, this asserts `git merge-base --is-ancestor <ref> refs/remotes/origin/staging`
-# against the ref being deleted. `-d` is still used rather than `-D` — it costs nothing
-# and it fails closed on the checked-out branch — but it is a backstop, not the gate.
-# A script that force-deletes branches is one bad filter away from losing work.
+# THE GATE IS AN EXPLICIT ANCESTRY ASSERT ON A RESOLVED SHA, NOT `git branch -d`.
+#
+# `git branch -d` answers "is this published?", not "is this merged?". branch_merged()
+# tests containment in the branch's UPSTREAM, falling back to HEAD when there is none,
+# and consults origin/staging never. So it is uncorrelated with the property that makes
+# a delete lossless, in BOTH directions — both observed, not theorised:
+#
+#   * It PERMITS what staging does not contain. On a tracked branch whose tip equals its
+#     remote but holds a commit staging has never seen, `-d` printed "warning: ... merged
+#     to refs/remotes/origin/X, but not yet merged to HEAD", deleted it, and exited 0.
+#   * It REFUSES what staging fully contains. Three branches here — 0 commits outside
+#     origin/staging, so provably lossless — were refused with "error: The branch 'X' is
+#     not fully merged", because their local was ahead of their own stale remote (or, for
+#     one with no upstream at all, ahead of whatever HEAD happened to be).
+#
+# So each delete, local and remote, is preceded by resolving the ref to a SHA and
+# asserting `git merge-base --is-ancestor <SHA> refs/remotes/origin/staging`. The assert
+# is on the SHA, never the name — inferring from the name is exactly what `-d` does and
+# exactly how the wrong answer was reached. The assert is only as good as its right-hand
+# side, so the fetch above is not a convenience: an assert against a stale
+# refs/remotes/origin/staging is the real hazard in this script, more than `-D` is.
+#
+# `-d` is still tried FIRST on every ref. Its answer is a genuinely useful second signal
+# — "this has unpushed commits" is worth surfacing — it is simply not the gate. When it
+# refuses a ref the assert has ALREADY cleared, the script prints the ref, its SHA and
+# the reason, and deletes that one ref with `-D`. That upgrade is never silent. `-D` is
+# reachable ONLY behind a passed assert on that exact ref: never as the default path,
+# never on an unasserted ref, and never behind a flag — there is no way to ask for it.
+# If the fallback set is ever large, the model of the repo is wrong and the operator
+# needs to see that before the irreversible pass runs.
+#
+# EVERY DELETION PRINTS ITS SHA, local and remote, and that is the recovery path:
+#   local:  git branch <name> <sha>
+#   remote: git push origin <sha>:refs/heads/<name>
+# A `-D` whose SHA was printed is recoverable exactly; a `-d` whose SHA was not is not
+# meaningfully safer. The SHA is what makes the distinction between them small.
+#
+# The exclusions below run BEFORE the assert and are unconditional. `-D` existing in
+# this file makes getting that list right more load-bearing, not less.
 #
 # The asymmetry is where the risk actually lives: `git push origin --delete` has no
 # `-d` equivalent at all. It deletes unconditionally. On the remote pass the ancestry
@@ -186,10 +215,23 @@ printf '\n'
 print_list 'remote branches merged into origin/staging' ${REMOTE+"${REMOTE[@]}"}
 printf '\n%srecord written to %s%s\n\n' "$DIM" "$RECORD" "$OFF"
 
-# --- the second gate ---------------------------------------------------------
-# Asserted against the exact ref about to be deleted, immediately before deleting it.
-# This is the check `git branch -d` looks like it performs and does not.
+# --- the gate ----------------------------------------------------------------
+# Asserted on the RESOLVED SHA of the ref about to be deleted, immediately before
+# deleting it. On the SHA and not the name: reasoning from the name is what `git
+# branch -d` does, and it is how the wrong answer was reached.
 contained() { git merge-base --is-ancestor "$1" "$STAGING"; }
+
+# Why -d refused a ref the assert cleared — surfaced, never swallowed.
+refusal_reason() {
+    local b="$1" up n
+    up="$(git rev-parse --abbrev-ref "$b@{u}" 2>/dev/null || true)"
+    if [ -n "$up" ]; then
+        n="$(git rev-list --count "$up..refs/heads/$b" 2>/dev/null || echo '?')"
+        printf 'local is ahead of its upstream %s by %s commit(s) — unpublished commits' "$up" "$n"
+    else
+        printf 'no upstream, so -d compared against HEAD instead of origin/staging'
+    fi
+}
 
 # --- act ---------------------------------------------------------------------
 case "$MODE" in
@@ -204,24 +246,48 @@ case "$MODE" in
             printf '%s✓ nothing to delete locally%s\n' "$GREEN" "$OFF"
             exit 0
         fi
-        printf '%sdeleting %d local branches%s\n\n' "$BOLD" "${#LOCAL[@]}" "$OFF"
-        FAILED=0
+        printf '%sdeleting %d local branches%s\n' "$BOLD" "${#LOCAL[@]}" "$OFF"
+        printf '%sasserting against %s = %s%s\n\n' "$DIM" "$STAGING" "$(git rev-parse "$STAGING")" "$OFF"
+        FAILED=0; FORCED=0; DELETED=0
         for b in "${LOCAL[@]}"; do
-            if ! contained "refs/heads/$b"; then
-                printf '%s  refused: %s is not contained in %s%s\n' "$RED" "$b" "$STAGING" "$OFF"
-                FAILED=$((FAILED + 1))
-                continue
+            sha="$(git rev-parse --verify -q "refs/heads/$b")" || {
+                printf '%s  refused: %s could not be resolved to a SHA%s\n' "$RED" "$b" "$OFF"
+                FAILED=$((FAILED + 1)); continue
+            }
+            if ! contained "$sha"; then
+                printf '%s  refused: %s (%s) is not contained in %s%s\n' "$RED" "$b" "$sha" "$STAGING" "$OFF"
+                FAILED=$((FAILED + 1)); continue
             fi
-            git branch -d "$b" || FAILED=$((FAILED + 1))
+            # -d first. Its answer is a second signal, not the gate.
+            if git branch -d "$b" >/dev/null 2>&1; then
+                printf '  deleted %s %s\n' "$sha" "$b"
+                printf 'deleted %s %s\n' "$sha" "$b" >> "$RECORD"
+                DELETED=$((DELETED + 1))
+            else
+                printf '%s  -d refused %s (%s): %s%s\n' "$YELLOW" "$b" "$sha" "$(refusal_reason "$b")" "$OFF"
+                printf '%s    assert against %s PASSED — deleting with -D%s\n' "$YELLOW" "$STAGING" "$OFF"
+                if git branch -D "$b" >/dev/null 2>&1; then
+                    printf '  deleted %s %s %s(-D)%s\n' "$sha" "$b" "$YELLOW" "$OFF"
+                    printf 'deleted %s %s (-D fallback)\n' "$sha" "$b" >> "$RECORD"
+                    DELETED=$((DELETED + 1)); FORCED=$((FORCED + 1))
+                else
+                    printf '%s  FAILED to delete %s (%s)%s\n' "$RED" "$b" "$sha" "$OFF"
+                    FAILED=$((FAILED + 1))
+                fi
+            fi
         done
         printf '\n'
+        if [ "$FORCED" -gt 0 ]; then
+            printf '%s%d branch(es) needed the -D fallback (assert-cleared, -d refused).%s\n' "$YELLOW" "$FORCED" "$OFF"
+            printf '%sIf that number is large, the model of this repo is wrong — look before the remote pass.%s\n' "$YELLOW" "$OFF"
+        fi
         if [ "$FAILED" -gt 0 ]; then
             # The filter passed something the ancestry assert refused. The filter is
-            # wrong — investigate before re-running, and never reach for -D.
-            printf '%s✗ %d branch(es) refused — the filter and the ancestry assert disagree; do not force%s\n' "$RED" "$FAILED" "$OFF"
+            # wrong — investigate before re-running.
+            printf '%s✗ %d branch(es) refused by the assert — the filter and the gate disagree%s\n' "$RED" "$FAILED" "$OFF"
             exit 1
         fi
-        printf '%s✓ %d local branches deleted (recoverable from the reflog for ~90 days)%s\n' "$GREEN" "${#LOCAL[@]}" "$OFF"
+        printf '%s✓ %d local branches deleted%s — restore any with: git branch <name> <sha>\n' "$GREEN" "$DELETED" "$OFF"
         ;;
 
     remote)
@@ -236,21 +302,35 @@ case "$MODE" in
             printf '  Its output is how the filter gets reviewed before an irreversible delete.\n'
             exit 2
         fi
-        # Re-assert containment on every ref before any of them is pushed. One
-        # unexpected ref aborts the whole pass rather than a batch of twenty.
+        # Resolve every ref to a SHA and assert on the SHA before ANY of them is
+        # pushed. One unexpected ref aborts the whole pass, not just its batch of 20.
+        printf '%sasserting against %s = %s%s\n' "$DIM" "$STAGING" "$(git rev-parse "$STAGING")" "$OFF"
         for b in "${REMOTE[@]}"; do
-            if ! contained "$REMOTE_PREFIX$b"; then
-                printf '%s✗ %s is not contained in %s — aborting, nothing deleted%s\n' "$RED" "$b" "$STAGING" "$OFF"
+            sha="$(git rev-parse --verify -q "$REMOTE_PREFIX$b")" || {
+                printf '%s✗ %s could not be resolved to a SHA — aborting, nothing deleted%s\n' "$RED" "$b" "$OFF"
+                exit 1
+            }
+            if ! contained "$sha"; then
+                printf '%s✗ %s (%s) is not contained in %s — aborting, nothing deleted%s\n' "$RED" "$b" "$sha" "$STAGING" "$OFF"
                 exit 1
             fi
         done
         printf '%sdeleting %d remote branches (git push origin --delete, batches of 20)%s\n' "$BOLD" "${#REMOTE[@]}" "$OFF"
-        printf '%sthis is NOT recoverable.%s\n\n' "$YELLOW" "$OFF"
+        printf '%sthis is NOT recoverable except from the SHAs below.%s\n\n' "$YELLOW" "$OFF"
+        # The SHA of every ref about to go, printed and recorded before the push.
+        # This IS the recovery path: git push origin <sha>:refs/heads/<name>
+        for b in "${REMOTE[@]}"; do
+            sha="$(git rev-parse --verify -q "$REMOTE_PREFIX$b")"
+            printf '  deleting %s %s\n' "$sha" "$b"
+            printf 'deleted %s %s\n' "$sha" "$b" >> "$RECORD"
+        done
+        printf '\n'
         # Batched so one rejected ref fails its batch of 20 and the rest still run,
         # instead of a single 226-ref push aborting the whole sweep on one bad ref.
         # xargs exits non-zero if any batch did, so a partial failure is still visible.
         if printf '%s\n' "${REMOTE[@]}" | xargs -n 20 git push origin --delete; then
             printf '\n%s✓ %d remote branches deleted on origin%s\n' "$GREEN" "${#REMOTE[@]}" "$OFF"
+            printf 'restore any with: git push origin <sha>:refs/heads/<name>  (SHAs above and in %s)\n' "$RECORD"
             printf '%sother clones keep their stale origin/* refs until they fetch --prune.%s\n' "$DIM" "$OFF"
         else
             printf '\n%s✗ at least one batch failed — re-run the dry run to see what survived%s\n' "$RED" "$OFF"

@@ -82,12 +82,21 @@ repo already carries a prefix. The unprefixed exceptions
 `bin/branch-sweep` does it, dry-run by default. The filter is merged-ness, never
 the name: `main`, `staging`, the `branch/` archival namespace, `origin/HEAD` and
 the branch you are standing on are exempt unconditionally, with no flag to
-include them. Before each delete the script asserts the ref is an ancestor of
-`origin/staging` — `git branch -d` is **not** that check, it tests containment in
-the branch's _upstream_, so it will happily delete a branch `staging` has never
-seen. Local pass first, and the remote pass refuses to run until the local set is
-empty: a local delete comes back from the reflog, a remote one does not. This is
-a convention and a tool, not a gate — it deliberately has no `bin/quality` step.
+include them. Local pass first, and the remote pass refuses to run until the
+local set is empty. This is a convention and a tool, not a gate — it deliberately
+has no `bin/quality` step.
+
+The gate is an explicit `merge-base --is-ancestor` of the branch's **resolved
+SHA** against a freshly fetched `refs/remotes/origin/staging` — **not**
+`git branch -d`. `-d` measures containment in a branch's _upstream_, falling back
+to HEAD when there is none, so it refuses branches `staging` already contains
+(local ahead of its remote) and permits branches `staging` does not (tip equals
+its remote). It answers "is this published?", not "is this merged?". It is still
+tried first, because "this has unpushed commits" is worth surfacing; when it
+refuses a ref the assert has cleared, the script says so loudly and deletes that
+one ref with `-D`, which is reachable only that way and never via a flag. Every
+deletion prints its SHA, and that is the recovery path — `git branch <name>
+<sha>` locally, `git push origin <sha>:refs/heads/<name>` on the remote.
 
 ### The enforcement floor is LOCAL, permanently
 

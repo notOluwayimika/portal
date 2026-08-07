@@ -15,7 +15,7 @@ class GuardianAccountCreatedNotification extends Notification implements ShouldQ
         private readonly string $plainPassword,
         private readonly string $schoolName,
         private readonly string $loginUrl,
-        private readonly array  $studentNames = [],
+        private readonly array $studentNames = [],
     ) {}
 
     public function via(object $notifiable): array
@@ -30,8 +30,8 @@ class GuardianAccountCreatedNotification extends Notification implements ShouldQ
             ->greeting("Hello {$notifiable->full_name},")
             ->line("A parent/guardian account has been created for you at {$this->schoolName}.");
 
-        if (!empty($this->studentNames)) {
-            $mail->line('You are linked to the following student(s): **' . implode(', ', $this->studentNames) . '**.');
+        if (! empty($this->studentNames)) {
+            $mail->line('You are linked to the following student(s): **'.implode(', ', $this->studentNames).'**.');
         }
 
         return $mail

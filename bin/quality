@@ -12,25 +12,35 @@
 # this too — a fork between the two re-creates the bug that started the tsc saga,
 # where CI and a developer measured different trees and both reported green.
 #
-#   lint.yml (job: quality)          -> steps 1..12 below
-#   tests.yml (job: ci)              -> step 13 below
+#   lint.yml (job: quality)          -> steps 2..13 below
+#   tests.yml (job: ci)              -> step 14 below
 #
-# (The two numbers above are re-derived, not carried: the step count is 13 as of the
-# grants-convergence lint. They were already one behind at 12 steps.)
+# (The two numbers above are re-derived, not carried: the step count is 14 as of the
+# dependency-integrity lint. They were already one behind at 12 steps, then 13.)
+#
+# STEP 1 IS THE ONE EXCEPTION TO THE MIRROR, and deliberately: CI runs `composer install`
+# in the job immediately before, so a lock-vs-vendor check there is vacuous by construction.
+# It has meaning only on a working copy someone has been merging into. (lint.yml is in any
+# case already behind this script by two lints — Actions has never executed a job here.)
 #
 # DELIBERATELY OMITTED, and why — these are environment PROVISIONING, not gates:
 #   composer install / pnpm install  - your working copy already has them; this
-#                                      script verifies they exist instead.
+#                                      script verifies vendor/ MATCHES composer.lock
+#                                      instead (step 1). It used to verify only that
+#                                      the directory existed, which is not the same
+#                                      claim and is how a wrong tree got measured.
 #   cp .env.example .env             - would clobber your real local .env.
 #   php artisan key:generate         - CI runs it on a throwaway .env copy. Locally
 #                                      it would ROTATE your APP_KEY and can render
 #                                      existing encrypted data unreadable. Never here.
 #   php artisan migrate --force      - CI migrates a fresh service DB; locally the
 #                                      suite's RefreshDatabase migrates per run, so
-#                                      a broken migration still fails step 11.
+#                                      a broken migration still fails step 14. (This
+#                                      read "step 11" and was already two behind; the
+#                                      suite is the last step, whatever its number.)
 #   pnpm run build                   - asset compilation, not a quality signal. The
 #                                      wayfinder generation it would perform IS
-#                                      needed, and is done explicitly in step 1.
+#                                      needed, and is done explicitly in step 2.
 #
 # Usage: bin/quality            (base auto-detected: merge-base with origin/staging)
 #        bin/quality <base-ref>
@@ -46,13 +56,23 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/13]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/14]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
 # rather than one-at-a-time. (CI stops at the first failing step; collecting them
 # locally is strictly more useful and cannot make the gate weaker — any failure
 # still fails the whole run.)
+#
+# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-14 each measure a
+# property of the code. Step 1 measures whether the code being measured is the code that
+# was declared. When step 1 is red the later steps are not extra findings — they are
+# readings from an instrument that has just reported itself untrustworthy, and thirteen
+# green ticks printed beside one red line tell the reader the opposite of the truth. So
+# step 1 alone uses abort_check() and exits 2, which is the severity the `[ -d vendor ]`
+# precondition it replaced always had; moving it into check() would have quietly demoted
+# a hard precondition to a soft finding. Do NOT "fix" that inconsistency by making step 1
+# collect like the others — the inconsistency is the point.
 check() {
     local label="$1"; shift
     if "$@" >/tmp/quality-step.log 2>&1; then
@@ -64,8 +84,29 @@ check() {
     fi
 }
 
+# Step 1 only — see check()'s note above. Same output shape, then stops the run: exit 2,
+# not 1, to keep it distinguishable from "the gate found problems". Either blocks a push
+# (.githooks/pre-push:74 treats any non-zero the same), so nothing is weakened by it.
+abort_check() {
+    local label="$1"; shift
+    if "$@" >/tmp/quality-step.log 2>&1; then
+        printf '   %s✓%s %s\n' "$GREEN" "$OFF" "$label"
+        return 0
+    fi
+    printf '   %s✗%s %s\n' "$RED" "$OFF" "$label"
+    sed 's/^/       /' /tmp/quality-step.log | tail -25
+    printf '\n%s✗ quality: ABORTED at step %d%s — the working tree does not match what was declared.\n' "$RED" "$STEP" "$OFF"
+    printf '%sThe remaining steps would measure the wrong tree, so they were not run. Fix the above and re-run.%s\n' "$DIM" "$OFF"
+    exit 2
+}
+
 # ---------------------------------------------------------------- preconditions
-[ -d vendor ] || { echo "${RED}vendor/ missing — run: composer install${OFF}"; exit 2; }
+# EXISTENCE ONLY — "can this script bootstrap at all", NOT "are the dependencies right".
+# `[ -d vendor ]` used to be the whole dependency check and it cannot carry that: a
+# vendor/ that exists but is behind composer.lock passes it, and every step after runs
+# against a tree nobody declared. Integrity is step 1 below, which is a real check.
+# node_modules has no integrity check yet — same known limit, see step 1's header.
+[ -f vendor/autoload.php ] || { echo "${RED}vendor/ missing — run: composer install${OFF}"; exit 2; }
 [ -d node_modules ] || { echo "${RED}node_modules/ missing — run: pnpm install${OFF}"; exit 2; }
 
 # The base commit for the changed-files lint, mirroring lint.yml's "Determine base
@@ -82,10 +123,22 @@ if [ -z "$BASE" ]; then
 fi
 printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE" 2>/dev/null || echo "$BASE")" "$OFF"
 
-# 1. Wayfinder FIRST. resources/js/{routes,actions} are generated from the PHP
+# 1. Dependency integrity BEFORE ANYTHING ELSE. Every step below measures a tree, and
+#    a tree that does not match composer.lock makes all fourteen answers meaningless —
+#    in whichever direction. It also reconciles step 13's phpstan result cache against
+#    composer.lock, because that cache cannot see vendor/ moving underneath it. Full
+#    reasoning, and the two failure cases, in the lint's header.
+#
+#    ABORTS the run rather than collecting — abort_check(), not check(). See check()'s
+#    comment for why this one step is the exception.
+step "dependency integrity (composer.lock vs composer.json vs vendor/)"
+abort_check "dependency-integrity-lint" php bin/ci-dependency-integrity-lint.php
+
+# 2. Wayfinder EARLY. resources/js/{routes,actions} are generated from the PHP
 #    routes and gitignored; without this, tsc measures a stale or absent tree and
 #    the ratchet compares against a number that means nothing. This ordering is the
-#    fix from the tsc slice — do not move it below step 3.
+#    fix from the tsc slice — do not move it below the tsc ratchet (step 4). Named, not
+#    numbered, because the number has already shifted once.
 #
 #    --with-form IS REQUIRED and must match vite.config.ts's `wayfinder({
 #    formVariants: true })`. Without it the generator omits every `.form` helper, so
@@ -97,19 +150,19 @@ printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE
 step "wayfinder:generate --with-form (must match vite.config.ts formVariants)"
 check "wayfinder:generate" php artisan wayfinder:generate --with-form
 
-# 2. Pint / Prettier / ESLint — CHECK MODE, CHANGED FILES ONLY.
+# 3. Pint / Prettier / ESLint — CHECK MODE, CHANGED FILES ONLY.
 #    Never a directory glob: globbing has silently reformatted ~12 unrelated legacy
 #    files twice in this project. bin/lint-changed.sh is the only sanctioned entry
 #    point, and it is what CI runs.
 step "lint changed files (Pint / Prettier / ESLint, check mode)"
 check "lint-changed" bash bin/lint-changed.sh "$BASE"
 
-# 3. tsc ratchet — pest/tsc may exit non-zero; the RATCHET script is the gate.
+# 4. tsc ratchet — pest/tsc may exit non-zero; the RATCHET script is the gate.
 step "types (tsc ratchet vs tsc-baseline)"
 pnpm run types:check >/tmp/quality-tsc.txt 2>&1 || true
 check "tsc-ratchet" php bin/ci-tsc-ratchet.php /tmp/quality-tsc.txt
 
-# 4. Frontend build. The tsc ratchet CANNOT stand in for this: a syntax error that
+# 5. Frontend build. The tsc ratchet CANNOT stand in for this: a syntax error that
 #    stops a file parsing is not a TYPE error, so the ratchet counts it as zero and
 #    stays at baseline while the bundle refuses to build. That is not theoretical —
 #    merging #162 into a staging already carrying #160 interleaved two JSX blocks and
@@ -155,7 +208,7 @@ check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
 step "static analysis (Larastan level 5 vs baseline)"
 check "larastan" composer analyse
 
-# 13. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
+# 14. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
 step "tests (failure ratchet vs tests/ratchet-baseline.txt)"
 env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit /tmp/quality-junit.xml >/tmp/quality-pest.log 2>&1 || true

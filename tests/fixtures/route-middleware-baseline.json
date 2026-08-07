@@ -544,11 +544,33 @@
         "tenant",
         "permission:admin_area.access"
     ],
+    "GET /api/notifications": [
+        "api",
+        "auth:sanctum",
+        "tenant"
+    ],
+    "GET /api/notifications-queue-health": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:activity_log.view_system"
+    ],
+    "GET /api/notifications/unread-count": [
+        "api",
+        "auth:sanctum",
+        "tenant"
+    ],
     "GET /api/outstanding-comments": [
         "api",
         "auth:sanctum",
         "tenant",
         "permission:report.view"
+    ],
+    "GET /api/parent/wards": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:parent_portal.access"
     ],
     "GET /api/results/incomplete": [
         "api",
@@ -899,6 +921,12 @@
         "tenant",
         "permission:admin_area.access"
     ],
+    "GET /notifications/queue-health": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:admin_area.access"
+    ],
     "GET /outstanding-comments": [
         "web",
         "auth",
@@ -1218,6 +1246,11 @@
         "tenant",
         "permission:manage_key_stage_coordinator_comments"
     ],
+    "PATCH /api/notifications/{uuid}/read": [
+        "api",
+        "auth:sanctum",
+        "tenant"
+    ],
     "PATCH /api/student-curricula/{studentCurriculum}": [
         "api",
         "auth:sanctum",
@@ -1523,6 +1556,25 @@
         "auth:sanctum",
         "tenant",
         "permission:admin_area.access"
+    ],
+    "POST /api/notifications/read-all": [
+        "api",
+        "auth:sanctum",
+        "tenant"
+    ],
+    "POST /api/notifications/seen": [
+        "api",
+        "auth:sanctum",
+        "tenant"
+    ],
+    "POST /api/notifications/ses-events": [
+        "api",
+        "throttle:120,1"
+    ],
+    "POST /api/notifications/{notification}/actions/{action}": [
+        "api",
+        "auth:sanctum",
+        "tenant"
     ],
     "POST /api/psychomotor-skills": [
         "api",

@@ -14,8 +14,7 @@ class ActivityLogExportReadyNotification extends Notification implements ShouldQ
     public function __construct(
         private readonly string $downloadUrl,
         private readonly int $rowCount,
-    ) {
-    }
+    ) {}
 
     public function via(object $notifiable): array
     {
@@ -35,9 +34,9 @@ class ActivityLogExportReadyNotification extends Notification implements ShouldQ
     public function toArray(object $notifiable): array
     {
         return [
-            'type'         => 'activity_log_export',
+            'type' => 'activity_log_export',
             'download_url' => $this->downloadUrl,
-            'row_count'    => $this->rowCount,
+            'row_count' => $this->rowCount,
         ];
     }
 }

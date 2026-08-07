@@ -897,16 +897,23 @@ it('MARKER 6 — an unrecognised marker is ECHOED on the failing path, and exemp
         ->and($r['output'])->toContain('declares @converges auditor activity_log.viewww — no such permission');
 });
 
-it('MARKER 7 — a `?` role is NOT exemptible by any marker, and the failure says so', function () {
-    // THE INVARIANT: exemption 3 is a lookup on (role, permission), so a finding whose role could not
-    // be inferred has nothing to look up and no marker can clear it. The failure text must therefore
-    // send the author to ATTRIBUTION, not to more markers.
+it('MARKER 7 / F9 — a `?` role is NOT exemptible by any marker, and the failure names a PARSER GAP', function () {
+    // THE INVARIANT, UNCHANGED: exemption 3 is a lookup on (role, permission), so a finding whose
+    // role could not be inferred has nothing to look up and no marker can clear it.
     //
-    // The assertion on the literal `ATTRIBUTE IT` is the only thing stopping the wrong instruction
-    // from creeping back. An earlier revision of the heredoc told a `?`-role author to "declare a
-    // line for every pre-existing role it spreads to" — faithful-sounding, and unfollowable: they
-    // ship the markers, re-run, and get a byte-identical red with no feedback at all. Do not soften
-    // this assertion into `toContain('shared fragment')`; that phrase survives the bad wording too.
+    // WHAT CHANGED IS THE FIXTURE, AND WHY. This arm used to be built on the fragment case — a
+    // fragment defined above `return [` and spliced into two pre-existing roles. Fragment additions
+    // are now fanned out to every role that spreads them and arrive with REAL role names, so that
+    // fixture no longer yields a `?` at all and this arm would have stayed green while asserting
+    // nothing its name claims. It is rebuilt here on the RESIDUAL `?`: a shape above `return [` that
+    // sits inside no fragment the table could resolve. That is a parser gap, and it must still flag.
+    //
+    // The assertions on the literals are the only thing stopping the wrong instruction from creeping
+    // back. Two revisions of this heredoc have now told a `?`-role author something unfollowable:
+    // first "declare a line for every pre-existing role it spreads to" (ship the markers, re-run,
+    // byte-identical red), then "ATTRIBUTE IT — move the addition under a `'<role>' => [` key, or
+    // regroup the fragments beneath one" — which manufactures the silent green $inferRole's own
+    // docblock warns about. Both are asserted ABSENT. Do not soften `not->toContain('ATTRIBUTE IT')`.
     $enum = <<<'PHP'
 <?php
 
@@ -917,9 +924,6 @@ enum Permission: string
 }
 PHP;
 
-    // The shape `$inferRole` reports `?` for: a fragment defined ABOVE `return [`, spliced into two
-    // pre-existing roles. Scanning backwards from the added line reaches neither a `'<role>' => [`
-    // key nor `return [`, so the role is null.
     $seeder = <<<'PHP'
 <?php
 
@@ -932,13 +936,17 @@ class RbacSeeder
 
     public static function grantsMap(): array
     {
-        $activityAdmin = [
+        $activityStaff = [
             PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
         ];
 
         return [
-            'auditor' => $activityAdmin,
-            'bursar' => $activityAdmin,
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                ...$activityStaff,
+            ],
         ];
     }
 }
@@ -946,24 +954,18 @@ PHP;
 
     $base = gclCommit(['app/Enums/Permission.php' => $enum, 'database/seeders/RbacSeeder.php' => $seeder]);
 
-    // The migration does everything the author could be asked to do: two syntactically valid markers,
-    // one per pre-existing role that splices the fragment. It still exempts nothing.
-    $migration = <<<'PHP'
-<?php
-
-/**
- * @converges auditor activity_log.view
- * @converges bursar activity_log.view
- */
-PHP;
-
+    // The added line sits above `return [` and is NOT a `$name = [` fragment, so the fragment table
+    // cannot resolve it and there is nothing to fan out to. Scanning backwards reaches neither a
+    // `'<role>' => [` key nor `return [`, so the role is null.
     $head = gclCommit([
         'database/seeders/RbacSeeder.php' => str_replace(
-            "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n",
-            "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n",
+            "        return [\n",
+            "        \$extra = array_merge(\$activityStaff, [PermissionEnum::ACTIVITY_LOG_VIEW->value]);\n\n        return [\n",
             $seeder
         ),
-        'database/migrations/2099_01_01_000000_converge_fragment.php' => $migration,
+        // The migration does everything the author could be asked to do: two syntactically valid
+        // markers, one per pre-existing role. It still exempts nothing.
+        'database/migrations/2099_01_01_000000_converge_fragment.php' => "<?php\n\n/**\n * @converges auditor activity_log.view\n * @converges bursar activity_log.view\n */\n",
     ], $base);
 
     $r = gclRun($base, $head);
@@ -974,8 +976,9 @@ PHP;
         // migration is not cited anywhere in the run.
         ->and($r['output'])->not->toContain('2099_01_01_000000_converge_fragment.php')
         ->and($r['output'])->not->toContain('were EXEMPT')
-        // ...and the remedy the author is given is attribution.
-        ->and($r['output'])->toContain('ATTRIBUTE IT');
+        // The remedy names the real cause and does NOT send the author to restructure the seeder.
+        ->and($r['output'])->toContain('parser gap')
+        ->and($r['output'])->not->toContain('ATTRIBUTE IT');
 });
 
 it('MARKER 8 — a marker the parser cannot READ is reported, not swallowed', function () {
@@ -1119,4 +1122,788 @@ it('FAILS rather than passing when it cannot resolve the base — a gate that ca
 
     expect($r['exit'])->toBe(1)
         ->and($r['output'])->toContain('NOT LINTED');
+});
+
+// ── FRAGMENT RESOLUTION (F1–F10) ─────────────────────────────────────────────
+//
+// The two defects these arms pin, both inside this gate's own defect class:
+//
+//   A. THE SILENT GREEN. An added `...$fragment,` line resolved ZERO permissions. Permission
+//      resolution accepts `PermissionEnum::X->value` and a quoted string that is a real enum value
+//      at head; a spread line is neither. So an added spread of a PRE-EXISTING fragment into a
+//      PRE-EXISTING role granted every permission in that fragment, `rbac:sync` granted none of
+//      them, and the gate exited 0. Not exotic: `grantsMap()['admin']` opens with SIX consecutive
+//      spreads before its first literal permission, and `'head_of_school'` repeats the same six.
+//   B. THE DEAD END. A permission added to a fragment's own DEFINITION (above `return [`) resolved
+//      fine, but `$inferRole` scanned backwards, hit `return [`, and returned null. The role printed
+//      `?`, which disables exemptions 2 and 3 — so the addition was flagged with NO path to green,
+//      and the remedy text told the author to regroup the fragments beneath a role key, which is the
+//      silent green `$inferRole`'s own docblock warns about.
+//
+// These fixtures are the same harness as everything above (gclCommit / gclBlob into the object
+// database, scratch index, nothing in the repository mutated). No second harness was built.
+
+/**
+ * The enum every fragment arm shares: three permissions, all PRE-EXISTING on both sides of every
+ * diff below. That is what makes exemption 1 unreachable, so each arm asks about the fragment
+ * machinery alone rather than about "the permission is new".
+ */
+function gclFragmentEnum(): string
+{
+    return <<<'PHP'
+<?php
+
+enum Permission: string
+{
+    case ACTIVITY_LOG_VIEW = 'activity_log.view';
+    case ACTIVITY_LOG_VIEW_ALL = 'activity_log.view_all';
+    case ACTIVITY_LOG_EXPORT = 'activity_log.export';
+}
+PHP;
+}
+
+/** Commit a seeder (plus the fragment enum) as a standalone base. */
+function gclFragmentBase(string $seeder): string
+{
+    return gclCommit([
+        'app/Enums/Permission.php' => gclFragmentEnum(),
+        'database/seeders/RbacSeeder.php' => $seeder,
+    ]);
+}
+
+/** One fragment, spread into `auditor` only. `bursar` holds a literal. */
+function gclOneSpreadSeeder(): string
+{
+    return <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+            ],
+        ];
+    }
+}
+PHP;
+}
+
+/** The same seeder with `...$activityStaff,` ALSO spread into the pre-existing `bursar`. */
+function gclWithSpreadIntoBursar(string $seeder): string
+{
+    return str_replace(
+        "                PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n",
+        "                ...\$activityStaff,\n                PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n",
+        $seeder
+    );
+}
+
+/** One fragment, spread into BOTH pre-existing roles — the fan-out shape. */
+function gclTwoSpreadSeeder(): string
+{
+    return <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                ...$activityStaff,
+            ],
+        ];
+    }
+}
+PHP;
+}
+
+/** Add a PRE-EXISTING permission to the fragment's own DEFINITION. */
+function gclWithPermissionInFragment(string $seeder): string
+{
+    return str_replace(
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n        ];\n",
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n        ];\n",
+        $seeder
+    );
+}
+
+/** Count the ✗ finding markers in a run's output. */
+function gclFindingCount(string $output): int
+{
+    return substr_count($output, "\u{2717}");
+}
+
+it('F1 — an ADDED spread into a PRE-EXISTING role flags every permission in the fragment, by real role name', function () {
+    // DEFECT A, armed. Before the fix this fixture is exit 0 with zero findings: the added line is
+    // `...$activityStaff,`, which resolves to no permission under either accepted form, while
+    // rbac:sync grants neither of the two permissions it actually carries.
+    $base = gclFragmentBase(gclOneSpreadSeeder());
+    $head = gclCommit(
+        ['database/seeders/RbacSeeder.php' => gclWithSpreadIntoBursar(gclOneSpreadSeeder())],
+        $base
+    );
+
+    $r = gclRun($base, $head);
+    [$failures] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and(gclFindingCount($r['output']))->toBe(2)
+        ->and($failures)->toContain('activity_log.view')
+        ->and($failures)->toContain('activity_log.view_all')
+        // The role is REAL, not `?` — a spread sits inside a role key, so $inferRole resolves it.
+        ->and($failures)->toContain('role: bursar')
+        ->and($failures)->not->toContain('role: ?')
+        // ...and auditor is untouched: only the ADDED spread is a finding source.
+        ->and($failures)->not->toContain('role: auditor');
+});
+
+it('F2 — F1 plus a migration declaring ALL the pairs is exempt in full', function () {
+    // Exemption 3, unchanged, applied to fan-out findings. Ten grants means ten marker lines; this
+    // is the two-permission case of that rule.
+    $base = gclFragmentBase(gclOneSpreadSeeder());
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclWithSpreadIntoBursar(gclOneSpreadSeeder()),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges bursar activity_log.view\n// @converges bursar activity_log.view_all\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('OK — no unexempted grant addition')
+        ->and($r['output'])->toContain('declares @converges bursar activity_log.view')
+        ->and($r['output'])->toContain('declares @converges bursar activity_log.view_all');
+});
+
+it('F3 — F1 plus a migration declaring all but ONE pair fails naming exactly that pair', function () {
+    // The per-pair property, on the fan-out. A fragment-level marker would exempt both here; there
+    // is deliberately no such marker (the fragment's contents change after the migration is written,
+    // so it would exempt permissions the migration never granted).
+    $base = gclFragmentBase(gclOneSpreadSeeder());
+    $head = gclCommit([
+        'database/seeders/RbacSeeder.php' => gclWithSpreadIntoBursar(gclOneSpreadSeeder()),
+        'database/migrations/2099_01_01_000000_converge.php' => "<?php\n\n// @converges bursar activity_log.view\n",
+    ], $base);
+
+    $r = gclRun($base, $head);
+    [$failures, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and(gclFindingCount($r['output']))->toBe(1)
+        ->and($failures)->toContain('activity_log.view_all')
+        ->and($exemptions)->toContain('declares @converges bursar activity_log.view');
+});
+
+it('F4 — a permission added to a fragment DEFINITION fans out to every spreading role, with no `?`', function () {
+    // DEFECT B, armed. Before the fix this is ONE finding with `role: ?` and no path to green:
+    // exemption 3 is a lookup on (role, permission) and there is no role to look up.
+    $base = gclFragmentBase(gclTwoSpreadSeeder());
+    $head = gclCommit(
+        ['database/seeders/RbacSeeder.php' => gclWithPermissionInFragment(gclTwoSpreadSeeder())],
+        $base
+    );
+
+    $r = gclRun($base, $head);
+    [$failures] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and(gclFindingCount($r['output']))->toBe(2)
+        ->and($failures)->toContain('activity_log.export')
+        ->and($failures)->toContain('role: auditor')
+        ->and($failures)->toContain('role: bursar')
+        // The whole point of the change: each finding is attributable, so each is markable.
+        ->and($failures)->not->toContain('role: ?');
+});
+
+it('F5 — F4 where one spreading role is NEW in the diff: that one exempt by 2, the other flagged', function () {
+    // Exemption 2 reaching a fan-out finding. `bursar` is created in this diff, so it takes the full
+    // $permissions array and needs no migration; `auditor` is pre-existing and needs one.
+    $base = gclFragmentBase(<<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+        ];
+    }
+}
+PHP);
+
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+            PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                ...$activityStaff,
+            ],
+        ];
+    }
+}
+PHP], $base);
+
+    $r = gclRun($base, $head);
+    [$failures, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and($failures)->toContain('activity_log.export')
+        ->and($failures)->toContain('role: auditor')
+        ->and($failures)->not->toContain('role: bursar')
+        ->and($exemptions)->toContain('bursar')
+        ->and($exemptions)->toContain('is NEW in this diff (takes the full $permissions array)');
+});
+
+it('F6 — a fragment NEW in this diff, spread into a pre-existing role, is STILL flagged', function () {
+    // THE TEMPTING FIFTH EXEMPTION, refused. A fragment added in this diff, spread into a
+    // pre-existing role, carrying PRE-EXISTING permissions, is the defect in full: rbac:sync grants
+    // nothing, because neither the permission nor the role is new. The fragment being new says
+    // nothing about the permissions.
+    //
+    // It also pins DEDUPLICATION: both new finding sources fire here (the spread line is added AND
+    // the definition lines are added), and the same (role, permission) pair must be reported ONCE.
+    $base = gclFragmentBase(<<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+            ],
+        ];
+    }
+}
+PHP);
+
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+            ],
+        ];
+    }
+}
+PHP], $base);
+
+    $r = gclRun($base, $head);
+    [$failures, $exemptions] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        // Exactly two — one per permission the new fragment carries, not four.
+        ->and(gclFindingCount($r['output']))->toBe(2)
+        ->and($failures)->toContain('activity_log.view')
+        ->and($failures)->toContain('activity_log.view_all')
+        ->and($failures)->toContain('role: auditor')
+        // Nothing here is exempt. "The fragment is new" is NOT an exemption.
+        ->and($exemptions)->toBe('');
+});
+
+it('F7 — a permission added to a fragment NO role spreads yields zero findings', function () {
+    // Correct, and it is the honest converse of the fan-out: nothing is granted, so nothing needs
+    // converging. Note this is only sound because the spread index reads BOTH consumption forms —
+    // see F10 for the one that would otherwise be a fresh silent green.
+    $unspread = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $unused = [
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($unspread);
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n        ];\n",
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n        ];\n",
+        $unspread
+    )], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('OK — no unexempted grant addition')
+        ->and($r['output'])->not->toContain('role: ?');
+});
+
+it('F8 — a fragment containing a NESTED spread refuses loudly: NOT LINTED, never a quiet skip', function () {
+    // Decision 3. No fragment nests today, so this costs nothing until someone writes one — at which
+    // point the gate says so instead of resolving transitively or skipping. It reuses the existing
+    // notLinted() rather than inventing a second not-looked message, for the reason that function's
+    // own docblock gives.
+    $base = gclFragmentBase(gclOneSpreadSeeder());
+
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        $combined = [
+            ...$activityStaff,
+            PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                ...$combined,
+            ],
+        ];
+    }
+}
+PHP], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->toContain('combined')
+        ->and($r['output'])->not->toContain('no unexempted grant addition');
+});
+
+it('F10 — a fragment consumed as `\'<role>\' => $fragment,` is indexed too, not read as spread by nobody', function () {
+    // THE SILENT GREEN THIS CHANGE WOULD OTHERWISE HAVE CREATED. `'<role>' => $fragment,` grants the
+    // whole fragment exactly as `...$fragment,` does. Index only the spread form and a permission
+    // added to such a fragment fans out to nothing and the run exits 0 — where TODAY, before this
+    // change, it is a red `?`. That would be strictly worse than the defect being fixed, so both
+    // consumption forms are indexed.
+    //
+    // (This is the shape the previous MARKER 7 fixture was built on; MARKER 7 has been rebuilt on
+    // the residual-`?` shape below, which is what its name has always claimed to assert.)
+    $assigned = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => $activityStaff,
+            'bursar' => $activityStaff,
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($assigned);
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n        ];\n",
+        "            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n        ];\n",
+        $assigned
+    )], $base);
+
+    $r = gclRun($base, $head);
+    [$failures] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and(gclFindingCount($r['output']))->toBe(2)
+        ->and($failures)->toContain('activity_log.view')
+        ->and($failures)->toContain('role: auditor')
+        ->and($failures)->toContain('role: bursar')
+        ->and($failures)->not->toContain('role: ?');
+});
+
+it('F11 — changing HOW a role consumes a fragment it already consumed grants nothing, and is not flagged', function () {
+    // A RESTRUCTURE IS NOT A GRANT, and this is not a hypothetical shape: it is what 9caf958 did.
+    // That commit rewrote `'boarding_parent' => $assessments,` into
+    // `'boarding_parent' => [ ...$assessments, … ]`. Line-wise that is an ADDED `...$assessments,`
+    // carrying six PRE-EXISTING permissions into a PRE-EXISTING role — defect A's exact signature.
+    // Grant-wise it is nothing at all: the role already held all six, through the same fragment.
+    //
+    // Without the base-side fragment model the fan-out reports six convergences for grants that were
+    // never absent, and it does it on the one commit in this file whose arm exists to prove the gate
+    // does NOT fire on the legitimate case. The real-history arm for 9caf958 is the primary proof;
+    // this fixture is the isolated statement of the rule, so a mutant that drops the base model
+    // reddens something that names the rule rather than only something that names a commit.
+    $assigned = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => $activityStaff,
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($assigned);
+
+    // The same grants, expressed the other way, plus one genuinely new literal so the diff is not
+    // vacuous. Only the literal is a new grant.
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "            'auditor' => \$activityStaff,\n",
+        "            'auditor' => [\n                ...\$activityStaff,\n                PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n            ],\n",
+        $assigned
+    )], $base);
+
+    $r = gclRun($base, $head);
+    [$failures] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        // Exactly ONE finding: the literal. Not three.
+        ->and(gclFindingCount($r['output']))->toBe(1)
+        ->and($failures)->toContain('activity_log.export')
+        ->and($failures)->not->toContain('activity_log.view_all')
+        ->and($failures)->toContain('role: auditor');
+});
+
+// ── The two holes the cold review of a573401 found ───────────────────────────
+//
+// NUMBERING: the review brief calls these F10 and F11. Those names were already taken by the
+// arms above (the `'<role>' => $fragment,` consumption form, and the restructure rule), so they
+// are F12 and F13 here. Nothing was renumbered.
+
+it('F12 — a quoted permission value in a TRAILING COMMENT must not feed the resolver', function () {
+    // THE SILENCING DIRECTION, which is what makes this worse than a mis-parse. $resolvePermissions
+    // ends in a floating quote-pair scan, and the fragment-body scanner strips only WHOLE-LINE
+    // comments — so a trailing `// … 'activity_log.export' …` inside a fragment body at BASE put
+    // that permission into $baseFragmentGrants. The base set is used to SUPPRESS findings, so the
+    // genuine addition of that permission on the branch reported nothing at all.
+    //
+    // This is the class constMembers()'s docblock is an essay about: a quote-pair scan with no idea
+    // what a quote MEANS, poisoned by a comment. That one lost roles and was caught; this one lost
+    // a finding. Measured before the fix: exit 0. staging's lint, which has no base-side model at
+    // all, reports this diff red.
+    $withComment = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,   // deliberately NOT 'activity_log.export'
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($withComment);
+
+    // The branch now genuinely grants what the comment merely mentioned.
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "            PermissionEnum::ACTIVITY_LOG_VIEW->value,   // deliberately NOT 'activity_log.export'\n",
+        "            PermissionEnum::ACTIVITY_LOG_VIEW->value,   // deliberately NOT 'activity_log.export'\n            PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n",
+        $withComment
+    )], $base);
+
+    $r = gclRun($base, $head);
+    [$failures] = gclSplit($r['output']);
+
+    expect($r['exit'])->toBe(1)
+        ->and(gclFindingCount($r['output']))->toBe(1)
+        ->and($failures)->toContain('activity_log.export')
+        ->and($failures)->toContain('role: auditor');
+});
+
+it('F13 — a consumption line the two forms do not match REFUSES, and does not skip quietly', function () {
+    // `'<role>' => [...$fragment],` on ONE line is Pint-clean and grants the whole fragment. Neither
+    // consumption regex matches it (the first wants the spread at line start, the second wants a bare
+    // `$name` after `=>`), so before this fix the line was skipped with no refusal and no finding —
+    // defect A in full, on a line no formatter objects to.
+    //
+    // The docblock at the head of the lint asserts that a consumption the table could not find is
+    // never a silent zero. That sentence was FALSE at a573401 and this arm is what makes it true.
+    $inline = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+        'bursar',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $activityStaff = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+            PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$activityStaff,
+            ],
+            'bursar' => [
+                PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($inline);
+
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "            'bursar' => [\n                PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n            ],\n",
+        "            'bursar' => [...\$activityStaff],\n",
+        $inline
+    )], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(1)
+        ->and($r['output'])->toContain('NOT LINTED')
+        ->and($r['output'])->toContain('own line')
+        ->and($r['output'])->not->toContain('no unexempted grant addition');
+});
+
+it('F14 — a permission already held at base through a DIFFERENT fragment is suppressed, not re-reported', function () {
+    // THE SUPPRESSION'S ACTUAL SCOPE, pinned. $baseFragmentGrants is keyed role => permission and
+    // UNIONED over every fragment that role consumed at base — so "auditor already holds
+    // activity_log.export" is true whichever fragment carried it. An earlier revision of this file's
+    // docblock, and of the implementation report, claimed the overlapping-fragment case was NOT
+    // covered. It is; the claim was wrong and the behaviour was right.
+    //
+    // THE RED THIS ARM HAS, AND WHY IT DOES NOT COUNT. Against `staging`'s lint the fixture DOES
+    // fail — exit 1, not 0 — but for an unrelated reason: that revision has no fragment model at
+    // all, so the added line takes the generic path, `$inferRole` returns null and it reports
+    // `role: ?`. Nothing about that red discriminates a per-role set from a per-fragment one, which
+    // is the only thing this arm claims. So it is NOT offered as the watched red.
+    //
+    // M10 is the discriminating mutant: key $baseFragmentGrants per (role, fragment) instead of
+    // unioning per role, and this arm reddens while every other arm stays green. Said plainly
+    // rather than dressed up, because a red that fires for the wrong reason is worse than none —
+    // it reads as coverage the arm does not have.
+    //
+    // What is uncovered, and deliberately: a permission the role held at base through a LITERAL
+    // line. That needs the whole base map evaluated — the carried line-vs-grant diffing ticket.
+    $twoFragments = <<<'PHP'
+<?php
+
+class RbacSeeder
+{
+    public const SUPER_ADMIN_PLATFORM = [
+        'activity_log.view_all',
+    ];
+
+    public const ROLES = [
+        'auditor',
+    ];
+
+    public static function grantsMap(): array
+    {
+        $one = [
+            PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+        ];
+
+        $two = [
+            PermissionEnum::ACTIVITY_LOG_VIEW->value,
+        ];
+
+        return [
+            'auditor' => [
+                ...$one,
+                ...$two,
+            ],
+        ];
+    }
+}
+PHP;
+
+    $base = gclFragmentBase($twoFragments);
+
+    // `activity_log.export` is added to $two. auditor already receives it through $one, so the map
+    // grants it no more widely than before and there is nothing for a migration to converge.
+    $head = gclCommit(['database/seeders/RbacSeeder.php' => str_replace(
+        "        \$two = [\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n        ];\n",
+        "        \$two = [\n            PermissionEnum::ACTIVITY_LOG_VIEW->value,\n            PermissionEnum::ACTIVITY_LOG_EXPORT->value,\n        ];\n",
+        $twoFragments
+    )], $base);
+
+    $r = gclRun($base, $head);
+
+    expect($r['exit'])->toBe(0)
+        ->and($r['output'])->toContain('OK — no unexempted grant addition')
+        ->and($r['output'])->not->toContain('activity_log.export');
 });

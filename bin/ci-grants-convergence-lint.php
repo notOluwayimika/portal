@@ -31,23 +31,32 @@
  * four exemptions holds.
  *
  * READ THIS QUALIFICATION BEFORE TRUSTING THAT SENTENCE. Coverage is per-pair for permissions this
- * lint can RESOLVE from an added line, and it resolves exactly two forms: `PermissionEnum::X->value`,
- * and a quoted string that is a real enum value at head (see the resolution block at the findings
- * loop). It does NOT resolve `...$fragment,`. So an added spread of a PRE-EXISTING fragment into a
- * PRE-EXISTING role grants every permission in that fragment, `rbac:sync` grants none of them, and
- * this lint produces no finding and exits 0.
+ * lint can RESOLVE, and {@see $resolvePermissions} reads exactly two forms: `PermissionEnum::X->value`,
+ * and a quoted string that is a real enum value at head.
  *
- * That is a LIVE BLIND SPOT inside this gate's own defect class — not a shape outside it — and it is
- * reached by the map's most common line: `grantsMap()['admin']` opens with six consecutive spreads
- * before its first literal permission. Resolving `...$fragment,` means locating `$fragment = [...]`
- * in the head seeder and extracting its enum values; that is a behaviour change with its own finding
- * volume and its own arms, so it is a dated successor to this file rather than a rider on it. It is
- * disclosed here because the alternative is a reader taking the sentence above at face value, and a
- * false justification in a comment is worse than none — the next author reasons from it.
+ * WHAT IT NOW RESOLVES BEYOND A SINGLE LINE. Shared fragments are read too — see the fragment model.
+ * `$fragment = [ … ];` blocks defined between `function grantsMap()` and its `return [` are tabled
+ * with the permissions they carry, and the roles that consume them (`...$fragment,` and
+ * `'<role>' => $fragment,`, both forms) are indexed. Two things follow, and both are the whole point:
  *
- * (`$inferRole` resolves a REAL role at a spread line, since the spread sits inside `'<role>' => [`.
- * Findings from that future work will be attributable and exemption 3 will apply to them normally.
- * The `?` case is a permission added to the fragment's own DEFINITION, above `return [`.)
+ *   · An ADDED consumption of a fragment reports one finding per permission the fragment carries,
+ *     attributed to the role at that site. This was a SILENT GREEN — a spread is neither accepted
+ *     form, so it resolved nothing while `rbac:sync` granted nothing, and the map's most common line
+ *     went unseen (`grantsMap()['admin']` opens with six consecutive spreads before its first
+ *     literal permission, and `'head_of_school'` repeats the same six).
+ *   · A permission added to a fragment's own DEFINITION reports one finding per role that spreads
+ *     it. That addition used to resolve fine and then print `?`, which disables exemptions 2 and 3 —
+ *     flagged with no path to green, and no marker able to clear it.
+ *
+ * A NEW GRANT IS NOT A RESTRUCTURE. The model is also built at BASE, so a diff that merely rewrites
+ * how a role consumes a fragment it already consumed reports nothing. 9caf958 is the live shape:
+ * `'boarding_parent' => $assessments,` became `'boarding_parent' => [ ...$assessments, … ]`, which
+ * is an added spread line carrying six pre-existing permissions and zero new grants.
+ *
+ * WHAT IT STILL DOES NOT RESOLVE. A NESTED spread — a fragment whose own body spreads another —
+ * REFUSES rather than passing: it is `NOT LINTED`, never a quiet skip, because resolving
+ * transitively would depend on a definition order this scanner does not parse. So does a consumption
+ * of a `$name` the table could not find. Neither is a silent zero.
  *
  * The four exemptions:
  *
@@ -94,15 +103,20 @@
  * and then keeps the answer only if it is a real member of `RbacSeeder::ROLES` at head. (That is
  * deliberately stronger than scanning the diff hunk, which loses the role whenever the hunk is
  * tight — `7370e89`'s `head_of_school` hunk is exactly that case. It is still inference: it does not
- * parse PHP.) It reports `?` rather than guessing — which is the correct answer for the shared
- * `$guardianFull` / `$activityAdmin` style fragments defined ABOVE `return [`, since those are
- * granted to every role that spreads them. THE PERMISSION AND THE FILE:LINE ARE EXACT; the role is
- * marked `inferred`. This lint's job is to make a human look. It is not a proof.
+ * parse PHP.) It reports `?` rather than guessing. THE PERMISSION AND THE FILE:LINE ARE EXACT; the
+ * role is marked `inferred`. This lint's job is to make a human look. It is not a proof.
  *
  * A `?` ROLE IS NOT AN EXEMPTION. It disables exemptions 2 and 3 for that addition, so the addition
- * is flagged. That is the safe direction and it is also the correct one for the fragment case: a
- * permission added to a shared fragment reaches every pre-existing role that spreads it, and each
- * of those needs the convergence migration.
+ * is flagged. That is the safe direction.
+ *
+ * WHAT A `?` MEANS NOW, WHICH IS NOT WHAT IT USED TO MEAN. It used to be the answer for the shared
+ * `$guardianFull` / `$activityAdmin` style fragments defined ABOVE `return [` — correct as far as it
+ * went, and useless to the author, since exemption 3 is a lookup on (role, permission) and there was
+ * no role to look up. Those additions are now fanned out to every role that consumes the fragment
+ * and arrive with REAL role names. The residual `?` is a shape this lint could not read at all: an
+ * addition above `return [` that sits inside no fragment the table resolved. It must still flag, and
+ * the remedy is to report the shape — NOT to restructure the seeder, which is a silent green (see
+ * $inferRole).
  *
  * NO BASELINE FILE. This is an absolute rule from day one, not a ratchet — there is nothing
  * pre-existing to grandfather, because it only ever sees new diffs.
@@ -510,6 +524,22 @@ foreach (explode("\n", $diff) as $line) {
 // ($headEnum / $baseEnum / $headRoles / $baseRoles were read and validated above, before the
 // unchanged-diff early return, so that an unreadable input is NOT LINTED rather than green.)
 $headValues = array_flip($headEnum);    // value => constant
+
+// THE ASSERTION THAT MAKES THE COMMENT STRIP HONEST RATHER THAN LUCKY. {@see $resolvePermissions}
+// removes a trailing `//` or `#` tail before it scans, so that a permission value MENTIONED in a
+// comment cannot be read as one GRANTED by the line. That strip is only safe while no permission
+// value contains those characters — today none does, and every value is `[a-z_]+(\.[a-z_-]+)*`.
+// Leaving that as a happy accident is how the next enum addition silently truncates a real grant
+// line at its own name, so it is asserted here instead: the strip and this check ship together and
+// neither is correct without the other.
+foreach ($headEnum as $constant => $value) {
+    if (str_contains($value, '//') || str_contains($value, '#')) {
+        notLinted('permission value '.json_encode($value)." (case {$constant}) contains `//` or `#`."
+            .' {@see $resolvePermissions} strips a trailing comment before resolving, so that value'
+            .' would truncate the line that grants it and the grant would resolve to nothing.'
+            .' Rename the case, or replace the tail-strip with a real lexer.');
+    }
+}
 $newPermissions = array_values(array_diff($headEnum, $baseEnum));
 
 $newRoles = array_values(array_diff($headRoles, $baseRoles));
@@ -681,10 +711,12 @@ foreach ($addedMigrations as $path => $content) {
  * The nearest preceding `'<role>' => [` above $line in the new file, IF that key is an actual
  * member of `RbacSeeder::ROLES` at head. Inference, not a parse — but inference with a codomain.
  *
- * THE HOLE THE MEMBERSHIP GATE CLOSES. The scan stops at `return [`, which keeps it out of code
- * BELOW the map's opening but does nothing about associative array literals ABOVE it. The shared
- * fragments (`$guardianFull`, `$activityAdmin`, `$assessments`, …) all live there, and today they
- * scan back to nothing and correctly report `?`. Regroup them once —
+ * THE HOLE THE MEMBERSHIP GATE CLOSES — AND IT IS A HAZARD ON THE RECORD, NEVER A SUGGESTION. The
+ * scan stops at `return [`, which keeps it out of code BELOW the map's opening but does nothing
+ * about associative array literals ABOVE it. The shared fragments (`$guardianFull`, `$activityAdmin`,
+ * `$assessments`, …) all live there. Regrouping them beneath a role key was once printed to authors
+ * as the remedy for a `?`; it is not, it is a defect generator, and the failure text no longer says
+ * it. Do it once —
  *
  *     $byRole = [
  *         'accounts_supervisor' => [ ... ],
@@ -706,37 +738,71 @@ foreach ($addedMigrations as $path => $content) {
  * never be produced by the `[a-z0-9_]+` key pattern here even if the parse were still garbled.
  *
  * Returning null is not a soft outcome. A null role cannot satisfy exemption 2, and cannot satisfy
- * exemption 3 either (see below) — so the addition is FLAGGED. That is correct for the fragment
- * case: a permission added to a shared fragment lands on every pre-existing role that spreads it,
- * and every one of those needs the convergence migration.
+ * exemption 3 either (see below) — so the addition is FLAGGED. Since the fragment model landed, null
+ * no longer means "a shared fragment": those additions are attributed to every role that consumes
+ * the fragment and never reach this function's null path for their attribution. What remains is a
+ * shape this file could not read, which is a parser gap worth a human's eyes.
  */
-$inferRole = function (int $line) use ($headSeeder, $headRoles): ?string {
-    for ($i = min($line, count($headSeeder)) - 1; $i >= 0; $i--) {
-        if (preg_match('/^\s*[\'"]([a-z0-9_]+)[\'"]\s*=>\s*\[/', $headSeeder[$i], $m)) {
-            return in_array($m[1], $headRoles, true) ? $m[1] : null;
+// A FACTORY rather than a bare closure, because the same inference is now needed over TWO
+// revisions: the head seeder (to attribute findings) and the base seeder (to know which roles
+// already consumed a fragment before this diff). One mechanism, applied twice — a second
+// hand-rolled backward scan over the base lines would be a place for the two to disagree.
+// The codomain stays `RbacSeeder::ROLES` AT HEAD in both cases: a role that does not exist at head
+// cannot receive anything at head, so nothing is withheld by not consulting the base list.
+$inferRoleIn = function (array $lines) use ($headRoles): Closure {
+    return function (int $line) use ($lines, $headRoles): ?string {
+        for ($i = min($line, count($lines)) - 1; $i >= 0; $i--) {
+            if (preg_match('/^\s*[\'"]([a-z0-9_]+)[\'"]\s*=>\s*\[/', $lines[$i], $m)) {
+                return in_array($m[1], $headRoles, true) ? $m[1] : null;
+            }
+            // Do not scan out of the map into unrelated code.
+            if (preg_match('/^\s*return \[/', $lines[$i])) {
+                return null;
+            }
         }
-        // Do not scan out of the map into unrelated code.
-        if (preg_match('/^\s*return \[/', $headSeeder[$i])) {
-            return null;
-        }
-    }
 
-    return null;
+        return null;
+    };
 };
 
-// ---------------------------------------------------------------- findings
-$findings = [];
-$exempted = [];
+$inferRole = $inferRoleIn($headSeeder);
 
-foreach ($added as [$line, $text]) {
-    $stripped = ltrim($text);
-    if (str_starts_with($stripped, '//') || str_starts_with($stripped, '*') || str_starts_with($stripped, '/*')) {
-        continue;
-    }
+/**
+ * The ONE permission resolver. Two accepted forms, and a quoted string is kept only when it is a
+ * real enum VALUE at head — that is what keeps role keys (`'internal_auditor' => [`) and the
+ * dot-less permission names (`view_psychomotor_skills`) apart without guessing at their shape.
+ *
+ * IT IS A FUNCTION SO THAT THE FRAGMENT TABLE CANNOT DRIFT FROM THE FINDINGS LOOP. Both callers
+ * resolve by the same two forms, so "what a fragment carries" and "what an added line grants" are
+ * the same question answered by the same code. A second resolver for fragment bodies would be a
+ * place for the two to disagree, and the disagreement would be silent in the safe-looking
+ * direction — a fragment that resolves fewer permissions than the line-level scanner fans out
+ * fewer findings, which reads exactly like "no defect here".
+ *
+ * A form this cannot read is a permission the line does not carry. That is already the rule
+ * everywhere else in this file, and it is why a NESTED spread refuses rather than resolving: the
+ * refusal is the alternative to silently carrying zero.
+ *
+ * @return list<string>
+ */
+$resolvePermissions = function (string $text) use ($headEnum, $headValues): array {
+    // A MENTION IS NOT A GRANT — the same distinction exemption 3 was rewritten for, one layer down.
+    // The quoted-string scan below is a FLOATING quote-pair scan, with no idea what a quote means,
+    // and a trailing comment is the one place a permission value appears in seeder text without
+    // being granted: `PermissionEnum::A->value,  // deliberately NOT 'activity_log.export'`.
+    //
+    // WHY THAT WAS WORSE THAN A MIS-PARSE. The fragment-body scanner strips only WHOLE-LINE
+    // comments, so such a tail reached this function and put the mentioned permission into the
+    // fragment's set at BASE — and $baseFragmentGrants is used to SUPPRESS findings. The genuine
+    // addition of that permission on the branch then reported nothing. Measured: red on staging's
+    // lint, green here, before this strip.
+    //
+    // A tail-strip is naive on purpose and is safe only because no permission value contains `//`
+    // or `#`. That is ASSERTED where $headValues is built, not assumed — the two ship together.
+    // Callers are all seeder text; declaredConvergences deliberately does NOT use this, because its
+    // markers live in comments by design.
+    $text = (string) preg_replace('~(//|#).*$~m', '', $text);
 
-    // Resolve the permission NAME. Two accepted forms, and a quoted string is kept only when it is a
-    // real enum VALUE at head — that is what keeps role keys ('internal_auditor' => [) and the
-    // dot-less permission names (view_psychomotor_skills) apart without guessing at their shape.
     $permissions = [];
 
     if (preg_match_all('/PermissionEnum::([A-Z0-9_]+)->value/', $text, $m)) {
@@ -755,50 +821,407 @@ foreach ($added as [$line, $text]) {
         }
     }
 
-    foreach (array_unique($permissions) as $permission) {
-        $role = $inferRole($line);
+    return array_values(array_unique($permissions));
+};
 
-        $inSuperAdminConst = $sapFrom !== null && $sapTo !== null && $line >= $sapFrom && $line <= $sapTo;
+// ---------------------------------------------------------------- the fragment model
+// THE BLIND SPOT THIS CLOSES. Until this existed, an added `...$fragment,` line resolved to NOTHING
+// — a spread is neither of the two forms the resolver accepts — so an added spread of a
+// PRE-EXISTING fragment into a PRE-EXISTING role granted every permission in that fragment,
+// `rbac:sync` granted none of them, and this gate exited 0. That is not an exotic shape:
+// `grantsMap()['admin']` opens with SIX consecutive spreads before its first literal permission,
+// and `'head_of_school'` repeats the same six. It is how the map is written.
+//
+// The model is built over the region between `function grantsMap()` and its `return [` (where
+// fragments are defined) and the map array below it (where roles consume them). It is built TWICE —
+// once at head, to attribute findings, and once at base, to tell a NEW GRANT from a RESTRUCTURE.
+// See $baseFragmentGrants for what the base copy is for and what it deliberately does not cover.
+//
+// `$strict` is the difference between the two calls. At HEAD an unreadable model is NOT LINTED: the
+// gate's own rule, since a missing table silently carries zero permissions per spread line, which is
+// the defect this section exists to close. At BASE an unreadable model degrades to `null` and the
+// caller treats it as "no prior grants", which over-reports rather than under-reports — a false RED,
+// never a false green.
+/**
+ * @return array{
+ *     fragments: array<string, array{from: int, to: int, permissions: list<string>}>,
+ *     spreadIndex: array<string, list<string>>,
+ *     spreadSites: array<int, array{fragment: string, role: string|null}>
+ * }|null
+ */
+$fragmentModel = function (array $lines, bool $strict) use ($resolvePermissions, $inferRoleIn, $headRoles): ?array {
+    $fail = function (string $why) use ($strict): ?array {
+        if ($strict) {
+            notLinted($why);
+        }
 
-        // Exemption 3 is a LOOKUP of a declared pair, never a search of a migration's text — see
-        // {@see declaredConvergences} for why prose cannot answer this and what it cost. A
-        // convergence migration is per (role, permission), and so is the declaration: 7370e89, this
-        // lint's own canonical defect, added `finance.access` to two roles, and a migration
-        // declaring one of them exempts exactly that one.
-        //
-        // THE HONEST CONSTRAINT, stated rather than papered over: the role is INFERRED from source
-        // text (see $inferRole). So this check is only as sound as that inference, and when the
-        // inference yields null there is no pair to look up — an exemption on an unknown pair is a
-        // guess in the silent direction. A null role therefore does NOT exempt. The cost is a false
-        // red on a legitimate shared-fragment convergence; the failure message says which role it
-        // could not resolve, and a red a human reads is the outcome this gate is for.
-        $migration = $role !== null
-            ? ($declared[$role."\0".$permission] ?? null)
-            : null;
+        return null;
+    };
 
-        $exemption = match (true) {
-            in_array($permission, $newPermissions, true) => 'permission is NEW in this diff (lands in $newPermissions)',
-            $role !== null && in_array($role, $newRoles, true) => "role [{$role}] is NEW in this diff (takes the full \$permissions array)",
-            $migration !== null => "migration [{$migration}] declares @converges {$role} {$permission}",
-            $inSuperAdminConst => 'inside SUPER_ADMIN_PLATFORM (self-healed by syncPermissions every run, RbacSeeder.php:506-512)',
-            default => null,
-        };
+    $mapFromIdx = $mapToIdx = null;
+    foreach ($lines as $i => $line) {
+        if ($mapFromIdx === null) {
+            if (preg_match('/function\s+grantsMap\s*\(/', $line)) {
+                $mapFromIdx = $i;
+            }
 
-        $record = [
-            'permission' => $permission,
-            'line' => $line,
-            'role' => $role,
-            'text' => trim($text),
-        ];
+            continue;
+        }
+        if (preg_match('/^\s*return \[/', $line)) {
+            $mapToIdx = $i;
+            break;
+        }
+    }
 
-        if ($exemption !== null) {
-            $exempted[] = $record + ['exemption' => $exemption];
+    if ($mapFromIdx === null || $mapToIdx === null) {
+        return $fail('could not locate `function grantsMap()` and its `return [` in '.SEEDER
+            .'. The fragment table cannot be built, so an added `...$fragment,` would resolve no'
+            .' permissions and this gate would be green on a diff it did not read.');
+    }
+
+    // ---- the fragments themselves: name => line range + the permissions they carry
+    $fragments = [];
+    $openName = null;
+    $openFrom = 0;
+    $openPermissions = [];
+
+    for ($i = $mapFromIdx + 1; $i < $mapToIdx; $i++) {
+        $line = $lines[$i];
+
+        if ($openName === null) {
+            // The SINGLE-LINE form is tested first, and it is tested at all because of the lesson
+            // SUPER_ADMIN_PLATFORM's range scan paid for: `$x = ['a'];` never matches `/^\s*\];/` on
+            // its own line, so treating it as an opener would run this fragment's range on to the
+            // NEXT fragment's terminator and merge the two.
+            if (preg_match('/^\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\[(.*)\];\s*$/', $line, $m)) {
+                if (str_contains($m[2], '...$')) {
+                    return $fail("fragment \${$m[1]} at ".SEEDER.':'.($i + 1).' nests another'
+                        .' fragment. This lint resolves ONE level of spread and will not guess at'
+                        .' more; flatten it, or extend the fragment table deliberately.');
+                }
+                $fragments[$m[1]] = [
+                    'from' => $i + 1,
+                    'to' => $i + 1,
+                    'permissions' => $resolvePermissions($m[2]),
+                ];
+
+                continue;
+            }
+            if (preg_match('/^\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\[\s*$/', $line, $m)) {
+                $openName = $m[1];
+                $openFrom = $i + 1;
+                $openPermissions = [];
+            }
 
             continue;
         }
 
-        $findings[] = $record;
+        if (preg_match('/^\s*\];/', $line)) {
+            $fragments[$openName] = [
+                'from' => $openFrom,
+                'to' => $i + 1,
+                'permissions' => array_values(array_unique($openPermissions)),
+            ];
+            $openName = null;
+
+            continue;
+        }
+
+        $stripped = ltrim($line);
+        if (str_starts_with($stripped, '//') || str_starts_with($stripped, '*')
+            || str_starts_with($stripped, '/*') || str_starts_with($stripped, '#')) {
+            continue;
+        }
+
+        // A NESTED SPREAD REFUSES LOUDLY. Resolving transitively is the tempting alternative and it
+        // is wrong here: the fan-out would then depend on a definition order this scanner does not
+        // parse, and a cycle would not terminate. Skipping quietly is worse still — it is the
+        // original defect, one layer down. No fragment nests today, so this costs nothing until
+        // someone writes one, at which point the gate says so instead of guessing. Reuses
+        // notLinted() rather than inventing a second not-looked message, for the reason that
+        // function's own docblock gives.
+        if (preg_match('/^\s*\.\.\.\$([A-Za-z_][A-Za-z0-9_]*)/', $line, $m)) {
+            return $fail("fragment \${$openName} in grantsMap() nests another fragment (...\${$m[1]}"
+                .' at '.SEEDER.':'.($i + 1).'). This lint resolves ONE level of spread and will not'
+                .' guess at more: a transitive resolution depends on a definition order it does not'
+                .' parse. Flatten the fragment, or extend the fragment table deliberately.');
+        }
+
+        $openPermissions = array_merge($openPermissions, $resolvePermissions($line));
     }
+
+    if ($openName !== null) {
+        return $fail("fragment \${$openName} opened at ".SEEDER.':'.$openFrom.' is never closed by a'
+            ." `];` before grantsMap()'s `return [`. The fragment table would be wrong, and a wrong"
+            .' table under-reports rather than over-reports — so this gate will not be green on it.');
+    }
+
+    // ---- who consumes them: for each fragment, the roles that receive the WHOLE fragment
+    //
+    // TWO CONSUMPTION FORMS, AND BOTH ARE LOAD-BEARING. `...$fragment,` is the one the map uses
+    // today. `'<role>' => $fragment,` grants exactly the same set — it is what `boarding_parent`
+    // used before 9caf958 rewrote it — and indexing only the first would have made a permission
+    // added to such a fragment fan out to NOBODY and exit 0, where before this change it was a red
+    // `?`. Closing one silent green by opening another is not a fix, so both are read.
+    //
+    // The scan is bounded to the map's own array. Role blocks close with `],`; the first `];` after
+    // `return [` is the map's own terminator. The declaration keyword is a second, independent stop,
+    // so a malformed map cannot walk this scan into unrelated code and attribute a spread there.
+    $inferRole = $inferRoleIn($lines);
+    $spreadIndex = [];
+    $spreadSites = [];
+
+    for ($i = $mapToIdx + 1; $i < count($lines); $i++) {
+        $line = $lines[$i];
+
+        if (preg_match('/^\s*\];/', $line)) {
+            break;
+        }
+        if (preg_match('/^\s*(?:(?:public|protected|private|final|abstract|static)\s+)*(?:const|function)\s/', $line)) {
+            break;
+        }
+
+        $name = $role = null;
+
+        if (preg_match('/^\s*\.\.\.\$([A-Za-z_][A-Za-z0-9_]*)\s*,/', $line, $m)) {
+            // A spread sits INSIDE a role key, so $inferRole resolves a real role here — the null
+            // case that prints `?` belongs to additions above `return [`, not to these lines.
+            $name = $m[1];
+            $role = $inferRole($i + 1);
+        } elseif (preg_match('/^\s*[\'"]([a-z0-9_]+)[\'"]\s*=>\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*,/', $line, $m)) {
+            // The role is ON this line, not above it — $inferRole would scan past it to the
+            // PREVIOUS role key and attribute the whole fragment to the wrong seat.
+            $name = $m[2];
+            $role = in_array($m[1], $headRoles, true) ? $m[1] : null;
+        }
+
+        // A CONSUMPTION THIS SCAN CANNOT READ REFUSES, rather than falling through to `continue`.
+        // `'bursar' => [...$activityStaff],` on ONE line grants the whole fragment and matches
+        // NEITHER form — the first wants the spread at line start, the second wants a bare `$name`
+        // after `=>`. Before this, that line was skipped in silence: defect A in full, on a line
+        // `pint --test` is perfectly happy with, and the partial case is worse still (the run goes
+        // red naming only the literal, the author writes that one marker, and the fragment's grants
+        // ship unconverged behind a green gate).
+        //
+        // WIDENING THE REGEXES TO PARSE INLINE MIXED ARRAYS IS THE WRONG FIX. That is a parser, and
+        // every accommodation it grows is a place for a mention to read as a grant — the road this
+        // file has already walked twice. Refusing costs nothing today: no line in the seeder needs it.
+        if ($name === null) {
+            if (str_contains($line, '...$')) {
+                return $fail('grantsMap() consumes a fragment at '.SEEDER.':'.($i + 1).' in a form'
+                    .' this lint does not read: '.trim($line).'. Put the spread on its own line as'
+                    .' `...$fragment,` inside the role key. Reading it inline would mean parsing'
+                    .' mixed array literals, and a scanner that guesses at those is how a MENTION'
+                    .' starts reading as a GRANT.');
+            }
+
+            continue;
+        }
+
+        // A consumption of something the table could not resolve is the original defect wearing a
+        // different hat: the line grants a set this lint cannot enumerate. It refuses rather than
+        // carrying zero.
+        if (! isset($fragments[$name])) {
+            return $fail("grantsMap() spreads \${$name} at ".SEEDER.':'.($i + 1).' but no `$'.$name
+                .' = [` fragment was found between `function grantsMap()` and its `return [`. This'
+                .' lint cannot enumerate what that line grants, and carrying zero permissions for it'
+                .' is exactly the silent green the fragment table exists to close.');
+        }
+
+        $spreadSites[$i + 1] = ['fragment' => $name, 'role' => $role];
+
+        if ($role !== null && ! in_array($role, $spreadIndex[$name] ?? [], true)) {
+            $spreadIndex[$name][] = $role;
+        }
+    }
+
+    return ['fragments' => $fragments, 'spreadIndex' => $spreadIndex, 'spreadSites' => $spreadSites];
+};
+
+$headModel = $fragmentModel($headSeeder, true);
+$fragments = $headModel['fragments'];
+$spreadIndex = $headModel['spreadIndex'];
+$spreadSites = $headModel['spreadSites'];
+
+// WHAT EACH ROLE ALREADY RECEIVED THROUGH A FRAGMENT AT BASE — the difference between a NEW GRANT
+// and a RESTRUCTURE.
+//
+// THE COMMIT THAT FORCED THIS, and it is the one commit in the suite that must never go red. 9caf958
+// rewrote `'boarding_parent' => $assessments,` into `'boarding_parent' => [ ...$assessments, … ]`.
+// Line-wise that is an ADDED `...$assessments,`; grant-wise it is nothing at all — boarding_parent
+// already held all six assessment permissions at base, through the very same fragment. Without this
+// set the fan-out reports six convergences for grants that were never absent, on a legitimate
+// commit. A gate that fires on the legitimate case is a gate that gets switched off within a week,
+// which is exactly what that arm exists to prevent.
+//
+// WHAT IT COVERS, STATED EXACTLY, because the suppression is the only false-green surface this
+// section adds and a reader who thinks it is narrower than it is will under-weight it. The set is
+// keyed role => permission and UNIONED over EVERY fragment that role consumed at base — so a
+// permission the role already held through a DIFFERENT, overlapping fragment IS covered, not just
+// the same one. (Base has `auditor` consuming `$one = [A]` and `$two = [B]`; head adds A to `$two`;
+// nothing is reported, correctly — auditor already held A.)
+//
+// WHAT IT DELIBERATELY DOES NOT COVER: a permission the role already held at base through a LITERAL
+// line. Answering that needs the whole base map evaluated rather than just its fragments — the
+// carried line-vs-grant diffing ticket, not this work. That residual is a false RED, never a false
+// green, so it fails in the direction this gate is allowed to fail in.
+$baseModel = $fragmentModel(explode("\n", $baseSeederSrc), false);
+
+$baseFragmentGrants = [];   // role => [permission => true]
+foreach ($baseModel['spreadIndex'] ?? [] as $name => $roles) {
+    foreach ($roles as $role) {
+        foreach ($baseModel['fragments'][$name]['permissions'] as $permission) {
+            $baseFragmentGrants[$role][$permission] = true;
+        }
+    }
+}
+// ---------------------------------------------------------------- findings
+$findings = [];
+$exempted = [];
+
+// THE CANDIDATES, FROM THREE SOURCES, JUDGED BY ONE SET OF EXEMPTIONS. The sources are collected
+// first and the four exemptions are applied below in a single loop, so a fan-out finding is exempted
+// on exactly the same terms as a literal one. There is no fifth exemption, and nothing about the
+// fragment work adds one.
+//
+// DEDUPLICATION, and why it is keyed on (role, permission) rather than on the line. A fragment that
+// is NEW in this diff triggers BOTH fragment sources: its definition lines are added AND the
+// `...$fragment,` line that consumes it is added. Those describe the same grants — one convergence
+// each, not two — so reporting the pair twice would misstate the work the author owes. The FIRST
+// occurrence wins, which is the fragment's own definition line: that is where the permission text
+// actually sits, and it is the line an author edits to change it.
+/** @var list<array{permission: string, line: int, role: ?string, text: string}> $candidates */
+$candidates = [];
+$fragmentSeen = [];
+
+foreach ($added as [$line, $text]) {
+    $stripped = ltrim($text);
+    if (str_starts_with($stripped, '//') || str_starts_with($stripped, '*') || str_starts_with($stripped, '/*')) {
+        continue;
+    }
+
+    // SOURCE 1 — an ADDED consumption of a fragment. Every permission the fragment carries at head
+    // lands on the role at that site, and `rbac:sync` applies none of them.
+    if (isset($spreadSites[$line])) {
+        $site = $spreadSites[$line];
+
+        foreach ($fragments[$site['fragment']]['permissions'] as $permission) {
+            // A RESTRUCTURE IS NOT A GRANT. If the role already received this permission through a
+            // fragment at base, this added line re-expresses an existing grant and there is nothing
+            // for a migration to converge — see $baseFragmentGrants for the commit that proves it.
+            if ($site['role'] !== null && isset($baseFragmentGrants[$site['role']][$permission])) {
+                continue;
+            }
+
+            $key = ($site['role'] ?? '?')."\0".$permission;
+            if (isset($fragmentSeen[$key])) {
+                continue;
+            }
+            $fragmentSeen[$key] = true;
+
+            $candidates[] = [
+                'permission' => $permission,
+                'line' => $line,
+                'role' => $site['role'],
+                'text' => trim($text),
+            ];
+        }
+
+        continue;
+    }
+
+    // SOURCE 2 — an ADDED permission inside a fragment's own DEFINITION. It lands on every role that
+    // consumes that fragment at head. A fragment NO role consumes yields nothing, and that is
+    // correct rather than a gap: nothing is granted, so nothing needs converging.
+    $inFragment = null;
+    foreach ($fragments as $name => $fragment) {
+        if ($line >= $fragment['from'] && $line <= $fragment['to']) {
+            $inFragment = $name;
+            break;
+        }
+    }
+
+    if ($inFragment !== null) {
+        foreach ($resolvePermissions($text) as $permission) {
+            foreach ($spreadIndex[$inFragment] ?? [] as $role) {
+                // Same rule as source 1: a role that already received this permission through a
+                // fragment at base is not newly granted it by an edit to that fragment's body.
+                if (isset($baseFragmentGrants[$role][$permission])) {
+                    continue;
+                }
+
+                $key = $role."\0".$permission;
+                if (isset($fragmentSeen[$key])) {
+                    continue;
+                }
+                $fragmentSeen[$key] = true;
+
+                $candidates[] = [
+                    'permission' => $permission,
+                    'line' => $line,
+                    'role' => $role,
+                    'text' => trim($text),
+                ];
+            }
+        }
+
+        continue;
+    }
+
+    // SOURCE 3 — the original: a permission added directly under a role key. Unchanged.
+    foreach ($resolvePermissions($text) as $permission) {
+        $candidates[] = [
+            'permission' => $permission,
+            'line' => $line,
+            'role' => $inferRole($line),
+            'text' => trim($text),
+        ];
+    }
+}
+
+foreach ($candidates as $candidate) {
+    ['permission' => $permission, 'line' => $line, 'role' => $role, 'text' => $text] = $candidate;
+
+    $inSuperAdminConst = $sapFrom !== null && $sapTo !== null && $line >= $sapFrom && $line <= $sapTo;
+
+    // Exemption 3 is a LOOKUP of a declared pair, never a search of a migration's text — see
+    // {@see declaredConvergences} for why prose cannot answer this and what it cost. A
+    // convergence migration is per (role, permission), and so is the declaration: 7370e89, this
+    // lint's own canonical defect, added `finance.access` to two roles, and a migration
+    // declaring one of them exempts exactly that one.
+    //
+    // THE HONEST CONSTRAINT, stated rather than papered over: the role is INFERRED from source
+    // text (see $inferRole). So this check is only as sound as that inference, and when the
+    // inference yields null there is no pair to look up — an exemption on an unknown pair is a
+    // guess in the silent direction. A null role therefore does NOT exempt. Since the fragment
+    // table landed, a null role no longer means "a shared fragment" — fragment additions arrive
+    // here already attributed — so the residual is a shape this file could not read at all.
+    $migration = $role !== null
+        ? ($declared[$role."\0".$permission] ?? null)
+        : null;
+
+    $exemption = match (true) {
+        in_array($permission, $newPermissions, true) => 'permission is NEW in this diff (lands in $newPermissions)',
+        $role !== null && in_array($role, $newRoles, true) => "role [{$role}] is NEW in this diff (takes the full \$permissions array)",
+        $migration !== null => "migration [{$migration}] declares @converges {$role} {$permission}",
+        $inSuperAdminConst => 'inside SUPER_ADMIN_PLATFORM (self-healed by syncPermissions every run, RbacSeeder.php:506-512)',
+        default => null,
+    };
+
+    $record = [
+        'permission' => $permission,
+        'line' => $line,
+        'role' => $role,
+        'text' => $text,
+    ];
+
+    if ($exemption !== null) {
+        $exempted[] = $record + ['exemption' => $exemption];
+
+        continue;
+    }
+
+    $findings[] = $record;
 }
 
 // ---------------------------------------------------------------- report
@@ -904,13 +1327,20 @@ fwrite(STDERR, <<<'TXT'
       Naming the permission and the role in PROSE is NOT enough and is no longer read: a
       migration that documents which roles it EXCLUDES would otherwise exempt them.
 
+      A permission added to a SHARED FRAGMENT needs one marker per role, not one per
+      fragment. The findings above already name those roles — a fragment addition is fanned
+      out to every role that spreads it — so declare a line for each. Ten grants means ten
+      marker lines, and that is the honest cost of ten grants. There is deliberately no
+      fragment-level marker: a fragment's contents change after the migration is written, so
+      such a marker would exempt permissions the migration never granted.
+
       If the role above reads `?`, a marker CANNOT clear this: exemption 3 is a lookup on
-      (role, permission) and there is no role to look up. The addition sits in a shared
-      fragment above `return [`, so it lands on every pre-existing role that splices it and
-      this lint cannot tell which. ATTRIBUTE IT — move the addition under a `'<role>' => [`
-      key, or regroup the fragments beneath one (see $inferRole in this file, which carries
-      the shape). Re-run; the findings then name real roles, and you declare a marker for
-      each.
+      (role, permission) and there is no role to look up. A `?` does NOT mean a shared
+      fragment — those arrive with real role names. It means a parser gap: an addition above
+      `return [` that sits inside no fragment this lint could resolve. Do NOT restructure the
+      seeder to make it go away. Moving fragments beneath a role key attributes every LATER
+      fragment addition to that key, which is a silent green when the key is new in a diff
+      (see $inferRole in this file, which carries the shape). Report the shape instead.
     · The permission is genuinely new — add its `case` to app/Enums/Permission.php in the
       same diff (exemption 1).
     · The role is genuinely new — add it to RbacSeeder::ROLES in the same diff (exemption 2).

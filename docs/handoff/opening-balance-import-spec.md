@@ -431,6 +431,18 @@ behind G2; that guard is demoted in §11, but `origin` is now the predicate that
 ledger** from double-counting the cutover. Dropping or deferring it does not weaken a guard, it
 breaks the export boundary. §9 records this as a hard dependency of commit 3.
 
+**And the ORDERING is load-bearing on its own — not merely a consequence of §9's build order.** The
+objection to expect, because it has already been raised once: `NOT NULL DEFAULT 'portal'` back-fills
+every pre-existing row whenever the ALTER runs, so surely the column could be added after the import.
+It could not. The DEFAULT retro-marks **uniformly, not correctly**, and the two coincide only while no
+migrated row exists — which is exactly the precondition this ordering enforces, not an independent
+property of the default. Import first, add the column second, and every migrated payment is silently
+stamped `'portal'`, joins the WCBS collections and GL export, and double-counts the cutover: the precise
+failure R4 exists to prevent. No later ALTER repairs it, because the rows no longer carry the
+distinction it would have to mark — **you cannot correctly retro-mark a distinction the data has already
+lost.** `origin` is not a label applied to rows; it is a fact captured at write time. §9's build order
+is a *second* reason, not a substitute.
+
 **The CHECK is what makes `origin` a rule rather than a convention.** `CHECK (origin COLLATE
 utf8mb4_bin IN ('portal','migrated'))`. §11's G1 finding was that a status column with no CHECK is
 releasable by one UPDATE, and `origin` carries more weight than a status because an export decides on

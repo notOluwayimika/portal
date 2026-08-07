@@ -16,8 +16,22 @@ use Illuminate\Support\Facades\Schema;
  *  - `origin` ('portal' | 'migrated', NOT NULL, DEFAULT 'portal') is the ONE predicate every collections
  *    report and every general-ledger export filters on. R4 (§12) made it structural: without it the GL
  *    double-counts the cutover, because an imported payment is real money that never arrived through this
- *    system. Retro-marking is impossible — a row written before this column existed would be permanently
- *    ambiguous — which is why it ships before the first imported row, not with it.
+ *    system.
+ *
+ *    THIS COLUMN MUST EXIST BEFORE THE FIRST IMPORTED ROW, and that ordering is load-bearing on its own,
+ *    not merely a consequence of §9's build order. The objection to expect — it has been raised once
+ *    already — is that `NOT NULL DEFAULT 'portal'` back-fills every pre-existing row anyway, so the
+ *    ordering is free. It does not. The DEFAULT retro-marks UNIFORMLY, not CORRECTLY, and the two
+ *    coincide only while no migrated row exists — which is exactly the precondition this ordering
+ *    enforces, not an independent property of the default. Run the import first and add the column
+ *    after, and every migrated payment is silently stamped 'portal', joins the WCBS export, and
+ *    double-counts the cutover: precisely the failure R4 exists to prevent. No later ALTER can repair it,
+ *    because the rows no longer carry the distinction it would have to mark — you cannot correctly
+ *    retro-mark a distinction the data has already lost. `origin` is not a label applied to rows; it is a
+ *    fact that has to be captured at write time.
+ *
+ *    §9's build order (provenance at step 3, posting at step 4) is a SECOND reason, not a replacement for
+ *    that one. Do not descope this column on the strength of the DEFAULT.
  *
  *  - `external_reference` (nullable) is the WCBS receipt reference, the only handle back to the source
  *    system for an imported row. Null for everything portal-issued.

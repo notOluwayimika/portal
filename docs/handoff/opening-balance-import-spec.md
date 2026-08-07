@@ -85,9 +85,47 @@ arrived at separately are not the same artifact, even when the text matches.
 
 **R11 adds exactly one thing Rev 4 does not have, and it is not a rule — it is a precondition
 nothing can enforce.** "Pure arrears" is a claim about what a number MEANS, and §11's procedural half
-is where it goes. See §11. R11 is also **silent on `student_total_balance`**, which §2 requires and
-L1 depends on; §12 records that as an open item with the data team rather than reading the silence as
-agreement.
+is where it goes. See §11.
+
+~~R11 is also silent on `student_total_balance`, which §2 requires and L1 depends on; §12 records
+that as an open item with the data team.~~ **Superseded within the same revision by R12, below.**
+R11's silence stopped mattering the moment the format was frozen: we are reading it neither as
+agreement nor as an open question, because it is no longer a question we are asking. The layout is
+dictated and Brookstone is handed it as non-negotiable.
+
+- **R12 — 2026-08-07: THE FILE FORMAT IS FROZEN, AND WE DICTATE IT.** We are no longer waiting on the
+  data team to propose a layout. **§2's table is the authority**, and this is it:
+
+  | Column | | |
+  |---|---|---|
+  | `admission_number` | required | |
+  | `wcbs_student_ref` | required | |
+  | `fee_type_label` | required | |
+  | `balance` | required | **SIGNED** — positive owed, negative credit |
+  | `student_total_balance` | required | repeated **IDENTICALLY** on every row of that student's group |
+  | `wcbs_bill_reference` | **OPTIONAL** | may be blank |
+
+  Header row, verbatim:
+
+  ```
+  admission_number,wcbs_student_ref,fee_type_label,balance,student_total_balance,wcbs_bill_reference
+  ```
+
+  This closes Rev 4's worry that `student_total_balance` was unconfirmed. It is not confirmed by the
+  data team — **it is required by us**, which is a stronger position and the one R13 makes
+  enforceable.
+
+- **R13 — 2026-08-07: THE PLATFORM ISSUES THE TEMPLATE.** Brookstone **downloads it from the
+  portal**; we do not email a spreadsheet and hope it survives being opened, re-saved and forwarded.
+
+  This follows the **guardian import** precedent exactly, and that precedent's own docblock states
+  the reason better than a new argument would:
+  *"the COLUMNS map drives both the template generator and the row validator, so they cannot drift
+  apart"* (`app/Services/Validators/GuardianImportRowValidator.php:15-19`). A hand-authored template
+  is a **second source of truth** for the format — and a second source of truth for a **money**
+  format is how a data team ends up holding two different files, each of which looks right.
+
+  §2 records the shape and the commit split.
 
 ---
 
@@ -135,6 +173,19 @@ degrades to *"the lines sum to themselves"* — an assertion that is true of any
 and therefore detects nothing. The stated total is the independent witness. Without it the import
 cannot tell a complete extract from one that lost a fee type on the way out of WCBS.
 
+**The two levels check DIFFERENT FAILURES, and R12/§12 is what makes that true.** Since the control
+total is typed by the operator off WCBS's own report rather than carried in the file:
+
+- **L1 is a FILE INTEGRITY check.** Both of its figures come from the same file, so what it catches
+  is a row lost *between export and upload* — an Excel edit, a truncated save, a copy-paste that took
+  four of a student's five lines. It cannot see anything that was already wrong when WCBS wrote the
+  file.
+- **L2 is a COMPLETENESS AGAINST WCBS check.** Its witness travelled a different path — a human read
+  it off WCBS and typed it — so it catches what L1 structurally cannot: a student, or a whole page of
+  students, missing from the export itself.
+
+**Neither replaces the other**, and a green on one says nothing about the other.
+
 - **L1 fails** → the student's row-group is rejected. Both sides go in the finding, as the old
   identity did.
 - **L2 fails** → a finding on the **batch**, not on any row: the lines may each be internally
@@ -162,12 +213,13 @@ it is the reason §9 records a staging-key migration (R9).
 | `student_total_balance` | yes | The student's STATED total, repeated on each of that student's rows. **L1's independent witness** (§1) — without it the checksum degrades to "the lines sum to themselves". |
 | `wcbs_bill_reference` | no | The reference on the last paper bill, if WCBS carries one. Lands in the narration snapshot; it no longer lands on an invoice, because no invoice is written (R6). |
 
-And **one batch-level figure**, supplied out of band with the file (an operator option, a control
-row, or a sidecar — commit 4's call, recorded in §12):
+And **one batch-level figure, which is NOT in the file** — it is **typed by the operator at upload**
+(R12/§12, decided). That is the whole point of it; see §12 for why a total carried inside the file
+would not be a witness at all:
 
 | Figure | Required | Notes |
 |---|---|---|
-| `batch_control_total` | yes | Σ of every student's stated total. **L2's independent witness** (§1). |
+| `batch_control_total` | yes | Σ of every student's stated total, **read off WCBS's own report and entered at upload** — `--control-total=` on the command, a field on U12b. **L2's independent witness** (§1). |
 
 **Blank ≠ zero. A blank in any required column rejects the row.** Unchanged and still the rule that
 matters most: a zero is a claim that nothing is owed, and only the file may make it.
@@ -182,6 +234,56 @@ matters most: a zero is a claim that nothing is owed, and only the file may make
 position**. Every payment WCBS ever took is already netted into `balance`; re-importing the receipts
 that produced it would double-count against WCBS's own general ledger, which is exactly what R4 (§12)
 exists to prevent.
+
+### The template is generated, not authored (R13)
+
+Brookstone downloads the template from the portal. Nobody hand-authors a spreadsheet and emails it,
+because that is a **second source of truth for the format**, and the guardian import already learned
+this: *"the COLUMNS map drives both the template generator and the row validator, so they cannot
+drift apart"* (`app/Services/Validators/GuardianImportRowValidator.php:15-19`).
+
+#### Commit 4 — the map (validator scope)
+
+`REQUIRED_COLUMNS` (`app/Finance/Console/ImportOpeningBalances.php:66-74`) is a **flat list of
+strings**. No required flag, no format, no example, no notes — so it cannot render a template, and a
+template built beside it would be the second source of truth R13 exists to refuse. Replace it with a
+**`COLUMNS` map in the guardian shape**: keyed by column name, each entry carrying `required`,
+`format`, `example`, `notes`, `group`. It has its consumer in the same commit — the validator reads
+it — so it is not front-loading.
+
+Three further diffs from what ships today, each of them a real behaviour change and not a
+re-organisation:
+
+- **`wcbs_bill_reference` moves REQUIRED → OPTIONAL.** It is required today
+  (`ImportOpeningBalances.php:66-74`) and R12 makes it optional. **A blank must NOT reject the row.**
+- **`NON_NEGATIVE_COLUMNS` (`:77`) RETIRES ENTIRELY.** Its three columns no longer exist, and
+  `balance` is **signed by design** — a non-negative rule pointed at it would reject every credit in
+  the file, which is to say every student who is owed money.
+- **The map's `notes` carry the operator-facing rules**, because `notes` is the column the data team
+  actually reads. A rule that lives only in this document is a rule the person filling in the
+  spreadsheet never sees.
+
+#### U12b — the export and the route (step 5 scope)
+
+An export rendering that map, and a `GET .../import/template` route behind an ability check — the
+same shape as `GuardianImportController@template` (`routes/endpoints/guardian.php:16`).
+
+**The gate is §8's maker ability, not a new one.** §8 makes the import maker–checker "the same shape
+as the other four request types", so commit 4 adds the triple
+`finance.opening-balance.submit` / `.approve` / `.reject` by that convention. **The template route
+uses the SUBMIT (maker) ability**: the person who downloads the template is the person who will
+upload the file. Note honestly that none of the three exists in `app/Enums/Permission.php` today —
+they arrive with commit 4's approval gate — so the route coins nothing; it reuses the maker half of a
+triple §8 already requires. If commit 4 names that triple differently, **the route follows the
+triple**, not the other way round.
+
+**THREE SHEETS.** The third is a departure from the guardian template and the code must say why:
+
+| Sheet | Contents |
+|---|---|
+| **Import** | Headings + **SAMPLE ROWS, plural.** The guardian template emits a single sample row, which structurally cannot demonstrate this format's central rule: `student_total_balance` **repeats identically across a student's rows**. Emit at least **two rows for one student**, plus a **second student carrying a NEGATIVE balance**. The most likely mistake must be the one the sample shows — a one-row sample teaches the reader that one row per student is the shape, which is the exact error R9's key exists to refuse. |
+| **Columns** | One row per column: Column, Group, Required, Format, Example, Notes. Exactly as guardian's (`app/Exports/GuardianImportTemplateExport.php:73-76`). |
+| **Notes** | The rules that are **not per-column** and therefore have nowhere to live in the table: pure arrears / no new-term fees (§11); blank is not zero — write `0.00`; the control total is **entered at upload and is not in the file** (§12); one file per school. These are the rules behind the **expensive** failures, which is precisely why they must not be the ones with no home. |
 
 ---
 
@@ -377,10 +479,14 @@ front-loading rule biting in reverse, where a consumer was withdrawn after the p
    `students_school_id_admission_number_unique` and identical as a join key. Any at all and the key
    is unsafe; the validator raises it as a finding on the batch, not on a row.
 2. ~~**Can WCBS split by term?**~~ **MOOT under R5.** R1 answered it yes, and R5 then removed the
-   question: a boundary cutover needs a closing position, not a per-term split. What replaces it is a
-   different data question, and it must be answered before the file format is frozen: **does the
-   extract carry the per-student stated total and the batch control total?** Without both, §1's L1
-   and L2 have no witness and the checksum degrades to the lines summing to themselves.
+   question: a boundary cutover needs a closing position, not a per-term split.
+   ~~What replaces it is a different data question, and it must be answered before the file format is
+   frozen: does the extract carry the per-student stated total and the batch control total?~~
+   **ALSO CLOSED, by R12: the format is frozen and we dictate it.** There is nothing left to ask the
+   data team about the layout. `student_total_balance` is a **required column** by construction (§2),
+   and `batch_control_total` is **not a column at all** — it is typed by the operator at upload
+   (§12), which is what makes it a witness rather than a second copy of the file's own arithmetic. So
+   L1 and L2 both have their witness by design, not by hoping the extract carries one.
    R1's *consequence* survives its question: **one batch is one term boundary.** A second posted
    batch would bring the same history forward twice, and §11's G1 is what makes that hard — though
    see §11 for how hard it actually is, which is less than Rev 3 claimed.
@@ -511,6 +617,36 @@ inside the module.
 > different name.** Every alias of a banned call has to be enumerated by hand, or the rule has a hole
 > shaped exactly like the alias — and a doc that asserts the rule covers it makes the hole harder to
 > find, not easier.
+
+### OPEN — `term_id` on the batch contradicts §1, and this is not a docs decision
+
+**Rev 4 and the shipped migration disagree, and the disagreement is live.** Both read, both confirmed:
+
+- §1 says *"There is no cutover term **T** any more: R5 puts the cutover on a term boundary, so the
+  file is a closing position, not a mid-term snapshot."*
+- The batch table says otherwise:
+  `$table->foreignId('term_id')->constrained('terms')->restrictOnDelete();`
+  (`2026_08_06_100000_create_finance_opening_balance_tables.php:93`) — **NOT NULL by default**, so
+  every batch must name a term.
+- And the command still requires one: `{--term= : the cutover term T (terms.id)}`
+  (`app/Finance/Console/ImportOpeningBalances.php:58`), validated to a term of the target School at
+  `:721`.
+
+So today the validator cannot stage a batch without naming a term that R5 says no longer exists. That
+is not a documentation slip on either side; it is a real column with a real FK, written when T was a
+real thing.
+
+**Two options, and RECORDING THEM IS ALL THIS REVISION DOES:**
+
+1. **`term_id` becomes nullable** — the batch names no term, because a boundary cutover has none.
+   The `--term` option and its validation go with it.
+2. **`term_id` is repurposed to name the term being CLOSED OUT** — the last term, whose closing
+   position the file carries. The column keeps its FK and its NOT NULL; only its MEANING changes, and
+   the docblock and the option's description have to change with it or the column becomes a lie.
+
+**No choice is made here.** Either answer changes a migration — option 1 an `ALTER`, option 2 at
+minimum a comment and an option rename — and a migration is not decided in a docs commit. Commit 4
+picks one and says which, in the migration's docblock.
 
 ### G1 — at most one posted batch per school, at INSERT
 
@@ -659,9 +795,11 @@ Four things now, and none has a mechanism:
    **byte-identical** to one that does not. There is no column to compare — R5's file has one signed
    `balance` per fee type — no schedule to compare against, because §5 is withdrawn, and no
    arithmetic anywhere that separates *"arrears of 120,000"* from *"arrears of 20,000 plus this
-   term's 100,000"*. **L1 and L2 both pass either way**, and that is not a defect in them: they check
-   the file against **itself**, which is all they ever claimed to do. A checksum cannot tell you that
-   a number is the wrong number; only that the numbers agree with each other.
+   term's 100,000"*. **L1 and L2 both pass either way**, and that is not a defect in either: L1
+   checks the file against **itself** and L2 checks it against **a total** — and neither of them
+   knows what a number MEANS. A control total read off WCBS carries the contamination too, because
+   WCBS produced both. A checksum can only tell you that numbers agree with each other; it can never
+   tell you that a number is the wrong number.
 
    **The damage surfaces one step later and looks like a portal bug.** The native re-bill posts the
    new term's fees on top, and the student is billed the term twice — and the first place anyone sees
@@ -770,24 +908,28 @@ somebody reads.
    provenance. **Rev 4 does not add a column.** If a statement or a report needs D on the payment
    row itself, that is a schema decision to argue explicitly — not a field to slip into the
    provenance migration because it seemed useful.
-2. **How does `batch_control_total` arrive — NARROWED by R11, not closed.** The figure's
-   **existence** is confirmed: Brookstone's data team is producing it (*"keep a single batch control
-   total to protect the checksum"*). What is still unsettled is **delivery** — an operator option, a
-   control row in the CSV, or a sidecar. Commit 4 still chooses, and still **must not invent a
-   convention the data team has not agreed to**.
+2. **How does `batch_control_total` arrive — CLOSED by R12.** It arrives as an
+   **OPERATOR-ENTERED OPTION**: `--control-total=` on the command, and a field on U12b. **Not a
+   column, not a control row in the CSV, not a sidecar.**
 
-   **AND — `student_total_balance` is NOT confirmed, and this one blocks the file format.** §2
-   requires it and §1's L1 depends on it, but **R11 names only the batch grand total**; the client
-   said nothing about a per-row student total, and silence is not agreement. If the extract ships
-   with the grand total alone, **L1 has no witness**: a student whose fee type was dropped on the way
-   out of WCBS passes silently, because their remaining lines still sum to something and there is
-   nothing to compare that something to. L2 would fail — but L2 names the **batch**, so the import
-   can say *"the file is short"* and cannot say *"of whom"*. On a real extract that is the difference
-   between one student to check and every student to check.
+   **Why, and the reason is the only reason the figure is worth having.** A total carried inside the
+   file was produced by **the same export run as the rows**. Drop a student on the way out of WCBS
+   and they vanish from the rows *and* from the total — the two still agree, and **L2 goes green on
+   an incomplete file**. A witness that shares a failure mode with the thing it witnesses is not a
+   witness; it is a second copy. The total earns its place only by travelling a **different path**:
+   read off WCBS's own report and typed by the person doing the upload, who thereby **attests** to
+   it.
 
-   **OPEN ITEM WITH THE DATA TEAM, blocking the file format.** Ask explicitly whether the per-student
-   stated total can be carried on every row. This is not a resolved requirement to be implemented
-   against — do not build to it, and do not quietly downgrade L1 to compensate if the answer is no.
+   This is what sharpens the two levels into different checks rather than two spellings of one, and
+   §1 now says so: **L1 is FILE INTEGRITY** (a row lost between export and upload — an Excel edit, a
+   truncated save), **L2 is COMPLETENESS AGAINST WCBS**. Different failures. Neither replaces the
+   other, and a green on one says nothing about the other.
+
+   ~~AND — `student_total_balance` is NOT confirmed, and this one blocks the file format.~~
+   **Withdrawn by R12.** It is not an open item and never becomes one: §2 requires the column, the
+   template the platform issues (R13) emits it, and the validator's `COLUMNS` map is the single
+   source of truth for both. Nothing here is waiting on the data team.
+
 3. **Does `fee_type_label` need normalising for the R9 key?** The key
    `unique(school_id, batch_id, admission_number, fee_type_label)` is enforced under
    `utf8mb4_unicode_ci`, so `'Tuition'` and `'tuition'` collide at the database while PHP byte

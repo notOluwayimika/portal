@@ -76,6 +76,10 @@ final class RecordPayment
             $outstandingKobo = max(0, $locked->total->toKobo() - $alreadyAllocated);
             $allocateKobo = min($amount->toKobo(), $outstandingKobo);
 
+            // NO SEED CLOSURE, and that omission is load-bearing — do not "harden" this to match
+            // HasAdmissionNumber:55 / HasStaffNumber:54. Seeding it would adopt MAX(reference), which
+            // after an opening-balance import is a migrated row in the reserved band, sending every
+            // portal receipt for that school above Payment::MIGRATED_REFERENCE_FLOOR forever.
             $reference = Sequences::next('finance_payment', (string) $invoice->school_id);
 
             // The payment records the FULL cash received (belongs to the account).

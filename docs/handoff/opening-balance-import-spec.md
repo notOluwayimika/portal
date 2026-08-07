@@ -411,13 +411,19 @@ An imported payment is real, but it did **not** arrive through this system, and 
 
 New, and all of it must exist **before** the first imported row:
 
+**The table is `finance_payments`, not `fee_payments`** — and `finance_invoices`, not `fee_invoices`.
+All five were renamed by `2026_07_19_110000_rename_fee_tables_to_finance.php`; the `fee_*` names below
+were dead when this section was written and are corrected here. The create migrations still carry the
+old names in their **filenames**, so a citation like `2026_07_19_100002_create_fee_payments_tables.php`
+is still right — the *table* name in it is not.
+
 | Where | Field | Why |
 |---|---|---|
-| `fee_payments` | `origin` — `portal` \| `migrated`, NOT NULL, default `portal` | The single predicate every collections report filters on. Retro-marking is impossible; a row written without it is permanently ambiguous. |
-| `fee_payments` | `external_reference` (nullable string) | The WCBS receipt reference. |
-| `fee_payments` | `method` value `migrated` | Distinct from `manual`/`transfer`/`pos`, which are claims about a channel this system observed. |
-| `fee_payments` | ~~received date (S2)~~ | **Corrected in Rev 4: there is no received/effective date column on `finance_payments` — the table has only `timestamps()`.** D lives on the batch (`2026_08_06_100000:92`) and the payment inherits it by provenance. Whether one is needed at all is an open decision in §12; it is not added silently. |
-| `fee_payments` | `bank_account_id` (S6) stays **null** | Legitimately unknown. `origin` explains the null; without `origin` a null bank account looks like sloppy data entry. |
+| `finance_payments` | `origin` — `portal` \| `migrated`, NOT NULL, default `portal`, **DB CHECK** | The single predicate every collections report and every GL export filters on. Retro-marking is impossible; a row written without it is permanently ambiguous. **Shipped** — `2026_08_07_110000_add_provenance_to_finance_payments.php`. |
+| `finance_payments` | `external_reference` (nullable string) | The WCBS receipt reference. **Shipped** in the same migration. |
+| `finance_payments` | `method` value `migrated` | A snapshot of the channel. See the limit below: this is not a constraint and cannot be made into one in this commit. |
+| `finance_payments` | ~~received date (S2)~~ | **Corrected in Rev 4: there is no received/effective date column on `finance_payments` — the table has only `timestamps()`.** D lives on the batch (`2026_08_06_100000:92`) and the payment inherits it by provenance. Whether one is needed at all is an open decision in §12; it is not added silently. |
+| `finance_payments` | ~~`bank_account_id` (S6) stays **null**~~ | **Corrected: the column DOES NOT EXIST.** `git grep -l bank_account_id -- database/migrations app/` returns nothing; S6 has not happened. There is no null to explain. It is not added here — a column ahead of its writer is front-loading, and S6 will add it with the code that populates it. |
 | ~~`fee_invoices`~~ | ~~`external_reference`~~ | **WITHDRAWN by R5/R6.** It existed for the re-billed T invoice, and no invoice is written any more. The opening charge needs no column — its narration is already a snapshot carrying the label and the WCBS bill reference. |
 
 **`origin` CAN NO LONGER BE DESCOPED — R4 (§12) made it structural.** In Rev 3 it was the predicate
@@ -425,7 +431,64 @@ behind G2; that guard is demoted in §11, but `origin` is now the predicate that
 ledger** from double-counting the cutover. Dropping or deferring it does not weaken a guard, it
 breaks the export boundary. §9 records this as a hard dependency of commit 3.
 
-**Receipt numbers.** `fee_payments.reference` is a school-scoped gap-free sequence and `unique(school_id, reference)`. Imported payments must not interleave with portal-issued receipts, and no receipt PDF may ever be printed for one — nobody at Brookstone handed that parent this system's receipt. Migrated rows take references from a **reserved high band** (≥ 900,000,000), the live `Sequences` counter is untouched, and the receipt action is refused for `origin = migrated` with a reason rather than hidden.
+**The CHECK is what makes `origin` a rule rather than a convention.** `CHECK (origin COLLATE
+utf8mb4_bin IN ('portal','migrated'))`. §11's G1 finding was that a status column with no CHECK is
+releasable by one UPDATE, and `origin` carries more weight than a status because an export decides on
+it. `COLLATE utf8mb4_bin` is load-bearing for the same reason it is in
+`2026_08_01_120000_add_currency_shape_checks.php:24` — under the default case-insensitive collation
+`'Migrated'` would insert *and* would match every `origin = 'migrated'` filter. **On this table the
+CHECK's live door is INSERT**: `finance_payments` is append-only, so `finance_payments_no_update`
+(SIGNAL 45000, driver 1644) refuses an UPDATE ahead of any CHECK evaluation. Both doors are shut at
+the database; only the codes differ. Proved in `tests/Feature/Finance/PaymentProvenanceTest.php`.
+
+**LIMIT — `method` is an unconstrained string, and "adding a value" to it enforces nothing.** There is
+no payment-method enum in this project (`ls app/Finance/Enums/` — fifteen enums, none of them a
+method), and `finance_payments.method` is a plain `string` with default `'manual'`
+(`2026_07_19_100002_create_fee_payments_tables.php:36`). So `method = 'migrated'` is a **snapshot
+label**, not a predicate: nothing refuses a fourth value, and nothing will until an enum plus a CHECK
+ships. **No enum is invented here** — introducing one would touch every existing payment write path,
+which is a different change from this one. The division is therefore explicit: **`origin` is the
+predicate and it has a constraint; `method` is a description and it has none; every code path that
+needs to know where the money came from filters on `origin`.**
+
+**Receipt numbers.** `finance_payments.reference` is a school-scoped sequence under
+`unique(school_id, reference)`. Imported payments must not interleave with portal-issued receipts, so
+migrated rows take references from a **reserved high band** (≥ 900,000,000,
+`App\Finance\Models\Payment::MIGRATED_REFERENCE_FLOOR`) and the live `Sequences` counter is untouched.
+
+**THE SEED TRAP — the band's safety rests on an absent argument, and the codebase's dominant pattern is
+the one that breaks it.** `Sequences::next()` takes an optional third argument, a seed closure used on
+first use to adopt the existing domain maximum. Both payment call sites — `RecordPayment.php:79`,
+`RecordAccountPayment.php:82` — **pass no seed**, so a school's counter starts at 0 and portal receipts
+begin at 1 no matter what is sitting in the reserved band. `HasAdmissionNumber.php:55` and
+`HasStaffNumber.php:54` **do** pass one, correctly for them. Anyone "hardening" the payment sequence to
+match those two makes the counter adopt `900,000,001` on the first payment after an import, and every
+subsequent portal receipt for that school is issued inside the reserved band — permanently, because the
+table is append-only and nothing can be renumbered.
+
+*Can it be enforced?* **No — only asserted.** The invariant is the absence of an optional argument: a
+DB constraint sees only the resulting value (legal); a lint would have to pin a scope string literal at
+a call site and any extracted variable walks past it; static analysis has no opinion, since both
+arities type-check. The one mechanism available is a test —
+`PaymentProvenanceTest`'s seed case plants a migrated row at 900,000,001, records a portal payment and
+asserts the reference is `1` — and it is stated plainly in that test's header as the only one. It runs
+in `bin/quality` step 14, so it blocks a push; it does not stop anyone writing the seed in the first
+place. The one constraint that *would* be structural — `CHECK (origin = 'migrated' OR reference <
+900000000)` — is expressible and is deliberately **rejected**: it converts a silent corruption into a
+hard 3819 on every payment the school takes after the import, i.e. it closes the bursar's front door
+instead of preventing the mistake. Recorded as considered, not overlooked.
+
+**THE RECEIPT REFUSAL IS OWED, NOT BUILT — there is no receipt surface to refuse from.** No receipt is
+produced for a payment anywhere in this repository today: payments are JSON-only
+(`PaymentController::store` / `storeForStudent`, `routes/endpoints/finance.php:24`, `:145`), the only
+UI that renders them is a read-only table (`resources/js/pages/admin/finance/statement.tsx:688`), and
+there is no PDF, no mail, no export and no download endpoint over `finance_payments`.
+`NotificationType::PAYMENT_RECEIVED` exists as an enum case
+(`app/Notifications/Enums/NotificationType.php:39`) and has no dispatcher. Building a refusal now would
+be a guard over nothing. **The obligation moves to whichever commit introduces the first receipt
+surface** — PDF, printable page, emailed confirmation or export: it must refuse for `origin = 'migrated'`
+**with a stated reason**, never silently hide the row, because nobody at Brookstone handed that parent
+this system's receipt. That is a condition on that commit, and this paragraph is where it is recorded.
 
 ---
 

@@ -43,9 +43,15 @@
  *
  * The invariant the fingerprint file carries: IT EXISTS ONLY IF THE CACHE BESIDE IT WAS
  * BUILT OVER A VENDOR TREE THAT MATCHED THAT LOCK. So a failing run drops the cache and
- * does NOT record the fingerprint — otherwise bin/quality (which collects failures and
- * keeps going) would run phpstan over the known-bad tree, cache that, and the next run
- * would find a matching fingerprint and keep the poison. That is the original bug.
+ * does NOT record the fingerprint. Without that, phpstan could run over the known-bad
+ * tree, cache the result, and the next run would find a matching fingerprint and keep the
+ * poison — which is the original bug.
+ *
+ * The invariant does not depend on bin/quality's control flow, and that is deliberate.
+ * Step 1 now aborts the run (bin/quality's abort_check), so the poisoned cache would not
+ * be reached anyway — but this lint is also runnable on its own, and a guard that only
+ * holds because of its caller is not a guard. Recording the fingerprint ONLY on a passing
+ * run is what makes the cache trustworthy no matter who invoked it.
  *
  * NOT IN SCOPE, deliberately: the pnpm/node_modules equivalent. pnpm-lock.yaml is YAML
  * with no parser in this repo's PHP toolchain, so it shares nothing with the JSON path

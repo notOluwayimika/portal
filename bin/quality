@@ -63,6 +63,16 @@ step() {
 # rather than one-at-a-time. (CI stops at the first failing step; collecting them
 # locally is strictly more useful and cannot make the gate weaker — any failure
 # still fails the whole run.)
+#
+# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-14 each measure a
+# property of the code. Step 1 measures whether the code being measured is the code that
+# was declared. When step 1 is red the later steps are not extra findings — they are
+# readings from an instrument that has just reported itself untrustworthy, and thirteen
+# green ticks printed beside one red line tell the reader the opposite of the truth. So
+# step 1 alone uses abort_check() and exits 2, which is the severity the `[ -d vendor ]`
+# precondition it replaced always had; moving it into check() would have quietly demoted
+# a hard precondition to a soft finding. Do NOT "fix" that inconsistency by making step 1
+# collect like the others — the inconsistency is the point.
 check() {
     local label="$1"; shift
     if "$@" >/tmp/quality-step.log 2>&1; then
@@ -72,6 +82,22 @@ check() {
         sed 's/^/       /' /tmp/quality-step.log | tail -25
         FAILED+=("$label")
     fi
+}
+
+# Step 1 only — see check()'s note above. Same output shape, then stops the run: exit 2,
+# not 1, to keep it distinguishable from "the gate found problems". Either blocks a push
+# (.githooks/pre-push:74 treats any non-zero the same), so nothing is weakened by it.
+abort_check() {
+    local label="$1"; shift
+    if "$@" >/tmp/quality-step.log 2>&1; then
+        printf '   %s✓%s %s\n' "$GREEN" "$OFF" "$label"
+        return 0
+    fi
+    printf '   %s✗%s %s\n' "$RED" "$OFF" "$label"
+    sed 's/^/       /' /tmp/quality-step.log | tail -25
+    printf '\n%s✗ quality: ABORTED at step %d%s — the working tree does not match what was declared.\n' "$RED" "$STEP" "$OFF"
+    printf '%sThe remaining steps would measure the wrong tree, so they were not run. Fix the above and re-run.%s\n' "$DIM" "$OFF"
+    exit 2
 }
 
 # ---------------------------------------------------------------- preconditions
@@ -102,8 +128,11 @@ printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE
 #    in whichever direction. It also reconciles step 13's phpstan result cache against
 #    composer.lock, because that cache cannot see vendor/ moving underneath it. Full
 #    reasoning, and the two failure cases, in the lint's header.
+#
+#    ABORTS the run rather than collecting — abort_check(), not check(). See check()'s
+#    comment for why this one step is the exception.
 step "dependency integrity (composer.lock vs composer.json vs vendor/)"
-check "dependency-integrity-lint" php bin/ci-dependency-integrity-lint.php
+abort_check "dependency-integrity-lint" php bin/ci-dependency-integrity-lint.php
 
 # 2. Wayfinder EARLY. resources/js/{routes,actions} are generated from the PHP
 #    routes and gitignored; without this, tsc measures a stale or absent tree and

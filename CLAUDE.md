@@ -56,9 +56,11 @@ operational facts an agent needs most often.
 
 ## Workflow
 
-Slice branches off `staging` → PR → `staging` (CI + manual validation) →
-milestone merge to `main`. Never stack branches. Conventional Commits with
-scope. Rollout flags in `config/rbac.php` / `config/auth.php` ship dark.
+Slice branches off `staging` → PR → `staging` (`bin/quality` via the
+`.githooks/pre-push` hook, plus maintainer review — there is no CI, permanently;
+ADR 0053) → milestone merge to `main`. Never stack branches. Conventional
+Commits with scope. Rollout flags in `config/rbac.php` / `config/auth.php` ship
+dark.
 
 **Branch names carry a Conventional-Commits type prefix**, so the branch says what
 kind of change it is before anyone opens it — same vocabulary as the commits:

@@ -420,10 +420,10 @@ is still right — the *table* name in it is not.
 | Where | Field | Why |
 |---|---|---|
 | `finance_payments` | `origin` — `portal` \| `migrated`, NOT NULL, default `portal`, **DB CHECK** | The single predicate every collections report and every GL export filters on. Retro-marking is impossible; a row written without it is permanently ambiguous. **Shipped** — `2026_08_07_110000_add_provenance_to_finance_payments.php`. |
-| `finance_payments` | `external_reference` (nullable string) | The WCBS receipt reference. **Shipped** in the same migration. |
+| `finance_payments` | `external_reference` (nullable string) | The WCBS receipt reference. **Shipped** in the same migration — with **no index and no uniqueness**, see the open decision below. |
 | `finance_payments` | `method` value `migrated` | A snapshot of the channel. See the limit below: this is not a constraint and cannot be made into one in this commit. |
 | `finance_payments` | ~~received date (S2)~~ | **Corrected in Rev 4: there is no received/effective date column on `finance_payments` — the table has only `timestamps()`.** D lives on the batch (`2026_08_06_100000:92`) and the payment inherits it by provenance. Whether one is needed at all is an open decision in §12; it is not added silently. |
-| `finance_payments` | ~~`bank_account_id` (S6) stays **null**~~ | **Corrected: the column DOES NOT EXIST.** `git grep -l bank_account_id -- database/migrations app/` returns nothing; S6 has not happened. There is no null to explain. It is not added here — a column ahead of its writer is front-loading, and S6 will add it with the code that populates it. |
+| `finance_payments` | ~~`bank_account_id` (S6) stays **null**~~ | **Corrected: the column DOES NOT EXIST.** No table carries it and no code reads one; S6 has not happened. There is no null to explain. It is not added here — a column ahead of its writer is front-loading, and S6 will add it with the code that populates it. |
 | ~~`fee_invoices`~~ | ~~`external_reference`~~ | **WITHDRAWN by R5/R6.** It existed for the re-billed T invoice, and no invoice is written any more. The opening charge needs no column — its narration is already a snapshot carrying the label and the WCBS bill reference. |
 
 **`origin` CAN NO LONGER BE DESCOPED — R4 (§12) made it structural.** In Rev 3 it was the predicate
@@ -458,13 +458,22 @@ migrated rows take references from a **reserved high band** (≥ 900,000,000,
 
 **THE SEED TRAP — the band's safety rests on an absent argument, and the codebase's dominant pattern is
 the one that breaks it.** `Sequences::next()` takes an optional third argument, a seed closure used on
-first use to adopt the existing domain maximum. Both payment call sites — `RecordPayment.php:79`,
-`RecordAccountPayment.php:82` — **pass no seed**, so a school's counter starts at 0 and portal receipts
-begin at 1 no matter what is sitting in the reserved band. `HasAdmissionNumber.php:55` and
-`HasStaffNumber.php:54` **do** pass one, correctly for them. Anyone "hardening" the payment sequence to
-match those two makes the counter adopt `900,000,001` on the first payment after an import, and every
-subsequent portal receipt for that school is issued inside the reserved band — permanently, because the
-table is append-only and nothing can be renumbered.
+first use to adopt the existing domain maximum. Both payment call sites — `RecordPayment::handle` and
+`RecordAccountPayment::handle` — **pass no seed**, so a school's counter starts at 0 and portal receipts
+begin at 1 no matter what is sitting in the reserved band. `HasAdmissionNumber` and `HasStaffNumber`
+**do** pass one, correctly for them. Anyone "hardening" the payment sequence to match those two makes
+the counter adopt `900,000,001` on the first payment after an import, and every subsequent portal
+receipt for that school is issued inside the reserved band — permanently, because the table is
+append-only and nothing can be renumbered.
+
+**The two Actions share ONE counter** — same scope `finance_payment`, same key (the school id), stated
+in `RecordAccountPayment`'s own comment as "one receipt series per school across both doors". A seed is
+evaluated on **first use only**, so whichever door a school happens to use first after its import is the
+one that creates the counter row, and seeding **either Action alone** corrupts the band through both.
+Both doors are therefore pinned separately, one seed case each, and a red was watched for each. A
+**third** call site on this scope — the commit-4 posting Action, if it allocates through `Sequences`
+rather than computing references in the band directly — would be pinned by neither and must arrive with
+its own case.
 
 *Can it be enforced?* **No — only asserted.** The invariant is the absence of an optional argument: a
 DB constraint sees only the resulting value (legal); a lint would have to pin a scope string literal at
@@ -477,6 +486,16 @@ place. The one constraint that *would* be structural — `CHECK (origin = 'migra
 900000000)` — is expressible and is deliberately **rejected**: it converts a silent corruption into a
 hard 3819 on every payment the school takes after the import, i.e. it closes the bursar's front door
 instead of preventing the mistake. Recorded as considered, not overlooked.
+
+**OPEN, and owed by commit 4: is `external_reference` UNIQUE?** It shipped nullable with **no index and
+no uniqueness**, which is the honest state of a column whose writer does not exist yet — but it is a
+decision, not an oversight, and it is named here so it is not discovered later. Idempotency today is at
+the **batch** level only (`ob_batches_school_reference_unique` on `(school_id, batch_reference)`), so two
+batches filed under different batch references and carrying the same WCBS receipt would post that
+receipt twice and the database would have no opinion — at which point `external_reference` stops being
+"the only handle back to the source system". Commit 4 must rule one way or the other: a unique index on
+`(school_id, external_reference)` where non-null, or an explicit statement that duplicates are legal and
+why. Do not leave it unstated a third time.
 
 **THE RECEIPT REFUSAL IS OWED, NOT BUILT — there is no receipt surface to refuse from.** No receipt is
 produced for a payment anywhere in this repository today: payments are JSON-only

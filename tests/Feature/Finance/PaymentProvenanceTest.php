@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Models\Invoice;
@@ -45,11 +46,18 @@ use Illuminate\Support\Str;
  *    A lint that can be evaded by extracting a variable is wallpaper with a build step.
  *  - Static analysis has no opinion: the parameter is genuinely optional and both arities type-check.
  *
- * So THE TEST BELOW IS THE ONLY MECHANISM, and it is stated plainly as such rather than dressed up. It
- * is a real one — it fails the suite, and the suite is bin/quality step 14 — but it catches the mistake
- * at push time, not at write time, and it protects the invariant only for the scope and shape it
- * exercises. That is the whole guarantee. The comments at Payment::MIGRATED_REFERENCE_FLOOR,
- * RecordPayment.php:79 and RecordAccountPayment.php:82 are documentation, not enforcement.
+ * So THE TESTS BELOW ARE THE ONLY MECHANISM, and that is stated plainly rather than dressed up. They
+ * are real ones — they fail the suite, and the suite is bin/quality step 14 — but they catch the
+ * mistake at push time, not at write time. The comments at Payment::MIGRATED_REFERENCE_FLOOR and at
+ * both Actions are documentation, not enforcement.
+ *
+ * AND A TEST PINS ONLY THE DOORS IT DRIVES. Both live doors share one counter — scope
+ * 'finance_payment', key the school id — so whichever runs FIRST after an import is the one that
+ * creates the row, and Sequences evaluates the seed on first use only. A seed added to just one Action
+ * would corrupt the band through both, because the counter is shared. So BOTH are driven below, one
+ * seed case each, and a red was watched for each. A THIRD call site on this scope — commit 4's posting
+ * Action, if it allocates references through Sequences rather than computing them in the band — would
+ * be invisible to both, and must arrive with its own case.
  */
 uses(RefreshDatabase::class);
 
@@ -160,17 +168,26 @@ it("default — the existing payment path writes origin = 'portal' with no code 
     });
 });
 
-// ── 3. The seed trap ───────────────────────────────────────────────────────────────────────────────
+// ── 3. The seed trap, at BOTH doors onto the shared counter ────────────────────────────────────────
 
-it('seed trap — a migrated row in the reserved band does NOT drag the live receipt sequence up with it', function () {
+/**
+ * Put a school in the exact state that makes the trap reachable: migrated payments sitting in the
+ * reserved band, and NO `finance_payment` counter row yet — the moment after opening balances post and
+ * before that school's first portal payment. Sequences evaluates a seed on first use only, so this is
+ * the one moment at which a seed closure could adopt the band.
+ */
+function plantImportedBandRow(int $schoolId, int $studentId): void
+{
+    insertPaymentRow($schoolId, $studentId, Payment::MIGRATED_REFERENCE_FLOOR + 1, 'migrated', 'migrated');
+
+    expect(DB::table('sequences')->where('scope', 'finance_payment')->where('key', (string) $schoolId)->exists())
+        ->toBeFalse();
+}
+
+it('seed trap, INVOICE door — a migrated row in the reserved band does NOT drag the live receipt sequence up with it', function () {
     [$school, $admin, $student, $makeInvoice] = provenanceSetup();
 
-    // Plant the import: one migrated payment holding a reference inside the reserved band, with the
-    // school's `finance_payment` counter row not yet created — precisely the state a school is in the
-    // moment after its opening balances post and before its first portal payment.
-    insertPaymentRow($school->id, $student->id, Payment::MIGRATED_REFERENCE_FLOOR + 1, 'migrated', 'migrated');
-    expect(DB::table('sequences')->where('scope', 'finance_payment')->where('key', (string) $school->id)->exists())
-        ->toBeFalse();
+    plantImportedBandRow($school->id, $student->id);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
@@ -184,6 +201,31 @@ it('seed trap — a migrated row in the reserved band does NOT drag the live rec
     // Not merely "below the floor" — the counter must have started at 0, which is what the ABSENT seed
     // closure buys. A seeded counter would return MIGRATED_REFERENCE_FLOOR + 2 here and this assertion
     // is the one that catches it.
+    expect($reference)->toBe(1)
+        ->and($reference)->toBeLessThan(Payment::MIGRATED_REFERENCE_FLOOR);
+});
+
+it('seed trap, ACCOUNT door — the same counter, reached without an invoice, must not adopt the band either', function () {
+    // RecordAccountPayment is the OTHER door onto scope 'finance_payment', keyed on the same school
+    // (RecordAccountPayment's own comment: "Same sequence scope and key as RecordPayment — one receipt
+    // series per school across both doors"). It is the door a bursar reaches through
+    // POST …/students/{student:uuid}/payments, under the same finance.payment.record permission as the
+    // invoice door, so it is exactly as likely to be the FIRST payment a school takes after an import —
+    // and first use is the only moment a seed closure is evaluated.
+    //
+    // The invoice-door test above cannot stand in for this one. A seed added to RecordAccountPayment
+    // alone leaves that test green, because it never calls this Action; the counter it corrupts is then
+    // shared, so every subsequent receipt through BOTH doors lands in the reserved band.
+    [$school, $admin, $student] = provenanceSetup();
+
+    plantImportedBandRow($school->id, $student->id);
+
+    ActiveSchool::runFor($school->id, function () use ($admin, $student) {
+        app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(10000), 'AccountPayer', $admin);
+    });
+
+    $reference = (int) DB::table('finance_payments')->where('payer_name', 'AccountPayer')->value('reference');
+
     expect($reference)->toBe(1)
         ->and($reference)->toBeLessThan(Payment::MIGRATED_REFERENCE_FLOOR);
 });

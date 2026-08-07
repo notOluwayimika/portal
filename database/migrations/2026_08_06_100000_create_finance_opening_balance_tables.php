@@ -13,11 +13,20 @@ use Illuminate\Support\Facades\Schema;
  * --dry-run` ({@see ImportOpeningBalances}), which parses a WCBS extract, checks
  * §1's identity per row, runs §5's fee-schedule comparison and records what it found.
  *
- * DELIBERATELY ABSENT (they ship with the commits that WRITE them, per §9 — a column ahead of its
- * writer is front-loading): finance_payments.origin / external_reference / the `migrated` method value
- * / the reserved receipt band (§4), the posting Action (§3), the approval gate (§8), and the U12b
- * screen. The batch's `status` therefore has three values today — draft | validated | rejected — and
- * gains its posting states in commit 4.
+ * DELIBERATELY ABSENT AT THE TIME THIS MIGRATION WAS WRITTEN — read the list as of commit 1, not as a
+ * standing claim about the schema:
+ *
+ *   - finance_payments.origin / external_reference / the reserved receipt band (§4) —
+ *     **SHIPPED in commit 3**, 2026_08_07_110000_add_provenance_to_finance_payments.php. This header's
+ *     original framing ("they ship with the commits that WRITE them") was wrong when written: §9 puts
+ *     provenance at step 3 and the posting Action at step 4, so `origin` was always meant to precede its
+ *     writer — R4 made it structural, the predicate the general-ledger export decides on.
+ *   - the `migrated` method value — still absent, and by ruling: `method` is an unconstrained string
+ *     with no enum, so there is no value to "add". §4 records that limit.
+ *   - the posting Action (§3), the approval gate (§8), and the U12b screen — still absent, commit 4/5.
+ *
+ * The batch's `status` therefore still has three values today — draft | validated | rejected — and gains
+ * its posting states in commit 4.
  *
  * MONEY is integer minor units + an explicit ISO-4217 currency on every amount ({name}_minor +
  * {name}_currency, Constitution rule 10). The row-level amounts are NULLABLE because a blank or

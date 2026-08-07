@@ -40,16 +40,19 @@ class Payment extends Model
      * An imported row takes its `reference` from at or above this value so it never interleaves
      * with a portal-issued receipt under UNIQUE (school_id, reference).
      *
-     * THE BAND IS SAFE ONLY BECAUSE THE PAYMENT SEQUENCE TAKES NO SEED. Both call sites —
-     * RecordPayment.php:79 and RecordAccountPayment.php:82 — call
+     * THE BAND IS SAFE ONLY BECAUSE THE PAYMENT SEQUENCE TAKES NO SEED. Both live call sites —
+     * RecordPayment::handle and RecordAccountPayment::handle — call
      * `Sequences::next('finance_payment', …)` with no seed closure, so on first use the counter
      * starts at 0 instead of adopting MAX(reference). Add a seed to "harden" it the way
-     * HasAdmissionNumber:55 and HasStaffNumber:54 do — the codebase's dominant pattern, and a
-     * one-line change that reads as consistency — and a school whose counter is seeded after an
-     * import adopts 900,000,001 and issues every subsequent portal receipt inside the reserved
-     * band, permanently: this table is append-only, so nothing can be renumbered afterwards.
+     * HasAdmissionNumber and HasStaffNumber do — the codebase's dominant pattern, and a one-line
+     * change that reads as consistency — and a school whose counter is seeded after an import
+     * adopts 900,000,001 and issues every subsequent portal receipt inside the reserved band,
+     * permanently: this table is append-only, so nothing can be renumbered afterwards.
      *
-     * Pinned by tests/Feature/Finance/PaymentProvenanceTest.php.
+     * The two Actions SHARE one counter (same scope, same key), and Sequences evaluates a seed on
+     * first use only — so seeding either one alone corrupts the band for both. Both are pinned, one
+     * case each, in tests/Feature/Finance/PaymentProvenanceTest.php. A THIRD call site on this
+     * scope would be pinned by neither and must arrive with its own case.
      */
     public const MIGRATED_REFERENCE_FLOOR = 900_000_000;
 

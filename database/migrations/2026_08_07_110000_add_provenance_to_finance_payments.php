@@ -22,10 +22,11 @@ use Illuminate\Support\Facades\Schema;
  *  - `external_reference` (nullable) is the WCBS receipt reference, the only handle back to the source
  *    system for an imported row. Null for everything portal-issued.
  *
- * There is deliberately NO bank_account_id. It does not exist anywhere in this repository
- * (`git grep -l bank_account_id -- database/migrations app/` is empty), S6 has not happened, and a column
- * ahead of its writer is an abstraction shaped by imagination. §4's "bank_account_id stays null" row is
- * corrected in the same commit as this migration.
+ * There is deliberately NO bank_account_id. No table in this repository has such a column and no code
+ * reads one — S6 has not happened, and a column ahead of its writer is an abstraction shaped by
+ * imagination. §4's "bank_account_id stays null" row is corrected in the same commit as this migration.
+ * (Confirmed by grep over database/migrations and app/ before this file existed; the recipe is not
+ * repeated here because this docblock would now be its own only hit.)
  *
  * THE CHECK IS NOT OPTIONAL. §11's G1 finding was that a status column with no CHECK is releasable by one
  * UPDATE; `origin` carries strictly more weight than a status, because it is the boundary an export
@@ -51,18 +52,21 @@ use Illuminate\Support\Facades\Schema;
  * 900,000,000) so an imported row never interleaves with a portal-issued receipt under
  * UNIQUE (school_id, reference).
  *
- * That band is safe for ONE reason and it is not written down in the sequence: both live call sites call
- * `Sequences::next('finance_payment', …)` with NO seed closure (RecordPayment.php:79,
- * RecordAccountPayment.php:82), so on first use the counter starts at 0 rather than adopting
- * MAX(reference). The absence of the third argument is the invariant.
+ * That band is safe for ONE reason and it is not written down in the sequence: both live call sites —
+ * RecordPayment::handle and RecordAccountPayment::handle — call `Sequences::next('finance_payment', …)`
+ * with NO seed closure, so on first use the counter starts at 0 rather than adopting MAX(reference).
+ * The absence of the third argument is the invariant.
  *
- * The codebase's DOMINANT pattern is the opposite one. HasAdmissionNumber.php:55 and HasStaffNumber.php:54
- * both pass a seed and deliberately adopt the domain maximum, and their docblocks explain why that is
- * correct for THEM (a switch onto the counter must never reissue an existing identifier). Anyone
- * "hardening" the payment sequence to match those two — a one-line change that looks like consistency —
- * makes the counter adopt a migrated reference of 900,000,001 on a school whose sequence row does not yet
- * exist, and every subsequent portal receipt for that school is issued inside the reserved band.
- * Permanently: the payments table is append-only, so the receipts cannot be renumbered.
+ * The codebase's DOMINANT pattern is the opposite one. HasAdmissionNumber and HasStaffNumber both pass a
+ * seed and deliberately adopt the domain maximum, and their docblocks explain why that is correct for
+ * THEM (a switch onto the counter must never reissue an existing identifier). Anyone "hardening" the
+ * payment sequence to match those two — a one-line change that looks like consistency — makes the counter
+ * adopt a migrated reference of 900,000,001 on a school whose sequence row does not yet exist, and every
+ * subsequent portal receipt for that school is issued inside the reserved band. Permanently: the payments
+ * table is append-only, so the receipts cannot be renumbered.
+ *
+ * The two Actions share ONE counter (same scope, same key) and a seed is evaluated on first use only, so
+ * seeding either one alone corrupts the band through both doors. Both are pinned separately.
  *
  * Stated at Payment::MIGRATED_REFERENCE_FLOOR and at both call sites, and pinned by
  * tests/Feature/Finance/PaymentProvenanceTest.php's seed test. See that test's header for the honest

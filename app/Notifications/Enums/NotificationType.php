@@ -36,6 +36,12 @@ enum NotificationType: string
     case INVOICE_SETTLED = 'finance.invoice.settled';
     case INVOICE_VOIDED = 'finance.invoice.voided';
     case INVOICE_AMENDED = 'finance.invoice.amended';
+    // NO DISPATCHER TODAY — this case is declared and nothing sends it. WHOEVER WIRES IT owes the
+    // migrated-payment refusal: a payment with origin = 'migrated' was collected by WCBS before the
+    // cutover and nobody at Brookstone handed that parent this system's receipt, so a confirmation
+    // must be REFUSED for it with a stated reason, never silently skipped. Same obligation on any
+    // receipt PDF, printable page or export over finance_payments — see
+    // docs/handoff/opening-balance-import-spec.md §4, "THE RECEIPT REFUSAL IS OWED, NOT BUILT".
     case PAYMENT_RECEIVED = 'finance.payment.received';
 
     // ── Account (v2) ────────────────────────────────────────────────────────

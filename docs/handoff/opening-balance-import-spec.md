@@ -462,9 +462,32 @@ cutover carries their balance". The second is the one that needs a human, and it
 invisible.
 
 Commit 4 splits it into a distinct **`student_soft_deleted`** finding with its own message. Both
-still reject — nothing posts against a trashed student — but the operator is told which. Reaching the
-distinction means asking the port for the trashed roster too; keep that behind the ACL port rather
-than reaching for `withTrashed()` from inside Finance, which the boundary forbids.
+still reject — nothing posts against a trashed student — but the operator is told which.
+
+**Reaching the distinction means asking the PORT for the trashed roster.** Do not reach for
+`withTrashed()` from inside Finance: soft-deletion is an Academics-owned lifecycle fact, and the
+whole reason `admissionNumberIndex()` exists is that Finance must not re-join the students table
+(arch rule 3). The trashed roster is a second question for the same port, not a scope to peel off
+inside the module.
+
+> **A correction, because this note previously claimed an enforcer that did not exist.** It said the
+> boundary lint forbade `withTrashed()` inside Finance. **It did not.**
+> `bin/ci-boundary-lint.php`'s `finance-escape-hatches` rule matched five tokens —
+> `withoutGlobalScope(`, `withoutSchoolScope(`, `->hasRole(`, `auth()->setUser(`, `DB::table(` — and
+> `withTrashed(` was not among them; `App\Models\Student` is also absent from
+> `tests/Arch/ArchitectureBoundaryTest.php`'s forbidden-model list, and deliberately so, since three
+> Finance files already import it. `Student::withTrashed()` inside `app/Finance` therefore passed all
+> thirteen quality steps. **It is closed now** — `withTrashed(`, `withoutTrashed(` and
+> `SoftDeletingScope` were added to that same rule, with the lint's own coverage test to prove it
+> fails.
+>
+> **The general lesson, which is worth more than the fix:** `withTrashed()` *is*
+> `withoutGlobalScope(SoftDeletingScope::class)` — Laravel's `SoftDeletes` trait implements it that
+> way — so the behaviour had been forbidden since the first Finance commit and only the *token*
+> escaped. **A token-grep lint cannot see a method that reaches the same forbidden behaviour under a
+> different name.** Every alias of a banned call has to be enumerated by hand, or the rule has a hole
+> shaped exactly like the alias — and a doc that asserts the rule covers it makes the hole harder to
+> find, not easier.
 
 ### G1 — at most one posted batch per school, at INSERT
 

@@ -33,10 +33,26 @@
  *   force-create-finance-tests  `forceCreate(` in Finance tests — bypasses
  *                               MoneyCast. HARD (no Finance tests exist yet).
  *   finance-escape-hatches      withoutGlobalScope / withoutSchoolScope /
+ *                               withTrashed / withoutTrashed / SoftDeletingScope /
  *                               ->hasRole( / auth()->setUser / DB::table( inside
  *                               app/Finance/ (§17.1 rule 4 — method calls, which
  *                               arch tests cannot see). HARD; inert until
  *                               app/Finance exists, live from its first commit.
+ *
+ *                               THE SOFT-DELETE TOKENS ARE NOT A SIXTH RULE. They
+ *                               are the SAME rule under a different name:
+ *                               `withTrashed()` IS
+ *                               `withoutGlobalScope(SoftDeletingScope::class)` —
+ *                               Laravel's own SoftDeletes trait implements it that
+ *                               way. The behaviour was forbidden from the first
+ *                               commit; only the TOKEN escaped, because this lint
+ *                               greps tokens and not semantics. That is the general
+ *                               lesson and it is worth stating where the next
+ *                               reader will meet it: a token-grep lint cannot see a
+ *                               method that reaches the same forbidden behaviour
+ *                               under a different name, so every alias of a banned
+ *                               call has to be enumerated by hand or the rule has a
+ *                               hole shaped exactly like the alias.
  *
  * Like the sibling ratchets, the baseline may only shrink: CI fails on any NEW
  * occurrence; removing a baselined line is reported as progress.
@@ -113,8 +129,11 @@ foreach ($app as [$rel, $line]) {
     }
 
     // finance-escape-hatches — §17.1 rule 4, method calls inside app/Finance/.
+    // withTrashed/withoutTrashed/SoftDeletingScope are the SAME rule as
+    // withoutGlobalScope, not a new one — see the header. They are enumerated
+    // separately only because the match is on tokens, not on behaviour.
     if (str_starts_with($rel, 'app/Finance/')
-        && preg_match('/(withoutGlobalScopes?\(|withoutSchoolScope\(|->hasRole\(|auth\(\)->setUser\(|DB::table\()/', $line)) {
+        && preg_match('/(withoutGlobalScopes?\(|withoutSchoolScope\(|withTrashed\(|withoutTrashed\(|SoftDeletingScope|->hasRole\(|auth\(\)->setUser\(|DB::table\()/', $line)) {
         $add('finance-escape-hatches', $rel, $line);
     }
 

@@ -10,3 +10,15 @@ parameters:
     level: 5
     paths:
         - app
+
+    # Result cache, REPO-LOCAL and gitignored. The default is sys_get_temp_dir()/phpstan,
+    # which is shared by every checkout and every branch on the machine and is invisible to
+    # anyone debugging a wrong answer — a stale entry there reported 8 hard failures against
+    # a vendor/ that was merely incomplete, and survived the `composer install` that fixed
+    # the tree. Per-checkout makes it inspectable and scopes a bad cache to one worktree.
+    #
+    # It is NOT cleared every run — the result cache is the only reason `composer analyse`
+    # is bearable in bin/quality. It is cleared exactly when the input it cannot see has
+    # moved: bin/ci-dependency-integrity-lint.php drops it when composer.lock's sha256
+    # differs from build/phpstan.lock-fingerprint. bin/quality-promote clears it outright.
+    tmpDir: build/phpstan

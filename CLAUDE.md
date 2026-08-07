@@ -77,6 +77,18 @@ repo already carries a prefix. The unprefixed exceptions
 (`slice-2-multi-line-invoicing`, `slice-i-enrollment-school-id`,
 `ci-enforcement-floor`) are recent deviations, not precedent — don't copy them.
 
+**Branches are swept once merged.** A branch whose tip is contained in
+`origin/staging` holds nothing `staging` does not, so it is deleted —
+`bin/branch-sweep` does it, dry-run by default. The filter is merged-ness, never
+the name: `main`, `staging`, the `branch/` archival namespace, `origin/HEAD` and
+the branch you are standing on are exempt unconditionally, with no flag to
+include them. Before each delete the script asserts the ref is an ancestor of
+`origin/staging` — `git branch -d` is **not** that check, it tests containment in
+the branch's _upstream_, so it will happily delete a branch `staging` has never
+seen. Local pass first, and the remote pass refuses to run until the local set is
+empty: a local delete comes back from the reflog, a remote one does not. This is
+a convention and a tool, not a gate — it deliberately has no `bin/quality` step.
+
 ### The enforcement floor is LOCAL, permanently
 
 **GitHub Actions is intentionally disabled** — the account is billing-locked and

@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+#
+# BRANCH SWEEP — delete branches whose tip is already contained in origin/staging.
+#
+# A branch that is merged into origin/staging holds nothing staging does not already
+# have, so deleting it cannot lose a commit. That containment IS the filter. The name
+# is never the filter: nothing here matches on `feat/`, on age, or on who pushed it.
+#
+# Usage: bin/branch-sweep                  dry run — prints both lists, deletes nothing
+#        bin/branch-sweep --delete-local   delete the local merged set
+#        bin/branch-sweep --delete-remote  delete the remote merged set
+#
+# DRY RUN IS THE DEFAULT and the two delete flags are mutually exclusive — one pass
+# per invocation, local first. That order is the recovery story: a local delete is
+# recoverable from the reflog for ~90 days, a remote delete is not recoverable at all.
+# The ordering is ENFORCED, not merely advised: --delete-remote refuses to run while
+# the local merged set is non-empty, because a completed local pass empties it. (On a
+# fresh clone with no local branches the set is already empty and the gate is vacuous
+# — it protects the machine that has the branches, which is the machine at risk.)
+#
+# THE SECOND GATE IS AN EXPLICIT ANCESTRY ASSERT, NOT `git branch -d`. `-d` looks like
+# a containment check and is not one: git's branch_merged() tests containment in the
+# branch's UPSTREAM when it has one, falling back to HEAD only when it does not, and
+# origin/staging is never consulted. Every branch here is tracked, so `-d` on a branch
+# whose remote is ahead of staging prints "warning: ... merged to refs/remotes/origin/X,
+# but not yet merged to HEAD" and DELETES IT, exit 0. So before each delete, local and
+# remote, this asserts `git merge-base --is-ancestor <ref> refs/remotes/origin/staging`
+# against the ref being deleted. `-d` is still used rather than `-D` — it costs nothing
+# and it fails closed on the checked-out branch — but it is a backstop, not the gate.
+# A script that force-deletes branches is one bad filter away from losing work.
+#
+# The asymmetry is where the risk actually lives: `git push origin --delete` has no
+# `-d` equivalent at all. It deletes unconditionally. On the remote pass the ancestry
+# assert is the only gate, which is why the local pass runs first — its output is the
+# review of the filter, paid for in a currency the reflog gives back.
+#
+# REFS ARE FULLY QUALIFIED — `refs/remotes/origin/staging`, never bare `origin/staging`.
+# Per gitrevisions, `refs/heads/<name>` is resolved BEFORE `refs/remotes/<name>`, so a
+# local branch literally named `origin/staging` — the residue of a mistyped
+# `git checkout -b origin/staging` — silently becomes the thing every branch is measured
+# against, and `rev-parse --verify` validates the impostor rather than catching it.
+#
+# It fetches with --prune first. Without that, merged-ness is measured against whatever
+# origin/staging happened to be last time anyone fetched, and the answer is not wrong so
+# much as meaningless.
+#
+# ALWAYS EXCLUDED, and there is deliberately no flag to include them:
+#   main · staging · anything under branch/ (the archival namespace) · origin/HEAD ·
+#   the currently checked-out branch and its origin/ counterpart
+# The last of those cannot be honoured on a detached HEAD — there is no current branch
+# to protect — so both delete modes refuse to run detached. The dry run still works.
+#
+# THIS IS NOT A bin/quality STEP AND MUST NEVER BECOME ONE. Stale branches are not a
+# property of the change being pushed. Failing a push over them would be a gate that
+# punishes the wrong act — the person shipping today would pay for branches someone
+# else left behind last month. It is a convention and a tool, not a gate.
+#
+# WHAT DELETING ACTUALLY COSTS, honestly:
+#   * For a branch merged via a merge commit the NAME survives in the commit subject
+#     ("Merge pull request #N from owner/the-branch-name"). For a squash or a
+#     fast-forward merge it does not — the name is gone once the ref is, and a
+#     measured majority of this repo's sweep-able names are in that second category.
+#     So the list is printed BEFORE acting AND written to storage/logs/, because a
+#     terminal that scrolls is not an archive.
+#   * The remote list is a SNAPSHOT taken at fetch time and pushed minutes later, with
+#     no --force-with-lease (a lease is per-ref and incompatible with the batching
+#     below). A colleague who pushes to a listed branch inside that window loses that
+#     commit. The window is the reason to run this when the repo is quiet, not at the
+#     start of someone else's day.
+#   * Deleting a remote branch does not touch anyone else's clone. Their stale
+#     origin/* refs persist until they run `git fetch --prune` themselves.
+set -uo pipefail
+
+cd "$(dirname "$0")/.." || exit 2
+
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+[ -t 1 ] || { RED=''; GREEN=''; YELLOW=''; BOLD=''; DIM=''; OFF=''; }
+
+STAGING='refs/remotes/origin/staging'
+REMOTE_PREFIX='refs/remotes/origin/'
+
+usage() {
+    printf 'Usage: bin/branch-sweep [--delete-local | --delete-remote]\n'
+    printf '  no flags         dry run: print both merged sets, delete nothing\n'
+    printf '  --delete-local   delete the local merged set\n'
+    printf '  --delete-remote  delete the remote merged set (irreversible; local pass first)\n'
+    printf '\nThe two delete flags are mutually exclusive. Run local first.\n'
+}
+
+# --- flags -------------------------------------------------------------------
+MODE=dry
+if [ "$#" -gt 1 ]; then
+    printf '%s✗ one pass per invocation — never --delete-local and --delete-remote together%s\n' "$RED" "$OFF"
+    printf '  Local first: a local delete comes back from the reflog, a remote one does not.\n'
+    exit 2
+fi
+case "${1:-}" in
+    '')              MODE=dry ;;
+    --delete-local)  MODE=local ;;
+    --delete-remote) MODE=remote ;;
+    -h|--help)       usage; exit 0 ;;
+    *)               printf '%s✗ unknown flag: %s%s\n\n' "$RED" "$1" "$OFF"; usage; exit 2 ;;
+esac
+
+# --- current branch ----------------------------------------------------------
+# On a detached HEAD there is no branch to exempt, and the exemption is not optional.
+CURRENT="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [ -z "$CURRENT" ] && [ "$MODE" != dry ]; then
+    printf '%s✗ detached HEAD — the currently-checked-out-branch exemption cannot be honoured%s\n' "$RED" "$OFF"
+    printf '  git checkout <branch> first. The dry run works detached; deleting does not.\n'
+    exit 2
+fi
+
+# --- freshness ---------------------------------------------------------------
+printf '%sfetching origin --prune%s\n' "$DIM" "$OFF"
+if ! git fetch origin --prune; then
+    printf '%s✗ fetch failed — refusing to measure merged-ness against a stale %s%s\n' "$RED" "$STAGING" "$OFF"
+    exit 1
+fi
+if ! git rev-parse --verify -q "$STAGING" >/dev/null; then
+    printf '%s✗ %s does not exist — nothing to measure containment against%s\n' "$RED" "$STAGING" "$OFF"
+    exit 1
+fi
+
+# --- the filter --------------------------------------------------------------
+# Exclusions are unconditional by design. There is no flag that turns them off,
+# because every reason to want one is a reason to not be running this script.
+# Names arriving here are already stripped of refs/heads/ or refs/remotes/origin/,
+# so origin/HEAD arrives as the literal "HEAD" and is caught by the first arm.
+excluded() {
+    local b="$1"
+    case "$b" in
+        main|staging|HEAD) return 0 ;;
+        branch/*)          return 0 ;;
+    esac
+    [ -n "$CURRENT" ] && [ "$b" = "$CURRENT" ] && return 0
+    return 1
+}
+
+# Both lists are built from %(refname) — the FULL ref — not %(refname:short).
+# Two reasons, each of which bit a previous revision of this script:
+#   * %(refname:short) shortens refs/remotes/origin/HEAD to "origin", not
+#     "origin/HEAD", so the HEAD exemption never fired and origin/HEAD was
+#     excluded only as a side effect of the "this remote only" filter.
+#   * `git branch --merged` emits the pseudo-entry "(HEAD detached at <sha>)" on a
+#     detached HEAD in EVERY format, %(refname) included. Requiring the refs/heads/
+#     prefix drops it; without that it entered the list as if it were a branch name.
+LOCAL=()
+while IFS= read -r ref; do
+    case "$ref" in refs/heads/*) ;; *) continue ;; esac
+    b="${ref#refs/heads/}"
+    excluded "$b" || LOCAL+=("$b")
+done < <(git branch --merged "$STAGING" --format='%(refname)')
+
+REMOTE=()
+while IFS= read -r ref; do
+    case "$ref" in "$REMOTE_PREFIX"*) ;; *) continue ;; esac   # this remote only
+    b="${ref#"$REMOTE_PREFIX"}"
+    excluded "$b" || REMOTE+=("$b")
+done < <(git branch -r --merged "$STAGING" --format='%(refname)')
+
+# --- report ------------------------------------------------------------------
+# Printed in full, always, and tee'd to a file. A truncated list is a list nobody
+# reviewed, and for a squash-merged branch the record is the only thing that outlives
+# the ref. A scrolling terminal is not a record.
+RECORD="storage/logs/branch-sweep-$(date -u +%Y%m%dT%H%M%SZ).txt"
+[ -d storage/logs ] && [ -w storage/logs ] || RECORD="${TMPDIR:-/tmp}/branch-sweep-$(date -u +%Y%m%dT%H%M%SZ).txt"
+: > "$RECORD" || RECORD=/dev/null
+
+print_list() {
+    local label="$1"; shift
+    printf '%s%s: %d%s\n' "$BOLD" "$label" "$#" "$OFF"
+    printf '%s: %d\n' "$label" "$#" >> "$RECORD"
+    local b
+    for b in "$@"; do
+        printf '  %s\n' "$b"
+        printf '  %s\n' "$b" >> "$RECORD"
+    done
+    [ "$#" -eq 0 ] && printf '  %s(none)%s\n' "$DIM" "$OFF"
+    return 0
+}
+
+printf '\n'
+print_list 'local branches merged into origin/staging' ${LOCAL+"${LOCAL[@]}"}
+printf '\n'
+print_list 'remote branches merged into origin/staging' ${REMOTE+"${REMOTE[@]}"}
+printf '\n%srecord written to %s%s\n\n' "$DIM" "$RECORD" "$OFF"
+
+# --- the second gate ---------------------------------------------------------
+# Asserted against the exact ref about to be deleted, immediately before deleting it.
+# This is the check `git branch -d` looks like it performs and does not.
+contained() { git merge-base --is-ancestor "$1" "$STAGING"; }
+
+# --- act ---------------------------------------------------------------------
+case "$MODE" in
+    dry)
+        printf '%sdry run — nothing deleted.%s\n' "$YELLOW" "$OFF"
+        printf 'Local pass first:  bin/branch-sweep --delete-local\n'
+        printf 'Then the remote:   bin/branch-sweep --delete-remote\n'
+        ;;
+
+    local)
+        if [ "${#LOCAL[@]}" -eq 0 ]; then
+            printf '%s✓ nothing to delete locally%s\n' "$GREEN" "$OFF"
+            exit 0
+        fi
+        printf '%sdeleting %d local branches%s\n\n' "$BOLD" "${#LOCAL[@]}" "$OFF"
+        FAILED=0
+        for b in "${LOCAL[@]}"; do
+            if ! contained "refs/heads/$b"; then
+                printf '%s  refused: %s is not contained in %s%s\n' "$RED" "$b" "$STAGING" "$OFF"
+                FAILED=$((FAILED + 1))
+                continue
+            fi
+            git branch -d "$b" || FAILED=$((FAILED + 1))
+        done
+        printf '\n'
+        if [ "$FAILED" -gt 0 ]; then
+            # The filter passed something the ancestry assert refused. The filter is
+            # wrong — investigate before re-running, and never reach for -D.
+            printf '%s✗ %d branch(es) refused — the filter and the ancestry assert disagree; do not force%s\n' "$RED" "$FAILED" "$OFF"
+            exit 1
+        fi
+        printf '%s✓ %d local branches deleted (recoverable from the reflog for ~90 days)%s\n' "$GREEN" "${#LOCAL[@]}" "$OFF"
+        ;;
+
+    remote)
+        if [ "${#REMOTE[@]}" -eq 0 ]; then
+            printf '%s✓ nothing to delete on origin%s\n' "$GREEN" "$OFF"
+            exit 0
+        fi
+        # Local-first, enforced. A completed local pass leaves this set empty.
+        if [ "${#LOCAL[@]}" -ne 0 ]; then
+            printf '%s✗ %d local merged branches still present — run the recoverable pass first%s\n' "$RED" "${#LOCAL[@]}" "$OFF"
+            printf '  bin/branch-sweep --delete-local\n'
+            printf '  Its output is how the filter gets reviewed before an irreversible delete.\n'
+            exit 2
+        fi
+        # Re-assert containment on every ref before any of them is pushed. One
+        # unexpected ref aborts the whole pass rather than a batch of twenty.
+        for b in "${REMOTE[@]}"; do
+            if ! contained "$REMOTE_PREFIX$b"; then
+                printf '%s✗ %s is not contained in %s — aborting, nothing deleted%s\n' "$RED" "$b" "$STAGING" "$OFF"
+                exit 1
+            fi
+        done
+        printf '%sdeleting %d remote branches (git push origin --delete, batches of 20)%s\n' "$BOLD" "${#REMOTE[@]}" "$OFF"
+        printf '%sthis is NOT recoverable.%s\n\n' "$YELLOW" "$OFF"
+        # Batched so one rejected ref fails its batch of 20 and the rest still run,
+        # instead of a single 226-ref push aborting the whole sweep on one bad ref.
+        # xargs exits non-zero if any batch did, so a partial failure is still visible.
+        if printf '%s\n' "${REMOTE[@]}" | xargs -n 20 git push origin --delete; then
+            printf '\n%s✓ %d remote branches deleted on origin%s\n' "$GREEN" "${#REMOTE[@]}" "$OFF"
+            printf '%sother clones keep their stale origin/* refs until they fetch --prune.%s\n' "$DIM" "$OFF"
+        else
+            printf '\n%s✗ at least one batch failed — re-run the dry run to see what survived%s\n' "$RED" "$OFF"
+            exit 1
+        fi
+        ;;
+esac

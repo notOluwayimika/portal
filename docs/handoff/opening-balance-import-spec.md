@@ -66,6 +66,29 @@ struck sentence needs to see what it was.
 Rev 4 also corrects two things Rev 3 asserted and could not support: **G1 was false as written**
 (§11) and **G2 detected the wrong thing** (§11). Both are fixed below with the weaker, true claim.
 
+**Rev 5** — 2026-08-07. **R11 CONFIRMS Rev 4; it supersedes nothing.** Everything below was already
+ruled in Rev 4 and derived from the schema. What is new is that **Brookstone has now stated the same
+shape independently, in their own words** — and confirmation from the party whose money it is carries
+a different weight from our derivation. A design we reasoned our way to and a design the client
+arrived at separately are not the same artifact, even when the text matches.
+
+- **R11 — 2026-08-07, confirmed by Brookstone via the project lead.** They export closing balances
+  strictly **as at the end of the last term**, and the portal bills the new term natively. Point by
+  point, against what Rev 4 already says:
+
+  | Brookstone's words | Confirms |
+  |---|---|
+  | *"Pure arrears, zero new-term fees included"* | **R5** — and it adds §11's new precondition, below |
+  | *"Route positives to ledger charges with per-fee-type narrations, to avoid consuming active episode slots or hitting the active-invoice unique constraint"* | **R6**, reasoning and all — they reached the episode-slot and unique-constraint arguments independently |
+  | *"Net negatives per student into a single migrated payment at ACCOUNT level so `applyCreditForward` settles their new-term invoices"* | **R8** |
+  | *"Keep a single batch control total to protect the checksum"* | **R10's L2** |
+
+**R11 adds exactly one thing Rev 4 does not have, and it is not a rule — it is a precondition
+nothing can enforce.** "Pure arrears" is a claim about what a number MEANS, and §11's procedural half
+is where it goes. See §11. R11 is also **silent on `student_total_balance`**, which §2 requires and
+L1 depends on; §12 records that as an open item with the data team rather than reading the silence as
+agreement.
+
 ---
 
 ## 0. ~~What was decided, and one thing I got wrong~~ — SUPERSEDED BY R5
@@ -626,7 +649,36 @@ precondition it must be argued for on its own merits, not inherited from Rev 3.
 
 ### PROCEDURAL — not enforceable, and must not be written up as if it were
 
-Three things now, and none has a mechanism:
+Four things now, and none has a mechanism:
+
+0. **PURE ARREARS — the file contains no new-term fees (R11).** Listed first because it is the most
+   expensive assumption in the cutover, and the only one whose failure is invisible until after the
+   money has moved.
+
+   **There is nothing to check it against.** A closing balance that carries a term's fees is
+   **byte-identical** to one that does not. There is no column to compare — R5's file has one signed
+   `balance` per fee type — no schedule to compare against, because §5 is withdrawn, and no
+   arithmetic anywhere that separates *"arrears of 120,000"* from *"arrears of 20,000 plus this
+   term's 100,000"*. **L1 and L2 both pass either way**, and that is not a defect in them: they check
+   the file against **itself**, which is all they ever claimed to do. A checksum cannot tell you that
+   a number is the wrong number; only that the numbers agree with each other.
+
+   **The damage surfaces one step later and looks like a portal bug.** The native re-bill posts the
+   new term's fees on top, and the student is billed the term twice — and the first place anyone sees
+   it is a parent's statement. By then the opening charges sit in an **append-only** ledger
+   (`2026_07_19_100001_create_fee_ledger_transactions_table.php:56-60` denies DELETE), so there is no
+   tidying it away: R3's answer is a **database restore**, with everything §11's other three items
+   cost.
+
+   So it is verified **by a person, before the post, against WCBS** — not by the import. This is
+   procedural for exactly the reason the pre-post snapshot and the no-other-writes window are: **a
+   claim about what a number MEANS cannot be checked by code that only sees the number.** Writing it
+   up as a validation would be the same class of false comfort §11 exists to refuse.
+
+   **Operator step, before approving the batch:** take a sample of students and confirm against WCBS
+   that each student's stated total is the **last term's closing position** and carries none of the
+   new term's fees. Sample, name who did it, and record it with the go/no-go — the point is that a
+   human looked at the meaning, which no sample size makes automatic.
 
 1. **The pre-post snapshot.** R3's entire correction path is a restore, and a restore is only
    available if somebody took a snapshot first.
@@ -655,7 +707,9 @@ could not fire in any sequence R3 produces. A gate that cannot fire in the scena
 for is wallpaper, and leaving it in the ENFORCED half would have been worse than having nothing
 there: it would have made the procedural half look shorter than it is.
 
-**Why the procedural three cannot be automated, stated plainly so nobody proposes a checkbox.** A
+**Why the procedural four cannot be automated, stated plainly so nobody proposes a checkbox.**
+Item 0 fails for its own reason — the file cannot testify to its own meaning — and the other three
+fail for one shared reason. A
 restore happens **below the application**. The portal is not running when it occurs, it is not
 consulted, and afterwards it cannot tell that it happened — there is no row to read, no event to
 observe, no invariant to violate. The application cannot see a restore, cannot refuse one, and cannot
@@ -716,9 +770,24 @@ somebody reads.
    provenance. **Rev 4 does not add a column.** If a statement or a report needs D on the payment
    row itself, that is a schema decision to argue explicitly — not a field to slip into the
    provenance migration because it seemed useful.
-2. **How does `batch_control_total` arrive?** §1's L2 requires it and §2 requires it to be present;
-   whether it is an operator option, a control row in the CSV, or a sidecar file is unsettled, and
-   the data team has not agreed a convention. Do not invent one in code.
+2. **How does `batch_control_total` arrive — NARROWED by R11, not closed.** The figure's
+   **existence** is confirmed: Brookstone's data team is producing it (*"keep a single batch control
+   total to protect the checksum"*). What is still unsettled is **delivery** — an operator option, a
+   control row in the CSV, or a sidecar. Commit 4 still chooses, and still **must not invent a
+   convention the data team has not agreed to**.
+
+   **AND — `student_total_balance` is NOT confirmed, and this one blocks the file format.** §2
+   requires it and §1's L1 depends on it, but **R11 names only the batch grand total**; the client
+   said nothing about a per-row student total, and silence is not agreement. If the extract ships
+   with the grand total alone, **L1 has no witness**: a student whose fee type was dropped on the way
+   out of WCBS passes silently, because their remaining lines still sum to something and there is
+   nothing to compare that something to. L2 would fail — but L2 names the **batch**, so the import
+   can say *"the file is short"* and cannot say *"of whom"*. On a real extract that is the difference
+   between one student to check and every student to check.
+
+   **OPEN ITEM WITH THE DATA TEAM, blocking the file format.** Ask explicitly whether the per-student
+   stated total can be carried on every row. This is not a resolved requirement to be implemented
+   against — do not build to it, and do not quietly downgrade L1 to compensate if the answer is no.
 3. **Does `fee_type_label` need normalising for the R9 key?** The key
    `unique(school_id, batch_id, admission_number, fee_type_label)` is enforced under
    `utf8mb4_unicode_ci`, so `'Tuition'` and `'tuition'` collide at the database while PHP byte

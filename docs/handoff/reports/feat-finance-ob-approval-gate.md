@@ -204,14 +204,75 @@ rediscover it as a mystery.
 The comment-only claim on `2026_08_06_100000` was re-proved after the reword: **executing half still
 byte-identical to `c200d08`**.
 
+### R9. Round 3 — the trap gets a gate
+
+Round 2 closed by naming its own weakest part: the forcing-target trap was written in three places
+and enforced by nothing. `tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php` is the
+enforcement. **One test file, no helper** — the scope fuse was not tripped.
+
+**The invariant.** For every role a forcing migration governs, every permission the grants map gives
+that role inside the frozen namespace must appear **either** in that migration's `TARGET` literal
+**or** in an `@converges <role> <permission>` marker on a migration dated **after** it. Uncovered ⇒
+the seeder writes it and the migration revokes it on the next deploy.
+
+**Nothing is hardcoded.** The namespace and target come from reflecting the migration's own
+constants (`getConstants()` returns private ones, which is what makes it work on the anonymous class
+a migration file returns); the grants from `RbacSeeder::grantsMap()`; the markers by scanning
+`database/migrations/` with **the lint's own regex, copied verbatim from
+`bin/ci-grants-convergence-lint.php:414`**, so the two cannot disagree. "Dated after" is a plain
+string comparison on the `YYYY_MM_DD_HHMMSS_` prefix — which *is* the order Laravel runs them in, and
+that ordering is the load-bearing part: a marker on a migration running *before* the forcing one
+would be re-stripped by it.
+
+**One forcing migration exists, and the test says so rather than implying more.** `FORCING_MIGRATIONS`
+is a manual one-entry list. "Forcing" is a property of the **body** — it revokes
+`array_diff($current, $target)` — that no constant declares, and a heuristic that silently
+classified a migration as non-forcing would be a green proving nothing, which is the failure class
+this file replaces. Registering a second one is a deliberate act: add its filename, and it must
+expose `NAMESPACE` and `TARGET`; the test fails loudly rather than skipping if either is missing.
+
+**Non-vacuity guards both arms separately.** The TARGET-covered and marker-covered counts must each
+be non-zero. Today ED's nine finance grants are covered by the TARGET and 4c's three by markers on
+`2026_08_09_110000`, so both fire — if either ever falls to zero, that exemption path has stopped
+being tested and the guard is half wallpaper again. The population is asserted first (>100 migration
+files), which is `MigrationsDoNotReadTheSeederMapTest`'s lesson.
+
+**Watched red, raw.** Mutation: `PermissionEnum::FINANCE_INVOICE_GENERATE->value` added to
+`executive_director`'s slice in `grantsMap()`, with no convergence migration.
+
+```
+{"result":"failed","tests":1,"passed":0,"assertions":11,"failures":[{
+ "test":"...it_no_forcing_convergence_migration_strips_a_grant_the_seeder_map_adds_after_it",
+ "message":"these grants are written by the seeder map and then REVOKED by a forcing convergence
+ migration on the next deploy (rbac:sync, then migrate), and no later rbac:sync restores them. Ship
+ an additive convergence migration dated after the forcing one, carrying an @converges marker per
+ pair — 2026_08_09_110000_converge_opening_balance_grants.php is the worked example. See ADR 0052
+ § \"A FORCING target freezes a namespace, not a row set\".
+ --- Expected: []
+ +++ Actual:   ['executive_director + finance.invoice.generate (governed by
+                2026_08_06_100000_move_head_of_school_finance_to_executive_director.php, in neither
+                its TARGET nor any @converges marker dated after it)']"}]}
+```
+
+It names the exact pair and tells the reader what to ship. Restored; green at 11 assertions.
+
+**One thing found while writing it, worth carrying.** The first draft used
+`expect($constants)->toHaveKey('NAMESPACE', "<message>")` — Pest's second argument there is the
+expected **value**, not a message, so it asserted the constant equalled that sentence. It failed with
+`Failed asserting that two strings are equal: '<my message>' vs 'finance.'`, which is a red that
+reads as gibberish; had the constant happened to match, it would have been a green that meant
+nothing. Replaced with `expect(array_key_exists(...))->toBeTrue("<message>")` and noted at the line.
+
+The three comments now **point at the gate** instead of standing in for it — the forcing migration's
+box, ADR 0052, and the lint's exemption-1 note. `2026_08_06_100000`'s edit is comment-only for the
+third time: executing half re-proved **byte-identical to `c200d08`**.
+
 ### R8. Round-2 residuals
 
 - The `@converges` markers on `2026_08_09_110000` are **inert on the base this branch is pushed
   against** (§R3). They are correct, they are per-pair, and they are not a gate here.
-- The forcing-target trap is recorded in three places (`2026_08_06_100000`'s TARGET docblock, ADR
-  0052, the lint's exemption 1) but **nothing enforces it**. No gate will tell the next person that
-  their new `finance.*` grant needs a convergence migration; three comments will. By the wallpaper
-  principle that is the weakest part of this round, and it is a ticket I have not written.
+- ~~The forcing-target trap is recorded in three places but **nothing enforces it**.~~ **CLOSED in
+  round 3** — see §R9. It is now a test, and the three comments point at it.
 - The comment-only amendment to `2026_08_06_100000` was proved non-executing per ADR 0052's
   condition 2 (`token_get_all` comment-strip diff, since the amended block is inside the class body):
   **executing half byte-identical to `c200d08`**.

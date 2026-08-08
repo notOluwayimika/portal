@@ -139,7 +139,55 @@ Enumerate what will run (I can't list filenames from here — the clone can):
 php artisan migrate:status          # what's pending against the cloned (old) schema
 ```
 
-Then, **only after Step 1 is all-pass**:
+### 2a — `rbac:sync` runs BEFORE `migrate`, and the ordering is PROCEDURAL
+
+```bash
+php artisan rbac:sync               # BEFORE migrate — see why, below
+```
+
+**Why.** `2026_08_06_100000_move_head_of_school_finance_to_executive_director` **governs a
+role the seeder creates**. `executive_director` is new in `RbacSeeder::ROLES`, and the
+migration deliberately refuses to create the row itself — `two_factor_required` is applied
+only at role creation (`RbacSeeder.php:507-517`) and ED is in `TWO_FACTOR_REQUIRED`, so a row
+created by a migration would carry the flag **false permanently**, silently stripping
+two-factor from the one seat that can approve money leaving four different ways. Aborting
+costs one command; creating costs an invisible security downgrade.
+
+**A migration cannot run a seeder, so nothing enforces this ordering.** It is the same
+enforced-versus-procedural split §11 uses: an enforced control fails a build, a procedural one
+needs a person who knows. This is procedural, and this line is the only thing carrying it.
+
+**Before you run it**, confirm `rbac:sync` is safe on this database: `php artisan
+rbac:diff-grants` → Section A must show `missing_rows` only. **Any `extra_rows` and you STOP** —
+`rbac:sync` hard-deletes permission rows the enum no longer declares and both pivots cascade, so
+it would take runtime matrix grants with it, without an audit trace. Full procedure:
+[`rbac-grants-reconciliation.md`](rbac-grants-reconciliation.md) §2a / §2b.
+
+**If you skip this and go straight to `migrate`, here is exactly what you get** — reproduced on
+a throwaway database at the release boundary:
+
+```text
+2026_08_06_100000_create_finance_opening_balance_tables .. 305.15ms DONE
+2026_08_06_100000_move_head_of_school_finance_to_executive_director  6.71ms FAIL
+
+  move-hos-finance-to-ed ABORTED: the [executive_director] role row does not exist yet. It is
+  new in RbacSeeder::ROLES, so run `php artisan rbac:sync` first and then re-migrate. …
+```
+
+`migrate` exits **1**, `create_finance_opening_balance_tables` has **landed**, and
+`2026_08_07_*` and both `2026_08_08_*` migrations **never ran**. That looks like the
+half-applied schema this step tells you to STOP on — but it is not one. The abort is a
+**pre-flight**: it fires before any write and before the transaction opens, so nothing of that
+migration is half-applied.
+
+**Recovery is one command, then re-run:** `php artisan rbac:sync && php artisan migrate --force`.
+Measured on the same database: exit **0**, zero pending, and `head_of_school` ends with zero
+`finance.*` grants. **This is the one `migrate` failure on this release that you re-run rather
+than re-clone** — check the error names `move-hos-finance-to-ed` before treating it as such.
+
+### 2b — the migrations
+
+Then, **only after Step 1 is all-pass and 2a has run**:
 
 ```bash
 php artisan migrate --force
@@ -150,7 +198,9 @@ php artisan migrate --force
   half-applied schema. Do **not** loop `migrate`. On the clone this is cheap (drop and
   re-clone), but capture the exact error — it's the one you'd have hit in prod. The
   slice-(i) migration (`2026_07_19_130000_add_school_id_to_student_curricula`) is the
-  most likely abort point, and Step 1a is what prevents it.
+  most likely abort point, and Step 1a is what prevents it. **Exception:** the
+  `move-hos-finance-to-ed` abort in 2a, which is a pre-flight and is recovered by
+  running `rbac:sync` and re-running `migrate`.
 
 ### Reversibility — separate, via the throwaway-DB gate
 
@@ -298,7 +348,9 @@ is measuring the wrong tree.** Always regenerate before believing a green.
 | 1b | `students.school_id` null | `0` | STOP — assign School per row |
 | 1c | DB default collation | `utf8mb4_unicode_ci` | ALTER + recreate triggers (on prod too) |
 | 1d | S7 divergence A1–A3 | (record only) | note for future backfill; not a blocker |
-| 2 | `migrate --force` | exit 0 | STOP — half-applied schema, re-clone |
+| 2a | `rbac:diff-grants` Section A | `missing_rows` only | STOP on any `extra_rows` — see `rbac-grants-reconciliation.md` §2b |
+| 2a | `rbac:sync` **before** migrate | exit 0 | PROCEDURAL — nothing enforces the ordering; skipping it aborts `move-hos-finance-to-ed` |
+| 2 | `migrate --force` | exit 0 | STOP — half-applied schema, re-clone. **Except** a `move-hos-finance-to-ed` abort: run `rbac:sync`, re-run `migrate` |
 | 2 | `bin/quality-clean-db` | four paths green | fix the `down()` bug it names |
 | 3 | `audit:verify-immutability` | exit 0 | triggers missing — re-apply |
 | 3 | `rbac:sync` | clean, super_admin healed | fix null-team seed context |

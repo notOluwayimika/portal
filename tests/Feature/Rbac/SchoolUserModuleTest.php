@@ -127,6 +127,53 @@ it('D2 — an admin granting `admin` is rejected; a super_admin doing it succeed
     expect($this->target->fresh()->hasRole('admin'))->toBeTrue();
 });
 
+it('D2 — `executive_director` is refused to an rbac.manage_users holder and allowed to a super_admin', function () {
+    // ED is the sole checker on all four built finance pairs. It is deliberately NOT in
+    // SCHOOL_ROLES: that list is gated on `rbac.manage_users`, which a school admin holds, so
+    // listing ED there would let a school admin grant themselves the top financial approver.
+    // It rides the same super-admin-only append as `admin`.
+    //
+    // The first half is the load-bearing one — `$this->admin` HOLDS rbac.manage_users, which is
+    // exactly the actor this refusal exists for. Checked under the school's team context, since
+    // that is the only context in which a school-scoped grant resolves.
+    setPermissionsTeamId($this->school->id);
+    $this->admin->unsetRelation('roles');
+    expect($this->admin->can('rbac.manage_users'))->toBeTrue();
+    setPermissionsTeamId(null);
+
+    sum_put($this, $this->admin, $this->target, ['executive_director'])
+        ->assertRedirect()
+        ->assertSessionHasErrors('roles');
+
+    setPermissionsTeamId($this->school->id);
+    expect($this->target->fresh()->hasRole('executive_director'))->toBeFalse();
+
+    config(['auth.gate_before_superadmin' => true]);
+    sum_put($this, sum_superAdmin(), $this->target, ['executive_director'])->assertStatus(302);
+
+    setPermissionsTeamId($this->school->id);
+    expect($this->target->fresh()->hasRole('executive_director'))->toBeTrue();
+});
+
+it('offers `executive_director` in assignableRoles only to a super_admin actor', function () {
+    // The UI mirror must agree with the write, or the module presents a control that 422s.
+    $this->actingAs($this->admin)->withSession(['school_id' => $this->school->id])
+        ->get('/setup/users')
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('assignableRoles', fn ($roles) => ! collect($roles)->contains('executive_director')),
+        );
+
+    config(['auth.gate_before_superadmin' => true]);
+    $superAdmin = sum_superAdmin();
+    $superAdmin->schools()->syncWithoutDetaching([$this->school->id]);
+
+    $this->actingAs($superAdmin)->withSession(['school_id' => $this->school->id])
+        ->get('/setup/users')
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('assignableRoles', fn ($roles) => collect($roles)->contains('executive_director')),
+        );
+});
+
 // ── D3: no self-modification ───────────────────────────────────────────────
 
 it('D3 — an admin editing their own roles is denied (closes demote-self-then-locked-out)', function () {

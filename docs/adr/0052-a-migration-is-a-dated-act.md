@@ -108,6 +108,91 @@ passes. **So it aborts, and its sibling abort on a missing target permission row
 reason. Neither converts.**
 
 
+### The same boundary, applied to `DutySeparation`
+
+Freezing the target did not freeze the guard. The four converted migrations stopped reading the
+seeder map for their **target** and went on reading live authority state for their **abort** — and a
+2026-08-02 migration would still roll back for a both-sides state assembled entirely from roles it
+does not govern. *(Found by the implementing agent after the freeze shipped; the advisor specified the
+preservation of that abort and never looked inside it. This section exists because of that finding.)*
+
+The boundary is **dated act vs runtime question**, not which primitive is called. `DutySeparation` has
+three populations of caller, and only one of them needed narrowing.
+
+Counts below are **executable call sites**, excluding `DutySeparation` itself and excluding mentions
+in comments, re-derived with
+`grep -rn "DutySeparation::" app database bin --include='*.php'` (20 in total, 2026-08-08). The
+classification is the load-bearing part; the numbers are given so a reader can reproduce them rather
+than trust them. **The first two counts were wrong when this section was written** — 7 and 4 — and are
+corrected here; the classification they described was and is right.
+
+**RUNTIME — 6 files, 11 call sites. Leave live.** `User::assignRole` (`app/Models/User.php:412`),
+`SyncRolePermissionsRequest:112`, `RbacOverview:67,207`, `SchoolRbacOverview:95,308`,
+`CheckStaffingReadiness:37,50,51`, `AuditDutySeparation:53,71`. Each asks a question about NOW: may
+this assignment proceed, is this school staffed, who currently holds both sides. A live answer is the
+only correct one, and freezing any of them would be this ADR's defect in reverse.
+
+**DATED ACTS THAT REPORT — 5 migrations, 5 call sites. Leave live.** `DutySeparation::holdsViaGrant`
+in the `report()` methods of `2026_08_02:252`, `2026_08_03:363`, `2026_08_04:222`, `2026_08_05:297`
+and `2026_08_06:435`. (`2026_08_03` was omitted from the original list; it has a `report()` like the
+rest.) A report of current state is exactly what they are; a frozen holder count would be a lie about
+the database in front of you. Do not freeze these either.
+
+**DATED ACTS THAT DECIDE — 2 walks, 4 call sites. Scoped.** The post-write walks in `2026_08_03`
+(`:276` `enforcedPairs`, `:284` `violations`) and `2026_08_06` (`:325`, `:337`). These read live state
+to decide whether to **roll back a dated act**, which is the one place the distinction bites. Both are
+now scoped to what their own run WROTE:
+
+- The filter is by PERMISSION, not by user. The walk still visits every user in every school; what
+  narrowed is which findings it will roll back for. A pair is the migration's to block on only when at
+  least one of its two sides is a permission **this run actually granted** — not the frozen target,
+  the grants the diff wrote on this run.
+- **Revocations are out of scope in both directions**: a revoke can only CLEAR a both-sides state,
+  never create one. For `2026_08_06`, whose act is a transfer, that means the scope is the granted
+  side only.
+- A second, idempotent run grants nothing and therefore flags nothing — correct, because it wrote
+  nothing.
+- Violations outside that scope are **reported and continued past**: `user#<id> @ school#<id>`,
+  counted, and the count repeated in the `AFTER` report, with the echo naming
+  `php artisan finance:audit-duty-separation` as their owner. They are real and they matter; they are
+  not a migration's to block on.
+
+This answers part 1 of the two-part test rather than amending it. A violation the run did not create
+is not a hole the run's own writes dug.
+
+#### And say what the narrowing costs, because for `2026_08_06` it costs the whole abort
+
+Narrowing to `$grantedThisRun` is right, and for `2026_08_06` it makes that walk's throw
+**unreachable on every sequence `rbac:sync` produces**. That is not a defect of the narrowing; it is
+what honesty about the narrowing looks like, and it must be written down or the abort reads as a
+guarantee it does not give.
+
+`executive_director` is new in `RbacSeeder::ROLES`, so `syncLogged` snapshots `$existingRoles`
+(`RbacSeeder.php:492`) **before** creating it (`:507`) and ED takes the whole-slice `: $permissions`
+branch (`:542-544`), receiving all nine. `TARGET['executive_director']` is those same nine, so its
+grant diff is empty. `head_of_school`'s target is `[]`; `accounts_supervisor`'s is a subset of what it
+holds. Every branch grants nothing, so `$grantedThisRun` is empty and **every** finding is out of
+scope. The transfer's only real work is the revoke half — which is the entire reason that file exists
+— and a revoke can never put a side into `$grantedThisRun`.
+
+Measured on a production-shaped throwaway database (`rbac:sync`, then HoS and AS left holding their
+pre-seat-move grants because `rbac:sync` revokes nothing, then one user holding `executive_director`
+alongside `accounts_officer`): the walk found **eight** both-sides findings for that user — all four
+ED pairs, both directions — reported every one as out of scope, and `migrate` exited 0.
+
+Two consequences worth stating rather than leaving to be rediscovered:
+
+1. **A test that reaches such a throw proves the branch EXECUTES, not that it GUARDS.** Say so in the
+   test, or the next reader counts it as coverage. What covers the ED direction is
+   `DutySeparation::assertAssignmentAllowed` at grant time (`app/Models/User.php:412`), with
+   `finance:audit-duty-separation` as the detector for pairings that predate it.
+2. **Keep the throw anyway.** It costs nothing and guards a path nobody has enumerated. Deleting an
+   abort because today's sequences cannot reach it is how the next sequence gets no guard at all.
+
+`2026_08_03`'s walk is different and is **not** covered by this: its act is an ADD, its target grants
+three maker sides, and its `$grantedThisRun` is non-empty whenever there is drift to converge — which
+is the case the replay in the carve-out below exercises.
+
 ### Corollary: an applied migration must not be edited
 
 The decision above rules that a migration is a **dated act** rather than a live query. The same
@@ -138,6 +223,102 @@ exit code from `migrate:rollback` cannot see it. Only reading the resulting sche
 This is the same class as the `--step=N` audit error already recorded in `docs/testing.md`: a
 migration command that exits 0 having done something other than what you assumed, with nothing in the
 output to say so.
+
+#### The carve-out: `2026_08_03`, edited after it had already applied
+
+`feat/executive-director-role`'s commit `17da5c3` edits the executing half of
+`2026_08_03_100000_converge_finance_change_grants`, a migration applied long before this corollary
+existed. It narrows the post-write duty-separation walk's abort predicate — precisely the thing the
+rule above forbids, because replay now does something the original run did not.
+
+**The edit stands.** Not by seniority and not by analogy: by four conditions, each proved on a
+throwaway database rather than argued.
+
+**1. Neither sanctioned exit exists for this file.** The rule offers two: roll back first, or ship a
+new dated migration. `2026_08_03`'s `down()` is a deliberate, documented no-op, so rolling it back
+restores nothing and re-applying it is simply a replay — the exit is a tautology here. And no new
+dated migration can change an earlier migration's abort predicate; nothing a later file writes stops
+`2026_08_03::up()` throwing on the next replay. The narrowing is not portable to another file, which
+is what makes this a carve-out rather than a shortcut.
+
+**2. Left alone the file is unreplayable.** Replayed on a from-zero throwaway database seeded by
+`rbac:sync` at today's map, with one user holding `executive_director` alongside a role granting only
+`finance.credit-note.submit`, and `2026_08_03`'s `migrations` row cleared:
+
+```
+converge-finance-change-grants ABORTED (rolled back): 2 user(s) would hold both sides of a finance
+maker-checker pair after convergence — user#2 @ school#1 finance.credit-note.submit<>finance.credit-
+note.approve; user#2 @ school#1 finance.credit-note.submit<>finance.credit-note.reject.
+```
+
+`migrate` exited 1 and the `migrations` row was never written — so the ADD-side gap this migration
+exists to close stays open, and no `migrate` command can close it. Read the pair it aborted over:
+`finance.credit-note.*` is in **neither** of the two namespaces this migration governs, and the state
+was assembled from two roles it cannot touch. The narrowed file, same database, same planted state,
+reports both findings, names `finance:audit-duty-separation` as their owner and **commits** — exit 0,
+the three maker grants landed. Replaying `2026_08_03` and `2026_08_06` together in filename order
+ends with `head_of_school` holding zero `finance.*` grants and `accounts_officer` holding its maker
+side. The dated act, reproduced.
+
+The narrowing therefore does not rewrite the act. It is the only version of the file that can still
+perform it.
+
+**3. It is behaviour-identical on the state the original run met.** The out-of-scope set was empty on
+2026-08-02 — it had to be, or that run would have aborted instead of committing. With that set empty
+the two versions are the same program: same diff, same writes, same activity rows, same `AFTER`
+counts, differing only by an `out-of-scope both-sides findings=0` field in one echo. This is the same
+property that made the four target freezes behaviour-preserving, and it is why the divergence this
+corollary was written from — an applied `up()` and a `down()` describing different shapes — cannot
+arise here.
+
+**4. The pure from-zero path decides nothing, and it is the first thing anyone will try.** On
+`migrate` against an empty database the walk is **unreachable**; the fresh-install guard keyed on the
+permission substrate returns first, identically on both versions:
+
+```
+2026_08_03_100000_converge_finance_change_grants   converge-finance-change-grants: finance RBAC
+substrate unseeded (no finance-change permissions) — nothing to converge.
+```
+
+A from-zero replay that does not abort is therefore not evidence the abort is harmless. The proof
+above seeds the substrate before clearing the `migrations` row, which is what makes the walk
+reachable at all.
+
+**The scope of the carve-out.** An applied migration may be edited only when **all four** hold: its
+`down()` is a documented no-op, so no `up()`/`down()` shape divergence is possible; the edit is
+provably behaviour-identical on the state the original run met; the file is otherwise unreplayable;
+and no new dated migration could carry the change. The replay evidence goes in the branch's
+implementation report, raw. Anything failing one of the four goes back to the two options above.
+
+#### What the corollary governs is the EXECUTING half — a comment is not in scope
+
+The rule above says "an applied migration must not be edited", and read literally that forbids fixing
+a comment that has gone false — which would mean a file's prose can only ever get more wrong. It was
+never the intent, and the practice already says so: `2026_08_08_100000`'s retraction box was added
+after that migration had applied to two databases, amending the docblock and leaving `up()` and
+`down()` untouched.
+
+**So: the corollary governs `up()` and `down()`. Comments may be corrected at any time**, on three
+conditions.
+
+1. **Retract, do not rewrite.** Strike the superseded text so it stays readable, and box what changed
+   and when. The struck sentences are the reasoning the next author would otherwise reconstruct from
+   scratch, and a silently-edited comment teaches nobody why it went. `2026_08_08_100000:13-35` is the
+   form.
+2. **Prove the executing half is untouched, and paste the proof.** For a docblock above the class,
+   `diff <(git show <ref>:<file> | sed -n '/^return new class/,$p') <(sed -n '/^return new class/,$p' <file>)`.
+   That slice does **not** work when the amended comment is inside the class body — there, strip
+   comments from both revisions with `token_get_all` and diff the remainder.
+3. **Narrow the claim to match.** "Executing half byte-identical to `<ref>`", never "byte-identical".
+   The wider claim is the one that stops being true the moment you touch a comment, and it was never
+   the claim that mattered.
+
+`2026_08_06_100000_move_head_of_school_finance_to_executive_director`'s post-write walk comment was
+corrected this way on 2026-08-08 (see the section above on what the narrowing costs). It needs no
+carve-out on the four conditions for a second reason: it has **never applied to an environment that
+persists** — it is on an unmerged branch, and every run was against a throwaway replay database
+created and dropped in the same session. The corollary exists because a file and a **live** database
+diverge; there is no such database here.
 
 ## The trade, stated rather than buried
 

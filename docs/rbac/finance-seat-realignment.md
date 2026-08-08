@@ -1,5 +1,17 @@
 # Finance seat realignment — 2026-08-01
 
+> **SUPERSEDED IN PART, 2026-08-04 — the CHECKER column below is no longer current.**
+> Brookstone moved every finance checker side to a new `executive_director` role: the five grants
+> this document gives `head_of_school` (finance.access + fee-schedule and discount-policy
+> approve/reject) and the four it gives `accounts_supervisor` (credit-note and invoice-void
+> approve/reject). `head_of_school` now holds NO finance grant at all; `accounts_supervisor` is a
+> maker-and-viewer seat holding `finance.access` + `finance.fee-schedule.change.submit`. `principal`
+> keeps `finance.access` deliberately. See `docs/handoff/executive-director-role-brief.md` and
+> `database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php`.
+>
+> The 2026-08-01 narrative below is left intact as the dated record of what was decided then. Read it
+> for the maker sides and the rename, not for who approves.
+
 Realigns the finance roles to the five seats Brookstone's business actually has, moves the grants to
 match the answered authority matrix, and removes an approval authority `principal` was never sanctioned
 to hold. One commit: `RbacSeeder` (roles + grants), a rename migration, the readiness label fix, a test,

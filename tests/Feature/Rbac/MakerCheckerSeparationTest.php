@@ -404,7 +404,7 @@ it('keeps the Policy and the DB constraint agreeing on the NULL case', function 
 //
 // The role-level SoD test above proves no ONE role holds both sides. Nothing there stops a USER
 // from accumulating both by holding two roles (the exact dev-data finding: a user with
-// accounts_officer + accounts_supervisor). The DB CHECK still makes self-approval impossible; what a
+// accounts_officer + the credit-note checker seat). The DB CHECK still makes self-approval impossible; what a
 // both-sides user creates is a CONFIGURATION hole (approve a colleague's work in both directions),
 // which these DETECT — they never refuse a grant.
 
@@ -446,7 +446,9 @@ function plantBothSidesFinanceUser(School $school): User
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'accounts_officer'); // maker — allowed
 
-    $director = Role::where('name', 'accounts_supervisor')->where('guard_name', 'web')->firstOrFail();
+    // executive_director since 2026-08-04 — it holds the credit-note and void checker sides that
+    // accounts_supervisor held until then. AS is now maker-and-viewer and would plant no violation.
+    $director = Role::where('name', 'executive_director')->where('guard_name', 'web')->firstOrFail();
     DB::table('model_has_roles')->insert([
         'role_id' => $director->id,
         'model_type' => User::class,
@@ -460,7 +462,7 @@ function plantBothSidesFinanceUser(School $school): User
 
 it('DETECTS a user who accumulates both sides across two roles (the dev-data shape)', function () {
     // The role guard forbids one role holding both; this user holds two roles that together do —
-    // exactly user#2 (admin + accounts_officer + accounts_supervisor) in the dev audit. Planted raw
+    // the dev-audit shape: one user holding the maker seat and the checker seat together. Planted raw
     // because grant-time enforcement now refuses this via the spatie API.
     $school = al_makeSchool();
     $user = plantBothSidesFinanceUser($school);

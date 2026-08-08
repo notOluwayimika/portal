@@ -77,9 +77,6 @@ function ccStaff(School $school, string $role): User
 }
 
 it('ARM 1 — converges the drift, leaves principal/head_of_school untouched, closes the GAP', function () {
-    $principalBefore = ccNsGrants('principal');
-    $hosBefore = ccNsGrants('head_of_school');
-
     // Staff a maker seat (AO) and a checker seat (HoS) in one school — distinct users.
     $school = School::factory()->create();
     ccStaff($school, 'accounts_officer');
@@ -99,9 +96,28 @@ it('ARM 1 — converges the drift, leaves principal/head_of_school untouched, cl
         ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue()
         ->and(ccGlobalRole('accounts_supervisor')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 
-    // #186's settlement is byte-identical — widening $governed to five disturbed nothing.
-    expect(ccNsGrants('principal'))->toBe($principalBefore)
-        ->and(ccNsGrants('head_of_school'))->toBe($hosBefore);
+    // STRONGER THAN THE ASSERTION THIS REPLACED, and map-independent. It used to say principal and
+    // head_of_school came out "untouched" — a comparison against whatever the live seeder map had put
+    // there, which stopped being true when the 2026-08-04 seat move emptied HoS's finance slice while
+    // this 2026-08-02 migration's behaviour did not change at all.
+    //
+    // Under the freeze the honest claim is the whole target: after up(), EVERY governed role's
+    // namespace slice equals the frozen literal. Written out here as literals rather than read from
+    // the migration's const — two copies is the point; a test that reads the constant it checks
+    // proves only that PHP can read a constant.
+    expect(ccNsGrants('principal'))->toBe([])
+        ->and(ccNsGrants('head_of_school'))->toBe([
+            'finance.discount-policy.change.approve',
+            'finance.discount-policy.change.reject',
+            'finance.fee-schedule.change.approve',
+            'finance.fee-schedule.change.reject',
+        ])
+        ->and(ccNsGrants('accounts_officer'))->toBe([
+            'finance.discount-policy.change.submit',
+            'finance.fee-schedule.change.submit',
+        ])
+        ->and(ccNsGrants('accounts_supervisor'))->toBe(['finance.fee-schedule.change.submit'])
+        ->and(ccNsGrants('finance_lead'))->toBe(['finance.discount-policy.change.submit']);
 
     // GAP is gone.
     expect(ccPairCovered($school->id, 'finance.discount-policy.change.submit', 'finance.discount-policy.change.approve'))->toBeTrue()
@@ -153,16 +169,6 @@ it('ARM 4 — user-scoped pre-flight bites: a user holding accounts_supervisor +
     // passes). The convergence then ADDS the maker and retroactively creates the both-sides state —
     // exactly the hazard the assignment-time guard cannot catch, because there is no assignment.
     ccPlantDrift();
-
-    // §9 step 4c added a SECOND maker to accounts_supervisor — finance.opening-balance.submit —
-    // whose checker sits on head_of_school. That pair is nothing to do with this migration's drift,
-    // but it makes the dual-hat assignment below illegal at ASSIGNMENT time, before the migration is
-    // ever reached: the test would then abort on the wrong pair and stop exercising the migration's
-    // user-scoped pre-flight at all. Revoked HERE and not in ccPlantDrift(), because it is a
-    // precondition of this arm, not part of the drift the other arms are about. Nothing is asserted
-    // about it; the throw asserted below still names the fee-schedule pair.
-    ccGlobalRole('accounts_supervisor')->revokePermissionTo('finance.opening-balance.submit');
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     $school = School::factory()->create();
     $dual = User::factory()->create(['school_id' => $school->id]);
@@ -230,4 +236,53 @@ it('ARM 6 — a missing governed role is SKIPPED and reported; the other governe
         ->and($output)->toContain('finance_lead')
         // Per-role, not a bail-out — which is the whole difference from the abort this replaced.
         ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
+});
+
+it('ARM 7 — a both-sides user this run did NOT create is REPORTED, not rolled back', function () {
+    // THE NARROWING, ARMED. This migration grants the three `*.change.submit` maker sides. A user
+    // holding both sides of the CREDIT-NOTE pair involves neither of them — it is a both-sides state
+    // that existed before this run and that this run cannot have caused. Under ADR 0052 the walk
+    // reports it and commits; before the narrowing it rolled the whole migration back for it.
+    //
+    // ARM 4 is the other half of this pair of arms and must stay green: there the violation IS created
+    // by this run's own grant of the fee-schedule maker, so it still throws and still rolls back.
+    ccPlantDrift();
+
+    $school = School::factory()->create();
+    $dual = User::factory()->create(['school_id' => $school->id]);
+
+    // A bespoke maker seat holding ONLY finance.credit-note.submit. Deliberately not
+    // accounts_officer or finance_lead: both of those also hold a `*.change.submit` that THIS RUN
+    // grants, which would make the user in-scope through a second pair and prove nothing about the
+    // narrowing. The credit-note pair is the one this migration touches neither side of.
+    $maker = Role::create(['name' => 'credit_note_maker_only', 'guard_name' => 'web']);
+    $maker->givePermissionTo('finance.credit-note.submit');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // Both assigned RAW: grant-time enforcement refuses this pairing through the spatie API, which is
+    // exactly why a migration is the only thing that can meet it already in place.
+    foreach ([$maker->id, ccGlobalRole('executive_director')->id] as $roleId) {
+        DB::table('model_has_roles')->insert([
+            'role_id' => $roleId,
+            'model_type' => User::class,
+            'model_id' => $dual->id,
+            'school_id' => $school->id,
+        ]);
+    }
+    $dual->flushSchoolAccessCache();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    ob_start();
+    convergeMigration()->up();
+    $output = (string) ob_get_clean();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect($output)->toContain('did NOT create')
+        ->and($output)->toContain("user#{$dual->id} @ school#{$school->id}")
+        ->and($output)->toContain('finance:audit-duty-separation')
+        // ...and the migration COMMITTED: the three maker grants landed. A rollback would leave them
+        // stripped, which is the regression this arm exists to catch.
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue()
+        ->and(ccGlobalRole('accounts_officer')->fresh()->hasPermissionTo('finance.discount-policy.change.submit'))->toBeTrue()
+        ->and(ccGlobalRole('accounts_supervisor')->fresh()->hasPermissionTo('finance.fee-schedule.change.submit'))->toBeTrue();
 });

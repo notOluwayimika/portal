@@ -73,7 +73,9 @@ class DriveCastSeeder extends Seeder
     private function seedCast(School $schoolA, School $schoolB): void
     {
         $this->maker = $this->driveUser('maker@drive.test', $schoolA, 'accounts_officer');
-        $this->checker = $this->driveUser('checker@drive.test', $schoolA, 'accounts_supervisor');
+        // executive_director since 2026-08-04 — it holds every finance checker side. accounts_supervisor
+        // is now maker-and-viewer and could not approve anything the drive walks through.
+        $this->checker = $this->driveUser('checker@drive.test', $schoolA, 'executive_director');
 
         // The one-permission checker — the exact user the per-feed 403-tolerant queue was written
         // for. A dedicated role holding ONLY the void checker permissions (legal under the grant

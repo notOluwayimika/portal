@@ -83,12 +83,55 @@ belonging to no School, which `BelongsToSchool` and every scope silently mis-han
 
 Only after steps 1 and 2 are zero.
 
-|                    |                                                                        |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Check**          | `php artisan migrate --force`                                          |
-| **Pass criterion** | exit 0                                                                 |
-| **Failure action** | STOP — see "if migrate fails mid-run" below. Do **not** re-run blindly |
-| **Gate**           | Human-executed; repo-verified that the chain applies cleanly from zero |
+### 3a — `rbac:sync` FIRST — the ordering is procedural and nothing enforces it
+
+|                    |                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| **Check**          | `php artisan rbac:diff-grants`, then `php artisan rbac:sync` — **before** `migrate`                                 |
+| **Pass criterion** | diff-grants Section A shows `missing_rows` only; `rbac:sync` exits 0                                                |
+| **Failure action** | Any `extra_rows` in Section A → **STOP, do not run `rbac:sync`** — see `rbac-grants-reconciliation.md` §2b          |
+| **Gate**           | **Human-executed and PROCEDURAL.** A migration cannot run a seeder, so no gate, lint or test can enforce this order |
+
+**Why this exists as a step.** `2026_08_06_100000_move_head_of_school_finance_to_executive_director`
+**governs a role the seeder creates.** `executive_director` is new in `RbacSeeder::ROLES`,
+and the migration deliberately refuses to create the row: `two_factor_required` is applied
+only at role creation (`RbacSeeder.php:507-517`) and ED is in `TWO_FACTOR_REQUIRED`, so a row
+created by a migration would carry the flag **false permanently** — silently stripping
+two-factor from the one seat that can approve money leaving four different ways. Aborting
+costs one command; creating costs an invisible security downgrade.
+
+This is §11's enforced-versus-procedural split in its clearest form: an enforced control fails
+a build, a procedural one needs a person who knows. **This line is the only thing carrying
+it**, and `bin/quality-clean-db` cannot cover it — that script migrates from **zero**, where
+the migration's fresh-install guard returns before the pre-flight is ever reached.
+
+**What a skipped 3a looks like** — reproduced on a throwaway database at the release boundary:
+
+```text
+2026_08_06_100000_create_finance_opening_balance_tables .. 305.15ms DONE
+2026_08_06_100000_move_head_of_school_finance_to_executive_director  6.71ms FAIL
+
+  move-hos-finance-to-ed ABORTED: the [executive_director] role row does not exist yet. It is
+  new in RbacSeeder::ROLES, so run `php artisan rbac:sync` first and then re-migrate. …
+```
+
+`migrate` exits **1**; `create_finance_opening_balance_tables` has landed; `2026_08_07_*` and
+both `2026_08_08_*` migrations never ran.
+
+**This is NOT the half-applied schema below, and must not be treated as one.** The abort is a
+pre-flight: it throws before any write and before the transaction opens, so nothing of that
+migration is partially applied. **Recovery is `php artisan rbac:sync && php artisan migrate
+--force`** — measured on the same database: exit **0**, zero pending, `head_of_school` ends
+with zero `finance.*` grants.
+
+### 3b — migrate
+
+|                    |                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Check**          | `php artisan migrate --force`                                                                                                                              |
+| **Pass criterion** | exit 0                                                                                                                                                     |
+| **Failure action** | STOP — see "if migrate fails mid-run" below. Do **not** re-run blindly. **Unless** the error names `move-hos-finance-to-ed`: that one is 3a, and you re-run |
+| **Gate**           | Human-executed; repo-verified that the chain applies cleanly from zero                                                                                     |
 
 **If migrate fails mid-run:** MySQL DDL is **not transactional**. A migration that
 fails partway leaves a **half-applied schema**, and the same is true in reverse for a
@@ -96,6 +139,9 @@ failed `down()` — this was observed directly during the four-path audit, where
 aborted `down()` left the database in a state the next attempt could not parse. Do not
 loop `migrate`. Capture the error, and treat recovery as restore-from-backup unless the
 partial state is understood.
+
+**The one exception, named so nobody restores a backup over it:** a `move-hos-finance-to-ed
+ABORTED` error is a pre-flight refusal, not a partial write. Run 3a and re-run `migrate`.
 
 ---
 

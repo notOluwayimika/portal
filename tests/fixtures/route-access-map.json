@@ -260,6 +260,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -287,6 +288,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -319,6 +321,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -338,6 +341,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -853,12 +857,65 @@
             "super_admin"
         ]
     },
+    "GET /api/notifications": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "GET /api/notifications-queue-health": {
+        "auth": true,
+        "roles": [
+            "super_admin"
+        ]
+    },
+    "GET /api/notifications/unread-count": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "GET /api/outstanding-comments": {
         "auth": true,
         "roles": [
             "admin",
             "head_of_school",
             "principal",
+            "super_admin"
+        ]
+    },
+    "GET /api/parent/wards": {
+        "auth": true,
+        "roles": [
+            "guardian",
             "super_admin"
         ]
     },
@@ -1147,8 +1204,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1156,7 +1213,7 @@
     "GET /api/v1/finance/credit-notes/pending": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "GET /api/v1/finance/discount-policies": {
@@ -1165,8 +1222,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1174,13 +1231,13 @@
     "GET /api/v1/finance/discount-policy-changes/pending": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "GET /api/v1/finance/fee-schedule-changes/pending": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "GET /api/v1/finance/fee-schedules": {
@@ -1189,8 +1246,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1201,8 +1258,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1213,8 +1270,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1225,8 +1282,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1234,7 +1291,7 @@
     "GET /api/v1/finance/void-requests/pending": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "GET /boarding-parent/behavioral-assessments": {
@@ -1292,8 +1349,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1301,8 +1358,7 @@
     "GET /finance/approvals": {
         "auth": true,
         "roles": [
-            "accounts_supervisor",
-            "head_of_school"
+            "executive_director"
         ]
     },
     "GET /finance/students/{student}/statement": {
@@ -1311,8 +1367,8 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "executive_director",
             "finance_lead",
-            "head_of_school",
             "principal",
             "super_admin"
         ]
@@ -1324,6 +1380,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1393,6 +1450,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1406,6 +1464,13 @@
         ]
     },
     "GET /notices": {
+        "auth": true,
+        "roles": [
+            "admin",
+            "super_admin"
+        ]
+    },
+    "GET /notifications/queue-health": {
         "auth": true,
         "roles": [
             "admin",
@@ -1460,6 +1525,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1496,6 +1562,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1522,6 +1589,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1541,6 +1609,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1560,6 +1629,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1579,6 +1649,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1712,6 +1783,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1799,6 +1871,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1818,6 +1891,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1837,6 +1911,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1856,6 +1931,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1875,6 +1951,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1894,6 +1971,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1913,6 +1991,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -1932,6 +2011,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2052,6 +2132,26 @@
             "super_admin"
         ]
     },
+    "PATCH /api/notifications/{uuid}/read": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "PATCH /api/student-curricula/{studentCurriculum}": {
         "auth": true,
         "roles": [
@@ -2140,6 +2240,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2475,6 +2576,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2494,6 +2596,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2534,6 +2637,86 @@
         "roles": [
             "admin",
             "super_admin"
+        ]
+    },
+    "POST /api/notifications/read-all": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/notifications/seen": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/notifications/ses-events": {
+        "auth": false,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
+    "POST /api/notifications/{notification}/actions/{action}": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
         ]
     },
     "POST /api/psychomotor-skills": {
@@ -2677,6 +2860,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2726,13 +2910,13 @@
     "POST /api/v1/finance/credit-notes/{creditNote}/approve": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/credit-notes/{creditNote}/reject": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/discount-policy-changes": {
@@ -2746,13 +2930,13 @@
     "POST /api/v1/finance/discount-policy-changes/{change}/approve": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/discount-policy-changes/{change}/reject": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/fee-schedule-changes": {
@@ -2766,13 +2950,13 @@
     "POST /api/v1/finance/fee-schedule-changes/{change}/approve": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/fee-schedule-changes/{change}/reject": {
         "auth": true,
         "roles": [
-            "head_of_school"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/fee-schedules": {
@@ -2831,13 +3015,13 @@
     "POST /api/v1/finance/void-requests/{voidRequest}/approve": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "POST /api/v1/finance/void-requests/{voidRequest}/reject": {
         "auth": true,
         "roles": [
-            "accounts_supervisor"
+            "executive_director"
         ]
     },
     "POST /dashboard/refresh": {
@@ -2858,6 +3042,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2883,6 +3068,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2902,6 +3088,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2921,6 +3108,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2948,6 +3136,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -2999,6 +3188,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3018,6 +3208,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3037,6 +3228,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3056,6 +3248,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3075,6 +3268,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3305,6 +3499,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3331,6 +3526,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",
@@ -3381,6 +3577,7 @@
             "accounts_supervisor",
             "admin",
             "boarding_parent",
+            "executive_director",
             "finance_lead",
             "form_teacher",
             "guardian",

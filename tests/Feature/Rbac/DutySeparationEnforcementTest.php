@@ -24,8 +24,13 @@ uses(RefreshDatabase::class);
  *
  * The enforced pairs today (all Finance): credit-note.approve/reject ↔ credit-note.submit and
  * invoice.void-request.approve/reject ↔ invoice.void-request.submit. In the seeded map:
- *   accounts_officer = MAKER  (credit-note.submit + void-request.submit)
- *   accounts_supervisor  = CHECKER (credit-note + void-request approve/reject)
+ *   accounts_officer   = MAKER   (credit-note.submit + void-request.submit)
+ *   executive_director = CHECKER (credit-note + void-request approve/reject)
+ *
+ * The CHECKER seat was `accounts_supervisor` until 2026-08-04, when Brookstone moved every finance
+ * checker side to the new `executive_director` role. AS now holds `finance.access` and
+ * `finance.fee-schedule.change.submit` only — both maker-or-viewer, so AS + AO is no longer a
+ * both-sides pair and would no longer throw. Naming ED here is what keeps these arms about the guard.
  */
 beforeEach(fn () => $this->seed(DatabaseSeeder::class));
 
@@ -36,7 +41,7 @@ it('REFUSES assigning the checker role to a user who already holds the maker (ma
     $user = al_makeUser($school->id);
     $user->grantSchoolAccess($school, 'accounts_officer'); // maker — allowed
 
-    expect(fn () => $user->grantSchoolAccess($school, 'accounts_supervisor'))
+    expect(fn () => $user->grantSchoolAccess($school, 'executive_director'))
         ->toThrow(DutySeparationViolationException::class);
 
     // Nothing landed: the checker role was refused before the write.
@@ -48,14 +53,14 @@ it('REFUSES assigning the checker role to a user who already holds the maker (ma
 it('REFUSES assigning the maker role to a user who already holds the checker (checker → maker mirror)', function () {
     $school = al_makeSchool();
     $user = al_makeUser($school->id);
-    $user->grantSchoolAccess($school, 'accounts_supervisor'); // checker — allowed
+    $user->grantSchoolAccess($school, 'executive_director'); // checker — allowed
 
     expect(fn () => $user->grantSchoolAccess($school, 'accounts_officer'))
         ->toThrow(DutySeparationViolationException::class);
 
     setPermissionsTeamId($school->id);
     $user->unsetRelation('roles');
-    expect($user->getRoleNames()->all())->toBe(['accounts_supervisor']);
+    expect($user->getRoleNames()->all())->toBe(['executive_director']);
 });
 
 // ── Decision 0: the boundary is FINANCE pairs only ─────────────────────────
@@ -93,7 +98,7 @@ it('ALLOWS the maker at school A and the checker at school B — the pair is per
 
     $user->grantSchoolAccess($schoolA, 'accounts_officer'); // maker @ A
     // Not a violation: no single school holds both sides.
-    expect(fn () => $user->grantSchoolAccess($schoolB, 'accounts_supervisor'))
+    expect(fn () => $user->grantSchoolAccess($schoolB, 'executive_director'))
         ->not->toThrow(DutySeparationViolationException::class);
 
     setPermissionsTeamId($schoolA->id);
@@ -102,7 +107,7 @@ it('ALLOWS the maker at school A and the checker at school B — the pair is per
 
     setPermissionsTeamId($schoolB->id);
     $user->unsetRelation('roles');
-    expect($user->getRoleNames()->all())->toBe(['accounts_supervisor']);
+    expect($user->getRoleNames()->all())->toBe(['executive_director']);
 });
 
 // ── Wholesale: a violating multi-role grant applies NOTHING ─────────────────
@@ -115,11 +120,11 @@ it('applies NOTHING when a multi-role grant contains a violating role — no par
     // registrar is innocuous; accounts_supervisor violates. The guard refuses BEFORE spatieAssignRole,
     // so the whole call lands nothing — registrar must NOT sneak in alongside the refused checker.
     setPermissionsTeamId($school->id);
-    expect(fn () => $user->assignRole('registrar', 'accounts_supervisor'))
+    expect(fn () => $user->assignRole('registrar', 'executive_director'))
         ->toThrow(DutySeparationViolationException::class);
 
     $user->unsetRelation('roles');
     expect($user->getRoleNames()->all())->toBe(['accounts_officer'])
         ->and($user->hasRole('registrar'))->toBeFalse()
-        ->and($user->hasRole('accounts_supervisor'))->toBeFalse();
+        ->and($user->hasRole('executive_director'))->toBeFalse();
 });

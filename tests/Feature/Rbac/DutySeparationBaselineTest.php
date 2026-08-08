@@ -108,18 +108,36 @@ it('ARM 2 — a finding NOT in the baseline exits NON-ZERO', function () {
 });
 
 it('ARM 3 — a FINANCE finding fails even when it IS in the baseline', function () {
-    // THE HARD-CODED HALF. accounts_officer holds finance.credit-note.submit; accounts_supervisor
-    // holds .approve/.reject. Both lines are written into the baseline, and the command must ignore
-    // them: a control that can be silenced by editing a file is exactly as strong as whoever last
-    // edited the file.
-    [$user, $school] = dsbPlant('accounts_officer', 'accounts_supervisor');
+    // THE HARD-CODED HALF. accounts_officer holds finance.credit-note.submit and
+    // finance.invoice.void-request.submit; executive_director holds both .approve/.reject pairs.
+    // All four lines are written into the baseline, and the command must ignore them: a control that
+    // can be silenced by editing a file is exactly as strong as whoever last edited the file.
+    //
+    // THE CHECKER SEAT IS executive_director, NOT accounts_supervisor. This arm was authored against
+    // the pre-2026-08-04 map and merged onto this branch unchanged. The seat move took every finance
+    // checker side off accounts_supervisor, leaving it a maker-only seat (finance.access +
+    // finance.fee-schedule.change.submit), so the old plant produces NO finance finding at all and
+    // the arm asserted `1` against an exit code of `0`. Planting the role that actually holds the
+    // checker side restores what the arm tests; it does not weaken it.
+    [$user, $school] = dsbPlant('accounts_officer', 'executive_director');
 
-    $path = dsbWrite([
-        "{$school->id}|{$user->id}|finance.credit-note.approve|finance.credit-note.submit",
-        "{$school->id}|{$user->id}|finance.credit-note.reject|finance.credit-note.submit",
-        "{$school->id}|{$user->id}|finance.invoice.void-request.approve|finance.invoice.void-request.submit",
-        "{$school->id}|{$user->id}|finance.invoice.void-request.reject|finance.invoice.void-request.submit",
-    ]);
+    // THE BASELINE MUST ACCEPT **EVERY** CURRENT FINDING, or this arm passes through the ordinary
+    // unaccepted-findings path and proves nothing about the hard-code. Derived, not listed, and the
+    // reason is measured rather than assumed: the carried-over four-line list covered credit-note and
+    // void-request only, while executive_director as the checker seat produces findings across all
+    // FOUR finance pairs — so with the hard-code mutated away (`->filter(fn () => false)`) this arm
+    // still exited 1, and still passed. A green nobody watched go red proves nothing.
+    $keys = collect(DutySeparation::violations($user, (int) $school->id))
+        ->map(fn (array $p): string => "{$school->id}|{$user->id}|{$p['checker']}|{$p['maker']}")
+        ->unique()->sort()->values();
+    setPermissionsTeamId(null);
+
+    // Fail closed: an empty or non-finance finding set would make the arm vacuous.
+    expect($keys)->not->toBeEmpty('the plant produced no finding at all — this arm would be vacuous')
+        ->and($keys->reject(fn (string $k): bool => str_contains($k, '|finance.'))->all())
+        ->toBe([], 'every planted finding must be in the namespace the baseline can never amnesty');
+
+    $path = dsbWrite($keys->all());
 
     try {
         expect(dsbRun(['--baseline' => $path]))->toBe(1);
@@ -141,12 +159,22 @@ it('ARM 4 — the resolved-one-appeared-one case a COUNT ratchet would pass', fu
     //
     // What this arm therefore pins: the finance hard-code fires even when the counts line up, so the
     // two guards are independent and neither is load-bearing alone.
-    [$user, $school] = dsbPlant('accounts_officer', 'accounts_supervisor');
+    //
+    // Checker seat re-pointed to executive_director for the same reason as ARM 3 — see the note there.
+    [$user, $school] = dsbPlant('accounts_officer', 'executive_director');
 
-    $path = dsbWrite([
-        "{$school->id}|424242|result.approve|result.submit",
-        "{$school->id}|424242|result.reject|result.submit",
-    ]);
+    // The COUNTS ARE MADE TO LINE UP, which the two hand-written lines never did: the plant produced
+    // four findings against a two-line baseline before the seat move and eight against it after, so a
+    // count comparison would have failed here for the wrong reason and the arm's own claim ("a count
+    // comparison would exit zero here") was never staged. One accepted result.* line per current
+    // finding, each for a user id that does not exist, stages it exactly.
+    $found = collect(DutySeparation::violations($user, (int) $school->id));
+    setPermissionsTeamId(null);
+    expect($found)->not->toBeEmpty('the plant produced no finding at all — this arm would be vacuous');
+
+    $path = dsbWrite($found->values()
+        ->map(fn (array $p, int $i): string => "{$school->id}|".(424242 + $i).'|result.approve|result.submit')
+        ->all());
 
     try {
         expect(dsbRun(['--baseline' => $path]))->toBe(1);

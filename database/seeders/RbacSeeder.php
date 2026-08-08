@@ -40,10 +40,24 @@ class RbacSeeder extends Seeder
     public const GUARD = 'web';
 
     /**
-     * Roles that require two-factor enrolment (C7). super_admin + admin only:
-     * the 4 Finance roles are not seeded (step-0), their default is I6/Finance.
+     * Roles that require two-factor enrolment (C7).
+     *
+     * The default applies ONLY at role creation (`firstOrCreate` below, and `--fresh`); afterwards
+     * `two_factor_required` is a runtime-editable matrix toggle (RbacMatrixController). So creation is
+     * the only cheap moment to get a new role right. The flag is TEAM-AGNOSTIC at enforcement —
+     * `EnsureTwoFactorEnrolled::requiresTwoFactor()` matches the role in ANY school or globally — and
+     * sits under the `rbac.two_factor_enforced` master switch, which defaults ON in production.
+     *
+     * `executive_director` is here deliberately, and it is the FIRST finance seat to carry the flag.
+     * That asymmetry is the point, not an oversight to normalise away: ED is the sole checker on all
+     * four built finance pairs, so it is the only seat that can approve money leaving four different
+     * ways. The operational finance seats (AO/AS/FL/IA) stay out — they propose and view.
+     *
+     * (The prior note here said the finance roles were "not seeded (step-0)". That stopped being true
+     * with the 2026-08-01 realignment, which put all four in ROLES. Their absence below is now a
+     * decision, not a consequence.)
      */
-    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin'];
+    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin', 'executive_director'];
 
     /**
      * super_admin's explicit PLATFORM-ADMIN set (ADR 0045 A2/A3, slice B2).
@@ -78,8 +92,14 @@ class RbacSeeder extends Seeder
         // docs/rbac/finance-seat-realignment.md). Segregation of duties: makers propose, checkers
         // (≠ maker) decide; the SyncRolePermissionsRequest grant guard makes any one role holding
         // both sides of a pair impossible.
+        // Executive Director (ED) — new 2026-08-04. The single approval authority for every finance
+        // decision that is built: fee-schedule change, discount-policy change, credit note, invoice
+        // void. Took all five of head_of_school's finance grants and all four of accounts_supervisor's
+        // checker sides. "Access across schools" is ASSIGNMENT to each school, not a passage through
+        // the isolation boundary — nothing here goes near ISOLATION_CROSSING or the Gate::before.
+        'executive_director',
         'accounts_officer',      // AO — bursar / maker on every finance flow
-        'accounts_supervisor',   // AS — renamed from finance_director; CHECKS credit-note + void
+        'accounts_supervisor',   // AS — renamed from finance_director; maker + viewer since 2026-08-04
         'finance_lead',          // FL — proposer (credit-note + discount submit)
         'internal_auditor',      // IA — activity-log only. Still no finance.access, but the SAFETY reason is
         // gone: 001fd1f gated both payment doors on finance.payment.record
@@ -221,24 +241,21 @@ class RbacSeeder extends Seeder
                 ...$activityAdmin,
                 ...$resultChecker,
                 PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
-                // Finance governance — HoS is the APPROVER (2026-08-01 seat realignment, docs/rbac/
-                // finance-seat-realignment.md). Brookstone's matrix: HoS approves the fee-schedule change
-                // (row 2, HoS=A) and the discount-policy change (row 20, derived by analogy with row 2).
-                // The SUBMIT sides moved OFF HoS to AO/AS/FL — HoS must never hold both sides of a pair
-                // (DutySeparation enforces it at grant time), and approving what you proposed is the whole
-                // thing SoD forbids.
-                PermissionEnum::FINANCE_ACCESS->value,
-                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_APPROVE->value,
-                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_REJECT->value,
-                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
-                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT->value,
-                // Opening-balance cutover (§9 step 4c) — the CHECKER side, placed here by reading where
-                // finance.fee-schedule.change.approve/reject already sit rather than by choosing a seat:
-                // this triple mirrors the fee-schedule-change triple, so it lands on the same roles.
-                // Approving posts the arrears into the subledger and can never be undone (G1b), which is
-                // the same "one irreversible act, two people" shape the SUBMIT sides below carry.
-                PermissionEnum::FINANCE_OPENING_BALANCE_APPROVE->value,
-                PermissionEnum::FINANCE_OPENING_BALANCE_REJECT->value,
+                // NO FINANCE AT ALL — 2026-08-04, Brookstone: "The heads of school have never approved
+                // any of the items listed — they initiate it for my approval", and "nothing changed
+                // except switching every permission and ability held by HoS to ED. HoS doesn't have
+                // access to finance." The five grants that stood here (finance.access, and the
+                // fee-schedule + discount-policy approve/reject pairs, added by the 2026-08-01
+                // realignment) all moved to `executive_director` below. HoS keeps everything
+                // non-finance; do not re-add a finance grant here without a business decision.
+                //
+                // `principal` KEEPS `finance.access` and that is deliberate, not a miss — answered
+                // 2026-08-04: "The Principal role should be able to view finance." A secondary
+                // Principal who also holds head_of_school therefore still sees the finance area.
+                // `finance.access` alone is VIEW: no record, no generate, no approve.
+                //
+                // §9 step 4c's opening-balance checker side (finance.opening-balance.approve/.reject)
+                // is NOT here either, for the same decision — it sits with `executive_director`.
                 // Route access (C2)
                 PermissionEnum::RESULT_REVIEW_ACCESS->value,
                 PermissionEnum::REPORT_VIEW->value,
@@ -361,25 +378,70 @@ class RbacSeeder extends Seeder
                 // Opening-balance cutover (§9 step 4c) — the MAKER side, on the same two roles that hold
                 // finance.fee-schedule.change.submit (AO here, AS below). Read off this map, not chosen:
                 // the bursar office is who runs the WCBS extract. finance_lead does NOT get it, because
-                // finance_lead does not hold fee-schedule.change.submit either.
+                // finance_lead does not hold fee-schedule.change.submit either. The CHECKER side is on
+                // `executive_director` (2026-08-04), never on a maker seat.
                 PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
-            // Accounts Supervisor (AS) — renamed from finance_director 2026-08-01 (it is the SUPERVISOR,
-            // not the lead: it CHECKS credit-note + void, matrix rows 15/16 = AS=A). The 2026_08_01 rename
-            // migration carries the role row + its holders; this map defines its grants.
-            'accounts_supervisor' => [
+            // Executive Director (ED) — new 2026-08-04. Brookstone: "The executive director approves
+            // scholarships and discounts, concessions, refunds, write offs and other high impact
+            // financial decisions… The heads of school have never approved any of the items listed."
+            // Nine grants: `finance.access` plus the CHECKER side of all four built finance pairs —
+            // five taken from head_of_school, four from accounts_supervisor.
+            //
+            // CHECKER SIDES ONLY. ED MUST NEVER HOLD A `*.submit`. Four maker-checker pairs now
+            // terminate on this one role, so a single stray submit grant makes ED a both-sides holder
+            // and DutySeparation throws at grant time — the seat that approves everything is exactly
+            // the seat that must propose nothing. If you are here to add "just enough to raise a credit
+            // note", that is a second role on the user, not a grant on this one.
+            //
+            // "Access across schools" is ASSIGNMENT: ED is assigned to every school and sees each one
+            // through the school switcher. There is no combined all-schools view and this map cannot
+            // create one. No new permission case exists for ED — all nine already existed.
+            'executive_director' => [
                 PermissionEnum::FINANCE_ACCESS->value,
+                // From head_of_school (2026-08-04).
+                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_APPROVE->value,
+                PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_REJECT->value,
+                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
+                PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT->value,
+                // From accounts_supervisor (2026-08-04) — matrix rows 15/16.
                 PermissionEnum::FINANCE_CREDIT_NOTE_APPROVE->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_REJECT->value,
-                // Ph3b — checker side of the void instance.
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_REJECT->value,
-                // Seat realignment: AS also proposes the fee-schedule change (row 2, AS=P) — a maker side,
-                // distinct pair from its credit-note/void checker sides, so no both-sides violation.
+                // Opening-balance cutover (§9 step 4c) — the CHECKER side of the FIFTH pair, and it sits
+                // here because 2026_08_06_100000_move_head_of_school_finance_to_executive_director.php
+                // moved EVERY finance checker side to this role and left `head_of_school` holding no
+                // finance at all (the 2026-08-04 decision; the file is dated by its landing). That is the
+                // placement rule now: a new finance checker ability lands on ED, full stop. It is NOT
+                // derived from where the fee-schedule-change checker happens to sit — that reasoning was
+                // right against the tree it read and wrong against the decision, which is exactly how a
+                // grant ends up on a seat nobody chose for it.
+                //
+                // These two are NEW permissions, so no convergence migration accompanies them
+                // (grants-convergence exemption 1): they land in $newPermissions and rbac:sync grants
+                // them per this map on every environment. That freedom lasts only while the permission
+                // is new — once it has shipped to a role, moving it is a dated convergence migration.
+                PermissionEnum::FINANCE_OPENING_BALANCE_APPROVE->value,
+                PermissionEnum::FINANCE_OPENING_BALANCE_REJECT->value,
+            ],
+            // Accounts Supervisor (AS) — renamed from finance_director 2026-08-01. The 2026_08_01 rename
+            // migration carries the role row + its holders; this map defines its grants.
+            //
+            // AS APPROVES NOTHING THAT IS BUILT, as of 2026-08-04. Its credit-note and invoice-void
+            // checker sides (matrix rows 15/16) moved to `executive_director`, and matrix rows 14 and 19
+            // — its other checker sides — were given to ED by the same decision and do not exist in code.
+            // What remains is a maker-and-viewer seat: view the finance area, propose the fee-schedule
+            // change (row 2, AS=P). Recorded rather than re-litigated: if that reads wrong to Brookstone
+            // it is a business correction, not a code one.
+            'accounts_supervisor' => [
+                PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
                 // Opening-balance cutover (§9 step 4c) — maker side, following fee-schedule.change.submit
-                // above onto the same role. Its checker side sits on head_of_school, so this is a
-                // distinct pair from AS's credit-note/void checker sides: no both-sides violation.
+                // above onto the same role: AS is a maker-and-viewer seat and this is a maker ability.
+                // Its checker side is on `executive_director`, which holds no submit at all, so the pair
+                // cannot land on one role and cannot land on one person without two deliberate role
+                // assignments.
                 PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
             // Finance Lead (FL) — new 2026-08-01. A PROPOSER in the matrix (rows 10, 12, 13, 16, 17):

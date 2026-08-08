@@ -1,5 +1,10 @@
 # Segregation of duties — what is guaranteed vs what is observed
 
+> **Seat note, 2026-08-04.** The CHECKER of every built finance pair is now `executive_director`.
+> `head_of_school` holds no finance grant; `accounts_supervisor` is a maker-and-viewer seat. Examples
+> below that name a seat are dated observations and are left as written — the mechanism they
+> illustrate is unchanged, only the role holding the checker side moved.
+
 Two different questions hide under "separation of duties," and conflating them is how an overstated
 guarantee gets relied on. State them apart.
 

@@ -212,7 +212,7 @@ return new class extends Migration
             }
         }
 
-        $this->report('BEFORE', $sixNames, $skipped);
+        $this->report('BEFORE', $sixNames, $skipped, 0);
 
         if (! $needsWork) {
             echo "  converge-finance-change-grants: already aligned — no grants changed, no activity rows written.\n";
@@ -223,7 +223,13 @@ return new class extends Migration
 
         // Diff-based revoke + give, atomically. revoke fires PermissionDetachedEvent, give fires
         // PermissionAttachedEvent — both reach LogRbacChange. (syncPermissions detaches RAW, no event.)
-        DB::transaction(function () use ($roles, $target, $inNs) {
+        $outOfScope = 0;
+
+        DB::transaction(function () use ($roles, $target, $inNs, &$outOfScope) {
+            // The permissions THIS RUN actually grants — not the frozen target, and not the revokes.
+            // This is the scope of the walk below.
+            $grantedThisRun = [];
+
             foreach ($target as $roleName => $wantedForRole) {
                 $role = $roles[$roleName];
                 $current = $role->permissions->pluck('name')->filter($inNs)->values()->all();
@@ -235,8 +241,11 @@ return new class extends Migration
                 }
                 if ($grant !== []) {
                     $role->givePermissionTo($grant);
+                    $grantedThisRun = array_merge($grantedThisRun, $grant);
                 }
             }
+
+            $grantedThisRun = array_values(array_unique($grantedThisRun));
 
             // The grant writes above may leave the registrar's permission cache stale; flush it so
             // the two SoD checks below read the real post-convergence grant state (still uncommitted,
@@ -252,8 +261,21 @@ return new class extends Migration
             // real post-convergence state, so it agrees with finance:audit-duty-separation afterwards.
             // Filtered to enforced pairs so pre-existing result.* findings (a different owner's area)
             // do not block this. Names each offender as user#<id> @ school#<id> (never an email).
+            // SCOPED TO WHAT THIS RUN WROTE (ADR 0052). The walk still visits every user in every
+            // school — the population is unchanged — but a pair is only THIS migration's to block on
+            // when at least one of its two sides is a permission this run actually GRANTED. Anything
+            // else is a both-sides state the run did not create.
+            //
+            // Revocations are out of scope in both directions: a revoke can only CLEAR a both-sides
+            // state, never create one. And a second, idempotent run grants nothing, so it flags
+            // nothing — correct, because it wrote nothing.
+            //
+            // Before this filter the walk read live pair definitions AND live user-role assignments to
+            // decide whether to roll back a dated act, and would abort on a violation assembled
+            // entirely from roles it does not govern. Freezing the target did not freeze the guard.
             $enforced = collect(DutySeparation::enforcedPairs());
             $bothSidesUsers = [];
+            $outOfScopeUsers = [];
             foreach (School::query()->orderBy('id')->get() as $school) {
                 $userIds = DB::table('model_has_roles')
                     ->where('model_type', User::class)
@@ -263,13 +285,36 @@ return new class extends Migration
                         $isFinance = $enforced->contains(
                             fn ($e) => $e['checker'] === $pair['checker'] && $e['maker'] === $pair['maker']
                         );
-                        if ($isFinance) {
-                            $bothSidesUsers[] = "user#{$user->id} @ school#{$school->id} {$pair['maker']}<>{$pair['checker']}";
+                        if (! $isFinance) {
+                            continue;
+                        }
+
+                        $thisRunWroteASide = in_array($pair['maker'], $grantedThisRun, true)
+                            || in_array($pair['checker'], $grantedThisRun, true);
+
+                        $entry = "user#{$user->id} @ school#{$school->id} {$pair['maker']}<>{$pair['checker']}";
+
+                        if ($thisRunWroteASide) {
+                            $bothSidesUsers[] = $entry;
+                        } else {
+                            $outOfScopeUsers[] = $entry;
                         }
                     }
                 }
             }
             setPermissionsTeamId(null);
+
+            // Out of scope: real, and not this migration's to block on. Reported so an operator sees
+            // them and knows where they are owned.
+            $outOfScopeUsers = array_values(array_unique($outOfScopeUsers));
+            $outOfScope = count($outOfScopeUsers);
+            if ($outOfScope > 0) {
+                echo "  converge-finance-change-grants REPORT: {$outOfScope} both-sides finding(s) this run did NOT create — not blocked on:\n";
+                foreach ($outOfScopeUsers as $entry) {
+                    echo "    {$entry}\n";
+                }
+                echo "    These are real and they matter. They belong to `php artisan finance:audit-duty-separation`, not to a migration.\n";
+            }
 
             if ($bothSidesUsers !== []) {
                 $list = collect($bothSidesUsers)->unique()->values();
@@ -283,7 +328,7 @@ return new class extends Migration
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->report('AFTER', $sixNames, $skipped);
+        $this->report('AFTER', $sixNames, $skipped, $outOfScope);
     }
 
     /**
@@ -302,9 +347,9 @@ return new class extends Migration
      *
      * @param  list<string>  $sixNames
      */
-    private function report(string $label, array $sixNames, int $skipped): void
+    private function report(string $label, array $sixNames, int $skipped, int $outOfScope): void
     {
-        echo "  converge-finance-change-grants [{$label}] holders per school per governed permission (skipped={$skipped}):\n";
+        echo "  converge-finance-change-grants [{$label}] holders per school per governed permission (skipped={$skipped}, out-of-scope both-sides findings={$outOfScope}):\n";
 
         foreach (School::query()->orderBy('id')->get() as $school) {
             $userIds = DB::table('model_has_roles')

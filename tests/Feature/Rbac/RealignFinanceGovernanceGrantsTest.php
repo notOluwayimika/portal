@@ -58,6 +58,24 @@ function rfgNsGrants(string $name): array
         ->orderBy('p.name')->pluck('p.name')->all();
 }
 
+/** The role's `finance.` grants OUTSIDE the two governed namespaces — what this migration must not move. */
+function rfgOtherFinanceGrants(string $name): array
+{
+    $role = rfgGlobalRole($name);
+
+    if ($role === null) {
+        return [];
+    }
+
+    return DB::table('role_has_permissions as rhp')
+        ->join('permissions as p', 'p.id', '=', 'rhp.permission_id')
+        ->where('rhp.role_id', $role->id)
+        ->where('p.name', 'like', 'finance.%')
+        ->where('p.name', 'not like', 'finance.discount-policy.change.%')
+        ->where('p.name', 'not like', 'finance.fee-schedule.change.%')
+        ->orderBy('p.name')->pluck('p.name')->all();
+}
+
 /**
  * The four checker permissions the frozen target puts on `head_of_school`, WRITTEN OUT HERE as
  * literals rather than read from the migration's own const. Two copies of the literal is the point:
@@ -96,16 +114,32 @@ function rfgPlantDrift(): void
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 }
 
-it('ARM 0 (bite-proof, runs first) — the planted drift is real, so the arms below cannot pass vacuously', function () {
-    // A fresh seed already writes the realigned map, so without the plant this migration has nothing
-    // to do and every arm below would be green against a no-op.
-    expect(rfgNsGrants('principal'))->toBe([])
-        ->and(rfgNsGrants('head_of_school'))->toBe(rfgFrozenHosTarget());
+it('ARM 0 (bite-proof, runs first) — the planted drift CHANGED the state, so the arms below cannot pass vacuously', function () {
+    // MAP-INDEPENDENT BY CONSTRUCTION, and the first version of this arm was not.
+    //
+    // It used to assert the fresh seed's ABSOLUTE content — `head_of_school` holds exactly the four
+    // checker sides — which is a read of the live seeder map wearing a test's clothes. That went red
+    // the moment the 2026-08-04 seat move emptied HoS's finance slice, on a migration whose behaviour
+    // had not changed at all. Exactly the coupling ADR 0052 exists to remove, reintroduced in the
+    // test file written to prove the removal.
+    //
+    // What bite-proofing actually needs is that the plant CHANGED something. Capture the slice, plant,
+    // assert it moved and now equals the planted shape. That survives every future map edit.
+    $principalBefore = rfgNsGrants('principal');
+    $hosBefore = rfgNsGrants('head_of_school');
 
     rfgPlantDrift();
 
-    expect(rfgNsGrants('principal'))->toBe(rfgFrozenHosTarget())
-        ->and(rfgNsGrants('head_of_school'))->toBe([
+    $principalAfter = rfgNsGrants('principal');
+    $hosAfter = rfgNsGrants('head_of_school');
+
+    expect($principalAfter)->not->toBe($principalBefore)
+        ->and($hosAfter)->not->toBe($hosBefore);
+
+    // ...and it landed the exact drift this migration was written for: principal holding the four
+    // approve/reject the realignment removed, head_of_school holding the two submits instead.
+    expect($principalAfter)->toBe(rfgFrozenHosTarget())
+        ->and($hosAfter)->toBe([
             'finance.discount-policy.change.submit',
             'finance.fee-schedule.change.submit',
         ]);
@@ -113,6 +147,8 @@ it('ARM 0 (bite-proof, runs first) — the planted drift is real, so the arms be
 
 it('ARM 1 — converges to the FROZEN target: principal to nothing, head_of_school to the four checker sides', function () {
     rfgPlantDrift();
+
+    $hosOtherBefore = rfgOtherFinanceGrants('head_of_school');
 
     rfgMigration()->up();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -123,9 +159,10 @@ it('ARM 1 — converges to the FROZEN target: principal to nothing, head_of_scho
     expect(rfgNsGrants('principal'))->toBe([])
         ->and(rfgNsGrants('head_of_school'))->toBe(rfgFrozenHosTarget());
 
-    // And nothing outside the two namespaces moved: HoS keeps finance.access, which this migration
-    // does not govern.
-    expect(rfgGlobalRole('head_of_school')->fresh()->hasPermissionTo('finance.access'))->toBeTrue();
+    // And nothing OUTSIDE the two governed namespaces moved. Asserted as a before/after comparison
+    // rather than as "HoS holds finance.access": whether it does is a live-map fact that the
+    // 2026-08-04 seat move changed, and this migration's behaviour does not depend on it.
+    expect(rfgOtherFinanceGrants('head_of_school'))->toBe($hosOtherBefore);
 });
 
 it('ARM 2 — idempotent: a second up() changes no grant and writes no activity row', function () {

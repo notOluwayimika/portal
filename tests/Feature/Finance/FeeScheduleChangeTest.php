@@ -65,11 +65,16 @@ function fscMaker(School $school): User
     return $user;
 }
 
-/** A user holding the seeded head_of_school role (change.approve + change.reject — the CHECKER/ED). */
+/**
+ * A user holding the seeded executive_director role (change.approve + change.reject — the CHECKER).
+ *
+ * Was head_of_school until 2026-08-04, when Brookstone moved every finance checker side to ED and
+ * stripped HoS of finance entirely. The seat moved; what this helper is for did not.
+ */
 function fscChecker(School $school): User
 {
     $user = User::factory()->create(['school_id' => $school->id]);
-    $user->grantSchoolAccess($school, 'head_of_school');
+    $user->grantSchoolAccess($school, 'executive_director');
     $user->flushSchoolAccessCache();
 
     return $user;

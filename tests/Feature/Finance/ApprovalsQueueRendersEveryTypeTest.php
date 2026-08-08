@@ -311,7 +311,9 @@ it('all five types reach a checker holding all five, in the one shape the queue 
         $row = $this->actingAs($checker)->withSession(['school_id' => $school->id])
             ->getJson($url)->assertOk()->json('data.0');
 
-        expect($row)->not->toBeNull("{$url} returned no pending row")
+        // `toBeArray` rather than `->not->toBeNull($message)`: the message survives, and asserting
+        // the SHAPE says more than asserting non-null on a value about to be subscripted.
+        expect($row)->toBeArray("{$url} returned no pending row")
             ->and($row['type'])->toBe($type)
             ->and($row)->toHaveKeys(['id', 'note', 'amount', 'status', 'submitted_by_name', 'can_approve', 'can_reject', 'created_at']);
 

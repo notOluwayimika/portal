@@ -31,7 +31,8 @@ it('leaves every trigger body with balanced quotes, so a dump can be restored', 
          WHERE TRIGGER_SCHEMA = DATABASE()'
     );
 
-    expect($triggers)->not->toBeEmpty(
+    expect(count($triggers))->toBeGreaterThan(
+        0,
         'no triggers found — this test would pass vacuously and prove nothing'
     );
 

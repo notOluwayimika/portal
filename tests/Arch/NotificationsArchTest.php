@@ -139,7 +139,9 @@ it('registers a resolver class that exists and implements the contract, for ever
         expect(class_exists($definition->resolver))->toBeTrue("resolver for [{$key}] does not exist")
             ->and(is_subclass_of($definition->resolver, RecipientResolver::class))
             ->toBeTrue("resolver for [{$key}] does not implement RecipientResolver")
-            ->and($definition->defaultChannels)->not->toBeEmpty("type [{$key}] declares no channels");
+            // Counted rather than `->not->toBeEmpty($message)`: Pest discards a custom message on
+            // every `->not->` matcher, and a count also puts the 0 in the failure output.
+            ->and(count($definition->defaultChannels))->toBeGreaterThan(0, "type [{$key}] declares no channels");
     }
 });
 

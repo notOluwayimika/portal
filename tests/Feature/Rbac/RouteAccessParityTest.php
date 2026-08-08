@@ -72,8 +72,16 @@ it('keeps the deviation list honest — each entry differs from the fixture', fu
 
     foreach (ACCESS_DEVIATIONS as $key => $roles) {
         expect($fixture)->toHaveKey($key);
-        expect($roles)->not->toEqual(
-            $fixture[$key]['roles'],
+        // THE ONE REWRITE IN THIS SWEEP THAT TRADES SOMETHING AWAY, so it is stated rather than
+        // buried. `->not->toEqual($other, $message)` printed both role arrays and DISCARDED the
+        // message (Pest drops a custom message on every `->not->` matcher). Asserting the loose
+        // comparison as a boolean keeps the message and loses the printed arrays. The message names
+        // `$key`, which is what identifies the offending row, and both arrays are one lookup away in
+        // the fixture — so the sentence is worth more here than the dump was.
+        //
+        // `==` and not `===`, deliberately: `toEqual` is a LOOSE comparison, and `!==` is true more
+        // often than `!=`, which would silently weaken the assertion while looking stricter.
+        expect($roles == $fixture[$key]['roles'])->toBeFalse(
             "'{$key}' is listed as a deviation but matches the fixture — stale entry, remove it.",
         );
     }

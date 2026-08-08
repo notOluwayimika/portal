@@ -85,7 +85,10 @@ it('ED holds every finance checker side and NO submit; HoS holds no finance at a
         $row = Role::with('permissions')
             ->where('name', $role)->where('guard_name', 'web')->whereNull('school_id')->first();
 
-        expect($row)->not->toBeNull("global role [{$role}] is missing from the seeded map");
+        // `toBeInstanceOf` rather than `->not->toBeNull($message)`: the message survives, and the
+        // failure names what arrived instead — null under a reverted map, which is the case this
+        // guards. `->not->toBeNull` printed neither.
+        expect($row)->toBeInstanceOf(Role::class, "global role [{$role}] is missing from the seeded map");
 
         return $row->permissions->pluck('name')
             ->filter(fn (string $p): bool => str_starts_with($p, 'finance.'))

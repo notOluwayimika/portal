@@ -1,15 +1,18 @@
 <?php
 
-// The currency SHAPE invariant (^[A-Z]{3}$, case-sensitive) is now a DB CHECK on all ten *_currency
-// columns. Three columns stand for the three write paths: a FormRequest-only column reached by a model
-// create, the raw-DB path SubledgerPoster uses, and an append-only table with an existing immutability
-// trigger the CHECK must not have displaced. 'ngn' — a right-currency wrong-case value — must be 3819.
+// The currency SHAPE invariant (^[A-Z]{3}$, case-sensitive) is a DB CHECK on every *_currency column.
+// Four columns stand for the four write paths: a FormRequest-only column reached by a model create,
+// the raw-DB path SubledgerPoster uses, an append-only table with an existing immutability trigger the
+// CHECK must not have displaced, and (4a) a scratch staging table with NO trigger at all, where the
+// CHECK is the only door. 'ngn' — a right-currency wrong-case value — must be 3819 on all of them.
 
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Models\DiscountPolicy;
+use App\Models\AcademicSession;
 use App\Models\School;
 use App\Models\Student;
+use App\Models\Term;
 use App\Support\ActiveSchool;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
@@ -98,4 +101,56 @@ it('finance_ledger_transactions.amount_currency — CHECK 3819 on insert; immuta
     } catch (QueryException $e) {
         expect((int) ($e->errorInfo[1] ?? 0))->toBe(1644);
     }
+});
+
+// ── Path 4: the 4a staging columns — a table with NO immutability trigger at all ──
+//
+// `finance_opening_balance_rows` is scratch: CASCADE-deleted from its batch, no append-only trigger,
+// and nothing posts from it. That is exactly why its two new *_currency columns need this case — on
+// the three tables above, a dropped CHECK would still leave a trigger in the way of a bad UPDATE;
+// here the CHECK is the ONLY door, so a migration that re-added it without COLLATE utf8mb4_bin would
+// admit 'ngn' with nothing else to notice. Both columns arrived in
+// 2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php with no watched red.
+
+it('finance_opening_balance_rows.balance_currency / student_total_balance_currency — "ngn" is refused 3819; "NGN" inserts', function () {
+    $school = School::factory()->create();
+
+    // A batch needs a term (batches.term_id is NOT NULL with an FK — §9's open decision), so one is
+    // built rather than assumed to be seeded.
+    $termId = ActiveSchool::runFor($school->id, function () use ($school) {
+        $session = AcademicSession::create([
+            'school_id' => $school->id, 'name' => '2026/2027-'.Str::random(4),
+            'slug' => 'sess-'.Str::random(8), 'is_current' => true,
+        ]);
+
+        return Term::create([
+            'academic_session_id' => $session->id, 'school_id' => $school->id, 'name' => 'First Term',
+            'slug' => 'term-'.Str::random(8), 'order' => 1,
+            'start_date' => now()->subMonth(), 'end_date' => now()->addMonths(2), 'status' => 'active',
+        ])->id;
+    });
+
+    $batchId = DB::table('finance_opening_balance_batches')->insertGetId([
+        'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id,
+        'batch_reference' => 'CUR-'.Str::random(6), 'filename' => 'x.csv', 'status' => 'draft',
+        'row_count' => 0, 'file_row_count' => 0, 'cutover_date' => '2026-08-06',
+        'term_id' => $termId,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $insertRow = fn (string $label, ?string $balanceCurrency, ?string $totalCurrency) => DB::table('finance_opening_balance_rows')->insert([
+        'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id, 'batch_id' => $batchId,
+        'line_number' => 2, 'admission_number' => $label, 'fee_type_label' => 'Tuition',
+        'balance_minor' => 1000, 'balance_currency' => $balanceCurrency,
+        'student_total_balance_minor' => 1000, 'student_total_balance_currency' => $totalCurrency,
+        'status' => 'ok', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // Wrong case on either column is a CHECK violation — this is the case utf8mb4_unicode_ci would
+    // have admitted had COLLATE utf8mb4_bin been left off the constraint.
+    expect3819(fn () => $insertRow('ADM-BAD-1', 'ngn', 'NGN'));
+    expect3819(fn () => $insertRow('ADM-BAD-2', 'NGN', 'ngn'));
+
+    $insertRow('ADM-GOOD', 'NGN', 'NGN'); // negative: the valid shape inserts
+    expect(DB::table('finance_opening_balance_rows')->where('batch_id', $batchId)->count())->toBe(1);
 });

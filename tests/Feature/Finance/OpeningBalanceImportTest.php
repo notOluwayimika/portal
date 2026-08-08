@@ -41,6 +41,7 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -332,6 +333,105 @@ it('and the DATABASE refuses the same pair independently of the in-PHP pass (106
             expect((int) ($e->errorInfo[1] ?? 0))->toBe(1062);
         }
     });
+});
+
+it('converts an engine-refused duplicate into the same finding and CONTINUES the run', function () {
+    // `utf8mb4_unicode_ci` folds accents; `normaliseLabel()` folds case. 'Tuición' and 'Tuicion' are
+    // therefore ONE key at the index and TWO keys in PHP — the gap that used to abort the run at the
+    // insert, leaving a committed batch whose own counters said it had staged nothing.
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-ACCENT');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-ACCENT,W1,Tuición,50000.00,100000.00,BILL-1',
+        'ADM-ACCENT,W1,Tuicion,50000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    $batch = obBatch($ctx);
+    $rows = obRows($ctx);
+
+    // THE RUN COMPLETED. `draft` is the state an abort leaves behind, so asserting it is NOT draft
+    // is the assertion that the catch did its job — a status and a row count were written at all.
+    expect($batch->status)->toBe(OpeningBalanceBatchStatus::Rejected)
+        ->and($batch->status)->not->toBe(OpeningBalanceBatchStatus::Draft)
+        ->and($exit)->toBe(1);
+
+    // The counters agree with what is actually in the table — the specific thing that was false
+    // during the abort (row_count said 0 while a prefix of the file sat in rows).
+    expect($rows)->toHaveCount(1)
+        ->and($batch->row_count)->toBe(1)
+        ->and($batch->file_row_count)->toBe(2)
+        ->and($rows[2]->fee_type_label)->toBe('Tuición');
+
+    // Same finding the in-PHP pass would have produced, and the accounting still balances.
+    expect(obBatchCodes($batch))->toContain('duplicate_row_key_in_file')
+        ->and(obBatchCodes($batch))->toContain('ingest_incomplete');
+
+    $duplicate = collect($batch->findings)->firstWhere('code', 'duplicate_row_key_in_file')['message'];
+    expect($duplicate)->toContain('1 row(s) repeat')
+        ->and($duplicate)->toContain('0 caught while reading, 1 refused by the unique index');
+
+    $ingest = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
+    expect($ingest)->toContain('Read 2 data line(s) with content but staged 1')
+        ->and($ingest)->toContain('duplicate_row_key_in_file=1')
+        ->and($ingest)->not->toContain('unattributed');
+});
+
+it('drops an over-length value, names the column, and CONTINUES the run', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-LONG');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-LONG,W1,Tuition,100000.00,100000.00,BILL-1',
+        'ADM-LONG,W1,'.str_repeat('X', 300).',50000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    $batch = obBatch($ctx);
+
+    expect($batch->status)->not->toBe(OpeningBalanceBatchStatus::Draft)
+        ->and(obRows($ctx))->toHaveCount(1)
+        ->and($batch->row_count)->toBe(1)
+        ->and($batch->file_row_count)->toBe(2)
+        ->and(obBatchCodes($batch))->toContain('value_too_long')
+        ->and($exit)->toBe(1);
+
+    // The column is named — "a value was too long" without saying which cell is not actionable.
+    // The row is NOT staged-and-rejected, because there is no row shape that could hold it.
+    $tooLong = collect($batch->findings)->firstWhere('code', 'value_too_long')['message'];
+    expect($tooLong)->toContain('1 row(s) carry a value longer than its column can hold')
+        ->and($tooLong)->toContain('Correct the file; nothing is truncated');
+
+    $ingest = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
+    expect($ingest)->toContain('value_too_long=1')
+        ->and($ingest)->not->toContain('unattributed');
+});
+
+it('accepts a label at exactly the column limit, so the length rule is a limit and not a margin', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-EXACT');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-EXACT,W1,'.str_repeat('X', 255).',100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    expect(obRows($ctx))->toHaveCount(1)
+        ->and(obBatch($ctx)->findings)->toBeNull()
+        ->and($exit)->toBe(0);
+});
+
+it('counts a multi-byte label by CHARACTERS, not bytes, so an accented label at the limit is accepted', function () {
+    // 255 two-byte characters is 510 BYTES. `strlen` would drop this row; MySQL counts characters
+    // in a utf8mb4 varchar and accepts it, so a byte count here would reject a legitimate label.
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-MB');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-MB,W1,'.str_repeat('é', 255).',100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    expect(obRows($ctx))->toHaveCount(1)
+        ->and(obBatch($ctx)->findings)->toBeNull()
+        ->and($exit)->toBe(0);
 });
 
 it('still stages two rows for a student when the fee types genuinely differ', function () {
@@ -731,10 +831,35 @@ it('freezes R12\'s six columns in the COLUMNS map, with wcbs_bill_reference the 
     // Every entry carries what a template needs — a map missing `notes` renders a template whose
     // rules the person filling it in never sees.
     foreach (ImportOpeningBalances::COLUMNS as $column => $spec) {
-        expect(array_keys($spec))->toBe(['required', 'format', 'example', 'notes', 'group'], $column)
+        expect(array_keys($spec))->toBe(['required', 'max', 'format', 'example', 'notes', 'group'], $column)
             ->and($spec['notes'])->not->toBe('', $column)
-            ->and($spec['example'])->not->toBe('', $column);
+            ->and($spec['example'])->not->toBe('', $column)
+            // The limit is held as a number AND stated in `format`, because `format` is what the
+            // data team reads. Two copies of one fact drift, so the agreement is asserted rather
+            // than trusted: change one and this goes red.
+            ->and(str_contains($spec['format'], 'max '.$spec['max'].' characters'))
+            ->toBeTrue("COLUMNS[{$column}].format must state its own max ({$spec['max']})");
     }
+});
+
+it('holds a max for every column that matches the storage column it lands in', function () {
+    // Read from information_schema, not from the migration source: the rule exists to keep a value
+    // out of a column it does not fit, so the number has to be the column's, not a remembered one.
+    $lengths = collect(DB::select(
+        "SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH AS len FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_opening_balance_rows'"
+    ))->pluck('len', 'COLUMN_NAME');
+
+    foreach (['admission_number', 'wcbs_student_ref', 'fee_type_label', 'wcbs_bill_reference'] as $column) {
+        expect(ImportOpeningBalances::COLUMNS[$column]['max'])
+            ->toBe((int) $lengths[$column], "COLUMNS[{$column}].max must equal the column's own limit");
+    }
+
+    // The two money cells land in bigint, so they inherit no varchar limit; theirs is the widest
+    // naira figure a signed bigint holds in kobo. Pinned so it cannot be quietly widened past it.
+    expect(ImportOpeningBalances::COLUMNS['balance']['max'])->toBe(21)
+        ->and(ImportOpeningBalances::COLUMNS['student_total_balance']['max'])->toBe(21)
+        ->and(strlen('92233720368547758.07') + 1)->toBe(21);
 });
 
 // ── The ACL port extension, exercised through its own consumer ──

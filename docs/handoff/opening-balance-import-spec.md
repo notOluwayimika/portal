@@ -742,6 +742,16 @@ real thing.
 minimum a comment and an option rename — and a migration is not decided in a docs commit. Commit 4
 picks one and says which, in the migration's docblock.
 
+> **DEFERRED AGAIN BY STEP 4a (2026-08-08), on the merits — and recorded here so it is not read as
+> overlooked.** 4a shipped the R9 migration, which is the file this paragraph names, and did **not**
+> close this. The reason is that both options turn on what a batch's term is *for*, and nothing in the
+> repository answers that until posting exists: option 2's "the term being CLOSED OUT" only has a
+> meaning a reader can check once something reads the column, and option 1 deletes an FK on the
+> strength of a use nobody has written yet. Choosing now would be picking a label, not making a
+> decision. **It moves to 4b — the posting step — which is the first commit with a caller.** Until
+> then `term_id` stays NOT NULL and `--term` stays required and validated; `ImportOpeningBalances`'s
+> `resolveTerm()` docblock says so at the site.
+
 ### G1 — at most one posted batch per school, at INSERT
 
 **In the DATABASE, not the job.** A job-level "has this school already posted?" check reads, decides,
@@ -1041,9 +1051,24 @@ somebody reads.
    folds case (and trims) before comparing, so the reported duplicate and the refused duplicate are
    the same set.
 
-   **The residual, stated rather than implied.** `utf8mb4_unicode_ci` also folds **accents** and is
-   PAD SPACE; `mb_strtolower` + `trim` reproduces the case and the padding only. An accent-only pair
-   (`'Tuición'` / `'Tuicion'`) is therefore still caught by the **index** rather than by the in-PHP
-   pass — a worse operator experience (an aborted run rather than a finding), not a correctness hole:
-   nothing is staged wrongly either way. Recorded in `normaliseLabel()`'s docblock and in the 4a
-   migration's.
+   **The residual is WIDER THAN ACCENTS, and the first version of this paragraph understated it.**
+   `utf8mb4_unicode_ci` is the full UCA folding: it equates accents (`'Tuición'` = `'Tuicion'`),
+   expansions (`'Straße'` = `'Strasse'`) and everything else its tertiary weights ignore, and it is
+   PAD SPACE. `mb_strtolower` + `trim` reproduces case and padding only, so **every** equivalence the
+   collation has and the fold does not reaches the INSERT.
+
+   **And that is why the write is now wrapped in a catch, which is the load-bearing half of this
+   decision.** The paragraph originally said the residual was "a worse operator experience, not a
+   correctness hole: nothing is staged wrongly either way". **That was false, and it was asserted
+   without executing the case.** Running it showed the abort leaving a committed batch in `draft`
+   whose own `row_count` said `0` while an arbitrary prefix of the file sat in the rows table — and
+   §7's idempotency reference spent on a run nobody could read. The row insert now catches the unique
+   violation and converts it into the same `duplicate_row_key_in_file` finding the in-PHP pass would
+   have produced, counted in the same not-ingested accounting, and the run continues. The fold keeps
+   the common case out of the engine; the catch is what makes the claim true. Recorded in
+   `normaliseLabel()`'s docblock and in the 4a migration's.
+
+   **The same catch covers 1406** (a value longer than its column), with a `max` in the `COLUMNS` map
+   as the defence in front of it. One defect, two triggers, one fix: a guard that closed only the
+   1062 door would have left the identical orphaned-batch failure reachable under another error
+   number.

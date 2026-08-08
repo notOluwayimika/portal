@@ -1,7 +1,18 @@
 # Implementation report — `feat/finance-ob-file-format` (§9 step 4a, the FILE FORMAT)
 
-Base: `origin/staging` @ `26e144b`. Branch: `feat/finance-ob-file-format`. One commit, seven files
-(one new migration, four module files, one test file, one docs section).
+Base: `origin/staging` @ `26e144b`. Branch: `feat/finance-ob-file-format`. Two commits, nine files
+(one new migration, four module files, two test files, one docs section, this report).
+
+> **Second pass (2026-08-08) — the review's finding 1 is CONFIRMED and FIXED, and finding 2 was the
+> same defect under a different error number.** A row the engine refused used to abort the run and
+> leave a committed batch reporting `row_count = 0` over a partially-written rows table, with §7's
+> idempotency reference spent. The write now **catches and converts**: a unique violation becomes the
+> `duplicate_row_key_in_file` finding, a 1406 becomes `value_too_long`, both are counted in the same
+> not-ingested accounting, anything else re-throws. A `max` per column in `COLUMNS` is the defence in
+> front of the catch. `last_payment_date` was retired in the same migration. Three watched reds for
+> the fix, below. **My earlier claim that "nothing is staged wrong either way" was false, and it was
+> made without executing the case** — that is the whole lesson of this pass, and it is corrected at
+> all four places it was written (`normaliseLabel()`, the migration docblock, spec §12, and here).
 
 **This is full-review tier** — it touches money columns, a migration, a unique key, an append-only
 neighbourhood and a fixture-adjacent test file. Subagent review attached; recommend a cold session
@@ -19,6 +30,38 @@ checksum replacing the dead four-column identity, §5 and `OpeningBalanceRowStat
 withdrawn, `wcbs_bill_reference` optional, the non-negative rule gone. `--dry-run` is still the only
 mode and the refusal at the top of `handle()` is untouched. `bin/quality` passes all 14 steps; neither
 baseline was touched.
+
+## Second pass — what the fix does, and the reasoning I was given and checked
+
+**The batch row is NOT wrapped in a transaction, deliberately.** It is inserted before a byte is
+parsed precisely so a concurrent re-run of the same reference stops at
+`ob_batches_school_reference_unique` — the create migration's docblock states that as §7's
+idempotency guarantee, and I re-read it rather than take it second-hand
+(`2026_08_06_100000_...php:42-44`). A transaction hides that row until commit and weakens the
+backstop it exists to be. So the fix is catch-and-convert, not atomicity.
+
+**Caught by TYPE and by driver CODE, never by message text.**
+`UniqueConstraintViolationException` is its own class; 1406 has none, so it is classified on
+`$e->errorInfo[1]` — the code, not the string. Anything unclassified is **re-thrown**: a failure whose
+meaning nobody has decided must not be swallowed.
+
+**Every caught row is COUNTED.** Both arms push into `$skipReasons` under the same reason keys the
+reader's own drops use (`duplicate_row_key_in_file`, `value_too_long`), so `ingest_incomplete`'s
+arithmetic still accounts for the whole gap and `unattributed` stays absent. That is the invariant
+`85472dc` installed, and a row that was neither staged nor counted would have broken it silently —
+worse than the abort it replaces. Asserted in both new tests.
+
+**A `max` per column, checked before the write.** `mb_strlen`, not `strlen`: a `utf8mb4` varchar
+counts CHARACTERS, and a byte count would drop a legitimate accented label (tested — 255 `é` is 510
+bytes and is accepted). The four columns backed by `varchar(255)` take the column's own limit, pinned
+against `information_schema` by a test so the number cannot drift from the schema. The two money
+cells land in `bigint` and inherit no varchar, so theirs is derived: 21 characters is the widest naira
+figure a signed bigint holds in kobo. The limit is stated in `format` — what the data team reads — and
+held as a number, with a test asserting the two agree.
+
+**One defect, two triggers, one fix — and the layers are independent.** With the `max` rule disabled
+the over-length test still passes, because the catch produces the same finding and the same
+accounting; with both disabled it aborts. Both states are pasted below.
 
 ## Deviations from the brief
 
@@ -234,6 +277,41 @@ the row the old rule rejected. Restored; green.
 The rule rejects the student in credit, which is precisely why it retired. Restored; `git diff` after
 restoration shows no mutation residue and the full file is green at 27/27.
 
+## The watched red — second pass (the catch-and-convert fix)
+
+Three mutations, because the fix has two layers and a single red could not tell them apart.
+
+**A — the catch's unique arm neutered** (`catch (UniqueConstraintViolationException $mutation) { throw $mutation; }`).
+The accent test aborts, and the abort is exactly the failure the review reported:
+
+```text
+{"tool":"pest","result":"failed","errors":1,"error_details":[{"test":"…it_converts_an_engine_refused_duplicate_into_the_same_finding_and_CONTINUES_the_run","message":
+"SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '1-1-ADM-ACCENT-Tuicion' for key
+'finance_opening_balance_rows.ob_rows_school_batch_admission_fee_type_unique' (… insert into
+`finance_opening_balance_rows` (… `fee_type_label`, …) values (1, 3, ADM-ACCENT, W1, Tuicion, 5000000, NGN, …))"}]}
+```
+
+Restored; green. Note the key MySQL prints — `'1-1-ADM-ACCENT-Tuicion'` collided with the already-staged
+`Tuición`, which is the accent folding observed rather than argued.
+
+**B — the `max` rule disabled, catch left in place.** The over-length test **still passes**: the
+backstop caught the 1406 and produced the same `value_too_long` finding and the same accounting.
+
+```text
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":10,"duration_ms":10994}
+```
+
+**C — the `max` rule disabled AND the 1406 arm neutered** (`if (true || … !== 1406) { throw $e; }`).
+Now it aborts, which is what proves arm B's green was the catch and not an accident:
+
+```text
+{"tool":"pest","result":"failed","errors":1,"error_details":[{"test":"…it_drops_an_over_length_value__names_the_column__and_CONTINUES_the_run","message":
+"SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'fee_type_label' at row 1 (…)"}]}
+```
+
+Both restored (`grep` confirms `if (mb_strlen(trim(...)) > $spec['max'])` and
+`if ((int) ($e->errorInfo[1] ?? 0) !== 1406)` are back); the two files run 36/36, 202 assertions.
+
 ## Database observations
 
 Privacy rule applied: ids and counts only.
@@ -260,10 +338,11 @@ Privacy rule applied: ids and counts only.
   term; the column is NOT NULL with an FK and `--term` is still required and still validated. Either
   answer changes a migration and 4a is the file format, so I left it as it shipped rather than
   half-changing it. `resolveTerm()`'s docblock now says so explicitly. **4b or 4c must close it.**
-- **`rows.last_payment_date` survives, unwritten.** It is not in R12's frozen column list, so the
-  validator no longer reads it; the brief's retirement list does not name it, so I did not drop it. It
-  is now a column no rule writes — the inverse of the decoration §7 refuses. One line in the next
-  migration.
+- ~~**`rows.last_payment_date` survives, unwritten.**~~ **Done in the second pass** — retired in the
+  same 4a migration, on the same reasoning that retires the four withdrawn pairs. The migration had
+  only ever run on the two local databases and was unpushed, so it was rolled back on both, edited,
+  and re-applied rather than chased with a second ALTER; the up → down → up audit was re-run
+  afterwards and `last_payment_date` is absent after `up()` and restored by `down()`.
 - **The operator's control total is not persisted anywhere.** It arrives as `--control-total`, is
   checked, and is reported; on a *failed* L2 both figures land in the batch's `findings` JSON, but on
   a **passing** L2 nothing records what the operator attested to. The brief's migration list retires
@@ -276,6 +355,20 @@ Privacy rule applied: ids and counts only.
   test that freezes the six columns, the single optional one, and the presence of every template field
   (`notes`, `example`, …), so the map cannot silently lose what the template will need.
 - **No approval gate, no permissions, no G1/G1b, no posting** — 4b and 4c, as scoped.
+
+## The review's five findings — disposition
+
+| # | Disposition |
+|---|---|
+| 1 — engine-refused duplicate orphans the batch | **FIXED.** Catch-and-convert, counted, three watched reds. My "not a correctness hole" claim was wrong and is corrected in all four places. |
+| 2 — no length rule, 1406 aborts identically | **FIXED as the same defect**, not deferred: closing only 1062 would have left the hole open under another error number. `max` in `COLUMNS` + the 1406 catch arm. |
+| 3 — the two new currency CHECKs unpinned | **TAKEN.** Path 4 added to `CurrencyShapeConstraintTest` — both columns, `'ngn'` → 3819, `'NGN'` inserts. It is the first case there on a table with no immutability trigger, so the CHECK is the only door. |
+| 4 — `term_id` still open | **DEFERRED, on the merits, and now recorded in §9** rather than left looking overlooked. Both options turn on what a batch's term is *for*, which nothing answers until posting exists; 4b is the first commit with a caller. |
+| 5 — `last_payment_date` written by nothing | **FIXED.** Retired in the same migration. |
+
+One correction to my own first-pass report, which the reviewer caught: the absent-students list prints
+**50** entries, not 611 — `printList` caps at `LIST_LIMIT` with an announced truncation. The count was
+611; the print was 50. The ticket below is sized to the print.
 
 ## Findings raised, not fixed
 

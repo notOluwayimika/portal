@@ -9,7 +9,6 @@ use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
 
 /**
  * One (student × fee type) line in a staged WCBS extract (§9 step 4a) — the file as it arrived, plus
@@ -49,7 +48,6 @@ use Illuminate\Support\Carbon;
  * @property Money|null $balance
  * @property Money|null $student_total_balance
  * @property string|null $wcbs_bill_reference
- * @property Carbon|null $last_payment_date
  * @property int|null $student_id
  * @property OpeningBalanceRowStatus $status
  * @property array<int, array<string, mixed>>|null $findings
@@ -64,7 +62,6 @@ class OpeningBalanceRow extends Model
 
     protected $casts = [
         'status' => OpeningBalanceRowStatus::class,
-        'last_payment_date' => 'date',
         'findings' => 'array',
         'balance' => MoneyCast::class.':balance_minor,balance_currency',
         'student_total_balance' => MoneyCast::class.':student_total_balance_minor,student_total_balance_currency',

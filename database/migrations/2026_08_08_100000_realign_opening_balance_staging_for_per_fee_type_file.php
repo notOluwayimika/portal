@@ -42,9 +42,11 @@ use Illuminate\Support\Facades\Schema;
  *  3. The key becomes unique(school_id, batch_id, admission_number, fee_type_label). The old
  *     unique(school_id, batch_id, admission_number) permitted exactly one row per student per batch,
  *     which is one row per student — the shape R5 replaced (R9).
- *  4. The four Rev 2/3 money pairs, the `expected_billed` pair and the batches' three total_* pairs
- *     are RETIRED with their CHECK constraints. R5 withdrew the file those columns came from and §5's
- *     comparison went with it; a column no rule writes is the decoration §7 refuses.
+ *  4. The four Rev 2/3 money pairs, the `expected_billed` pair, the batches' three total_* pairs and
+ *     `rows.last_payment_date` are RETIRED, the money ones with their CHECK constraints. R5 withdrew
+ *     the file those columns came from and §5's comparison went with it; R12 froze the format at six
+ *     columns and `last_payment_date` is not among them. A column no rule writes is the decoration §7
+ *     refuses, and it is the same reasoning in both directions.
  *
  * §12 DECISION 3 — `fee_type_label` NORMALISATION, CLOSED HERE: 'Tuition' and 'tuition' are THE SAME
  * FEE TYPE. The column is utf8mb4_unicode_ci (verified against information_schema, not assumed), so
@@ -62,9 +64,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * NOT TOUCHED HERE, and named so the omissions are visible rather than discovered:
  *   - `batches.term_id` — §9's OPEN decision (nullable, or repurposed to name the term being closed
- *     out) is still open. It is a posting-shape question and 4a is the file format; 4b/4c closes it.
- *   - `rows.last_payment_date` — R12's frozen column list does not carry it, so 4a stops writing it.
- *     The column is left in place rather than retired in a diff that was not asked to.
+ *     out) is DEFERRED, not overlooked. §9 assigns it to "commit 4's migration", which is this file,
+ *     and it is left open on the merits: the column's MEANING cannot be settled until posting exists
+ *     to say what a batch's term is for. 4b/4c closes it, and §9 now records that deferral.
  */
 return new class extends Migration
 {
@@ -108,6 +110,9 @@ return new class extends Migration
             'paid_to_date_minor', 'paid_to_date_currency',
             'wcbs_total_balance_minor', 'wcbs_total_balance_currency',
             'expected_billed_minor', 'expected_billed_currency',
+            // Not a money pair, and retired for the same reason they are: R12 froze the file at six
+            // columns and `last_payment_date` is not among them, so nothing writes it any more.
+            'last_payment_date',
         ],
     ];
 
@@ -211,6 +216,7 @@ return new class extends Migration
             $table->char('wcbs_total_balance_currency', 3)->nullable()->after('wcbs_total_balance_minor');
             $table->bigInteger('expected_billed_minor')->nullable();
             $table->char('expected_billed_currency', 3)->nullable();
+            $table->date('last_payment_date')->nullable()->after('wcbs_bill_reference');
         });
 
         Schema::table('finance_opening_balance_batches', function (Blueprint $table) {

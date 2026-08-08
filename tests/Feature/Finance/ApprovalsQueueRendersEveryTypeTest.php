@@ -5,9 +5,11 @@ use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
+use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleChangeStatus;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\DiscountPolicyChange;
 use App\Finance\Models\FeeScheduleChange;
 use App\Finance\Models\OpeningBalanceBatch;
@@ -350,6 +352,118 @@ it('decision flags are server-computed per type, and opening balances are not de
 // School isolation, on the feed 5a added. It is inherited (BelongsToSchool + SchoolScope) rather than
 // written, which is exactly why it is asserted: an inherited guarantee that nobody checks is the kind
 // that a later `withoutGlobalScopes()` quietly removes.
+// ── ARM 5 ────────────────────────────────────────────────────────────────────────────────────────
+// THE SUBJECT REACHES THE WIRE, and two pending changes against different targets are TELLABLE
+// APART. This is the arm that matters most on this screen: `open_key` forbids two open requests
+// against the SAME schedule and permits any number against different ones, so a checker really can
+// face several publishes at once. Before the `target_*` fields the only per-row content was
+// `kind`, so every one of them read "Fee schedule · publish" and the second signature was given to
+// a row that did not say what it was about — maker-checker with the checking removed.
+//
+// Asserted on the WIRE rather than on the rendered string: the subject renderer lives in
+// TypeScript, and a renderer composing from fields the Resource does not emit is the same green-
+// that-means-nothing this branch has now hit three times. What is checkable from here is that the
+// parts it composes from are present, populated, and DIFFERENT per target.
+it('two pending fee-schedule changes against different targets carry different subjects', function () {
+    $ctx = aqContext();
+    $school = $ctx['school'];
+    $maker = aqMaker($school);
+
+    $second = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 2', 'order' => 2]);
+
+    ActiveSchool::runFor($school->id, function () use ($ctx, $second, $maker) {
+        foreach ([[$ctx['level'], 'JSS 1 — First Term'], [$second, 'JSS 2 — First Term']] as [$level, $label]) {
+            $schedule = app(CreateFeeSchedule::class)->handle(
+                $ctx['term']->id,
+                $level->id,
+                $label,
+                [['description' => 'Tuition', 'amount_minor' => 500000]],
+            );
+
+            FeeScheduleChange::create([
+                'kind' => FeeScheduleChangeKind::Publish,
+                'target_schedule_id' => $schedule->id,
+                'reason' => 'publish for the term',
+                'status' => FeeScheduleChangeStatus::Submitted,
+                'submitted_by' => $maker->id,
+            ]);
+        }
+    });
+
+    $checker = aqUser($school, ['finance.access', 'finance.fee-schedule.change.approve']);
+    $rows = $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/fee-schedule-changes/pending')->assertOk()->json('data');
+
+    expect($rows)->toHaveCount(2);
+
+    // Every part the subject is composed from is on the wire and populated — not merely present.
+    foreach ($rows as $row) {
+        // `?? null` deliberately: these are whenLoaded() fields, so dropping the eager load OMITS
+        // the keys rather than nulling them. Reading them defensively makes the failure "null is
+        // not a string" instead of an undefined-key warning — the same red, legible.
+        expect($row['target_label'] ?? null)->toBeString()->not->toBe('')
+            ->and($row['target_class_level'] ?? null)->toBeString()->not->toBe('')
+            ->and($row['target_term'] ?? null)->toBeString()->not->toBe('');
+    }
+
+    // And the two rows differ where it counts. Comparing the composed TRIPLE, because that is what
+    // the checker reads: two rows agreeing on kind and term but differing on class level are still
+    // tellable apart, and this must not pass just because some unrelated field differs.
+    $subjects = array_map(
+        fn (array $row) => $row['kind'].'|'.($row['target_class_level'] ?? '').'|'.($row['target_term'] ?? '').'|'.($row['target_label'] ?? ''),
+        $rows
+    );
+
+    expect(array_unique($subjects))->toHaveCount(2, 'two pending fee-schedule changes render identically: '.$subjects[0]);
+});
+
+// ── ARM 6 ────────────────────────────────────────────────────────────────────────────────────────
+// The discount twin, on the case its own row cannot answer — and the case is a RETIRE, not an amend.
+// The `…_terms_shape` CHECK (2026_07_26_140001:76-84) forces `name`, `basis` and `requires_approval`
+// to be NULL on a retire and NOT NULL on everything else, so a retire carries no name, no basis and
+// no value at all: its only content is `target_policy_id`, an internal integer nobody reads. Two
+// pending retires are then two rows saying "Discount policy" and nothing else. `target_policy_name`
+// is the only thing that tells them apart.
+//
+// I asserted the opposite first — that `name` is null on an amend — and the CHECK rejected the
+// insert with SQLSTATE 3819. Recorded rather than quietly corrected: the database was the thing that
+// knew, and a docblock claiming the wrong one shipped in three files before it spoke up.
+it('a retire names the policy it retires — the row itself carries no name at all', function () {
+    $ctx = aqContext();
+    $school = $ctx['school'];
+    $maker = aqMaker($school);
+
+    ActiveSchool::runFor($school->id, function () use ($maker) {
+        $policy = DiscountPolicy::create([
+            'name' => 'Staff ward discount',
+            'basis' => DiscountBasis::Percent,
+            'percent' => 25,
+            'requires_approval' => false,
+            'status' => DiscountPolicyStatus::Active,
+        ]);
+
+        DiscountPolicyChange::create([
+            'kind' => DiscountPolicyChangeKind::Retire,
+            'target_policy_id' => $policy->id,
+            // name / basis / requires_approval MUST be null here — the CHECK enforces it.
+            'reason' => 'withdrawn at the board',
+            'status' => DiscountPolicyChangeStatus::Submitted,
+            'submitted_by' => $maker->id,
+        ]);
+    });
+
+    $checker = aqUser($school, ['finance.access', 'finance.discount-policy.change.approve']);
+    $row = $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/discount-policy-changes/pending')->assertOk()->json('data.0');
+
+    // The row states nothing about itself…
+    expect($row['name'])->toBeNull()
+        ->and($row['basis'])->toBeNull()
+        // …so the ONLY identifying content is the target's name, and it is present and populated.
+        ->and($row['target_policy_name'] ?? null)->toBeString()->not->toBe('');
+});
+
+// ── ARM 7 ────────────────────────────────────────────────────────────────────────────────────────
 it('the opening-balance feed is School-scoped — a checker in School A sees none of School B', function () {
     $a = aqContext();
     $b = aqContext();

@@ -22,7 +22,7 @@ import { useClientTable } from '@/hooks/use-client-table';
 import {
     APPROVAL_FEEDS,
     feedFor,
-    rowLabel,
+    rowSubject,
 } from '@/lib/finance/approval-feeds';
 import { formatNaira } from '@/lib/format';
 import type { PendingApproval } from '@/types/finance';
@@ -40,7 +40,7 @@ const TH =
  * API, so fee-schedule changes and discount-policy changes were reachable, ability-gated and shown
  * nowhere; an approver holding finance.fee-schedule.change.approve had no screen. That is what a
  * page which cannot enumerate its feeds costs, and it is why the fix is the enumeration rather than
- * two more imports. Everything per-type — the badge, the row label, the decision urls — comes off
+ * two more imports. Everything per-type — the badge, the SUBJECT line, the decision urls — comes off
  * the feed entry. Read that module's docblock before adding a type.
  *
  * Approve / Reject are driven by the server-computed `can_approve` / `can_reject` (a checker cannot
@@ -117,7 +117,7 @@ export default function FinanceApprovalsQueue() {
         try {
             await axios.post(decide.approve(row.id));
             toast.success(
-                `${rowLabel(row)} approved — ${decide.approvedMessage}.`,
+                `${rowSubject(row)} approved — ${decide.approvedMessage}.`,
             );
             await load();
         } catch (err: unknown) {
@@ -148,7 +148,7 @@ export default function FinanceApprovalsQueue() {
             await axios.post(decide.reject(rejectFor.id), {
                 reason: reason.trim(),
             });
-            toast.success(`${rowLabel(rejectFor)} rejected.`);
+            toast.success(`${rowSubject(rejectFor)} rejected.`);
             setRejectFor(null);
             setReason('');
             await load();
@@ -168,7 +168,7 @@ export default function FinanceApprovalsQueue() {
     // invoice-bound types alone, so it is read through the same presence check the column uses.
     const { search, setSearch, filtered, paged, meta, setPage, setLimit } =
         useClientTable(rows, (r) => [
-            rowLabel(r),
+            rowSubject(r),
             'invoice_display_number' in r ? r.invoice_display_number : null,
             r.submitted_by_name,
             r.note,
@@ -230,7 +230,7 @@ export default function FinanceApprovalsQueue() {
                             onChange={setSearch}
                             shown={paged.length}
                             total={filtered.length}
-                            placeholder="Search by request, invoice or submitter…"
+                            placeholder="Search by subject, invoice or submitter…"
                         />
 
                         {/* Table */}
@@ -239,7 +239,7 @@ export default function FinanceApprovalsQueue() {
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
                                         <th className={TH}>Type</th>
-                                        <th className={TH}>Request</th>
+                                        <th className={TH}>Subject</th>
                                         <th className={TH}>Invoice</th>
                                         <th className={TH}>Submitted by</th>
                                         <th className={TH}>Reason / note</th>
@@ -338,7 +338,7 @@ export default function FinanceApprovalsQueue() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
-                                                    {rowLabel(row)}
+                                                    {rowSubject(row)}
                                                 </td>
                                                 {/* Not every type hangs off an invoice; the governance
                                                     changes and opening-balance batches do not. */}
@@ -456,7 +456,7 @@ export default function FinanceApprovalsQueue() {
                 onClose={() => setRejectFor(null)}
                 title={
                     rejectFor
-                        ? `Reject ${rowLabel(rejectFor)}`
+                        ? `Reject ${rowSubject(rejectFor)}`
                         : 'Reject request'
                 }
                 size="md"

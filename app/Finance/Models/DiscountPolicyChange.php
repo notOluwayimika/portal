@@ -49,6 +49,16 @@ class DiscountPolicyChange extends Model
         'decided_at' => 'datetime',
     ];
 
+    /**
+     * The policy being amended or retired — null on a `create`, which has no target yet.
+     *
+     * The generic is not decoration: without it Larastan reads `$this->target` as a bare Model and
+     * fails any property read on it (level 5, `property.notFound`), which is what happens the moment
+     * anything actually uses this relation. FeeScheduleChange::target() has carried the annotation
+     * since it shipped; this one was written without a caller and never had to.
+     *
+     * @return BelongsTo<DiscountPolicy, $this>
+     */
     public function target(): BelongsTo
     {
         return $this->belongsTo(DiscountPolicy::class, 'target_policy_id');

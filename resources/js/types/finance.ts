@@ -101,6 +101,12 @@ export type FeeScheduleChangeApproval = {
     id: string; // uuid
     kind: string;
     target_schedule_id?: string | null;
+    // The SUBJECT of the decision — a schedule IS its (class level × term) pair, and `label` alone
+    // is author-supplied free text that two schedules may share. Present only when the feed eager-
+    // loads the target (the pending queue does); whenLoaded() omits them otherwise.
+    target_label?: string | null;
+    target_class_level?: string | null;
+    target_term?: string | null;
     reason: string;
     note?: string | null;
     amount?: Money | null;
@@ -118,7 +124,16 @@ export type DiscountPolicyChangeApproval = {
     type: 'discount_policy_change';
     id: string; // uuid
     kind: string;
+    // A create and an amend state their own terms; a RETIRE states none of them — the DB CHECK
+    // forces name/basis/requires_approval NULL there — so `target_policy_name` is the only thing
+    // that identifies a retire. `basis` + `percent` / `value_minor` are the rate or amount at
+    // stake; rendered in the subject, never in the money column (a discount rate is not money).
     name?: string | null;
+    target_policy_name?: string | null;
+    basis?: 'amount' | 'percent' | null;
+    percent?: number | null;
+    value_minor?: number | null;
+    value_currency?: string | null;
     reason: string;
     note?: string | null;
     amount?: Money | null;

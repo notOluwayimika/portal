@@ -46,6 +46,15 @@ class FeeScheduleChangeResource extends JsonResource
             'id' => $this->uuid,
             'kind' => $this->kind->value,
             'target_schedule_id' => $this->target?->uuid,
+            // THE SUBJECT OF THE DECISION, in the three parts a human identifies a schedule by.
+            // `open_key` stops two open requests against the SAME schedule but not against different
+            // ones, so a checker can face several pending publishes at once; without these all of
+            // them read "Fee schedule · publish" and the second signature is given to a row that
+            // does not say what it is about. `label` alone is not enough — it is author-supplied
+            // free text — so the (class level × term) pair the schedule IS goes beside it.
+            'target_label' => $this->whenLoaded('target', fn () => $this->target?->label),
+            'target_class_level' => $this->whenLoaded('target', fn () => $this->target?->classLevel?->name),
+            'target_term' => $this->whenLoaded('target', fn () => $this->target?->term?->name),
             'reason' => $this->reason,
             // The queue reads every type's free text under one column.
             'note' => $this->reason,

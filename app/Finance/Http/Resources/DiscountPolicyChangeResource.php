@@ -32,6 +32,14 @@ class DiscountPolicyChangeResource extends JsonResource
             'id' => $this->uuid,
             'kind' => $this->kind->value,
             'target_policy_id' => $this->target_policy_id,
+            // THE SUBJECT OF THE DECISION, and a RETIRE is the case that needs it. The
+            // `…_terms_shape` CHECK (2026_07_26_140001:76-84) forces `name`, `basis` and
+            // `requires_approval` to be NULL on a retire and NOT NULL on everything else — so a
+            // create and an amend name themselves, and a retire carries nothing whatsoever except
+            // `target_policy_id`, an internal integer. Two pending retires are then two rows
+            // reading "Discount policy" and nothing else. This is the only field that tells them
+            // apart.
+            'target_policy_name' => $this->whenLoaded('target', fn () => $this->target?->name),
             'name' => $this->name,
             'basis' => $this->basis?->value,
             'value_minor' => $this->value_minor,

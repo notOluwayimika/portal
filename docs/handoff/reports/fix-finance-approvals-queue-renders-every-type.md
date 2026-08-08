@@ -393,7 +393,7 @@ Route surface: 360 → **361** registered routes. Exactly one new route, reachab
 
 ## Findings raised, not fixed
 
-- `app/Finance/Http/Resources/DiscountPolicyChangeResource.php:24-27` — `value_minor` /
+- `app/Finance/Http/Resources/DiscountPolicyChangeResource.php` (`:20-21` on `a7d24f1`, `:45-46` on this branch — an earlier draft of this report cited `:24-27`, which is neither) — `value_minor` /
   `value_currency` are emitted as **raw columns**, not through the `Money` VO wire shape, and this
   table is one of the two whose `*_currency` does not cast through `MoneyCast` (a known, recorded
   exception). Pre-existing; I did not touch it, and set the queue's `amount` to null rather than
@@ -409,3 +409,312 @@ Route surface: 360 → **361** registered routes. Exactly one new route, reachab
   on the queue (it only lists `submitted` rows) and the Actions refuse the transition, so this is a
   flag-accuracy issue on the other surfaces that use these resources, not a hole. Pre-existing across
   all four, uniformly. **ticket.**
+
+---
+---
+
+# Round 2 — the review's findings, worked
+
+Second commit on the same branch. `bin/quality` re-run and green; twelve tests in the two new files,
+**eleven watched reds** this round on top of round 1's four.
+
+## Headline
+
+The reviewer's finding 1 was right and is fixed at the level it should be: not "label these two
+types", but **the declared list now carries the rule** — `subject` is a required member of
+`ApprovalFeed`, so the sixth type cannot be added without answering "which thing is this row about",
+and the coverage test fails an entry that declares none. All three tickets closed. One of my own
+docblock claims turned out to be false and the database said so; one of my watched-red *mutations*
+turned out not to mutate anything, which is the same pattern the lead named and is written up below.
+
+## The premise the database corrected
+
+I wrote, in three files, that `name` is null on a discount-policy **amend** and a **retire**. It is
+not. `finance_discount_policy_changes_terms_shape`
+(`database/migrations/2026_07_26_140001_create_finance_discount_policy_changes.php:76-84`) reads:
+
+```sql
+(kind = 'retire' AND name IS NULL AND basis IS NULL AND requires_approval IS NULL)
+OR (kind <> 'retire' AND name IS NOT NULL AND basis IS NOT NULL AND requires_approval IS NOT NULL …)
+```
+
+So a create and an amend **must** name themselves, and a **retire must not** — it carries no name, no
+basis and no value at all, and its only content is `target_policy_id`, an internal integer nobody
+renders. The retire is therefore the unidentifiable row, and it is worse than I described: an amend at
+least states its own new terms. I found this because the arm I wrote against an amend was refused by
+the engine with SQLSTATE **3819** on insert. Corrected in the resource, the feed module, the type and
+the test; the arm is now a retire.
+
+## What changed (round 2)
+
+- `app/Finance/Models/FeeSchedule.php` — `term()` and `classLevel()` belongsTo. Read-side only, both
+  School-scoped. The class docblock's "never joined for display" is about BILLING (prices are
+  snapshotted onto invoice lines); naming a pending change's target is not that, and no price is read
+  through either.
+- `app/Finance/Models/DiscountPolicyChange.php` — `@return BelongsTo<DiscountPolicy, $this>` on
+  `target()`. Not cosmetic: without it Larastan level 5 reads `$this->target` as a bare `Model` and
+  fails any property read on it. It had no caller until now, which is why it never had to be right.
+- `FeeScheduleChangeResource` — `target_label`, `target_class_level`, `target_term`.
+- `DiscountPolicyChangeResource` — `target_policy_name`.
+- Both `pending()` — `target` eager-loaded (see the N+1 note below).
+- `resources/js/lib/finance/approval-feeds.ts` — `rowLabel` → **`subject`, required**; per-type
+  renderers compose from wire fields; `decidedElsewhere` reworded.
+- `resources/js/pages/admin/finance/approvals.tsx` — `rowSubject`; the column header is now
+  **Subject**.
+- `resources/js/types/finance.ts` — the new wire fields.
+- `ApprovalsQueueFeedCoverageTest` — two new tests (wiring aliases, subject required) and
+  `aqfFeedsArrayBody()`.
+- `ApprovalsQueueRendersEveryTypeTest` — ARM 5 (two schedules, tellable apart) and ARM 6 (a retire
+  names its policy).
+
+### The subject renderers, verbatim
+
+```ts
+// fee_schedule_change
+subject: (row) => {
+    if (row.type !== 'fee_schedule_change') { return '—'; }
+    const pair = [row.target_class_level, row.target_term].filter(Boolean).join(' · ');
+    const named = [pair, row.target_label].filter(Boolean).join(' — ');
+    const fallback = `#${row.target_schedule_id?.slice(0, 8) ?? 'unknown'}`;
+    return `${row.kind} · ${named === '' ? fallback : named}`;
+},
+
+// discount_policy_change
+subject: (row) => {
+    if (row.type !== 'discount_policy_change') { return '—'; }
+    const value = discountValue(row);                       // `10%`, or formatNaira(...)
+    const policy = row.name ?? row.target_policy_name ?? 'unnamed policy';
+    return `${row.kind} · ${policy}${value === null ? '' : ` · ${value}`}`;
+},
+```
+
+The uuid-tail fallback is the brief's `#47` allowance and is not expected to fire: the parts are
+proven present and populated over HTTP in ARM 5. A discount **value** is rendered in the subject and
+still never in the money column — a rate is not money moving.
+
+### The list entry shape, verbatim
+
+```ts
+export type ApprovalFeed = {
+    type: PendingApproval['type'];
+    label: string;
+    badgeClass: string;
+    pendingUrl: () => string;
+    decide?: {
+        approve: (id: string) => string;
+        reject: (id: string) => string;
+        approvedMessage: string;
+    };
+    decidedElsewhere?: string;
+    /**
+     * WHICH thing this row is about, in human terms. REQUIRED — see the module docblock. It must
+     * distinguish two pending rows of the same type from each other; a bare type name does not.
+     */
+    subject: (row: PendingApproval) => string;
+};
+```
+
+`subject` required, `decide` optional — and the module docblock now states the asymmetry explicitly:
+**`decide` may be withheld only because the endpoint does not exist. It is never the answer to a row
+that is hard to label** — withholding it there reproduces this branch's own defect, and the fix for a
+hard label is to put the subject on the wire.
+
+## The pattern, named
+
+The lead asked for this by name because it is now its fourth appearance on one branch. The pattern is
+**an assertion that is green for a reason other than the one it claims**, and it has four distinct
+faces here:
+
+1. **Exiting through a guard instead of the claim.** ARM 3 claims "all five types reach a checker in
+   the one shape the queue consumes". Round 1's RED 4 (bare-array envelope) made it fail on its
+   *first* line — `not->toBeNull` — so the `toHaveKeys` half, which is what the test is named for,
+   had never been shown to fail. Closed this round: RED 15 drops `can_reject` from one resource and
+   the failure is now `Failed asserting that an array has the key 'can_reject'`. And the message
+   string printed where an operand normally sits (`Expecting null not to be null '/api/v1/…ng row'`)
+   is why that output reads as though a key were compared against a sentence.
+2. **Counting the declaration instead of the data.** The first subject test counted `^\s+subject: `
+   over the whole module and read **6 renderers for 5 entries** — the `ApprovalFeed` type's own
+   member matched. Had the count gone the other way it would have been a permanent silent pass.
+   Closed by `aqfFeedsArrayBody()`, which narrows to the array literal.
+3. **A mutation that does not mutate.** RED 12's first form removed `->with(['submitter',
+   'target.term', 'target.classLevel'])` and the test **stayed green**. Not a flake and not a bad
+   assertion: the line above the new fields, `'target_schedule_id' => $this->target?->uuid`,
+   lazy-loads `target` during `toArray()`, so `whenLoaded('target', …)` is *always* satisfied and the
+   closures lazy-load `term` and `classLevel` in turn. The eager load is an N+1 fix and nothing more.
+   **My controller docblock claimed otherwise and was wrong**; it now says what is true, and the red
+   mutates the RESOURCE instead.
+4. **Pinning one half of a two-half invariant.** The reviewer's finding 4: the coverage guard read
+   imports and not wiring, so aliasing `void`'s `pendingUrl` at `pendingCredit.url()` was green while
+   pending voids rendered nowhere. Closed by the alias multiset test — and watched red with exactly
+   that aliasing (RED 7).
+
+The lesson is not "be careful", which is unenforceable. It is that **an assertion must be shown to
+fail for the reason it claims**, and the watched red is the only thing that shows it. Three of these
+four were found *by* watching a red, not by reading the code: instance 3 in particular was invisible
+to inspection and would have shipped as a false guarantee in a docblock.
+
+## The watched reds — round 2
+
+Eleven mutations, each run and each restored. Backups in the scratchpad; `git status` clean of
+mutations after each; the 12/12 green below is post-restore. Output is the raw pest reporter line,
+truncated to the failure message.
+
+**RED 5 — phantom branch** (the "both directions" claim that had only been proven in one). Deleted
+the opening-balance route, left the entry in the list:
+
+```
+The approvals queue declares a feed with no registered route: OpeningBalanceBatchController
+— the page would fetch a URL that does not exist.
+```
+
+**RED 6 — duplicate entry.** Added a second `credit_note` entry:
+
+```
+APPROVAL_FEEDS has 6 entries for 5 registered pending routes.
+```
+
+**RED 7 — wiring, the reviewer's finding 4.** `void`'s `pendingUrl` aliased at the credit feed:
+
+```
+The declared feed list imports [pendingCredit, pendingDiscountChange, pendingOpeningBalance,
+pendingScheduleChange, pendingVoid] but its entries fetch [pendingCredit, pendingCredit,
+pendingDiscountChange, pendingOpeningBalance, pendingScheduleChange]. A duplicate on the right
+means one type is fetched twice and another never — its rows render on no screen.
+```
+
+**RED 8 — a feed with no subject.** Renamed one entry's `subject:` key:
+
+```
+APPROVAL_FEEDS has 5 entries and 4 subject renderers. A feed with no subject renders rows that
+name their TYPE and not the thing being approved, which is a second signature given to something
+the checker cannot identify.
+```
+
+**RED 9 — the page reaches for a hardcoded import again.** Added one controller import to
+`approvals.tsx`:
+
+```
+Failed asserting that two arrays are identical.
+-Array &0 []
++Array &0 [ 0 => 'CreditNoteController' ]
+```
+
+**RED 10 — ARM 1.** Ungated the fee-schedule feed, so a credit-only checker 403s on three of four:
+
+```
+Expected response status code [403] but received 200.
+```
+
+**RED 11 — ARM 3b.** Forced `can_approve => true` on the opening-balance resource:
+
+```
+     'discount_policy_change' => true,
+-    'opening_balance' => false,
++    'opening_balance' => true,
+```
+
+**RED 12 — ARM 5, first form: GREEN. See the pattern above.** Removing the eager load changed no
+output. Second form — removed the three `target_*` fields from `FeeScheduleChangeResource`:
+
+```
+Failed asserting that null is of type string.
+```
+
+**RED 12b — ARM 5's second half, which the mutation above never reached.** Replaced the three
+subject parts with per-type constants: present, populated, and identical across both rows.
+
+```
+two pending fee-schedule changes render identically: publish|a class|a term|Fee schedule
+Failed asserting that actual size 1 matches expected size 2.
+```
+
+This is the reviewer's finding 1 reproduced exactly, and the assertion that refuses it.
+
+**RED 13 — ARM 6.** Dropped `target` from the discount eager load — here it genuinely is
+load-bearing, because nothing else on that resource touches the relation:
+
+```
+Failed asserting that null is of type string.
+```
+
+**RED 14 — ARM 7, School isolation on the new endpoint.** `->withoutGlobalScopes()`:
+
+```
+Failed asserting that actual size 2 matches expected size 1.
+```
+
+**RED 15 — ARM 3's shape half** (pattern instance 1). Dropped `can_reject` from one resource:
+
+```
+Failed asserting that an array has the key 'can_reject'
+```
+
+Every assertion in both new files has now been watched red. The docblock claim that the guard works
+"in BOTH directions" is demonstrated rather than asserted.
+
+## Tickets closed
+
+- **Reviewer 2** — `decidedElsewhere` no longer names a screen that does not exist. It reads
+  **"No decision screen yet — §9 step 5b"**. Naming a screen sends the approver somewhere, which is
+  the same dishonesty as a dead button.
+- **Reviewer 3** — closed by the eleven reds above rather than by striking the claim.
+- **The citation** — `DiscountPolicyChangeResource`'s raw `value_minor` / `value_currency` are at
+  `:20-21` on `a7d24f1` and `:45-46` on this branch. Corrected in the findings section above.
+
+## Proof — round 2
+
+```
+$ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php tests/Feature/Finance/ApprovalsQueueRendersEveryTypeTest.php
+{"tool":"pest","result":"passed","tests":12,"passed":12,"assertions":157,"duration_ms":16875}
+```
+
+`bin/quality` **failed first**, and the failure is worth pasting rather than hiding — it is the
+Larastan error the new `target` relation caused, and the reason the generic annotation above is not
+cosmetic:
+
+```
+[13/14] static analysis (Larastan level 5 vs baseline)
+   ✗ larastan
+       {"tool":"phpstan","result":"failed","errors":1,"error_details":{
+         ".../app/Finance/Http/Resources/DiscountPolicyChangeResource.php":[{"line":42,
+         "message":"Access to an undefined property Illuminate\\Database\\Eloquent\\Model::$name.",
+         "identifier":"property.notFound"}]}}
+✗ quality: FAIL (1): larastan
+```
+
+After annotating `DiscountPolicyChange::target()`:
+
+```
+[1/14] … ✓ dependency-integrity-lint
+[2/14] … ✓ wayfinder:generate
+[3/14] … ✓ lint-changed
+[4/14] … ✓ tsc-ratchet
+[5/14] … ✓ build
+[6/14] … ✓ authz-lint
+[7/14] … ✓ boundary-lint
+[8/14] … ✓ grants-convergence-lint
+[9/14] … ✓ money-lint
+[10/14] … ✓ runtime-zero-lint
+[11/14] … ✓ identifier-generation-lint
+[12/14] … ✓ arch
+[13/14] … ✓ larastan
+[14/14] … ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+No fixture regeneration this round: no route was added, moved or re-gated, and `git diff` on
+`tests/fixtures/` is empty since round 1.
+
+## Not done — round 2
+
+- **Still no browser drive.** Unchanged from round 1, and now carrying more: the subject strings are
+  composed in TypeScript and nobody has read one on a rendered page. What is proven is that every
+  part they compose from is on the wire, populated, and different per target (ARM 5, ARM 6). The
+  composition itself is unproven — there is no JS test runner to prove it with, and that is exactly
+  the seam pattern instance 3 lives in.
+- **The reviewer's ordering ticket is still open** — `pending()` orders `id` ascending on the two
+  change feeds and descending on the two working ones. Out of scope, unchanged, still worth a ticket.
+- **I did not re-spawn the reviewer.** Round 2 is a response to its findings; a second pass by the
+  same subagent on the same branch is worth less than the cold session the headline already
+  recommends.

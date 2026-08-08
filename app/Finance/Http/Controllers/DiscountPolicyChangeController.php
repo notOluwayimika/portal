@@ -47,14 +47,16 @@ class DiscountPolicyChangeController extends Controller
     }
 
     /**
-     * The checker's pending queue for this type — the `data` envelope and the eager-loaded maker are
-     * §9 step 5a's, for the reasons written out on FeeScheduleChangeController::pending().
+     * The checker's pending queue for this type — the `data` envelope, the eager-loaded maker and
+     * the eager-loaded TARGET policy (the subject of an amend or a retire, where this row's own
+     * `name` is null) are §9 step 5a's, for the reasons written out on
+     * FeeScheduleChangeController::pending().
      */
     public function pending(): JsonResponse
     {
         $changes = DiscountPolicyChange::query()
             ->where('status', DiscountPolicyChangeStatus::Submitted->value)
-            ->with('submitter')
+            ->with(['submitter', 'target'])
             ->orderBy('id')
             ->get();
 

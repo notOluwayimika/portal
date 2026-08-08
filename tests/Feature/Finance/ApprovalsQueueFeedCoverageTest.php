@@ -34,6 +34,20 @@ function aqfRead(string $relative): string
 }
 
 /**
+ * Just the APPROVAL_FEEDS array literal. Counting `type:` or `subject:` over the whole file also
+ * counts the ApprovalFeed TYPE DECLARATION's members, which are not entries — the first version of
+ * the subject test did exactly that and read 6 subjects for 5 entries. Narrow to the body, so the
+ * counts are of things that are actually feeds.
+ */
+function aqfFeedsArrayBody(string $source): string
+{
+    $start = strpos($source, 'export const APPROVAL_FEEDS');
+    $end = strpos($source, "\n];", (int) $start);
+
+    return substr($source, (int) $start, (int) $end - (int) $start);
+}
+
+/**
  * Every registered pending feed under the Finance API prefix, as `controller short name => uri`.
  * Derived from the ROUTER, never from a list in this file — a second hardcoded list is the thing
  * being guarded against, and writing one here would make this test agree with itself.
@@ -84,6 +98,42 @@ function aqfDeclaredControllers(string $source): array
     return $controllers;
 }
 
+/**
+ * The local aliases the feed list IMPORTS its pending routes under — `pending as pendingVoid` →
+ * `pendingVoid`. A multiset, not a set: a duplicate import is itself worth seeing.
+ *
+ * @return list<string>
+ */
+function aqfImportedPendingAliases(string $source): array
+{
+    preg_match_all('/^\s+pending as ([A-Za-z]+),?$/m', $source, $matches);
+
+    // The single-line import form (`import { pending as x } from '…';`) does not match the
+    // multi-line shape above, so it is picked up separately.
+    preg_match_all('/^import \{ pending as ([A-Za-z]+) \} from /m', $source, $single);
+
+    $aliases = [...$matches[1], ...$single[1]];
+    sort($aliases);
+
+    return $aliases;
+}
+
+/**
+ * The aliases each ENTRY actually calls in its `pendingUrl` — `pendingUrl: () => pendingVoid.url()`
+ * → `pendingVoid`. This is the half that says what the page fetches, as opposed to what it imports.
+ *
+ * @return list<string>
+ */
+function aqfWiredPendingAliases(string $source): array
+{
+    preg_match_all('/pendingUrl: \(\) => ([A-Za-z]+)\.url\(\)/', $source, $matches);
+
+    $aliases = $matches[1];
+    sort($aliases);
+
+    return $aliases;
+}
+
 it('every pending feed the API registers is declared on the approvals queue, and nothing else is', function () {
     $routes = aqfPendingRoutes();
     $declared = aqfDeclaredControllers(aqfRead(AQF_FEEDS_MODULE));
@@ -102,9 +152,61 @@ it('every pending feed the API registers is declared on the approvals queue, and
     // The count is asserted separately so a DUPLICATE entry (same controller twice — a merge
     // artefact that the set comparison above cannot see) is caught: it would render every row of
     // that type twice.
-    $entries = preg_match_all("/^\s+type: '/m", aqfRead(AQF_FEEDS_MODULE));
+    $entries = preg_match_all("/^\s+type: '/m", aqfFeedsArrayBody(aqfRead(AQF_FEEDS_MODULE)));
     expect($entries)->toBe(count($registered),
         "APPROVAL_FEEDS has {$entries} entries for ".count($registered).' registered pending routes.');
+});
+
+/**
+ * IMPORT COVERAGE IS NOT WIRING COVERAGE, and the test above only had the first half. Every import
+ * can be present, all five entries can exist, both directions of the route comparison can agree —
+ * and one entry can still be pointed at another feed's url:
+ *
+ *     { type: 'void', …, pendingUrl: () => pendingCredit.url() }
+ *
+ * That is green under every assertion above, and it fetches credit notes twice while fetching void
+ * requests never. Pending voids then render on NO screen: the exact defect this file is named for,
+ * reintroduced inside the one file whose docblock tells you to be careful.
+ *
+ * So the aliases are pinned 1:1. Each `pending as X` import must be called by exactly one entry's
+ * `pendingUrl`, and each entry must call an imported one. A multiset comparison, not a set — set
+ * equality would pass the aliasing above the moment a sixth entry happened to mention the orphaned
+ * alias somewhere.
+ */
+it('every imported pending alias is wired to exactly one entry, and every entry to an imported one', function () {
+    $source = aqfRead(AQF_FEEDS_MODULE);
+
+    $imported = aqfImportedPendingAliases($source);
+    $wired = aqfWiredPendingAliases(aqfFeedsArrayBody($source));
+
+    expect($wired)->toBe($imported, 'The declared feed list imports ['.implode(', ', $imported)
+        .'] but its entries fetch ['.implode(', ', $wired).']. A duplicate on the right means one '
+        .'type is fetched twice and another never — its rows render on no screen.');
+});
+
+/**
+ * A ROW THAT CANNOT SAY WHICH THING IT IS ABOUT VOIDS THE CONTROL IT IMPLEMENTS. Maker-checker's
+ * premise is that a second person looks at THE THING; two pending fee-schedule publishes that both
+ * render "Fee schedule · publish" make the signature ceremonial, and that state was reachable
+ * (`open_key` forbids two open requests against the same schedule, not against different ones).
+ *
+ * The fix is not "label these two types" — it is that the LIST carries the rule, so the sixth type
+ * cannot be added without answering the question. `subject` is required on `ApprovalFeed`, which
+ * TypeScript enforces at the point of writing; this asserts it at the point of running, so an entry
+ * that reaches `main` without one is red rather than silently rendering a type name.
+ */
+it('every declared feed says which thing its rows are about', function () {
+    $source = aqfRead(AQF_FEEDS_MODULE);
+
+    $body = aqfFeedsArrayBody($source);
+
+    $entries = preg_match_all("/^\s+type: '/m", $body);
+    $subjects = preg_match_all('/^\s+subject: /m', $body);
+
+    expect($subjects)->toBe($entries,
+        "APPROVAL_FEEDS has {$entries} entries and {$subjects} subject renderers. A feed with no "
+        .'subject renders rows that name their TYPE and not the thing being approved, which is a '
+        .'second signature given to something the checker cannot identify.');
 });
 
 /**

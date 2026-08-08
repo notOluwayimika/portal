@@ -19,7 +19,11 @@ import {
     pending as pendingVoid,
     reject as rejectVoid,
 } from '@/actions/App/Finance/Http/Controllers/VoidRequestController';
-import type { PendingApproval } from '@/types/finance';
+import { formatNaira } from '@/lib/format';
+import type {
+    DiscountPolicyChangeApproval,
+    PendingApproval,
+} from '@/types/finance';
 
 /**
  * THE APPROVALS QUEUE'S FEEDS, DECLARED (§9 step 5a).
@@ -36,12 +40,26 @@ import type { PendingApproval } from '@/types/finance';
  * (tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php) walks the registered routes, takes
  * every `/api/v1/finance/**\/pending` it finds, and asserts this file imports that controller —
  * in BOTH directions, so a feed that exists and is unrendered fails, and so does an entry whose
- * route has gone. The test parses this source as text (the precedent is
- * NotificationDeepLinkRouteTest, which reads use-notifications.ts the same way, for the same
- * reason: the alternative is a dead surface discovered in production). Two consequences worth
- * knowing before editing: the per-controller `from '@/actions/App/Finance/Http/Controllers/X'`
- * import lines are LOAD-BEARING, and this list must live in its own module rather than inside the
- * page, so that what the test reads is a declaration and not a component.
+ * route has gone. It also pins the per-entry `pendingUrl` ALIASES against the import aliases 1:1,
+ * because import coverage alone stays green if one entry is pointed at another feed's url: every
+ * import present, five entries, and one type silently fetched twice while another is fetched
+ * never. The test parses this source as text (the precedent is NotificationDeepLinkRouteTest,
+ * which reads use-notifications.ts the same way, for the same reason: the alternative is a dead
+ * surface discovered in production). Two consequences worth knowing before editing: the
+ * per-controller `from '@/actions/App/Finance/Http/Controllers/X'` import lines are LOAD-BEARING,
+ * and this list must live in its own module rather than inside the page, so that what the test
+ * reads is a declaration and not a component.
+ *
+ * `subject` IS REQUIRED, AND THAT IS THE RULE THIS LIST CARRIES. An approval row that cannot say
+ * WHICH thing it is about voids the control it implements: maker-checker's premise is that a
+ * second person looks at the thing, and a screen showing two rows that both read
+ * "Fee schedule · publish" makes the second signature ceremonial. That state was live and
+ * reachable — `open_key` forbids two open requests against the SAME schedule and permits any
+ * number against different ones, so a checker really can face several at once. Making `subject` a
+ * required member of ApprovalFeed means the sixth type cannot be added without answering the
+ * question, and ApprovalsQueueFeedCoverageTest fails an entry that declares none — the rule is
+ * enforced rather than remembered. Compose it from fields the Resource EMITS; if the parts are not
+ * on the wire, put them there (both change resources gained `target_*` fields for exactly this).
  *
  * DECISION URLS ARE OPTIONAL, and that is the honest shape rather than a convenience. A type whose
  * decisions are taken elsewhere carries `decidedElsewhere` instead of `decide`, and the queue
@@ -49,8 +67,12 @@ import type { PendingApproval } from '@/types/finance';
  * shipped their approval gate as domain only — there is no approve/reject endpoint and no policy
  * until step 5b's operator screen. Rendering them with Approve/Reject would produce a row an
  * approver can see, press and fail on, which is worse than an absent one: absent is honestly
- * broken, present-and-dead is dishonestly broken. Step 5b turns this into a decidable row by
- * giving this one entry a `decide`.
+ * broken, present-and-dead is dishonestly broken.
+ *
+ * Note the asymmetry deliberately: `decide` may be withheld ONLY because the endpoint does not
+ * exist. It is never the answer to a row that is hard to label — withholding it there reproduces
+ * this branch's own defect, a visible row nobody can act on, and the fix for a hard label is to
+ * put the subject on the wire.
  */
 export type ApprovalFeed = {
     /** The `type` discriminator the matching Resource emits. */
@@ -70,9 +92,38 @@ export type ApprovalFeed = {
     };
     /** Where this type IS decided, when `decide` is absent. Shown in place of the buttons. */
     decidedElsewhere?: string;
-    /** The row's human handle in the Request column. */
-    rowLabel: (row: PendingApproval) => string;
+    /**
+     * WHICH thing this row is about, in human terms. REQUIRED — see the module docblock. It must
+     * distinguish two pending rows of the same type from each other; a bare type name does not.
+     */
+    subject: (row: PendingApproval) => string;
 };
+
+/** `10%`, or a fixed amount through the single money renderer. Null when the change states neither. */
+function discountValue(row: DiscountPolicyChangeApproval): string | null {
+    if (
+        row.basis === 'percent' &&
+        row.percent !== null &&
+        row.percent !== undefined
+    ) {
+        return `${row.percent}%`;
+    }
+
+    if (
+        row.basis === 'amount' &&
+        row.value_minor !== null &&
+        row.value_minor !== undefined &&
+        row.value_currency !== null &&
+        row.value_currency !== undefined
+    ) {
+        return formatNaira({
+            amount_minor: row.value_minor,
+            currency: row.value_currency,
+        });
+    }
+
+    return null;
+}
 
 export const APPROVAL_FEEDS: ApprovalFeed[] = [
     {
@@ -86,7 +137,8 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
             reject: (id) => rejectCredit.url(id),
             approvedMessage: 'credit applied',
         },
-        rowLabel: (row) =>
+        // The note's own number already names one document.
+        subject: (row) =>
             row.type === 'credit_note' ? row.display_number : '—',
     },
     {
@@ -100,7 +152,8 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
             reject: (id) => rejectVoid.url(id),
             approvedMessage: 'invoice voided',
         },
-        rowLabel: (row) =>
+        // The invoice being reversed is the subject.
+        subject: (row) =>
             row.type === 'void'
                 ? `Void · ${row.invoice_display_number ?? '—'}`
                 : '—',
@@ -116,10 +169,22 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
             reject: (id) => rejectScheduleChange.url(id),
             approvedMessage: 'fee schedule change applied',
         },
-        rowLabel: (row) =>
-            row.type === 'fee_schedule_change'
-                ? `Fee schedule · ${row.kind}`
-                : '—',
+        // The ACT plus the schedule it acts on. A schedule IS its (class level × term) pair, so
+        // those identify it even when two carry the same author-written label. The uuid tail is
+        // the last resort — ugly, and still better than two rows a checker cannot tell apart.
+        subject: (row) => {
+            if (row.type !== 'fee_schedule_change') {
+                return '—';
+            }
+
+            const pair = [row.target_class_level, row.target_term]
+                .filter(Boolean)
+                .join(' · ');
+            const named = [pair, row.target_label].filter(Boolean).join(' — ');
+            const fallback = `#${row.target_schedule_id?.slice(0, 8) ?? 'unknown'}`;
+
+            return `${row.kind} · ${named === '' ? fallback : named}`;
+        },
     },
     {
         type: 'discount_policy_change',
@@ -132,10 +197,20 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
             reject: (id) => rejectDiscountChange.url(id),
             approvedMessage: 'discount policy change applied',
         },
-        rowLabel: (row) =>
-            row.type === 'discount_policy_change'
-                ? `Discount · ${row.name ?? row.kind}`
-                : '—',
+        // The ACT, the policy, and the rate or amount at stake. A create and an amend name
+        // themselves; a RETIRE carries no name, no basis and no value at all (the `…_terms_shape`
+        // CHECK forbids them), so its subject is the target policy's name and nothing else.
+        subject: (row) => {
+            if (row.type !== 'discount_policy_change') {
+                return '—';
+            }
+
+            const value = discountValue(row);
+            const policy =
+                row.name ?? row.target_policy_name ?? 'unnamed policy';
+
+            return `${row.kind} · ${policy}${value === null ? '' : ` · ${value}`}`;
+        },
     },
     {
         type: 'opening_balance',
@@ -143,9 +218,12 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400',
         pendingUrl: () => pendingOpeningBalance.url(),
-        // No `decide`: see the module docblock — the decision surface is §9 step 5b.
-        decidedElsewhere: 'Decided on the opening-balance batch screen',
-        rowLabel: (row) =>
+        // No `decide`: see the module docblock — the decision surface is §9 step 5b. The sentence
+        // says the screen is NOT BUILT rather than naming one, because naming a screen that does
+        // not exist sends the approver somewhere and is the same dishonesty as a dead button.
+        decidedElsewhere: 'No decision screen yet — §9 step 5b',
+        // The batch reference is the operator's own handle for the file they uploaded.
+        subject: (row) =>
             row.type === 'opening_balance'
                 ? `Batch · ${row.batch_reference}`
                 : '—',
@@ -157,7 +235,7 @@ export function feedFor(row: PendingApproval): ApprovalFeed | undefined {
     return APPROVAL_FEEDS.find((feed) => feed.type === row.type);
 }
 
-/** The row's human handle, via its own feed. */
-export function rowLabel(row: PendingApproval): string {
-    return feedFor(row)?.rowLabel(row) ?? '—';
+/** WHICH thing this row is about, via its own feed. */
+export function rowSubject(row: PendingApproval): string {
+    return feedFor(row)?.subject(row) ?? '—';
 }

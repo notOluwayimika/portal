@@ -343,6 +343,16 @@ map. On `portal_testing`: seed → `executive_director` holds `.approve` + `.rej
 `accounts_supervisor` holds `.submit`; run `2026_08_06_100000` → all three gone.
 `accounts_officer`'s `.submit` survived only because that role is not governed by that TARGET.
 
+**And it is a rule, not a note.** `tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php`
+enforces it repo-wide: for every role a forcing migration governs, every permission the grants map
+gives that role inside the frozen namespace must appear either in the migration's own `TARGET` or in
+an `@converges <role> <permission>` marker on a migration dated after it. Both sides are derived from
+source — the namespace and target by reflecting the migration's constants, the grants from
+`RbacSeeder`, the markers by scanning `database/migrations/` — so a grant added tomorrow with no
+convergence migration turns it red with nobody editing the test. **Forcing migrations are registered
+by filename in that file's `FORCING_MIGRATIONS` list**, because "forcing" is a property of the body
+(it revokes `array_diff($current, $target)`) that no constant declares; today the list has one entry.
+
 **The rule.** Adding a `finance.*` grant to a role governed by a forcing target requires a **new dated
 convergence migration**, additive-only, dated after the forcing one. Never edit the forcing literal:
 its frozen act is honest and describes what its author intended on the day, which is the whole value

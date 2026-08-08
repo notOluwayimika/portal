@@ -79,6 +79,13 @@
  *      after it (`2026_08_09_110000`), declared through exemption 3. So: before relying on this
  *      exemption, check whether a forcing migration governs the role and namespace you are granting
  *      into. See ADR 0052 § "A FORCING target freezes a namespace, not a row set".
+ *
+ *      YOU DO NOT HAVE TO REMEMBER THIS. `tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php`
+ *      is the gate: it derives each forcing migration's namespace and target by reflection, reads the
+ *      grants map and every later `@converges` marker, and fails on any governed grant covered by
+ *      neither. This note explains WHY that test exists; the test is what stops it happening again.
+ *      Deliberately a test and not a rule here: this lint is diff-based (`--diff-filter=A`) and the
+ *      population that invariant governs is files already on the base, which it cannot see.
  *   2. THE ROLE IS NEW — the same diff adds the role to `RbacSeeder::ROLES`. Then
  *      `in_array($roleName, $existingRoles, true)` is false and the role receives the FULL
  *      `$permissions` array. No migration needed.

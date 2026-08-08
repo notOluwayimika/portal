@@ -144,7 +144,13 @@ return new class extends Migration
      * ║ and must stay so. 4c's repair is                                                            ║
      * ║ `2026_08_09_110000_converge_opening_balance_grants.php`, additive-only, dated after this.    ║
      * ║ Anyone adding a `finance.*` grant to a governed role must ship the same kind of file, or     ║
-     * ║ the grant will not survive a deploy. Also recorded in ADR 0052 and beside exemption 1 in     ║
+     * ║ the grant will not survive a deploy — and that is now ENFORCED, not merely written down:    ║
+     * ║ tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php derives this file's        ║
+     * ║ NAMESPACE and TARGET by reflection, reads the grants map and every later `@converges`        ║
+     * ║ marker, and goes red on any governed grant covered by neither. This file is registered in    ║
+     * ║ that test's FORCING_MIGRATIONS list; a second forcing migration must be added there by hand, ║
+     * ║ because "forcing" is a property of the body that no constant declares.                       ║
+     * ║ Also recorded in ADR 0052 and beside exemption 1 in                                          ║
      * ║ `bin/ci-grants-convergence-lint.php` — "no migration needed" is a statement about the LINT,  ║
      * ║ never about the deploy.                                                                     ║
      * ╚═════════════════════════════════════════════════════════════════════════════════════════════╝

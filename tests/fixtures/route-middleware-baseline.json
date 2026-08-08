@@ -797,6 +797,13 @@
         "tenant",
         "permission:finance.access"
     ],
+    "GET /api/v1/finance/opening-balance-batches/pending": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.opening-balance.approve"
+    ],
     "GET /api/v1/finance/students/{student}/billable-enrollment": [
         "api",
         "auth:sanctum",

@@ -10,8 +10,10 @@ use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Actions\RejectOpeningBalanceBatch;
 use App\Finance\Actions\SubmitOpeningBalanceBatch;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
+use App\Models\User;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -96,6 +98,19 @@ class OpeningBalanceBatch extends Model
     public function rows(): HasMany
     {
         return $this->hasMany(OpeningBalanceRow::class, 'batch_id');
+    }
+
+    /**
+     * The MAKER, for display on the approvals queue (§9 step 5a) — the read-side twin of
+     * CreditNote::submittedBy(). `submitted_by_user_id` carries no database FK by design (the
+     * column's docblock above says why), and an Eloquent belongsTo does not need one; this
+     * resolves a name, it does not add a constraint.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by_user_id');
     }
 
     public function getRouteKeyName(): string

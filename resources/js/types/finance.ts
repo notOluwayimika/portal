@@ -93,12 +93,77 @@ export type VoidRequest = {
     created_at: string;
 };
 
-// The two documents that flow through the maker-checker approvals queue. Both resources
-// carry a `type` discriminator; the queue merges the two pending feeds and routes the
-// approve/reject call to the right controller by `type`.
+// FeeScheduleChangeResource on the approvals queue (§9 step 5a). `amount` is null — approving a
+// publish/retire moves no money — and `note` mirrors `reason` so the queue reads one field across
+// every type, exactly as VoidRequest does.
+export type FeeScheduleChangeApproval = {
+    type: 'fee_schedule_change';
+    id: string; // uuid
+    kind: string;
+    target_schedule_id?: string | null;
+    reason: string;
+    note?: string | null;
+    amount?: Money | null;
+    status: string;
+    submitted_by_name?: string | null;
+    rejection_reason?: string | null;
+    can_approve: boolean;
+    can_reject: boolean;
+    created_at: string;
+};
+
+// DiscountPolicyChangeResource on the approvals queue (§9 step 5a). `amount` is null on purpose:
+// `value_minor` / `percent` are the policy's parameters, not a sum that moves on approval.
+export type DiscountPolicyChangeApproval = {
+    type: 'discount_policy_change';
+    id: string; // uuid
+    kind: string;
+    name?: string | null;
+    reason: string;
+    note?: string | null;
+    amount?: Money | null;
+    status: string;
+    submitted_by_name?: string | null;
+    rejection_reason?: string | null;
+    can_approve: boolean;
+    can_reject: boolean;
+    created_at: string;
+};
+
+// OpeningBalanceBatchResource on the approvals queue (§9 step 5a). `amount` is the batch's
+// control total — the position approval posts into the subledger in one transaction.
+//
+// `can_approve` / `can_reject` are present for shape parity and are FALSE for every viewer today:
+// there is no policy and no approve/reject endpoint yet (that is §9 step 5b). The queue does not
+// read them for this type — APPROVAL_FEEDS declares no decision urls for it — so no dead button is
+// ever rendered off them.
+export type OpeningBalanceApproval = {
+    type: 'opening_balance';
+    id: string; // uuid
+    batch_reference: string;
+    invoice_id: null;
+    invoice_display_number: null;
+    amount?: Money | null;
+    note: null;
+    status: string;
+    submitted_by_name?: string | null;
+    decided_at?: string | null;
+    rejection_reason?: string | null;
+    can_approve: boolean;
+    can_reject: boolean;
+    created_at: string;
+};
+
+// Every document that flows through the maker-checker approvals queue. Each resource carries a
+// `type` discriminator and the queue renders all of them from ONE declared list
+// (lib/finance/approval-feeds.ts) — the union and that list are the two halves of the same
+// statement, and ApprovalsQueueFeedCoverageTest is what stops them drifting apart.
 export type PendingApproval =
     | (CreditNote & { type: 'credit_note' })
-    | VoidRequest;
+    | VoidRequest
+    | FeeScheduleChangeApproval
+    | DiscountPolicyChangeApproval
+    | OpeningBalanceApproval;
 
 // The account-level position (where credit-note credit is visible — it carries on the
 // balance, not as a per-invoice line). balance is signed (positive = owed).

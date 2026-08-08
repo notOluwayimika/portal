@@ -137,7 +137,7 @@ Today's tree carries **3 pages** (`admin/finance/index`, `approvals`, `statement
 | U14 | Void request — list + detail | Ph7 done | `request-void-modal` exists; no list. |
 | U15 | Refund — request + approval path | S10 | **Nothing.** |
 | **Oversight** ||||
-| U16 | Approvals queue — must cover **six** request types: fee-schedule change · discount-policy change · credit note · void · opening balance · refund | all | `approvals.tsx` exists, covers four. |
+| U16 | Approvals queue — must cover **six** request types: fee-schedule change · discount-policy change · credit note · void · opening balance · refund | all | **Five of six, and the sixth is blocked on its domain, not on this screen.** The old "covers four" was wrong twice over: it covered **two**, while four feeds were live and ability-gated at the API — fee-schedule changes and discount-policy changes were rendered nowhere, so a holder of `finance.fee-schedule.change.approve` had no screen at all. §9 step 5a added the opening-balance feed and made the page render every type from one declared list (`resources/js/lib/finance/approval-feeds.ts`), pinned to the registered routes by `ApprovalsQueueFeedCoverageTest` — so this row can no longer be wrong silently. Refund is the only type outstanding and has no domain yet (U15 / S10); when it lands it is one entry. Opening balances render but are not DECIDED here — their approve/reject surface is §9 step 5b. |
 | U17 | Student account statement — staff-facing | — | `statement.tsx` exists. |
 | U18 | Outstanding balances by class/year group + Excel export | V5 | **Nothing.** |
 | U19 | Activity-log filter for grant changes | S7 | Reuses the existing log; filter only. |

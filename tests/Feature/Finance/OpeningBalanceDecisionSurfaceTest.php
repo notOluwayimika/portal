@@ -68,6 +68,8 @@ const OBDS_APPROVE = 'finance.opening-balance.approve';
 
 const OBDS_REJECT = 'finance.opening-balance.reject';
 
+const OBDS_SUBMIT = 'finance.opening-balance.submit';
+
 /**
  * A web-session user in $school holding EXACTLY $permissions via a dedicated role — the shape
  * PaymentRecordGateTest and OpeningBalanceImportTemplateTest both use, and for their reason: role
@@ -415,7 +417,10 @@ function obdsRouteAbilities(): array
     foreach (Route::getRoutes() as $route) {
         $uri = $route->uri();
 
-        if (! str_starts_with($uri, 'api/v1/finance/opening-balance-batches/')) {
+        // NO TRAILING SLASH. §9 step 5b-iii added `POST` and `GET` on the bare collection uri, and a
+        // prefix ending in `/` excluded exactly those two — leaving the maker's upload route as the
+        // one opening-balance endpoint whose ability nothing pinned.
+        if (! str_starts_with($uri, 'api/v1/finance/opening-balance-batches')) {
             continue;
         }
 
@@ -437,7 +442,7 @@ function obdsRouteAbilities(): array
     return $found;
 }
 
-it('PROOF H — each decision route carries its OWN ability at the router, and only that one', function () {
+it('PROOF H — each opening-balance route carries its OWN ability at the router, and only that one', function () {
     // THE LAYER NO HTTP ARM IN THIS FILE CAN SEE. Strip `permission:…approve` off the approve route
     // and every other arm here stays green: a permissionless request simply travels one layer
     // further and is refused by the Policy, with the same 403. Two gates, and until this arm neither
@@ -448,17 +453,34 @@ it('PROOF H — each decision route carries its OWN ability at the router, and o
     // Policy's own `…reject` clause then produces the identical 403 an approve-only actor already
     // expects, and PROOF D cannot tell the two apart. The set says which ability, not merely that
     // there is one.
-    // The two read routes are included rather than filtered out: this arm is then also the pin that
-    // says the template stays on the MAKER ability and `pending` on the checker's, so a later edit
-    // cannot quietly hand the format to every approver.
+    // EVERY opening-balance route is listed, not just the two decisions, so this arm is also the pin
+    // that keeps the two halves apart: the maker's five on `…submit`, the checker's three on
+    // `…approve`/`…reject`, and the template on the MAKER's — a later edit cannot quietly hand the
+    // format to every approver, nor let a maker decide their own cutover by way of a route change.
     expect(obdsRouteAbilities())->toBe([
+        'GET api/v1/finance/opening-balance-batches' => [
+            OBDS_ACCESS,
+            OBDS_SUBMIT,
+        ],
         'GET api/v1/finance/opening-balance-batches/import/template' => [
             OBDS_ACCESS,
-            'finance.opening-balance.submit',
+            OBDS_SUBMIT,
         ],
         'GET api/v1/finance/opening-balance-batches/pending' => [
             OBDS_ACCESS,
             OBDS_APPROVE,
+        ],
+        'GET api/v1/finance/opening-balance-batches/{batch}' => [
+            OBDS_ACCESS,
+            OBDS_SUBMIT,
+        ],
+        'GET api/v1/finance/opening-balance-batches/{batch}/report' => [
+            OBDS_ACCESS,
+            OBDS_SUBMIT,
+        ],
+        'POST api/v1/finance/opening-balance-batches' => [
+            OBDS_ACCESS,
+            OBDS_SUBMIT,
         ],
         'POST api/v1/finance/opening-balance-batches/{batch}/approve' => [
             OBDS_ACCESS,
@@ -468,7 +490,11 @@ it('PROOF H — each decision route carries its OWN ability at the router, and o
             OBDS_ACCESS,
             OBDS_REJECT,
         ],
-    ], 'A decision route no longer requires its own ability at the router. Either a permission '
+        'POST api/v1/finance/opening-balance-batches/{batch}/submit' => [
+            OBDS_ACCESS,
+            OBDS_SUBMIT,
+        ],
+    ], 'An opening-balance route no longer requires its own ability at the router. Either a permission '
         .'middleware was dropped — in which case the Policy is the only gate left and no other arm '
         .'here can tell — or one route now carries another\'s ability, which PROOF D cannot see.');
 });

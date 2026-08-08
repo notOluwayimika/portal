@@ -268,20 +268,60 @@ return new class extends Migration
             // the map moves — the assignment-time guard runs only on assignment, and there is no
             // assignment here.
             //
-            // The reachable direction is the ED one: four maker-checker pairs now terminate on a single
-            // role, so any user who ends up holding executive_director alongside accounts_officer,
-            // finance_lead or accounts_supervisor is a both-sides holder. Removals from HoS and AS can
-            // only CLEAR violations, never create them, so the scope below is the GRANTED side of the
-            // transfer only. Uses DutySeparation::violations — the audit command's own primitive, so
-            // this cannot disagree with finance:audit-duty-separation — filtered to ENFORCED (finance)
-            // pairs, which is why pre-existing result.* findings do not abort a finance migration.
+            // ╔═════════════════════════════════════════════════════════════════════════════════════╗
+            // ║ RETRACTED 2026-08-08 — THIS ABORT CANNOT FIRE. READ BEFORE THE STRUCK SENTENCE.     ║
+            // ║                                                                                     ║
+            // ║ The struck sentence below was written as the reason this walk THROWS, and it is not ║
+            // ║ one. It is kept rather than deleted because it is the reasoning the next removal-   ║
+            // ║ only convergence migration would copy, and a deleted paragraph teaches nobody why   ║
+            // ║ it went.                                                                            ║
+            // ║                                                                                     ║
+            // ║ ON EVERY SEQUENCE `rbac:sync` PRODUCES, `$grantedThisRun` IS EMPTY. ED is new in    ║
+            // ║ RbacSeeder::ROLES, so `syncLogged` snapshots `$existingRoles` BEFORE creating it    ║
+            // ║ (RbacSeeder.php:492 then :507) and ED takes the whole-slice `: $permissions`        ║
+            // ║ branch (:542-544), receiving all nine. TARGET['executive_director'] is those same   ║
+            // ║ nine, so `array_diff($wanted, $current)` is []. head_of_school's target is [] and   ║
+            // ║ accounts_supervisor's is a subset of what it holds, so both grant [] too. The       ║
+            // ║ transfer's only real work is the REVOKE half — which is exactly why this file       ║
+            // ║ exists — and a revoke can never put a side into `$grantedThisRun`.                  ║
+            // ║                                                                                     ║
+            // ║ MEASURED, on a production-shaped throwaway database: rbac:sync, then HoS and AS     ║
+            // ║ left holding their pre-seat-move grants (rbac:sync revokes nothing), then one user  ║
+            // ║ holding executive_director + accounts_officer. The walk found EIGHT both-sides      ║
+            // ║ findings for that user — all four ED pairs, both directions — and reported every    ║
+            // ║ one of them as out of scope. `migrate` exited 0 and committed.                      ║
+            // ║                                                                                     ║
+            // ║ SO: a test that reaches the throw does so through a state the system cannot         ║
+            // ║ produce, and proves the branch EXECUTES rather than that it GUARDS. What actually   ║
+            // ║ covers the ED direction is DutySeparation::assertAssignmentAllowed at grant time    ║
+            // ║ (app/Models/User.php:412), with `finance:audit-duty-separation` as the detector for ║
+            // ║ pairings that predate it. The throw is RETAINED because it costs nothing and        ║
+            // ║ guards a path nobody has enumerated — not because it is load-bearing today.         ║
+            // ║                                                                                     ║
+            // ║ Only this comment is amended. up() and down() are untouched — ADR 0052's corollary  ║
+            // ║ governs the EXECUTING half, and its carve-out section records that a comment-only   ║
+            // ║ amendment is inside it. (This file has in any case never applied to an environment  ║
+            // ║ that persists: it is unmerged, and every run was a throwaway replay database.)      ║
+            // ╚═════════════════════════════════════════════════════════════════════════════════════╝
+            //
+            // ~~The reachable direction is the ED one: four maker-checker pairs now terminate on a
+            // single role, so any user who ends up holding executive_director alongside
+            // accounts_officer, finance_lead or accounts_supervisor is a both-sides holder.~~ — TRUE
+            // AS A STATEMENT ABOUT USERS, FALSE AS A STATEMENT ABOUT THIS ABORT; see the box.
+            //
+            // Removals from HoS and AS can only CLEAR violations, never create them, so the scope
+            // below is the GRANTED side of the transfer only. Uses DutySeparation::violations — the
+            // audit command's own primitive, so this cannot disagree with finance:audit-duty-separation
+            // — filtered to ENFORCED (finance) pairs, which is why pre-existing result.* findings do
+            // not abort a finance migration.
             //
             // SCOPED TO WHAT THIS RUN WROTE (ADR 0052). The walk still visits every user in every
             // school; what narrowed is which findings it will ROLL BACK for. A pair is this
             // migration's to block on only when one of its sides is a permission this run actually
             // granted. Anything else is a both-sides state the run did not create — reported, not
             // thrown on. A second, idempotent run grants nothing and so flags nothing, which is
-            // correct, because it wrote nothing.
+            // correct, because it wrote nothing. On the seeded path that is EVERY run, which is the
+            // box above.
             $enforced = collect(DutySeparation::enforcedPairs())
                 ->map(fn (array $pair): string => $pair['checker'].'|'.$pair['maker'])->all();
 

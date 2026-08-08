@@ -102,8 +102,12 @@ it('ARM 0 (bite-proof, runs first) — the planted pre-move state is real, so th
 it('ARM 1 — converges: HoS ends with no finance grant, AS with two, ED with nine', function () {
     edPlantPreMoveState();
 
-    // principal is GOVERNED by this migration and must come out unchanged — the 2026-08-04 answer
-    // was that the Principal keeps finance view. Captured before, compared after.
+    // principal is NOT governed by this migration and must come out unchanged — the 2026-08-04 answer
+    // was that the Principal keeps finance view. It is deliberately absent from TARGET (the migration
+    // says so at :121-124: "governing a role means FORCING it"), and this arm is what proves the
+    // absence holds rather than merely being intended. Do not read the assertion as evidence that
+    // principal belongs in TARGET — adding it there would invert the distinction the whole file rests
+    // on. Captured before, compared after.
     $principalBefore = edFinanceGrants('principal');
     expect($principalBefore)->toBe(['finance.access']);
 
@@ -282,7 +286,32 @@ it('ARM 6 — fresh install (no finance.* permission rows) is a quiet green, not
         ->and(DB::table('activity_log')->max('id'))->toBe($logMaxBefore);
 });
 
-it('ARM 7 — the duty-separation walk rolls the whole migration back on an enforced finance violation', function () {
+it('ARM 7 — the duty-separation walk rolls back, from a state rbac:sync cannot produce', function () {
+    // ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+    // │ READ THIS BEFORE COUNTING THIS ARM AS COVERAGE.                                           │
+    // │                                                                                            │
+    // │ THIS ARM PROVES THE BRANCH EXECUTES. IT DOES NOT PROVE THE BRANCH GUARDS. The only reason  │
+    // │ the throw is reachable here is edPlantPreMoveState() below, which REVOKES every            │
+    // │ executive_director permission first (:80-83). `rbac:sync` never produces that state: ED is │
+    // │ new in RbacSeeder::ROLES, so it takes the whole-slice branch (RbacSeeder.php:542-544) and  │
+    // │ already holds all nine before `migrate` runs. `$grantedThisRun` is therefore EMPTY on      │
+    // │ every real sequence, every finding is out of scope, and this abort CANNOT FIRE.            │
+    // │                                                                                            │
+    // │ Measured on a production-shaped throwaway database: one user holding executive_director +  │
+    // │ accounts_officer produced EIGHT both-sides findings — all four ED pairs, both directions — │
+    // │ every one reported as out of scope, `migrate` exit 0. See the retraction box in the        │
+    // │ migration's walk comment and ADR 0052 § "what the narrowing costs".                        │
+    // │                                                                                            │
+    // │ What actually covers the ED direction is DutySeparation::assertAssignmentAllowed at grant  │
+    // │ time (app/Models/User.php:412) — which is precisely why this pairing has to be planted raw │
+    // │ below — with `finance:audit-duty-separation` as the detector for pairings predating it.    │
+    // │                                                                                            │
+    // │ The arm is KEPT because the throw is kept: it costs nothing and guards a path nobody has   │
+    // │ enumerated, and an unexercised throw is how a future reachable path finds a broken one.    │
+    // │ ARM 8 is the arm that reflects production — the run grants nothing and every finding is    │
+    // │ reported rather than thrown on.                                                            │
+    // └───────────────────────────────────────────────────────────────────────────────────────────┘
+    //
     // The walk runs INSIDE the transaction, so a finding must leave the database exactly as it was —
     // not half-converged. Planted raw, because grant-time enforcement refuses this through the spatie
     // API: a user holding executive_director (checker on four pairs) AND accounts_officer (maker on
@@ -321,8 +350,11 @@ it('ARM 8 — a both-sides user this run did NOT create is REPORTED, not rolled 
     // never create one, so nothing this run writes can be a side of any violation — every finding is
     // out of scope by construction, which is the cleanest possible statement of the rule.
     //
-    // ARM 7 is the other half and must stay green: there the run grants ED's nine, so a violation
-    // involving one of them still throws and still rolls back.
+    // AND THIS ARM, NOT ARM 7, IS THE PRODUCTION ONE. The setup below — ED already at its nine —
+    // is exactly what `rbac:sync` leaves behind before `migrate` runs, so this is the only sequence
+    // a real deploy takes. ARM 7 reaches the throw only from a state `rbac:sync` cannot produce; see
+    // the box on it. Both are kept: ARM 7 keeps the retained throw exercised, this one pins what
+    // actually happens.
     edPlantPreMoveState();
 
     // Put ED and AS back at their frozen target, leaving only the HoS strip to do.

@@ -21,6 +21,414 @@ reason.
 **This is full-review tier** — it touches an applied migration, RBAC grants, and two fixture
 oracles. Subagent review attached; recommend a cold session before merge.
 
+---
+
+## Round 2 — the review's two `fix` findings, closed
+
+Everything above this line is round 1. The `finance-reviewer` subagent returned two `fix` findings
+and three `ticket`s; the project lead ruled on them and this section is the work. **Both `fix`
+findings reproduced.** Neither was taken on the reviewer's word.
+
+### R2 deviation, and it was the lead's to resolve
+
+The brief's item 2 said "delete the claim wherever the docblock says it" while its footer said "do
+not edit `2026_08_06` further — byte-identical to `17da5c3`". The loudest instance of the claim is
+inside that file. **I stopped and asked rather than picking.** The lead's ruling: the footer was
+over-broad and meant the **executing half** — which is what ADR 0052's corollary actually governs,
+what its carve-out argues about, and what item 1's replay was proving. A comment has never been in
+scope, and `2026_08_08_100000`'s retraction box is the standing precedent. Second and stronger:
+`2026_08_06` has **never applied to an environment that persists** — unmerged branch, every run a
+throwaway replay database — so the divergence the corollary exists for cannot have occurred.
+
+So the claim was corrected **in place**, in `2026_08_08_100000`'s retraction form, and the wider
+claim is narrowed everywhere it appears: **"executing half byte-identical to `17da5c3`"**, never
+"byte-identical". The wider claim was never the one that mattered and is now false. `2026_08_03` is
+untouched in both halves — its carve-out is settled and was not reopened.
+
+### R2 finding 1 — the deploy fails by design and no runbook said so (reproduced)
+
+Not taken on the reviewer's word. Reproduced at the **release boundary**: the seven release
+migrations moved out of `database/migrations/`, a throwaway database migrated to the pre-release
+state, `rbac:sync` run and then the `executive_director` row deleted — the exact shape of a
+production database whose seeder has not been run since ED entered `RbacSeeder::ROLES` — the files
+moved back, and then the deploy step exactly as both runbooks write it.
+
+```text
+=== 2. seed the RBAC substrate, then remove executive_director ===
+executive_director rows: 0
+finance.* permission rows: 17
+=== 3. the deploy step, exactly as both runbooks write it ===
+   php artisan migrate --force  exit=1
+=== 4. what actually landed ===
+APPLIED 2026_08_06_100000_create_finance_opening_balance_tables
+PENDING 2026_08_06_100000_move_head_of_school_finance_to_executive_director
+PENDING 2026_08_07_100000_add_file_row_count_to_opening_balance_batches
+PENDING 2026_08_07_110000_add_provenance_to_finance_payments
+PENDING 2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file
+PENDING 2026_08_08_110000_opening_balance_posting_state_and_guards
+PENDING 2026_08_08_120000_opening_balance_posted_rows_are_terminal
+=== 5. and the documented recovery: rbac:sync, then migrate again ===
+   php artisan migrate --force  exit=0
+pending after recovery: 0
+head_of_school finance.* grants: 0
+--- migration files restored: 0 dirty paths (0 expected)
+```
+
+The abort itself, verbatim:
+
+```text
+2026_08_06_100000_create_finance_opening_balance_tables .. 305.15ms DONE
+2026_08_06_100000_move_head_of_school_finance_to_executive_director  6.71ms FAIL
+
+  move-hos-finance-to-ed ABORTED: the [executive_director] role row does not exist yet. It is new
+  in RbacSeeder::ROLES, so run `php artisan rbac:sync` first and then re-migrate. This migration
+  deliberately does NOT create the row: two_factor_required is applied only at role creation
+  (RbacSeeder.php:461-477) and executive_director is in TWO_FACTOR_REQUIRED, so a row created here
+  would carry the flag FALSE permanently.
+```
+
+**The abort is right and was not weakened, not made to skip, and not touched at all.** Its executing
+half is byte-identical to `17da5c3` (proof below). One correction to the record that the reviewer did
+not raise and the runbooks now carry: **this is not a half-applied schema**, which is what both
+runbooks tell an operator to STOP and re-clone on. The throw is a pre-flight — it fires before any
+write and before the transaction opens — so nothing of that migration is partially applied, and the
+recovery is one command plus a re-run. A runbook that classed it with the DDL hazard would have sent
+someone to restore a backup over a state that needed `rbac:sync`.
+
+**The runbooks were wrong. Both now carry `rbac:sync` before `migrate --force`**, with why, what a
+skip looks like, and the recovery — see the two diffs below.
+
+#### The two runbook diffs, verbatim
+
+Prettier was NOT run on either file. `bin/lint-changed.sh:46` scopes Prettier to
+`resources/*.{ts,tsx,js,jsx,vue,css,json}`, so markdown under `docs/` is outside every gate —
+running it would have reflowed emphasis markers and table padding across both files and buried
+the change in cosmetic churn. (It was run once and reverted: it turned a 56-line insertion into
+an 84-add / 28-remove diff.)
+
+```diff
+diff --git a/docs/runbooks/clone-dress-rehearsal.md b/docs/runbooks/clone-dress-rehearsal.md
+index d6e78e4..2928c25 100644
+--- a/docs/runbooks/clone-dress-rehearsal.md
++++ b/docs/runbooks/clone-dress-rehearsal.md
+@@ -139,7 +139,55 @@ ## Step 2 — run the migrations
+ php artisan migrate:status          # what's pending against the cloned (old) schema
+ ```
+ 
+-Then, **only after Step 1 is all-pass**:
++### 2a — `rbac:sync` runs BEFORE `migrate`, and the ordering is PROCEDURAL
++
++```bash
++php artisan rbac:sync               # BEFORE migrate — see why, below
++```
++
++**Why.** `2026_08_06_100000_move_head_of_school_finance_to_executive_director` **governs a
++role the seeder creates**. `executive_director` is new in `RbacSeeder::ROLES`, and the
++migration deliberately refuses to create the row itself — `two_factor_required` is applied
++only at role creation (`RbacSeeder.php:507-517`) and ED is in `TWO_FACTOR_REQUIRED`, so a row
++created by a migration would carry the flag **false permanently**, silently stripping
++two-factor from the one seat that can approve money leaving four different ways. Aborting
++costs one command; creating costs an invisible security downgrade.
++
++**A migration cannot run a seeder, so nothing enforces this ordering.** It is the same
++enforced-versus-procedural split §11 uses: an enforced control fails a build, a procedural one
++needs a person who knows. This is procedural, and this line is the only thing carrying it.
++
++**Before you run it**, confirm `rbac:sync` is safe on this database: `php artisan
++rbac:diff-grants` → Section A must show `missing_rows` only. **Any `extra_rows` and you STOP** —
++`rbac:sync` hard-deletes permission rows the enum no longer declares and both pivots cascade, so
++it would take runtime matrix grants with it, without an audit trace. Full procedure:
++[`rbac-grants-reconciliation.md`](rbac-grants-reconciliation.md) §2a / §2b.
++
++**If you skip this and go straight to `migrate`, here is exactly what you get** — reproduced on
++a throwaway database at the release boundary:
++
++```text
++2026_08_06_100000_create_finance_opening_balance_tables .. 305.15ms DONE
++2026_08_06_100000_move_head_of_school_finance_to_executive_director  6.71ms FAIL
++
++  move-hos-finance-to-ed ABORTED: the [executive_director] role row does not exist yet. It is
++  new in RbacSeeder::ROLES, so run `php artisan rbac:sync` first and then re-migrate. …
++```
++
++`migrate` exits **1**, `create_finance_opening_balance_tables` has **landed**, and
++`2026_08_07_*` and both `2026_08_08_*` migrations **never ran**. That looks like the
++half-applied schema this step tells you to STOP on — but it is not one. The abort is a
++**pre-flight**: it fires before any write and before the transaction opens, so nothing of that
++migration is half-applied.
++
++**Recovery is one command, then re-run:** `php artisan rbac:sync && php artisan migrate --force`.
++Measured on the same database: exit **0**, zero pending, and `head_of_school` ends with zero
++`finance.*` grants. **This is the one `migrate` failure on this release that you re-run rather
++than re-clone** — check the error names `move-hos-finance-to-ed` before treating it as such.
++
++### 2b — the migrations
++
++Then, **only after Step 1 is all-pass and 2a has run**:
+ 
+ ```bash
+ php artisan migrate --force
+@@ -150,7 +198,9 @@ ## Step 2 — run the migrations
+   half-applied schema. Do **not** loop `migrate`. On the clone this is cheap (drop and
+   re-clone), but capture the exact error — it's the one you'd have hit in prod. The
+   slice-(i) migration (`2026_07_19_130000_add_school_id_to_student_curricula`) is the
+-  most likely abort point, and Step 1a is what prevents it.
++  most likely abort point, and Step 1a is what prevents it. **Exception:** the
++  `move-hos-finance-to-ed` abort in 2a, which is a pre-flight and is recovered by
++  running `rbac:sync` and re-running `migrate`.
+ 
+ ### Reversibility — separate, via the throwaway-DB gate
+ 
+@@ -298,7 +348,9 @@ ## Pass / fail summary
+ | 1b | `students.school_id` null | `0` | STOP — assign School per row |
+ | 1c | DB default collation | `utf8mb4_unicode_ci` | ALTER + recreate triggers (on prod too) |
+ | 1d | S7 divergence A1–A3 | (record only) | note for future backfill; not a blocker |
+-| 2 | `migrate --force` | exit 0 | STOP — half-applied schema, re-clone |
++| 2a | `rbac:diff-grants` Section A | `missing_rows` only | STOP on any `extra_rows` — see `rbac-grants-reconciliation.md` §2b |
++| 2a | `rbac:sync` **before** migrate | exit 0 | PROCEDURAL — nothing enforces the ordering; skipping it aborts `move-hos-finance-to-ed` |
++| 2 | `migrate --force` | exit 0 | STOP — half-applied schema, re-clone. **Except** a `move-hos-finance-to-ed` abort: run `rbac:sync`, re-run `migrate` |
+ | 2 | `bin/quality-clean-db` | four paths green | fix the `down()` bug it names |
+ | 3 | `audit:verify-immutability` | exit 0 | triggers missing — re-apply |
+ | 3 | `rbac:sync` | clean, super_admin healed | fix null-team seed context |
+```
+
+```diff
+diff --git a/docs/runbooks/phase1-deploy.md b/docs/runbooks/phase1-deploy.md
+index 69a8d2e..1466bf5 100644
+--- a/docs/runbooks/phase1-deploy.md
++++ b/docs/runbooks/phase1-deploy.md
+@@ -83,12 +83,55 @@ ## Step 3 — migrate
+ 
+ Only after steps 1 and 2 are zero.
+ 
+-|                    |                                                                        |
+-| ------------------ | ---------------------------------------------------------------------- |
+-| **Check**          | `php artisan migrate --force`                                          |
+-| **Pass criterion** | exit 0                                                                 |
+-| **Failure action** | STOP — see "if migrate fails mid-run" below. Do **not** re-run blindly |
+-| **Gate**           | Human-executed; repo-verified that the chain applies cleanly from zero |
++### 3a — `rbac:sync` FIRST — the ordering is procedural and nothing enforces it
++
++|                    |                                                                                                                     |
++| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
++| **Check**          | `php artisan rbac:diff-grants`, then `php artisan rbac:sync` — **before** `migrate`                                 |
++| **Pass criterion** | diff-grants Section A shows `missing_rows` only; `rbac:sync` exits 0                                                |
++| **Failure action** | Any `extra_rows` in Section A → **STOP, do not run `rbac:sync`** — see `rbac-grants-reconciliation.md` §2b          |
++| **Gate**           | **Human-executed and PROCEDURAL.** A migration cannot run a seeder, so no gate, lint or test can enforce this order |
++
++**Why this exists as a step.** `2026_08_06_100000_move_head_of_school_finance_to_executive_director`
++**governs a role the seeder creates.** `executive_director` is new in `RbacSeeder::ROLES`,
++and the migration deliberately refuses to create the row: `two_factor_required` is applied
++only at role creation (`RbacSeeder.php:507-517`) and ED is in `TWO_FACTOR_REQUIRED`, so a row
++created by a migration would carry the flag **false permanently** — silently stripping
++two-factor from the one seat that can approve money leaving four different ways. Aborting
++costs one command; creating costs an invisible security downgrade.
++
++This is §11's enforced-versus-procedural split in its clearest form: an enforced control fails
++a build, a procedural one needs a person who knows. **This line is the only thing carrying
++it**, and `bin/quality-clean-db` cannot cover it — that script migrates from **zero**, where
++the migration's fresh-install guard returns before the pre-flight is ever reached.
++
++**What a skipped 3a looks like** — reproduced on a throwaway database at the release boundary:
++
++```text
++2026_08_06_100000_create_finance_opening_balance_tables .. 305.15ms DONE
++2026_08_06_100000_move_head_of_school_finance_to_executive_director  6.71ms FAIL
++
++  move-hos-finance-to-ed ABORTED: the [executive_director] role row does not exist yet. It is
++  new in RbacSeeder::ROLES, so run `php artisan rbac:sync` first and then re-migrate. …
++```
++
++`migrate` exits **1**; `create_finance_opening_balance_tables` has landed; `2026_08_07_*` and
++both `2026_08_08_*` migrations never ran.
++
++**This is NOT the half-applied schema below, and must not be treated as one.** The abort is a
++pre-flight: it throws before any write and before the transaction opens, so nothing of that
++migration is partially applied. **Recovery is `php artisan rbac:sync && php artisan migrate
++--force`** — measured on the same database: exit **0**, zero pending, `head_of_school` ends
++with zero `finance.*` grants.
++
++### 3b — migrate
++
++|                    |                                                                                                                                                            |
++| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
++| **Check**          | `php artisan migrate --force`                                                                                                                              |
++| **Pass criterion** | exit 0                                                                                                                                                     |
++| **Failure action** | STOP — see "if migrate fails mid-run" below. Do **not** re-run blindly. **Unless** the error names `move-hos-finance-to-ed`: that one is 3a, and you re-run |
++| **Gate**           | Human-executed; repo-verified that the chain applies cleanly from zero                                                                                     |
+ 
+ **If migrate fails mid-run:** MySQL DDL is **not transactional**. A migration that
+ fails partway leaves a **half-applied schema**, and the same is true in reverse for a
+@@ -97,6 +140,9 @@ ## Step 3 — migrate
+ loop `migrate`. Capture the error, and treat recovery as restore-from-backup unless the
+ partial state is understood.
+ 
++**The one exception, named so nobody restores a backup over it:** a `move-hos-finance-to-ed
++ABORTED` error is a pre-flight refusal, not a partial write. Run 3a and re-run `migrate`.
++
+ ---
+ 
+ ## Step 4 — `audit:verify-immutability`, **wired into the pipeline after migrate**
+```
+
+#### Every other path that runs `migrate`, checked
+
+Derived with a repo-wide grep for `artisan migrate`, `migrate --force`, `migrate:fresh|refresh|rollback`
+across `*.php`, `*.md`, `*.sh`, `*.yml`, `Makefile`, `composer.json`, excluding `vendor/`,
+`node_modules/` and `build/`. **There is no deploy script, no Makefile, no Envoy/Docker/Procfile/Vapor
+artifact in the repo at all** — `ls -a | grep -iE 'envoy|deploy|docker|procfile|fly|vapor|forge'`
+returns nothing, and `bin/` contains only the lints and the three gate scripts.
+
+| path                                            | runs migrate                      | affected?                                                                                                                                          |
+| ----------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/runbooks/clone-dress-rehearsal.md:145`    | `migrate --force` on a prod clone | **YES — fixed**                                                                                                                                    |
+| `docs/runbooks/phase1-deploy.md:88`             | `migrate --force` on production   | **YES — fixed**                                                                                                                                    |
+| `.github/workflows/tests.yml:89`                | `migrate --force`                 | No — Actions is billing-locked and has never executed a job (ADR 0053); and it migrates an empty service DB, where the fresh-install guard returns |
+| `composer.json:59` (`composer setup`)           | `migrate --force`                 | No — new-developer bootstrap against an empty DB                                                                                                   |
+| `composer.json:107` (`post-create-project-cmd`) | `migrate --graceful`              | No — never runs for a clone of an existing project                                                                                                 |
+| `bin/quality-clean-db:87`                       | `migrate --force`                 | No, **and this is the blindness** — from zero, so the guard returns before the pre-flight                                                          |
+| `app/Console/Commands/SeedDriveFixture.php:68`  | `migrate:fresh`                   | No — refuses outside local (`:51`), from zero                                                                                                      |
+| `README.md:26`, `docs/testing.md:38`            | `migrate --force`                 | No — `portal_testing`, from zero                                                                                                                   |
+| Pest `RefreshDatabase`                          | `migrate:fresh`                   | No — from zero, per run                                                                                                                            |
+
+So: two affected paths, both documentation, both fixed. **Nothing executable in this repository runs
+`migrate` against a database that would hit the abort** — which is exactly why the control has to be
+procedural and why the runbook line is the only thing carrying it.
+
+### R2 finding 2 — the post-write abort cannot fire (confirmed, and wider than stated)
+
+Confirmed twice: by reading, and by running.
+
+**By reading.** `RbacSeeder::syncLogged` snapshots `$existingRoles` at `:492`, **before** the
+role-creation loop at `:507`. `executive_director` is therefore absent from that snapshot and takes
+the whole-slice `: $permissions` branch at `:542-544`, receiving all nine.
+`TARGET['executive_director']` is those same nine, so its grant diff is empty; `head_of_school`'s
+target is `[]`; `accounts_supervisor`'s is a subset of what it holds. Every branch grants nothing.
+
+**By running**, on a production-shaped throwaway database — `rbac:sync`, then `head_of_school` and
+`accounts_supervisor` left holding their pre-seat-move grants (because `rbac:sync` revokes nothing,
+which is the entire reason this migration exists), then one user holding `executive_director`
+alongside `accounts_officer`, then `2026_08_06`'s `migrations` row cleared and `migrate --force`:
+
+```text
+move-hos-finance-to-ed REPORT: 8 both-sides finding(s) this run did NOT create — not blocked on:
+  user#2 @ school#1 [finance.credit-note.approve + finance.credit-note.submit]
+  user#2 @ school#1 [finance.credit-note.reject + finance.credit-note.submit]
+  user#2 @ school#1 [finance.invoice.void-request.approve + finance.invoice.void-request.submit]
+  user#2 @ school#1 [finance.invoice.void-request.reject + finance.invoice.void-request.submit]
+  user#2 @ school#1 [finance.discount-policy.change.approve + finance.discount-policy.change.submit]
+  user#2 @ school#1 [finance.discount-policy.change.reject + finance.discount-policy.change.submit]
+  user#2 @ school#1 [finance.fee-schedule.change.approve + finance.fee-schedule.change.submit]
+  user#2 @ school#1 [finance.fee-schedule.change.reject + finance.fee-schedule.change.submit]
+  These are real and they matter. They belong to `php artisan finance:audit-duty-separation`, not to a migration.
+move-hos-finance-to-ed [AFTER] holders per school (out-of-scope both-sides findings=8):
+… 232.12ms DONE
+```
+
+**REPLAY EXIT=0.** All **eight** findings — all four ED pairs, both directions, exactly the case the
+struck comment named as "the reachable direction" — reported and committed. The migration also did
+real work on that run (it stripped `head_of_school`'s five and `accounts_supervisor`'s four), so this
+is not the idempotent-no-op case.
+
+**The abort was KEPT.** Deleting a throw because today's sequences cannot reach it is how the next
+sequence gets no guard at all. What changed is the claim, in four places:
+
+1. `2026_08_06`'s walk comment — struck in place, in a retraction box, in `2026_08_08_100000`'s form.
+2. ADR 0052 — a new section, _"And say what the narrowing costs, because for `2026_08_06` it costs
+   the whole abort"_, under the `DutySeparation` boundary it belongs to.
+3. `MoveHosFinanceToEdConvergenceTest` ARM 7 — retitled _"rolls back, from a state `rbac:sync` cannot
+   produce"_, with a box saying the arm proves the branch **executes**, not that it **guards**. ARM 8
+   now says it, not ARM 7, is the production sequence.
+4. This report.
+
+#### The corrected claim, verbatim
+
+From `database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php`:
+
+```text
+╔═════════════════════════════════════════════════════════════════════════════════════╗
+║ RETRACTED 2026-08-08 — THIS ABORT CANNOT FIRE. READ BEFORE THE STRUCK SENTENCE.     ║
+║                                                                                     ║
+║ The struck sentence below was written as the reason this walk THROWS, and it is not ║
+║ one. It is kept rather than deleted because it is the reasoning the next removal-   ║
+║ only convergence migration would copy, and a deleted paragraph teaches nobody why   ║
+║ it went.                                                                            ║
+║                                                                                     ║
+║ ON EVERY SEQUENCE `rbac:sync` PRODUCES, `$grantedThisRun` IS EMPTY. ED is new in    ║
+║ RbacSeeder::ROLES, so `syncLogged` snapshots `$existingRoles` BEFORE creating it    ║
+║ (RbacSeeder.php:492 then :507) and ED takes the whole-slice `: $permissions`        ║
+║ branch (:542-544), receiving all nine. TARGET['executive_director'] is those same   ║
+║ nine, so `array_diff($wanted, $current)` is []. head_of_school's target is [] and   ║
+║ accounts_supervisor's is a subset of what it holds, so both grant [] too. The       ║
+║ transfer's only real work is the REVOKE half — which is exactly why this file       ║
+║ exists — and a revoke can never put a side into `$grantedThisRun`.                  ║
+║                                                                                     ║
+║ MEASURED, on a production-shaped throwaway database: rbac:sync, then HoS and AS     ║
+║ left holding their pre-seat-move grants (rbac:sync revokes nothing), then one user  ║
+║ holding executive_director + accounts_officer. The walk found EIGHT both-sides      ║
+║ findings for that user — all four ED pairs, both directions — and reported every    ║
+║ one of them as out of scope. `migrate` exited 0 and committed.                      ║
+║                                                                                     ║
+║ SO: a test that reaches the throw does so through a state the system cannot         ║
+║ produce, and proves the branch EXECUTES rather than that it GUARDS. What actually   ║
+║ covers the ED direction is DutySeparation::assertAssignmentAllowed at grant time    ║
+║ (app/Models/User.php:412), with `finance:audit-duty-separation` as the detector for ║
+║ pairings that predate it. The throw is RETAINED because it costs nothing and        ║
+║ guards a path nobody has enumerated — not because it is load-bearing today.         ║
+║                                                                                     ║
+║ Only this comment is amended. up() and down() are untouched — ADR 0052's corollary  ║
+║ governs the EXECUTING half, and its carve-out section records that a comment-only   ║
+║ amendment is inside it. (This file has in any case never applied to an environment  ║
+║ that persists: it is unmerged, and every run was a throwaway replay database.)      ║
+╚═════════════════════════════════════════════════════════════════════════════════════╝
+
+~~The reachable direction is the ED one: four maker-checker pairs now terminate on a
+single role, so any user who ends up holding executive_director alongside
+accounts_officer, finance_lead or accounts_supervisor is a both-sides holder.~~ — TRUE
+AS A STATEMENT ABOUT USERS, FALSE AS A STATEMENT ABOUT THIS ABORT; see the box.
+```
+
+**And this is ADR 0052's own hazard turned on itself**, which is worth stating rather than leaving
+implicit: the narrowing froze a false guarantee into a file the ADR then makes hard to correct. The
+correction was possible only because the corollary's scope is the executing half — which the ADR did
+not say plainly until this branch, and now does.
+
+#### Proof the executing half is untouched
+
+`sed -n '/^return new class/,$p'` — the form `2026_08_08_100000`'s remediation used — **does not work
+here**, because the amended comment lives _inside_ the class body rather than in a docblock above it.
+That slice reports the comment as a difference. So both revisions were stripped of every `T_COMMENT`
+and `T_DOC_COMMENT` via `token_get_all`, blank-only lines dropped, and the remainder diffed:
+
+```console
+$ git show 17da5c3:database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php > 08_06.at17da5c3.php
+$ diff <(php strip-comments.php 08_06.at17da5c3.php) \
+       <(php strip-comments.php database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php)
+(no output — EXECUTING HALF byte-identical to 17da5c3, after Pint)
+
+$ git diff --quiet HEAD -- database/migrations/2026_08_03_100000_converge_finance_change_grants.php
+08_03: whole file untouched
+```
+
+Re-run after Pint, not before — Pint reformatting the box would have been a silent executing-half
+change if the box had been malformed.
+
+### R2 tickets
+
+| review # | what                                                                                     | done                                                                                                                                                                                                                                                                                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3        | This report's raised finding #2 was false as written                                     | Struck and corrected in **Findings raised, not fixed** below, with the narrower real gap re-derived (`accounts_officer`, `admin`, `finance_lead` — **not** the reviewer's `internal_auditor`, which holds no finance grant at all) and the 4c merge warning                                                                                                            |
+| 4        | `MoveHosFinanceToEdConvergenceTest:105` said `principal` "is GOVERNED by this migration" | Comment corrected to "is NOT governed", with the migration's own `:121-124` cited and an explicit "do not read this as a reason to add principal to TARGET"                                                                                                                                                                                                            |
+| 5        | ADR 0052's `DutySeparation` inventory said "RUNTIME — 7 call sites" and named six files  | Re-derived rather than copied. **RUNTIME is 6 files / 11 call sites, not 10** — the reviewer's own list totals 11. And a second error they did not catch: **REPORT is 5 call sites, not 4** — `2026_08_03:363` has a `holdsViaGrant` in its `report()` like the other four and was omitted. DECIDE is 2 walks / 4 call sites. 11 + 5 + 4 = 20, which is the whole grep |
+
+### R2 — throwaway databases
+
+Dropped at the end of this session: `portal_replay_test`, `portal_oracle_test`, `portal_grants_test`,
+`portal_edabort_test`, `portal_deploysim_test`. Nothing was left behind, and none of them was ever the
+dev copy `portaa10_portal` or `portal_testing`.
+
+---
+
 ## Deviations from the brief
 
 **Item 2 was withdrawn by the project lead after I reported its premise was false.** The brief said
@@ -599,9 +1007,27 @@ reviewer's time.
   time a route ships without regeneration, and `RouteAccessParityTest` is documented not to catch
   it. **ticket** — the asymmetry is deliberate, so the fix is a separate "every live route has a
   fixture entry" arm, not a change to this one.
-- `bin/ci-grants-convergence-lint.php` exemption 1 waives a migration for NEW permissions, which is
+- ~~`bin/ci-grants-convergence-lint.php` exemption 1 waives a migration for NEW permissions, which is
   correct — but it means a new checker-side permission landing on the wrong seat is invisible to
-  every gate. That is exactly the shape of the withdrawn item 2. **ticket** — a "no role holds both
-  sides of an enforced pair in `grantsMap()`" arm exists
-  (`tests/Feature/Rbac/GrantsMapSeparationTest.php`); a "no non-`executive_director` global role
-  holds a `finance.*` checker" arm does not.
+  every gate.~~ **FALSE AS WRITTEN — corrected 2026-08-08 after review.** `FinanceRoleRealignmentTest`
+  pins the exact `finance.*` slice of four roles: `executive_director` (`:95-105`),
+  `head_of_school` → `[]` (`:115`), `principal` → `['finance.access']` (`:116`) and
+  `accounts_supervisor` (`:119-122`). So a checker side landing on `head_of_school` is **not**
+  invisible — it turns that arm red.
+
+    **The real gap, re-derived:** of the roles that hold any `finance.*` grant today —
+    `accounts_officer` (9), `accounts_supervisor` (2), `admin` (4), `executive_director` (9),
+    `finance_lead` (3), `principal` (1) — the three with **no** exact-slice pin are
+    **`accounts_officer`, `admin` and `finance_lead`**. A checker side landing on one of those is
+    invisible to every gate. Every other global role (`internal_auditor` included) holds no finance
+    grant, and nothing asserts that it stays that way. **ticket** — the arm to add is "no global role
+    outside `executive_director` holds a `finance.*` checker"; `GrantsMapSeparationTest` does not cover
+    it (it catches same-role both-sides only).
+
+    **WARNING FOR WHOEVER MERGES 4c.** `feat/finance-ob-approval-gate` grants
+    `finance.opening-balance.approve/.reject` to `head_of_school` (`RbacSeeder.php:240-241` on that
+    branch). When it lands on top of this one, `FinanceRoleRealignmentTest`'s
+    `expect($finance('head_of_school'))->toBe([])` **goes red — correctly**. The fix is **moving those
+    two grants to `executive_director`'s slice**, not editing the expected array. That file's own
+    sibling comment (`:106-107`) states the trap: "an equality assertion silently stops being about
+    submits the moment someone edits the expected array".

@@ -131,7 +131,7 @@ return new class extends Migration
      * ║ it. So this migration keeps acting on permissions that did not exist when it was written:    ║
      * ║ any `finance.*` ability added to `executive_director`, `accounts_supervisor` or              ║
      * ║ `head_of_school` in a LATER commit is REVOKED by this file on every environment where it    ║
-     * ║ has not yet run — silently, whatever `RbacSeeder::grantsMap()` says. And `rbac:sync` does    ║
+     * ║ has not yet run — silently, whatever the seeder's grants map says. And `rbac:sync` does      ║
      * ║ not put it back: by then the permission is no longer new, and `sync()` grants an existing    ║
      * ║ role only permissions created in that same run.                                             ║
      * ║                                                                                             ║

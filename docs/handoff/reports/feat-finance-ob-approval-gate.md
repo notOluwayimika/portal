@@ -1,5 +1,225 @@
 # §9 step 4c — the opening-balance approval gate
 
+> **ROUND 2 (2026-08-09) — read §R first.** `origin/staging` was merged in after PR #218
+> (`executive_director`). The checker side moved off `head_of_school`, and a **forcing** convergence
+> migration was found to strip all three 4c grants on deploy. §R records that round; §0–§10 below are
+> round 1 and are left as written except where §R supersedes them.
+
+---
+
+## §R. Round 2 — the ED merge, and the trap underneath it
+
+**Base moved.** `origin/staging` @ `c200d08` merged into the branch at `c161aa4`. Conflicts in
+`RbacSeeder.php` (resolved to staging's side — HoS keeps no finance, mine included) and
+`rbac-grants-baseline.json` (resolved by **re-derivation**, not by choosing a side — §R4).
+
+### R1. My brief's premise was wrong, and the correction is the reusable part
+
+The brief said *"no migration is needed or possible"* because the three permissions are new and
+convergence-lint exemption 1 waives one. **That conflates two questions:**
+
+1. **Does the LINT demand a migration?** No — still true. A new permission lands in
+   `$newPermissions`, `rbac:sync` grants it per `grantsMap()` everywhere, no drift to catch.
+2. **Does the grant SURVIVE A DEPLOY?** The lint says nothing about this. And the answer was **no**.
+
+`2026_08_06_100000_move_head_of_school_finance_to_executive_director`'s TARGET is **forcing** — each
+governed role's `finance.` slice is made to **equal** a frozen literal, not to contain it. On the
+runbook order (`rbac:sync`, then `migrate`) the seeder writes the grants and that migration revokes
+the two it governs. No later `rbac:sync` restores them: by then the permissions are not new, and
+`RbacSeeder::sync()` grants an existing role only permissions created in that same run.
+
+**Measured on `portal_testing`, not reasoned** — this is the probe output that produced the decision:
+
+```
+BEFORE migration (seeded map):
+  executive_director OB: ["finance.opening-balance.approve","finance.opening-balance.reject"]
+  accounts_supervisor OB: ["finance.opening-balance.submit"]
+AFTER migration:
+  executive_director OB: []
+  accounts_supervisor OB: []
+```
+
+`accounts_officer`'s `.submit` **survives** — that role is not in the forcing TARGET. **Checked, not
+assumed**, which is why the repair governs two roles and not three.
+
+### R2. The repair — roll forward, never edit the frozen act
+
+`database/migrations/2026_08_09_110000_converge_opening_balance_grants.php`. Dated after the forcing
+migration. **Additive only** — it grants, it revokes nothing, and there is no revoke branch for
+anyone to extend later. `2026_08_06_100000`'s executing half is untouched.
+
+Its post-write duty-separation walk is scoped to what the run actually granted, and — unlike
+`2026_08_06_100000`'s, whose own retraction box records that its walk can never fire — **this one
+can**: the migration puts a maker (`accounts_supervisor`) and a checker (`executive_director`) of the
+same pair onto two roles, so a user wearing both would be caught and the transaction rolled back.
+
+**Bite-proof, raw** (seed → strip → converge → idempotency):
+
+```
+── STEP 1  after seed
+   accounts_officer     OB=["finance.opening-balance.submit"]
+   accounts_supervisor  OB=["finance.opening-balance.submit"]
+   executive_director   OB=["finance.opening-balance.approve","finance.opening-balance.reject"]
+   head_of_school       OB=[]  allFinance=0
+── STEP 2  after 2026_08_06 (the strip)
+   accounts_officer     OB=["finance.opening-balance.submit"]
+   accounts_supervisor  OB=[]
+   executive_director   OB=[]
+   head_of_school       OB=[]  allFinance=0
+  converge-opening-balance-grants: granted [finance.opening-balance.approve, finance.opening-balance.reject] to [executive_director]
+  converge-opening-balance-grants: granted [finance.opening-balance.submit] to [accounts_supervisor]
+── STEP 3  after 2026_08_09_110000 (the convergence)
+   accounts_officer     OB=["finance.opening-balance.submit"]
+   accounts_supervisor  OB=["finance.opening-balance.submit"]
+   executive_director   OB=["finance.opening-balance.approve","finance.opening-balance.reject"]
+   head_of_school       OB=[]  allFinance=0
+── STEP 4  idempotency: second run
+  converge-opening-balance-grants: already aligned — no grants changed, no activity rows written
+```
+
+`head_of_school` holds zero finance at every step, which is the property PR #218 exists to establish.
+
+### R3. The `@converges` watched red — and the honest limit on it
+
+**The requested red is UNREACHABLE on this branch's real diff, and that is a finding, not a
+shortcut.** `bin/ci-grants-convergence-lint.php:1220-1226` is a `match(true)`: exemption 1
+(*permission is NEW*) is the **first** arm, so it fires for all four pairs and exemption 3 (the
+marker) is never consulted. Removing a marker changes nothing:
+
+```
+=== RED attempt (marker for AS/submit removed), base origin/staging ===
+grants-convergence-lint: OK — no unexempted grant addition ... (c200d08..20bef27; 4 exempted).
+  · finance.opening-balance.submit @ ...:383 — exempt: permission is NEW in this diff
+  ...
+```
+
+So on this diff the markers are **documentation, not enforcement** — which the migration's own
+docblock already says, and which the round-1 review would rightly have called wallpaper if I had
+claimed otherwise.
+
+To prove the markers themselves are well-formed I built a **synthetic range** where exemptions 1 and
+2 cannot fire — base `59c0f37` (enum cases present, ED role present, convergence migration absent),
+head `728f076` (grant added + migration added):
+
+```
+=== GREEN — only @converges can carry it ===
+grants-convergence-lint: OK — no unexempted grant addition (59c0f37..728f076; 2 exempted).
+  · finance.opening-balance.approve @ ...:425 — exempt: migration [.../2026_08_09_110000_converge_opening_balance_grants.php] declares @converges executive_director finance.opening-balance.approve
+  · finance.opening-balance.reject  @ ...:426 — exempt: migration [.../2026_08_09_110000_converge_opening_balance_grants.php] declares @converges executive_director finance.opening-balance.reject
+
+=== RED — the .approve marker removed ===
+grants-convergence-lint: 1 grant addition(s) ... that rbac:sync will NOT apply (59c0f37..44180e0):
+  ✗ finance.opening-balance.approve  @  database/seeders/RbacSeeder.php:425
+      role: executive_director (INFERRED from the nearest preceding '<role>' => [ — verify it)
+  1 addition(s) in the same diff were EXEMPT:
+  ✓ finance.opening-balance.reject  @ ...:426 — migration [...] declares @converges executive_director finance.opening-balance.reject
+```
+
+Per-pair, exactly as designed: `.approve` flags, `.reject` still carried by its own marker. The
+scratch branch was deleted; the tree is unchanged.
+
+### R4. Oracles — re-derived, not hand-resolved
+
+The `rbac-grants-baseline.json` merge conflict was **not** resolved by picking a side. I took
+staging's version as the base, then re-ran the three oracles in the required order against a freshly
+migrated + seeded `portal_testing`: `rbac:sync` (via `migrate:fresh --seed`) →
+`rbac:derive-access` → the baselines (the grants map recomputed by the exact expression
+`PermissionEnumTest` uses, then `rbac:derive-map`).
+
+Result, diffed against `origin/staging` rather than against my pre-merge state:
+
+- `rbac-grants-baseline.json` — **+6 −2**: `.submit` into `accounts_officer` and
+  `accounts_supervisor`, `.approve` + `.reject` into `executive_director`. Nothing else moved.
+- `route-middleware-baseline.json` — **one line**, the derived approvals-route middleware string.
+- `route-access-map.json` — **zero diff against staging.** Which retires round 1's §6 finding: PR
+  #218 regenerated it, so the ten-route staleness I reported is gone. Re-derivation produced a
+  byte-identical file, which is the strongest available evidence that nothing was hand-edited.
+
+### R5. Item 2 — the §8 / U16 queue finding, re-measured
+
+**It stands, unchanged.** `git diff 6890edb origin/staging --stat -- resources/js routes/ app/Finance`
+returns **nothing**: PR #218 touched no frontend, no routes and no Finance code. So the count is
+still four pending feeds at the API (`credit-notes`, `void-requests`, `fee-schedule-changes`,
+`discount-policy-changes`), **two** of them rendered by `approvals.tsx:72-75`, and now **five**
+request types in the domain. §8's "six on the queue" is no closer.
+
+What #218 *did* change is **who can open the queue**: the derived route gate now admits
+`executive_director` and no longer `head_of_school`.
+
+### R6. Item 3 — the illegal pair DISSOLVES, and the workaround is gone
+
+**Answer: it dissolves.** Round 1's regression was `accounts_supervisor` holding `.submit` against
+`head_of_school` holding `.approve`. `head_of_school` now holds **no finance at all**, so that pair
+cannot form. The ARM 4 workaround I added in round 1 has been **removed in full**, and
+`FinanceChangeGrantConvergenceTest` passes 6/6 with no substitute.
+
+**And the larger question the brief asked me to name if it did not dissolve — it does not arise, but
+here is the derivation so it is not taken on faith.** The checker side now sits on
+`executive_director`, so the pair to worry about is `accounts_supervisor` + `executive_director` on
+one person. That combination was **already illegal before 4c**: AS holds
+`finance.fee-schedule.change.submit` and ED holds `finance.fee-schedule.change.approve`. 4c adds a
+second pair to an already-forbidden combination; it forbids no combination that was previously
+allowed. `accounts_supervisor` remains a maker-and-viewer seat, and the test now pins that as a
+**property** (`no .approve, no .reject`) alongside the exact list, so the list cannot be edited into
+a lie.
+
+### R7. `ARM 3`'s detach count is 10, not 9 — expected
+
+`MoveHosFinanceToEdConvergenceTest` ARM 3 counts `permission_detached` events from
+`2026_08_06_100000`. 4c gives `accounts_supervisor` a fifth finance ability in the seeded map while
+that migration's frozen TARGET still names two, so the forcing diff revokes one more than before.
+Said at the assertion, not in a commit message, so the next reader does not treat it as drift. ARM 0
+(9→11 on ED, 6→7 on AS) and ARM 5 (6→7) moved for the same reason and carry the same note.
+
+Two exact-list pins in `FinanceRoleRealignmentTest` also gained entries — `executive_director` (+2
+checker) and `accounts_supervisor` (+1 maker) — because those roles **genuinely hold** them.
+`head_of_school`'s `toBe([])` was **not** touched, which was the arm the brief warned about. Each
+edited list now carries a property assertion beside it (ED holds no `.submit`; AS holds no
+`.approve`/`.reject`) so an equality array cannot silently stop being about the thing it names.
+
+### R7b. `bin/quality` round 1 failed on a gate my PROSE tripped
+
+The first round-2 `bin/quality` failed the ratchet with one new failure:
+
+```
+✗ tests/Feature/Rbac/MigrationsDoNotReadTheSeederMapTest.php::it no migration reads the seeder grants map
+  --- Expected: []
+  +++ Actual:   ['2026_08_06_100000_move_head_of_school_finance_to_executive_director.php',
+                 '2026_08_09_110000_converge_opening_balance_grants.php']
+```
+
+`MigrationsDoNotReadTheSeederMapTest.php:49` is a raw `str_contains($source, 'grantsMap')` over every
+migration file — **it cannot tell a MENTION from a READ**. Both flagged files read nothing; they
+*named* the accessor in a comment, and one of those comments was the trap note I had just added to
+`2026_08_06_100000`.
+
+**Fixed by rewording the prose, not by touching the gate.** Weakening it to strip comments first
+would trade a real invariant for my sentence structure, and blunt-in-the-safe-direction is the right
+setting for a rule whose failure mode is a migration silently re-shaping itself on replay. The
+limitation is now recorded in `2026_08_09_110000`'s own docblock so the next person does not
+rediscover it as a mystery.
+
+`tests/ratchet-baseline.txt` and `phpstan-baseline.neon` were **not** touched.
+
+The comment-only claim on `2026_08_06_100000` was re-proved after the reword: **executing half still
+byte-identical to `c200d08`**.
+
+### R8. Round-2 residuals
+
+- The `@converges` markers on `2026_08_09_110000` are **inert on the base this branch is pushed
+  against** (§R3). They are correct, they are per-pair, and they are not a gate here.
+- The forcing-target trap is recorded in three places (`2026_08_06_100000`'s TARGET docblock, ADR
+  0052, the lint's exemption 1) but **nothing enforces it**. No gate will tell the next person that
+  their new `finance.*` grant needs a convergence migration; three comments will. By the wallpaper
+  principle that is the weakest part of this round, and it is a ticket I have not written.
+- The comment-only amendment to `2026_08_06_100000` was proved non-executing per ADR 0052's
+  condition 2 (`token_get_all` comment-strip diff, since the amended block is inside the class body):
+  **executing half byte-identical to `c200d08`**.
+- Round 1's §6 finding (`route-access-map.json` stale) is **retired** — see §R4.
+
+---
+
+
 **Branch** `feat/finance-ob-approval-gate` · **Base** `origin/staging` @ `6890edb` ·
 **Commit** `8e9e79e` · one commit, 17 files.
 

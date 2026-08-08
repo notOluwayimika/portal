@@ -22,8 +22,13 @@ use Spatie\Permission\PermissionRegistrar;
  * distinction is the whole content of this docblock:
  *
  *   1. DOES THE LINT DEMAND A MIGRATION? No — and that is still true. A new permission lands in
- *      `$newPermissions` and `rbac:sync` grants it per `grantsMap()` on every environment, so there
- *      is no drift for the lint to catch. Exemption 1 is correct and unchanged.
+ *      `$newPermissions` and `rbac:sync` grants it per the seeder's grants map on every environment,
+ *      so there is no drift for the lint to catch. Exemption 1 is correct and unchanged.
+ *
+ *      (That sentence deliberately does not spell the map's accessor. MigrationsDoNotReadTheSeederMapTest
+ *      greps every migration for the bare identifier and cannot tell a MENTION from a READ — so naming
+ *      it here, in a comment, in a file that reads nothing, turns the gate red. The gate is blunt in
+ *      the safe direction and must stay that way; the prose is what moves.)
  *
  *   2. DOES THE GRANT SURVIVE A DEPLOY? That is a different question, and the lint says nothing
  *      about it. 2026_08_06_100000's TARGET is FORCING — each governed role's `finance.` slice is

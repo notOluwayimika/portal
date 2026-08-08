@@ -7,6 +7,7 @@ use App\Finance\Http\Controllers\FeeScheduleChangeController;
 use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
+use App\Finance\Http\Controllers\OpeningBalanceBatchController;
 use App\Finance\Http\Controllers\PaymentController;
 use App\Finance\Http\Controllers\VoidRequestController;
 use Illuminate\Support\Facades\Route;
@@ -95,8 +96,16 @@ Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleControlle
 /*
  * Fee-schedule governance (S1 commit 4). PUBLISHING a schedule is maker-checker: the Head submits a
  * publish/retire change (finance.fee-schedule.change.submit), the ED approves/rejects (…approve / …reject).
- * A schedule reaches `active` ONLY when ApproveFeeScheduleChange approves; the pending queue joins the
- * unified approvals screen by the ApprovalAbility convention (no route edit). Mirrors discount governance.
+ * A schedule reaches `active` ONLY when ApproveFeeScheduleChange approves.
+ *
+ * THIS COMMENT USED TO CLAIM the pending queue "joins the unified approvals screen by the
+ * ApprovalAbility convention (no route edit)", and it was false for the eighteen commits it stood.
+ * The convention derives who may OPEN the queue (routes/web.php's permission gate); it has never had
+ * anything to say about which feeds the page FETCHES, and the page fetched two hardcoded imports. A
+ * holder of finance.fee-schedule.change.approve could open a screen that never asked this endpoint
+ * anything. §9 step 5a is what made the sentence true: the page now maps one declared list
+ * (resources/js/lib/finance/approval-feeds.ts) over every feed, and a route that is not in that list
+ * is caught by ApprovalsQueueFeedCoverageTest rather than by nobody.
  */
 Route::post('/v1/finance/fee-schedule-changes', [FeeScheduleChangeController::class, 'submit'])
     ->middleware('permission:finance.fee-schedule.change.submit');
@@ -112,7 +121,8 @@ Route::post('/v1/finance/fee-schedule-changes/{change:uuid}/reject', [FeeSchedul
  * `amend` and `retire` change requests, never a direct PUT/DELETE. Governance is maker-checker: the
  * Head submits create/amend/retire (finance.discount-policy.change.submit), the ED approves/rejects
  * (…approve / …reject). The catalog changes ONLY when ApproveDiscountPolicyChange approves; the pending
- * queue joins the unified approvals screen by the ApprovalAbility convention (no route edit).
+ * queue is on the unified approvals screen because it is an entry in that page's declared feed list —
+ * see the correction on the fee-schedule block above, which this comment carried the same way.
  */
 Route::get('/v1/finance/discount-policies', [DiscountPolicyController::class, 'index']);
 Route::post('/v1/finance/discount-policy-changes', [DiscountPolicyChangeController::class, 'submit'])
@@ -123,6 +133,18 @@ Route::post('/v1/finance/discount-policy-changes/{change:uuid}/approve', [Discou
     ->middleware('permission:finance.discount-policy.change.approve');
 Route::post('/v1/finance/discount-policy-changes/{change:uuid}/reject', [DiscountPolicyChangeController::class, 'reject'])
     ->middleware('permission:finance.discount-policy.change.reject');
+
+/*
+ * Opening-balance cutover (§9 step 5a) — THE READ SURFACE ONLY. §9 step 4c shipped the approval gate
+ * as domain: Submit/Approve/RejectOpeningBalanceBatch exist, exercised by the console and tests, with
+ * no HTTP path. This route does not open one. Submitting a batch and DECIDING it are the operator
+ * screen's (§9 step 5b / spec §2's U12b); this is only the feed that lets a holder of
+ * `finance.opening-balance.approve` see that a batch is waiting — which, before 5a, no screen told
+ * them. The queue therefore renders this type without decision controls and says where the decision
+ * is taken; 5b turns it into a decidable row by adding two urls to one entry in the declared list.
+ */
+Route::get('/v1/finance/opening-balance-batches/pending', [OpeningBalanceBatchController::class, 'pending'])
+    ->middleware('permission:finance.opening-balance.approve');
 
 /*
  * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the

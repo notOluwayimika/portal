@@ -11,16 +11,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
-import {
-    approve as approveCredit,
-    pending as pendingCredit,
-    reject as rejectCredit,
-} from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
-import {
-    approve as approveVoid,
-    pending as pendingVoid,
-    reject as rejectVoid,
-} from '@/actions/App/Finance/Http/Controllers/VoidRequestController';
 import { TableToolbar } from '@/components/finance/table-toolbar';
 import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
@@ -29,31 +19,35 @@ import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
 import { useClientTable } from '@/hooks/use-client-table';
+import {
+    APPROVAL_FEEDS,
+    feedFor,
+    rowSubject,
+} from '@/lib/finance/approval-feeds';
 import { formatNaira } from '@/lib/format';
 import type { PendingApproval } from '@/types/finance';
 
 const TH =
     'px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase';
 
-/** The human label for a queue row — a credit note shows its own number; a void names its invoice. */
-function rowLabel(row: PendingApproval): string {
-    return row.type === 'credit_note'
-        ? row.display_number
-        : `Void · ${row.invoice_display_number ?? '—'}`;
-}
-
 /**
- * The checker's UNIFIED pending-approvals queue (Ph3 + Ph3b) — a PURE CONSUMER of the two
- * pending feeds (GET /credit-notes/pending and /void-requests/pending), merged into one
- * datatable in the finance-module style with a TYPE column. Both are maker-checker documents:
- * approving a credit note forgives money (posts a compensating credit); approving a void
- * reverses a whole invoice charge. Approve / Reject are driven by the server-computed
- * `can_approve` / `can_reject` (a checker cannot act on their OWN submission — maker ≠ checker);
- * the Policy is the real guard, these flags just shape the UI. All money via formatNaira.
+ * The checker's UNIFIED pending-approvals queue (Ph3 + Ph3b, generalised by §9 step 5a) — a PURE
+ * CONSUMER of every declared pending feed, merged into one datatable in the finance-module style
+ * with a TYPE column.
  *
- * Each feed is gated by its own permission, so a checker holding only one side sees only that
- * queue: a 403 (or any error) on one feed degrades to an empty contribution, never a broken page.
- * Search + pagination are CLIENT-side (a decision queue is small).
+ * IT RENDERS EVERY TYPE FROM A DECLARED LIST — lib/finance/approval-feeds.ts — and holds no
+ * knowledge of any individual one. It used to import two feeds by hand while FOUR were live at the
+ * API, so fee-schedule changes and discount-policy changes were reachable, ability-gated and shown
+ * nowhere; an approver holding finance.fee-schedule.change.approve had no screen. That is what a
+ * page which cannot enumerate its feeds costs, and it is why the fix is the enumeration rather than
+ * two more imports. Everything per-type — the badge, the SUBJECT line, the decision urls — comes off
+ * the feed entry. Read that module's docblock before adding a type.
+ *
+ * Approve / Reject are driven by the server-computed `can_approve` / `can_reject` (a checker cannot
+ * act on their OWN submission — maker ≠ checker); the Policy is the real guard, these flags only
+ * shape the UI, and the page never infers them from abilities it holds locally. A feed with no
+ * decision urls shows where its decisions are taken instead of dead buttons. All money via
+ * formatNaira. Search + pagination are CLIENT-side (a decision queue is small).
  */
 export default function FinanceApprovalsQueue() {
     const [rows, setRows] = useState<PendingApproval[]>([]);
@@ -67,30 +61,38 @@ export default function FinanceApprovalsQueue() {
         setLoading(true);
         setError(false);
 
-        // Fetch both feeds independently: a checker who only holds one side 403s on the other,
-        // which must not blank the whole queue. allSettled → each rejection contributes nothing.
-        const [credit, voids] = await Promise.allSettled([
-            axios.get<{ data: PendingApproval[] }>(pendingCredit.url()),
-            axios.get<{ data: PendingApproval[] }>(pendingVoid.url()),
-        ]);
+        // Fetch every declared feed independently. Each is gated by its own permission, so a
+        // checker who holds one ability 403s on the rest, and that must not blank the queue —
+        // allSettled is here for exactly that, and each rejection contributes no rows.
+        const settled = await Promise.allSettled(
+            APPROVAL_FEEDS.map((feed) =>
+                axios.get<{ data: PendingApproval[] }>(feed.pendingUrl()),
+            ),
+        );
 
-        // A hard failure is only when BOTH feeds error (e.g. the network is down) — a single
-        // permission 403 is expected and simply yields no rows from that side.
-        if (credit.status === 'rejected' && voids.status === 'rejected') {
+        // THE ERROR RULE IS "ALL REJECTED", NOT "SOME REJECTED", and the difference is the whole
+        // point at N feeds. It read "both rejected" when there were two, which was right then and
+        // silently wrong the moment a third existed. A checker holding ONE of the five approve
+        // abilities gets four 403s on every load: that is the EXPECTED case, not a failure, and a
+        // rule keyed on "any rejection" or "not all fulfilled" would show them a broken queue for
+        // doing nothing wrong. Only a total wipe-out — every feed down, i.e. the network — is an
+        // error worth a retry button. Keep it phrased over the whole array, so it stays true at six.
+        if (settled.every((result) => result.status === 'rejected')) {
             setError(true);
             setLoading(false);
 
             return;
         }
 
-        const merged: PendingApproval[] = [
-            ...(credit.status === 'fulfilled' ? credit.value.data.data : []),
-            ...(voids.status === 'fulfilled' ? voids.value.data.data : []),
-        ].sort(
-            (a, b) =>
-                new Date(b.created_at).getTime() -
-                new Date(a.created_at).getTime(),
-        );
+        const merged: PendingApproval[] = settled
+            .flatMap((result) =>
+                result.status === 'fulfilled' ? result.value.data.data : [],
+            )
+            .sort(
+                (a, b) =>
+                    new Date(b.created_at).getTime() -
+                    new Date(a.created_at).getTime(),
+            );
 
         setRows(merged);
         setLoading(false);
@@ -101,19 +103,21 @@ export default function FinanceApprovalsQueue() {
         void load();
     }, [load]);
 
+    // The decision urls come off the row's own feed entry, never off a type ternary — a ternary is
+    // how a fee-schedule-change uuid would end up POSTed at the credit-note approve endpoint.
     const approve = async (row: PendingApproval) => {
+        const decide = feedFor(row)?.decide;
+
+        if (decide === undefined) {
+            return;
+        }
+
         setBusyId(row.id);
 
         try {
-            const url =
-                row.type === 'void'
-                    ? approveVoid.url(row.id)
-                    : approveCredit.url(row.id);
-            await axios.post(url);
+            await axios.post(decide.approve(row.id));
             toast.success(
-                row.type === 'void'
-                    ? `${rowLabel(row)} approved — invoice voided.`
-                    : `${rowLabel(row)} approved — credit applied.`,
+                `${rowSubject(row)} approved — ${decide.approvedMessage}.`,
             );
             await load();
         } catch (err: unknown) {
@@ -132,15 +136,19 @@ export default function FinanceApprovalsQueue() {
             return;
         }
 
+        const decide = feedFor(rejectFor)?.decide;
+
+        if (decide === undefined) {
+            return;
+        }
+
         setBusyId(rejectFor.id);
 
         try {
-            const url =
-                rejectFor.type === 'void'
-                    ? rejectVoid.url(rejectFor.id)
-                    : rejectCredit.url(rejectFor.id);
-            await axios.post(url, { reason: reason.trim() });
-            toast.success(`${rowLabel(rejectFor)} rejected.`);
+            await axios.post(decide.reject(rejectFor.id), {
+                reason: reason.trim(),
+            });
+            toast.success(`${rowSubject(rejectFor)} rejected.`);
             setRejectFor(null);
             setReason('');
             await load();
@@ -156,10 +164,12 @@ export default function FinanceApprovalsQueue() {
     };
 
     // Client-side filter + page over the merged pending set (the shared datatable behaviour).
+    // Only the fields EVERY type carries are searched directly; the invoice number exists on the
+    // invoice-bound types alone, so it is read through the same presence check the column uses.
     const { search, setSearch, filtered, paged, meta, setPage, setLimit } =
         useClientTable(rows, (r) => [
-            rowLabel(r),
-            r.invoice_display_number,
+            rowSubject(r),
+            'invoice_display_number' in r ? r.invoice_display_number : null,
             r.submitted_by_name,
             r.note,
         ]);
@@ -191,9 +201,10 @@ export default function FinanceApprovalsQueue() {
                                         </h1>
                                     </div>
                                     <p className="text-xs text-slate-500">
-                                        Credit notes and invoice voids awaiting
-                                        a second person's sign-off. Money moves
-                                        only on approval.
+                                        Everything awaiting a second person's
+                                        sign-off — you see only the types you
+                                        may check. Nothing here has taken effect
+                                        yet.
                                     </p>
                                 </div>
                             </div>
@@ -219,7 +230,7 @@ export default function FinanceApprovalsQueue() {
                             onChange={setSearch}
                             shown={paged.length}
                             total={filtered.length}
-                            placeholder="Search by request, invoice or submitter…"
+                            placeholder="Search by subject, invoice or submitter…"
                         />
 
                         {/* Table */}
@@ -228,7 +239,7 @@ export default function FinanceApprovalsQueue() {
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
                                         <th className={TH}>Type</th>
-                                        <th className={TH}>Request</th>
+                                        <th className={TH}>Subject</th>
                                         <th className={TH}>Invoice</th>
                                         <th className={TH}>Submitted by</th>
                                         <th className={TH}>Reason / note</th>
@@ -287,10 +298,9 @@ export default function FinanceApprovalsQueue() {
                                                         approval
                                                     </p>
                                                     <p className="text-xs text-slate-500">
-                                                        Submitted credit notes
-                                                        and void requests appear
-                                                        here for a checker to
-                                                        decide.
+                                                        Submitted requests
+                                                        appear here for a
+                                                        checker to decide.
                                                     </p>
                                                 </div>
                                             </td>
@@ -318,23 +328,25 @@ export default function FinanceApprovalsQueue() {
                                                 key={`${row.type}:${row.id}`}
                                                 className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
                                             >
+                                                {/* Badge text and colour come off the feed entry — no per-type branch here. */}
                                                 <td className="px-4 py-2.5">
-                                                    {row.type === 'void' ? (
-                                                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 uppercase dark:bg-amber-900/20 dark:text-amber-400">
-                                                            Void
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-indigo-700 uppercase dark:bg-indigo-900/20 dark:text-indigo-400">
-                                                            Credit note
-                                                        </span>
-                                                    )}
+                                                    <span
+                                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${feedFor(row)?.badgeClass ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+                                                    >
+                                                        {feedFor(row)?.label ??
+                                                            row.type}
+                                                    </span>
                                                 </td>
                                                 <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
-                                                    {rowLabel(row)}
+                                                    {rowSubject(row)}
                                                 </td>
+                                                {/* Not every type hangs off an invoice; the governance
+                                                    changes and opening-balance batches do not. */}
                                                 <td className="px-4 py-2.5 text-slate-500">
-                                                    {row.invoice_display_number ??
-                                                        '—'}
+                                                    {('invoice_display_number' in
+                                                    row
+                                                        ? row.invoice_display_number
+                                                        : null) ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-slate-500">
                                                     {row.submitted_by_name ??
@@ -355,55 +367,69 @@ export default function FinanceApprovalsQueue() {
                                                           )
                                                         : '—'}
                                                 </td>
+                                                {/* A type whose decisions are taken elsewhere says so
+                                                    rather than rendering buttons that cannot work —
+                                                    see lib/finance/approval-feeds.ts. */}
                                                 <td className="px-4 py-2.5">
-                                                    <div className="flex justify-end gap-1.5">
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                void approve(
-                                                                    row,
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                !row.can_approve ||
-                                                                busyId ===
-                                                                    row.id
-                                                            }
-                                                            title={
-                                                                row.can_approve
-                                                                    ? undefined
-                                                                    : 'You cannot approve your own submission'
-                                                            }
-                                                            className="h-7 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700"
-                                                        >
-                                                            <Check className="mr-1 h-3.5 w-3.5" />
-                                                            Approve
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => {
-                                                                setReason('');
-                                                                setRejectFor(
-                                                                    row,
-                                                                );
-                                                            }}
-                                                            disabled={
-                                                                !row.can_reject ||
-                                                                busyId ===
-                                                                    row.id
-                                                            }
-                                                            title={
-                                                                row.can_reject
-                                                                    ? undefined
-                                                                    : 'You cannot reject your own submission'
-                                                            }
-                                                            className="h-7 rounded-lg text-xs"
-                                                        >
-                                                            <X className="mr-1 h-3.5 w-3.5" />
-                                                            Reject
-                                                        </Button>
-                                                    </div>
+                                                    {feedFor(row)?.decide ===
+                                                    undefined ? (
+                                                        <p className="text-right text-[11px] text-slate-400 italic">
+                                                            {feedFor(row)
+                                                                ?.decidedElsewhere ??
+                                                                'Decided elsewhere'}
+                                                        </p>
+                                                    ) : (
+                                                        <div className="flex justify-end gap-1.5">
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={() =>
+                                                                    void approve(
+                                                                        row,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    !row.can_approve ||
+                                                                    busyId ===
+                                                                        row.id
+                                                                }
+                                                                title={
+                                                                    row.can_approve
+                                                                        ? undefined
+                                                                        : 'You cannot approve your own submission'
+                                                                }
+                                                                className="h-7 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700"
+                                                            >
+                                                                <Check className="mr-1 h-3.5 w-3.5" />
+                                                                Approve
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => {
+                                                                    setReason(
+                                                                        '',
+                                                                    );
+                                                                    setRejectFor(
+                                                                        row,
+                                                                    );
+                                                                }}
+                                                                disabled={
+                                                                    !row.can_reject ||
+                                                                    busyId ===
+                                                                        row.id
+                                                                }
+                                                                title={
+                                                                    row.can_reject
+                                                                        ? undefined
+                                                                        : 'You cannot reject your own submission'
+                                                                }
+                                                                className="h-7 rounded-lg text-xs"
+                                                            >
+                                                                <X className="mr-1 h-3.5 w-3.5" />
+                                                                Reject
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))
@@ -430,7 +456,7 @@ export default function FinanceApprovalsQueue() {
                 onClose={() => setRejectFor(null)}
                 title={
                     rejectFor
-                        ? `Reject ${rowLabel(rejectFor)}`
+                        ? `Reject ${rowSubject(rejectFor)}`
                         : 'Reject request'
                 }
                 size="md"

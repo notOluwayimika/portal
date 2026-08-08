@@ -1264,6 +1264,12 @@
             "super_admin"
         ]
     },
+    "GET /api/v1/finance/opening-balance-batches/pending": {
+        "auth": true,
+        "roles": [
+            "executive_director"
+        ]
+    },
     "GET /api/v1/finance/students/{student}/billable-enrollment": {
         "auth": true,
         "roles": [

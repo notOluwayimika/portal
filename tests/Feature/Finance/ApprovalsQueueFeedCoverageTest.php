@@ -241,8 +241,30 @@ it('every decidable entry wires its approve and reject at the SAME controller it
 
         $suffix = fn (string $alias) => preg_replace('/^(pending|approve|reject)/', '', $alias);
 
-        expect([$approve[1] ?? '', $reject[1] ?? ''])->not->toContain('',
-            "The [{$type}] entry declares `decide` but does not wire both an approve and a reject url.");
+        // POSITIVE EXPECTATIONS, ONE PER URL — and the shape matters more than it looks.
+        //
+        // This was `expect([$approve, $reject])->not->toContain('', "…")`, and the sentence never
+        // reached a failing reader. TWO SEPARATE MECHANISMS ate it, and only fixing both gets the
+        // diagnostic out:
+        //
+        //  1. `toContain` is VARIADIC IN NEEDLES (vendor/pestphp/pest/src/Mixins/Expectation.php:184)
+        //     and takes no message at all, so the sentence was asserted as a SECOND NEEDLE. It
+        //     passed trivially — no wayfinder alias is a prose sentence — so the '' check itself
+        //     was never blind. What was lost was the message, not the assertion.
+        //  2. `->not->` DISCARDS CUSTOM MESSAGES ON EVERY MATCHER, which is the general rule and is
+        //     easy to miss because the message argument is accepted without complaint.
+        //     OppositeExpectation::__call (`:770-784`) runs the POSITIVE assertion and, when it
+        //     passes, calls throwExpectationFailedException(name, arguments) — which at `:811-825`
+        //     runs `shortenedExport` over every argument, message included, into a generic
+        //     "Expecting X not to be Y 'The [opening_bal…T url.'." So even `->not->toBe($x, "…")`
+        //     prints the message TRUNCATED IN THE MIDDLE rather than as the failure description.
+        //
+        // Hence the comparison is inverted into a boolean and asserted positively: `toBeTrue`
+        // (`:88-91`) hands the message straight to `Assert::assertTrue`, which prints it whole.
+        expect(($approve[1] ?? '') !== '')->toBeTrue(
+            "The [{$type}] entry declares `decide` but wires no APPROVE url.")
+            ->and(($reject[1] ?? '') !== '')->toBeTrue(
+                "The [{$type}] entry declares `decide` but wires no REJECT url.");
 
         expect($suffix((string) $approve[1]))->toBe($suffix((string) $pending[1]),
             "The [{$type}] entry fetches with [{$pending[1]}] but approves with [{$approve[1]}] — "

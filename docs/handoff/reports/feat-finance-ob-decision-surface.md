@@ -412,3 +412,256 @@ refusal and after the successful reject.
 - Local dev database is 4 migrations behind `origin/staging` — anyone driving
   the app against it will not find the decision columns. **ticket** (environment,
   not code).
+
+---
+
+# Remediation — commit 2, on top of `961de2b`
+
+Four of the review's five findings closed; the fifth is recorded below as a
+ticket covering six actions rather than patched in one place.
+
+## Deviations from the remediation brief
+
+**One, and it changes what FIX C actually fixes.** The brief diagnosed the dead
+diagnostic as `toContain` being variadic — true, and only half of it. Moving the
+message onto `->not->toBe($x, "…")`, which *does* declare a `string $message`
+parameter, **still did not print it**. Proven, not reasoned:
+
+```
+Expecting '' not to be '' 'The [opening_balance] entry d…T url.'.
+at tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php:252
+```
+
+The message is there, truncated in the middle, rendered as an exported *value*
+rather than as the failure description. The mechanism is
+`OppositeExpectation::__call`
+(`vendor/pestphp/pest/src/Expectations/OppositeExpectation.php:770-784`): under
+`->not->` Pest runs the POSITIVE assertion, and when that passes — i.e. the
+`not` has failed — it discards the exception and calls
+`throwExpectationFailedException($name, $arguments)`. That method (`:811-825`)
+runs `Exporter::shortenedExport()` over **every** argument, the message
+included, into a generic `Expecting %s not %s %s.`.
+
+**The general rule, stated as a rule so it can be checked:** on this Pest
+version, `->not->anyMatcher(..., "message")` discards the custom message on
+every matcher, not only the variadic ones. The message argument is accepted
+without complaint and never becomes the failure description.
+
+So the fix is a **positive** expectation — the comparison inverted into a
+boolean and asserted with `toBeTrue`, whose `$message` reaches
+`Assert::assertTrue` intact. Same shape used for the new PROOF H.
+
+## What changed
+
+| File                                                          | Fix     | What                                                                                                                                          |
+| ------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/Feature/Finance/OpeningBalanceDecisionSurfaceTest.php` | A, B    | PROOF H (route abilities off the router) and PROOF G2 (`can_reject` on an approve-only checker); header paragraph rewritten into three layers. |
+| `tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php`    | C       | The two url-presence checks become positive `toBeTrue` expectations, with the mechanism written out.                                           |
+| `docs/handoff/finance-mvp-cut-brief.md`                       | D       | U16's final sentence. Count untouched — five of six is still right, refund still has no domain.                                               |
+
+11 arms in the decision-surface file (was 9); 8 in the feed-coverage file.
+
+### FIX A — the route's ability, pinned at the router
+
+PROOF H reads `Route::getRoutes()` and asserts the **exact** ability set per
+opening-balance route. Two things the router does that `route:list` hides, both
+found by watching the arm fail rather than by reading:
+
+- `gatherMiddleware()` returns the **unresolved alias** (`permission:finance.access`).
+  `route:list --json` prints the resolved
+  `Spatie\Permission\Middleware\PermissionMiddleware:finance.access`, and my
+  first draft matched the class — so the filter matched nothing and the arm
+  failed against empty arrays.
+- `uri()` returns `{batch}`, not `{batch:uuid}`. Laravel strips the field
+  binding off the compiled uri, so the expected keys are the router's spelling.
+
+It is an **exact set**, not a `contains`. A `contains` check passes the mutation
+that matters most — the reject route re-gated on the approve ability — because
+the Policy's own `…reject` clause then produces the identical 403 an approve-only
+actor already expects, and PROOF D cannot tell those apart.
+
+The header paragraph now names the three layers and what each one's removal
+degrades to, replacing the "the only thing left to refuse them is the Policy"
+claim that RED 2 had already falsified.
+
+### FIX B — `can_reject`
+
+PROOF G2 mints a checker holding `finance.access` + `…approve` and **not**
+`…reject`, fetches `pending` (gated on `…approve` alone, so they are served the
+row), and asserts `can_approve` true and `can_reject` **false** on the same
+actor. Both on one actor deliberately: `true` alone would also be produced by a
+blanket allow, `false` alone by a viewer the Gate refuses entirely.
+
+### FIX C — the diagnostic, shown printing
+
+After the fix, with the entry's reject url removed:
+
+```
+it every decidable entry wires its approve and reject at the SAME controller its pending feed points to
+The [opening_balance] entry declares `decide` but wires no REJECT url.
+Failed asserting that false is true.
+at tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php:266
+```
+
+Whole sentence, un-truncated, as the failure description. Compare the "before"
+paste under *Deviations*.
+
+**Sweep, with counts.** Variadic matcher given a message as its last argument,
+across both test files: **1 found** (the one fixed) and **0 remaining** — the
+only other `toContain` in either file is `toContain('irreversible')` at
+`ApprovalsQueueFeedCoverageTest`, a single needle with no message, which is
+correct usage. Under the wider rule this commit discovered — **any** `->not->`
+matcher given a message — the count across both files is **2** (both mine, both
+now positive expectations) and **0 remaining**.
+
+### FIX D — the stale line, with counts
+
+`docs/handoff/finance-mvp-cut-brief.md` U16 now says opening balances are
+decided here, names the confirmation, and states what is still outstanding: the
+type is **decidable and not yet submittable over HTTP**, so nothing reaches
+`submitted` and the feed renders zero rows until U12b lands. The five-of-six
+count is untouched — refund still has no domain.
+
+**Sweep of the whole `docs/` tree** for any other sentence asserting this type
+has no decision surface: **1 live instance found and fixed** (the one above),
+**0 other live instances**, and **4 hits deliberately left** — all in
+`docs/handoff/reports/fix-finance-approvals-queue-renders-every-type.md`, which
+is 5a's own implementation report. A report is a dated record of what was true
+when it was written; correcting one falsifies the record rather than the claim.
+The fifth grep hit,
+`docs/handoff/opening-balance-import-spec.md:795` ("a migration is not decided
+in a docs commit"), is unrelated prose.
+
+## The watched red — three more
+
+### RED 11 — the approve route stripped of `permission:finance.opening-balance.approve`
+
+Caught by **PROOF H alone**. Every other arm in the file stayed green, which is
+precisely the gap the review named:
+
+```
+it PROOF H — each decision route carries its OWN ability at the router, and only that one
+A decision route no longer requires its own ability at the router. Either a permission
+middleware was dropped — in which case the Policy is the only gate left and no other arm
+here can tell — or one route now carries another's ability, which PROOF D cannot see.
+Failed asserting that two arrays are identical.
+at tests/Feature/Finance/OpeningBalanceDecisionSurfaceTest.php:453
+```
+
+### RED 12 — the reject route re-gated on the APPROVE ability
+
+```
+FAILED: PROOF E  — REJECT over HTTP records the reason and the checker
+FAILED: PROOF E2 — a reject with no reason is 422 from the FormRequest
+FAILED: PROOF H  — each decision route carries its OWN ability at the router
+```
+
+PROOF H fires, as the brief required. PROOF D stayed green through this
+mutation, as predicted — which is why the arm compares an exact set and not a
+presence.
+
+### RED 13 — the permission clause dropped from `OpeningBalanceBatchPolicy::reject`
+
+```
+FAILED: PROOF G2 — an approve-but-not-reject checker is served the row with can_reject FALSE
+    at vendor/laravel/framework/.../AssertableJsonString.php:243
+```
+
+Caught by **PROOF G2 alone**. All three restored.
+
+## Proof
+
+```
+DB_DATABASE=portal_testing ./vendor/bin/pest \
+  tests/Feature/Finance/OpeningBalanceDecisionSurfaceTest.php \
+  tests/Feature/Finance/ApprovalsQueueFeedCoverageTest.php \
+  tests/Feature/Finance/ApprovalsQueueRendersEveryTypeTest.php
+{"tool":"pest","result":"passed","tests":26,"passed":26,"assertions":237,"duration_ms":28136}
+```
+
+### bin/quality — raw, unedited (ANSI colour codes stripped; nothing else removed)
+
+```
+quality gate — base a4f669d
+
+[1/14] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/14] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/14] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+[4/14] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/14] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/14] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/14] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/14] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/14] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/14] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/14] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/14] architecture tests (§17.1)
+   ✓ arch
+[13/14] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+## Ticket, not fixed — the reviewer's finding 1, and it is six instances
+
+`RejectOpeningBalanceBatch` has no cross-school refusal where
+`PostOpeningBalanceBatch:138-144` has one. Its locked re-read leans entirely on
+`SchoolScope`, which is **fail-open on a null context** unless the model is
+opted in via `config/rbac.php:78`'s `RBAC_FAIL_CLOSED_MODELS` — empty by
+default — and `SetSchoolContext:51` admits a super admin with no school
+selected.
+
+**This is not one gap; it is six.** The same asymmetry is open on all five
+sibling Reject actions. Patching one makes the pattern *harder* to see, not
+easier: a reader who finds the guard in one Reject and not the others concludes
+the others are fine. So it is recorded whole:
+
+- Six actions: `RejectOpeningBalanceBatch`, `RejectCreditNote`,
+  `RejectVoidRequest`, `RejectFeeScheduleChange`, `RejectDiscountPolicyChange`,
+  and the opening-balance one that prompted it.
+- The other half of the answer is **`RBAC_FAIL_CLOSED_MODELS`**. An explicit
+  refusal in each action and an opt-in of the finance models are different
+  fixes at different layers, and the right change probably uses both.
+- **It is unreachable today, and the reason matters.** No identity holds a
+  `…reject` ability without a school context. That is a fact about the CURRENT
+  GRANTS — one `grantsMap()` edit away from being false — and not a property of
+  the code. Anyone reading "unreachable" as "safe" has read it wrong.
+
+## The browser drive — deferred, with the exit condition written down
+
+This is the fourth deferral and it stops being open-ended here. The condition,
+recorded so the next commit inherits it as a requirement rather than as a
+memory:
+
+> **The browser drive happens in the OPERATOR SCREEN commit**, where a maker can
+> create and submit a batch honestly. It drives the confirmation dialog **OPEN
+> and CANCELLED**, and then a **REJECT** — neither of which posts anything.
+> **Approve stays undriven until there is a database we are willing to spend**,
+> because G1/G1b make the first approval consume that school's single posting
+> slot permanently, with no un-post, no delete and no move.
+
+## Still not verified
+
+Unchanged from the first half of this report, and none of it is closed by this
+commit:
+
+- The confirmation dialog is proven at the **source level only** — declared,
+  exclusive, saying "irreversible", and consulted by the button. No JS test
+  runner exists in this repository, so no arm renders it.
+- The approve path has never been driven through a browser.
+- `row_count` is still not on the wire, so the dialog still cannot state the
+  size of the cutover it is about to post.

@@ -10,11 +10,27 @@
  * fact that approving through the endpoint really posts rather than returning a cheerful 200. It
  * asserts the posting MECHANICS once (PROOF B) and no further; those are OpeningBalancePostingTest's.
  *
- * THE MAKER-REFUSAL ARMS GIVE THE MAKER THE CHECKER'S ABILITY ON PURPOSE. A maker who holds no
- * approve permission is refused by the route middleware, and the assertion would then be green with
- * the Policy deleted — proving the group gate and nothing about maker ≠ checker. So every actor here
- * is minted from an EXPLICIT permission list, and the maker in those arms holds exactly what a
- * checker holds. The only thing left to refuse them is the Policy.
+ * THREE LAYERS STAND BETWEEN A MAKER AND THEIR OWN CUTOVER, and each arm below is pinned to ONE of
+ * them. The earlier version of this paragraph claimed the Policy was "the only thing left to refuse
+ * them", and that was wrong in a way the watched red exposed — so it is written out properly here,
+ * because a header that overclaims is a dead assertion one level up.
+ *
+ *   1. THE ROUTE'S ABILITY (`permission:finance.opening-balance.{approve,reject}`). Remove it and a
+ *      permissionless request reaches the controller, where the Policy still refuses — so no HTTP
+ *      arm here can see its removal. PROOF H therefore reads the REGISTERED ROUTES and asserts the
+ *      abilities at the router itself. It is also the only arm that catches the reject route
+ *      re-gated on the APPROVE ability, which PROOF D structurally cannot: an approve-only actor is
+ *      then admitted by the middleware and refused by the Policy's own `…reject` check, so PROOF D
+ *      stays green through exactly that mutation.
+ *   2. THE POLICY's maker ≠ checker rule. Remove it and the maker is STILL refused — by layer 3,
+ *      under the lock — but with **422 instead of 403**. That is what the watched red produced, and
+ *      it is why PROOF C and C2 assert a STATUS CODE rather than merely "refused": the Policy is
+ *      pinned by the code it produces, not by being the sole refusal. Those two arms give the maker
+ *      the checker's full ability set on purpose, so layer 1 cannot be what refuses them.
+ *   3. THE ACTION's locked re-read of `submitted_by_user_id`, and under that the
+ *      `…_maker_ne_checker` CHECK. Neither is this file's subject —
+ *      OpeningBalanceApprovalGateTest owns them — but layer 2's red is only readable if you know
+ *      they are there.
  *
  * Every arm was watched RED before it was watched green; the mutations and both outputs are in the
  * implementation report.
@@ -38,6 +54,7 @@ use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -370,6 +387,92 @@ it('PROOF F — a VALIDATED batch is refused with 422 on both decisions, and not
     expect(obdsSubledgerCounts())->toBe([0, 0]);
 });
 
+// ── PROOF H — the route's own ability, read off the ROUTER ───────────────────────────────────────
+
+/**
+ * The ABILITIES each opening-balance route requires, keyed by `METHOD uri`.
+ *
+ * Read from `Route::getRoutes()` — the registered stack — and never from routes/endpoints/finance.php
+ * as text. The precedent is ApprovalsQueueFeedCoverageTest::aqfPendingRoutes(), and the reason is the
+ * same: a source grep agrees with the file it just read, while the router is what actually runs. It
+ * would also miss middleware applied from a GROUP, which is exactly where `finance.access` comes
+ * from (routes/api.php) — so a source-level check could not tell a route inside the finance group
+ * from one outside it.
+ *
+ * TWO THINGS THE ROUTER DOES NOT DO THAT `route:list` DOES, both found by watching this fail:
+ * `gatherMiddleware()` returns the UNRESOLVED alias (`permission:finance.access`) where
+ * `route:list --json` prints the resolved class, and `uri()` returns `{batch}` where the route was
+ * declared `{batch:uuid}` — Laravel strips the field binding off the compiled uri. The keys below
+ * are therefore the router's spelling, not the routes file's, which is the whole point of reading
+ * the router.
+ *
+ * @return array<string, list<string>>
+ */
+function obdsRouteAbilities(): array
+{
+    $found = [];
+
+    foreach (Route::getRoutes() as $route) {
+        $uri = $route->uri();
+
+        if (! str_starts_with($uri, 'api/v1/finance/opening-balance-batches/')) {
+            continue;
+        }
+
+        $abilities = [];
+        foreach ($route->gatherMiddleware() as $middleware) {
+            if (! is_string($middleware) || ! str_starts_with($middleware, 'permission:')) {
+                continue;
+            }
+
+            $abilities[] = substr($middleware, strlen('permission:'));
+        }
+
+        sort($abilities);
+        $found[$route->methods()[0].' '.$uri] = $abilities;
+    }
+
+    ksort($found);
+
+    return $found;
+}
+
+it('PROOF H — each decision route carries its OWN ability at the router, and only that one', function () {
+    // THE LAYER NO HTTP ARM IN THIS FILE CAN SEE. Strip `permission:…approve` off the approve route
+    // and every other arm here stays green: a permissionless request simply travels one layer
+    // further and is refused by the Policy, with the same 403. Two gates, and until this arm neither
+    // was load-bearing on its own.
+    //
+    // It is asserted as an EXACT SET per route, not as "contains". A `contains` check passes the
+    // mutation that matters most — the reject route re-gated on the approve ability — because the
+    // Policy's own `…reject` clause then produces the identical 403 an approve-only actor already
+    // expects, and PROOF D cannot tell the two apart. The set says which ability, not merely that
+    // there is one.
+    // The two read routes are included rather than filtered out: this arm is then also the pin that
+    // says the template stays on the MAKER ability and `pending` on the checker's, so a later edit
+    // cannot quietly hand the format to every approver.
+    expect(obdsRouteAbilities())->toBe([
+        'GET api/v1/finance/opening-balance-batches/import/template' => [
+            OBDS_ACCESS,
+            'finance.opening-balance.submit',
+        ],
+        'GET api/v1/finance/opening-balance-batches/pending' => [
+            OBDS_ACCESS,
+            OBDS_APPROVE,
+        ],
+        'POST api/v1/finance/opening-balance-batches/{batch}/approve' => [
+            OBDS_ACCESS,
+            OBDS_APPROVE,
+        ],
+        'POST api/v1/finance/opening-balance-batches/{batch}/reject' => [
+            OBDS_ACCESS,
+            OBDS_REJECT,
+        ],
+    ], 'A decision route no longer requires its own ability at the router. Either a permission '
+        .'middleware was dropped — in which case the Policy is the only gate left and no other arm '
+        .'here can tell — or one route now carries another\'s ability, which PROOF D cannot see.');
+});
+
 // ── PROOF G — the queue's flags are live, and the Policy is what made them live ──────────────────
 
 it('PROOF G — the pending feed now reports can_approve TRUE for a checker and FALSE for the maker', function () {
@@ -396,5 +499,31 @@ it('PROOF G — the pending feed now reports can_approve TRUE for a checker and 
 
     $asMaker->assertOk()
         ->assertJsonPath('data.0.can_approve', false)
+        ->assertJsonPath('data.0.can_reject', false);
+});
+
+it('PROOF G2 — an approve-but-not-reject checker is served the row with can_reject FALSE', function () {
+    // THE DEAD-BUTTON DEFECT, FOUND INSIDE THE MODULE WRITTEN TO PREVENT IT. The feed list's own
+    // docblock (resources/js/lib/finance/approval-feeds.ts) rules that a row an approver can see,
+    // press and fail on is worse than an absent one — "present-and-dead is dishonestly broken". This
+    // type reaches that state by a route nobody would look at: `pending` is gated on `…approve`
+    // ALONE, so a checker holding approve and not reject is served the row, and the Resource's
+    // `can_reject` is the only thing standing between them and a Reject button that 403s at the
+    // route. Nothing pinned it: PROOF G's two actors both hold the full triple, and ARM 3b of
+    // ApprovalsQueueRendersEveryTypeTest reads `can_approve` only.
+    //
+    // Both flags are asserted on ONE actor, because the pair is the claim: `true` alone would also
+    // be produced by a blanket allow, and `false` alone by a viewer the Gate refuses entirely.
+    $ctx = obdsSchool();
+    $maker = obdsUser($ctx['school'], [OBDS_ACCESS]);
+    $approveOnly = obdsUser($ctx['school'], [OBDS_ACCESS, OBDS_APPROVE]);
+    $student = Student::factory()->create(['school_id' => $ctx['school']->id]);
+
+    obdsBatch($ctx, [['student' => $student, 'label' => 'Tuition', 'kobo' => 250000]], $maker);
+
+    test()->actingAs($approveOnly)->withSession(['school_id' => $ctx['school']->id])
+        ->getJson('/api/v1/finance/opening-balance-batches/pending')
+        ->assertOk()
+        ->assertJsonPath('data.0.can_approve', true)
         ->assertJsonPath('data.0.can_reject', false);
 });

@@ -519,6 +519,27 @@ receipt twice and the database would have no opinion — at which point `externa
 `(school_id, external_reference)` where non-null, or an explicit statement that duplicates are legal and
 why. Do not leave it unstated a third time.
 
+> **RULED BY STEP 4b (2026-08-08): DUPLICATES ARE LEGAL. NO UNIQUE INDEX.** And the ruling turns on a
+> fact that did not exist when the paragraph above was written.
+>
+> The risk named above is *"two batches filed under different batch references and carrying the same
+> WCBS receipt"*. **G1 and G1b close that scenario outright**: a school has at most one posted batch,
+> ever, and it can be neither un-posted nor deleted to make room for a second. There is no second
+> posting run for a duplicate receipt to arrive on, so a unique index would constrain nothing that is
+> still reachable.
+>
+> It would, however, **cost something real**. Step 2 nets one payment per STUDENT, and
+> `external_reference` on that netted row is the first non-null bill reference among the student's
+> credit lines — a breadcrumb, not a key, because one row cannot carry the several references the file
+> may hold for it (the full per-line set stays on the staged rows, which is where it is not lossy). A
+> WCBS extract that legitimately repeats a bill reference across two students would then abort the
+> cutover mid-post at 1062.
+>
+> **So the division is: `external_reference` is PROVENANCE, `origin` is the PREDICATE, and idempotency
+> is held twice at the database — at the batch (`ob_batches_school_reference_unique`) and now at the
+> post (G1).** Stated in `PostOpeningBalanceBatch`'s docblock as well as here, so it is not re-opened
+> as an oversight.
+
 **THE RECEIPT REFUSAL IS OWED, NOT BUILT — there is no receipt surface to refuse from.** No receipt is
 produced for a payment anywhere in this repository today: payments are JSON-only
 (`PaymentController::store` / `storeForStudent`, `routes/endpoints/finance.php:24`, `:145`), the only
@@ -657,8 +678,30 @@ Per S9 the import is maker–checker, and the batch is the unit of approval, not
    reserved receipt band, the receipt refusal. **`origin` is now a hard dependency, not a
    convenience**: R4 (§12) makes it the export-exclusion predicate, so descoping it breaks the
    general-ledger boundary rather than weakening a guard.
-4. **Posting + approval gate** (§3, §8), **plus the R9 migration, G1 and G1b**.
+4. **Posting + approval gate** (§3, §8), **plus the R9 migration, G1 and G1b**. Split, and the split
+   is forced rather than chosen: **4a** the file format + R9 migration (*shipped*, PR #215 at
+   `2d55fda`); **4b** the posting Action, the `posted` state, G1 and G1b (*shipped*); **4c** the §8
+   approval gate. 4c is indivisible — `bin/ci-boundary-lint.php`'s `approval-seam-count` requires one
+   `Submit*.php` per finance `*_SUBMIT` Permission case, and `bin/ci-grants-convergence-lint.php`
+   requires a migration in the same diff as a `grantsMap()` addition — so a Permission case cannot
+   land ahead of the Action and the grants that go with it. **There is therefore no `approved` state
+   until 4c**: today's transition is `validated → posted`, and 4c inserts approval between the two.
 5. **U12b** — the operator screen.
+
+**4b's own scope note, so a reader can tell what it did NOT do.** The posting Action exists and
+`finance:import-opening-balances` still refuses every non-dry run before it reads a byte, naming 4c —
+commit 1's precedent kept verbatim, for its reason: *"there is no posting path to reach, and a run
+that got as far as opening a file before refusing would suggest there is."* Posting happens on
+approval (§8); a console flag onto the one irreversible write in this feature, ahead of the gate meant
+to authorise it, is a second door. The Action is exercised by tests only.
+
+One integration consequence, recorded because it is invisible from §3: `finance:audit-ledger-coherence`
+holds a closed vocabulary of `source_type` values (assertion I2). `opening_balance_row` was not in it,
+so the first school to post its cutover would have turned the auditor red on a *correct* ledger. 4b
+adds it to `AuditLedgerCoherence::SOURCE_TABLES` (→ `finance_opening_balance_rows`) and to I7's
+currency map. That is not scope creep: the auditor's vocabulary is part of what "the ledger is
+coherent" means, and a new posting instrument that does not teach it is a gate reporting green while
+the fact it checks has changed underneath it.
 
 ### R9 — the staging key is wrong for a per-fee-type file
 
@@ -762,6 +805,29 @@ picks one and says which, in the migration's docblock.
 > then `term_id` stays NOT NULL and `--term` stays required and validated; `ImportOpeningBalances`'s
 > `resolveTerm()` docblock says so at the site.
 
+> **CLOSED BY STEP 4b (2026-08-08). THE RULING IS OPTION 2 — REPURPOSE, DO NOT NULLIFY.** `term_id`
+> names **the term being CLOSED OUT**: the last term, whose closing position the file carries. It
+> keeps its `NOT NULL` and its FK; only the MEANING changes.
+>
+> **The reasoning, because a ruling with no argument is a label.** R5 does put the cutover on a term
+> boundary, so there is no cutover term **T** to name — that is what made the column look wrong. But
+> the file **is** the closing position of a *specific* term, and recording **which** term is exactly
+> the provenance a cutover needs: it is the one fact that lets a reader a year later say what period
+> the opening charges represent. Nulling the column discards that for no gain, and discards the FK's
+> referential guarantee and the option's per-School validation with it. The cost of repurposing is a
+> comment and a rename; the cost of nullifying is a permanent loss of provenance plus an `ALTER`.
+> Option 2 wins on the merits, not on the smaller diff.
+>
+> **And the rename is not cosmetic** — §9's own wording is that without it "the column becomes a
+> lie". So: the option is `--closing-term` with a corrected description, `resolveTerm()`'s docblock
+> and its error message say the new meaning, `OpeningBalanceBatch`'s docblock says it, and the
+> **column itself carries a MySQL `COMMENT`** stating it
+> (`2026_08_08_110000_opening_balance_posting_state_and_guards.php`). The comment is the copy a
+> reader of `SHOW CREATE TABLE` sees, which is where someone who doubts the column's meaning actually
+> looks. It is a comment, not a constraint, and it is not dressed as one: nothing at the engine stops
+> a caller writing the wrong term, and nothing could — "this is last term, not this term" is a claim
+> about meaning, the same class §11 quarantines as procedural.
+
 ### G1 — at most one posted batch per school, at INSERT
 
 **In the DATABASE, not the job.** A job-level "has this school already posted?" check reads, decides,
@@ -839,6 +905,33 @@ copying the precedent without noticing that is how the false claim got written.
 transition **out of** the posted state, signalling SQLSTATE `'45000'` in the house style. Until it
 exists, §11 must state the weaker, true claim.
 
+> **SHIPPED IN STEP 4b (2026-08-08) — AS TWO TRIGGERS, NOT ONE, AND THE SECOND ONE IS THE POINT OF
+> THIS NOTE.** The paragraph above specifies `BEFORE UPDATE` only, and an UPDATE guard alone leaves
+> the identical release reachable through the other door:
+>
+> ```sql
+> DELETE FROM finance_opening_balance_batches WHERE id = <the posted batch>;
+> ```
+>
+> That frees the generated unique key just as completely as the `UPDATE` does, and it is **worse**:
+> `finance_opening_balance_rows_batch_school_foreign` is `ON DELETE CASCADE`
+> (`2026_08_06_100000:156-161`), so the staged rows go with it — and the posted ledger charges, which
+> **cannot** be deleted (`2026_07_19_100001:56-60`), are left pointing at `source_id`s that no longer
+> exist. A second batch then posts and the arrears are double-counted permanently, which is the exact
+> Rev 3 outcome G1b was written to close.
+>
+> So 4b ships `finance_opening_balance_batches_no_unpost` (`BEFORE UPDATE`, denies `OLD.status =
+> 'posted' AND NEW.status <> 'posted'`) **and**
+> `finance_opening_balance_batches_no_delete_posted` (`BEFORE DELETE`, denies `OLD.status =
+> 'posted'`). Other columns stay updatable on a posted batch — 4c's approval screen and U12b will want
+> to annotate one — and a non-posted batch stays freely deletable, because staging is scratch.
+>
+> **This is the same lesson as the `withTrashed()` correction three sections above, and it is worth
+> stating in the same words:** a guard written against one **token** rather than against the
+> **behaviour** has a hole shaped exactly like the other spelling. Rev 3 asserted G1 was absolute
+> having guarded only INSERT; specifying G1b as `BEFORE UPDATE` alone would have repeated that within
+> the same section, one revision later.
+
 ---
 
 ## 10. What I am least sure of
@@ -881,16 +974,24 @@ unrecoverable.
 
 ### Enforced by the DATABASE
 
-**G1 — one posted batch per school, ENFORCED BY THE UNIQUE KEY AGAINST INSERT; releasable by an
-UPDATE until G1b lands** (§9).
+**G1 — one posted batch per school, ENFORCED BY THE UNIQUE KEY; and the slot cannot be released,
+because G1b denies both exits from `posted` (UPDATE and DELETE).** Shipped in step 4b —
+`2026_08_08_110000_opening_balance_posting_state_and_guards.php`.
 
-That sentence is deliberately weaker than Rev 3's, which claimed *"nothing an operator, a job, a race
-or a second approval can do produces two posted batches."* **That was false.** The generated key is
-computed from `status`, `finance_opening_balance_batches` carries no trigger, and `status` has no
-CHECK — so `UPDATE … SET status='rejected'` on the posted batch frees the key and a second batch
-posts, while the first post's ledger charges can never be removed. §9 carries the verification and
-G1b's shape. **Until G1b ships, the true claim is: concurrent inserts cannot both post; a deliberate
-status edit can re-open the slot.**
+**The history is kept, because the weakening was the finding.** Rev 3 claimed *"nothing an operator,
+a job, a race or a second approval can do produces two posted batches."* **That was false when
+written.** The generated key is computed from `status`, `finance_opening_balance_batches` carried no
+trigger, and `status` has no CHECK — so `UPDATE … SET status='rejected'` on the posted batch freed
+the key and a second batch posted, while the first post's ledger charges can never be removed. Rev 4
+therefore stated the weaker, true claim, and §9 carried G1b's shape as the correction. 4b builds it,
+**and found that the shape as specified was itself one door short**: `DELETE` frees the same key. Both
+are now denied by name, and both are bite-proved by planting the release and watching the refusal —
+not by observing a green.
+
+**The claim is now the strong one again, and this time it is enforced rather than asserted:** at most
+one posted batch per school, at the database, with no statement that re-opens the slot. What remains
+outside it is what always was — a restore below the application (§11's procedural half), which the
+portal cannot see, refuse or verify.
 
 ### Enforced by the JOB
 

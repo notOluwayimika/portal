@@ -74,11 +74,20 @@ class AuditLedgerCoherence extends Command
 
     protected $description = 'READ-ONLY: verify the subledger is coherent with the documents that produced it; exit non-zero on any incoherence (ADR 0047)';
 
-    /** The three source_type values → the table each points at. `allocation` is absent by design (R4). */
+    /**
+     * The known source_type values → the table each points at. `allocation` is absent by design (R4).
+     *
+     * `opening_balance_row` arrived with §9 step 4b: PostOpeningBalanceBatch posts one charge per
+     * positive fee-type line, sourced to the STAGED ROW rather than to a document the portal
+     * originated (spec §3 / R6 — no invoice is written for an inherited balance). Without it here,
+     * I2 would report every opening charge as "not a known document type" the first time a school
+     * posted its cutover, and the auditor would go red on a correct ledger.
+     */
     private const SOURCE_TABLES = [
         'invoice' => 'finance_invoices',
         'payment' => 'finance_payments',
         'credit_note' => 'finance_credit_notes',
+        'opening_balance_row' => 'finance_opening_balance_rows',
     ];
 
     /** @var list<array{code: string, school_id: int, doc_type: string, doc_id: int, detail: string}> */
@@ -329,6 +338,9 @@ class AuditLedgerCoherence extends Command
             'invoice' => ['finance_invoices', 'total_currency'],
             'payment' => ['finance_payments', 'amount_currency'],
             'credit_note' => ['finance_credit_notes', 'amount_currency'],
+            // §9 step 4b — an opening charge's currency is the staged row's own balance currency,
+            // because the charge IS that balance. Same check, same reason as the other three.
+            'opening_balance_row' => ['finance_opening_balance_rows', 'balance_currency'],
         ];
 
         foreach ($currencyColumn as $type => [$table, $column]) {

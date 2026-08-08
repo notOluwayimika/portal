@@ -182,8 +182,10 @@ class OpeningBalanceImportTemplateImportSheet extends StringValueBinder implemen
                 // array_key_exists, not ??: a sample cell deliberately left BLANK (the optional
                 // reference) must stay blank, and `?? $meta['example']` would silently refill it with
                 // the example — turning the one row that demonstrates "optional" back into a row that
-                // demonstrates nothing.
-                $row[] = array_key_exists($column, $sample) ? $sample[$column] : ($meta['example'] ?? '');
+                // demonstrates nothing. The map's own cell needs no fallback either: COLUMNS is typed
+                // with every key required, so `?? ''` would be dead code Larastan rejects, and would
+                // paper over a malformed entry rather than failing on it.
+                $row[] = array_key_exists($column, $sample) ? $sample[$column] : $meta['example'];
             }
             $rows[] = $row;
         }
@@ -222,11 +224,11 @@ class OpeningBalanceImportTemplateColumnsSheet implements FromArray, ShouldAutoS
         foreach (ImportOpeningBalances::COLUMNS as $column => $meta) {
             $rows[] = [
                 $column,
-                $meta['group'] ?? '',
+                $meta['group'],
                 $meta['required'] ? 'Yes' : 'No',
-                $meta['format'] ?? '',
-                $meta['example'] ?? '',
-                $meta['notes'] ?? '',
+                $meta['format'],
+                $meta['example'],
+                $meta['notes'],
             ];
         }
 

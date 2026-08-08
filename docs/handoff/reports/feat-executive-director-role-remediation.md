@@ -842,6 +842,44 @@ quality gate — base 6890edb
 QUALITY EXIT=0
 ```
 
+**Run 3, after round 2 (`98391fa`), raw:**
+
+```text
+quality gate — base 6890edb
+
+[1/14] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/14] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/14] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+[4/14] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/14] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/14] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/14] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/14] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/14] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/14] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/14] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/14] architecture tests (§17.1)
+   ✓ arch
+[13/14] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+QUALITY EXIT=0
+```
+
 Two caveats on what that green covers, neither of them new to this branch. Step 14 is the failure
 **ratchet**, not a clean suite — pre-existing failures in `tests/ratchet-baseline.txt` are frozen and
 I did not touch that file. And `bin/quality-clean-db` (throwaway DB, migrate-from-zero against data,

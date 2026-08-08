@@ -1,6 +1,7 @@
 # Implementation report — §9 step 4b, the posting Action, `posted`, G1 and G1b
 
-Branch `feat/finance-ob-posting`, off `origin/staging` @ `2d55fda`.
+Branch `feat/finance-ob-posting` @ `a33d369`, off `origin/staging` @ `2d55fda`.
+PR **#216** → `staging`. Not merged.
 
 **This is full-review tier** — it touches money, a migration, database triggers, an
 append-only ledger and a `school_id`-scoped write path. The `finance-reviewer`

@@ -213,6 +213,9 @@ it('rejects a blank required column but accepts a literal 0.00 as a real zero', 
     $exit = obRun($ctx, obCsv([
         'ADM-ZERO,W1,0.00,0.00,0.00,0.00,BILL-1,',
         'ADM-BLANK,W2,,100000.00,60000.00,40000.00,BILL-2,',
+        // The join key itself blank — the most consequential blank required column, and the row
+        // shape a reader would be most tempted to drop before it ever becomes a record.
+        ',W3,0.00,100000.00,60000.00,40000.00,BILL-3,',
     ]));
 
     $rows = obRows($ctx);
@@ -221,6 +224,10 @@ it('rejects a blank required column but accepts a literal 0.00 as a real zero', 
         ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
         ->and(obCodes($rows[3]))->toContain('blank_required_column')
         ->and($rows[3]->prior_arrears)->toBeNull()          // never coerced to zero
+        // Blank join key: STAGED and rejected, never dropped. A dropped row is one nobody can see.
+        ->and($rows[4]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[4]))->toContain('blank_required_column')
+        ->and($rows[4]->admission_number)->toBeNull()
         ->and($exit)->toBe(1);
 });
 
@@ -483,7 +490,7 @@ it('raises an ingest_incomplete batch finding naming the difference and its reas
     // The numbers, not just the code — a finding that says "something was dropped" without saying
     // how many or why is the same as no finding to whoever has to act on it.
     $message = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
-    expect($message)->toContain('Read 2 data line(s) but staged 1')
+    expect($message)->toContain('Read 2 data line(s) with content but staged 1')
         ->and($message)->toContain('1 not ingested')
         ->and($message)->toContain('duplicate_admission_number_in_file=1')
         // The breakdown accounts for the WHOLE gap, so nothing is left unexplained here.
@@ -503,6 +510,44 @@ it('leaves file_row_count equal to row_count with no ingest finding on a clean f
 
     $batch = obBatch($ctx);
     expect($batch->file_row_count)->toBe(2)
+        ->and($batch->row_count)->toBe(2)
+        ->and($batch->findings)->toBeNull()
+        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Validated)
+        ->and($exit)->toBe(0);
+});
+
+it('excludes wholly blank lines from file_row_count without raising an ingest finding', function () {
+    $ctx = obSchool();
+    obSchedule($ctx, 10000000);
+    obStudent($ctx, 'ADM-A');
+    obStudent($ctx, 'ADM-B');
+
+    // Two content lines with a blank between them and a blank at the end. `obCsv` appends its own
+    // trailing newline, so the file's physical data lines are: content, blank, content, blank.
+    $csv = obCsv([
+        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
+        '',
+        'ADM-B,W2,25000.00,100000.00,60000.00,65000.00,BILL-2,',
+        '',
+    ]);
+
+    // Driven directly rather than through obRun() so the console assertion can ride along: the
+    // blank count is NOT persisted, so the operator report is the only place it is observable, and
+    // it is what makes content + blank reconcile to the physical file by eye.
+    $exit = test()->artisan('finance:import-opening-balances', [
+        '--file' => $csv,
+        '--school' => (string) $ctx['school']->id,
+        '--term' => (string) $ctx['term']->id,
+        '--as-at' => '2026-08-06',
+        '--batch-reference' => 'BLANKS-'.Str::random(6),
+        '--dry-run' => true,
+    ])->expectsOutputToContain('blank lines skipped')->run();
+
+    // A blank line is not a row, so it must not read as a missing one. `ingest_incomplete` firing
+    // on a trailing newline would be a false positive on every real extract, and a control that
+    // cries wolf on every file is one an operator learns to scroll past.
+    $batch = obBatch($ctx);
+    expect($batch->file_row_count)->toBe(2)     // content lines, not physical lines
         ->and($batch->row_count)->toBe(2)
         ->and($batch->findings)->toBeNull()
         ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Validated)

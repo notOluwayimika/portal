@@ -48,3 +48,10 @@ tsc-output.txt
 
 # Local drive-fixture environment (secrets copied from .env — never commit)
 .env.drive
+
+# Boundary-lint coverage fixtures (tests/Arch/BoundaryLintCoverageTest.php plants
+# these into the real tree and removes them in a finally). The finally covers a
+# thrown exception; it does not cover a SIGKILL or a crashed host, and the residue
+# of those is an UNTRACKED file — committable, and the one consequence that
+# outlives the run.
+app/Finance/BoundaryLintFixture*.php

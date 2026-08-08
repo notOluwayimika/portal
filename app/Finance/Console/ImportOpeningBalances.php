@@ -120,7 +120,7 @@ class ImportOpeningBalances extends Command
             }
 
             try {
-                $records = $this->readCsv($file);
+                ['records' => $records, 'blankLines' => $blankLines] = $this->readCsv($file);
             } catch (InvalidArgumentException $e) {
                 $this->error($e->getMessage());
 
@@ -141,7 +141,7 @@ class ImportOpeningBalances extends Command
                 'uploaded_by_user_id' => null, // a console run has no authenticated causer
             ]);
 
-            return $this->validateInto($batch, $records, $termId, $enrollments, $schedules);
+            return $this->validateInto($batch, $records, $blankLines, $termId, $enrollments, $schedules);
         });
     }
 
@@ -149,10 +149,13 @@ class ImportOpeningBalances extends Command
      * The whole validation pass, inside the School context. Returns the process exit code.
      *
      * @param  list<array{line: int, values: array<string, string>}>  $records
+     * @param  int  $blankLines  wholly blank physical lines the reader dropped — carried through so
+     *                           read + blank reconciles to the physical file on the operator report
      */
     private function validateInto(
         OpeningBalanceBatch $batch,
         array $records,
+        int $blankLines,
         int $termId,
         BillableEnrollmentProvider $enrollments,
         FeeScheduleLookup $schedules,
@@ -189,7 +192,7 @@ class ImportOpeningBalances extends Command
         }
 
         $rowCount = 0;      // rows STAGED
-        $fileRowCount = 0;  // data lines READ — incremented before any skip, never conditioned
+        $fileRowCount = 0;  // data lines WITH CONTENT — incremented before any skip in this loop
         $skipReasons = [];  // reason → count, for the ingest-completeness breakdown
         $rejected = [];
         $exceptions = [];
@@ -209,9 +212,13 @@ class ImportOpeningBalances extends Command
 
         foreach ($records as $record) {
             // FIRST statement in the body, before every `continue` below and before any added
-            // later. This is "what the file contained" and it is never conditioned on a row being
-            // valid, resolvable or parseable — the moment it is, it stops being able to detect
-            // that a row went missing.
+            // later. It is never conditioned on a row being valid, resolvable or parseable — the
+            // moment it is, it stops being able to detect that a row went missing.
+            //
+            // It counts the reader's records, so it is "every data line CARRYING CONTENT", not
+            // every physical line: readCsv() drops wholly blank lines one frame up, deliberately
+            // and by an invariant that refuses to let a second drop path join it. The blank count
+            // comes through with the records so the operator report reconciles to the physical file.
             $fileRowCount++;
 
             $line = $record['line'];
@@ -438,7 +445,7 @@ class ImportOpeningBalances extends Command
             }
 
             $batchFindings[] = $this->finding('ingest_incomplete', sprintf(
-                'Read %d data line(s) but staged %d — %d not ingested (%s).',
+                'Read %d data line(s) with content but staged %d — %d not ingested (%s).',
                 $fileRowCount, $rowCount, $fileRowCount - $rowCount, implode(', ', $parts),
             ));
         }
@@ -471,8 +478,9 @@ class ImportOpeningBalances extends Command
                 : OpeningBalanceBatchStatus::Rejected,
         ]);
 
-        return $this->report($batch, $rowCount, $fileRowCount, $rejected, $exceptions, $notComparable,
-            $unresolved, $absent, $duplicateInFile, $nullAdmissions, $duplicateAfterTrim, $batchFindings);
+        return $this->report($batch, $rowCount, $fileRowCount, $blankLines, $rejected, $exceptions,
+            $notComparable, $unresolved, $absent, $duplicateInFile, $nullAdmissions, $duplicateAfterTrim,
+            $batchFindings);
     }
 
     /**
@@ -492,6 +500,7 @@ class ImportOpeningBalances extends Command
         OpeningBalanceBatch $batch,
         int $rowCount,
         int $fileRowCount,
+        int $blankLines,
         array $rejected,
         array $exceptions,
         array $notComparable,
@@ -506,7 +515,12 @@ class ImportOpeningBalances extends Command
         $this->table(['Measure', 'Count'], [
             // Read vs staged, adjacent on purpose: the pair IS the ingest-completeness control, and
             // a reader who sees only one of them cannot tell a complete batch from a short one.
-            ['data lines read', $fileRowCount],
+            // The blank count sits with them so the three reconcile BY EYE against the file the
+            // operator is holding: content + blank = physical data lines. `file_row_count` counts
+            // lines WITH CONTENT, not physical lines — labelled as such rather than left to be
+            // discovered when a trailing newline makes the numbers look wrong.
+            ['data lines with content', $fileRowCount],
+            ['blank lines skipped', $blankLines],
             ['rows staged', $rowCount],
             ['rejected rows', count($rejected)],
             ['comparison exceptions (§5 different)', count($exceptions)],
@@ -576,7 +590,15 @@ class ImportOpeningBalances extends Command
      * missing required column aborts the run before the batch row is written — a file whose shape
      * is wrong has no rows worth staging.
      *
-     * @return list<array{line: int, values: array<string, string>}>
+     * WHOLLY BLANK LINES ARE DROPPED HERE, and this is the only place in the run where a physical
+     * line disappears without reaching `$skipReasons`. That is deliberate — a blank line carries no
+     * claim, and raising `ingest_incomplete` over a trailing newline would be a false positive on
+     * every real extract, which teaches an operator to ignore the one control that says a row went
+     * missing. But an exemption that nothing measures is an exemption that grows, so the count is
+     * returned rather than swallowed, and the invariant below refuses to let a SECOND drop path
+     * join it silently.
+     *
+     * @return array{records: list<array{line: int, values: array<string, string>}>, blankLines: int}
      *
      * @throws InvalidArgumentException
      */
@@ -603,11 +625,14 @@ class ImportOpeningBalances extends Command
             }
 
             $records = [];
+            $blankLines = 0;
             $line = 1; // the header is line 1; data starts at 2, which is what an operator sees
             while (($row = fgetcsv($handle)) !== false) {
                 $line++;
                 if ($row === [null]) {
-                    continue; // a wholly blank line carries no claim
+                    $blankLines++; // a wholly blank line carries no claim — counted, not swallowed
+
+                    continue;
                 }
                 $values = [];
                 foreach ($header as $index => $name) {
@@ -616,7 +641,24 @@ class ImportOpeningBalances extends Command
                 $records[] = ['line' => $line, 'values' => $values];
             }
 
-            return $records;
+            // THE POINT OF THIS METHOD'S BOOKKEEPING. Every physical data line must have become
+            // either a record or a counted blank; those are the only two outcomes this loop is
+            // allowed to have. It holds today by construction, which is exactly why it is asserted:
+            // the day someone adds a third `continue` here — `if ($values['admission_number'] ===
+            // '') continue;` is the plausible one — the drop lands upstream of $skipReasons, where
+            // `file_row_count` cannot see it and the ingest-completeness finding reports nothing.
+            // This throw is what turns that silent narrowing into a stopped run.
+            $physical = $line - 1; // $line counts the header
+            if (count($records) + $blankLines !== $physical) {
+                throw new InvalidArgumentException(sprintf(
+                    'Reader accounting failed: %d record(s) + %d blank line(s) != %d physical data line(s). '
+                    .'A drop path was added to readCsv() that neither stages a row nor counts a blank, so '
+                    .'file_row_count can no longer detect a missing row. Register it, or do not drop it.',
+                    count($records), $blankLines, $physical,
+                ));
+            }
+
+            return ['records' => $records, 'blankLines' => $blankLines];
         } finally {
             fclose($handle);
         }

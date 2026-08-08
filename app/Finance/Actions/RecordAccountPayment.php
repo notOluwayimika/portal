@@ -79,6 +79,10 @@ final class RecordAccountPayment
         return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor) {
             // Same sequence scope and key as RecordPayment — one receipt series per school across both
             // doors; UNIQUE(school_id, reference) is the backstop that makes a second counter fail loudly.
+            // NO SEED CLOSURE, and that omission is load-bearing — do not "harden" this to match
+            // HasAdmissionNumber:55 / HasStaffNumber:54. Seeding it would adopt MAX(reference), which
+            // after an opening-balance import is a migrated row in the reserved band, sending every
+            // portal receipt for that school above Payment::MIGRATED_REFERENCE_FLOOR forever.
             $reference = Sequences::next('finance_payment', (string) $schoolId);
 
             // The payment belongs to the ACCOUNT. `method` is not a request input and keeps its

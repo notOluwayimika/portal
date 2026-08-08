@@ -21,6 +21,7 @@
 
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
+use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Models\AcademicSession;
 use App\Models\Permission;
@@ -36,6 +37,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Excel as ExcelFormat;
+use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
@@ -346,6 +349,57 @@ it('serves the operator screen to a maker, with the terms it needs, and 403s a c
         ->withSession(['school_id' => $ctx['school']->id])
         ->get('/finance/opening-balances/import')
         ->assertForbidden();
+});
+
+// ── FIX 3 — an .xlsx gets a sentence, not Laravel's default ──────────────────────────────────────
+
+it('refuses a REAL .xlsx with a sentence that tells the operator what to do about it', function () {
+    // THE MISTAKE THE FLOW INVITES. The template is a CSV; a data team opens it in Excel to fill it
+    // in and saves it back as a workbook. Laravel's default — "The file must be a file of type: csv,
+    // txt" — names the rule and not the remedy, on the one day this feature is used.
+    //
+    // A REAL xlsx, not a renamed text file: `mimes` sniffs the contents, so a fake would be refused
+    // for a reason this arm is not about.
+    $ctx = obosSchool();
+    $maker = obosUser($ctx['school'], [OBOS_ACCESS, OBOS_SUBMIT]);
+
+    $xlsx = UploadedFile::fake()->createWithContent(
+        'filled-template.xlsx',
+        Excel::raw(new OpeningBalanceImportTemplateExport, ExcelFormat::XLSX),
+    );
+
+    $response = obosUpload($maker, $ctx, $xlsx, '145000.00');
+
+    $response->assertStatus(422)->assertJsonValidationErrors('file');
+
+    expect($response->json('errors.file.0'))
+        ->toContain('reads CSV only')
+        ->and($response->json('errors.file.0'))->toContain('Save As')
+        // The default message must be GONE, not merely accompanied.
+        ->and($response->json('errors.file.0'))->not->toContain('must be a file of type');
+
+    // And nothing was staged: a refused upload spends no idempotency key.
+    expect(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0);
+});
+
+// ── FIX 2 — the Columns and Notes sheets, now on the screen ──────────────────────────────────────
+
+it('renders the FORMAT on the screen, from the same map the template renders', function () {
+    // The template is a single-sheet CSV and cannot carry a format reference. These rules did not
+    // vanish with the sheets — they moved here, and they are read from the same constants, so the
+    // file an operator fills in and the reference beside it cannot drift.
+    $ctx = obosSchool();
+
+    test()->actingAs(obosUser($ctx['school'], [OBOS_ACCESS, OBOS_SUBMIT]))
+        ->withSession(['school_id' => $ctx['school']->id])
+        ->get('/finance/opening-balances/import')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('columns', count(ImportOpeningBalances::COLUMNS))
+            ->where('columns.0.column', array_key_first(ImportOpeningBalances::COLUMNS))
+            ->where('columns.0.notes', ImportOpeningBalances::COLUMNS[array_key_first(ImportOpeningBalances::COLUMNS)]['notes'])
+            ->has('notes', count(OpeningBalanceImportTemplateExport::NOTES))
+            ->etc());
 });
 
 // ── The report download ──────────────────────────────────────────────────────────────────────────

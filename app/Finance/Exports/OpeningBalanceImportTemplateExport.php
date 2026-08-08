@@ -2,15 +2,11 @@
 
 namespace App\Finance\Exports;
 
-use App\Exports\GuardianImportTemplateExport;
 use App\Finance\Console\ImportOpeningBalances;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromArray;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithMultipleSheets;
-use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Cell\StringValueBinder;
 
 /**
@@ -21,27 +17,35 @@ use PhpOffice\PhpSpreadsheet\Cell\StringValueBinder;
  * reason better than a new argument would: "the COLUMNS map drives both the template generator and the
  * row validator, so they cannot drift apart" (GuardianImportRowValidator.php:15-19).
  *
- * SO THIS FILE RENDERS {@see ImportOpeningBalances::COLUMNS}; it never restates it. Every heading,
- * every Columns-sheet row and every sample cell is read from that constant at generation time, so a
- * column added, renamed, made optional or given a different limit reaches the downloaded workbook with
- * no edit here. A template that listed the columns itself would be exactly the second source R13
- * exists to refuse — and the drift it invites is invisible until a data team has already filled in a
- * file against the older copy.
+ * SO THIS FILE RENDERS {@see ImportOpeningBalances::COLUMNS}; it never restates it. Every heading and
+ * every sample cell is read from that constant at generation time, so a column added, renamed, made
+ * optional or given a different limit reaches the download with no edit here.
  *
- * THREE SHEETS, and the third is a deliberate departure from the two-sheet guardian template
- * ({@see GuardianImportTemplateExport}):
+ * IT IS A SINGLE-SHEET CSV, AND IT USED TO BE A THREE-SHEET WORKBOOK. §9 step 5b-iii shipped the
+ * operator screen, whose upload accepts CSV only — because that is what the validator's `read()`
+ * parses, with `fgetcsv` and a strict line accounting. So the button handed the operator an `.xlsx`
+ * and the upload on the SAME SCREEN refused it. Before that screen existed there was no upload to
+ * refuse it, which is the only reason this survived 5b-i: the template was never carried through to
+ * the thing that reads it. One download, in the one format the importer accepts.
  *
- *   "Import"  — the headings plus SAMPLE ROWS, PLURAL. See SAMPLE_ROWS for why one row cannot be
- *               enough for this format.
- *   "Columns" — one row per column: Column / Group / Required / Format / Example / Notes, exactly the
- *               guardian sheet's shape (GuardianImportTemplateExport.php:73-76).
- *   "Notes"   — the rules that are NOT per-column and therefore have nowhere to live in that table.
- *               They are the rules behind the EXPENSIVE failures (§11's pure-arrears assumption is
- *               invisible until after money has moved), which is precisely why they must not be the
- *               ones with no home.
+ * THE OTHER TWO SHEETS DID NOT DIE, THEY MOVED. "Columns" and "Notes" are rendered on the operator
+ * screen from the same COLUMNS map and from {@see self::NOTES}. A CSV cannot carry them, and the
+ * rules they hold are the ones behind the expensive failures — a rule that lives only in a document
+ * is a rule the person filling in the file never sees.
+ *
+ * THE StringValueBinder STAYS, AND THAT WAS MEASURED RATHER THAN ASSUMED. "A CSV carries text
+ * verbatim" is FALSE: written through PhpSpreadsheet's own `DefaultValueBinder`, `120000.00` reaches
+ * the CSV as `120000` and `-5000.00` as `-5000`, exactly as it would in a spreadsheet cell — the
+ * decimals the format demands vanish from the one place a reader looks for them. The reason the
+ * decimals survive today is that `config/excel.php` binds `Maatwebsite\Excel\DefaultValueBinder`,
+ * which preserves strings; this binder is what makes the template independent of that config setting
+ * rather than quietly dependent on it. Dropping it would be safe today and silently wrong the day
+ * someone changes one line of config.
  */
-class OpeningBalanceImportTemplateExport implements WithMultipleSheets
+class OpeningBalanceImportTemplateExport extends StringValueBinder implements FromArray, WithCustomValueBinder, WithHeadings
 {
+    use Exportable;
+
     /**
      * The sample rows, as SPARSE OVERRIDES on the COLUMNS map's own `example` values: a cell named
      * here is written verbatim, a cell absent falls back to that column's example. So a column added
@@ -147,44 +151,21 @@ class OpeningBalanceImportTemplateExport implements WithMultipleSheets
         ],
     ];
 
-    public function sheets(): array
-    {
-        return [
-            new OpeningBalanceImportTemplateImportSheet,
-            new OpeningBalanceImportTemplateColumnsSheet,
-            new OpeningBalanceImportTemplateNotesSheet,
-        ];
-    }
-}
-
-/**
- * Sheet 1 — what the operator fills in. Headings are the COLUMNS map's keys in the map's order, and
- * the sample rows are rendered against those same keys, so the two cannot fall out of step with each
- * other or with the validator that reads the file back.
- *
- * EVERY CELL IS WRITTEN AS TEXT (StringValueBinder), and on a money template that is not a detail.
- * The default binder casts a numeric-looking string to a number, and the sample's whole job is to show
- * the FORMAT: '120000.00' would render as 120000 and '-5000.00' as -5000, so the two decimals the file
- * requires would be invisible in the one place a reader looks for them, and an admission number with a
- * leading zero would lose it.
- */
-class OpeningBalanceImportTemplateImportSheet extends StringValueBinder implements FromArray, ShouldAutoSize, WithCustomValueBinder, WithHeadings, WithTitle
-{
-    use Exportable;
-
+    /**
+     * The sample rows, rendered against the COLUMNS map's keys so the headings and the samples cannot
+     * fall out of step with each other or with the validator that reads the file back.
+     */
     public function array(): array
     {
         $rows = [];
 
-        foreach (OpeningBalanceImportTemplateExport::SAMPLE_ROWS as $sample) {
+        foreach (self::SAMPLE_ROWS as $sample) {
             $row = [];
             foreach (ImportOpeningBalances::COLUMNS as $column => $meta) {
                 // array_key_exists, not ??: a sample cell deliberately left BLANK (the optional
                 // reference) must stay blank, and `?? $meta['example']` would silently refill it with
                 // the example — turning the one row that demonstrates "optional" back into a row that
-                // demonstrates nothing. The map's own cell needs no fallback either: COLUMNS is typed
-                // with every key required, so `?? ''` would be dead code Larastan rejects, and would
-                // paper over a malformed entry rather than failing on it.
+                // demonstrates nothing.
                 $row[] = array_key_exists($column, $sample) ? $sample[$column] : $meta['example'];
             }
             $rows[] = $row;
@@ -193,79 +174,16 @@ class OpeningBalanceImportTemplateImportSheet extends StringValueBinder implemen
         return $rows;
     }
 
+    /**
+     * The COLUMNS map's keys, in the map's order — which is also the order `read()` expects to find
+     * them announced in the header row it requires.
+     *
+     * NO COMMENT OR TITLE ROWS ABOVE THIS. The reader takes the FIRST line as the header and counts
+     * every line after it; its reader-accounting throw exists precisely to stop drop paths being
+     * added, so a decorative line here would be a parse error rather than a nicety.
+     */
     public function headings(): array
     {
         return array_keys(ImportOpeningBalances::COLUMNS);
-    }
-
-    public function title(): string
-    {
-        return 'Import';
-    }
-}
-
-/**
- * Sheet 2 — the format, one row per column, in the guardian template's shape and column order
- * (GuardianImportTemplateExport.php:73-76). Every cell is read from the COLUMNS map.
- *
- * `Format` is where the map's `max` reaches the reader, and for `fee_type_label` that number is 229,
- * NOT the storage column's 255: posting appends ' — Balance Brought Forward' (26 characters) to the
- * label verbatim into a varchar(255) narration. A template advertising 255 would produce a file that
- * stages perfectly and then aborts the post at 1406 — on cutover day.
- */
-class OpeningBalanceImportTemplateColumnsSheet implements FromArray, ShouldAutoSize, WithHeadings, WithTitle
-{
-    use Exportable;
-
-    public function array(): array
-    {
-        $rows = [];
-
-        foreach (ImportOpeningBalances::COLUMNS as $column => $meta) {
-            $rows[] = [
-                $column,
-                $meta['group'],
-                $meta['required'] ? 'Yes' : 'No',
-                $meta['format'],
-                $meta['example'],
-                $meta['notes'],
-            ];
-        }
-
-        return $rows;
-    }
-
-    public function headings(): array
-    {
-        return ['Column', 'Group', 'Required', 'Format', 'Example', 'Notes'];
-    }
-
-    public function title(): string
-    {
-        return 'Columns';
-    }
-}
-
-/** Sheet 3 — the rules with no column to live on. See OpeningBalanceImportTemplateExport::NOTES. */
-class OpeningBalanceImportTemplateNotesSheet implements FromArray, ShouldAutoSize, WithHeadings, WithTitle
-{
-    use Exportable;
-
-    public function array(): array
-    {
-        return array_map(
-            fn (array $note) => [$note[0], $note[1]],
-            OpeningBalanceImportTemplateExport::NOTES,
-        );
-    }
-
-    public function headings(): array
-    {
-        return ['Rule', 'What it means'];
-    }
-
-    public function title(): string
-    {
-        return 'Notes';
     }
 }

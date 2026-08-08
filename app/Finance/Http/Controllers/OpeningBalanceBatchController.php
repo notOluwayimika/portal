@@ -19,6 +19,7 @@ use App\Http\Controllers\GuardianImportController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Gate;
+use Maatwebsite\Excel\Excel as ExcelFormat;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -104,7 +105,15 @@ class OpeningBalanceBatchController extends Controller
      */
     public function template(): BinaryFileResponse
     {
-        return Excel::download(new OpeningBalanceImportTemplateExport, 'opening-balance-import-template.xlsx');
+        // CSV, and the extension is not cosmetic: this screen's own upload accepts CSV only, because
+        // that is what the validator's read() parses. Handing the operator an .xlsx from a button
+        // sitting above an upload that refuses .xlsx is the defect §9 step 5b-iii shipped and this
+        // corrects. The format the button issues and the format the next step accepts are now one.
+        return Excel::download(
+            new OpeningBalanceImportTemplateExport,
+            'opening-balance-import-template.csv',
+            ExcelFormat::CSV,
+        );
     }
 
     /**

@@ -64,6 +64,11 @@ class StoreOpeningBalanceImportRequest extends FormRequest
     public function messages(): array
     {
         return [
+            // `mimes` renders "The file must be a file of type: csv, txt", which tells an operator
+            // nothing on the day they need it — and the mistake it catches is the one the flow
+            // invites: a data team opens the CSV in Excel and saves it back as a workbook. So the
+            // refusal names the cause AND both ways out of it.
+            'file.mimes' => 'This import reads CSV only. If you opened the template in Excel, use File → Save As and choose CSV, or download the CSV template from the button above and fill that.',
             'control_total.required' => 'The control total is required: Σ of every student\'s stated total, read off WCBS\'s own report (§1 L2).',
             'control_total.regex' => 'The control total must be naira with up to two decimal places. It may be negative if the school is net in credit.',
             'batch_reference.max' => 'The batch reference is snapshotted onto every migrated payment at posting, so it cannot exceed '.OpeningBalanceFileValidator::BATCH_REFERENCE_MAX.' characters.',

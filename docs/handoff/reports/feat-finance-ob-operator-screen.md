@@ -333,3 +333,220 @@ definition, and its first census would be a property of the rule.
   defect above is what it looks like in practice, and it fails silently rather than loudly, because
   Eloquent binds the model without complaint. Worth a named accessor or a type-level guard.
   **ticket.**
+
+---
+
+# Remediation — commit 2, on top of `1d2a2a2`
+
+## Headline
+
+**The screen shipped a template its own upload refused.** The button issued an `.xlsx`; the upload
+accepts CSV only, because that is what the validator's `read()` parses. Before this screen existed
+there was no upload to refuse it — so 5b-iii made the situation worse, not better.
+
+Four fixes, and the fourth is the one that matters: the drive now carries the downloaded file
+through to the upload, which is the only assertion that could ever have caught this.
+
+## All four readings verified before anything was changed
+
+| Claim | Verified |
+|---|---|
+| `OpeningBalanceBatchController:107` → `'…template.xlsx'` | yes |
+| Export still `WithMultipleSheets`, three sheets | yes — `:43`, `sheets()` at `:150` returning Import/Columns/Notes |
+| `StoreOpeningBalanceImportRequest:43` → `mimes:csv,txt` | yes |
+| `import.tsx` renders no notes/format/example | yes — 2 matching lines, both prose |
+
+## FIX 1 — the template is a single-sheet CSV
+
+`opening-balance-import-template.csv`, headers plus the same sample rows, still rendered from
+`ImportOpeningBalances::COLUMNS`. The three sheet classes are gone; one download ships.
+
+### The binder question — measured, and the brief's premise was wrong
+
+The brief said *"a CSV carries text verbatim"* and asked which way it went. **It is false**, and the
+probe that says so is a controlled one:
+
+```
+=== WITH StringValueBinder, written as CSV ===
+"STU2025001","120000.00","-5000.00","0012"
+=== WITHOUT it (config's Maatwebsite\Excel\DefaultValueBinder), as CSV ===
+"STU2025001","120000.00","-5000.00","0012"
+=== SENSITIVITY CONTROL: PhpSpreadsheet's own DefaultValueBinder ===
+  as XLSX: ["STU2025001","120000","-5000","0012"]
+  as CSV:  "STU2025001","120000","-5000","0012"
+```
+
+A numeric-coercing binder destroys the decimals **in CSV exactly as it does in XLSX**. The decimals
+survive today only because `config/excel.php` binds `Maatwebsite\Excel\DefaultValueBinder`, which
+preserves strings. **So the `StringValueBinder` stays** — it is what makes the template independent
+of that config line rather than quietly dependent on it. Dropping it would be safe today and
+silently wrong the day someone edits one line of config. RED B below is that claim, executed.
+
+No comment or title rows: `read()` takes the first line as the header and counts every line after
+it, and its reader-accounting throw exists to stop drop paths being added.
+
+## FIX 2 — Columns and Notes moved onto the screen
+
+Rendered from `ImportOpeningBalances::COLUMNS` and the export's `NOTES`, passed as Inertia props by
+the same route that already passes `terms`. **No new representation of the map**: the screen is a
+third *reader* of the constant, not a copy — unlike `constants/guardian-import-columns.ts`, which is
+a hand-written second copy and is ticketed below. The fuse's stop-condition did not fire.
+
+**Per the mid-flight amendment**, the section now sits **above** the upload card and is a collapsed
+disclosure headed *"Read this before you fill in the file"*, with a one-line summary of what is
+inside and an **"Open the format guide"** toggle. Collapsed by default so a wall of format table does
+not push the upload off the screen; placed first so the operator meets it before the file picker.
+
+## FIX 3 — an `.xlsx` gets a sentence
+
+> This import reads CSV only. If you opened the template in Excel, use File → Save As and choose
+> CSV, or download the CSV template from the button above and fill that.
+
+Proven with a **real xlsx binary** (`Excel::raw(…, XLSX)`, not a renamed text file, because `mimes`
+sniffs contents) asserting the **message**, that Laravel's default is *gone* rather than merely
+accompanied, and that nothing was staged.
+
+**The drive found this only half-done.** The API returned the sentence; the *screen* showed
+`"There are validation errors"`, because the page read `response.data.message` — Laravel's envelope
+— rather than `errors.file[0]`. Fixed. This is a second instance of the same lesson: the assertion
+was on the API, the operator reads the page, and nothing made them meet.
+
+## FIX 4 — the round trip, which is the real repair
+
+The previous drive downloaded the template and separately uploaded a CSV it had prepared. **Both
+steps were green and the format had diverged between them**, because *"the button downloads A file"*
+and *"the upload accepts A file"* are both true of two different formats.
+
+The general form is now written into the drive's own header comment:
+
+> **A download step and an upload step that do not meet prove nothing about each other.** Any step
+> that produces an artifact must hand it to the step that consumes one, or the pair asserts nothing
+> about either.
+
+It is also pinned server-side, in `OpeningBalanceImportTemplateTest`: the template's actual bytes are
+parsed by the **real** `OpeningBalanceFileValidator::read()`, asserting zero blank lines, one record
+per sample row, every required column present and populated, and line numbering starting at 2.
+
+## PROOF H's trailing slash — a shipped gate repaired inside a feature commit
+
+Stated here rather than left to the diff: 5b-ii's route-ability pin filtered on a prefix **ending in
+`/`**, which excluded bare-collection routes. It shipped in #221. Widening it to all nine routes
+repairs a gate that was already live, and it is in this commit because that is where the routes it
+failed to cover were added.
+
+## The watched red
+
+```
+RED A — the template served as .xlsx again
+  FAILED: it serves the template as a CSV to a holder of the MAKER ability
+    Failed asserting that 'attachment; filename=opening-balance-import-template.xlsx'
+    contains "opening-balance-import-template.csv".
+
+RED B — the StringValueBinder dropped for PhpSpreadsheet's numeric-coercing default
+  FAILED: it keeps the two decimals and the minus sign, which a numeric binder would delete
+    Failed asserting that '120000' matches PCRE pattern "/^-?\d+\.\d{2}$/".
+
+RED C — the custom mimes message removed
+  FAILED: it refuses a REAL .xlsx with a sentence that tells the operator what to do about it
+    Failed asserting that 'The file field must be a file of type: csv, txt.'
+    contains "reads CSV only".
+
+RED D — the format reference dropped from the screen's props
+  FAILED: it renders the FORMAT on the screen, from the same map the template renders
+    Property [columns] does not exist.
+```
+
+## The drive, re-run end to end
+
+```
+• guide before upload on the page: true {"guide":344,"upload":582}
+• collapsed by default — format rows visible: 0
+• after opening — format rows visible: 6
+• rules rendered: ["Arrears only — no new-term fees","A blank is not a zero",
+                   "The control total is NOT in this file","One file per school",
+                   "One row per student PER FEE TYPE"]
+• downloaded: opening-balance-import-template.csv 307 bytes
+•   header line: "admission_number","wcbs_student_ref","fee_type_label","balance",
+                 "student_total_balance","wcbs_bill_reference"
+•   first sample: "STU2025001","WCBS-10233","Tuition","120000.00","145000.00","BILL-2026-0912"
+• filled the DOWNLOADED file, keeping its own header row
+• ROUND TRIP status: Validated
+• xlsx refusal: "This import reads CSV only. If you opened the template in Excel, use
+                 File → Save As and choose CSV, or download the CSV template from the
+                 button above and fill that."
+• submit for approval: 200 → submitted
+• queue row: OPENING BALANCE  Batch · ROUNDTRIP-… — Cutover Drive — ₦220,000.00  Approve Reject
+•   DIALOG ¶ Approving batch ROUNDTRIP-… posts its opening balances into the subledger immediately…
+•   DIALOG ¶ The batch states a control total of ₦220,000.00 — the figure the uploader read off
+             WCBS and attested to. Check it against WCBS before you approve.
+•   DIALOG ¶ This is irreversible. Posted balances cannot be un-posted, deleted or moved to another
+             school, and this school may never post a second batch.
+• cancelled — dialog gone: true | row still there: 1
+• rejected — row gone: true
+```
+
+The decimals in the sample survived the round trip (`"120000.00"`, `"-5000.00"` in the downloaded
+file), which is FIX 1's binder decision observed rather than argued.
+
+**Approve was not pressed**, on the standing condition. The drive's batches were rejected afterwards
+through the real Action; `finance_ledger_transactions` is untouched.
+
+## Proof
+
+```
+OpeningBalanceImportTemplateTest      8 passed,  35 assertions
+OpeningBalanceOperatorScreenTest     12 passed,  93 assertions
+```
+
+### bin/quality — raw, unedited (ANSI colour codes stripped; nothing else removed)
+
+```
+quality gate — base 367a966
+
+[1/14] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/14] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/14] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+[4/14] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/14] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/14] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/14] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/14] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/14] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/14] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/14] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/14] architecture tests (§17.1)
+   ✓ arch
+[13/14] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+## Not done
+
+- **The toast fix is proven at the source level and by the drive, not by a unit test.** There is no
+  JS test runner in this repository. The message itself is pinned server-side.
+- **No test asserts the format guide is collapsed by default or ordered above the upload.** Both were
+  observed in the drive and are rendering concerns a Pest arm cannot reach.
+- **Approve remains undriven**, unchanged.
+
+## Findings raised, not fixed
+
+- `resources/js/constants/guardian-import-columns.ts` is a **hand-written second copy** of the
+  guardian import's column map — exactly what R13 refuses for this feature, in the feature this one
+  was modelled on. This commit's screen takes the map from the server instead. **ticket.**
+- The previous ticket stands: a loop-driven arm whose body never executes
+  (`RouteAccessParityTest:67-88` versus `ApprovalsQueueFeedCoverageTest`'s guard).

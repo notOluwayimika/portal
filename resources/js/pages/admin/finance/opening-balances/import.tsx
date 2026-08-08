@@ -3,7 +3,9 @@ import axios from 'axios';
 import {
     AlertTriangle,
     ArrowLeft,
+    BookOpen,
     CheckCircle2,
+    ChevronDown,
     Clock,
     Download,
     FileSpreadsheet,
@@ -60,6 +62,27 @@ interface Term {
     label: string;
 }
 
+/**
+ * One column of the format, as `ImportOpeningBalances::COLUMNS` describes it — the SAME constant the
+ * template renders and the validator enforces. It arrives as a prop rather than as a TypeScript
+ * constant on purpose: a hand-written copy on this side is the second source of truth R13 exists to
+ * refuse, and it is what `constants/guardian-import-columns.ts` already is.
+ */
+interface FormatColumn {
+    column: string;
+    group: string;
+    required: boolean;
+    format: string;
+    example: string;
+    notes: string;
+}
+
+/** A rule that belongs to no single column — the template's old "Notes" sheet. */
+interface FormatNote {
+    rule: string;
+    meaning: string;
+}
+
 const TERMINAL: OpeningBalanceBatchRecord['status'][] = [
     'validated',
     'rejected',
@@ -108,7 +131,15 @@ function Stat({ label, value }: { label: string; value: number | string }) {
     );
 }
 
-export default function OpeningBalanceImport({ terms }: { terms: Term[] }) {
+export default function OpeningBalanceImport({
+    terms,
+    columns,
+    notes,
+}: {
+    terms: Term[];
+    columns: FormatColumn[];
+    notes: FormatNote[];
+}) {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [file, setFile] = useState<File | null>(null);
@@ -126,6 +157,10 @@ export default function OpeningBalanceImport({ terms }: { terms: Term[] }) {
     );
     const [recent, setRecent] = useState<OpeningBalanceBatchRecord[]>([]);
     const [dragOver, setDragOver] = useState(false);
+    // Closed by default: the guide is long on purpose, and a wall of format table between the hero
+    // and the upload would push the thing the operator came to do off the screen. The header says
+    // what is inside and tells them to open it before filling anything in.
+    const [formatOpen, setFormatOpen] = useState(false);
 
     const refreshRecent = useCallback(async () => {
         try {
@@ -213,10 +248,21 @@ export default function OpeningBalanceImport({ terms }: { terms: Term[] }) {
                 'Uploaded. Validating — nothing is posted, and nothing will be until a second person approves it.',
             );
         } catch (err: unknown) {
-            const message =
-                axios.isAxiosError(err) && err.response?.data?.message
-                    ? err.response.data.message
-                    : 'Could not upload this extract.';
+            // THE FIELD ERROR FIRST, and the envelope only as a fallback. A 422 from a FormRequest
+            // carries Laravel's generic "There are validation errors" in `message` and the sentence
+            // the operator actually needs in `errors.<field>[0]`. Reading `message` showed the
+            // envelope and threw away the one line that says what to do — which is what the drive
+            // saw when it uploaded a workbook.
+            const message = axios.isAxiosError(err)
+                ? (Object.values(
+                      (err.response?.data?.errors ?? {}) as Record<
+                          string,
+                          string[]
+                      >,
+                  )[0]?.[0] ??
+                  err.response?.data?.message ??
+                  'Could not upload this extract.')
+                : 'Could not upload this extract.';
             toast.error(message);
         } finally {
             setSubmitting(false);
@@ -309,6 +355,131 @@ export default function OpeningBalanceImport({ terms }: { terms: Term[] }) {
                             </a>
                         </div>
                     </div>
+
+                    {/* ── THE FORMAT ─────────────────────────────────────────────
+                        The template's old "Columns" and "Notes" sheets. They moved here when the
+                        template became a single-sheet CSV, which cannot carry them — and they had
+                        to move rather than be dropped, because these are the rules whose failure is
+                        expensive and which no checksum can catch. Rendered from the SAME constants
+                        the template renders, so the file an operator fills in and the reference
+                        beside it cannot drift. */}
+                    <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                        <button
+                            type="button"
+                            onClick={() => setFormatOpen((v) => !v)}
+                            aria-expanded={formatOpen}
+                            className="flex w-full items-center justify-between gap-3 border-b border-slate-50 bg-slate-50/30 px-5 py-3 text-left transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-900/40"
+                        >
+                            <span className="flex items-center gap-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                                <span className="flex size-7 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                                    <BookOpen className="h-4 w-4 text-indigo-600" />
+                                </span>
+                                Read this before you fill in the file
+                            </span>
+                            <span className="flex items-center gap-2 text-xs font-semibold text-indigo-600">
+                                {formatOpen ? 'Hide' : 'Open the format guide'}
+                                <ChevronDown
+                                    className={cn(
+                                        'h-4 w-4 transition-transform',
+                                        formatOpen && 'rotate-180',
+                                    )}
+                                />
+                            </span>
+                        </button>
+
+                        {!formatOpen && (
+                            <p className="px-5 py-3 text-xs text-slate-500">
+                                Every column, what it must contain, and the four
+                                rules no checksum can catch — including the one
+                                whose failure is only visible after money has
+                                moved. Open it before you start.
+                            </p>
+                        )}
+
+                        <CardContent
+                            className={cn(
+                                'space-y-5 p-5',
+                                !formatOpen && 'hidden',
+                            )}
+                        >
+                            <div className="custom-scrollbar overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-slate-50/60 dark:bg-slate-900/40">
+                                        <tr>
+                                            {[
+                                                'Column',
+                                                'Group',
+                                                'Required',
+                                                'Format',
+                                                'Example',
+                                                'Notes',
+                                            ].map((h) => (
+                                                <th
+                                                    key={h}
+                                                    className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase"
+                                                >
+                                                    {h}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {columns.map((c) => (
+                                            <tr
+                                                key={c.column}
+                                                className="border-t border-slate-100 align-top dark:border-slate-800"
+                                            >
+                                                <td className="px-3 py-2 font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                                    {c.column}
+                                                </td>
+                                                <td className="px-3 py-2 text-slate-500">
+                                                    {c.group}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {c.required ? (
+                                                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-400">
+                                                            Required
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-400">
+                                                            Optional
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                                                    {c.format}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <code className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">
+                                                        {c.example}
+                                                    </code>
+                                                </td>
+                                                <td className="max-w-md px-3 py-2 text-slate-500">
+                                                    {c.notes}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="space-y-2">
+                                {notes.map((n) => (
+                                    <div
+                                        key={n.rule}
+                                        className="rounded-lg border border-slate-100 bg-slate-50/40 p-3 text-xs dark:border-slate-800 dark:bg-slate-900/30"
+                                    >
+                                        <p className="font-semibold text-slate-700 dark:text-slate-200">
+                                            {n.rule}
+                                        </p>
+                                        <p className="mt-1 text-slate-500">
+                                            {n.meaning}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
 
                     {/* ── Upload ─────────────────────────────────────────────── */}
                     <Card className="overflow-hidden rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)]">

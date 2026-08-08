@@ -4,6 +4,8 @@ use App\Enums\GuardianStatusEnum;
 use App\Enums\Permission;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
+use App\Finance\Console\ImportOpeningBalances;
+use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImpersonationController;
@@ -207,7 +209,35 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
             ])
             ->values();
 
-        return Inertia::render('admin/finance/opening-balances/import', ['terms' => $terms]);
+        // THE COLUMNS AND NOTES SHEETS, MOVED ONTO THE SCREEN. The template is now a single-sheet
+        // CSV — it cannot carry a format reference — and the rules it used to carry are the ones
+        // behind the expensive failures. A rule that lives only in a document is a rule the person
+        // filling in the file never sees (spec, Commit 4).
+        //
+        // BOTH ARE READ FROM THE SAME CONSTANTS THE TEMPLATE RENDERS, so there is still exactly one
+        // source of truth for the format: `ImportOpeningBalances::COLUMNS` (the public alias of the
+        // validator's own map) and the export's `NOTES`. No second representation is introduced —
+        // the screen is a third READER of the map, not a copy of it.
+        $columns = collect(ImportOpeningBalances::COLUMNS)
+            ->map(fn (array $meta, string $column) => [
+                'column' => $column,
+                'group' => $meta['group'],
+                'required' => $meta['required'],
+                'format' => $meta['format'],
+                'example' => $meta['example'],
+                'notes' => $meta['notes'],
+            ])
+            ->values();
+
+        $notes = collect(OpeningBalanceImportTemplateExport::NOTES)
+            ->map(fn (array $note) => ['rule' => $note[0], 'meaning' => $note[1]])
+            ->values();
+
+        return Inertia::render('admin/finance/opening-balances/import', [
+            'terms' => $terms,
+            'columns' => $columns,
+            'notes' => $notes,
+        ]);
     })
         ->middleware('permission:finance.opening-balance.submit')
         ->name('admin.finance.opening-balances.import');

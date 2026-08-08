@@ -182,6 +182,77 @@ This is the same class as the `--step=N` audit error already recorded in `docs/t
 migration command that exits 0 having done something other than what you assumed, with nothing in the
 output to say so.
 
+#### The carve-out: `2026_08_03`, edited after it had already applied
+
+`feat/executive-director-role`'s commit `17da5c3` edits the executing half of
+`2026_08_03_100000_converge_finance_change_grants`, a migration applied long before this corollary
+existed. It narrows the post-write duty-separation walk's abort predicate — precisely the thing the
+rule above forbids, because replay now does something the original run did not.
+
+**The edit stands.** Not by seniority and not by analogy: by four conditions, each proved on a
+throwaway database rather than argued.
+
+**1. Neither sanctioned exit exists for this file.** The rule offers two: roll back first, or ship a
+new dated migration. `2026_08_03`'s `down()` is a deliberate, documented no-op, so rolling it back
+restores nothing and re-applying it is simply a replay — the exit is a tautology here. And no new
+dated migration can change an earlier migration's abort predicate; nothing a later file writes stops
+`2026_08_03::up()` throwing on the next replay. The narrowing is not portable to another file, which
+is what makes this a carve-out rather than a shortcut.
+
+**2. Left alone the file is unreplayable.** Replayed on a from-zero throwaway database seeded by
+`rbac:sync` at today's map, with one user holding `executive_director` alongside a role granting only
+`finance.credit-note.submit`, and `2026_08_03`'s `migrations` row cleared:
+
+```
+converge-finance-change-grants ABORTED (rolled back): 2 user(s) would hold both sides of a finance
+maker-checker pair after convergence — user#2 @ school#1 finance.credit-note.submit<>finance.credit-
+note.approve; user#2 @ school#1 finance.credit-note.submit<>finance.credit-note.reject.
+```
+
+`migrate` exited 1 and the `migrations` row was never written — so the ADD-side gap this migration
+exists to close stays open, and no `migrate` command can close it. Read the pair it aborted over:
+`finance.credit-note.*` is in **neither** of the two namespaces this migration governs, and the state
+was assembled from two roles it cannot touch. The narrowed file, same database, same planted state,
+reports both findings, names `finance:audit-duty-separation` as their owner and **commits** — exit 0,
+the three maker grants landed. Replaying `2026_08_03` and `2026_08_06` together in filename order
+ends with `head_of_school` holding zero `finance.*` grants and `accounts_officer` holding its maker
+side. The dated act, reproduced.
+
+The narrowing therefore does not rewrite the act. It is the only version of the file that can still
+perform it.
+
+**3. It is behaviour-identical on the state the original run met.** The out-of-scope set was empty on
+2026-08-02 — it had to be, or that run would have aborted instead of committing. With that set empty
+the two versions are the same program: same diff, same writes, same activity rows, same `AFTER`
+counts, differing only by an `out-of-scope both-sides findings=0` field in one echo. This is the same
+property that made the four target freezes behaviour-preserving, and it is why the divergence this
+corollary was written from — an applied `up()` and a `down()` describing different shapes — cannot
+arise here.
+
+**4. The pure from-zero path decides nothing, and it is the first thing anyone will try.** On
+`migrate` against an empty database the walk is **unreachable**; the fresh-install guard keyed on the
+permission substrate returns first, identically on both versions:
+
+```
+2026_08_03_100000_converge_finance_change_grants   converge-finance-change-grants: finance RBAC
+substrate unseeded (no finance-change permissions) — nothing to converge.
+```
+
+A from-zero replay that does not abort is therefore not evidence the abort is harmless. The proof
+above seeds the substrate before clearing the `migrations` row, which is what makes the walk
+reachable at all.
+
+**The scope of the carve-out.** An applied migration may be edited only when **all four** hold: its
+`down()` is a documented no-op, so no `up()`/`down()` shape divergence is possible; the edit is
+provably behaviour-identical on the state the original run met; the file is otherwise unreplayable;
+and no new dated migration could carry the change. The replay evidence goes in the branch's
+implementation report, raw. Anything failing one of the four goes back to the two options above.
+
+`2026_08_06_100000_move_head_of_school_finance_to_executive_director` is edited on the same branch and
+needs no carve-out: it has never merged, so it has not applied anywhere except possibly a local
+database — and if it has, its `down()` is likewise a documented no-op, so the same four conditions
+cover it.
+
 ## The trade, stated rather than buried
 
 This is the honest cost and it is not hypothetical. An environment that genuinely has **not** run

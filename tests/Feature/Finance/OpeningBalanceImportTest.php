@@ -451,18 +451,28 @@ it('re-throws a unique violation that is NOT the fee-type key, rather than repor
     expect(obBatchCodes(obBatch($ctx)))->not->toContain('duplicate_row_key_in_file');
 });
 
-it('names a unique index that really exists, so the catch cannot be matching a stale constant', function () {
+it('names the FEE-TYPE key specifically, by its columns, not merely a name that resolves', function () {
     // The constant is a second copy of the migration's NEW_KEY (an anonymous class cannot be
     // referenced), so the drift it invites is closed here — read from information_schema, which is
     // neither of the two sources.
-    $indexes = collect(DB::select(
-        "SELECT DISTINCT INDEX_NAME AS n, NON_UNIQUE FROM information_schema.STATISTICS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_opening_balance_rows'"
+    //
+    // ASSERTING THE COLUMNS, NOT JUST THE NAME. A name-only check proves the string resolves to some
+    // index, which is not what the catch arm depends on: a migration that renames the fee-type key
+    // and reuses the old name for a different unique index would pass a name-only check while the
+    // arm quietly starts converting violations of the WRONG constraint into a finding about the
+    // operator's file. The columns, in order, are the thing that identifies this key.
+    $columns = collect(DB::select(
+        'SELECT COLUMN_NAME AS c, NON_UNIQUE FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+         ORDER BY SEQ_IN_INDEX',
+        ['finance_opening_balance_rows', ImportOpeningBalances::ROW_KEY_INDEX]
     ));
 
-    $named = $indexes->firstWhere('n', ImportOpeningBalances::ROW_KEY_INDEX);
-    expect($named)->not->toBeNull(ImportOpeningBalances::ROW_KEY_INDEX.' is not an index on the table')
-        ->and((int) $named->NON_UNIQUE)->toBe(0);
+    expect($columns)->not->toBeEmpty(ImportOpeningBalances::ROW_KEY_INDEX.' is not an index on the table')
+        ->and((int) $columns->first()->NON_UNIQUE)->toBe(0)
+        ->and($columns->pluck('c')->all())->toBe([
+            'school_id', 'batch_id', 'admission_number', 'fee_type_label',
+        ]);
 });
 
 it('drops an over-length value, names the column, and CONTINUES the run', function () {

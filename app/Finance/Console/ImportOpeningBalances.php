@@ -506,6 +506,11 @@ class ImportOpeningBalances extends Command
                 // refuses: the prose around it ("Duplicate entry …") is localised and version-
                 // dependent, while `ob_rows_school_batch_admission_fee_type_unique` is an identifier
                 // this repository chose and a migration would have to rename deliberately.
+                //
+                // AND IT FAILS CLOSED, which is what a reader worried about a string match needs to
+                // know: if MySQL's message shape changes or the index is renamed, the match MISSES,
+                // the exception re-throws, and the run aborts. The failure of this comparison costs
+                // an aborted run — never a wrong finding printed as fact about someone's file.
                 if (! str_contains((string) ($e->errorInfo[2] ?? $e->getMessage()), self::ROW_KEY_INDEX)) {
                     throw $e;
                 }

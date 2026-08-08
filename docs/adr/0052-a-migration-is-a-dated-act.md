@@ -108,6 +108,37 @@ passes. **So it aborts, and its sibling abort on a missing target permission row
 reason. Neither converts.**
 
 
+### Corollary: an applied migration must not be edited
+
+The decision above rules that a migration is a **dated act** rather than a live query. The same
+principle forbids editing one that has already run, and this is the form the rule takes in day-to-day
+work rather than in a convergence migration: once `up()` has executed anywhere, the file and the
+database have **diverged**. `down()` now describes a shape the applied `up()` never created, and the
+pairing that makes a rollback meaningful is silently broken.
+
+**Observed on 2026-08-08**, amending `2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file`
+after it had already been applied to two local databases. The amended `down()` tried to drop a column
+its applied `up()` had never added — MySQL 1091 — **after** it had already re-added an old unique key.
+Both databases were left half-rolled-back: old key present, three column pairs and eight CHECK
+constraints missing. `migrate` then reported **"Nothing to migrate"**, because the `migrations` table
+records **that a version ran, not what it did**. Nothing in the tooling reports the divergence; a bare
+exit code from `migrate:rollback` cannot see it. Only reading the resulting schema found it.
+
+**The rule.** To change a migration that has run **anywhere** — including only your own machine:
+
+1. **Roll it back FIRST**, then edit, then re-apply. Or ship a **new dated migration** and leave the
+   applied one alone. Those are the only two options.
+2. **If a rollback aborts partway, stop.** The database is now in a state that neither `up()` nor
+   `down()` describes, and no further migration command will do the right thing. Repair it **by hand**
+   against the recorded pre-migration shape before anything else runs.
+3. **Verify by SHAPE afterwards**, from `information_schema` — columns, indexes, constraints — not by
+   the exit code and not by the `migrations` table. Both of those report success over exactly this
+   failure.
+
+This is the same class as the `--step=N` audit error already recorded in `docs/testing.md`: a
+migration command that exits 0 having done something other than what you assumed, with nothing in the
+output to say so.
+
 ## The trade, stated rather than buried
 
 This is the honest cost and it is not hypothetical. An environment that genuinely has **not** run

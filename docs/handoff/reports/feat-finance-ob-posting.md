@@ -1,232 +1,254 @@
-# Implementation report — §9 step 4b, the posting Action, `posted`, G1 and G1b
+# Implementation report — §9 step 4b: the posting Action, `posted`, G1 and G1b
 
-Branch `feat/finance-ob-posting` @ `a33d369`, off `origin/staging` @ `2d55fda`.
-PR **#216** → `staging`. Not merged.
+Branch `feat/finance-ob-posting`, off `origin/staging` @ `2d55fda`. PR **#216** → `staging`, not merged.
 
-**This is full-review tier** — it touches money, a migration, database triggers, an
-append-only ledger and a `school_id`-scoped write path. The `finance-reviewer`
-subagent's findings are attached separately; a cold session started from this file
-is still recommended before merge.
+Two passes are recorded here. Pass 1 built 4b. Pass 2 closed three findings a review
+raised against pass 1. Both are described; nothing from pass 1 is silently overwritten.
 
 ---
 
-## Headline
+## A process correction, applied from this report onwards
 
-Done, with deviations. The `posted` state, G1 (one posted batch per school, at the
-database) and G1b (the state is terminal) ship with
-`App\Finance\Actions\PostOpeningBalanceBatch`; §9's `term_id` fork is ruled
-**repurpose, not nullify**; the command still cannot post and now names 4c when it
-refuses. Five watched reds plus three extra, all pasted raw below.
+The pass-1 version of this file nominated one of its own changes as "the change to
+argue about", pre-assigned severities to items it raised against itself, and referred
+to review findings the reader did not have. A report that does any of those steers its
+reviewer, and a steered review is worth less than an unsteered one — as it happened,
+every finding the review returned came from outside the areas the report had
+nominated.
+
+From here this report carries facts, evidence, deviations, and what could not be
+verified. No severity calls on my own work. No nomination of what is contentious. No
+references to material the reader does not have in front of them. The correction is
+recorded here rather than only acted on, so the next reader can check whether it held.
 
 ## Deviations from the brief
 
-**1 — G1's column and index are named as §9 spells them, not as the task did.**
-The task said `posted_key` / `UNIQUE (posted_key)`; §9's own SQL block says
-`posted_school_key` / `ob_batches_posted_school_unique`. I followed §9, because the
-spec is the artifact a future reader opens and a name that disagrees with it is a
-small permanent papercut. Everything else about the shape is as specified: STORED
-generated column, `IF(status = 'posted', school_id, NULL)`, unique on the generated
-column **alone**.
+**Pass 1.**
 
-**2 — G1b ships as TWO triggers, not one. This is an addition and it is the most
-important thing in this report.** §9 specifies `BEFORE UPDATE` only. An UPDATE guard
-alone leaves the identical release reachable through the other door:
+1. **G1's column and index are named as §9 spells them** — `posted_school_key` and
+   `ob_batches_posted_school_unique` — not `posted_key` / `UNIQUE (posted_key)` as the
+   task wrote them. The shape is otherwise as specified: STORED generated column,
+   `IF(status = 'posted', school_id, NULL)`, unique on the generated column alone.
+2. **G1b shipped as two triggers, not one.** §9 specifies `BEFORE UPDATE`. `DELETE`
+   frees the same generated key, and additionally CASCADEs the staged rows away
+   (`finance_opening_balance_rows_batch_school_foreign`), so
+   `finance_opening_balance_batches_no_delete_posted` ships alongside
+   `..._no_unpost`. The general rule claimed, stated as a rule so it can be checked:
+   *a guard on a state's exit must cover every statement that can remove the row, not
+   only the statement that can rewrite it.* Pass 2 found this rule was applied one
+   table too shallow — see finding 1 below.
+3. **`AuditLedgerCoherence` was changed, and the task did not name it.** Its I2
+   assertion holds a closed vocabulary of `source_type` values;
+   `opening_balance_row` was absent, so the first school to post would have produced
+   one I2 finding per opening charge on a ledger whose balances are correct. Added to
+   `SOURCE_TABLES` (which also gives I2's dangling-reference check a table to look in)
+   and to I7's currency map.
+4. **§4's open `external_reference` question was ruled**, which the task did not ask
+   for; §4 requires commit 4 to rule it. Ruling: no unique index, duplicates legal.
+   §4's stated risk — two batches under different batch references posting the same
+   WCBS receipt — is closed by G1 + G1b, and a unique index would additionally abort a
+   cutover on an extract that repeats a bill reference across two students.
+5. **Three shapes the task left open, chosen:** `received_by_user_id` is NULL on a
+   migrated payment (nobody in this system received the cash; who posted is on the
+   batch); `external_reference` is the first non-null `wcbs_bill_reference` among that
+   student's credit rows (netting is one row against possibly several references, and
+   the full set stays on the staged rows); `payer_name` snapshots the batch reference.
+6. **A stated-zero balance posts nothing.** §3 assigns an instrument to positive and to
+   negative. The zero stays on the staged row.
+7. **Pushed and opened the PR.** The `finance-execute` skill says the implementing hand
+   never pushes; the task file overrides it explicitly. Not merged.
 
-```sql
-DELETE FROM finance_opening_balance_batches WHERE id = <the posted batch>;
-```
+**Pass 2.**
 
-That frees the generated unique key just as completely, and it is worse than the
-UPDATE: `finance_opening_balance_rows_batch_school_foreign` is `ON DELETE CASCADE`
-(`2026_08_06_100000:156-161`), so the staged rows go too — and the posted ledger
-charges, which can never be deleted (`2026_07_19_100001:56-60`), are left pointing at
-`source_id`s that no longer exist. A second batch then posts and the arrears are
-double-counted permanently: the exact Rev 3 outcome G1b exists to close.
-
-So `finance_opening_balance_batches_no_unpost` (BEFORE UPDATE) **and**
-`finance_opening_balance_batches_no_delete_posted` (BEFORE DELETE) both ship, both
-bite-proved. **The general rule I am claiming, stated as a rule so it can be
-checked: a guard on a state's exit must cover every statement that can remove the
-row, not only the statement that can rewrite it.** That is the same lesson §9
-already records about `withTrashed()` — a guard written against one token rather
-than the behaviour has a hole shaped exactly like the other spelling.
-
-**3 — I changed a file the brief did not name: `AuditLedgerCoherence`.** Its
-assertion I2 holds a CLOSED vocabulary of `source_type` values
-(`SOURCE_TABLES`, three entries). `opening_balance_row` was not among them, so the
-first school to post its cutover would have turned `finance:audit-ledger-coherence`
-red on a *correct* ledger — one I2 finding per opening charge. I added
-`'opening_balance_row' => 'finance_opening_balance_rows'` to `SOURCE_TABLES` (which
-also gives I2's dangling-reference check a real table to look in) and the matching
-entry to I7's currency map. I read this as inside "step 3 — nothing else", which
-bounds what the POST writes, not what the auditor is allowed to know; a new posting
-instrument that does not teach the auditor its vocabulary leaves a gate reporting
-green about a fact that changed underneath it. **If the reviewer disagrees, this is
-the change to argue about.**
-
-**4 — I ruled §4's open `external_reference` question, which the task did not
-mention.** §4 says *"Commit 4 must rule one way or the other … Do not leave it
-unstated a third time."* **The ruling is: no unique index, duplicates are legal.**
-The scenario §4 named — two batches under different batch references posting the
-same WCBS receipt twice — is closed outright by G1 + G1b in this same commit, so a
-unique index would constrain nothing still reachable, while making a legitimate
-extract that repeats a bill reference across two students abort a cutover mid-post.
-Recorded in §4 of the spec and in the Action's docblock.
-
-**5 — three shapes the brief left to me, named so they are not read as accidents.**
-
-- `received_by_user_id` on a migrated payment is **NULL**. Nobody in this system
-  received that money; the column means "who took it at the counter". Who posted is
-  recorded on the batch (`posted_by_user_id`).
-- `external_reference` on the netted payment is the **first non-null**
-  `wcbs_bill_reference` among that student's credit rows. Netting is one row against
-  possibly several references, so no single value is complete — the full per-line
-  set stays on the staged rows. It is a breadcrumb, not a key (see deviation 4).
-- `payer_name` (NOT NULL) snapshots `"Balance brought forward (WCBS batch <ref>)"`.
-  The file carries no payer name and inventing one would be worse than naming the
-  provenance a bursar can actually trace.
-
-**6 — a stated-zero balance posts nothing.** §3 assigns an instrument to positive and
-to negative; zero is neither, and a zero-amount ledger row would be a movement that
-did not happen. The stated zero stays on the staged row, which is where the file's
-claim belongs.
-
-**7 — I pushed and opened the PR.** The `finance-execute` skill says the implementing
-hand commits and never pushes. The task file overrides it explicitly ("Then push and
-open the PR. Do not merge."), so I did. Not merged.
+8. **The batch reference was removed from the credit ledger narration.** It read
+   `"Payment #<ref> — Balance Brought Forward (WCBS batch <batch_reference>)"`. That
+   string embeds operator input behind 49 fixed characters against `payer_name`'s 37,
+   so it — not `payer_name` — would have been the binding constraint on the batch
+   reference limit, and the limit would have had to be the minimum of two arithmetics.
+   The narration is now `"Payment #<ref> — Balance Brought Forward"`, whose parts are
+   all bounded by the Action, so one limit covers the reference. The batch reference is
+   still on the payment row, in `payer_name`. **This is why the task's stated 218 is
+   the correct number rather than a number that would still have overflowed.**
+9. **The `fee_type_label` limit test at `OpeningBalanceImportTest` was re-pointed, not
+   deleted.** It asserted every column's `max` equals its own storage width. That is
+   still asserted for `admission_number`, `wcbs_student_ref` and
+   `wcbs_bill_reference`. `fee_type_label` now asserts two things instead: that it
+   still fits its own column, **and** that it equals the narration column's width minus
+   the suffix. Strictly more than it asserted before.
 
 ## Contradictions of the premise
 
-**None material.** Every file, line number and claim the task cited reproduced:
-`GenerateInvoice.php:386-428` is `applyCreditForward` and behaves as described;
-`Payment.php:57` is `MIGRATED_REFERENCE_FLOOR`; `OpeningBalanceBatchStatus` had
-exactly three cases; `finance_opening_balance_batches` carried no trigger and
-`status` no CHECK; the staging tables' composite FK is `ON DELETE CASCADE`.
+Pass 1: none material. Every file, line number and behaviour the task cited
+reproduced — `GenerateInvoice.php:386-428` is `applyCreditForward` and sources
+allocations from `Payment` rows ordered by `id`; `Payment.php:57` is
+`MIGRATED_REFERENCE_FLOOR`; `OpeningBalanceBatchStatus` had three cases;
+`finance_opening_balance_batches` carried no trigger and `status` no CHECK.
 
-One thing the brief could not have known, found by watching it bite (see the watched
-reds): **MySQL's `MESSAGE_TEXT` is a `varchar(128)`.** My first draft of both G1b
-messages carried the full reasoning inline, and the over-long literal made the
-`SIGNAL` itself fail with driver code **1648** ("Data too long for condition item")
-instead of **1644**. The write is still refused, so the guard *looks* fine — but
-every assertion, log and runbook that reads 1644 as "a house trigger refused this"
-sees an unrecognised error instead. The messages are now short and the reasoning is
-in the migration docblock. Worth carrying forward to any future trigger.
+Pass 2: one number in the task did not survive contact with the code as written.
+The task derives the batch-reference limit as 218 = 255 − 37 (`payer_name`). At the
+time it was written the credit narration also embedded the batch reference behind 49
+fixed characters, making 197 the true limit. Rather than take the minimum of two
+arithmetics, the reference was removed from that narration (deviation 8), which makes
+218 correct. Stated because the alternative — silently using 218 against the code as
+it stood — would have left a 218-character reference aborting the post at 1406 on
+`narration` instead of `payer_name`.
+
+**MySQL fact found by watching a guard bite, carried forward for any future trigger:**
+`MESSAGE_TEXT` is a `varchar(128)`. A longer literal makes the `SIGNAL` itself fail
+with driver code **1648** instead of **1644**. The write is still refused, so the guard
+looks correct; only an assertion on the driver code distinguishes them.
 
 ## What changed
 
-`git show --name-status` is below under Proof. In summary:
+Pass 1 (`a33d369`):
 
 | File | What |
 |---|---|
-| `database/migrations/2026_08_08_110000_opening_balance_posting_state_and_guards.php` (new, 195 lines) | `posted_at` + `posted_by_user_id`; the `posted_school_key` generated column + unique index (G1); the two G1b triggers; the `term_id` ruling as a column COMMENT |
-| `app/Finance/Actions/PostOpeningBalanceBatch.php` (new, 276 lines) | The posting Action — §3 steps 1/2/3, the reserved band, the transition |
-| `app/Finance/Enums/OpeningBalanceBatchStatus.php` | `Posted` added; `approved` still deliberately absent (4c) |
+| `database/migrations/2026_08_08_110000_opening_balance_posting_state_and_guards.php` (new) | `posted_at`, `posted_by_user_id`; `posted_school_key` generated column + unique index (G1); two G1b triggers; the `term_id` ruling as a column COMMENT |
+| `app/Finance/Actions/PostOpeningBalanceBatch.php` (new) | The posting Action — §3 steps 1/2/3, the reserved band, the transition |
+| `app/Finance/Enums/OpeningBalanceBatchStatus.php` | `Posted` added; `approved` absent (4c) |
 | `app/Finance/Models/OpeningBalanceBatch.php` | `posted_at` cast, two properties, the `term_id` meaning |
-| `app/Finance/Console/ImportOpeningBalances.php` | `--term` → `--closing-term`; the refusal now names 4c; `resolveTerm()` records the ruling |
-| `app/Finance/Console/AuditLedgerCoherence.php` | I2/I7 learn `opening_balance_row` (deviation 3) |
-| `tests/Feature/Finance/OpeningBalancePostingTest.php` (new, 13 tests) | The five proofs plus eight supporting cases |
-| `tests/Feature/Finance/OpeningBalanceImportTest.php` | Option rename at 5 call sites; the refusal assertion now pins "the approval gate is §9 step 4c" |
-| `docs/handoff/opening-balance-import-spec.md` | §4 `external_reference` ruled; §9 build order split 4a/4b/4c, `term_id` ruled, G1b's second door; §11's G1 claim restored to the strong form |
+| `app/Finance/Console/ImportOpeningBalances.php` | `--term` → `--closing-term`; refusal names 4c; `resolveTerm()` records the ruling |
+| `app/Finance/Console/AuditLedgerCoherence.php` | I2/I7 learn `opening_balance_row` |
+| `tests/Feature/Finance/OpeningBalancePostingTest.php` (new) | The five proofs plus supporting cases |
+| `tests/Feature/Finance/OpeningBalanceImportTest.php` | Option rename; refusal assertion pins "the approval gate is §9 step 4c" |
+| `docs/handoff/opening-balance-import-spec.md` | §4 `external_reference` ruled; §9 build order split, `term_id` ruled, G1b's second door; §11's G1 claim |
 
-**No Permission case, no `Submit*.php`, no `grantsMap()` edit** — the two lints that
-make 4c indivisible are untouched. **`phpstan-baseline.neon` and
-`tests/ratchet-baseline.txt` are untouched.** **No applied migration was edited**
-(ADR 0052's corollary); the one migration here is new on this branch.
+Pass 2:
 
-## The term_id ruling, with reasoning
+| File | What |
+|---|---|
+| `database/migrations/2026_08_08_120000_opening_balance_posted_rows_are_terminal.php` (new) | Two triggers on `finance_opening_balance_rows` (UPDATE/DELETE denied while the parent batch is posted); `..._no_unpost` dropped and recreated with the `school_id` clause |
+| `database/migrations/2026_08_08_100000_...php` | **Docblock only** — the three superseded claims struck in place with what changed and when |
+| `app/Finance/Actions/PostOpeningBalanceBatch.php` | Four public constants (`SNAPSHOT_COLUMN_MAX`, `NARRATION_SUFFIX`, `PAYER_NAME_PREFIX`, `PAYER_NAME_SUFFIX`); credit narration no longer carries the batch reference |
+| `app/Finance/Console/ImportOpeningBalances.php` | `fee_type_label` `max` 255 → 229; `BATCH_REFERENCE_MAX = 218` and its refusal before the batch insert |
+| `tests/Feature/Finance/OpeningBalancePostingTest.php` | PROOF 6/6b (row guards), 7 (`school_id` door), 8/8b/8c (derived limits and both mirrors), the fail-closed context case |
+| `tests/Feature/Finance/OpeningBalanceImportTest.php` | Both boundary pairs; the `fee_type_label` limit assertion re-pointed |
+
+**Pass 2 edited no applied migration's executing half.** `2026_08_08_100000`'s `up()`
+and `down()` are byte-identical to what ran; only its docblock is amended, and the
+amendment says so. `2026_08_08_110000` was not edited at all — its `no_unpost` trigger
+is superseded by a DROP-and-CREATE in a new migration, which is why `120000` exists
+instead of a one-line change to `110000`.
+
+**Untouched throughout:** `phpstan-baseline.neon`, `tests/ratchet-baseline.txt`. **No
+Permission case, no `Submit*.php`, no `grantsMap()` edit** — the two lints that make 4c
+indivisible are not approached.
+
+## The `term_id` ruling
 
 **Option 2 — REPURPOSE. `term_id` names the term being CLOSED OUT.** It keeps
 `NOT NULL` and its FK; only the meaning changes.
 
-R5 does put the cutover on a term boundary, so there is no cutover term **T** — that
-is what made the column look wrong. But the file **is** the closing position of a
-*specific* term, and recording *which* term is exactly the provenance a cutover
-needs: it is the one fact that lets a reader a year later say what period the opening
-charges represent. Nullifying discards that, and takes the FK's referential
-guarantee and the option's per-School validation with it, in exchange for nothing.
-The cost of repurposing is a comment and a rename; the cost of nullifying is a
-permanent loss of provenance plus an `ALTER`. Option 2 wins on the merits, not on the
-smaller diff.
+R5 puts the cutover on a term boundary, so there is no cutover term **T** — that is
+what made the column look wrong. The file is the closing position of a *specific*
+term, and recording which term is the provenance that lets a reader a year later say
+what period the opening charges represent. Nullifying discards that, and takes the FK's
+referential guarantee and the option's per-School validation with it. Repurposing costs
+a comment and a rename.
 
-**And the code agreed with the ruling rather than against it** — the task invited me
-to argue if it did not. `resolveTerm()` already validates the term belongs to the
-School (`ImportOpeningBalances.php:1069-1071`), and nothing anywhere reads
-`batches.term_id` for a cutover-term meaning, so no caller had to be un-taught
-anything. The rename is the whole cost.
+The task invited a counter-argument if the code disagreed. It did not: `resolveTerm()`
+already validated the term against the School (`ImportOpeningBalances.php`), and no
+code anywhere read `batches.term_id` for a cutover-term meaning, so no caller needed
+un-teaching. The rename is the whole cost.
 
-Carried through so the column is not a lie: the option is `--closing-term` with a
-corrected description; `resolveTerm()`'s docblock and its error message state the new
-meaning; `OpeningBalanceBatch`'s docblock states it; §9 records it; and the **column
-itself carries a MySQL `COMMENT`** — the copy a reader of `SHOW CREATE TABLE` sees.
-Stated plainly: the comment is **not** a constraint and is not dressed as one.
-Nothing at the engine stops a caller writing the wrong term, and nothing could —
-"this is last term, not this term" is a claim about meaning, the class §11
-quarantines as procedural.
+Carried through: `--closing-term` with a corrected description; `resolveTerm()`'s
+docblock and error message; `OpeningBalanceBatch`'s docblock; §9's record; and a MySQL
+`COMMENT` on the column, which is what a reader of `SHOW CREATE TABLE` sees. The
+comment is not a constraint and is not presented as one — nothing at the engine stops a
+caller writing the wrong term, and "this is last term, not this term" is a claim about
+meaning, which §11 classes as procedural.
+
+## The derived-limit arithmetic
+
+Two operator-supplied strings reach a `varchar(255)` snapshot column at posting.
+Nothing is truncated — R7 carries the fee-type label VERBATIM onto a parent's
+statement — so both refusals live at the validator.
+
+```
+finance_ledger_transactions.narration   varchar(255)   (read from information_schema)
+finance_payments.payer_name             varchar(255)   (read from information_schema)
+
+PostOpeningBalanceBatch::NARRATION_SUFFIX    = ' — Balance Brought Forward'          26 chars
+PostOpeningBalanceBatch::PAYER_NAME_PREFIX   = 'Balance brought forward (WCBS batch ' 36 chars
+PostOpeningBalanceBatch::PAYER_NAME_SUFFIX   = ')'                                    1 char
+
+narration  = <fee_type_label> . NARRATION_SUFFIX
+             → COLUMNS['fee_type_label']['max'] = 255 − 26  = 229
+
+payer_name = PAYER_NAME_PREFIX . <batch_reference> . PAYER_NAME_SUFFIX
+             → BATCH_REFERENCE_MAX             = 255 − 37  = 218
+
+credit narration = 'Payment #' . <reference> . NARRATION_SUFFIX
+             → no operator input; bounded by the Action. This is why there is one
+               batch-reference limit rather than min(218, 197). See deviation 8.
+```
+
+A PHP const expression cannot call `mb_strlen`, so both limits are literals with the
+arithmetic written beside them, and `PROOF 8` asserts the two agree — including reading
+both column widths from `information_schema` rather than from a migration's source.
+Editing an affix without moving its limit fails there.
 
 ## Proof
 
-### Migration reversibility — re-derived per run, not assumed
+### Migration reversibility — re-derived per run
 
-`migrate:status | tail -5` put my migration last, so `--step=1` is mine. Verified by
-name in the rollback output, then asserted against `information_schema` rather than
-trusting exit 0:
+`migrate:status | tail` put `120000` last, so `--step=1` is mine; confirmed by name in
+the rollback output, then asserted against `information_schema` rather than exit 0.
 
 ```
- 2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file [1] Ran
  2026_08_08_110000_opening_balance_posting_state_and_guards .. [1] Ran
+ 2026_08_08_120000_opening_balance_posted_rows_are_terminal .. [1] Ran
 
- INFO  Rolling back migrations.
- 2026_08_08_110000_opening_balance_posting_state_and_guards .. 85.85ms DONE
+ 2026_08_08_120000_opening_balance_posted_rows_are_terminal .. 33.87ms DONE
 
 === after rollback ===
-triggers: []
-columns: [{"COLUMN_NAME":"term_id","COLUMN_COMMENT":""}]
-index: []
+finance_opening_balance_rows :: (no triggers)
+finance_opening_balance_batches :: finance_opening_balance_batches_no_unpost :: no school_id clause
+finance_opening_balance_batches :: finance_opening_balance_batches_no_delete_posted :: no school_id clause
 ```
 
-Both triggers gone, `posted_at` / `posted_by_user_id` / `posted_school_key` gone, the
-unique index gone, the term comment cleared. Re-up, then the shape read back:
+The rollback restores `110000`'s narrower trigger rather than leaving the table
+unguarded. Re-up:
 
 ```
- INFO  Running migrations.
- 2026_08_08_110000_opening_balance_posting_state_and_guards .. 85.73ms DONE
+ 2026_08_08_120000_opening_balance_posted_rows_are_terminal .. 27.37ms DONE
 
-[{"TRIGGER_NAME":"finance_opening_balance_batches_no_unpost","ACTION_TIMING":"BEFORE","EVENT_MANIPULATION":"UPDATE"},
- {"TRIGGER_NAME":"finance_opening_balance_batches_no_delete_posted","ACTION_TIMING":"BEFORE","EVENT_MANIPULATION":"DELETE"}]
+finance_opening_balance_rows :: finance_opening_balance_rows_no_update_when_posted :: BEFORE UPDATE :: no school_id clause
+finance_opening_balance_rows :: finance_opening_balance_rows_no_delete_when_posted :: BEFORE DELETE :: no school_id clause
+finance_opening_balance_batches :: finance_opening_balance_batches_no_unpost :: BEFORE UPDATE :: HAS school_id clause
+finance_opening_balance_batches :: finance_opening_balance_batches_no_delete_posted :: BEFORE DELETE :: no school_id clause
+```
 
-[{"COLUMN_NAME":"term_id","IS_NULLABLE":"NO","EXTRA":"","GENERATION_EXPRESSION":"",
-  "COLUMN_COMMENT":"The term being CLOSED OUT: the last term, whose closing position this file carries (spec §9, ruled in step 4b). NOT a cutover term T — R5 puts the cutover on a term boundary."},
- {"COLUMN_NAME":"posted_at","IS_NULLABLE":"YES","EXTRA":"","GENERATION_EXPRESSION":"","COLUMN_COMMENT":""},
- {"COLUMN_NAME":"posted_by_user_id","IS_NULLABLE":"YES","EXTRA":"","GENERATION_EXPRESSION":"","COLUMN_COMMENT":""},
- {"COLUMN_NAME":"posted_school_key","IS_NULLABLE":"YES","EXTRA":"STORED GENERATED",
+Pass 1's equivalent (`110000` rolled back and re-upped, generated column and index read
+back with `NON_UNIQUE: 0` on `posted_school_key` alone) is unchanged and was recorded
+at the time:
+
+```
+[{"COLUMN_NAME":"posted_school_key","IS_NULLABLE":"YES","EXTRA":"STORED GENERATED",
   "GENERATION_EXPRESSION":"if((`status` = _utf8mb4\\'posted\\'),`school_id`,NULL)","COLUMN_COMMENT":""}]
-
 [{"INDEX_NAME":"ob_batches_posted_school_unique","NON_UNIQUE":0,"COLUMN_NAME":"posted_school_key"}]
+[{"COLUMN_NAME":"term_id","IS_NULLABLE":"NO","COLUMN_COMMENT":"The term being CLOSED OUT: the last term, whose closing position this file carries (spec §9, ruled in step 4b). NOT a cutover term T — R5 puts the cutover on a term boundary."}]
 ```
 
-`NON_UNIQUE: 0` on `posted_school_key` **alone** — the index is not on
-`(school_id, posted_school_key)`, which is the §9 note about the invoice precedent.
+### Suites
 
-### The new suite
-
-```
-{"tool":"pest","result":"passed","tests":13,"passed":13,"assertions":70,"duration_ms":12111}
-```
-
-### The suites this change could break
+`OpeningBalancePostingTest` (20 tests) alone:
 
 ```
-{"tool":"pest","result":"passed","tests":66,"passed":66,"assertions":337,"duration_ms":19830}
+{"tool":"pest","result":"passed","tests":20,"passed":20,"assertions":96,"duration_ms":11754}
 ```
 
-(`OpeningBalanceImportTest`, `LedgerCoherenceTest`, `SchemaConventionsTest`,
-`TriggerBodiesAreDumpSafeTest`, `PaymentProvenanceTest` — the last three are the ones
-that would catch a badly-shaped trigger, a dropped append-only guard, and a seeded
-payment sequence respectively.)
+`OpeningBalancePostingTest` + `OpeningBalanceImportTest` + `LedgerCoherenceTest` +
+`SchemaConventionsTest` + `TriggerBodiesAreDumpSafeTest` + `PaymentProvenanceTest`:
+
+```
+{"tool":"pest","result":"passed","tests":87,"passed":87,"assertions":445,"duration_ms":20734}
+```
 
 ### bin/quality
 
-All 14 steps, raw (exit 0):
+Run on pass 2's tree, exit 0:
 
 ```
 quality gate — base 2d55fda
@@ -263,194 +285,161 @@ quality gate — base 2d55fda
 ✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
 ```
 
-Step 7 (`boundary-lint`) is the one that would have caught a `Submit*.php` filename or
-a `DB::table` on a `finance_` literal inside `app/Finance`; step 8 is the one that
-would have caught a `grantsMap()` edit without a migration. Both green with **zero new
-baseline entries** — neither baseline file was touched.
+Re-derived at the time of writing: 14 steps, boundary-lint at 7, grants-convergence at
+8, the suite at 14. Neither baseline file was touched, and neither lint reports a new
+entry.
 
-Re-derived at the time of writing: `bin/quality` is **14** steps, grants-convergence
-is step **8**, the suite is step **14**.
+### 4a's executing half, proved unchanged rather than asserted
+
+```
+$ git show origin/staging:…2026_08_08_100000….php | sed -n '/^return new class/,$p' > old
+$ sed -n '/^return new class/,$p' …2026_08_08_100000….php                                > new
+$ diff old new && echo "4a EXECUTING HALF: byte-identical to origin/staging"
+4a EXECUTING HALF: byte-identical to origin/staging
+```
+
+The whole diff on that file is inside the docblock. ADR 0052's corollary bites on the
+executing half; the comment is amended, `up()` and `down()` are not.
 
 ## The watched red
 
-Eight mutations, each planted, run, and restored. Every failure message named the
-right thing.
+Pass 2's six, each planted, run, restored, and the restore confirmed by `diff` against
+a pre-mutation copy.
 
-**RED 1 — G1.** Commented out the `ADD UNIQUE ob_batches_posted_school_unique`
-statement in the migration.
-
-```
-{"tool":"pest","result":"failed","tests":3,"passed":2,"assertions":3,"failed":1,
- "failures":[{"test":"PROOF 1 — G1: a second batch reaching posted for the same school is refused by the unique key (1062)",
-   "message":"Failed asserting that 0 is identical to 1062."}]}
-```
-
-Observed 0, not 1062: **the second batch posted successfully.** Without the index
-there is no refusal at all. Restored; `grep -c "ADD UNIQUE"` → 1.
-
-**RED 2 — G1b, the UPDATE door.** Changed the trigger condition to
-`IF 1 = 0 AND OLD.status = 'posted' AND NEW.status <> 'posted'`.
+**RED A — the row UPDATE guard.** Trigger condition prefixed `1 = 0 AND`.
 
 ```
-{"tool":"pest","result":"failed","tests":3,"passed":2,"assertions":6,"failed":1,
- "failures":[{"test":"PROOF 2 — G1b: UPDATE …SET status=rejected on a posted batch is refused BY THE TRIGGER (1644)",
-   "message":"Failed asserting that 0 is identical to 1644."}]}
+{"tool":"pest","result":"failed","tests":2,"passed":1,"assertions":3,"failed":1,
+ "failures":[{"test":"PROOF 6 — G1b at the ROW level: UPDATE and DELETE of a posted batch staged row are both refused (1644)",
+   "line":486,"message":"Failed asserting that 0 is identical to 1644."}]}
 ```
 
-Observed 0: the `UPDATE … SET status='rejected'` succeeded — the exact release the
-Rev 3 finding described. Restored.
+Line 486 is the `updateCode` assertion. Observed 0 — the `UPDATE` of a posted batch's
+staged row succeeded.
 
-**RED 2b — G1b, the DELETE door (the addition).** Same mutation on the BEFORE DELETE
-trigger.
-
-```
-{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":1,"failed":1,
- "failures":[{"test":"PROOF 2b — G1b: DELETE of a posted batch is refused BY THE TRIGGER (1644) — the second door",
-   "message":"Failed asserting that 0 is identical to 1644."}]}
-```
-
-Observed 0: the posted batch was deleted, and the assertion that the staged rows
-survived never ran because the first one failed — the CASCADE took them. This is the
-hole deviation 2 closes. Restored.
-
-**RED 2 (the earlier accident, kept because it is the more interesting one).** The
-first version of both triggers carried the full reasoning in `MESSAGE_TEXT`. Both
-PROOF 2 and PROOF 2b failed like this:
+**RED B — the row DELETE guard.** Same mutation on the other trigger.
 
 ```
-{"tool":"pest","result":"failed","tests":13,"passed":11,"assertions":67,"failed":2,
- "failures":[{"test":"PROOF 2 — G1b: UPDATE …","message":"Failed asserting that 1648 is identical to 1644."},
-             {"test":"PROOF 2b — G1b: DELETE …","message":"Failed asserting that 1648 is identical to 1644."}]}
+{"tool":"pest","result":"failed","tests":2,"passed":1,"assertions":4,"failed":1,
+ "failures":[{"test":"PROOF 6 — G1b at the ROW level: …",
+   "line":487,"message":"Failed asserting that 0 is identical to 1644."}]}
 ```
 
-**1648, not 1644, and not 0** — the guard refused, with the wrong error class,
-because `MESSAGE_TEXT` is `varchar(128)`. A test that had asserted "an exception was
-thrown" rather than the driver code would have gone green on this.
+Line 487 is `deleteCode` — a different assertion from RED A, so the two doors are
+attributed separately.
 
-**RED 3 — the reserved band.** Replaced `nextMigratedReference()`'s body with
-`Sequences::next('finance_payment', (string) $schoolId)` — the seed trap from the
-other side.
-
-```
-{"tool":"pest","result":"failed","tests":2,"passed":0,"assertions":4,"failed":2,
- "failures":[{"test":"PROOF 3 — the migrated reference comes from the reserved band and the live receipt counter is UNCHANGED",
-   "message":"Failed asserting that 2 is equal to 900000000 or is greater than 900000000."},
-  {"test":"PROOF 3b — a second student in the same batch takes the NEXT band reference, and both are migrated",
-   "message":"Failed asserting that 1 is identical to 900000001."}]}
-```
-
-Observed **2** where the band starts at 900,000,000: the migrated row took the live
-counter's next value, indistinguishable from a real receipt, and advanced the
-school's counter. Restored.
-
-**RED 4a — the charge's narration.** `strtolower($row->fee_type_label)` in the
-narration.
-
-```
-{"tool":"pest","result":"failed","tests":2,"passed":1,"assertions":13,"failed":1,
- "failures":[{"test":"PROOF 4 — every positive fee-type balance posts ONE charge carrying the label verbatim and pointing at its staged row",
-   "message":"Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'Tuition — Balance Brought Forward'\n+'tuition — Balance Brought Forward'"}]}
-```
-
-Restored.
-
-**RED 4b — the charge's source.** `source_type` posted as `'invoice'`.
-
-```
-{"tool":"pest","result":"failed","tests":2,"passed":1,"assertions":9,"failed":1,
- "failures":[{"test":"PROOF 4 — every positive fee-type balance posts ONE charge …",
-   "message":"Failed asserting that actual size 0 matches expected size 3."}]}
-```
-
-Zero rows carry `source_type = 'opening_balance_row'` — which is also §12's export
-exclusion predicate, so this mutation would have silently put the cutover's charges
-into the general-ledger export. Restored.
-
-**RED 5 — THE CREDIT, both directions.** This is the one the task said to stop on, so
-it was proved from both sides rather than once.
-
-Mutation: no payment row is written; the ledger credit is posted bare.
-
-```
-{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":0,"errors":1,
- "error_details":[{"test":"PROOF 5 — a posted credit is CONSUMED by the next invoice: applyCreditForward draws the migrated payment",
-   "message":"No query results for model [App\\Finance\\Models\\Payment]."}]}
-```
-
-That red only says "no payment row", so I also wrote a temporary probe
-(`tests/Feature/Finance/TmpBareCreditProbe.php`, deleted afterwards) asserting the
-failure mode §3 *describes* — right total, fully outstanding invoice. **Under the
-mutation it PASSED:**
-
-```
-{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":4,"duration_ms":11059}
-```
-
-i.e. with a bare ledger credit the account balance is correct (−500,000 then +700,000
-after a 1,200,000 charge) and the new invoice reads **fully outstanding — 1,200,000
-allocated 0**. On the restored code the same probe fails, because the credit is now
-consumed:
+**RED C — the `school_id` door.** `..._no_unpost` reverted to `110000`'s condition
+(`OLD.status = 'posted' AND NEW.status <> 'posted'`).
 
 ```
 {"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":2,"failed":1,
- "failures":[{"test":"PROBE — a bare ledger credit nets the balance and leaves the invoice fully outstanding",
-   "message":"Failed asserting that 500000 is identical to 0."}]}
+ "failures":[{"test":"PROOF 7 — G1b: moving a posted batch to another School is refused (1644), on a batch with NO staged rows",
+   "line":531,"message":"Failed asserting that 0 is identical to 1644."}]}
 ```
 
-**§3 step 2's claim holds, verified from both sides**: the account nets identically
-either way, and only the payment row makes the next invoice's outstanding fall.
-Probe deleted (`git status` clean of it); code restored.
+Observed 0 on a **zero-row** posted batch: the `school_id` moved and the generated key
+moved with it. The FK that blocks the row-carrying case is not involved in this case at
+all, which is why the proof uses a batch with no rows.
+
+**RED D — the label limit.** `COLUMNS['fee_type_label']['max']` returned to 255.
+
+```
+{"tool":"pest","result":"failed","tests":5,"passed":2,"assertions":12,"failed":2,
+ "failures":[{"test":"PROOF 8 — the validator limits are DERIVED from the strings this Action builds, not remembered",
+   "message":"Failed asserting that 255 is identical to 229."},
+  {"test":"…accepts a label at exactly the limit and REFUSES one character more — the boundary pair",
+   "message":"Failed asserting that 255 is identical to 229."}],
+ "errors":1,"error_details":[{"test":"PROOF 8b — the mirror at the posting end …",
+   "message":"SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'narration' at row 1 (… insert into `finance_ledger_transactions` … XXXX…XXXX — Balance Brought Forward …)"}]}
+```
+
+The 1406 in the third entry is the defect itself, reproduced: a label the validator
+declared valid aborting the post at the engine.
+
+**RED E — the batch-reference limit.** `BATCH_REFERENCE_MAX` returned to 255.
+
+```
+{"tool":"pest","result":"failed","tests":3,"passed":1,"assertions":4,"failed":1,
+ "failures":[{"test":"PROOF 8 — the validator limits are DERIVED …",
+   "line":547,"message":"Failed asserting that 255 is identical to 218."}],
+ "errors":1,"error_details":[{"test":"PROOF 8c — the mirror for payer_name …",
+   "message":"SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'filename' at row 1 …"}]}
+```
+
+Line 547 is the load-bearing assertion. The 1406 in the second entry is on `filename`,
+not `payer_name` — an artefact of the test helper deriving a filename from the
+reference under the mutation, not the guard under test. Stated so it is not read as
+evidence it is not.
+
+**RED F — the fail-closed context guard.** `ActiveSchool::id()` null branch replaced
+with a fallback to the batch's own `school_id`.
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":2,"failed":1,
+ "failures":[{"test":"refuses to post with NO active School context — the fail-closed branch, exercised",
+   "line":617,"message":"Exception \"App\\Exceptions\\BusinessRuleException\" not thrown."}]}
+```
+
+Pass 1's reds (G1's unique index, G1b's UPDATE and DELETE doors, the reserved band
+drawn through `Sequences`, the charge's narration and `source_type`, and the credit
+proved from both sides with a temporary probe) are unchanged and were recorded at the
+time. The credit's two-sided proof, restated because it is the one the task said to
+stop on: under a bare-ledger-credit mutation a probe asserting "balance correct,
+invoice fully outstanding" **passed**; on the restored code the same probe **failed**
+at `Failed asserting that 500000 is identical to 0`. The probe was deleted.
 
 ## Database observations
 
 Under the privacy rule — structure and counts only.
 
-- Local test database `portal_testing` only. **The production copy
-  (`portaa10_portal`) was not touched, migrated or read.**
-- `finance_opening_balance_batches` before: 8 columns' worth of shape unchanged;
-  after: `+posted_at`, `+posted_by_user_id`, `+posted_school_key` (STORED GENERATED),
-  `+1` unique index, `+2` triggers (it previously carried **0**).
-- `finance_opening_balance_rows`: unchanged.
-- `finance_payments`: unchanged — no migration touches it. The migrated rows this
-  Action writes use columns that shipped in step 3.
-- No school in any environment has a posted batch; the state did not exist before
+- Local test database `portal_testing` only. The production copy was not touched,
+  migrated or read in either pass.
+- `finance_opening_balance_batches`: `+posted_at`, `+posted_by_user_id`,
+  `+posted_school_key` (STORED GENERATED), `+1` unique index, `+2` triggers. It carried
+  0 triggers before this branch.
+- `finance_opening_balance_rows`: `+2` triggers (pass 2). It carried 0 before, and its
+  columns are unchanged.
+- `finance_payments`, `finance_ledger_transactions`: no schema change in either pass.
+- No school in any environment holds a posted batch; the state did not exist before
   this branch.
 
 ## Not done
 
-- **The approval gate (4c) is not built**, by design. There is therefore **no
-  production caller of the Action at all** — it is reachable only from tests. Anyone
-  reviewing "is posting authorised?" should read that as "posting is not reachable",
-  not as "posting is ungated".
-- **Concurrency is not proved by a test.** Two simultaneous posts for one school
-  cannot both commit (G1's unique index), but I did not write a concurrency case in
-  the shape of `InvoiceConcurrencyTest` / `WalletW3ConcurrencyTest`. The reasoning is
-  in the Action's docblock; the reasoning is not a proof. **Suggested: ticket.**
-- **The reference allocation's read-then-write is unlocked.** `MAX(reference)` within
-  the band is read without a lock; `UNIQUE (school_id, reference)` is the backstop and
-  G1 makes the racing case unreachable. Stated rather than tested (same ticket).
-- **No U12b surface**, no API, no UI — step 5.
-- **§12 decision 1 (does the migrated payment need date D on its own surface?) is
-  left open.** 4b did not need it: the payment inherits D from the batch by
-  provenance. I did not add a column, and I am not treating silence as a ruling.
-- **`--closing-term` is a breaking CLI rename.** Nothing in the repo calls the command
-  with `--term` any more (grepped: only historical report/spec prose), but any operator
-  runbook held outside this repository will break loudly, which is the intended failure.
+- **The approval gate (4c) is not built.** There is no production caller of the Action;
+  it is reachable from tests only. "Posting is not reachable" and "posting is ungated"
+  are different statements, and the first is the true one.
+- **Concurrency has no test.** Two simultaneous posts for one school cannot both commit
+  (G1's unique index), and the reference allocation's read-then-write is unlocked with
+  `UNIQUE (school_id, reference)` as the backstop. Both are argued in the Action's
+  docblock; neither is proved. No case in the shape of `InvoiceConcurrencyTest` or
+  `WalletW3ConcurrencyTest` was written.
+- **The row triggers' cost under load is not measured.** Each is a `SELECT` on the
+  parent inside `FOR EACH ROW`, paid on UPDATE and DELETE of a staged row only —
+  neither is an INSERT trigger, and validation only INSERTs. That reasoning is stated
+  in the migration; it is not a benchmark.
+- **§12 decision 1 (does the migrated payment need date D on its own surface?) is left
+  open.** No column was added; the payment inherits D from the batch by provenance.
+- **`--closing-term` is a breaking CLI rename**, and `--batch-reference` now has a
+  length limit it did not have. Nothing in this repository calls the command with
+  `--term`; operator runbooks held elsewhere will fail loudly.
+- **`bin/quality`'s output below was produced by running it; the pass-1 rollback
+  transcript above was recorded during pass 1 and not re-run in pass 2.**
 
 ## Findings raised, not fixed
 
-- `app/Finance/Console/AuditLedgerCoherence.php:78` — `SOURCE_TABLES` is a **closed
-  vocabulary with nothing pinning it to the writers**. Adding a posting instrument
-  and forgetting this entry turns the auditor red on a correct ledger, and nothing
-  fails until someone runs it. A test enumerating the distinct `source_type` values
-  the Actions write and asserting each is in the map would close it. **ticket.**
-- MySQL `MESSAGE_TEXT` is `varchar(128)` and a longer literal downgrades a house
-  trigger's refusal from 1644 to 1648 — silently, because the write is still refused.
-  `TriggerBodiesAreDumpSafeTest` already walks every trigger body for balanced quotes;
-  a length assertion in the same test would catch this class for every future trigger.
-  **ticket.**
-- `finance_opening_balance_batches` has **no CHECK tying `posted_at` /
-  `posted_by_user_id` to `status = 'posted'`**. The only writer sets all three in one
-  statement, so the columns cannot disagree today; a second writer could. Noted rather
-  than built — a constraint over a column the app already writes atomically is
-  decoration until there is a second writer. **ticket.**
+- `app/Finance/Console/AuditLedgerCoherence.php` — `SOURCE_TABLES` is a closed
+  vocabulary with nothing pinning it to the Actions that write `source_type`. A new
+  posting instrument that forgets an entry turns the auditor red on a correct ledger,
+  and nothing fails until someone runs it. A test enumerating the distinct
+  `source_type` values the Actions write and asserting each is in the map would close
+  it.
+- `MESSAGE_TEXT` is `varchar(128)` and a longer literal downgrades a refusal from 1644
+  to 1648 silently. `TriggerBodiesAreDumpSafeTest` already walks every trigger body for
+  balanced quotes; a length assertion in the same test would cover every future
+  trigger.
+- `finance_opening_balance_batches` has no CHECK tying `posted_at` /
+  `posted_by_user_id` to `status = 'posted'`. The only writer sets all three in one
+  statement inside one transaction, so they cannot disagree today.
+- `finance_opening_balance_rows_batch_school_foreign` is `NO ACTION` on update. The
+  `school_id` trigger no longer depends on that, but the FK's update rule is still
+  undocumented anywhere except the `120000` migration's docblock.

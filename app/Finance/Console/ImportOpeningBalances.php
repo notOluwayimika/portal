@@ -90,6 +90,20 @@ class ImportOpeningBalances extends Command
     protected $description = 'READ-ONLY: validate a WCBS opening-balance extract into staging and report (§9 step 4a — posts nothing)';
 
     /**
+     * The longest `--batch-reference` (or defaulted filename) a batch may carry.
+     *
+     * 218 = 255 − 37. `finance_payments`.`payer_name` is varchar(255) and §9 step 4b snapshots
+     * PostOpeningBalanceBatch::PAYER_NAME_PREFIX . <this reference> . ::PAYER_NAME_SUFFIX into it
+     * (36 + 1 = 37 fixed characters). It is NOT this column's own width — `batch_reference` holds 255
+     * and always will; the binding constraint is downstream, exactly as it is for `fee_type_label`.
+     *
+     * A PHP const expression cannot call mb_strlen, so the number is written with its arithmetic
+     * beside it and OpeningBalancePostingTest asserts the two agree. Edit either affix and that test
+     * goes red — which is the whole point, because the alternative is a cutover aborting at 1406.
+     */
+    public const BATCH_REFERENCE_MAX = 218;
+
+    /**
      * THE FILE FORMAT (§2, frozen by R12) — required flag, max length, format, example, notes and
      * group per column, in the guardian import's shape and for its reason: one constant drives both
      * the template the platform issues (R13) and this validator, so they cannot drift apart.
@@ -135,8 +149,16 @@ class ImportOpeningBalances extends Command
         ],
         'fee_type_label' => [
             'required' => true,
-            'max' => 255,
-            'format' => 'string, max 255 characters',
+            // 229 = 255 − 26: the ledger narration column is varchar(255) and posting appends
+            // PostOpeningBalanceBatch::NARRATION_SUFFIX (' — Balance Brought Forward', 26 characters)
+            // to this label VERBATIM. It is NOT the storage column's own width for once — that is 255,
+            // and a 255-character label stages perfectly well and then aborts the post at 1406. See the
+            // constant's docblock: nothing is truncated, so the refusal moves here, to the file. A PHP
+            // const expression cannot call mb_strlen, so the number is written with its arithmetic
+            // beside it and OpeningBalancePostingTest asserts the two agree — an edit to the suffix
+            // that forgets this number fails there rather than on cutover day.
+            'max' => 229,
+            'format' => 'string, max 229 characters',
             'example' => 'Tuition',
             'notes' => 'The fee type as WCBS names it, carried verbatim onto the statement. One row per student PER FEE TYPE. Spelling is matched case-insensitively — and also ignoring accents and trailing spaces — so "Tuition", "tuition" and "Tuitión" are ONE fee type, and a second row for it is refused.',
             'group' => 'Amounts',
@@ -248,6 +270,23 @@ class ImportOpeningBalances extends Command
             }
 
             $reference = (string) ($this->option('batch-reference') ?: basename($file));
+
+            // THE BATCH REFERENCE IS OPERATOR INPUT AND IT LANDS IN A POSTED PAYMENT'S payer_name.
+            // It had no length rule at all: it comes from --batch-reference or, defaulted, from the
+            // filename, and its own column holds 255 — so a long-but-legal reference staged green and
+            // then aborted the post at 1406 on a varchar(255) payer_name. Refused HERE, before the
+            // batch row is inserted, so a rejected reference does not spend §7's idempotency key on a
+            // run nobody can read. Same reasoning as the label above: nothing is truncated, so the
+            // refusal belongs at the file/options end.
+            if (mb_strlen($reference) > self::BATCH_REFERENCE_MAX) {
+                $this->error(sprintf(
+                    'The batch reference is %d characters; the limit is %d. It is snapshotted onto every migrated payment at posting, so a longer one cannot be recorded. Pass a shorter --batch-reference.',
+                    mb_strlen($reference),
+                    self::BATCH_REFERENCE_MAX,
+                ));
+
+                return self::FAILURE;
+            }
 
             // Inserted BEFORE a single row is validated, so §7's idempotency key is enforced by the
             // unique index at the engine rather than by a guard clause. A re-run of the same

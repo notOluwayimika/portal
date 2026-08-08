@@ -22,6 +22,7 @@
  */
 
 use App\Enums\TermStatusEnum;
+use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
@@ -504,12 +505,44 @@ it('drops an over-length value, names the column, and CONTINUES the run', functi
         ->and($ingest)->not->toContain('unattributed');
 });
 
-it('accepts a label at exactly the column limit, so the length rule is a limit and not a margin', function () {
+it('accepts a label at exactly the limit and REFUSES one character more — the boundary pair', function () {
+    // THE LIMIT MOVED IN 4b, from 255 (this column's own width) to 229 (the ledger narration's width
+    // minus the 26-character suffix posting appends). A 255-character label used to be pinned HERE as
+    // accepted, and it was: it staged perfectly and then aborted the post at 1406. Nothing is
+    // truncated — R7 carries the label VERBATIM onto a parent's statement — so the refusal moved to
+    // the file, and both sides of the new boundary are pinned rather than just the accepting one.
+    $limit = ImportOpeningBalances::COLUMNS['fee_type_label']['max'];
+    expect($limit)->toBe(229);
+
+    $accepted = obSchool();
+    obStudent($accepted, 'ADM-EXACT');
+    $acceptedExit = obRun($accepted, obCsv([
+        'ADM-EXACT,W1,'.str_repeat('X', $limit).',100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    expect(obRows($accepted))->toHaveCount(1)
+        ->and(obBatch($accepted)->findings)->toBeNull()
+        ->and($acceptedExit)->toBe(0);
+
+    $refused = obSchool();
+    obStudent($refused, 'ADM-OVER');
+    $refusedExit = obRun($refused, obCsv([
+        'ADM-OVER,W1,'.str_repeat('X', $limit + 1).',100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
+
+    expect(obRows($refused))->toHaveCount(0)
+        ->and(obBatchCodes(obBatch($refused)))->toContain('value_too_long')  // a NAMED finding, not a crash
+        ->and($refusedExit)->toBe(1);
+});
+
+it('counts a multi-byte label by CHARACTERS, not bytes, so an accented label at the limit is accepted', function () {
+    // 229 two-byte characters is 458 BYTES. `strlen` would drop this row; MySQL counts characters
+    // in a utf8mb4 varchar and accepts it, so a byte count here would reject a legitimate label.
     $ctx = obSchool();
-    obStudent($ctx, 'ADM-EXACT');
+    obStudent($ctx, 'ADM-MB');
 
     $exit = obRun($ctx, obCsv([
-        'ADM-EXACT,W1,'.str_repeat('X', 255).',100000.00,100000.00,BILL-1',
+        'ADM-MB,W1,'.str_repeat('é', ImportOpeningBalances::COLUMNS['fee_type_label']['max']).',100000.00,100000.00,BILL-1',
     ]), ['--control-total' => '100000.00']);
 
     expect(obRows($ctx))->toHaveCount(1)
@@ -517,19 +550,38 @@ it('accepts a label at exactly the column limit, so the length rule is a limit a
         ->and($exit)->toBe(0);
 });
 
-it('counts a multi-byte label by CHARACTERS, not bytes, so an accented label at the limit is accepted', function () {
-    // 255 two-byte characters is 510 BYTES. `strlen` would drop this row; MySQL counts characters
-    // in a utf8mb4 varchar and accepts it, so a byte count here would reject a legitimate label.
-    $ctx = obSchool();
-    obStudent($ctx, 'ADM-MB');
+it('accepts a batch reference at exactly the limit and REFUSES one character more, before staging anything', function () {
+    // The reference had NO length rule: it comes from --batch-reference or the filename, its own
+    // column holds 255, and it is snapshotted into a posted payment's varchar(255) payer_name behind a
+    // 37-character prefix. The refusal is BEFORE the batch insert on purpose — a rejected reference
+    // must not spend §7's idempotency key on a run nobody can read.
+    $limit = ImportOpeningBalances::BATCH_REFERENCE_MAX;
+    expect($limit)->toBe(218);
 
-    $exit = obRun($ctx, obCsv([
-        'ADM-MB,W1,'.str_repeat('é', 255).',100000.00,100000.00,BILL-1',
-    ]), ['--control-total' => '100000.00']);
+    $accepted = obSchool();
+    obStudent($accepted, 'ADM-REF');
+    $acceptedExit = obRun($accepted, obCsv([
+        'ADM-REF,W1,Tuition,100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00', '--batch-reference' => str_repeat('R', $limit)]);
 
-    expect(obRows($ctx))->toHaveCount(1)
-        ->and(obBatch($ctx)->findings)->toBeNull()
-        ->and($exit)->toBe(0);
+    expect(obRows($accepted))->toHaveCount(1)
+        ->and($acceptedExit)->toBe(0);
+
+    $refused = obSchool();
+    obStudent($refused, 'ADM-REF2');
+    $refusedExit = test()->artisan('finance:import-opening-balances', [
+        '--file' => obCsv(['ADM-REF2,W1,Tuition,100000.00,100000.00,BILL-1']),
+        '--school' => (string) $refused['school']->id,
+        '--closing-term' => (string) $refused['term']->id,
+        '--as-at' => '2026-08-06',
+        '--control-total' => '100000.00',
+        '--batch-reference' => str_repeat('R', $limit + 1),
+        '--dry-run' => true,
+    ])->expectsOutputToContain('the limit is 218')->run();
+
+    expect($refusedExit)->toBe(1)
+        // NOTHING staged — not even the batch row, so the reference is still free for a corrected run.
+        ->and(ActiveSchool::runFor($refused['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0);
 });
 
 it('still stages two rows for a student when the fee types genuinely differ', function () {
@@ -948,10 +1000,21 @@ it('holds a max for every column that matches the storage column it lands in', f
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_opening_balance_rows'"
     ))->pluck('len', 'COLUMN_NAME');
 
-    foreach (['admission_number', 'wcbs_student_ref', 'fee_type_label', 'wcbs_bill_reference'] as $column) {
+    foreach (['admission_number', 'wcbs_student_ref', 'wcbs_bill_reference'] as $column) {
         expect(ImportOpeningBalances::COLUMNS[$column]['max'])
             ->toBe((int) $lengths[$column], "COLUMNS[{$column}].max must equal the column's own limit");
     }
+
+    // `fee_type_label` IS THE ONE EXCEPTION, and it is stricter than the rule above rather than an
+    // escape from it. Its own staging column holds 255, and it fits — but §9 step 4b posts the label
+    // VERBATIM into a varchar(255) ledger narration with a 26-character suffix appended (R7: the label
+    // is what a parent reads, so it is never truncated). A label sized to its OWN column therefore
+    // stages green and aborts the post at 1406. The binding limit is the downstream one, and both
+    // halves are asserted: it still fits its own column, AND it leaves room for the suffix.
+    expect(ImportOpeningBalances::COLUMNS['fee_type_label']['max'])
+        ->toBeLessThanOrEqual((int) $lengths['fee_type_label'])
+        ->and(ImportOpeningBalances::COLUMNS['fee_type_label']['max'])
+        ->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX - mb_strlen(PostOpeningBalanceBatch::NARRATION_SUFFIX));
 
     // The two money cells land in bigint, so they inherit no varchar limit; theirs is the widest
     // naira figure a signed bigint holds in kobo. Pinned so it cannot be quietly widened past it.

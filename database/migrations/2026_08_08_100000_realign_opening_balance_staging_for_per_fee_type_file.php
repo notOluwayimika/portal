@@ -10,20 +10,52 @@ use Illuminate\Support\Facades\Schema;
  * It realigns the STAGING tables onto R5's balance-forward, one-row-per-(student × fee type) file.
  * Nothing here posts, and nothing here gates: the posting Action is 4b, the approval gate is 4c.
  *
- * THIS IS NOT A REWRITE OF LIVE DATA, and a reviewer should not read it as one. Every fact in that
- * sentence is checkable:
+ * ╔═══════════════════════════════════════════════════════════════════════════════════════════════╗
+ * ║ RETRACTED 2026-08-08 BY §9 STEP 4b — READ THIS BEFORE THE THREE STRUCK CLAIMS BELOW.           ║
+ * ║                                                                                                ║
+ * ║ Everything in the next paragraph was TRUE WHEN WRITTEN and is FALSE NOW. It is struck rather   ║
+ * ║ than deleted because it is the reasoning a later staging migration would copy, and a deleted   ║
+ * ║ paragraph teaches nobody why it went. What changed, and when:                                  ║
+ * ║                                                                                                ║
+ * ║  - 2026_08_08_110000 added the posting state, and PostOpeningBalanceBatch posts FROM THESE     ║
+ * ║    ROWS. Every opening charge in finance_ledger_transactions carries                            ║
+ * ║    source_type = 'opening_balance_row' and source_id = a row of this table.                     ║
+ * ║  - 2026_08_08_120000 therefore gave finance_opening_balance_rows a BEFORE UPDATE and a         ║
+ * ║    BEFORE DELETE trigger, both denying while the PARENT BATCH is 'posted'.                      ║
+ * ║                                                                                                ║
+ * ║ SO: the rows of a POSTED batch are NOT scratch, they DO carry triggers, and they CANNOT be     ║
+ * ║ deleted the way up() deletes them below. The delete in up() is safe only because it predates    ║
+ * ║ the posting state and only ever ran against unposted rows — it is NOT a precedent for a future  ║
+ * ║ realignment. A migration that needs to reshape this table now has to reckon with posted         ║
+ * ║ batches, and the ledger charges citing their rows can never be withdrawn                        ║
+ * ║ (2026_07_19_100001:56-60 denies DELETE on finance_ledger_transactions).                         ║
+ * ║                                                                                                ║
+ * ║ Only this comment is amended. up() and down() are untouched: this migration has run, and       ║
+ * ║ ADR 0052's corollary is that an applied migration's EXECUTING half is not edited.               ║
+ * ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
  *
- *   - `finance_opening_balance_rows` is CASCADE-deleted from its batch by
+ * ~~THIS IS NOT A REWRITE OF LIVE DATA, and a reviewer should not read it as one. Every fact in that
+ * sentence is checkable:~~ — ALL THREE BULLETS BELOW ARE SUPERSEDED, SEE THE BOX ABOVE.
+ *
+ *   - ~~`finance_opening_balance_rows` is CASCADE-deleted from its batch by
  *     `finance_opening_balance_rows_batch_school_foreign`
  *     (2026_08_06_100000_create_finance_opening_balance_tables.php:156-161) — it is scratch by
- *     construction.
- *   - NEITHER staging table carries an immutability trigger. They are absent from
- *     SchemaConventionsTest's trigger list on purpose; only the money tables are append-only.
- *   - NOTHING HAS EVER POSTED FROM THEM. The posting Action does not exist in this repository —
+ *     construction.~~ The CASCADE is still there, but the batch it hangs off can no longer be
+ *     deleted once posted (2026_08_08_110000's no_delete_posted trigger), so it no longer makes the
+ *     rows scratch.
+ *   - ~~NEITHER staging table carries an immutability trigger. They are absent from
+ *     SchemaConventionsTest's trigger list on purpose; only the money tables are append-only.~~
+ *     `finance_opening_balance_rows` now carries TWO (2026_08_08_120000). They are conditional on the
+ *     parent batch being posted rather than unconditional, which is why the table is still freely
+ *     writable during validation.
+ *   - ~~NOTHING HAS EVER POSTED FROM THEM. The posting Action does not exist in this repository —
  *     `finance:import-opening-balances` refuses without `--dry-run`
- *     (app/Finance/Console/ImportOpeningBalances.php:86-90) and that refusal is unchanged by 4a.
+ *     (app/Finance/Console/ImportOpeningBalances.php:86-90) and that refusal is unchanged by 4a.~~
+ *     The Action exists (PostOpeningBalanceBatch, 4b). The COMMAND still refuses — posting happens on
+ *     approval and the gate is 4c — but "no posting path exists" and "the command has no posting
+ *     path" stopped being the same sentence on 2026-08-08.
  *
- * So there are no rows worth keeping and no data migration to design. The staged rows ARE deleted
+ * ~~So there are no rows worth keeping and no data migration to design.~~ The staged rows ARE deleted
  * here, deliberately: they were parsed under a file format (Rev 2/3's four money columns) that R5
  * withdrew, they cannot satisfy the new NOT NULL `fee_type_label` or the new key, and a row staged
  * against a dead format is a false record of what a file said. Both tables were empty on the local

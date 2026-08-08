@@ -25,6 +25,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Actions\RecordAccountPayment;
+use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
@@ -454,6 +455,173 @@ it('refuses to post a batch that is not validated, and refuses a batch belonging
 
     expect((int) DB::scalar("SELECT COUNT(*) FROM finance_opening_balance_batches WHERE status = 'posted'"))->toBe(0)
         ->and((int) DB::scalar('SELECT COUNT(*) FROM finance_ledger_transactions'))->toBe(0);
+});
+
+// ── PROOF 6 — the staged rows a posted charge cites are terminal too ──
+
+it('PROOF 6 — G1b at the ROW level: UPDATE and DELETE of a posted batch staged row are both refused (1644)', function () {
+    // 2026_08_08_110000 closed both exits from the posted BATCH. The rows its charges point at carried
+    // no trigger at all, so the same end state — ledger charges citing source_ids that no longer exist
+    // — was reachable one table down, by the front door.
+    $ctx = obpContext();
+    $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
+
+    $batch = obpPost($ctx, obpBatch($ctx, [['student' => $s1, 'label' => 'Tuition', 'kobo' => 100000]]));
+    $rowId = (int) DB::scalar('SELECT id FROM finance_opening_balance_rows WHERE batch_id = ?', [$batch->id]);
+
+    $updateCode = 0;
+    try {
+        DB::update('UPDATE finance_opening_balance_rows SET balance_minor = 1 WHERE id = ?', [$rowId]);
+    } catch (QueryException $e) {
+        $updateCode = obpDriverCode($e);
+    }
+
+    $deleteCode = 0;
+    try {
+        DB::delete('DELETE FROM finance_opening_balance_rows WHERE id = ?', [$rowId]);
+    } catch (QueryException $e) {
+        $deleteCode = obpDriverCode($e);
+    }
+
+    expect($updateCode)->toBe(OBP_SIGNAL_45000)
+        ->and($deleteCode)->toBe(OBP_SIGNAL_45000)
+        ->and((int) DB::scalar('SELECT COUNT(*) FROM finance_opening_balance_rows WHERE id = ?', [$rowId]))->toBe(1)
+        ->and((int) DB::scalar('SELECT balance_minor FROM finance_opening_balance_rows WHERE id = ?', [$rowId]))->toBe(100000);
+});
+
+it('PROOF 6b — the row guards are conditional on the PARENT, so an unposted batch stays freely writable', function () {
+    // The neighbouring value that must still be ACCEPTED. Unconditional row triggers would pass PROOF
+    // 6 and break every validation run, because staging is where rows are written and rewritten.
+    $ctx = obpContext();
+    $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
+
+    $batch = obpBatch($ctx, [['student' => $s1, 'label' => 'Tuition', 'kobo' => 100000]], 'WCBS-OPEN');
+    $rowId = (int) DB::scalar('SELECT id FROM finance_opening_balance_rows WHERE batch_id = ?', [$batch->id]);
+
+    DB::update('UPDATE finance_opening_balance_rows SET balance_minor = 7 WHERE id = ?', [$rowId]);
+    expect((int) DB::scalar('SELECT balance_minor FROM finance_opening_balance_rows WHERE id = ?', [$rowId]))->toBe(7);
+
+    DB::delete('DELETE FROM finance_opening_balance_rows WHERE id = ?', [$rowId]);
+    expect((int) DB::scalar('SELECT COUNT(*) FROM finance_opening_balance_rows WHERE id = ?', [$rowId]))->toBe(0);
+});
+
+// ── PROOF 7 — G1's key is two columns, and both doors out are shut ──
+
+it('PROOF 7 — G1b: moving a posted batch to another School is refused (1644), on a batch with NO staged rows', function () {
+    // ZERO staged rows deliberately. finance_opening_balance_rows_batch_school_foreign is NO ACTION on
+    // update, so it refuses this statement with 1451 for any batch that HAS rows — incidentally, for a
+    // different purpose, and one `ON UPDATE CASCADE` away from being lost. A zero-row posted batch is
+    // outside that FK entirely, so this case is the one that proves the TRIGGER is doing the work.
+    $ctx = obpContext();
+    $other = obpContext();
+
+    $batch = obpPost($ctx, obpBatch($ctx, [], 'WCBS-EMPTY'));
+    expect((int) DB::scalar('SELECT COUNT(*) FROM finance_opening_balance_rows WHERE batch_id = ?', [$batch->id]))->toBe(0);
+
+    $code = 0;
+    try {
+        DB::update(
+            'UPDATE finance_opening_balance_batches SET school_id = ? WHERE id = ?',
+            [$other['school']->id, $batch->id],
+        );
+    } catch (QueryException $e) {
+        $code = obpDriverCode($e);
+    }
+
+    expect($code)->toBe(OBP_SIGNAL_45000)
+        ->and((int) DB::scalar('SELECT school_id FROM finance_opening_balance_batches WHERE id = ?', [$batch->id]))
+        ->toBe($ctx['school']->id)
+        ->and((int) DB::scalar('SELECT posted_school_key FROM finance_opening_balance_batches WHERE id = ?', [$batch->id]))
+        ->toBe($ctx['school']->id);
+});
+
+// ── PROOF 8 — the derived length limits, and the arithmetic behind them ──
+
+it('PROOF 8 — the validator limits are DERIVED from the strings this Action builds, not remembered', function () {
+    // A PHP const expression cannot call mb_strlen, so both limits are literals with their arithmetic
+    // written beside them. This is what makes that safe: edit an affix without moving its limit and
+    // this goes red, rather than a cutover aborting at 1406 on the day.
+    expect(ImportOpeningBalances::COLUMNS['fee_type_label']['max'])
+        ->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX - mb_strlen(PostOpeningBalanceBatch::NARRATION_SUFFIX))
+        ->and(ImportOpeningBalances::BATCH_REFERENCE_MAX)
+        ->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX - mb_strlen(
+            PostOpeningBalanceBatch::PAYER_NAME_PREFIX.PostOpeningBalanceBatch::PAYER_NAME_SUFFIX
+        ));
+
+    // And the columns those numbers are sized against really are 255 — read from information_schema,
+    // not from a migration's source, because the rule exists to keep a value out of a real column.
+    $narration = (int) DB::scalar(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_ledger_transactions' AND COLUMN_NAME = 'narration'"
+    );
+    $payerName = (int) DB::scalar(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_payments' AND COLUMN_NAME = 'payer_name'"
+    );
+
+    expect($narration)->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX)
+        ->and($payerName)->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX);
+});
+
+it('PROOF 8b — the mirror at the posting end: a label at the limit posts, and the narration is EXACTLY 255', function () {
+    // The assertion that proves the arithmetic instead of restating it. A label one character longer
+    // could not reach here — the validator refuses it — and this shows why that limit is the right one.
+    $ctx = obpContext();
+    $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
+    $label = str_repeat('X', ImportOpeningBalances::COLUMNS['fee_type_label']['max']);
+
+    obpPost($ctx, obpBatch($ctx, [['student' => $s1, 'label' => $label, 'kobo' => 100000]]));
+
+    ActiveSchool::runFor($ctx['school']->id, function () use ($label) {
+        $charge = LedgerTransaction::query()->where('source_type', 'opening_balance_row')->sole();
+
+        expect(mb_strlen($charge->narration))->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX)
+            ->and($charge->narration)->toBe($label.PostOpeningBalanceBatch::NARRATION_SUFFIX);
+    });
+});
+
+it('PROOF 8c — the mirror for payer_name: a batch reference at the limit posts, and payer_name is EXACTLY 255', function () {
+    $ctx = obpContext();
+    $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
+    $reference = str_repeat('R', ImportOpeningBalances::BATCH_REFERENCE_MAX);
+
+    obpPost($ctx, obpBatch($ctx, [['student' => $s1, 'label' => 'Tuition', 'kobo' => -100000]], $reference));
+
+    ActiveSchool::runFor($ctx['school']->id, function () use ($reference) {
+        $payment = Payment::query()->where('origin', 'migrated')->sole();
+        $credit = LedgerTransaction::query()->where('type', LedgerEntryType::Payment)->sole();
+
+        expect(mb_strlen($payment->payer_name))->toBe(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX)
+            ->and($payment->payer_name)->toBe(
+                PostOpeningBalanceBatch::PAYER_NAME_PREFIX.$reference.PostOpeningBalanceBatch::PAYER_NAME_SUFFIX
+            )
+            // The credit narration carries NO operator input, so its length is bounded by the Action
+            // alone and the batch reference cannot overflow it. That is why one limit, not two.
+            ->and(mb_strlen($credit->narration))->toBeLessThan(PostOpeningBalanceBatch::SNAPSHOT_COLUMN_MAX)
+            ->and($credit->narration)->not->toContain($reference);
+    });
+});
+
+// ── The Action's fail-closed context guard ──
+
+it('refuses to post with NO active School context — the fail-closed branch, exercised', function () {
+    // Rule 13. Without it, every SchoolScope-bound read in the Action returns an empty set and the
+    // post is a successful-looking no-op that marks the batch posted and moves no money.
+    $ctx = obpContext();
+    $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
+    $batch = obpBatch($ctx, [['student' => $s1, 'label' => 'Tuition', 'kobo' => 100000]]);
+
+    expect(ActiveSchool::id())->toBeNull(); // outside any runFor — the precondition, asserted
+
+    expect(fn () => app(PostOpeningBalanceBatch::class)->handle($batch, $ctx['actor']))
+        ->toThrow(BusinessRuleException::class, 'No active School context');
+
+    ActiveSchool::runFor($ctx['school']->id, function () use ($batch) {
+        expect($batch->refresh()->status)->toBe(OpeningBalanceBatchStatus::Validated);
+    });
+
+    expect((int) DB::scalar('SELECT COUNT(*) FROM finance_ledger_transactions'))->toBe(0)
+        ->and((int) DB::scalar('SELECT COUNT(*) FROM finance_payments'))->toBe(0);
 });
 
 it('records WHO posted and WHEN, on the batch', function () {

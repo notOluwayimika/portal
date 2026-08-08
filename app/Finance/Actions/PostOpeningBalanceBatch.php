@@ -99,6 +99,29 @@ use Illuminate\Support\Facades\DB;
  */
 final class PostOpeningBalanceBatch
 {
+    /**
+     * The width of every snapshot column this Action writes into — `finance_ledger_transactions`.`narration`
+     * and `finance_payments`.`payer_name` are both `varchar(255)`, counted in CHARACTERS by MySQL on a
+     * utf8mb4 column, and `sql_mode` carries STRICT_TRANS_TABLES so an over-length value is error 1406,
+     * not a silent truncation.
+     */
+    public const SNAPSHOT_COLUMN_MAX = 255;
+
+    /**
+     * THE THREE STRING PARTS THIS ACTION DERIVES, EXPOSED SO THE VALIDATOR CAN SIZE ITS INPUTS AGAINST
+     * THEM. Nothing here is truncated, ever: R7 carries the fee-type label VERBATIM into the narration
+     * because it is what a parent reads on their statement, and a silently shortened fee type is worse
+     * than a refused file. The refusal therefore belongs at the validator, where a file problem belongs
+     * (4a's own lesson) — so these are `public` and `ImportOpeningBalances` derives its length rules
+     * from them. Edit a literal here and the limit that guards it must move with it; the arithmetic is
+     * asserted in OpeningBalancePostingTest so an edit that forgets cannot land.
+     */
+    public const NARRATION_SUFFIX = ' — Balance Brought Forward';
+
+    public const PAYER_NAME_PREFIX = 'Balance brought forward (WCBS batch ';
+
+    public const PAYER_NAME_SUFFIX = ')';
+
     public function __construct(private readonly SubledgerPoster $ledger) {}
 
     /**
@@ -175,7 +198,7 @@ final class PostOpeningBalanceBatch
                         $balance,
                         'opening_balance_row',
                         (int) $row->id,
-                        "{$row->fee_type_label} — Balance Brought Forward",
+                        $row->fee_type_label.self::NARRATION_SUFFIX,
                     );
 
                     continue;
@@ -209,7 +232,7 @@ final class PostOpeningBalanceBatch
                     // A snapshot of who paid, and the honest answer is that this system does not know:
                     // the cash arrived at WCBS. The batch reference is what a bursar can actually trace,
                     // so that is what is snapshotted rather than a name nobody supplied.
-                    'payer_name' => "Balance brought forward (WCBS batch {$locked->batch_reference})",
+                    'payer_name' => self::PAYER_NAME_PREFIX.$locked->batch_reference.self::PAYER_NAME_SUFFIX,
                     // `method` is a snapshot label with no enum and no CHECK behind it (§4 states that
                     // limit); `origin` is THE predicate, and it has a CHECK. Every path that needs to
                     // know where money came from filters on origin.
@@ -226,6 +249,15 @@ final class PostOpeningBalanceBatch
                 // The crediting ledger row. BYTE-IDENTICAL in vocabulary to both live payment paths —
                 // LedgerEntryType::Payment, source_type 'payment', sourced to the payment — so
                 // finance:audit-ledger-coherence needs no new case for it (ADR 0047, assertion I1/I2).
+                //
+                // THE BATCH REFERENCE IS DELIBERATELY NOT IN THIS STRING, and leaving it out is what
+                // makes the validator's batch-reference limit a single number. Both derived strings
+                // embed operator input, and a narration carrying the reference AS WELL would have been
+                // the tighter of the two constraints (its fixed parts are 49 characters against
+                // payer_name's 37), so the limit would have had to be the MIN of the two — a second
+                // arithmetic nobody would maintain. This narration's parts are all bounded by the
+                // Action itself, so it cannot overflow whatever the operator types; the batch
+                // reference is on the payment row's own payer_name, one column away.
                 $this->ledger->post(
                     $schoolId,
                     $studentId,
@@ -233,7 +265,7 @@ final class PostOpeningBalanceBatch
                     $credit->times(-1),
                     'payment',
                     (int) $payment->getKey(),
-                    "Payment #{$reference} — Balance Brought Forward (WCBS batch {$locked->batch_reference})",
+                    'Payment #'.$reference.self::NARRATION_SUFFIX,
                 );
 
                 $reference++;

@@ -112,7 +112,7 @@ it('finance_ledger_transactions.amount_currency — CHECK 3819 on insert; immuta
 // admit 'ngn' with nothing else to notice. Both columns arrived in
 // 2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php with no watched red.
 
-it('finance_opening_balance_rows.balance_currency / student_total_balance_currency — "ngn" is refused 3819; "NGN" inserts', function () {
+it('the 4a opening-balance currency columns — "ngn" is refused 3819 on all three; "NGN" inserts', function () {
     $school = School::factory()->create();
 
     // A batch needs a term (batches.term_id is NOT NULL with an FK — §9's open decision), so one is
@@ -130,13 +130,18 @@ it('finance_opening_balance_rows.balance_currency / student_total_balance_curren
         ])->id;
     });
 
-    $batchId = DB::table('finance_opening_balance_batches')->insertGetId([
+    $insertBatch = fn (?string $controlCurrency) => DB::table('finance_opening_balance_batches')->insertGetId([
         'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id,
         'batch_reference' => 'CUR-'.Str::random(6), 'filename' => 'x.csv', 'status' => 'draft',
         'row_count' => 0, 'file_row_count' => 0, 'cutover_date' => '2026-08-06',
+        'control_total_minor' => 10000, 'control_total_currency' => $controlCurrency,
         'term_id' => $termId,
         'created_at' => now(), 'updated_at' => now(),
     ]);
+
+    // The batch's own money column — L2's operator-typed witness — is under the same CHECK.
+    expect3819(fn () => $insertBatch('ngn'));
+    $batchId = $insertBatch('NGN');
 
     $insertRow = fn (string $label, ?string $balanceCurrency, ?string $totalCurrency) => DB::table('finance_opening_balance_rows')->insert([
         'uuid' => (string) Str::orderedUuid(), 'school_id' => $school->id, 'batch_id' => $batchId,

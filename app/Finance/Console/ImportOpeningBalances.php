@@ -164,6 +164,20 @@ class ImportOpeningBalances extends Command
     /** How many identifiers a list prints before it is cut. Truncation is always announced. */
     private const LIST_LIMIT = 50;
 
+    /**
+     * The ONE unique index whose violation the write loop is allowed to convert into a finding
+     * about the operator's file.
+     *
+     * IT IS A SECOND COPY OF A NAME, and that is stated rather than hidden: the definition lives in
+     * `2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php`'s `NEW_KEY`
+     * constant, which is unreachable from here — that migration is an anonymous class, and pointing
+     * a migration at an application constant would let a later edit change what an old migration
+     * builds on a fresh install. So the copy is deliberate, and the drift it invites is closed by a
+     * test that asserts this string names a unique index that really exists on the table, read from
+     * `information_schema` rather than from either source.
+     */
+    public const ROW_KEY_INDEX = 'ob_rows_school_batch_admission_fee_type_unique';
+
     public function handle(BillableEnrollmentProvider $enrollments): int
     {
         // The refusal comes FIRST, before any option is even read: there is no posting path to
@@ -228,6 +242,12 @@ class ImportOpeningBalances extends Command
                 'status' => OpeningBalanceBatchStatus::Draft,
                 'cutover_date' => $cutoverDate,
                 'term_id' => $termId,
+                // §1 L2's witness, recorded HERE — at the batch insert, before a byte is parsed —
+                // so it survives every outcome: a passing run, a rejected one, and a run that dies
+                // partway. It is the operator's ATTESTATION, not a derived figure, and one kept only
+                // when the check passes cannot be reviewed after a rejection, which is exactly when
+                // someone wants to see what was claimed (§11's go/no-go).
+                'control_total' => $controlTotal,
                 'uploaded_by_user_id' => null, // a console run has no authenticated causer
             ]);
 
@@ -472,7 +492,24 @@ class ImportOpeningBalances extends Command
                     'status' => $isRejected ? OpeningBalanceRowStatus::Rejected : OpeningBalanceRowStatus::Ok,
                     'findings' => $findings === [] ? null : $findings,
                 ]);
-            } catch (UniqueConstraintViolationException) {
+            } catch (UniqueConstraintViolationException $e) {
+                // THE TYPE IS NOT ENOUGH, AND A FUTURE READER MUST NOT WIDEN THIS BACK.
+                // `finance_opening_balance_rows` carries TWO unique indexes: the fee-type key this
+                // arm is about, and `..._uuid_unique` from the AddUuid concern. Both raise this same
+                // exception class on this same insert. Converting on the class alone would report a
+                // uuid collision — a defect in THIS SYSTEM's identifier generation — to the operator
+                // as `duplicate_row_key_in_file`, which is a confident, wrong statement about their
+                // file, and it would send them to look for a duplicate line that is not there.
+                //
+                // So the constraint is matched by NAME and anything else re-throws, the same shape
+                // the 1406 arm has. Matching a name we own is not the message-text matching that arm
+                // refuses: the prose around it ("Duplicate entry …") is localised and version-
+                // dependent, while `ob_rows_school_batch_admission_fee_type_unique` is an identifier
+                // this repository chose and a migration would have to rename deliberately.
+                if (! str_contains((string) ($e->errorInfo[2] ?? $e->getMessage()), self::ROW_KEY_INDEX)) {
+                    throw $e;
+                }
+
                 // THE ENGINE CAUGHT A DUPLICATE THE IN-PHP PASS DID NOT — and §7 already rules that
                 // two lines for one (student, fee type) are a fact about the FILE, not an error, so
                 // this converts to the same finding the in-PHP pass would have produced and the run

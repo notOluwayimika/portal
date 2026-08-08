@@ -267,6 +267,47 @@ it('raises a BATCH finding when the stated totals do not sum to --control-total,
         ->and($message)->toContain('1000000 kobo');
 });
 
+it('records the operator control total on the batch, on a passing run AND on a rejected one', function () {
+    // L2's witness is an ATTESTATION — a human read it off WCBS's own report and typed it — and it
+    // is the only figure here no code derived. Kept only on success it could not be reviewed after a
+    // rejection, which is exactly when someone asks what was claimed (§11's go/no-go).
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-PASS');
+    obStudent($ctx, 'ADM-FAIL');
+
+    // Passing: Σ stated = the control total.
+    expect(obRun($ctx, obCsv([
+        'ADM-PASS,W1,Tuition,100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00', '--batch-reference' => 'CT-PASS']))->toBe(0);
+
+    $passing = ActiveSchool::runFor($ctx['school']->id,
+        fn () => OpeningBalanceBatch::query()->where('batch_reference', 'CT-PASS')->firstOrFail());
+    expect($passing->status)->toBe(OpeningBalanceBatchStatus::Validated)
+        ->and($passing->control_total->toKobo())->toBe(10000000);
+
+    // Rejected: the operator's figure is wrong, and it is that WRONG figure that must be on record.
+    expect(obRun($ctx, obCsv([
+        'ADM-FAIL,W2,Tuition,50000.00,50000.00,BILL-2',
+    ]), ['--control-total' => '99999.00', '--batch-reference' => 'CT-FAIL']))->toBe(1);
+
+    $rejected = ActiveSchool::runFor($ctx['school']->id,
+        fn () => OpeningBalanceBatch::query()->where('batch_reference', 'CT-FAIL')->firstOrFail());
+    expect($rejected->status)->toBe(OpeningBalanceBatchStatus::Rejected)
+        ->and(obBatchCodes($rejected))->toContain('control_total_mismatch')
+        ->and($rejected->control_total->toKobo())->toBe(9999900);
+});
+
+it('records a NEGATIVE control total, because a school net in credit has one', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-NEG-CT');
+
+    expect(obRun($ctx, obCsv([
+        'ADM-NEG-CT,W1,Tuition,-50000.00,-50000.00,BILL-1',
+    ]), ['--control-total' => '-50000.00']))->toBe(0);
+
+    expect(obBatch($ctx)->control_total->toKobo())->toBe(-5000000);
+});
+
 it('refuses to run at all without --control-total, and stages nothing', function () {
     $ctx = obSchool();
     obStudent($ctx, 'ADM-A');
@@ -375,6 +416,53 @@ it('converts an engine-refused duplicate into the same finding and CONTINUES the
     expect($ingest)->toContain('Read 2 data line(s) with content but staged 1')
         ->and($ingest)->toContain('duplicate_row_key_in_file=1')
         ->and($ingest)->not->toContain('unattributed');
+});
+
+it('re-throws a unique violation that is NOT the fee-type key, rather than reporting a duplicate that is not there', function () {
+    // `finance_opening_balance_rows` carries TWO unique indexes, and both raise the same exception
+    // class on the same insert. A uuid collision is a defect in THIS system's identifier generation;
+    // reporting it as `duplicate_row_key_in_file` would send the operator to hunt for a repeated line
+    // that does not exist in their file. So the catch matches the constraint by NAME and re-throws.
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-UUID');
+
+    // Every generated uuid becomes the same one, so the SECOND row insert collides on
+    // `finance_opening_balance_rows_uuid_unique` — a unique violation on a different door.
+    Str::createUuidsUsing(fn () => '11111111-1111-1111-1111-111111111111');
+
+    try {
+        obRun($ctx, obCsv([
+            'ADM-UUID,W1,Tuition,100000.00,145000.00,BILL-1',
+            'ADM-UUID,W1,Bus,45000.00,145000.00,BILL-1',
+        ]), ['--control-total' => '145000.00']);
+
+        throw new RuntimeException('expected the uuid collision to abort the run, not to be converted');
+    } catch (QueryException $e) {
+        expect((int) ($e->errorInfo[1] ?? 0))->toBe(1062)
+            // The exception names the uuid index, NOT the fee-type key — which is exactly why
+            // matching on the exception class alone would have mislabelled it.
+            ->and($e->getMessage())->toContain('finance_opening_balance_rows_uuid_unique')
+            ->and($e->getMessage())->not->toContain(ImportOpeningBalances::ROW_KEY_INDEX);
+    } finally {
+        Str::createUuidsNormally();
+    }
+
+    // And nothing pretended the file was at fault: no duplicate finding was recorded.
+    expect(obBatchCodes(obBatch($ctx)))->not->toContain('duplicate_row_key_in_file');
+});
+
+it('names a unique index that really exists, so the catch cannot be matching a stale constant', function () {
+    // The constant is a second copy of the migration's NEW_KEY (an anonymous class cannot be
+    // referenced), so the drift it invites is closed here — read from information_schema, which is
+    // neither of the two sources.
+    $indexes = collect(DB::select(
+        "SELECT DISTINCT INDEX_NAME AS n, NON_UNIQUE FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'finance_opening_balance_rows'"
+    ));
+
+    $named = $indexes->firstWhere('n', ImportOpeningBalances::ROW_KEY_INDEX);
+    expect($named)->not->toBeNull(ImportOpeningBalances::ROW_KEY_INDEX.' is not an index on the table')
+        ->and((int) $named->NON_UNIQUE)->toBe(0);
 });
 
 it('drops an over-length value, names the column, and CONTINUES the run', function () {

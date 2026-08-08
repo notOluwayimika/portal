@@ -47,6 +47,11 @@ use Illuminate\Support\Facades\Schema;
  *     the file those columns came from and §5's comparison went with it; R12 froze the format at six
  *     columns and `last_payment_date` is not among them. A column no rule writes is the decoration §7
  *     refuses, and it is the same reasoning in both directions.
+ *  5. `batches.control_total_minor` + `_currency` arrive — §1's L2 witness, recorded on EVERY run.
+ *     It is the one figure here that no code derived: a human read it off WCBS's own report and
+ *     typed it (§12 decision 2), which is the only reason L2 checks anything L1 does not. An
+ *     attestation nobody stored cannot be reviewed, and §11 asks for exactly this to be kept with
+ *     the go/no-go.
  *
  * §12 DECISION 3 — `fee_type_label` NORMALISATION, CLOSED HERE: 'Tuition' and 'tuition' are THE SAME
  * FEE TYPE. The column is utf8mb4_unicode_ci (verified against information_schema, not assumed), so
@@ -95,6 +100,7 @@ return new class extends Migration
     private const NEW_CHECKS = [
         ['finance_opening_balance_rows', 'balance_currency', 'ob_rows_balance_currency_shape'],
         ['finance_opening_balance_rows', 'student_total_balance_currency', 'ob_rows_student_total_balance_currency_shape'],
+        ['finance_opening_balance_batches', 'control_total_currency', 'ob_batches_control_total_currency_shape'],
     ];
 
     /** The retiring money column pairs, by table. */
@@ -165,6 +171,22 @@ return new class extends Migration
 
         Schema::table('finance_opening_balance_batches', function (Blueprint $table) {
             $table->dropColumn(self::RETIRED_COLUMNS['finance_opening_balance_batches']);
+
+            // L2's witness, ON THE BATCH — §2 names `batch_control_total` as the batch-level figure
+            // of the frozen format, and this is where it lands. It is NOT a column of the FILE: §12
+            // decision 2 is that the operator types it from WCBS's own report, because a total
+            // carried inside the file shares the export's failure mode and witnesses nothing.
+            //
+            // Recorded because it is an ATTESTATION, not a derived figure. A human read it off
+            // another system and typed it; §11 asks for exactly that to be kept with the go/no-go,
+            // and 4c's approval screen reads this column rather than asking for the number again.
+            //
+            // NULLABLE, and not because the figure is optional — the command requires it — but
+            // because a batch staged before this column existed must still be readable. MoneyCast
+            // returns null only when both columns are null, so "never recorded" and "recorded as
+            // zero" stay distinct.
+            $table->bigInteger('control_total_minor')->nullable()->after('file_row_count');
+            $table->char('control_total_currency', 3)->nullable()->after('control_total_minor');
         });
 
         foreach (self::NEW_CHECKS as [$table, $column, $name]) {
@@ -220,6 +242,8 @@ return new class extends Migration
         });
 
         Schema::table('finance_opening_balance_batches', function (Blueprint $table) {
+            $table->dropColumn(['control_total_minor', 'control_total_currency']);
+
             $table->bigInteger('total_prior_arrears_minor')->nullable()->after('row_count');
             $table->char('total_prior_arrears_currency', 3)->nullable()->after('total_prior_arrears_minor');
             $table->bigInteger('total_paid_to_date_minor')->nullable()->after('total_prior_arrears_currency');

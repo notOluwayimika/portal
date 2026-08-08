@@ -1,7 +1,32 @@
 # Implementation report — `feat/finance-ob-file-format` (§9 step 4a, the FILE FORMAT)
 
-Base: `origin/staging` @ `26e144b`. Branch: `feat/finance-ob-file-format`. Two commits, nine files
-(one new migration, four module files, two test files, one docs section, this report).
+Base: `origin/staging` @ `26e144b`. Branch: `feat/finance-ob-file-format`, PR #215. Three commits,
+nine files (one new migration, four module files, two test files, one docs section, this report).
+
+> **Third pass (2026-08-08) — two items.**
+>
+> **1. The unique catch arm was too wide, and is now matched by constraint NAME.**
+> `finance_opening_balance_rows` carries two unique indexes — the fee-type key and
+> `..._uuid_unique` from `AddUuid` — and both raise `UniqueConstraintViolationException` on the same
+> insert. Classifying on the type alone would have reported a **uuid collision**, a defect in this
+> system's own identifier generation, to the operator as `duplicate_row_key_in_file`: a confident,
+> wrong statement about their file that sends them hunting for a repeated line that is not there.
+> The arm now matches `ImportOpeningBalances::ROW_KEY_INDEX` and re-throws anything else — the same
+> shape the 1406 arm already had. Watched red below.
+>
+> Matching a constraint name is **not** the message-text matching the 1406 arm refuses: the prose
+> around it is localised and version-dependent, while `ob_rows_school_batch_admission_fee_type_unique`
+> is an identifier this repository chose. The constant is a second copy of the migration's `NEW_KEY`
+> (an anonymous class cannot be referenced, and pointing a migration at an application constant would
+> let a later edit change what an old migration builds on a fresh install), so the drift is closed by
+> a test reading `information_schema` — neither of the two sources.
+>
+> **2. The control total now lands on the batch, in this migration.** I had flagged it and deferred
+> it; that was the wrong call. §2 already names `batch_control_total` as the batch-level figure of the
+> frozen format, this migration is already reshaping that table, and a second ALTER later for a column
+> the format names is exactly the churn worth avoiding. `control_total_minor` / `_currency` (nullable,
+> same `^[A-Z]{3}$` CHECK under `utf8mb4_bin`), written **at the batch insert** so every outcome
+> carries it — passing, rejected, or aborted partway. Recorded as CLOSED in §2 and §12.
 
 > **Second pass (2026-08-08) — the review's finding 1 is CONFIRMED and FIXED, and finding 2 was the
 > same defect under a different error number.** A row the engine refused used to abort the run and
@@ -312,6 +337,50 @@ Now it aborts, which is what proves arm B's green was the catch and not an accid
 Both restored (`grep` confirms `if (mb_strlen(trim(...)) > $spec['max'])` and
 `if ((int) ($e->errorInfo[1] ?? 0) !== 1406)` are back); the two files run 36/36, 202 assertions.
 
+## The watched red — third pass (the narrowed unique arm)
+
+**The arm widened back to type-only** (`if (false && ! str_contains(...))`). The uuid-collision test
+fails, and it fails in the informative direction: the run **did not abort**, meaning a uuid collision
+was silently converted into a statement about the operator's file.
+
+```text
+{"tool":"pest","result":"failed","errors":1,"error_details":[{"test":"…it_re_throws_a_unique_violation_that_is_NOT_the_fee_type_key__rather_than_reporting_a_duplicate_that_is_not_there","line":439,
+"message":"expected the uuid collision to abort the run, not to be converted"}]}
+```
+
+Restored (`grep` confirms `if (! str_contains((string) ($e->errorInfo[2] ?? $e->getMessage()), self::ROW_KEY_INDEX))`);
+40 tests / 218 assertions green across the two files.
+
+**How the collision is produced.** `Str::createUuidsUsing()` pins every generated uuid to one value
+for the duration of the run, so the second row insert collides on
+`finance_opening_balance_rows_uuid_unique` — a real second door on the same statement, not a mock of
+one. Restored with `Str::createUuidsNormally()` in a `finally`. The green assertion checks the
+exception names the **uuid** index and **not** `ROW_KEY_INDEX`, which is the distinction the arm turns
+on.
+
+## Amending an already-applied migration — what I did and why
+
+The 4a migration had already run on both local databases when items 1 and 2 arrived. It is unpushed
+in the sense that matters — no other environment has it, and the branch is unmerged — so I amended it
+rather than chasing it with a second ALTER, which would have left `control_total` arriving in a
+migration that reads as an afterthought for a column §2 already names.
+
+**That is not free, and it bit once, so it is recorded.** The first rollback aborted partway: the
+amended `down()` tried to drop `control_total`, which the *already-applied* `up()` had never created
+(1091), after it had already re-added the old unique key. Both databases were left half-rolled-back —
+old key present, batch `total_*` pairs and all eight retired CHECKs missing — and `migrate` then said
+"Nothing to migrate" because the migrations row was still there. I repaired them by hand to the exact
+pre-4a shape (re-adding the three batch pairs and the eight CHECKs, then deleting the migrations
+row), re-ran the amended `up()`, and then re-ran the full four-path audit from a clean recorded state:
+`up` → `rollback` → `up`, reading `information_schema` at each stop. The `down()` in the tree has
+never been run against a state its own `up()` did not produce.
+
+**The general point, since it is the second time this class of thing has cost time here:** a
+migration's `down()` is only meaningful against the state its own `up()` created. Amending an applied
+migration silently invalidates that pairing until the rollback has been re-run, and a bare exit code
+from `migrate:rollback` would not have shown it — the failure was visible only because the shape was
+read afterwards.
+
 ## Database observations
 
 Privacy rule applied: ids and counts only.
@@ -343,11 +412,11 @@ Privacy rule applied: ids and counts only.
   only ever run on the two local databases and was unpushed, so it was rolled back on both, edited,
   and re-applied rather than chased with a second ALTER; the up → down → up audit was re-run
   afterwards and `last_payment_date` is absent after `up()` and restored by `down()`.
-- **The operator's control total is not persisted anywhere.** It arrives as `--control-total`, is
-  checked, and is reported; on a *failed* L2 both figures land in the batch's `findings` JSON, but on
-  a **passing** L2 nothing records what the operator attested to. The brief's migration list retires
-  the three batch `total_*` pairs and adds nothing, so I added nothing — but 4c's approval screen will
-  want the attested figure, and adding it later is another ALTER. Flagged as a decision, not fixed.
+- ~~**The operator's control total is not persisted anywhere.**~~ **Done in the third pass** —
+  `batches.control_total_minor` / `_currency`, written at the batch insert on every run. My original
+  reading (the brief's migration list adds nothing to `batches`, so add nothing) was too literal: §2
+  already names the figure as batch-level, and deferring it meant a second ALTER on a table this
+  migration is already reshaping.
 - **`student_soft_deleted` is not implemented.** §9 assigns the `student_not_found` split to "commit
   4" and it needs a second port method (the trashed roster); the brief's numbered scope does not
   include it, and reaching for `withTrashed()` inside Finance is now lint-forbidden. Left for 4b/4c.

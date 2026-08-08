@@ -221,6 +221,16 @@ would not be a witness at all:
 |---|---|---|
 | `batch_control_total` | yes | Σ of every student's stated total, **read off WCBS's own report and entered at upload** — `--control-total=` on the command, a field on U12b. **L2's independent witness** (§1). |
 
+> **CLOSED by step 4a (2026-08-08): the figure is now RECORDED, on
+> `finance_opening_balance_batches.control_total_minor` / `_currency`.** It arrives as an option and
+> not as a column of the file — that part is unchanged and is the whole reason it witnesses anything
+> (§12 decision 2) — but the batch keeps what was typed. It is written **at the batch insert, before
+> a byte is parsed**, so every outcome carries it: a passing run, a rejected one, and a run that dies
+> partway. A figure kept only on success could not be reviewed after a rejection, which is exactly
+> when someone asks what was claimed. §11 wants this attestation held with the go/no-go, and **4c's
+> approval screen reads this column rather than asking the checker to re-enter it** — a checker who
+> retypes the number is not verifying it, they are producing a second copy of it.
+
 **Blank ≠ zero. A blank in any required column rejects the row.** Unchanged and still the rule that
 matters most: a zero is a claim that nothing is owed, and only the file may make it.
 
@@ -1012,9 +1022,17 @@ somebody reads.
    provenance. **Rev 4 does not add a column.** If a statement or a report needs D on the payment
    row itself, that is a schema decision to argue explicitly — not a field to slip into the
    provenance migration because it seemed useful.
-2. **How does `batch_control_total` arrive — CLOSED by R12.** It arrives as an
-   **OPERATOR-ENTERED OPTION**: `--control-total=` on the command, and a field on U12b. **Not a
-   column, not a control row in the CSV, not a sidecar.**
+2. **How does `batch_control_total` arrive — CLOSED by R12; and where it is KEPT — CLOSED by step
+   4a.** It arrives as an **OPERATOR-ENTERED OPTION**: `--control-total=` on the command, and a field
+   on U12b. **Not a column of the FILE, not a control row in the CSV, not a sidecar.**
+
+   **It IS a column of the BATCH** — `finance_opening_balance_batches.control_total_minor` /
+   `_currency`, added by
+   `2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php` with the same
+   `^[A-Z]{3}$` CHECK under `COLLATE utf8mb4_bin` every other currency column carries. Those two
+   facts are not in tension and the distinction is the point: **where the figure COMES FROM is what
+   makes it a witness; where it is KEPT is what makes it reviewable.** It is written at the batch
+   insert, on every run, passing or failing — see §2.
 
    **Why, and the reason is the only reason the figure is worth having.** A total carried inside the
    file was produced by **the same export run as the rows**. Drop a student on the way out of WCBS

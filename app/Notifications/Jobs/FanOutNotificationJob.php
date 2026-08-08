@@ -3,11 +3,14 @@
 namespace App\Notifications\Jobs;
 
 use App\Jobs\Middleware\SchoolAware;
+use App\Models\User;
 use App\Notifications\DTOs\Recipient;
+use App\Notifications\Enums\ChannelKey;
 use App\Notifications\Enums\DeliveryStatus;
 use App\Notifications\Models\Notification;
 use App\Notifications\Models\NotificationDelivery;
 use App\Notifications\Models\NotificationRecipient;
+use App\Notifications\Models\NotificationSuppression;
 use App\Notifications\Services\ChannelRegistry;
 use App\Notifications\Services\NotificationRegistry;
 use App\Notifications\Services\PreferenceGate;
@@ -84,9 +87,17 @@ class FanOutNotificationJob implements ShouldQueue
                     );
 
                     foreach ($channels->all() as $channel) {
+                        // ORDER IS THE SEMANTICS. Suppression is checked LAST but is
+                        // the only TERMINAL one: preference and address are about
+                        // whether we would send, suppression is about whether we may.
+                        // A transactional type cannot be preference-suppressed — a
+                        // checker may not opt out of being asked — but it CAN be
+                        // bounce-suppressed, because a dead mailbox does not care
+                        // what the type is.
                         $skipReason = match (true) {
                             ! $preferences->allows($asDto, $definition, $channel->key(), $this->schoolId) => 'preference_off',
                             ! $channel->supports($asDto) => 'no_address',
+                            $this->isSuppressed($asDto, $channel->key()) => 'suppressed',
                             default => null,
                         };
 
@@ -118,7 +129,57 @@ class FanOutNotificationJob implements ShouldQueue
                 NotificationDelivery::query()->insertOrIgnore($rows);
 
                 $this->deliverInApp($chunk->pluck('id')->all(), $channels);
+                $this->dispatchExternalSends($chunk->pluck('id')->all());
             });
+    }
+
+    /**
+     * Is this recipient's address for this channel suppressed?
+     *
+     * ⚠️ IT RESOLVES THE ADDRESS THE SAME WAY THE CHANNEL DOES, and then hands it to
+     * the same normalizer the suppression WRITE used. If the check normalized
+     * differently from the write, a suppressed address would pass — mail to someone
+     * who asked us to stop, with nothing thrown, nothing logged, and every test
+     * green. That disagreement is the failure this whole arm exists to prevent, so
+     * both sides route through NotificationSuppression, never through their own copy.
+     *
+     * In-app has no address and cannot be suppressed: the feed IS the record.
+     */
+    private function isSuppressed(Recipient $recipient, ChannelKey $channel): bool
+    {
+        if ($channel === ChannelKey::IN_APP || $recipient->notifiableType !== User::class) {
+            return false;
+        }
+
+        $address = $channel === ChannelKey::EMAIL
+            ? User::query()->find($recipient->notifiableId)?->deliverableEmailAddress()
+            : null;
+
+        return $address !== null && NotificationSuppression::suppresses($channel, $address);
+    }
+
+    /**
+     * Enqueue one send job per PENDING external delivery.
+     *
+     * AFTER the insertOrIgnore, deliberately: dispatching from the in-memory rows
+     * would enqueue sends for rows the UNIQUE index rejected as duplicates, and each
+     * would then find a delivery already terminal. Reading back what was actually
+     * inserted keeps "a job exists" and "a row exists" the same statement.
+     *
+     * EXTERNAL ONLY. In-app is completed inline above because it has nothing to
+     * transmit; routing it through the queue would make the feed depend on a worker
+     * it does not need.
+     *
+     * @param  list<int>  $recipientIds
+     */
+    private function dispatchExternalSends(array $recipientIds): void
+    {
+        NotificationDelivery::query()
+            ->whereIn('notification_recipient_id', $recipientIds)
+            ->where('status', DeliveryStatus::PENDING)
+            ->where('channel', '!=', ChannelKey::IN_APP->value)
+            ->pluck('id')
+            ->each(fn (int $id) => SendDeliveryJob::dispatch($id, $this->schoolId));
     }
 
     /**

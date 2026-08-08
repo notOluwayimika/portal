@@ -1966,11 +1966,20 @@ change what is in the code).
 
 ## Governance — current state (not intent)
 
-- CI: `linter` + `tests` workflows run on PRs to `staging`/`main`.
-- **Branch protection / required status checks are not confirmed as enabled**
-  on GitHub; merges are performed by the maintainer after review. Enabling
-  protection is an outstanding GitHub-settings action (v10 §17.3), not a repo
-  change.
+- **There is no CI.** GitHub Actions is disabled (billing-locked, not being
+  pursued) and has never executed a job here; `.github/workflows/{lint,tests}.yml`
+  sit on disk, disabled and drifted. The enforcement floor is `bin/quality` run by
+  `.githooks/pre-push` on every push, and `bin/quality-promote` for `staging` →
+  `main`. This is permanent, not a stopgap ([ADR 0053](adr/0053-local-enforcement-floor.md)).
+- **Required status checks are moot, not outstanding** — there are no checks to
+  require while Actions is off, so that half of v10 §17.3 cannot be satisfied and
+  is closed by the ADR 0053 ruling rather than left open. Merges are still
+  performed by the maintainer after review, and promotion to `main` is gated
+  locally by the `.quality-promote-ok` stamp, which the pre-push hook requires to
+  equal the exact commit being pushed. Branch protection in the narrower sense
+  (blocking force-push and direct commits to `main`) remains an unconfirmed
+  GitHub setting and an outstanding settings action — it is enforceable without
+  CI, so the ruling does not make it moot.
 - **v10 is now tracked in `docs/`** (previously `plan_docs/`, untracked). Decision:
   a spec that governs the build should be reviewable in the same diff as the build,
   so the Finance Implementation Specification v10 was moved into `docs/` alongside

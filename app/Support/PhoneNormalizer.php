@@ -29,7 +29,8 @@ class PhoneNormalizer
         // Already starts with + → keep digits after.
         if (str_starts_with($cleaned, '+')) {
             $digits = preg_replace('/\D/', '', $cleaned);
-            return $digits === '' ? null : '+' . $digits;
+
+            return $digits === '' ? null : '+'.$digits;
         }
 
         $digits = preg_replace('/\D/', '', $cleaned);
@@ -39,10 +40,10 @@ class PhoneNormalizer
 
         // Local "0XXXXXXXXXX" → swap leading 0 for the default country code.
         if (str_starts_with($digits, '0')) {
-            $digits = self::DEFAULT_DIAL_CODE . substr($digits, 1);
+            $digits = self::DEFAULT_DIAL_CODE.substr($digits, 1);
         }
 
-        return '+' . $digits;
+        return '+'.$digits;
     }
 
     public static function equals(?string $a, ?string $b): bool

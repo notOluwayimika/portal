@@ -118,6 +118,25 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
             ->all();
     }
 
+    /**
+     * The School's admission-number roster, for an exact join key (see the port's docblock for why
+     * neither displayFor() nor matchingStudentIds() can serve as one). Ordered by id so a caller's
+     * duplicate-detection and its "absent from the file" report are stable between runs.
+     *
+     * @return list<array{student_id: int, admission_number: ?string}>
+     */
+    public function admissionNumberIndex(): array
+    {
+        return Student::query()
+            ->orderBy('id')
+            ->get(['id', 'admission_number'])
+            ->map(fn (Student $student) => [
+                'student_id' => (int) $student->getAttribute('id'),
+                'admission_number' => $student->getAttribute('admission_number'),
+            ])
+            ->all();
+    }
+
     private function displayName(Student $student): string
     {
         $name = trim(($student->getAttribute('first_name') ?? '').' '.($student->getAttribute('last_name') ?? ''));
@@ -143,7 +162,44 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
             schoolId: $this->schoolId($enrollment),
             studentName: $this->studentName($enrollment),
             academicContext: $this->academicContext($enrollment),
+            termId: $this->termId($enrollment),
+            classLevelId: $this->classLevelId($enrollment),
         );
+    }
+
+    /**
+     * The episode's term. ONE hop — `curricula.term_id` is a direct FK to `terms`.
+     *
+     * The spec (§5) prescribed a three-hop resolution through a `curricula.term` ordinal (1|2|3)
+     * joined to `terms` on the unique `(academic_session_id, order)`, and warned that the id types
+     * on `curricula.academic_session_id` vs `terms.academic_session_id` might disagree across the
+     * hybrid uuid→integer conversion. NEITHER COLUMN EXISTS: `2026_05_06_085734_update_terms_and_
+     * curricula_tables.php:114` dropped `curricula.term` AND `curricula.academic_session_id`
+     * together and replaced them with this `term_id` FK. Confirmed against information_schema on
+     * 2026-08-06. The ordinal join, and the id-type question with it, is dead code that was never
+     * written. (The stale index name `curricula_school_id_academic_session_id_status_index`
+     * survives the drop and covers only (school_id, status) — it is a name that lies, not a column.)
+     */
+    private function termId(StudentCurriculum $enrollment): ?int
+    {
+        $curriculum = $enrollment->getAttribute('curriculum');
+        $termId = is_object($curriculum) ? $curriculum->getAttribute('term_id') : null;
+
+        return $termId === null ? null : (int) $termId;
+    }
+
+    /**
+     * The episode's class level — `curricula.class_level_arm_id → class_level_arms.class_level_id`,
+     * the one hop of §5's chain that survived. A fee schedule is keyed to the class LEVEL, not the
+     * arm: JSS1A and JSS1B are priced identically. Null when either link is absent (both columns
+     * are nullable), which the caller must report as "not comparable" rather than guess at.
+     */
+    private function classLevelId(StudentCurriculum $enrollment): ?int
+    {
+        $curriculum = $enrollment->getAttribute('curriculum');
+        $classLevelId = is_object($curriculum) ? $curriculum->classLevelArm?->class_level_id : null;
+
+        return $classLevelId === null ? null : (int) $classLevelId;
     }
 
     /**

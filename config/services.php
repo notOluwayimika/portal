@@ -26,6 +26,12 @@ return [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+        // ⚠️ REQUIRED FOR BOUNCE HANDLING, not for sending. SES emits bounce and
+        // complaint events to SNS only for messages sent under a configuration set
+        // that has an event destination. Unset, mail sends perfectly and generates
+        // NO events — so the suppression table stays empty and the channel is
+        // send-only wearing a safety label.
+        'configuration_set' => env('AWS_SES_CONFIGURATION_SET'),
     ],
 
     'slack' => [

@@ -1,0 +1,36 @@
+# ACCEPTED both-sides findings for `php artisan finance:audit-duty-separation --baseline=…`
+#
+# One finding per line, keyed `school_id|user_id|checker|maker`, sorted. Integer ids only — this file
+# is committed, and an id answers every question a duty-separation finding asks.
+#
+# KEYED BY TUPLE, NOT BY COUNT, and that is the whole point. A count ratchet passes on the day one
+# result.* finding is resolved and one finance finding appears — precisely the event this control
+# exists to catch.
+#
+# A FINANCE FINDING CANNOT BE ACCEPTED HERE. `finance.` is hard-coded as never-baselineable in the
+# command; adding such a line to this file will not silence it. Zero finance findings is the
+# invariant, and this file is only ever an amnesty for `result.*`.
+#
+# WHEN THIS FILE SHOULD BE EMPTY, DELETE IT — do not commit it empty. Remove this file AND the
+# `--baseline=` argument in routes/console.php together, in one diff. That is safe while the database
+# is clean: the command short-circuits to SUCCESS before the baseline is ever read, so an unfiltered
+# run on a clean database exits 0. The next new finding then fails as an ordinary non-zero instead of
+# as NOT AUDITED, which is the right failure — nothing has been accepted, so there is nothing to
+# compare against. DutySeparationBaselineTest ARM 7 asserts this file is non-empty, so committing it
+# empty turns the correct act into a red gate.
+#
+# Lowering the bar is a diff somebody reads. Baselines only shrink (ADR 0041) — the command prints
+# entries that no longer occur so they can be pruned.
+#
+# Seeded 2026-08-05 from the production copy: the 10 pre-existing result.* findings that have made
+# this command exit non-zero on every scheduled run since 2026-07-25, and nothing else.
+1|35|result.approve|result.submit
+1|35|result.reject|result.submit
+1|4|result.approve|result.submit
+1|4|result.reject|result.submit
+1|51|result.approve|result.submit
+1|51|result.reject|result.submit
+1|6|result.approve|result.submit
+1|6|result.reject|result.submit
+2|3199|result.approve|result.submit
+2|3199|result.reject|result.submit

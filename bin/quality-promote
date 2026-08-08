@@ -72,6 +72,14 @@ fi
 echo
 
 # --- the gate ----------------------------------------------------------------
+# PHPStan result cache: cleared UNCONDITIONALLY here, and only here. The per-push gate
+# keeps it (bin/ci-dependency-integrity-lint.php drops it only when composer.lock moves)
+# because it is the reason `composer analyse` is bearable on every push. A release is
+# rare and the trade runs the other way: a cache is an assumption about a tree, and this
+# is the one run where no assumption is worth the minutes it saves. Removing the
+# fingerprint too means step 1 re-records it against the tree it actually verified.
+rm -rf build/phpstan build/phpstan.lock-fingerprint
+
 # Release-scoped lint: base is origin/main, so every file the release introduces is
 # linted, not just one branch's diff. (A truly full-repo lint is not achievable —
 # the pre-existing legacy drift is grandfathered by design; see bin/lint-changed.sh.)

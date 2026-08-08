@@ -147,6 +147,23 @@ Route::get('/v1/finance/opening-balance-batches/pending', [OpeningBalanceBatchCo
     ->middleware('permission:finance.opening-balance.approve');
 
 /*
+ * §9 step 5b-i (R13) — the import template the platform ISSUES. Brookstone downloads it here; nobody
+ * emails a hand-made spreadsheet, because that is a second source of truth for a money format. The
+ * workbook renders ImportOpeningBalances::COLUMNS, so the file the operator fills in and the file the
+ * validator reads back cannot drift apart. This is the download ONLY — the upload screen is 5b-ii.
+ *
+ * Gated on the MAKER half of §9 step 4c's triple, not the checker's: the person who downloads the
+ * template is the person who will upload the file. Nothing new is coined here.
+ *
+ * It sits under `opening-balance-batches` rather than a second `opening-balances` noun — the brief
+ * wrote the latter, but one feature answering at two nouns is how a route list stops being readable,
+ * and `pending` above already owns this prefix. Path shape otherwise matches
+ * GET /api/guardians/import/template exactly.
+ */
+Route::get('/v1/finance/opening-balance-batches/import/template', [OpeningBalanceBatchController::class, 'template'])
+    ->middleware('permission:finance.opening-balance.submit');
+
+/*
  * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the
  * ACL port, so the frontend never handles an enrollment id. The read powers the "New
  * invoice" modal's episode-confirm + F7 preview; the write generates and delegates to the

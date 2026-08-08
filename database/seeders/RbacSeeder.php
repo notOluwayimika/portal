@@ -418,10 +418,14 @@ class RbacSeeder extends Seeder
                 // right against the tree it read and wrong against the decision, which is exactly how a
                 // grant ends up on a seat nobody chose for it.
                 //
-                // These two are NEW permissions, so no convergence migration accompanies them
-                // (grants-convergence exemption 1): they land in $newPermissions and rbac:sync grants
-                // them per this map on every environment. That freedom lasts only while the permission
-                // is new — once it has shipped to a role, moving it is a dated convergence migration.
+                // THESE TWO DO SHIP WITH A CONVERGENCE MIGRATION, and the reason is not the one the
+                // convergence LINT cares about. Exemption 1 waives a migration for a new permission,
+                // correctly: these land in $newPermissions and rbac:sync grants them per this map
+                // everywhere. But 2026_08_06_100000's TARGET is FORCING — it makes this role's
+                // `finance.` slice EQUAL a frozen literal — so on the deploy order (rbac:sync, then
+                // migrate) it REVOKES what the seeder just wrote, and no later sync restores it.
+                // 2026_08_09_110000_converge_opening_balance_grants.php puts them back. Measured, not
+                // reasoned; see ADR 0052 § "A FORCING target freezes a namespace, not a row set".
                 PermissionEnum::FINANCE_OPENING_BALANCE_APPROVE->value,
                 PermissionEnum::FINANCE_OPENING_BALANCE_REJECT->value,
             ],

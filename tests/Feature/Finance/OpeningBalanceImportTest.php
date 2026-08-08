@@ -1,25 +1,31 @@
 <?php
 
 /*
- * §9 commit 1 — the read-only WCBS opening-balance validator
- * (docs/handoff/opening-balance-import-spec.md Rev 2).
+ * §9 step 4a — the read-only WCBS opening-balance validator, on R5's balance-forward file
+ * (docs/handoff/opening-balance-import-spec.md Rev 4).
  *
  * Every rule the command claims to enforce has a RED case here, not just a green one: a rule whose
  * only test is the happy path is wallpaper, because a green is equally consistent with the rule
  * working, the rule never running, and the fixture quietly satisfying it. So each block pairs the
  * violation with the neighbouring value that must still be ACCEPTED — "0.00" beside a blank, a
- * negative balance beside a negative arrears, not_comparable beside an exception.
+ * NEGATIVE balance beside a rejected one, a blank optional column beside a blank required one.
+ *
+ * THREE OF THESE ARE BEHAVIOUR CHANGES from what shipped in commit 1, and they are tested as
+ * changes rather than as new features, because each one used to fail:
+ *   - a blank `wcbs_bill_reference` is ACCEPTED (it was required);
+ *   - a NEGATIVE `balance` is ACCEPTED (the retired non-negative rule would have rejected it);
+ *   - two lines for one student differing only in the CASE of the fee type are ONE key, at the
+ *     database and in the in-PHP duplicate pass alike (§12 decision 3).
  *
  * Nothing here asserts a posting. There is no posting in this commit; the assertions that matter
  * most are the ones proving the tables stay empty of consequence.
  */
 
 use App\Enums\TermStatusEnum;
+use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
-use App\Finance\Models\FeeItem;
-use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Models\OpeningBalanceRow;
 use App\Models\AcademicSession;
@@ -39,11 +45,12 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-const OB_HEADER = 'admission_number,wcbs_student_ref,prior_arrears,wcbs_billed_total,paid_to_date,wcbs_total_balance,wcbs_bill_reference,last_payment_date';
+const OB_HEADER = 'admission_number,wcbs_student_ref,fee_type_label,balance,student_total_balance,wcbs_bill_reference';
 
 /**
- * A School with a current session, an active term, a class level and an arm — the coordinates a
- * fee schedule and an enrollment both key off.
+ * A School with a current session, an active term, a class level and an arm — the coordinates an
+ * enrollment keys off. (No fee schedule: §5's comparison is withdrawn, so the import reaches no
+ * price and no episode.)
  *
  * @return array{school: School, term: Term, level: ClassLevel, arm: ClassLevelArm}
  */
@@ -98,40 +105,6 @@ function obStudent(array $ctx, string $admission, ?Term $term = null): Student
     });
 }
 
-/**
- * An ACTIVE fee schedule for ($term, $level) totalling $kobo across one item.
- *
- * Authored as a DRAFT and then published, because a DB trigger refuses an item on a non-draft
- * parent ("Fee items may only be added to a draft fee schedule") — the real lifecycle, not a
- * shortcut round it.
- */
-function obSchedule(array $ctx, int $kobo): FeeSchedule
-{
-    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $kobo) {
-        $schedule = FeeSchedule::create([
-            'school_id' => $ctx['school']->id,
-            'term_id' => $ctx['term']->id,
-            'class_level_id' => $ctx['level']->id,
-            'label' => 'JSS1 '.Str::random(4),
-            'status' => 'draft',
-        ]);
-
-        FeeItem::create([
-            'school_id' => $ctx['school']->id,
-            'fee_schedule_id' => $schedule->id,
-            'description' => 'Tuition',
-            'amount' => Money::fromKobo($kobo),
-            'is_mandatory' => true,
-            'is_discountable' => true,
-            'sort_order' => 0,
-        ]);
-
-        $schedule->update(['status' => 'active']);
-
-        return $schedule->refresh();
-    });
-}
-
 /** Write $lines (data rows; the header is prepended) to a temp CSV and return its path. */
 function obCsv(array $lines): string
 {
@@ -141,7 +114,13 @@ function obCsv(array $lines): string
     return $path;
 }
 
-/** Run the validator. Returns the exit code. */
+/**
+ * Run the validator. Returns the exit code.
+ *
+ * `--control-total` is REQUIRED (§1 L2, §12 decision 2) and defaults here to a value the caller
+ * overrides when it is the thing under test — it is the operator's attestation, not a figure derived
+ * from the file, so a helper that computed it from the rows would defeat the check it feeds.
+ */
 function obRun(array $ctx, string $csv, array $overrides = []): int
 {
     return test()->artisan('finance:import-opening-balances', array_merge([
@@ -149,6 +128,7 @@ function obRun(array $ctx, string $csv, array $overrides = []): int
         '--school' => (string) $ctx['school']->id,
         '--term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
+        '--control-total' => '0.00',
         '--batch-reference' => 'BATCH-'.Str::random(8),
         '--dry-run' => true,
     ], $overrides))->run();
@@ -172,35 +152,221 @@ function obCodes(OpeningBalanceRow $row): array
     return array_column($row->findings ?? [], 'code');
 }
 
-// ── §1 — the identity, which is the whole defence against a mis-split extract ──
+/** The finding codes on the batch. */
+function obBatchCodes(OpeningBalanceBatch $batch): array
+{
+    return array_column($batch->findings ?? [], 'code');
+}
 
-it('accepts a row satisfying the identity and rejects one that is off by a single kobo, naming both sides', function () {
+// ── §1 L1 — the student's row-group against their stated total ──
+
+it('accepts a student whose fee-type balances sum to their stated total, and rejects the WHOLE row-group of one that is off by a kobo, naming both sides', function () {
     $ctx = obSchool();
     obStudent($ctx, 'ADM-OK');
     obStudent($ctx, 'ADM-BAD');
 
-    // 25,000 + 100,000 − 60,000 = 65,000 ✓   |   the second row's checksum is one kobo out.
+    // ADM-OK: 100,000 + 45,000 = 145,000 ✓
+    // ADM-BAD: 100,000 + 45,000 = 145,000 but the file states 145,000.01.
     $exit = obRun($ctx, obCsv([
-        'ADM-OK,W1,25000.00,100000.00,60000.00,65000.00,BILL-1,',
-        'ADM-BAD,W2,25000.00,100000.00,60000.00,65000.01,BILL-2,',
-    ]));
+        'ADM-OK,W1,Tuition,100000.00,145000.00,BILL-1',
+        'ADM-OK,W1,Bus,45000.00,145000.00,BILL-1',
+        'ADM-BAD,W2,Tuition,100000.00,145000.01,BILL-2',
+        'ADM-BAD,W2,Bus,45000.00,145000.01,BILL-2',
+    ]), ['--control-total' => '290000.01']);
 
     $rows = obRows($ctx);
-    // NOT rejected, rather than Ok: these Schools have no priced class level, so a sound row is
-    // legitimately `not_comparable` (§5). Asserting Ok here would be asserting the wrong thing and
-    // would couple every parsing test to a fee schedule it does not care about.
-    expect($rows[2]->status)->not->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and(obCodes($rows[2]))->not->toContain('identity_mismatch')
-        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and(obCodes($rows[3]))->toContain('identity_mismatch')
+
+    // The sound student's rows are untouched by their neighbour's failure.
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and(obCodes($rows[2]))->not->toContain('student_total_mismatch');
+
+    // BOTH of the failing student's rows are rejected — not just the one carrying the arithmetic.
+    // A partial post is worse than none (§7), so the group is the unit.
+    expect($rows[4]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and($rows[5]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[4]))->toContain('student_total_mismatch')
+        ->and(obCodes($rows[5]))->toContain('student_total_mismatch')
         ->and($exit)->toBe(1);
 
-    // BOTH sides of the equation must be in the finding — a bare "identity failed" tells the
-    // operator nothing about which column the extract mis-split.
-    $message = collect($rows[3]->findings)->firstWhere('code', 'identity_mismatch')['message'];
-    expect($message)->toContain('65000.00')   // what the three figures derive
-        ->and($message)->toContain('65000.01') // what WCBS reported as the checksum
+    // BOTH sides in the finding — a bare "L1 failed" tells the operator nothing about which line the
+    // extract lost.
+    $message = collect($rows[4]->findings)->firstWhere('code', 'student_total_mismatch')['message'];
+    expect($message)->toContain('145000.00')   // what the lines sum to
+        ->and($message)->toContain('145000.01') // what the file states
         ->and($message)->toContain('-1 kobo');
+});
+
+it('rejects the whole row-group when the stated total disagrees with itself across a student\'s rows', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-SPLIT');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-SPLIT,W1,Tuition,100000.00,145000.00,BILL-1',
+        'ADM-SPLIT,W1,Bus,45000.00,150000.00,BILL-1',   // a different total on the second row
+    ]), ['--control-total' => '145000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[2]))->toContain('inconsistent_student_total')
+        ->and($exit)->toBe(1);
+
+    // And L2 must not silently sum such a student in: a group with two stated totals has no total.
+    $message = collect(obBatch($ctx)->findings)->firstWhere('code', 'control_total_mismatch')['message'];
+    expect($message)->toContain('over 0 student(s)')
+        ->and($message)->toContain('1 student(s) stated no usable total');
+});
+
+it('rejects a student\'s sound rows too when a sibling row has no usable figure, so nothing stages part-checked', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-PARTIAL');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-PARTIAL,W1,Tuition,100000.00,145000.00,BILL-1',
+        'ADM-PARTIAL,W1,Bus,,145000.00,BILL-1',          // blank balance — L1 cannot be evaluated
+    ]), ['--control-total' => '145000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[2]))->toContain('l1_not_checkable')
+        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[3]))->toContain('blank_required_column')
+        ->and($exit)->toBe(1);
+});
+
+// ── §1 L2 — the operator's control total, which is not in the file ──
+
+it('raises a BATCH finding when the stated totals do not sum to --control-total, and rejects NO row', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-A');
+    obStudent($ctx, 'ADM-B');
+
+    // Both students are internally consistent (L1 passes); the operator's figure is 10,000 short,
+    // which is what a student missing from the export looks like.
+    $exit = obRun($ctx, obCsv([
+        'ADM-A,W1,Tuition,100000.00,100000.00,BILL-1',
+        'ADM-B,W2,Tuition,50000.00,50000.00,BILL-2',
+    ]), ['--control-total' => '140000.00']);
+
+    $batch = obBatch($ctx);
+    $rows = obRows($ctx);
+
+    expect(obBatchCodes($batch))->toContain('control_total_mismatch')
+        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Rejected)
+        // NOT a row-level failure: every line may be internally consistent and the file still be
+        // missing a student.
+        ->and($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($exit)->toBe(1);
+
+    $message = collect($batch->findings)->firstWhere('code', 'control_total_mismatch')['message'];
+    expect($message)->toContain('150000.00')   // Σ of the stated totals
+        ->and($message)->toContain('140000.00') // what the operator typed
+        ->and($message)->toContain('1000000 kobo');
+});
+
+it('refuses to run at all without --control-total, and stages nothing', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-A');
+
+    $exit = test()->artisan('finance:import-opening-balances', [
+        '--file' => obCsv(['ADM-A,W1,Tuition,100000.00,100000.00,BILL-1']),
+        '--school' => (string) $ctx['school']->id,
+        '--term' => (string) $ctx['term']->id,
+        '--as-at' => '2026-08-06',
+        '--dry-run' => true,
+    ])->expectsOutputToContain('--control-total is required')->run();
+
+    expect($exit)->toBe(1)
+        ->and(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0);
+});
+
+// ── §12 decision 3 — one fee type, spelled two ways ──
+
+it('treats a fee type differing only in case as ONE key: the second line is reported and never staged', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-CASE');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-CASE,W1,Tuition,100000.00,100000.00,BILL-1',
+        'ADM-CASE,W1,tuition,45000.00,100000.00,BILL-1',   // same fee type, different spelling
+    ]), ['--control-total' => '100000.00']);
+
+    $batch = obBatch($ctx);
+    expect(obRows($ctx))->toHaveCount(1)              // the second line never became a row
+        ->and(obBatchCodes($batch))->toContain('duplicate_row_key_in_file')
+        ->and($batch->file_row_count)->toBe(2)        // but it WAS read, and is accounted for
+        ->and($batch->row_count)->toBe(1)
+        ->and(obBatchCodes($batch))->toContain('ingest_incomplete')
+        ->and($exit)->toBe(1);
+
+    $message = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
+    expect($message)->toContain('duplicate_row_key_in_file=1')
+        ->and($message)->not->toContain('unattributed');
+});
+
+it('and the DATABASE refuses the same pair independently of the in-PHP pass (1062, not a guard clause)', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-CASE');
+    obRun($ctx, obCsv(['ADM-CASE,W1,Tuition,100000.00,100000.00,BILL-1']), ['--control-total' => '100000.00']);
+
+    $batch = obBatch($ctx);
+
+    // Insert the case-variant DIRECTLY, bypassing normaliseLabel() entirely. Asserting the driver
+    // code — not a message, not an exit code — is what proves the refusal is the index: a PHP guard
+    // would raise something else, and a byte-comparing index would accept this row.
+    ActiveSchool::runFor($ctx['school']->id, function () use ($batch) {
+        try {
+            OpeningBalanceRow::create([
+                'batch_id' => $batch->id,
+                'line_number' => 99,
+                'admission_number' => 'ADM-CASE',
+                'fee_type_label' => 'TUITION',
+                'balance' => Money::fromKobo(1),
+                'student_total_balance' => Money::fromKobo(1),
+                'status' => OpeningBalanceRowStatus::Ok,
+            ]);
+            throw new RuntimeException('expected the unique index to refuse the case-variant fee type');
+        } catch (QueryException $e) {
+            expect((int) ($e->errorInfo[1] ?? 0))->toBe(1062);
+        }
+    });
+});
+
+it('still stages two rows for a student when the fee types genuinely differ', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-TWO');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-TWO,W1,Tuition,100000.00,145000.00,BILL-1',
+        'ADM-TWO,W1,Bus,45000.00,145000.00,BILL-1',
+    ]), ['--control-total' => '145000.00']);
+
+    expect(obRows($ctx))->toHaveCount(2)
+        ->and(obBatch($ctx)->findings)->toBeNull()
+        ->and(obBatch($ctx)->status)->toBe(OpeningBalanceBatchStatus::Validated)
+        ->and($exit)->toBe(0);
+});
+
+// ── R12 — wcbs_bill_reference moved REQUIRED → OPTIONAL. This one used to fail. ──
+
+it('accepts a row with a blank wcbs_bill_reference, and still rejects a blank REQUIRED column beside it', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-NOREF');
+    obStudent($ctx, 'ADM-NOREF2');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-NOREF,W1,Tuition,100000.00,100000.00,',           // blank OPTIONAL column — accepted
+        'ADM-NOREF2,W2,Tuition,50000.00,50000.00,',            // ditto
+    ]), ['--control-total' => '150000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[2]->wcbs_bill_reference)->toBeNull()
+        ->and(obCodes($rows[2]))->not->toContain('blank_required_column')
+        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($exit)->toBe(0);
 });
 
 // ── §2 — blank ≠ zero ──
@@ -211,19 +377,20 @@ it('rejects a blank required column but accepts a literal 0.00 as a real zero', 
     obStudent($ctx, 'ADM-BLANK');
 
     $exit = obRun($ctx, obCsv([
-        'ADM-ZERO,W1,0.00,0.00,0.00,0.00,BILL-1,',
-        'ADM-BLANK,W2,,100000.00,60000.00,40000.00,BILL-2,',
+        'ADM-ZERO,W1,Tuition,0.00,0.00,BILL-1',
+        'ADM-BLANK,W2,Tuition,,40000.00,BILL-2',
         // The join key itself blank — the most consequential blank required column, and the row
         // shape a reader would be most tempted to drop before it ever becomes a record.
-        ',W3,0.00,100000.00,60000.00,40000.00,BILL-3,',
-    ]));
+        ',W3,Tuition,40000.00,40000.00,BILL-3',
+    ]), ['--control-total' => '40000.00']);
 
     $rows = obRows($ctx);
-    expect($rows[2]->status)->not->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and($rows[2]->prior_arrears->toKobo())->toBe(0)   // a stated zero is a value, not an absence
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[2]->balance->toKobo())->toBe(0)        // a stated zero is a value, not an absence
+        ->and(obCodes($rows[2]))->toContain('nothing_to_post')
         ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
         ->and(obCodes($rows[3]))->toContain('blank_required_column')
-        ->and($rows[3]->prior_arrears)->toBeNull()          // never coerced to zero
+        ->and($rows[3]->balance)->toBeNull()               // never coerced to zero
         // Blank join key: STAGED and rejected, never dropped. A dropped row is one nobody can see.
         ->and($rows[4]->status)->toBe(OpeningBalanceRowStatus::Rejected)
         ->and(obCodes($rows[4]))->toContain('blank_required_column')
@@ -231,50 +398,88 @@ it('rejects a blank required column but accepts a literal 0.00 as a real zero', 
         ->and($exit)->toBe(1);
 });
 
-// ── §7 — negatives ──
-
-it('rejects a negative prior_arrears but accepts a negative wcbs_total_balance', function () {
+it('rejects a blank fee_type_label rather than staging an unnamed fee type', function () {
     $ctx = obSchool();
-    obStudent($ctx, 'ADM-CREDIT');
-    obStudent($ctx, 'ADM-NEG');
+    obStudent($ctx, 'ADM-NOLABEL');
 
-    // Row 2: paid more than billed — legitimately in credit, so the checksum is negative.
-    // Row 3: a negative arrears figure, which §7 forbids outright.
     $exit = obRun($ctx, obCsv([
-        'ADM-CREDIT,W1,0.00,100000.00,150000.00,-50000.00,BILL-1,',
-        'ADM-NEG,W2,-5000.00,100000.00,60000.00,35000.00,BILL-2,',
-    ]));
+        'ADM-NOLABEL,W1,,100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
 
     $rows = obRows($ctx);
-    expect($rows[2]->status)->not->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and($rows[2]->wcbs_total_balance->toKobo())->toBe(-5000000)
-        ->and($rows[3]->status)->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and(obCodes($rows[3]))->toContain('negative_amount')
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[2]))->toContain('blank_required_column')
+        ->and($rows[2]->fee_type_label)->toBe('')
         ->and($exit)->toBe(1);
+});
+
+// ── R8 — `balance` is SIGNED. The retired non-negative rule would have rejected this row. ──
+
+it('accepts a NEGATIVE balance as a credit, and nets it into the student\'s stated total', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-CREDIT');
+
+    // A scholarship line in credit against a tuition line owed: 100,000 − 30,000 = 70,000.
+    $exit = obRun($ctx, obCsv([
+        'ADM-CREDIT,W1,Tuition,100000.00,70000.00,BILL-1',
+        'ADM-CREDIT,W1,Scholarship,-30000.00,70000.00,BILL-1',
+    ]), ['--control-total' => '70000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[3]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[3]->balance->toKobo())->toBe(-3000000)
+        ->and(obCodes($rows[3]))->not->toContain('negative_amount')   // the rule is GONE, not relaxed
+        ->and($exit)->toBe(0);
+});
+
+it('accepts a student who is wholly in credit, including a negative stated total', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-ALLCREDIT');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-ALLCREDIT,W1,Tuition,-50000.00,-50000.00,BILL-1',
+    ]), ['--control-total' => '-50000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[2]->balance->toKobo())->toBe(-5000000)
+        ->and($rows[2]->student_total_balance->toKobo())->toBe(-5000000)
+        ->and($exit)->toBe(0);
 });
 
 // ── §2 — naira→kobo at the boundary, by integer string arithmetic ──
 
 it('parses naira to exact kobo, including a value that loses a kobo through float round-tripping', function () {
     $ctx = obSchool();
-    obStudent($ctx, 'ADM-BIG');
     obStudent($ctx, 'ADM-FLOAT');
 
-    // The counter-example is CHECKED, not assumed. The brief suggested 8.07; on this PHP the
-    // product rounds up to exactly 807.0 and 8.07 does not break at all, so a test built on it
-    // would have passed no matter how the parser worked. 80000.15 does break: the double is a
-    // hair under 8000015 and the cast truncates a kobo away.
+    // The counter-example is CHECKED, not assumed. 8.07 does NOT break on this PHP — the product
+    // rounds up to exactly 807.0 — so a test built on it would pass no matter how the parser worked.
+    // 80000.15 does break: the double is a hair under 8000015 and the cast truncates a kobo away.
     expect((int) ((float) '80000.15' * 100))->toBe(8000014);
 
     obRun($ctx, obCsv([
-        'ADM-BIG,W1,0.00,120000.00,0.00,120000.00,BILL-1,',
-        'ADM-FLOAT,W2,80000.15,0.00,0.00,80000.15,BILL-2,',
-    ]));
+        'ADM-FLOAT,W1,Tuition,80000.15,80000.15,BILL-1',
+    ]), ['--control-total' => '80000.15']);
 
     $rows = obRows($ctx);
-    expect($rows[2]->wcbs_billed_total->toKobo())->toBe(12000000)
-        ->and($rows[3]->prior_arrears->toKobo())->toBe(8000015)   // not 8000014
-        ->and($rows[3]->status)->not->toBe(OpeningBalanceRowStatus::Rejected);
+    expect($rows[2]->balance->toKobo())->toBe(8000015)   // not 8000014
+        ->and($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok);
+});
+
+it('rejects an unparseable amount rather than coercing it', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-JUNK');
+
+    $exit = obRun($ctx, obCsv([
+        'ADM-JUNK,W1,Tuition,100000.005,100000.00,BILL-1',   // three decimals — no rounding is permitted
+    ]), ['--control-total' => '100000.00']);
+
+    $rows = obRows($ctx);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
+        ->and(obCodes($rows[2]))->toContain('unparseable_amount')
+        ->and($rows[2]->balance)->toBeNull()
+        ->and($exit)->toBe(1);
 });
 
 // ── §6/§7 — the join key ──
@@ -284,9 +489,9 @@ it('counts a file row matching no student, still stages the batch, and exits non
     obStudent($ctx, 'ADM-REAL');
 
     $exit = obRun($ctx, obCsv([
-        'ADM-REAL,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
-        'ADM-GHOST,W2,0.00,100000.00,100000.00,0.00,BILL-2,',
-    ]));
+        'ADM-REAL,W1,Tuition,100000.00,100000.00,BILL-1',
+        'ADM-GHOST,W2,Tuition,50000.00,50000.00,BILL-2',
+    ]), ['--control-total' => '150000.00']);
 
     $rows = obRows($ctx);
     $batch = obBatch($ctx);
@@ -307,62 +512,34 @@ it('raises a BATCH-level finding when the School has admission numbers that coll
     obStudent($ctx, ' ADM-DUP');   // distinct at the unique index, identical after trim
 
     $exit = obRun($ctx, obCsv([
-        'ADM-OTHER,W1,0.00,0.00,0.00,0.00,BILL-1,',
-    ]));
+        'ADM-OTHER,W1,Tuition,0.00,0.00,BILL-1',
+    ]), ['--control-total' => '0.00']);
 
     $batch = obBatch($ctx);
-    expect(array_column($batch->findings ?? [], 'code'))->toContain('school_has_duplicate_admission_numbers')
+    expect(obBatchCodes($batch))->toContain('school_has_duplicate_admission_numbers')
         ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Rejected)
         ->and($exit)->toBe(1);
 });
 
-// ── §5 — the comparison, and the three outcomes that must never be conflated ──
+// ── §7 — a student with NO ACTIVE ENROLLMENT still stages. Do not re-add an enrollment check. ──
 
-it('reports equal, exception with a signed difference, and not_comparable — and never counts not_comparable as an exception', function () {
+it('accepts a student who has no enrollment at all, because the cutover exists to carry exactly those debtors', function () {
     $ctx = obSchool();
-    obSchedule($ctx, 10000000);          // the portal would bill ₦100,000 for JSS 1
-    obStudent($ctx, 'ADM-EQUAL');
-    obStudent($ctx, 'ADM-DIFF');
-
-    // A second class level that U1 has NOT priced — its student is not comparable, not in error.
-    $other = ActiveSchool::runFor($ctx['school']->id, function () use ($ctx) {
-        $level = ClassLevel::create(['school_id' => $ctx['school']->id, 'name' => 'JSS 2', 'order' => 2]);
-
-        return ClassLevelArm::create([
-            'school_id' => $ctx['school']->id,
-            'class_level_id' => $level->id,
-            'arm_id' => Arm::create(['school_id' => $ctx['school']->id, 'label' => strtoupper(Str::random(3))])->id,
-        ]);
-    });
-    $unpriced = obStudent(['school' => $ctx['school'], 'term' => $ctx['term'], 'arm' => $other], 'ADM-UNPRICED');
-
-    obRun($ctx, obCsv([
-        'ADM-EQUAL,W1,0.00,100000.00,0.00,100000.00,BILL-1,',
-        'ADM-DIFF,W2,0.00,85000.00,0.00,85000.00,BILL-2,',      // a discount applied off-platform
-        'ADM-UNPRICED,W3,0.00,70000.00,0.00,70000.00,BILL-3,',
+    // Deliberately NOT obStudent(): no curriculum, no StudentCurriculum, no episode of any kind.
+    ActiveSchool::runFor($ctx['school']->id, fn () => Student::factory()->create([
+        'school_id' => $ctx['school']->id,
+        'admission_number' => 'ADM-NOENROL',
     ]));
 
+    $exit = obRun($ctx, obCsv([
+        'ADM-NOENROL,W1,Tuition,120000.00,120000.00,BILL-1',
+    ]), ['--control-total' => '120000.00']);
+
     $rows = obRows($ctx);
-
-    // equal
     expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
-        ->and($rows[2]->expected_billed->toKobo())->toBe(10000000)
-        ->and(obCodes($rows[2]))->not->toContain('comparison_mismatch');
-
-    // different → an EXCEPTION: still `ok`, both figures and the signed difference recorded
-    expect($rows[3]->status)->toBe(OpeningBalanceRowStatus::Ok)
-        ->and($rows[3]->expected_billed->toKobo())->toBe(10000000)
-        ->and(obCodes($rows[3]))->toContain('comparison_mismatch');
-    $message = collect($rows[3]->findings)->firstWhere('code', 'comparison_mismatch')['message'];
-    expect($message)->toContain('100000.00')->and($message)->toContain('85000.00')
-        ->and($message)->toContain('1500000 kobo');   // portal − WCBS, signed
-
-    // no active schedule → NOT comparable, and NOT an exception
-    expect($rows[4]->status)->toBe(OpeningBalanceRowStatus::NotComparable)
-        ->and($rows[4]->expected_billed)->toBeNull()
-        ->and(obCodes($rows[4]))->toContain('no_active_fee_schedule')
-        ->and(obCodes($rows[4]))->not->toContain('comparison_mismatch')
-        ->and($unpriced->exists)->toBeTrue();
+        ->and(obCodes($rows[2]))->toBe([])
+        ->and($rows[2]->student_id)->not->toBeNull()
+        ->and($exit)->toBe(0);
 });
 
 // ── §7 — idempotency, at the DATABASE ──
@@ -370,7 +547,7 @@ it('reports equal, exception with a signed difference, and not_comparable — an
 it('refuses a re-run of the same batch_reference at the unique index, not in PHP', function () {
     $ctx = obSchool();
     obStudent($ctx, 'ADM-1');
-    $csv = obCsv(['ADM-1,W1,0.00,0.00,0.00,0.00,BILL-1,']);
+    $csv = obCsv(['ADM-1,W1,Tuition,0.00,0.00,BILL-1']);
 
     expect(obRun($ctx, $csv, ['--batch-reference' => 'WCBS-2026-T1']))->toBe(0);
 
@@ -394,10 +571,11 @@ it('refuses to run without --dry-run and writes nothing', function () {
     obStudent($ctx, 'ADM-1');
 
     $exit = test()->artisan('finance:import-opening-balances', [
-        '--file' => obCsv(['ADM-1,W1,0.00,0.00,0.00,0.00,BILL-1,']),
+        '--file' => obCsv(['ADM-1,W1,Tuition,0.00,0.00,BILL-1']),
         '--school' => (string) $ctx['school']->id,
         '--term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
+        '--control-total' => '0.00',
     ])->expectsOutputToContain('Posting is not implemented in this commit')->run();
 
     expect($exit)->toBe(1)
@@ -413,8 +591,8 @@ it('never resolves a row against a student belonging to another School', functio
     obStudent($other, 'ADM-ELSEWHERE');   // the SAME admission number exists — in the wrong School
 
     $exit = obRun($ctx, obCsv([
-        'ADM-ELSEWHERE,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
-    ]));
+        'ADM-ELSEWHERE,W1,Tuition,100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
 
     $rows = obRows($ctx);
     expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
@@ -427,107 +605,61 @@ it('never resolves a row against a student belonging to another School', functio
     expect(ActiveSchool::runFor($other['school']->id, fn () => OpeningBalanceRow::query()->count()))->toBe(0);
 });
 
-// ── §5's control totals, and the batch's terminal state ──
+// ── The clean file, end to end ──
 
-it('persists the control totals and validates a clean file with exit 0', function () {
+it('validates a clean multi-student, multi-fee-type file with exit 0 and no finding anywhere', function () {
     $ctx = obSchool();
-    obSchedule($ctx, 10000000);
     obStudent($ctx, 'ADM-A');
     obStudent($ctx, 'ADM-B');
 
     $exit = obRun($ctx, obCsv([
-        'ADM-A,W1,25000.00,100000.00,60000.00,65000.00,BILL-1,2026-07-31',
-        'ADM-B,W2,0.00,100000.00,100000.00,0.00,BILL-2,',
-    ]));
+        'ADM-A,W1,Tuition,100000.00,145000.00,BILL-1',
+        'ADM-A,W1,Bus,45000.00,145000.00,BILL-1',
+        'ADM-B,W2,Tuition,60000.00,55000.00,',
+        'ADM-B,W2,Scholarship,-5000.00,55000.00,',
+    ]), ['--control-total' => '200000.00']);
 
     $batch = obBatch($ctx);
+    $rows = obRows($ctx);
+
     expect($exit)->toBe(0)
         ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Validated)
-        ->and($batch->row_count)->toBe(2)
-        ->and($batch->total_prior_arrears->toKobo())->toBe(2500000)
-        ->and($batch->total_wcbs_billed->toKobo())->toBe(20000000)
-        ->and($batch->total_paid_to_date->toKobo())->toBe(16000000)
-        ->and(obRows($ctx)[2]->last_payment_date->format('Y-m-d'))->toBe('2026-07-31');
+        ->and($batch->row_count)->toBe(4)
+        ->and($batch->file_row_count)->toBe(4)
+        ->and($batch->findings)->toBeNull()
+        ->and($rows[2]->fee_type_label)->toBe('Tuition')      // carried VERBATIM (R7)
+        ->and($rows[5]->balance->toKobo())->toBe(-500000)
+        ->and($rows[5]->student_total_balance->toKobo())->toBe(5500000);
 });
 
 // ── Ingest completeness — read vs staged ──
-//
-// The control the batch was missing: the Money totals sum the STAGED rows, so a batch can be
-// perfectly self-consistent and short of the file. Only file_row_count vs row_count can see that.
-
-it('counts every data line read, including one dropped as an in-file duplicate', function () {
-    $ctx = obSchool();
-    obStudent($ctx, 'ADM-A');
-    obStudent($ctx, 'ADM-B');
-
-    // Three data lines; line 4 repeats line 2's key and is never staged.
-    obRun($ctx, obCsv([
-        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
-        'ADM-B,W2,0.00,100000.00,100000.00,0.00,BILL-2,',
-        'ADM-A,W3,0.00,50000.00,50000.00,0.00,BILL-3,',
-    ]));
-
-    $batch = obBatch($ctx);
-    expect($batch->file_row_count)->toBe(3)   // what the file contained
-        ->and($batch->row_count)->toBe(2)     // what got staged
-        ->and(obRows($ctx))->toHaveCount(2);
-});
-
-it('raises an ingest_incomplete batch finding naming the difference and its reason breakdown', function () {
-    $ctx = obSchool();
-    obStudent($ctx, 'ADM-A');
-
-    $exit = obRun($ctx, obCsv([
-        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
-        'ADM-A,W2,0.00,50000.00,50000.00,0.00,BILL-2,',
-    ]));
-
-    $batch = obBatch($ctx);
-    expect(array_column($batch->findings ?? [], 'code'))->toContain('ingest_incomplete')
-        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Rejected)
-        ->and($exit)->toBe(1);
-
-    // The numbers, not just the code — a finding that says "something was dropped" without saying
-    // how many or why is the same as no finding to whoever has to act on it.
-    $message = collect($batch->findings)->firstWhere('code', 'ingest_incomplete')['message'];
-    expect($message)->toContain('Read 2 data line(s) with content but staged 1')
-        ->and($message)->toContain('1 not ingested')
-        ->and($message)->toContain('duplicate_admission_number_in_file=1')
-        // The breakdown accounts for the WHOLE gap, so nothing is left unexplained here.
-        ->and($message)->not->toContain('unattributed');
-});
 
 it('leaves file_row_count equal to row_count with no ingest finding on a clean file', function () {
     $ctx = obSchool();
-    obSchedule($ctx, 10000000);
     obStudent($ctx, 'ADM-A');
-    obStudent($ctx, 'ADM-B');
 
     $exit = obRun($ctx, obCsv([
-        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
-        'ADM-B,W2,25000.00,100000.00,60000.00,65000.00,BILL-2,',
-    ]));
+        'ADM-A,W1,Tuition,100000.00,100000.00,BILL-1',
+    ]), ['--control-total' => '100000.00']);
 
     $batch = obBatch($ctx);
-    expect($batch->file_row_count)->toBe(2)
-        ->and($batch->row_count)->toBe(2)
+    expect($batch->file_row_count)->toBe(1)
+        ->and($batch->row_count)->toBe(1)
         ->and($batch->findings)->toBeNull()
-        ->and($batch->status)->toBe(OpeningBalanceBatchStatus::Validated)
         ->and($exit)->toBe(0);
 });
 
 it('excludes wholly blank lines from file_row_count without raising an ingest finding', function () {
     $ctx = obSchool();
-    obSchedule($ctx, 10000000);
     obStudent($ctx, 'ADM-A');
     obStudent($ctx, 'ADM-B');
 
     // Two content lines with a blank between them and a blank at the end. `obCsv` appends its own
     // trailing newline, so the file's physical data lines are: content, blank, content, blank.
     $csv = obCsv([
-        'ADM-A,W1,0.00,100000.00,100000.00,0.00,BILL-1,',
+        'ADM-A,W1,Tuition,100000.00,100000.00,BILL-1',
         '',
-        'ADM-B,W2,25000.00,100000.00,60000.00,65000.00,BILL-2,',
+        'ADM-B,W2,Tuition,50000.00,50000.00,BILL-2',
         '',
     ]);
 
@@ -539,6 +671,7 @@ it('excludes wholly blank lines from file_row_count without raising an ingest fi
         '--school' => (string) $ctx['school']->id,
         '--term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
+        '--control-total' => '150000.00',
         '--batch-reference' => 'BLANKS-'.Str::random(6),
         '--dry-run' => true,
     ])->expectsOutputToContain('blank lines skipped')->run();
@@ -554,9 +687,62 @@ it('excludes wholly blank lines from file_row_count without raising an ingest fi
         ->and($exit)->toBe(0);
 });
 
+it('aborts before writing a batch when a required column is missing from the header', function () {
+    $ctx = obSchool();
+    obStudent($ctx, 'ADM-A');
+
+    $path = tempnam(sys_get_temp_dir(), 'ob').'.csv';
+    // No `student_total_balance` — the L1 witness. A file without it cannot be checked at all.
+    file_put_contents($path, "admission_number,wcbs_student_ref,fee_type_label,balance,wcbs_bill_reference\nADM-A,W1,Tuition,100000.00,BILL-1\n");
+
+    $exit = test()->artisan('finance:import-opening-balances', [
+        '--file' => $path,
+        '--school' => (string) $ctx['school']->id,
+        '--term' => (string) $ctx['term']->id,
+        '--as-at' => '2026-08-06',
+        '--control-total' => '100000.00',
+        '--dry-run' => true,
+    ])->expectsOutputToContain('Missing required column(s): student_total_balance')->run();
+
+    expect($exit)->toBe(1)
+        ->and(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0);
+});
+
+// ── The format map is the single source of truth (R13) ──
+
+it('freezes R12\'s six columns in the COLUMNS map, with wcbs_bill_reference the only optional one', function () {
+    // The template the platform issues (R13, step 5) renders THIS constant, so a column added here
+    // reaches the data team's spreadsheet and the validator together or not at all.
+    expect(array_keys(ImportOpeningBalances::COLUMNS))->toBe([
+        'admission_number',
+        'wcbs_student_ref',
+        'fee_type_label',
+        'balance',
+        'student_total_balance',
+        'wcbs_bill_reference',
+    ]);
+
+    $optional = array_keys(array_filter(
+        ImportOpeningBalances::COLUMNS,
+        fn (array $spec) => ! $spec['required'],
+    ));
+    expect($optional)->toBe(['wcbs_bill_reference']);
+
+    // Every entry carries what a template needs — a map missing `notes` renders a template whose
+    // rules the person filling it in never sees.
+    foreach (ImportOpeningBalances::COLUMNS as $column => $spec) {
+        expect(array_keys($spec))->toBe(['required', 'format', 'example', 'notes', 'group'], $column)
+            ->and($spec['notes'])->not->toBe('', $column)
+            ->and($spec['example'])->not->toBe('', $column);
+    }
+});
+
 // ── The ACL port extension, exercised through its own consumer ──
 
 it('resolves the enrollment term and class level through the port, one hop each', function () {
+    // NOTE: with §5 withdrawn, `termId` / `classLevelId` have NO production caller until
+    // normal-course bulk billing lands — this test is the only thing exercising them, and it is
+    // kept deliberately rather than deleted with the comparison that used to consume them.
     $ctx = obSchool();
     $student = obStudent($ctx, 'ADM-PORT');
 

@@ -1024,8 +1024,26 @@ somebody reads.
    template the platform issues (R13) emits it, and the validator's `COLUMNS` map is the single
    source of truth for both. Nothing here is waiting on the data team.
 
-3. **Does `fee_type_label` need normalising for the R9 key?** The key
-   `unique(school_id, batch_id, admission_number, fee_type_label)` is enforced under
-   `utf8mb4_unicode_ci`, so `'Tuition'` and `'tuition'` collide at the database while PHP byte
-   comparison treats them as distinct. Decide whether that is the wanted behaviour (it probably is)
-   and make the in-PHP duplicate detection agree with the index rather than disagree with it.
+3. ~~**Does `fee_type_label` need normalising for the R9 key?**~~ **CLOSED by step 4a
+   (2026-08-08): the collision is KEPT — `'Tuition'` and `'tuition'` are THE SAME FEE TYPE — and the
+   in-PHP detection was changed to agree with the index.**
+
+   The column is `utf8mb4_unicode_ci` (verified against `information_schema.COLUMNS`, not assumed
+   from `config/database.php`), so `unique(school_id, batch_id, admission_number, fee_type_label)`
+   collides the two at the engine whatever PHP believes. The ruling is that this is the wanted
+   behaviour: a WCBS export spelling one fee type two ways has **two lines for one fee type**, which
+   §7 already calls an extract defect, and the alternative — normalising the stored label — would
+   break R7's "carried VERBATIM into the ledger narration".
+
+   **What changed in code, and why it had to.** Duplicate detection previously compared bytes, so a
+   case-variant pair passed the in-PHP pass and collided at the INSERT, aborting the run mid-batch
+   with 1062 instead of reporting a named finding. `ImportOpeningBalances::normaliseLabel()` now
+   folds case (and trims) before comparing, so the reported duplicate and the refused duplicate are
+   the same set.
+
+   **The residual, stated rather than implied.** `utf8mb4_unicode_ci` also folds **accents** and is
+   PAD SPACE; `mb_strtolower` + `trim` reproduces the case and the padding only. An accent-only pair
+   (`'Tuición'` / `'Tuicion'`) is therefore still caught by the **index** rather than by the in-PHP
+   pass — a worse operator experience (an aborted run rather than a finding), not a correctness hole:
+   nothing is staged wrongly either way. Recorded in `normaliseLabel()`'s docblock and in the 4a
+   migration's.

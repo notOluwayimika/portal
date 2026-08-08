@@ -2,26 +2,27 @@
 
 namespace App\Finance\Models;
 
-use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
-use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * One staged WCBS opening-balance extract (§9 commit 1). A batch is the unit of approval (§8) and,
- * today, the unit of validation: it names the cutover term T and date D ONCE, carries §5's control
- * totals, and owns the rows.
+ * One staged WCBS opening-balance extract (§9 step 4a). A batch is the unit of approval (§8) and,
+ * today, the unit of validation: it names the cutover date D ONCE and owns the rows.
  *
  * IT POSTS NOTHING. There is no ledger row, payment, invoice or account movement behind any of
- * this — the posting Action is commit 4.
+ * this — the posting Action is 4b.
  *
- * The control totals are NULLABLE and written when the run completes. A batch that aborted
- * mid-parse must present no total rather than a total nobody summed; `MoneyCast` returns null only
- * when both storage columns are null, so "not yet totalled" and "totalled to zero" stay distinct.
+ * IT CARRIES NO MONEY COLUMN, and that is R5/R10 rather than an omission. The three `total_*` pairs
+ * were §5's control totals over columns the balance-forward file does not have, and they retired with
+ * it (2026_08_08_100000). §1's L2 — Σ(student stated totals) against the operator's control total —
+ * is checked at validation time and reported as a BATCH finding; the control total itself is
+ * OPERATOR-ENTERED (`--control-total=`, §12 decision 2) and is not a column, because a figure
+ * carried in the file was produced by the same export run as the rows and would share their failure
+ * mode.
  *
  * `unique(school_id, batch_reference)` is §7's idempotency key AT THE DATABASE. The validator
  * inserts this row before it reads a byte of the file, so a re-run of the same batch is refused by
@@ -35,9 +36,6 @@ use Illuminate\Support\Carbon;
  * @property OpeningBalanceBatchStatus $status
  * @property int $row_count rows STAGED
  * @property int $file_row_count data lines READ — the ingest-completeness counterpart
- * @property Money|null $total_prior_arrears
- * @property Money|null $total_paid_to_date
- * @property Money|null $total_wcbs_billed
  * @property Carbon $cutover_date
  * @property int $term_id
  * @property int|null $uploaded_by_user_id
@@ -55,9 +53,6 @@ class OpeningBalanceBatch extends Model
         'status' => OpeningBalanceBatchStatus::class,
         'cutover_date' => 'date',
         'findings' => 'array',
-        'total_prior_arrears' => MoneyCast::class.':total_prior_arrears_minor,total_prior_arrears_currency',
-        'total_paid_to_date' => MoneyCast::class.':total_paid_to_date_minor,total_paid_to_date_currency',
-        'total_wcbs_billed' => MoneyCast::class.':total_wcbs_billed_minor,total_wcbs_billed_currency',
     ];
 
     /**

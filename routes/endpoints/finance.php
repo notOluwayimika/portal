@@ -168,6 +168,34 @@ Route::post('/v1/finance/opening-balance-batches/{batch:uuid}/reject', [OpeningB
     ->middleware('permission:finance.opening-balance.reject');
 
 /*
+ * §9 step 5b-iii — THE MAKER's half, spec §2's U12b. The block above is the checker's.
+ *
+ * ALL FIVE ARE THE SUBMIT (MAKER) ABILITY, the same one 5b-i put on the template, and for the same
+ * reason: the person who downloads the format is the person who uploads the file, reads its findings
+ * and offers it for approval. None of these can post anything — `submit` moves a `validated` batch to
+ * `submitted` and stops, and the post is the checker's approval (§8).
+ *
+ * ORDER IS LOAD-BEARING. `pending` and `import/template` are declared BEFORE `{batch:uuid}` because
+ * Laravel matches in declaration order and both would otherwise be swallowed as a uuid — a checker
+ * fetching the queue would get a 404 for a batch called "pending".
+ *
+ * `store` VALIDATES NOTHING SYNCHRONOUSLY. It inserts the batch (so §7's idempotency key is enforced
+ * by the engine and the operator has something to poll), stores the file at a path derived from the
+ * new row's uuid, and dispatches. There is no `file_path` column and no `report_path` column: the
+ * path is derived and the report is rendered on demand from `findings` and the staged rows.
+ */
+Route::post('/v1/finance/opening-balance-batches', [OpeningBalanceBatchController::class, 'store'])
+    ->middleware('permission:finance.opening-balance.submit');
+Route::get('/v1/finance/opening-balance-batches', [OpeningBalanceBatchController::class, 'index'])
+    ->middleware('permission:finance.opening-balance.submit');
+Route::get('/v1/finance/opening-balance-batches/{batch:uuid}', [OpeningBalanceBatchController::class, 'show'])
+    ->middleware('permission:finance.opening-balance.submit');
+Route::get('/v1/finance/opening-balance-batches/{batch:uuid}/report', [OpeningBalanceBatchController::class, 'report'])
+    ->middleware('permission:finance.opening-balance.submit');
+Route::post('/v1/finance/opening-balance-batches/{batch:uuid}/submit', [OpeningBalanceBatchController::class, 'submit'])
+    ->middleware('permission:finance.opening-balance.submit');
+
+/*
  * §9 step 5b-i (R13) — the import template the platform ISSUES. Brookstone downloads it here; nobody
  * emails a hand-made spreadsheet, because that is a second source of truth for a money format. The
  * workbook renders ImportOpeningBalances::COLUMNS, so the file the operator fills in and the file the

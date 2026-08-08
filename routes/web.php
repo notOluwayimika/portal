@@ -4,6 +4,8 @@ use App\Enums\GuardianStatusEnum;
 use App\Enums\Permission;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
+use App\Finance\Console\ImportOpeningBalances;
+use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImpersonationController;
@@ -35,6 +37,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentResult;
 use App\Models\Teacher;
+use App\Models\Term;
 use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
@@ -174,6 +177,70 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     Route::get('/finance/approvals', fn () => Inertia::render('admin/finance/approvals'))
         ->middleware('permission:'.$financeCheckerAbilities)
         ->name('admin.finance.approvals');
+
+    /*
+     * The opening-balance operator screen — U12b (§9 step 5b-iii). Gated on the MAKER ability, the
+     * same one that gates the template and the upload: this is where a bursar-office operator brings
+     * a school's closing position across from WCBS. A checker does not need it, and `finance.access`
+     * alone must not reach it.
+     *
+     * THE TERMS ARE PROPS, NOT A FETCH. The form needs the term being CLOSED OUT, and the only API
+     * that lists terms is gated on `academic_data.view` — an ability the finance maker seat does not
+     * hold. Passing them from the route avoids either widening that seat or coining a finance-side
+     * terms endpoint, both of which would be a bigger change than the screen. Scoped by the active
+     * School through the `tenant` middleware and an explicit where: `terms` is not a BelongsToSchool
+     * model, so this one is written rather than inherited.
+     */
+    Route::get('/finance/opening-balances/import', function () {
+        // `->id`, NOT the model. `ActiveSchool::getOrFail()` returns a School (ActiveSchool.php:66)
+        // while `id()` returns an int, and binding the MODEL into a `where` on `school_id` matched
+        // nothing and rendered the form with an EMPTY term select — a screen that looks fine and
+        // cannot be submitted. Every test still passed, because they assert the page renders. The
+        // browser drive is what found it; the arm in OpeningBalanceOperatorScreenTest asserting the
+        // prop is populated is what keeps it found.
+        $terms = Term::query()
+            ->where('school_id', ActiveSchool::getOrFail()->id)
+            ->with('academicSession')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Term $term) => [
+                'id' => $term->id,
+                'label' => trim(($term->academicSession->name ?? '').' — '.$term->name),
+            ])
+            ->values();
+
+        // THE COLUMNS AND NOTES SHEETS, MOVED ONTO THE SCREEN. The template is now a single-sheet
+        // CSV — it cannot carry a format reference — and the rules it used to carry are the ones
+        // behind the expensive failures. A rule that lives only in a document is a rule the person
+        // filling in the file never sees (spec, Commit 4).
+        //
+        // BOTH ARE READ FROM THE SAME CONSTANTS THE TEMPLATE RENDERS, so there is still exactly one
+        // source of truth for the format: `ImportOpeningBalances::COLUMNS` (the public alias of the
+        // validator's own map) and the export's `NOTES`. No second representation is introduced —
+        // the screen is a third READER of the map, not a copy of it.
+        $columns = collect(ImportOpeningBalances::COLUMNS)
+            ->map(fn (array $meta, string $column) => [
+                'column' => $column,
+                'group' => $meta['group'],
+                'required' => $meta['required'],
+                'format' => $meta['format'],
+                'example' => $meta['example'],
+                'notes' => $meta['notes'],
+            ])
+            ->values();
+
+        $notes = collect(OpeningBalanceImportTemplateExport::NOTES)
+            ->map(fn (array $note) => ['rule' => $note[0], 'meaning' => $note[1]])
+            ->values();
+
+        return Inertia::render('admin/finance/opening-balances/import', [
+            'terms' => $terms,
+            'columns' => $columns,
+            'notes' => $notes,
+        ]);
+    })
+        ->middleware('permission:finance.opening-balance.submit')
+        ->name('admin.finance.opening-balances.import');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {

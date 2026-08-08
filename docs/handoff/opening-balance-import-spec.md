@@ -221,6 +221,16 @@ would not be a witness at all:
 |---|---|---|
 | `batch_control_total` | yes | Σ of every student's stated total, **read off WCBS's own report and entered at upload** — `--control-total=` on the command, a field on U12b. **L2's independent witness** (§1). |
 
+> **CLOSED by step 4a (2026-08-08): the figure is now RECORDED, on
+> `finance_opening_balance_batches.control_total_minor` / `_currency`.** It arrives as an option and
+> not as a column of the file — that part is unchanged and is the whole reason it witnesses anything
+> (§12 decision 2) — but the batch keeps what was typed. It is written **at the batch insert, before
+> a byte is parsed**, so every outcome carries it: a passing run, a rejected one, and a run that dies
+> partway. A figure kept only on success could not be reviewed after a rejection, which is exactly
+> when someone asks what was claimed. §11 wants this attestation held with the go/no-go, and **4c's
+> approval screen reads this column rather than asking the checker to re-enter it** — a checker who
+> retypes the number is not verifying it, they are producing a second copy of it.
+
 **Blank ≠ zero. A blank in any required column rejects the row.** Unchanged and still the rule that
 matters most: a zero is a claim that nothing is owed, and only the file may make it.
 
@@ -742,6 +752,16 @@ real thing.
 minimum a comment and an option rename — and a migration is not decided in a docs commit. Commit 4
 picks one and says which, in the migration's docblock.
 
+> **DEFERRED AGAIN BY STEP 4a (2026-08-08), on the merits — and recorded here so it is not read as
+> overlooked.** 4a shipped the R9 migration, which is the file this paragraph names, and did **not**
+> close this. The reason is that both options turn on what a batch's term is *for*, and nothing in the
+> repository answers that until posting exists: option 2's "the term being CLOSED OUT" only has a
+> meaning a reader can check once something reads the column, and option 1 deletes an FK on the
+> strength of a use nobody has written yet. Choosing now would be picking a label, not making a
+> decision. **It moves to 4b — the posting step — which is the first commit with a caller.** Until
+> then `term_id` stays NOT NULL and `--term` stays required and validated; `ImportOpeningBalances`'s
+> `resolveTerm()` docblock says so at the site.
+
 ### G1 — at most one posted batch per school, at INSERT
 
 **In the DATABASE, not the job.** A job-level "has this school already posted?" check reads, decides,
@@ -1002,9 +1022,17 @@ somebody reads.
    provenance. **Rev 4 does not add a column.** If a statement or a report needs D on the payment
    row itself, that is a schema decision to argue explicitly — not a field to slip into the
    provenance migration because it seemed useful.
-2. **How does `batch_control_total` arrive — CLOSED by R12.** It arrives as an
-   **OPERATOR-ENTERED OPTION**: `--control-total=` on the command, and a field on U12b. **Not a
-   column, not a control row in the CSV, not a sidecar.**
+2. **How does `batch_control_total` arrive — CLOSED by R12; and where it is KEPT — CLOSED by step
+   4a.** It arrives as an **OPERATOR-ENTERED OPTION**: `--control-total=` on the command, and a field
+   on U12b. **Not a column of the FILE, not a control row in the CSV, not a sidecar.**
+
+   **It IS a column of the BATCH** — `finance_opening_balance_batches.control_total_minor` /
+   `_currency`, added by
+   `2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php` with the same
+   `^[A-Z]{3}$` CHECK under `COLLATE utf8mb4_bin` every other currency column carries. Those two
+   facts are not in tension and the distinction is the point: **where the figure COMES FROM is what
+   makes it a witness; where it is KEPT is what makes it reviewable.** It is written at the batch
+   insert, on every run, passing or failing — see §2.
 
    **Why, and the reason is the only reason the figure is worth having.** A total carried inside the
    file was produced by **the same export run as the rows**. Drop a student on the way out of WCBS
@@ -1024,8 +1052,41 @@ somebody reads.
    template the platform issues (R13) emits it, and the validator's `COLUMNS` map is the single
    source of truth for both. Nothing here is waiting on the data team.
 
-3. **Does `fee_type_label` need normalising for the R9 key?** The key
-   `unique(school_id, batch_id, admission_number, fee_type_label)` is enforced under
-   `utf8mb4_unicode_ci`, so `'Tuition'` and `'tuition'` collide at the database while PHP byte
-   comparison treats them as distinct. Decide whether that is the wanted behaviour (it probably is)
-   and make the in-PHP duplicate detection agree with the index rather than disagree with it.
+3. ~~**Does `fee_type_label` need normalising for the R9 key?**~~ **CLOSED by step 4a
+   (2026-08-08): the collision is KEPT — `'Tuition'` and `'tuition'` are THE SAME FEE TYPE — and the
+   in-PHP detection was changed to agree with the index.**
+
+   The column is `utf8mb4_unicode_ci` (verified against `information_schema.COLUMNS`, not assumed
+   from `config/database.php`), so `unique(school_id, batch_id, admission_number, fee_type_label)`
+   collides the two at the engine whatever PHP believes. The ruling is that this is the wanted
+   behaviour: a WCBS export spelling one fee type two ways has **two lines for one fee type**, which
+   §7 already calls an extract defect, and the alternative — normalising the stored label — would
+   break R7's "carried VERBATIM into the ledger narration".
+
+   **What changed in code, and why it had to.** Duplicate detection previously compared bytes, so a
+   case-variant pair passed the in-PHP pass and collided at the INSERT, aborting the run mid-batch
+   with 1062 instead of reporting a named finding. `ImportOpeningBalances::normaliseLabel()` now
+   folds case (and trims) before comparing, so the reported duplicate and the refused duplicate are
+   the same set.
+
+   **The residual is WIDER THAN ACCENTS, and the first version of this paragraph understated it.**
+   `utf8mb4_unicode_ci` is the full UCA folding: it equates accents (`'Tuición'` = `'Tuicion'`),
+   expansions (`'Straße'` = `'Strasse'`) and everything else its tertiary weights ignore, and it is
+   PAD SPACE. `mb_strtolower` + `trim` reproduces case and padding only, so **every** equivalence the
+   collation has and the fold does not reaches the INSERT.
+
+   **And that is why the write is now wrapped in a catch, which is the load-bearing half of this
+   decision.** The paragraph originally said the residual was "a worse operator experience, not a
+   correctness hole: nothing is staged wrongly either way". **That was false, and it was asserted
+   without executing the case.** Running it showed the abort leaving a committed batch in `draft`
+   whose own `row_count` said `0` while an arbitrary prefix of the file sat in the rows table — and
+   §7's idempotency reference spent on a run nobody could read. The row insert now catches the unique
+   violation and converts it into the same `duplicate_row_key_in_file` finding the in-PHP pass would
+   have produced, counted in the same not-ingested accounting, and the run continues. The fold keeps
+   the common case out of the engine; the catch is what makes the claim true. Recorded in
+   `normaliseLabel()`'s docblock and in the 4a migration's.
+
+   **The same catch covers 1406** (a value longer than its column), with a `max` in the `COLUMNS` map
+   as the defence in front of it. One defect, two triggers, one fix: a guard that closed only the
+   1062 door would have left the identical orphaned-batch failure reachable under another error
+   number.

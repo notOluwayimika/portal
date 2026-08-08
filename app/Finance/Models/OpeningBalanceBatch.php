@@ -12,16 +12,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * One staged WCBS opening-balance extract (§9 commit 1). A batch is the unit of approval (§8) and,
- * today, the unit of validation: it names the cutover term T and date D ONCE, carries §5's control
- * totals, and owns the rows.
+ * One staged WCBS opening-balance extract (§9 step 4a). A batch is the unit of approval (§8) and,
+ * today, the unit of validation: it names the cutover date D ONCE and owns the rows.
  *
  * IT POSTS NOTHING. There is no ledger row, payment, invoice or account movement behind any of
- * this — the posting Action is commit 4.
+ * this — the posting Action is 4b.
  *
- * The control totals are NULLABLE and written when the run completes. A batch that aborted
- * mid-parse must present no total rather than a total nobody summed; `MoneyCast` returns null only
- * when both storage columns are null, so "not yet totalled" and "totalled to zero" stay distinct.
+ * IT CARRIES ONE MONEY COLUMN, and which one is the whole point. The three `total_*` pairs were §5's
+ * control totals over columns the balance-forward file does not have, and they retired with it
+ * (2026_08_08_100000). What replaces them is `control_total` — §1's L2 witness, and the one figure on
+ * this table that no code derived: the operator read it off WCBS's own report and typed it
+ * (`--control-total=`, §12 decision 2). That different path is the only reason L2 catches what L1
+ * structurally cannot.
+ *
+ * IT IS RECORDED ON EVERY RUN, passing or failing. A figure kept only when the check succeeds cannot
+ * be reviewed after a rejection — which is precisely when someone wants to see what was claimed.
+ * §11 asks for the attestation to be held with the go/no-go, and this is where it is held.
  *
  * `unique(school_id, batch_reference)` is §7's idempotency key AT THE DATABASE. The validator
  * inserts this row before it reads a byte of the file, so a re-run of the same batch is refused by
@@ -35,9 +41,7 @@ use Illuminate\Support\Carbon;
  * @property OpeningBalanceBatchStatus $status
  * @property int $row_count rows STAGED
  * @property int $file_row_count data lines READ — the ingest-completeness counterpart
- * @property Money|null $total_prior_arrears
- * @property Money|null $total_paid_to_date
- * @property Money|null $total_wcbs_billed
+ * @property Money|null $control_total §1 L2's operator-typed witness — null only on a pre-4a batch
  * @property Carbon $cutover_date
  * @property int $term_id
  * @property int|null $uploaded_by_user_id
@@ -55,9 +59,7 @@ class OpeningBalanceBatch extends Model
         'status' => OpeningBalanceBatchStatus::class,
         'cutover_date' => 'date',
         'findings' => 'array',
-        'total_prior_arrears' => MoneyCast::class.':total_prior_arrears_minor,total_prior_arrears_currency',
-        'total_paid_to_date' => MoneyCast::class.':total_paid_to_date_minor,total_paid_to_date_currency',
-        'total_wcbs_billed' => MoneyCast::class.':total_wcbs_billed_minor,total_wcbs_billed_currency',
+        'control_total' => MoneyCast::class.':control_total_minor,control_total_currency',
     ];
 
     /**

@@ -7,47 +7,67 @@ use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Models\OpeningBalanceRow;
-use App\Finance\Services\FeeScheduleLookup;
 use App\Models\School;
 use App\Support\ActiveSchool;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Throwable;
 
 /**
- * §9 commit 1 — the READ-ONLY validator for a WCBS opening-balance extract
- * (docs/handoff/opening-balance-import-spec.md Rev 2).
+ * §9 step 4a — the READ-ONLY validator for a WCBS opening-balance extract, realigned onto R5's
+ * balance-forward file (docs/handoff/opening-balance-import-spec.md Rev 4).
  *
- * IT POSTS NOTHING. No ledger transaction, no payment, no invoice, no account-balance movement.
- * It parses the file, enforces §1's identity, applies §2's and §7's rejection rules, resolves the
- * join key against the School's roster, runs §5's fee-schedule comparison, and stages all of it in
- * finance_opening_balance_batches / _rows for a human to look at. `--dry-run` is the only mode that
- * exists; without it the command refuses and exits non-zero rather than stubbing a posting path.
- * Posting and its approval gate are commit 4.
+ * IT POSTS NOTHING. No ledger transaction, no payment, no invoice, no account-balance movement. It
+ * parses the file, enforces §1's two-level checksum, applies §2's and §7's rejection rules, resolves
+ * the join key against the School's roster, and stages all of it in finance_opening_balance_batches /
+ * _rows for a human to look at. `--dry-run` is the only mode that exists; without it the command
+ * refuses and exits non-zero rather than stubbing a posting path. Posting is 4b and the approval gate
+ * is 4c.
+ *
+ * WHAT 4a CHANGED, because a reader who knows the old shape will otherwise look for it:
+ *
+ *  - THE FILE IS ONE ROW PER (STUDENT × FEE TYPE). `fee_type_label` and a SIGNED per-fee-type
+ *    `balance` replace the four Rev 2/3 money columns, which R5 withdrew — that file will never be
+ *    produced.
+ *  - §1'S IDENTITY IS GONE and two levels replace it. L1 (Σ of a student's balances == that
+ *    student's stated total) rejects the STUDENT'S WHOLE ROW-GROUP; L2 (Σ of the stated totals ==
+ *    the operator's control total) is a finding on the BATCH and rejects no row.
+ *  - §5's COMPARISON IS WITHDRAWN. `expected_billed`, `comparison_mismatch` and all three
+ *    `not_comparable` reasons are gone, and so is `OpeningBalanceRowStatus::NotComparable`. They lost
+ *    their SUBJECT, not merely their input: under R6 the import touches no episode at all.
+ *    Consequence, stated rather than left to be found: `BillableEnrollment::termId` /
+ *    `classLevelId` now have no production caller until normal-course bulk billing lands.
+ *  - `wcbs_bill_reference` IS OPTIONAL. A blank must not reject the row (R12).
+ *  - THERE IS NO NON-NEGATIVE RULE. `balance` is signed by design — positive owed, negative credit —
+ *    and a non-negative rule pointed at it would reject every student who is in credit.
+ *
+ * THE COLUMNS MAP IS THE SINGLE SOURCE OF TRUTH FOR THE FORMAT, and it is deliberately the guardian
+ * import's shape, whose own docblock states the reason better than a new argument would: "the COLUMNS
+ * map drives both the template generator and the row validator, so they cannot drift apart"
+ * (app/Services/Validators/GuardianImportRowValidator.php:15-19). The template the platform issues
+ * (R13, step 5) renders THIS constant; a hand-authored template beside it would be a second source of
+ * truth for a money format, which is how a data team ends up holding two files that both look right.
  *
  * WHY IT LIVES IN App\Finance\Console AND NOT app/Console/Commands. It touches Finance models, and
  * tests/Arch/ArchitectureBoundaryTest.php keeps those private to the module; bin/ci-boundary-lint.php
  * separately forbids a `finance_*` table literal outside app/Finance/. bootstrap/app.php:37-40 already
  * records this and registers the module's other two commands explicitly, because auto-discovery only
- * scans app/Console/Commands. AuditDutySeparation.php — whose shape the brief pointed at — touches no
- * Finance model, which is why it can sit where it does.
+ * scans app/Console/Commands.
  *
  * STUDENTS ARE RESOLVED THROUGH THE ACL PORT, not by reading Academics tables (arch rule 3 — and from
- * inside App\Finance there is no other lawful option). The port's two existing methods cannot serve as
- * a join: `displayFor()` runs ids→display, the wrong direction for a file that has admission numbers;
- * `matchingStudentIds()` is a `LIKE %term%` search box that would resolve "A1" onto "A100" and import
- * one student's arrears against another. So this commit extends the port with
- * `admissionNumberIndex()` — an exact roster, matched in this command — which is also the only thing
- * that can answer §6's pre-flight counts and §7's "in the portal, absent from the file". That
- * extension is consumer-driven: this validator is the consumer, in the same commit.
+ * inside App\Finance there is no other lawful option). `admissionNumberIndex()` is an exact roster;
+ * the port's other two methods cannot serve as a join (`displayFor()` runs the wrong direction,
+ * `matchingStudentIds()` is a LIKE search that would resolve "A1" onto "A100").
  *
  * OUTPUT IS AN OPERATOR SURFACE AND IT LEAVES THE BOX. Counts, line numbers and admission numbers
  * only — never a name, never a student's figures. The figures that matter (both sides of a failed
- * identity, both sides of a §5 mismatch) are recorded in the staged row's `findings` JSON, which is
+ * L1, both sides of a failed L2) are recorded in the staged row's / batch's `findings` JSON, which is
  * where U12b will read them from.
  */
 class ImportOpeningBalances extends Command
@@ -57,29 +77,108 @@ class ImportOpeningBalances extends Command
         {--school= : the School to import into (numeric id or slug)}
         {--term= : the cutover term T (terms.id)}
         {--as-at= : the cutover date D (Y-m-d)}
+        {--control-total= : §1 L2 — Σ of every student stated total, read off WCBS and typed here}
         {--batch-reference= : §7 idempotency key; defaults to the CSV filename}
         {--dry-run : the ONLY mode this commit implements}';
 
-    protected $description = 'READ-ONLY: validate a WCBS opening-balance extract into staging and report (§9 commit 1 — posts nothing)';
+    protected $description = 'READ-ONLY: validate a WCBS opening-balance extract into staging and report (§9 step 4a — posts nothing)';
 
-    /** Columns §2 requires on every row. A blank in any of them rejects the row. */
-    private const REQUIRED_COLUMNS = [
-        'admission_number',
-        'wcbs_student_ref',
-        'prior_arrears',
-        'wcbs_billed_total',
-        'paid_to_date',
-        'wcbs_total_balance',
-        'wcbs_bill_reference',
+    /**
+     * THE FILE FORMAT (§2, frozen by R12) — required flag, max length, format, example, notes and
+     * group per column, in the guardian import's shape and for its reason: one constant drives both
+     * the template the platform issues (R13) and this validator, so they cannot drift apart.
+     *
+     * `notes` and `format` carry the OPERATOR-FACING rules, not notes to a developer, because those
+     * are the columns the data team actually reads. A rule that lives only in the spec is a rule the
+     * person filling in the sheet never sees — which is why `max` is stated in `format` as well as
+     * held as a number, and why a test asserts the two agree rather than trusting them to.
+     *
+     * `max` IS THE STORAGE COLUMN'S OWN LIMIT for the four columns that land in a `varchar(255)`,
+     * and it is checked in PHP *before* anything tries to write, because MySQL's answer to an
+     * over-length value is to abort the statement — which used to abort the whole run. See the catch
+     * in the write loop: the rule here is the defence, the catch is the backstop, and both ship.
+     *
+     * For the two MONEY cells there is no varchar to inherit from — they land in `bigint` minor
+     * units — so their limit is derived instead: 21 characters is the widest naira figure a signed
+     * bigint can hold in kobo (`92233720368547758.07`, plus a sign). It is a sanity bound on the
+     * cell, not a column width, and it is stated as such rather than dressed up as one.
+     *
+     * R12's columns and NOTHING ELSE. `last_payment_date` is not among them, and its staging column
+     * was retired with the four withdrawn money pairs
+     * (2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php).
+     *
+     * @var array<string, array{required: bool, max: int, format: string, example: string, notes: string, group: string}>
+     */
+    public const COLUMNS = [
+        // Linking
+        'admission_number' => [
+            'required' => true,
+            'max' => 255,
+            'format' => 'string, max 255 characters',
+            'example' => 'STU2025001',
+            'notes' => 'The join key. Must already exist in this School — a student is NEVER created from a finance import.',
+            'group' => 'Linking',
+        ],
+        'wcbs_student_ref' => [
+            'required' => true,
+            'max' => 255,
+            'format' => 'string, max 255 characters',
+            'example' => 'WCBS-10233',
+            'notes' => "WCBS's own id, stored for traceability. Never used to join.",
+            'group' => 'Linking',
+        ],
+        'fee_type_label' => [
+            'required' => true,
+            'max' => 255,
+            'format' => 'string, max 255 characters',
+            'example' => 'Tuition',
+            'notes' => 'The fee type as WCBS names it, carried verbatim onto the statement. One row per student PER FEE TYPE. Spelling is matched case-insensitively — and also ignoring accents and trailing spaces — so "Tuition", "tuition" and "Tuitión" are ONE fee type, and a second row for it is refused.',
+            'group' => 'Amounts',
+        ],
+        'balance' => [
+            'required' => true,
+            'max' => 21,
+            'format' => 'naira with two decimal places, SIGNED (120000.00 / -5000.00), max 21 characters',
+            'example' => '120000.00',
+            'notes' => 'That fee type\'s closing balance for that student. POSITIVE is owed, NEGATIVE is credit. Blank is not zero — write 0.00 if the balance really is nil.',
+            'group' => 'Amounts',
+        ],
+        'student_total_balance' => [
+            'required' => true,
+            'max' => 21,
+            'format' => 'naira with two decimal places, SIGNED, max 21 characters',
+            'example' => '145000.00',
+            'notes' => "The student's total across ALL their fee types. Write the SAME figure on every one of that student's rows — it is the independent check that no line of theirs went missing.",
+            'group' => 'Amounts',
+        ],
+        'wcbs_bill_reference' => [
+            'required' => false,
+            'max' => 255,
+            'format' => 'string, max 255 characters',
+            'example' => 'BILL-2026-0912',
+            'notes' => 'OPTIONAL. The reference on the last paper bill, if WCBS carries one. A blank here does NOT reject the row.',
+            'group' => 'Provenance',
+        ],
     ];
-
-    /** The three figures §7 forbids from being negative. Credit belongs in wcbs_total_balance. */
-    private const NON_NEGATIVE_COLUMNS = ['prior_arrears', 'wcbs_billed_total', 'paid_to_date'];
 
     /** How many identifiers a list prints before it is cut. Truncation is always announced. */
     private const LIST_LIMIT = 50;
 
-    public function handle(BillableEnrollmentProvider $enrollments, FeeScheduleLookup $schedules): int
+    /**
+     * The ONE unique index whose violation the write loop is allowed to convert into a finding
+     * about the operator's file.
+     *
+     * IT IS A SECOND COPY OF A NAME, and that is stated rather than hidden: the definition lives in
+     * `2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php`'s `NEW_KEY`
+     * constant, which is unreachable from here — that migration is an anonymous class, and pointing
+     * a migration at an application constant would let a later edit change what an old migration
+     * builds on a fresh install. So the copy is deliberate, and the drift it invites is closed by a
+     * test that asserts this string names a unique index that really exists on the table, read from
+     * `information_schema` rather than from either source.
+     */
+    public const ROW_KEY_INDEX = 'ob_rows_school_batch_admission_fee_type_unique';
+
+    public function handle(BillableEnrollmentProvider $enrollments): int
     {
         // The refusal comes FIRST, before any option is even read: there is no posting path to
         // reach, and a run that got as far as opening a file before refusing would suggest there is.
@@ -110,10 +209,15 @@ class ImportOpeningBalances extends Command
             return self::FAILURE;
         }
 
+        $controlTotal = $this->resolveControlTotal((string) $this->option('control-total'));
+        if ($controlTotal === null) {
+            return self::FAILURE;
+        }
+
         // §5.4 / Constitution 13: off-request context is ActiveSchool::runFor and nothing else.
-        // Every model touched below (the staging tables, the port's roster, the fee schedules) is
-        // School-scoped, so the scope — not a where() someone can forget — is what isolates the run.
-        return ActiveSchool::runFor($school->id, function () use ($school, $file, $cutoverDate, $enrollments, $schedules): int {
+        // Every model touched below (the staging tables, the port's roster) is School-scoped, so the
+        // scope — not a where() someone can forget — is what isolates the run.
+        return ActiveSchool::runFor($school->id, function () use ($school, $file, $cutoverDate, $controlTotal, $enrollments): int {
             $termId = $this->resolveTerm((string) $this->option('term'), $school->id);
             if ($termId === null) {
                 return self::FAILURE;
@@ -138,15 +242,25 @@ class ImportOpeningBalances extends Command
                 'status' => OpeningBalanceBatchStatus::Draft,
                 'cutover_date' => $cutoverDate,
                 'term_id' => $termId,
+                // §1 L2's witness, recorded HERE — at the batch insert, before a byte is parsed —
+                // so it survives every outcome: a passing run, a rejected one, and a run that dies
+                // partway. It is the operator's ATTESTATION, not a derived figure, and one kept only
+                // when the check passes cannot be reviewed after a rejection, which is exactly when
+                // someone wants to see what was claimed (§11's go/no-go).
+                'control_total' => $controlTotal,
                 'uploaded_by_user_id' => null, // a console run has no authenticated causer
             ]);
 
-            return $this->validateInto($batch, $records, $blankLines, $termId, $enrollments, $schedules);
+            return $this->validateInto($batch, $records, $blankLines, $controlTotal, $enrollments);
         });
     }
 
     /**
      * The whole validation pass, inside the School context. Returns the process exit code.
+     *
+     * THREE PHASES, and the order is the point. Rows are parsed first and held in memory; L1 is a
+     * check on a STUDENT'S ROW-GROUP, so it cannot be decided while streaming one row at a time, and
+     * a row cannot be written before its group's verdict is known. Only then is anything inserted.
      *
      * @param  list<array{line: int, values: array<string, string>}>  $records
      * @param  int  $blankLines  wholly blank physical lines the reader dropped — carried through so
@@ -156,9 +270,8 @@ class ImportOpeningBalances extends Command
         OpeningBalanceBatch $batch,
         array $records,
         int $blankLines,
-        int $termId,
+        Money $controlTotal,
         BillableEnrollmentProvider $enrollments,
-        FeeScheduleLookup $schedules,
     ): int {
         $roster = $enrollments->admissionNumberIndex();
 
@@ -177,11 +290,10 @@ class ImportOpeningBalances extends Command
         $duplicateAfterTrim = count(array_filter($byAdmission, fn (array $ids) => count($ids) > 1));
 
         $batchFindings = [];
-        // §6.1 and §3d: either of these means the join key itself is unsafe, so it is a finding on
-        // the BATCH — the file format is not yet frozen and no amount of row-level cleanliness
-        // rescues it. `students.admission_number` has been NOT NULL since
-        // 2026_07_18_100000_make_identifier_columns_not_null.php:36, so the first count can only be
-        // non-zero if that is ever relaxed; it is computed rather than assumed away.
+        // §6.1: either of these means the join key itself is unsafe, so it is a finding on the
+        // BATCH — no amount of row-level cleanliness rescues it. `students.admission_number` has been
+        // NOT NULL since 2026_07_18_100000_make_identifier_columns_not_null.php:36, so the first
+        // count can only be non-zero if that is ever relaxed; it is computed rather than assumed away.
         if ($nullAdmissions > 0) {
             $batchFindings[] = $this->finding('school_has_null_admission_numbers',
                 "{$nullAdmissions} student(s) in this School have no admission number — the join key is unsafe.");
@@ -191,25 +303,17 @@ class ImportOpeningBalances extends Command
                 "{$duplicateAfterTrim} admission number(s) in this School are duplicated after trimming — the join key is unsafe.");
         }
 
-        $rowCount = 0;      // rows STAGED
         $fileRowCount = 0;  // data lines WITH CONTENT — incremented before any skip in this loop
         $skipReasons = [];  // reason → count, for the ingest-completeness breakdown
-        $rejected = [];
-        $exceptions = [];
-        $notComparable = [];
         $unresolved = [];
-        $seenInFile = [];        // trimmed admission number → first line number staged
-        $duplicateInFile = [];   // lines dropped because their key was already staged
+        $seenInFile = [];        // trimmed admission → normalised label → first line staged
+        $duplicateInFile = [];   // lines dropped because their (student, fee type) key was already seen
+        $tooLong = [];           // lines dropped because a value exceeds what its column can hold
+        $refusedAtWrite = [];    // lines the ENGINE refused at the insert — the backstop's catch
         $matchedStudentIds = [];
+        $staged = [];            // parsed rows awaiting their group's L1 verdict
 
-        $totals = [
-            'prior_arrears' => Money::fromKobo(0),
-            'paid_to_date' => Money::fromKobo(0),
-            'wcbs_billed_total' => Money::fromKobo(0),
-        ];
-
-        $scheduleTotals = []; // class_level_id → Money|null (null = no active schedule)
-
+        // ── PHASE 1 — per-row parsing and the row-level rules. Nothing is written yet. ──
         foreach ($records as $record) {
             // FIRST statement in the body, before every `continue` below and before any added
             // later. It is never conditioned on a row being valid, resolvable or parseable — the
@@ -227,23 +331,53 @@ class ImportOpeningBalances extends Command
 
             $rawAdmission = $values['admission_number'] ?? '';
             $key = trim($rawAdmission);
+            $rawLabel = $values['fee_type_label'] ?? '';
+            $labelKey = $this->normaliseLabel($rawLabel);
 
-            // A repeat of the same key inside ONE file would collide on
-            // unique(school_id, batch_id, admission_number) mid-loop and abort the run. The first
-            // occurrence is staged; the rest are reported as a batch finding naming their lines.
-            // Nothing is dropped silently — the count and the lines are printed.
-            if ($key !== '' && isset($seenInFile[$key])) {
-                $duplicateInFile[] = ['line' => $line, 'admission_number' => $key, 'first' => $seenInFile[$key]];
+            // A repeat of the same (student, fee type) inside ONE file would collide on
+            // unique(school_id, batch_id, admission_number, fee_type_label) at the insert and abort
+            // the run. The first occurrence is staged; the rest are reported as a batch finding
+            // naming their lines. Nothing is dropped silently — the count and the lines are printed.
+            // Guarded on a non-blank admission because NULL admission numbers are exempt from the
+            // index (MySQL), so two blank-key rows do not collide and must not be dropped either.
+            if ($key !== '' && isset($seenInFile[$key][$labelKey])) {
+                $duplicateInFile[] = [
+                    'line' => $line,
+                    'admission_number' => $key,
+                    'fee_type_label' => $rawLabel,
+                    'first' => $seenInFile[$key][$labelKey],
+                ];
                 // Every skip must register a reason here. An unregistered one still shows up —
                 // as `unattributed` in the ingest-completeness finding — which is the point.
-                $skipReasons['duplicate_admission_number_in_file'] = ($skipReasons['duplicate_admission_number_in_file'] ?? 0) + 1;
+                $skipReasons['duplicate_row_key_in_file'] = ($skipReasons['duplicate_row_key_in_file'] ?? 0) + 1;
 
                 continue;
             }
 
-            // ── §2: required columns. Blank ≠ zero; reject, never coerce. ──
-            foreach (self::REQUIRED_COLUMNS as $column) {
-                if (trim($values[$column] ?? '') === '') {
+            // ── LENGTH, checked BEFORE anything tries to write. ──
+            // A value longer than its storage column cannot be staged at all: MySQL answers an
+            // over-length insert with 1406 and aborts the statement. So this row is DROPPED and
+            // reported, exactly as an in-file duplicate is, rather than staged as rejected — there
+            // is no row shape that could hold it. `mb_strlen`, not `strlen`, because a utf8mb4
+            // varchar counts CHARACTERS and a byte count would reject a legitimate accented label.
+            // The catch in the write loop remains the backstop for anything this misses.
+            $overLength = [];
+            foreach (self::COLUMNS as $column => $spec) {
+                if (mb_strlen(trim($values[$column] ?? '')) > $spec['max']) {
+                    $overLength[] = $column;
+                }
+            }
+            if ($overLength !== []) {
+                $tooLong[] = ['line' => $line, 'admission_number' => $key, 'columns' => $overLength];
+                $skipReasons['value_too_long'] = ($skipReasons['value_too_long'] ?? 0) + 1;
+
+                continue;
+            }
+
+            // ── §2: required columns, read from the COLUMNS map. Blank ≠ zero; reject, never
+            // coerce. `wcbs_bill_reference` is NOT among them — R12 made it optional. ──
+            foreach (self::COLUMNS as $column => $spec) {
+                if ($spec['required'] && trim($values[$column] ?? '') === '') {
                     $findings[] = $this->finding('blank_required_column', "Column [{$column}] is blank; a blank is not a zero.");
                 }
             }
@@ -251,10 +385,10 @@ class ImportOpeningBalances extends Command
             // ── Amounts: naira-with-2dp → integer kobo, by integer string arithmetic. ──
             // Money::fromNaira parses the digits itself (Money.php:74-77); no float multiplication
             // is involved, so a value like "80000.15" — which (int) ((float) '80000.15' * 100)
-            // reads as 8000014 — parses to exactly 8000015. (Measured, not assumed: 8.07 is the
-            // usual example and it does NOT break — 8.07 * 100 is exactly float(807).)
+            // reads as 8000014 — parses to exactly 8000015. BOTH are signed: a leading '-' is
+            // legitimate on either, and there is no non-negative rule anywhere near them.
             $amounts = [];
-            foreach (['prior_arrears', 'wcbs_billed_total', 'paid_to_date', 'wcbs_total_balance'] as $column) {
+            foreach (['balance', 'student_total_balance'] as $column) {
                 $raw = trim($values[$column] ?? '');
                 if ($raw === '') {
                     $amounts[$column] = null;
@@ -267,39 +401,6 @@ class ImportOpeningBalances extends Command
                     $amounts[$column] = null;
                     $findings[] = $this->finding('unparseable_amount',
                         "Column [{$column}] value [{$raw}] is not naira with up to two decimal places.");
-                }
-            }
-
-            // ── §7: negatives. A negative wcbs_total_balance is legitimate (student in credit). ──
-            foreach (self::NON_NEGATIVE_COLUMNS as $column) {
-                if ($amounts[$column] !== null && $amounts[$column]->isNegative()) {
-                    $findings[] = $this->finding('negative_amount',
-                        "Column [{$column}] is negative ({$amounts[$column]->toNaira()}); credit belongs in wcbs_total_balance.");
-                }
-            }
-
-            // ── §1: the identity. The whole defence against a mis-split extract. ──
-            $identityChecked = ! in_array(null, $amounts, true);
-            if ($identityChecked) {
-                $derived = $amounts['prior_arrears']->plus($amounts['wcbs_billed_total'])->minus($amounts['paid_to_date']);
-                if (! $derived->equals($amounts['wcbs_total_balance'])) {
-                    // BOTH sides in the finding, and the row is rejected — never corrected.
-                    $findings[] = $this->finding('identity_mismatch', sprintf(
-                        'prior_arrears + wcbs_billed_total − paid_to_date = %s but wcbs_total_balance = %s (Δ %d kobo).',
-                        $derived->toNaira(),
-                        $amounts['wcbs_total_balance']->toNaira(),
-                        $derived->toKobo() - $amounts['wcbs_total_balance']->toKobo(),
-                    ));
-                }
-            }
-
-            // ── last_payment_date is optional, but a malformed one is not a blank. ──
-            $lastPayment = null;
-            $rawDate = trim($values['last_payment_date'] ?? '');
-            if ($rawDate !== '') {
-                $lastPayment = $this->parseDate($rawDate);
-                if ($lastPayment === null) {
-                    $findings[] = $this->finding('unparseable_date', "Column [last_payment_date] value [{$rawDate}] is not Y-m-d.");
                 }
             }
 
@@ -319,114 +420,184 @@ class ImportOpeningBalances extends Command
                 $matchedStudentIds[$studentId] = true;
             }
 
-            $isRejected = $findings !== [];
-            $status = $isRejected ? OpeningBalanceRowStatus::Rejected : OpeningBalanceRowStatus::Ok;
-            $expected = null;
-
-            // ── §5: the comparison. Only for a row that is otherwise sound — comparing a row whose
-            // arithmetic is already known wrong produces a finding about a finding. ──
-            if (! $isRejected && $studentId !== null) {
-                $enrollment = $enrollments->currentForStudent($studentId);
-
-                if ($enrollment === null) {
-                    $status = OpeningBalanceRowStatus::NotComparable;
-                    $findings[] = $this->finding('no_active_enrollment',
-                        'The student has no active enrollment, so no class level to price against.');
-                    $notComparable[] = ['line' => $line, 'admission_number' => $key, 'reason' => 'no_active_enrollment'];
-                } elseif ($enrollment->classLevelId === null) {
-                    $status = OpeningBalanceRowStatus::NotComparable;
-                    $findings[] = $this->finding('enrollment_has_no_class_level',
-                        'The student\'s enrollment names no class level (nullable link), so nothing can be priced.');
-                    $notComparable[] = ['line' => $line, 'admission_number' => $key, 'reason' => 'enrollment_has_no_class_level'];
-                } else {
-                    // Informational, NOT a rejection: the episode the class level came from is not
-                    // the cutover term. It is still that student's class level, but it is the
-                    // reason a comparison could be against the wrong year's price, and V2 will bill
-                    // T against an episode that does not exist yet.
-                    if ($enrollment->termId !== null && $enrollment->termId !== $termId) {
-                        $findings[] = $this->finding('enrollment_term_differs_from_cutover_term',
-                            'The student\'s active enrollment is for a different term than the batch\'s cutover term.');
-                    }
-
-                    if (! array_key_exists($enrollment->classLevelId, $scheduleTotals)) {
-                        $scheduleTotals[$enrollment->classLevelId] = $this->scheduleTotalFor($schedules, $termId, $enrollment->classLevelId);
-                    }
-                    $expected = $scheduleTotals[$enrollment->classLevelId];
-
-                    if ($expected === null) {
-                        // §5: NOT an error. U1 has not priced this class level, and must before V2.
-                        $status = OpeningBalanceRowStatus::NotComparable;
-                        $findings[] = $this->finding('no_active_fee_schedule',
-                            'No ACTIVE fee schedule for this (term, class level); U1 must price it before V2 runs.');
-                        $notComparable[] = ['line' => $line, 'admission_number' => $key, 'reason' => 'no_active_fee_schedule'];
-                    } elseif ($amounts['wcbs_billed_total'] !== null && ! $expected->equals($amounts['wcbs_billed_total'])) {
-                        // An EXCEPTION, not a defect: the row stays `ok` and carries both figures
-                        // and the signed difference for a human. It is counted separately from
-                        // not_comparable and from rejections, and never conflated with either.
-                        $findings[] = $this->finding('comparison_mismatch', sprintf(
-                            'Portal would bill %s for T; WCBS billed %s (signed difference %d kobo, portal − WCBS).',
-                            $expected->toNaira(),
-                            $amounts['wcbs_billed_total']->toNaira(),
-                            $expected->toKobo() - $amounts['wcbs_billed_total']->toKobo(),
-                        ));
-                        $exceptions[] = ['line' => $line, 'admission_number' => $key];
-                    }
-                }
-            }
-
-            // §7: all three figures zero — nothing for commit 4 to post. Recorded, not rejected.
-            if ($status === OpeningBalanceRowStatus::Ok && $identityChecked
-                && $amounts['prior_arrears']->isZero() && $amounts['wcbs_billed_total']->isZero() && $amounts['paid_to_date']->isZero()) {
-                $findings[] = $this->finding('nothing_to_post', 'All three figures are zero; the posting commit will skip this row.');
-            }
-
-            OpeningBalanceRow::create([
-                'batch_id' => $batch->id,
-                'line_number' => $line,
-                // Stored EXACTLY as it appeared — the trim happens in the comparison, never in
-                // what is kept, so a whitespace defect stays visible to the operator.
-                'admission_number' => $rawAdmission === '' ? null : $rawAdmission,
-                'wcbs_student_ref' => $this->blankToNull($values['wcbs_student_ref'] ?? ''),
-                'prior_arrears' => $amounts['prior_arrears'],
-                'wcbs_billed_total' => $amounts['wcbs_billed_total'],
-                'paid_to_date' => $amounts['paid_to_date'],
-                'wcbs_total_balance' => $amounts['wcbs_total_balance'],
-                'wcbs_bill_reference' => $this->blankToNull($values['wcbs_bill_reference'] ?? ''),
-                'last_payment_date' => $lastPayment,
+            $staged[] = [
+                'line' => $line,
+                'admission_raw' => $rawAdmission,
+                'key' => $key,
+                'label_raw' => $rawLabel,
+                'wcbs_student_ref' => $values['wcbs_student_ref'] ?? '',
+                'wcbs_bill_reference' => $values['wcbs_bill_reference'] ?? '',
+                'balance' => $amounts['balance'],
+                'student_total_balance' => $amounts['student_total_balance'],
                 'student_id' => $studentId,
-                'status' => $status,
-                'findings' => $findings === [] ? null : $findings,
-                'expected_billed' => $expected,
-            ]);
+                'findings' => $findings,
+            ];
 
             if ($key !== '') {
-                $seenInFile[$key] = $line;
+                $seenInFile[$key][$labelKey] = $line;
             }
+        }
+
+        // ── PHASE 2 — §1's L1, per student row-group. ──
+        $groups = [];
+        foreach ($staged as $index => $row) {
+            if ($row['key'] !== '') {
+                $groups[$row['key']][] = $index;
+            }
+        }
+
+        $l1Failures = [];   // admission number → the reason code, for the operator report
+        foreach ($groups as $admission => $indexes) {
+            $codeAndMessage = $this->l1Verdict($staged, $indexes);
+            if ($codeAndMessage === null) {
+                continue;
+            }
+
+            // The WHOLE row-group is rejected, not the row that happens to carry the arithmetic:
+            // posting three of a student's four lines is worse than posting none (§7).
+            foreach ($indexes as $index) {
+                $staged[$index]['findings'][] = $codeAndMessage;
+            }
+            $l1Failures[] = ['admission_number' => (string) $admission, 'code' => $codeAndMessage['code']];
+        }
+
+        // ── PHASE 3 — write the rows, now that every group's verdict is known. ──
+        $rowCount = 0;
+        $rejected = [];
+        foreach ($staged as $row) {
+            $isRejected = $row['findings'] !== [];
+            $findings = $row['findings'];
+
+            // §7: a single line whose balance is zero has no movement to post. Recorded AFTER the
+            // status is decided, because it is information for 4b and not a defect — the line still
+            // stages and still counts toward L1.
+            if (! $isRejected && $row['balance'] !== null && $row['balance']->isZero()) {
+                $findings[] = $this->finding('nothing_to_post', 'This line\'s balance is zero; the posting commit will skip it.');
+            }
+
+            try {
+                OpeningBalanceRow::create([
+                    'batch_id' => $batch->id,
+                    'line_number' => $row['line'],
+                    // Stored EXACTLY as it appeared — the trim happens in the comparison, never in
+                    // what is kept, so a whitespace defect stays visible to the operator. Same for the
+                    // fee-type label, which R7 carries verbatim onto the statement narration.
+                    'admission_number' => $row['admission_raw'] === '' ? null : $row['admission_raw'],
+                    'wcbs_student_ref' => $this->blankToNull($row['wcbs_student_ref']),
+                    'fee_type_label' => $row['label_raw'],
+                    'balance' => $row['balance'],
+                    'student_total_balance' => $row['student_total_balance'],
+                    'wcbs_bill_reference' => $this->blankToNull($row['wcbs_bill_reference']),
+                    'student_id' => $row['student_id'],
+                    'status' => $isRejected ? OpeningBalanceRowStatus::Rejected : OpeningBalanceRowStatus::Ok,
+                    'findings' => $findings === [] ? null : $findings,
+                ]);
+            } catch (UniqueConstraintViolationException $e) {
+                // THE TYPE IS NOT ENOUGH, AND A FUTURE READER MUST NOT WIDEN THIS BACK.
+                // `finance_opening_balance_rows` carries TWO unique indexes: the fee-type key this
+                // arm is about, and `..._uuid_unique` from the AddUuid concern. Both raise this same
+                // exception class on this same insert. Converting on the class alone would report a
+                // uuid collision — a defect in THIS SYSTEM's identifier generation — to the operator
+                // as `duplicate_row_key_in_file`, which is a confident, wrong statement about their
+                // file, and it would send them to look for a duplicate line that is not there.
+                //
+                // So the constraint is matched by NAME and anything else re-throws, the same shape
+                // the 1406 arm has. Matching a name we own is not the message-text matching that arm
+                // refuses: the prose around it ("Duplicate entry …") is localised and version-
+                // dependent, while `ob_rows_school_batch_admission_fee_type_unique` is an identifier
+                // this repository chose and a migration would have to rename deliberately.
+                //
+                // AND IT FAILS CLOSED, which is what a reader worried about a string match needs to
+                // know: if MySQL's message shape changes or the index is renamed, the match MISSES,
+                // the exception re-throws, and the run aborts. The failure of this comparison costs
+                // an aborted run — never a wrong finding printed as fact about someone's file.
+                if (! str_contains((string) ($e->errorInfo[2] ?? $e->getMessage()), self::ROW_KEY_INDEX)) {
+                    throw $e;
+                }
+
+                // THE ENGINE CAUGHT A DUPLICATE THE IN-PHP PASS DID NOT — and §7 already rules that
+                // two lines for one (student, fee type) are a fact about the FILE, not an error, so
+                // this converts to the same finding the in-PHP pass would have produced and the run
+                // CONTINUES. It used to abort here, leaving a committed batch whose own counters
+                // said it had staged nothing while an arbitrary prefix of the file sat in the rows
+                // table, and the §7 idempotency reference spent on a run nobody could read.
+                //
+                // The gap this closes is real and permanent: `fee_type_label` is utf8mb4_unicode_ci,
+                // which folds case AND accents AND trailing spaces, while normaliseLabel() folds
+                // case and trims. Every equivalence the collation has and the fold does not arrives
+                // here.
+                $refusedAtWrite[] = ['line' => $row['line'], 'admission_number' => $row['key'], 'code' => 'duplicate_row_key_in_file'];
+                $skipReasons['duplicate_row_key_in_file'] = ($skipReasons['duplicate_row_key_in_file'] ?? 0) + 1;
+
+                continue;
+            } catch (QueryException $e) {
+                // Classified by DRIVER CODE, never by matching the message text — a message is a
+                // localised, version-dependent string and a guard that reads one is a guard that
+                // silently stops matching. 1406 is "data too long for column".
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1406) {
+                    // NOT swallowed. Anything unclassified aborts the run, which is the correct
+                    // outcome for a failure nobody has decided the meaning of.
+                    throw $e;
+                }
+
+                $refusedAtWrite[] = ['line' => $row['line'], 'admission_number' => $row['key'], 'code' => 'value_too_long'];
+                $skipReasons['value_too_long'] = ($skipReasons['value_too_long'] ?? 0) + 1;
+
+                continue;
+            }
+
             $rowCount++;
 
-            if ($status === OpeningBalanceRowStatus::Rejected) {
-                $rejected[] = ['line' => $line, 'admission_number' => $key, 'codes' => array_column($findings, 'code')];
-            }
-
-            // §5's control totals cover every staged row whose three summed figures all parsed. A
-            // row that could not produce a figure contributes nothing rather than a zero — a zero
-            // would be this command asserting an amount the file never stated.
-            if ($amounts['prior_arrears'] !== null && $amounts['paid_to_date'] !== null && $amounts['wcbs_billed_total'] !== null) {
-                $totals['prior_arrears'] = $totals['prior_arrears']->plus($amounts['prior_arrears']);
-                $totals['paid_to_date'] = $totals['paid_to_date']->plus($amounts['paid_to_date']);
-                $totals['wcbs_billed_total'] = $totals['wcbs_billed_total']->plus($amounts['wcbs_billed_total']);
+            if ($isRejected) {
+                $rejected[] = [
+                    'line' => $row['line'],
+                    'admission_number' => $row['key'],
+                    'codes' => array_column($findings, 'code'),
+                ];
             }
         }
 
-        if ($duplicateInFile !== []) {
-            $batchFindings[] = $this->finding('duplicate_admission_number_in_file',
-                count($duplicateInFile).' row(s) repeat an admission number already staged in this batch and were NOT staged.');
+        // The two not-staged classes, each reported ONCE with both of its sources counted. A caught
+        // row and a dropped row are the same fact to the operator — the file has a line the batch
+        // does not — so they are one finding, with the split named for whoever has to debug it.
+        $engineDuplicates = $this->refusalsWithCode($refusedAtWrite, 'duplicate_row_key_in_file');
+        $engineTooLong = $this->refusalsWithCode($refusedAtWrite, 'value_too_long');
+
+        if ($duplicateInFile !== [] || $engineDuplicates !== []) {
+            $batchFindings[] = $this->finding('duplicate_row_key_in_file', sprintf(
+                '%d row(s) repeat an (admission number, fee type) already staged in this batch and were NOT staged '
+                .'(%d caught while reading, %d refused by the unique index at the write — those spell one fee type '
+                .'two ways in a manner the column collation folds and a case fold does not).',
+                count($duplicateInFile) + count($engineDuplicates), count($duplicateInFile), count($engineDuplicates),
+            ));
         }
 
-        // INGEST COMPLETENESS — read vs staged. This is a different control from the Money totals:
-        // those defend the staging table against drift between validation and posting, and they can
-        // be perfectly self-consistent over a batch that is short of the file. Nothing measured
-        // that until now, so a dropped row was only ever visible in console output.
+        if ($tooLong !== [] || $engineTooLong !== []) {
+            $batchFindings[] = $this->finding('value_too_long', sprintf(
+                '%d row(s) carry a value longer than its column can hold and were NOT staged '
+                .'(%d caught while reading, %d refused at the write). Correct the file; nothing is truncated.',
+                count($tooLong) + count($engineTooLong), count($tooLong), count($engineTooLong),
+            ));
+        }
+
+        // ── §1's L2 — Σ(student stated totals) against the operator's control total. ──
+        [$statedSum, $contributing, $excluded] = $this->statedTotalSum($staged, $groups);
+        if (! $statedSum->equals($controlTotal)) {
+            $batchFindings[] = $this->finding('control_total_mismatch', sprintf(
+                'Σ of the stated student totals = %s over %d student(s) but --control-total = %s (Δ %d kobo).%s',
+                $statedSum->toNaira(),
+                $contributing,
+                $controlTotal->toNaira(),
+                $statedSum->toKobo() - $controlTotal->toKobo(),
+                $excluded > 0
+                    ? " {$excluded} student(s) stated no usable total and are NOT in the sum."
+                    : '',
+            ));
+        }
+
+        // INGEST COMPLETENESS — read vs staged. This is a different control from L1 and L2: those
+        // check the arithmetic of what was staged, and they can be perfectly self-consistent over a
+        // batch that is short of the file.
         //
         // The breakdown must account for the WHOLE difference. Anything it cannot explain is named
         // `unattributed`, which is what makes a future skip that forgets to register a reason
@@ -469,31 +640,175 @@ class ImportOpeningBalances extends Command
         $batch->update([
             'row_count' => $rowCount,
             'file_row_count' => $fileRowCount,
-            'total_prior_arrears' => $totals['prior_arrears'],
-            'total_paid_to_date' => $totals['paid_to_date'],
-            'total_wcbs_billed' => $totals['wcbs_billed_total'],
             'findings' => $batchFindings === [] ? null : $batchFindings,
             'status' => ($rejected === [] && $batchFindings === [])
                 ? OpeningBalanceBatchStatus::Validated
                 : OpeningBalanceBatchStatus::Rejected,
         ]);
 
-        return $this->report($batch, $rowCount, $fileRowCount, $blankLines, $rejected, $exceptions,
-            $notComparable, $unresolved, $absent, $duplicateInFile, $nullAdmissions, $duplicateAfterTrim,
-            $batchFindings);
+        return $this->report($batch, $rowCount, $fileRowCount, $blankLines, $rejected, $l1Failures,
+            $unresolved, $absent, $duplicateInFile, $tooLong, $refusedAtWrite, $nullAdmissions,
+            $duplicateAfterTrim, $statedSum, $controlTotal, $batchFindings);
+    }
+
+    /**
+     * §1's L1 for one student's row-group: Σ(that student's per-fee-type balances) against the total
+     * the file states for them. Returns the finding to stamp on EVERY row of the group, or null when
+     * the group passes.
+     *
+     * THREE OUTCOMES, and the middle one is the reason this returns a finding rather than a bool:
+     *
+     *  - the stated total disagrees with itself across the group → `inconsistent_student_total`.
+     *    §2 requires the same figure on every one of a student's rows; two different figures mean
+     *    there is no stated total to check against, and picking one would be this command inventing
+     *    the witness it is supposed to be checking.
+     *  - some row of the group has no usable balance or no usable stated total →
+     *    `l1_not_checkable`. That row is already rejected on its own account, but its NEIGHBOURS
+     *    would otherwise stage as `ok` with the group's arithmetic never checked — and 4b would then
+     *    post part of a student whose total nothing verified.
+     *  - the sum differs from the stated total → `student_total_mismatch`, both sides named.
+     *
+     * @param  list<array<string, mixed>>  $staged
+     * @param  list<int>  $indexes
+     * @return array{code: string, message: string}|null
+     */
+    private function l1Verdict(array $staged, array $indexes): ?array
+    {
+        $stated = [];
+        $missing = 0;
+        $sum = Money::fromKobo(0);
+
+        foreach ($indexes as $index) {
+            $balance = $staged[$index]['balance'];
+            $total = $staged[$index]['student_total_balance'];
+
+            if ($balance === null || $total === null) {
+                $missing++;
+
+                continue;
+            }
+
+            $sum = $sum->plus($balance);
+            $stated[$total->toKobo()] = $total;
+        }
+
+        if (count($stated) > 1) {
+            $figures = implode(', ', array_map(fn (Money $m) => $m->toNaira(), $stated));
+
+            return $this->finding('inconsistent_student_total', sprintf(
+                'This student\'s rows state %d different totals (%s); §2 requires the SAME total on every row of a student.',
+                count($stated), $figures,
+            ));
+        }
+
+        if ($missing > 0) {
+            return $this->finding('l1_not_checkable', sprintf(
+                '%d of this student\'s %d row(s) carry no usable balance or stated total, so L1 could not be checked; '
+                .'the whole row-group is rejected rather than staged part-checked.',
+                $missing, count($indexes),
+            ));
+        }
+
+        $total = reset($stated);
+        if ($total === false) {
+            // Unreachable while $missing === 0 and the group is non-empty; a group can only be
+            // empty if it was never created, and it is created by its first member.
+            return null;
+        }
+
+        if ($sum->equals($total)) {
+            return null;
+        }
+
+        // BOTH sides in the finding, and the group is rejected — never corrected (§1).
+        return $this->finding('student_total_mismatch', sprintf(
+            'Σ of this student\'s %d fee-type balance(s) = %s but student_total_balance = %s (Δ %d kobo).',
+            count($indexes), $sum->toNaira(), $total->toNaira(), $sum->toKobo() - $total->toKobo(),
+        ));
+    }
+
+    /**
+     * §1's L2 input: Σ over STUDENTS (not rows) of the total each one states, counted once per
+     * student. A student whose group states no usable total, or states more than one, contributes
+     * nothing and is counted as excluded — a zero would be this command asserting a figure the file
+     * never stated, and silently summing over fewer students than the file names is how L2 goes green
+     * on an incomplete set.
+     *
+     * @param  list<array<string, mixed>>  $staged
+     * @param  array<string, list<int>>  $groups
+     * @return array{0: Money, 1: int, 2: int}
+     */
+    private function statedTotalSum(array $staged, array $groups): array
+    {
+        $sum = Money::fromKobo(0);
+        $contributing = 0;
+        $excluded = 0;
+
+        foreach ($groups as $indexes) {
+            $stated = [];
+            foreach ($indexes as $index) {
+                $total = $staged[$index]['student_total_balance'];
+                if ($total !== null) {
+                    $stated[$total->toKobo()] = $total;
+                }
+            }
+
+            if (count($stated) !== 1) {
+                $excluded++;
+
+                continue;
+            }
+
+            $sum = $sum->plus(reset($stated));
+            $contributing++;
+        }
+
+        return [$sum, $contributing, $excluded];
+    }
+
+    /**
+     * The in-PHP duplicate key for a fee-type label — §12 decision 3, closed in
+     * 2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php's docblock:
+     * 'Tuition' and 'tuition' are THE SAME FEE TYPE.
+     *
+     * The point of folding case HERE is that the index folds it anyway. `fee_type_label` is
+     * utf8mb4_unicode_ci, so unique(school_id, batch_id, admission_number, fee_type_label) collides
+     * the two whatever PHP believes; a byte comparison would let the second row through the in-PHP
+     * pass and into the insert, where 1062 aborts the run mid-batch instead of reporting a named
+     * finding. So the detection is made to AGREE with the index rather than disagree with it.
+     *
+     * THE RESIDUAL IS WIDER THAN THIS FOLD, and the earlier wording here understated it. This
+     * function reproduces CASE and padding. `utf8mb4_unicode_ci` is the full UCA folding: it also
+     * equates accents ('Tuición' = 'Tuicion'), expansions ('Straße' = 'Strasse') and everything else
+     * the collation's tertiary weights ignore, and it is PAD SPACE. **Every equivalence it has and
+     * this fold does not still reaches the INSERT**, where the unique index refuses it.
+     *
+     * That is not a correctness hole and it is no longer an aborted run either: the write loop
+     * CATCHES the refusal and converts it into the same `duplicate_row_key_in_file` finding this
+     * pass would have produced, counted in the same not-ingested accounting. The previous claim in
+     * this docblock — "nothing is staged wrong either way" — was made without executing the case,
+     * and executing it showed a committed batch reporting row_count=0 over a partially-written rows
+     * table. The catch is what makes the sentence true; the fold is only what keeps the common case
+     * out of the engine.
+     */
+    private function normaliseLabel(string $label): string
+    {
+        return mb_strtolower(trim($label));
     }
 
     /**
      * The operator report. Counts, line numbers and admission numbers ONLY — no names, and no
      * per-student figures. The figures live in each staged row's `findings` JSON, which is what
-     * U12b will render.
+     * U12b will render. The two L2 figures ARE printed: they are batch aggregates, not any one
+     * student's position.
      *
      * @param  list<array{line: int, admission_number: string, codes: list<string>}>  $rejected
-     * @param  list<array{line: int, admission_number: string}>  $exceptions
-     * @param  list<array{line: int, admission_number: string, reason: string}>  $notComparable
+     * @param  list<array{admission_number: string, code: string}>  $l1Failures
      * @param  list<array{line: int, admission_number: string}>  $unresolved
      * @param  list<string>  $absent
-     * @param  list<array{line: int, admission_number: string, first: int}>  $duplicateInFile
+     * @param  list<array{line: int, admission_number: string, fee_type_label: string, first: int}>  $duplicateInFile
+     * @param  list<array{line: int, admission_number: string, columns: list<string>}>  $tooLong
+     * @param  list<array{line: int, admission_number: string, code: string}>  $refusedAtWrite
      * @param  list<array{code: string, message: string}>  $batchFindings
      */
     private function report(
@@ -502,13 +817,16 @@ class ImportOpeningBalances extends Command
         int $fileRowCount,
         int $blankLines,
         array $rejected,
-        array $exceptions,
-        array $notComparable,
+        array $l1Failures,
         array $unresolved,
         array $absent,
         array $duplicateInFile,
+        array $tooLong,
+        array $refusedAtWrite,
         int $nullAdmissions,
         int $duplicateAfterTrim,
+        Money $statedSum,
+        Money $controlTotal,
         array $batchFindings,
     ): int {
         $this->info("Batch [{$batch->batch_reference}] staged from [{$batch->filename}] — READ-ONLY, nothing was posted.");
@@ -523,22 +841,22 @@ class ImportOpeningBalances extends Command
             ['blank lines skipped', $blankLines],
             ['rows staged', $rowCount],
             ['rejected rows', count($rejected)],
-            ['comparison exceptions (§5 different)', count($exceptions)],
-            ['not comparable (§5 — NOT an exception)', count($notComparable)],
+            ['students failing L1 (whole row-group rejected)', count($l1Failures)],
             ['file rows matching no student', count($unresolved)],
             ['students in School absent from the file', count($absent)],
-            ['file rows dropped as duplicate keys', count($duplicateInFile)],
+            ['file rows dropped as duplicate (student, fee type)', count($duplicateInFile)],
+            ['file rows dropped for an over-length value', count($tooLong)],
+            ['file rows the engine refused at the write', count($refusedAtWrite)],
             ['School students with no admission number', $nullAdmissions],
             ['School admission numbers duplicated after trim', $duplicateAfterTrim],
         ]);
 
-        // §5's control totals, printed as the batch aggregate the approval screen re-asserts. These
-        // are batch sums, not any one student's figures.
-        $this->line('Control totals (kobo): '
-            .'Σ prior_arrears='.$batch->total_prior_arrears?->toKobo()
-            .' Σ paid_to_date='.$batch->total_paid_to_date?->toKobo()
-            .' Σ wcbs_billed_total='.$batch->total_wcbs_billed?->toKobo()
-            ." row_count={$rowCount}");
+        // §1's L2, printed whether or not it failed. A check whose figures only appear when it fails
+        // is one an operator cannot confirm ran.
+        $this->line(sprintf(
+            'L2 (kobo): Σ stated student totals=%d, --control-total=%d, Δ=%d',
+            $statedSum->toKobo(), $controlTotal->toKobo(), $statedSum->toKobo() - $controlTotal->toKobo(),
+        ));
 
         foreach ($batchFindings as $finding) {
             $this->error("BATCH FINDING [{$finding['code']}] {$finding['message']}");
@@ -547,16 +865,24 @@ class ImportOpeningBalances extends Command
         $this->printList('Rejected rows', array_map(
             fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}]: ".implode(', ', $r['codes']),
             $rejected));
-        $this->printList('Comparison exceptions (figures are on the staged row)', array_map(
-            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}]", $exceptions));
-        $this->printList('Not comparable', array_map(
-            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}]: {$r['reason']}", $notComparable));
-        $this->printList('Rows dropped as duplicate keys', array_map(
-            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}] first staged at line {$r['first']}", $duplicateInFile));
+        $this->printList('Students failing L1 (every row of theirs is rejected)', array_map(
+            fn (array $r) => "admission [{$r['admission_number']}]: {$r['code']}", $l1Failures));
+        $this->printList('Rows dropped as duplicate (student, fee type)', array_map(
+            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}] fee type [{$r['fee_type_label']}] first staged at line {$r['first']}",
+            $duplicateInFile));
+        $this->printList('Rows dropped for an over-length value', array_map(
+            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}]: ".implode(', ', $r['columns']),
+            $tooLong));
+        // The engine's refusals are listed separately from the reader's drops on purpose: same
+        // consequence for the file, different thing to look at. A row here means the in-PHP pass
+        // and the column's collation disagree, which is a fact about THIS command, not the extract.
+        $this->printList('Rows the engine refused at the write (the in-PHP pass did not catch them)', array_map(
+            fn (array $r) => "line {$r['line']} admission [{$r['admission_number']}]: {$r['code']}",
+            $refusedAtWrite));
         $this->printList('Students absent from the file (opening position would be zero)', $absent);
 
         if ($rejected === [] && $batchFindings === []) {
-            $this->info('Clean: every row validated and the join key is safe. Batch status: '.$batch->status->value);
+            $this->info('Clean: every row validated, both checksum levels hold, and the join key is safe. Batch status: '.$batch->status->value);
 
             return self::SUCCESS;
         }
@@ -588,7 +914,8 @@ class ImportOpeningBalances extends Command
     /**
      * Read the CSV into line-numbered associative records. The header row is REQUIRED (§2) and a
      * missing required column aborts the run before the batch row is written — a file whose shape
-     * is wrong has no rows worth staging.
+     * is wrong has no rows worth staging. The required set is read off the COLUMNS map, so a change
+     * to the format cannot leave the header check behind.
      *
      * WHOLLY BLANK LINES ARE DROPPED HERE, and this is the only place in the run where a physical
      * line disappears without reaching `$skipReasons`. That is deliberate — a blank line carries no
@@ -619,7 +946,8 @@ class ImportOpeningBalances extends Command
             $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header[0]);
             $header = array_map(fn ($h) => strtolower(trim((string) $h)), $header);
 
-            $missing = array_diff(self::REQUIRED_COLUMNS, $header);
+            $required = array_keys(array_filter(self::COLUMNS, fn (array $spec) => $spec['required']));
+            $missing = array_diff($required, $header);
             if ($missing !== []) {
                 throw new InvalidArgumentException('Missing required column(s): '.implode(', ', $missing).'.');
             }
@@ -664,28 +992,6 @@ class ImportOpeningBalances extends Command
         }
     }
 
-    /**
-     * The portal's expected total for (term, class level) — the sum of the ACTIVE schedule's items.
-     * Null when no active schedule exists, which is §5's "not comparable" and not an error.
-     *
-     * The single `status = active` filter lives in FeeScheduleLookup and nowhere else (that class's
-     * docblock explains why); this reads through it rather than re-querying schedules.
-     */
-    private function scheduleTotalFor(FeeScheduleLookup $schedules, int $termId, int $classLevelId): ?Money
-    {
-        $schedule = $schedules->activeFor($termId, $classLevelId);
-        if ($schedule === null) {
-            return null;
-        }
-
-        $total = Money::fromKobo(0);
-        foreach ($schedule->items as $item) {
-            $total = $total->plus($item->amount);
-        }
-
-        return $total;
-    }
-
     private function resolveSchool(string $option): ?School
     {
         if ($option === '') {
@@ -706,10 +1012,47 @@ class ImportOpeningBalances extends Command
     }
 
     /**
+     * §1's L2 witness, and REQUIRED — §2 makes it so, and the check has no second input.
+     *
+     * IT IS AN OPTION AND NOT A COLUMN, and that is the only reason the figure is worth having
+     * (§12 decision 2, CLOSED by R12). A total carried inside the file was produced by the same
+     * export run as the rows: drop a student on the way out of WCBS and they vanish from the rows
+     * AND from the total, the two still agree, and L2 goes green on an incomplete file. A witness
+     * that shares a failure mode with the thing it witnesses is not a witness, it is a second copy.
+     * The figure earns its place by travelling a different path — read off WCBS's own report and
+     * typed by the person doing the upload, who thereby ATTESTS to it.
+     *
+     * SIGNED, for the same reason `balance` is: a school whose students are net in credit has a
+     * negative Σ, and a non-negative rule here would refuse the file rather than the mistake.
+     */
+    private function resolveControlTotal(string $option): ?Money
+    {
+        if (trim($option) === '') {
+            $this->error('--control-total is required: Σ of every student stated total, read off WCBS\'s own report (§1 L2).');
+
+            return null;
+        }
+
+        try {
+            return Money::fromNaira(trim($option));
+        } catch (InvalidArgumentException) {
+            $this->error("Invalid --control-total [{$option}]: expected naira with up to two decimal places.");
+
+            return null;
+        }
+    }
+
+    /**
      * The cutover term, checked to exist AND to belong to the target School. Validated by rule
      * rather than by loading an Academics model: Finance does not import Academics' models
      * (arch rule 3), and the existing Finance precedent for naming `terms` is exactly this —
      * `exists:terms,id` in FeeScheduleRequest.
+     *
+     * STILL REQUIRED, AND STILL OPEN. §9 records the contradiction: R5 puts the cutover on a term
+     * boundary, so §1 says there is no cutover term T, while `batches.term_id` is NOT NULL with an
+     * FK. Either answer — nullable, or repurposed to name the term being CLOSED OUT — changes a
+     * migration, and 4a is the file format. 4b/4c closes it; this stays as it shipped rather than
+     * being half-changed here.
      */
     private function resolveTerm(string $option, int $schoolId): ?int
     {
@@ -747,6 +1090,15 @@ class ImportOpeningBalances extends Command
     private function finding(string $code, string $message): array
     {
         return ['code' => $code, 'message' => $message];
+    }
+
+    /**
+     * @param  list<array{line: int, admission_number: string, code: string}>  $refusals
+     * @return list<array{line: int, admission_number: string, code: string}>
+     */
+    private function refusalsWithCode(array $refusals, string $code): array
+    {
+        return array_values(array_filter($refusals, fn (array $r) => $r['code'] === $code));
     }
 
     /**

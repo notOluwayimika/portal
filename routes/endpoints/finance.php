@@ -135,16 +135,37 @@ Route::post('/v1/finance/discount-policy-changes/{change:uuid}/reject', [Discoun
     ->middleware('permission:finance.discount-policy.change.reject');
 
 /*
- * Opening-balance cutover (§9 step 5a) — THE READ SURFACE ONLY. §9 step 4c shipped the approval gate
- * as domain: Submit/Approve/RejectOpeningBalanceBatch exist, exercised by the console and tests, with
- * no HTTP path. This route does not open one. Submitting a batch and DECIDING it are the operator
- * screen's (§9 step 5b / spec §2's U12b); this is only the feed that lets a holder of
- * `finance.opening-balance.approve` see that a batch is waiting — which, before 5a, no screen told
- * them. The queue therefore renders this type without decision controls and says where the decision
- * is taken; 5b turns it into a decidable row by adding two urls to one entry in the declared list.
+ * Opening-balance cutover — the read feed (§9 step 5a) and, as of §9 step 5b-ii, THE DECISION.
+ *
+ * The block previously read "THE READ SURFACE ONLY … this route does not open one … no HTTP path".
+ * All three are false below this line and the rewrite is deliberate: a comment that contradicts the
+ * routes under it is worse than no comment, because it is read as a statement about what the
+ * feature can do.
+ *
+ * WHAT IS TRUE NOW. Deciding a batch is HTTP: approve and reject delegate to 4c's Actions, which own
+ * the transaction, the locked re-read of `status` and the submitter, and — on approve — the post
+ * itself. SUBMITTING IS STILL NOT HTTP. The maker's screen (spec §2's U12b) is the next commit, so
+ * nothing can currently move a batch into `submitted` and `pending` returns an empty feed to every
+ * checker. The exit is built before the entrance on purpose: the other order is what left 5a's two
+ * feeds and 5b-i's template shipped and reachable from no screen.
+ *
+ * THE TWO DECISIONS ARE SEPARATELY GATED, on `…approve` and `…reject`, because they are two abilities
+ * and the seat that holds one need not hold the other. Both end in a CHECKER segment, so
+ * ApprovalAbility excludes them from the super-admin Gate::before bypass (ADR 0040); the record-level
+ * maker ≠ checker rule is OpeningBalanceBatchPolicy, and the database's
+ * `…_maker_ne_checker` CHECK is the backstop under both.
+ *
+ * APPROVE IS THE POST AND IT IS IRREVERSIBLE. One request writes the cutover into the subledger and
+ * G1b denies every exit from `posted`. The queue therefore confirms this type's approval and no
+ * other's — see resources/js/lib/finance/approval-feeds.ts. That dialog is a courtesy; these
+ * middleware, the Policy, the Action's lock and the database are the controls.
  */
 Route::get('/v1/finance/opening-balance-batches/pending', [OpeningBalanceBatchController::class, 'pending'])
     ->middleware('permission:finance.opening-balance.approve');
+Route::post('/v1/finance/opening-balance-batches/{batch:uuid}/approve', [OpeningBalanceBatchController::class, 'approve'])
+    ->middleware('permission:finance.opening-balance.approve');
+Route::post('/v1/finance/opening-balance-batches/{batch:uuid}/reject', [OpeningBalanceBatchController::class, 'reject'])
+    ->middleware('permission:finance.opening-balance.reject');
 
 /*
  * §9 step 5b-i (R13) — the import template the platform ISSUES. Brookstone downloads it here; nobody

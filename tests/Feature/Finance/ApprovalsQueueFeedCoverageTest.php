@@ -185,6 +185,116 @@ it('every imported pending alias is wired to exactly one entry, and every entry 
 });
 
 /**
+ * One entry's source text, keyed by its `type`. Sliced from the array body between successive
+ * `type: '…'` lines, so a per-entry assertion can name WHICH entry is wrong instead of reporting
+ * that the file as a whole contains or lacks a string.
+ *
+ * @return array<string, string>
+ */
+function aqfEntriesByType(string $body): array
+{
+    preg_match_all("/^\s+type: '([a-z_]+)',$/m", $body, $matches, PREG_OFFSET_CAPTURE);
+
+    $entries = [];
+    $count = count($matches[0]);
+
+    for ($i = 0; $i < $count; $i++) {
+        $start = (int) $matches[0][$i][1];
+        $end = $i + 1 < $count ? (int) $matches[0][$i + 1][1] : strlen($body);
+        $entries[(string) $matches[1][$i][0]] = substr($body, $start, $end - $start);
+    }
+
+    return $entries;
+}
+
+/**
+ * THE PENDING-ALIAS PIN, EXTENDED TO THE DECISION URLS — and it is the same defect one door along.
+ * An entry can import every alias correctly and still wire the wrong one:
+ *
+ *     { type: 'opening_balance', …, decide: { approve: (id) => approveCredit.url(id), … } }
+ *
+ * That posts a BATCH uuid at the credit-note approve endpoint. It is green under every assertion in
+ * this file, and the failure it produces is a 404 in front of a checker who is trying to approve a
+ * cutover — discovered at the worst possible moment, by the one person who cannot work around it.
+ *
+ * All five entries already name their aliases `<verb><Type>` — pendingCredit/approveCredit/
+ * rejectCredit, pendingVoid/approveVoid/rejectVoid, and so on — so the wiring is checkable without
+ * inventing anything: strip the verb, and an entry's three aliases must agree on what is left. A
+ * rename that keeps the convention passes; one that breaks it fails loudly with the entry named,
+ * which is the right trade against a mis-wired decision discovered in production.
+ */
+it('every decidable entry wires its approve and reject at the SAME controller its pending feed points to', function () {
+    $entries = aqfEntriesByType(aqfFeedsArrayBody(aqfRead(AQF_FEEDS_MODULE)));
+
+    $decidable = 0;
+
+    foreach ($entries as $type => $source) {
+        if (preg_match('/^\s+decide: \{/m', $source) !== 1) {
+            continue;
+        }
+
+        $decidable++;
+
+        preg_match('/pendingUrl: \(\) => ([A-Za-z]+)\.url\(\)/', $source, $pending);
+        preg_match('/approve: \(id\) => ([A-Za-z]+)\.url\(id\)/', $source, $approve);
+        preg_match('/reject: \(id\) => ([A-Za-z]+)\.url\(id\)/', $source, $reject);
+
+        $suffix = fn (string $alias) => preg_replace('/^(pending|approve|reject)/', '', $alias);
+
+        expect([$approve[1] ?? '', $reject[1] ?? ''])->not->toContain('',
+            "The [{$type}] entry declares `decide` but does not wire both an approve and a reject url.");
+
+        expect($suffix((string) $approve[1]))->toBe($suffix((string) $pending[1]),
+            "The [{$type}] entry fetches with [{$pending[1]}] but approves with [{$approve[1]}] — "
+            .'a decision posted at another type\'s endpoint.')
+            ->and($suffix((string) $reject[1]))->toBe($suffix((string) $pending[1]),
+                "The [{$type}] entry fetches with [{$pending[1]}] but rejects with [{$reject[1]}] — "
+                .'a decision posted at another type\'s endpoint.');
+    }
+
+    // Not vacuous: a parse that matched no entry would satisfy the loop by never running.
+    expect($decidable)->toBeGreaterThan(0, 'No entry was parsed as decidable — the loop above asserted nothing.');
+});
+
+/**
+ * WHICH APPROVALS CANNOT BE UNDONE, WRITTEN DOWN.
+ *
+ * One approval on this queue is irreversible: an opening-balance batch's, which posts the school's
+ * cutover into an append-only subledger under two triggers that deny every exit from `posted`
+ * (G1/G1b). Its feed entry carries a `confirm`; the other four deliberately do not, because a dialog
+ * on every approval is a dialog nobody reads — and the one that gets clicked through is then the one
+ * that mattered.
+ *
+ * BOTH DIRECTIONS ARE PINNED, and the silent direction is why this test exists. Deleting `confirm`
+ * from the opening-balance entry breaks nothing visible: the button simply fires on the click, and a
+ * checker posts a cutover with one press. Nothing renders differently, no request fails, no type
+ * complains. Adding one to a correctable type is the loud direction, and it is pinned too, because
+ * that is how the confirmation stops meaning anything.
+ *
+ * The expected list is written out by name rather than derived. There is nothing in the TypeScript
+ * that says which approvals are irreversible, so a derivation would be inventing an oracle; a sixth
+ * type that cannot be undone must make this test red and force somebody to answer the question.
+ */
+it('exactly one approval type confirms before it fires, and it is the irreversible one', function () {
+    $entries = aqfEntriesByType(aqfFeedsArrayBody(aqfRead(AQF_FEEDS_MODULE)));
+
+    $confirming = array_keys(array_filter(
+        $entries,
+        fn (string $source) => preg_match('/^\s+confirm: /m', $source) === 1,
+    ));
+
+    expect($confirming)->toBe(['opening_balance'],
+        'The approvals queue confirms ['.implode(', ', $confirming).'] before approving. Exactly one '
+        .'type may: opening_balance, whose approval posts a cutover that cannot be un-posted, deleted '
+        .'or moved. A missing confirmation there is a one-click irreversible post; an extra one '
+        .'anywhere else is what teaches a checker to dismiss the dialog without reading it.');
+
+    // And the sentence a checker actually reads has to contain the claim. A confirmation that does
+    // not say the act cannot be undone is a speed bump, not a warning.
+    expect(strtolower($entries['opening_balance']))->toContain('irreversible');
+});
+
+/**
  * A ROW THAT CANNOT SAY WHICH THING IT IS ABOUT VOIDS THE CONTROL IT IMPLEMENTS. Maker-checker's
  * premise is that a second person looks at THE THING; two pending fee-schedule publishes that both
  * render "Fee schedule · publish" make the signature ceremonial, and that state was reachable
@@ -216,6 +326,31 @@ it('every declared feed says which thing its rows are about', function () {
  */
 it('the approvals page imports no Finance controller action directly — every feed comes off the declared list', function () {
     expect(aqfDeclaredControllers(aqfRead(AQF_PAGE)))->toBe([]);
+});
+
+/**
+ * A DECLARED CONFIRMATION THE PAGE NEVER CONSULTS IS WORSE THAN NO CONFIRMATION, because the
+ * declaration is then read — by the next person, and by the test above — as evidence that the guard
+ * is there. The arm above pins the feed entry; this pins the one line that makes the entry matter.
+ *
+ * Same limit and same precedent as the error-rule arm below: there is no JavaScript test runner in
+ * this repository, so this reads the source. It asserts the Approve button routes through the
+ * confirm-aware handler and NOT straight into the request — the exact edit (`onClick={() =>
+ * void approve(row)}`) that silently restores one-click posting.
+ */
+it('the Approve button fires through the confirmation gate, not straight at the request', function () {
+    $page = aqfRead(AQF_PAGE);
+
+    $viaGate = str_contains($page, 'onClick={() =>') && str_contains($page, 'requestApprove(');
+    $consultsFeed = str_contains($page, 'feedFor(row)?.confirm === undefined');
+    $directCall = preg_match('/onClick=\{\(\) =>\s*void approve\(/', $page) === 1;
+
+    expect($viaGate)->toBeTrue(AQF_PAGE.' no longer routes Approve through requestApprove(). An '
+        .'irreversible approval declared in the feed list would fire on the click with no dialog.')
+        ->and($consultsFeed)->toBeTrue(AQF_PAGE.' no longer branches on the row\'s FEED carrying a '
+            .'`confirm`. Either the confirmation is dead, or the page has grown per-type knowledge.')
+        ->and($directCall)->toBeFalse(AQF_PAGE.' calls approve() directly from an onClick. That is '
+            .'the edit that bypasses the confirmation while leaving it declared and apparently guarded.');
 });
 
 /**

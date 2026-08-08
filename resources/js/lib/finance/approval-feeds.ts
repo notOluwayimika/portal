@@ -13,7 +13,11 @@ import {
     pending as pendingScheduleChange,
     reject as rejectScheduleChange,
 } from '@/actions/App/Finance/Http/Controllers/FeeScheduleChangeController';
-import { pending as pendingOpeningBalance } from '@/actions/App/Finance/Http/Controllers/OpeningBalanceBatchController';
+import {
+    approve as approveOpeningBalance,
+    pending as pendingOpeningBalance,
+    reject as rejectOpeningBalance,
+} from '@/actions/App/Finance/Http/Controllers/OpeningBalanceBatchController';
 import {
     approve as approveVoid,
     pending as pendingVoid,
@@ -63,16 +67,23 @@ import type {
  *
  * DECISION URLS ARE OPTIONAL, and that is the honest shape rather than a convenience. A type whose
  * decisions are taken elsewhere carries `decidedElsewhere` instead of `decide`, and the queue
- * renders that sentence in place of buttons. Opening-balance batches are the live case: §9 step 4c
- * shipped their approval gate as domain only — there is no approve/reject endpoint and no policy
- * until step 5b's operator screen. Rendering them with Approve/Reject would produce a row an
- * approver can see, press and fail on, which is worse than an absent one: absent is honestly
- * broken, present-and-dead is dishonestly broken.
+ * renders that sentence in place of buttons — because a row an approver can see, press and fail on
+ * is worse than an absent one: absent is honestly broken, present-and-dead is dishonestly broken.
  *
- * Note the asymmetry deliberately: `decide` may be withheld ONLY because the endpoint does not
- * exist. It is never the answer to a row that is hard to label — withholding it there reproduces
- * this branch's own defect, a visible row nobody can act on, and the fix for a hard label is to
- * put the subject on the wire.
+ * NO TYPE WITHHOLDS `decide` TODAY. Opening-balance batches were the live case and stopped being one
+ * in §9 step 5b-ii, which gave them a Policy and an approve/reject endpoint; the option stays because
+ * the RULE it carries outlives the example. That rule: `decide` may be withheld ONLY because the
+ * endpoint does not exist. It is never the answer to a row that is hard to label — withholding it
+ * there reproduces this branch's own defect, a visible row nobody can act on, and the fix for a hard
+ * label is to put the subject on the wire.
+ *
+ * `confirm` IS THE OTHER OPTIONAL MEMBER, AND IT IS NOT A UI PREFERENCE. It exists for approvals that
+ * cannot be undone, and it is declared PER TYPE for the reason a blanket confirmation would defeat:
+ * a dialog on every approval is a dialog nobody reads, which is how the one that matters gets clicked
+ * through. Exactly one type carries it — opening-balance, whose approval posts the cutover under
+ * triggers that deny every exit from `posted`. Reject carries none anywhere: nothing it does is
+ * irreversible. And the dialog is a courtesy, never a control: the ability on the route, the Policy,
+ * the Action's locked re-read and the database's CHECK all hold against a client that never renders it.
  */
 export type ApprovalFeed = {
     /** The `type` discriminator the matching Resource emits. */
@@ -97,6 +108,22 @@ export type ApprovalFeed = {
      * distinguish two pending rows of the same type from each other; a bare type name does not.
      */
     subject: (row: PendingApproval) => string;
+    /**
+     * An APPROVAL that cannot be undone stops here first. Absent ⇒ Approve fires on the click, which
+     * is the right default for the four types whose approval is correctable afterwards.
+     *
+     * Only ever consulted on APPROVE. A reject moves no money on any type.
+     */
+    confirm?: (row: PendingApproval) => ApprovalConfirmation;
+};
+
+/** What the queue puts in front of an irreversible approval. */
+export type ApprovalConfirmation = {
+    title: string;
+    /** One paragraph per entry. The numbers a checker ties back go here, not in the title. */
+    body: string[];
+    /** The affirmative button's text. Name the ACT, never "Confirm". */
+    confirmLabel: string;
 };
 
 /** `10%`, or a fixed amount through the single money renderer. Null when the change states neither. */
@@ -218,15 +245,42 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400',
         pendingUrl: () => pendingOpeningBalance.url(),
-        // No `decide`: see the module docblock — the decision surface is §9 step 5b. The sentence
-        // says the screen is NOT BUILT rather than naming one, because naming a screen that does
-        // not exist sends the approver somewhere and is the same dishonesty as a dead button.
-        decidedElsewhere: 'No decision screen yet — §9 step 5b',
+        decide: {
+            approve: (id) => approveOpeningBalance.url(id),
+            reject: (id) => rejectOpeningBalance.url(id),
+            // NOT "batch approved". Approving this type is not a state change with a posting to
+            // follow — the post happens inside the same transaction, so the past tense has to name
+            // what happened to the money or the toast understates the act it is reporting.
+            approvedMessage: 'opening balances posted to the subledger',
+        },
         // The batch reference is the operator's own handle for the file they uploaded.
         subject: (row) =>
             row.type === 'opening_balance'
                 ? `Batch · ${row.batch_reference}`
                 : '—',
+        // THE ONE IRREVERSIBLE APPROVAL ON THIS QUEUE. It writes a ledger charge per positive
+        // fee-type line and a netted migrated payment per student in credit, and two database
+        // triggers then deny every exit from `posted` — UPDATE and DELETE alike. There is no
+        // un-post, no delete and no second attempt; a wrong cutover is corrected by restoring the
+        // database, which is a decision taken by people, outside this application.
+        //
+        // The figures are the ones the wire carries: the batch reference, and the control total the
+        // operator read off WCBS's own report and typed at upload (§1's L2 witness). The row COUNT
+        // would be the third number a checker wants and OpeningBalanceBatchResource does not emit
+        // it; that is recorded in the implementation report rather than papered over here.
+        confirm: (row) => ({
+            title: 'Post this cutover? It cannot be undone.',
+            body: [
+                row.type === 'opening_balance'
+                    ? `Approving batch ${row.batch_reference} posts its opening balances into the subledger immediately — a charge for every fee type a student owes, and a credit for every student in credit.`
+                    : '',
+                row.type === 'opening_balance' && row.amount
+                    ? `The batch states a control total of ${formatNaira(row.amount)} — the figure the uploader read off WCBS and attested to. Check it against WCBS before you approve.`
+                    : 'This batch carries no control total, so there is no figure to check it against.',
+                'This is irreversible. Posted balances cannot be un-posted, deleted or moved to another school, and this school may never post a second batch.',
+            ].filter((paragraph) => paragraph !== ''),
+            confirmLabel: 'Post opening balances',
+        }),
     },
 ];
 

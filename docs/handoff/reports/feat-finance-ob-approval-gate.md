@@ -40,6 +40,40 @@ asserts the count equals the number of `Submit*.php` files so it cannot pass vac
 **D4. I did NOT regenerate `tests/fixtures/route-access-map.json`.** See §6 — regenerating it
 folds 153 lines of pre-existing, unrelated drift into this commit.
 
+**D5. I edited one line of setup in `FinanceChangeGrantConvergenceTest` ARM 4 — and the reason is
+a real consequence of the grant, not a nuisance.** The first `bin/quality` run failed the ratchet
+with exactly one new failure, and it is worth reading before the fix:
+
+```
+Segregation of duties: [<redacted>] would hold BOTH the checker
+[finance.opening-balance.approve] (via role head_of_school) and the maker
+[finance.opening-balance.submit] (via role accounts_supervisor) in school #1.
+```
+
+ARM 4 reconstructs the pre-convergence production timeline: it strips the fee-schedule maker from
+`accounts_supervisor` (`ccPlantDrift()`), which makes assigning `accounts_supervisor` +
+`head_of_school` to one user **legal at assignment time**, and then proves the convergence
+migration's user-scoped pre-flight catches the both-sides state it retroactively creates. Putting
+the opening-balance maker on `accounts_supervisor` means that dual-hat assignment is now refused
+**before the migration is reached**, so the test would abort on the wrong pair and stop exercising
+the thing it exists to exercise.
+
+Fixed by revoking `finance.opening-balance.submit` from `accounts_supervisor` **inside ARM 4
+only** — not in the shared `ccPlantDrift()` helper, since it is a precondition of this one arm
+and not part of the drift the other five are about. **No assertion was changed or weakened**; the
+throw ARM 4 asserts still comes from the fee-schedule pair (`accounts_supervisor` holds no
+discount-policy maker, so no other pair can produce it).
+
+**The underlying fact a reviewer should weigh, since it is a production consequence and not a test
+one:** `accounts_supervisor` + `head_of_school` on one person is now an illegal combination
+*unconditionally*, where before 4c it was illegal only once the 2026-08-03 convergence had run.
+In the real, converged production state it was already illegal via the fee-schedule pair, so this
+adds no new prohibition that is reachable today — but it removes the last state in which the two
+seats could legally sit on one person, and that is a staffing constraint someone should agree to
+rather than discover. It follows directly from the brief's instruction to grant the maker side
+where `fee-schedule.change.submit` already sits; granting it to `accounts_officer` alone would
+avoid it entirely. **That is a call for the lead, not for me.**
+
 ---
 
 ## 1. The four pre-edit verifications
@@ -347,9 +381,64 @@ Shape, for a reader who wants the summary before the source:
 
 ---
 
-## 9. `bin/quality`
+## 9. `bin/quality` — raw
 
-See §10 of the chat transcript — pasted raw there in full.
+Fourteen steps, re-derived from this run (the substrate note saying "13" is stale).
+
+**First run — FAILED, and the failure was real.** See D5 above for the finding and the fix.
+
+```
+[14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✗ test-ratchet
+       ratchet: 1 NEW test failure(s) not in the baseline (regression):
+         ✗ tests/Feature/Rbac/FinanceChangeGrantConvergenceTest.php::it ARM 4 — user-scoped pre-flight bites: a user holding accounts_supervisor + head_of_school aborts the convergence, then converges once resolved
+       Fix the regression, or — if the failure is intentional — add it to tests/ratchet-baseline.txt.
+
+✗ quality: FAIL (1): test-ratchet
+```
+
+`tests/ratchet-baseline.txt` was **not** touched — the brief forbids it and the failure was a real
+consequence to fix, not one to grandfather.
+
+**Second run, on `911adc2` — PASS.**
+
+```
+quality gate — base 6890edb
+
+[1/14] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/14] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/14] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+[4/14] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/14] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/14] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/14] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/14] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/14] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/14] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/14] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/14] architecture tests (§17.1)
+   ✓ arch
+[13/14] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+Note the tsc ratchet is a known false-green (it can rise and does not hard-block); step 4 passing
+is not evidence of a type floor here. No TypeScript was written in this change.
 
 ---
 

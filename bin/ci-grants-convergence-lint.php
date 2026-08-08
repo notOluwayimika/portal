@@ -62,6 +62,23 @@
  *
  *   1. THE PERMISSION IS NEW — the same diff adds its `case` to `app/Enums/Permission.php`. It then
  *      lands in `$newPermissions` and `rbac:sync` grants it. No migration needed.
+ *
+ *      ⚠️ "NO MIGRATION NEEDED" IS A STATEMENT ABOUT THIS LINT, NOT ABOUT THE DEPLOY. Read as the
+ *      latter it is false, and it has already been read that way once (§9 step 4c, 2026-08-09). This
+ *      lint asks "will the grant LAND on every environment?" and for a new permission the answer is
+ *      yes. It does not ask "will the grant SURVIVE?" — and a FORCING convergence migration dated
+ *      later revokes it, because a forcing TARGET makes a role's slice EQUAL a frozen literal and is
+ *      scoped by a NAMESPACE PREFIX that never expires. `rbac:sync` will not put it back: by then
+ *      the permission is no longer new, and `RbacSeeder::sync()` grants an existing role only
+ *      permissions created in that same run.
+ *
+ *      Live instance: `2026_08_06_100000_move_head_of_school_finance_to_executive_director` forces
+ *      `finance.` on `executive_director` / `accounts_supervisor` / `head_of_school`. It stripped
+ *      4c's three `finance.opening-balance.*` grants on the runbook order (`rbac:sync`, then
+ *      `migrate`) — measured, not reasoned. The repair is a NEW additive convergence migration dated
+ *      after it (`2026_08_09_110000`), declared through exemption 3. So: before relying on this
+ *      exemption, check whether a forcing migration governs the role and namespace you are granting
+ *      into. See ADR 0052 § "A FORCING target freezes a namespace, not a row set".
  *   2. THE ROLE IS NEW — the same diff adds the role to `RbacSeeder::ROLES`. Then
  *      `in_array($roleName, $existingRoles, true)` is false and the role receives the FULL
  *      `$permissions` array. No migration needed.

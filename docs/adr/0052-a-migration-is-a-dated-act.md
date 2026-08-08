@@ -320,6 +320,41 @@ persists** — it is on an unmerged branch, and every run was against a throwawa
 created and dropped in the same session. The corollary exists because a file and a **live** database
 diverge; there is no such database here.
 
+### A FORCING target freezes a namespace, not a row set
+
+Added 2026-08-09, from §9 step 4c. This is the corollary's other edge, and it bites in the opposite
+direction to everything above: not "an old migration gets rewritten by a later map edit", but **an old
+migration keeps acting on rows that did not exist when it was written**.
+
+A convergence migration whose target is **forcing** — the governed role's slice is made to *equal* the
+frozen literal, not to *contain* it — is scoped by a **namespace prefix**, and a namespace has no
+expiry. `2026_08_06_100000_move_head_of_school_finance_to_executive_director` governs `finance.` on
+three roles. Every `finance.*` ability granted to one of those roles in any **later** commit is
+therefore revoked by that file on every environment where it has not yet run, silently, whatever
+`RbacSeeder::grantsMap()` says at the time.
+
+`rbac:sync` does not repair it. By the time the migration runs, the permission is no longer new, and
+`RbacSeeder::sync()` grants an existing role only permissions created in that same run — so the
+deploy order (`rbac:sync`, then `migrate`) writes the grant and then takes it away, with nothing
+downstream to notice.
+
+**Measured, not reasoned.** §9 step 4c added `finance.opening-balance.submit/.approve/.reject` to the
+map. On `portal_testing`: seed → `executive_director` holds `.approve` + `.reject`,
+`accounts_supervisor` holds `.submit`; run `2026_08_06_100000` → all three gone.
+`accounts_officer`'s `.submit` survived only because that role is not governed by that TARGET.
+
+**The rule.** Adding a `finance.*` grant to a role governed by a forcing target requires a **new dated
+convergence migration**, additive-only, dated after the forcing one. Never edit the forcing literal:
+its frozen act is honest and describes what its author intended on the day, which is the whole value
+of freezing it. 4c's repair is `2026_08_09_110000_converge_opening_balance_grants.php`.
+
+**And the distinction that produced the mistake, because it is the reusable part.**
+`bin/ci-grants-convergence-lint.php`'s exemption 1 says a **new** permission needs no convergence
+migration. That is true, and it is a statement about **the lint**: a new permission lands in
+`$newPermissions`, so `rbac:sync` grants it everywhere and there is no drift to catch. It says nothing
+about whether the grant **survives a deploy**. Two different questions; the first does not answer the
+second. The same note now sits beside exemption 1 in the lint itself.
+
 ## The trade, stated rather than buried
 
 This is the honest cost and it is not hypothetical. An environment that genuinely has **not** run

@@ -89,13 +89,21 @@ function edPlantPreMoveState(): array
 
 it('ARM 0 (bite-proof, runs first) — the planted pre-move state is real, so the arms below cannot pass vacuously', function () {
     // A fresh seed writes the POST-move map: assert that first, or the plant below could be a no-op.
+    //
+    // ELEVEN, NOT NINE — §9 step 4c added finance.opening-balance.approve/.reject to the SEEDED map
+    // for executive_director. This migration's frozen TARGET still names nine, deliberately, and that
+    // gap is exactly the trap 2026_08_09_110000 exists to repair: a forcing TARGET keeps acting on a
+    // namespace after new permissions join it. These counts track the MAP, which is why they move
+    // when the map does; the migration's own nine are asserted through its TARGET, not here.
     expect(edFinanceGrants('head_of_school'))->toBe([])
-        ->and(edFinanceGrants('executive_director'))->toHaveCount(9);
+        ->and(edFinanceGrants('executive_director'))->toHaveCount(11);
 
     edPlantPreMoveState();
 
+    // accounts_supervisor: 3 from the map (finance.access, fee-schedule submit, opening-balance
+    // submit — 4c added the third) + 4 planted checker sides = 7. Was 6 before 4c.
     expect(edFinanceGrants('head_of_school'))->toHaveCount(5)
-        ->and(edFinanceGrants('accounts_supervisor'))->toHaveCount(6)
+        ->and(edFinanceGrants('accounts_supervisor'))->toHaveCount(7)
         ->and(edFinanceGrants('executive_director'))->toBe([]);
 });
 
@@ -185,11 +193,17 @@ it('ARM 3 — the audit choice: revoke+give EMITS activity rows, which syncPermi
     $events = DB::table('activity_log')->where('log_name', 'rbac')->where('id', '>', $watermark)
         ->pluck('event')->countBy();
 
-    // NINE detach events, one per revoked grant — five off HoS, four off AS. Asserted as an exact
+    // TEN detach events, one per revoked grant — five off HoS, FIVE off AS. Asserted as an exact
     // count on the `event` column, not a substring of a description: under syncPermissions this is
     // ZERO (measured), because its `$this->permissions()->detach()` fires nothing, and the arm has to
     // fail on that and not on some incidental wording.
-    expect($events['permission_detached'] ?? 0)->toBe(9);
+    //
+    // IT WAS NINE UNTIL §9 step 4c, AND THE MOVE TO TEN IS EXPECTED, NOT DRIFT. 4c granted
+    // accounts_supervisor a fifth finance ability (finance.opening-balance.submit) in the seeded map;
+    // this migration's frozen TARGET for that role still names two, so the forcing diff now revokes
+    // one more than it did. That extra revoke is the trap 2026_08_09_110000 repairs by re-granting
+    // afterwards — it is not this migration misbehaving, and it must not be "fixed" here.
+    expect($events['permission_detached'] ?? 0)->toBe(10);
 
     // And the attach side still lands, so the arm cannot pass on a migration that only revokes.
     expect($events['permission_attached'] ?? 0)->toBeGreaterThan(0);
@@ -265,7 +279,8 @@ it('ARM 5 — ED role row missing ABORTS naming rbac:sync, and writes NOTHING', 
 
     // Nothing landed: the pre-move grants are all still where they were.
     expect(edFinanceGrants('head_of_school'))->toBe(collect($planted['head_of_school'])->sort()->values()->all())
-        ->and(edFinanceGrants('accounts_supervisor'))->toHaveCount(6)
+        // 7, not 6, since §9 step 4c added a third map grant to accounts_supervisor — see ARM 0.
+        ->and(edFinanceGrants('accounts_supervisor'))->toHaveCount(7)
         ->and(DB::table('role_has_permissions')->count())->toBe($grantsBefore)
         ->and(DB::table('activity_log')->max('id'))->toBe($logMaxBefore);
 });

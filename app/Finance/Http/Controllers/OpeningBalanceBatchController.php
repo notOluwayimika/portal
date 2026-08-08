@@ -3,14 +3,17 @@
 namespace App\Finance\Http\Controllers;
 
 use App\Finance\Enums\OpeningBalanceBatchStatus;
+use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Finance\Http\Resources\OpeningBalanceBatchResource;
 use App\Finance\Models\OpeningBalanceBatch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * The opening-balance cutover's READ surface (§9 step 5a) — one action, `pending`, and deliberately
- * nothing else.
+ * The opening-balance cutover's READ surface (§9 step 5a) — `pending`, plus §9 step 5b-i's
+ * `template`, and deliberately nothing else.
  *
  * §9 step 4c shipped the approval gate as DOMAIN ONLY: SubmitOpeningBalanceBatch,
  * ApproveOpeningBalanceBatch and RejectOpeningBalanceBatch exist and are exercised by tests and the
@@ -44,5 +47,27 @@ class OpeningBalanceBatchController extends Controller
         return response()->json([
             'data' => OpeningBalanceBatchResource::collection($batches),
         ]);
+    }
+
+    /**
+     * §9 step 5b-i (R13) — the import template, issued BY THE PLATFORM.
+     *
+     * Same shape as GuardianImportController@template: a download of an export that renders the
+     * validator's own COLUMNS map, so the format the operator fills in and the format the importer
+     * reads back cannot drift apart. This is the download only; the upload screen is 5b-ii.
+     *
+     * THE GATE IS THE MAKER ABILITY, and it coins nothing: `finance.opening-balance.submit` is the
+     * submit half of the triple §9 step 4c already ships (Permission.php:158-160). The person who
+     * downloads the template is the person who will upload the file — so the checker's
+     * `…approve` (which gates `pending` above) is the wrong ability here, and a template behind
+     * `finance.access` alone would hand the format to everyone who can read a statement.
+     *
+     * It carries no School data — it is the FORMAT, not an extract — so there is nothing here for
+     * SchoolScope to isolate; the route's `tenant` middleware still establishes context for the
+     * permission check itself.
+     */
+    public function template(): BinaryFileResponse
+    {
+        return Excel::download(new OpeningBalanceImportTemplateExport, 'opening-balance-import-template.xlsx');
     }
 }

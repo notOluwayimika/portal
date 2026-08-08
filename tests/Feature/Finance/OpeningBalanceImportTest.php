@@ -127,7 +127,7 @@ function obRun(array $ctx, string $csv, array $overrides = []): int
     return test()->artisan('finance:import-opening-balances', array_merge([
         '--file' => $csv,
         '--school' => (string) $ctx['school']->id,
-        '--term' => (string) $ctx['term']->id,
+        '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--control-total' => '0.00',
         '--batch-reference' => 'BATCH-'.Str::random(8),
@@ -315,7 +315,7 @@ it('refuses to run at all without --control-total, and stages nothing', function
     $exit = test()->artisan('finance:import-opening-balances', [
         '--file' => obCsv(['ADM-A,W1,Tuition,100000.00,100000.00,BILL-1']),
         '--school' => (string) $ctx['school']->id,
-        '--term' => (string) $ctx['term']->id,
+        '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--dry-run' => true,
     ])->expectsOutputToContain('--control-total is required')->run();
@@ -764,17 +764,17 @@ it('refuses a re-run of the same batch_reference at the unique index, not in PHP
 
 // ── The scope boundary of this commit ──
 
-it('refuses to run without --dry-run and writes nothing', function () {
+it('refuses to run without --dry-run, names 4c, and writes nothing — the Action exists but this door does not', function () {
     $ctx = obSchool();
     obStudent($ctx, 'ADM-1');
 
     $exit = test()->artisan('finance:import-opening-balances', [
         '--file' => obCsv(['ADM-1,W1,Tuition,0.00,0.00,BILL-1']),
         '--school' => (string) $ctx['school']->id,
-        '--term' => (string) $ctx['term']->id,
+        '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--control-total' => '0.00',
-    ])->expectsOutputToContain('Posting is not implemented in this commit')->run();
+    ])->expectsOutputToContain('the approval gate is §9 step 4c')->run();
 
     expect($exit)->toBe(1)
         ->and(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0)
@@ -867,7 +867,7 @@ it('excludes wholly blank lines from file_row_count without raising an ingest fi
     $exit = test()->artisan('finance:import-opening-balances', [
         '--file' => $csv,
         '--school' => (string) $ctx['school']->id,
-        '--term' => (string) $ctx['term']->id,
+        '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--control-total' => '150000.00',
         '--batch-reference' => 'BLANKS-'.Str::random(6),
@@ -896,7 +896,7 @@ it('aborts before writing a batch when a required column is missing from the hea
     $exit = test()->artisan('finance:import-opening-balances', [
         '--file' => $path,
         '--school' => (string) $ctx['school']->id,
-        '--term' => (string) $ctx['term']->id,
+        '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--control-total' => '100000.00',
         '--dry-run' => true,

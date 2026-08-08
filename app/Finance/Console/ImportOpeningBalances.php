@@ -2,6 +2,7 @@
 
 namespace App\Finance\Console;
 
+use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
@@ -27,8 +28,13 @@ use Throwable;
  * parses the file, enforces §1's two-level checksum, applies §2's and §7's rejection rules, resolves
  * the join key against the School's roster, and stages all of it in finance_opening_balance_batches /
  * _rows for a human to look at. `--dry-run` is the only mode that exists; without it the command
- * refuses and exits non-zero rather than stubbing a posting path. Posting is 4b and the approval gate
- * is 4c.
+ * refuses and exits non-zero rather than stubbing a posting path.
+ *
+ * THE POSTING ACTION NOW EXISTS AND THIS COMMAND STILL CANNOT REACH IT.
+ * {@see PostOpeningBalanceBatch} landed in 4b, but §8 puts posting ON APPROVAL
+ * and the approval gate is 4c. Until then the Action is exercised by tests only, and the refusal here
+ * names 4c rather than claiming posting is unimplemented — a console flag onto the one irreversible
+ * write in this feature, ahead of the gate that is supposed to authorise it, is a second door.
  *
  * WHAT 4a CHANGED, because a reader who knows the old shape will otherwise look for it:
  *
@@ -75,7 +81,7 @@ class ImportOpeningBalances extends Command
     protected $signature = 'finance:import-opening-balances
         {--file= : path to the WCBS CSV}
         {--school= : the School to import into (numeric id or slug)}
-        {--term= : the cutover term T (terms.id)}
+        {--closing-term= : the term being CLOSED OUT, whose closing position this file carries (terms.id)}
         {--as-at= : the cutover date D (Y-m-d)}
         {--control-total= : §1 L2 — Σ of every student stated total, read off WCBS and typed here}
         {--batch-reference= : §7 idempotency key; defaults to the CSV filename}
@@ -180,10 +186,20 @@ class ImportOpeningBalances extends Command
 
     public function handle(BillableEnrollmentProvider $enrollments): int
     {
-        // The refusal comes FIRST, before any option is even read: there is no posting path to
-        // reach, and a run that got as far as opening a file before refusing would suggest there is.
+        // The refusal comes FIRST, before any option is even read — commit 1's precedent and its
+        // reasoning, unchanged by 4b: there is no posting path to reach FROM HERE, and a run that got
+        // as far as opening a file before refusing would suggest there is.
+        //
+        // The posting Action now EXISTS (PostOpeningBalanceBatch, §9 step 4b) and this command still
+        // cannot invoke it, deliberately. Posting happens ON APPROVAL (§8) and the approval gate is
+        // 4c; wiring a console flag to the Action ahead of the gate would put a second, ungated door
+        // onto the one write in this feature that cannot be undone. A flag nobody is supposed to use
+        // is weaker than no flag.
         if (! $this->option('dry-run')) {
-            $this->error('Posting is not implemented in this commit. Re-run with --dry-run.');
+            $this->error(
+                'Posting is not reachable from this command. The posting Action exists (§9 step 4b) but '
+                .'runs only on APPROVAL, and the approval gate is §9 step 4c — not built. Re-run with --dry-run.'
+            );
 
             return self::FAILURE;
         }
@@ -218,7 +234,7 @@ class ImportOpeningBalances extends Command
         // Every model touched below (the staging tables, the port's roster) is School-scoped, so the
         // scope — not a where() someone can forget — is what isolates the run.
         return ActiveSchool::runFor($school->id, function () use ($school, $file, $cutoverDate, $controlTotal, $enrollments): int {
-            $termId = $this->resolveTerm((string) $this->option('term'), $school->id);
+            $termId = $this->resolveTerm((string) $this->option('closing-term'), $school->id);
             if ($termId === null) {
                 return self::FAILURE;
             }
@@ -1043,16 +1059,22 @@ class ImportOpeningBalances extends Command
     }
 
     /**
-     * The cutover term, checked to exist AND to belong to the target School. Validated by rule
-     * rather than by loading an Academics model: Finance does not import Academics' models
+     * The term being CLOSED OUT, checked to exist AND to belong to the target School. Validated by
+     * rule rather than by loading an Academics model: Finance does not import Academics' models
      * (arch rule 3), and the existing Finance precedent for naming `terms` is exactly this —
      * `exists:terms,id` in FeeScheduleRequest.
      *
-     * STILL REQUIRED, AND STILL OPEN. §9 records the contradiction: R5 puts the cutover on a term
-     * boundary, so §1 says there is no cutover term T, while `batches.term_id` is NOT NULL with an
-     * FK. Either answer — nullable, or repurposed to name the term being CLOSED OUT — changes a
-     * migration, and 4a is the file format. 4b/4c closes it; this stays as it shipped rather than
-     * being half-changed here.
+     * §9's OPEN DECISION IS CLOSED — RULED IN 4b, THE FIRST COMMIT WITH A CALLER. The contradiction
+     * was real: R5 puts the cutover on a term boundary, so §1 says there is no cutover term T, while
+     * `batches.term_id` is NOT NULL with an FK. The ruling is REPURPOSE, NOT NULLIFY — the column
+     * names the LAST term, whose closing position the file carries. The file IS a specific term's
+     * closing position, and recording WHICH term is the provenance that lets a reader a year later
+     * say what period the opening charges represent; nulling the column discards that, and the FK and
+     * this per-School validation with it, for no gain. The option is renamed `--closing-term` and the
+     * column carries the meaning as a COMMENT in the schema
+     * (2026_08_08_110000_opening_balance_posting_state_and_guards.php) — a repurposed column whose
+     * name, option and docs still describe the old meaning is a lie, which is why the rename is not
+     * cosmetic.
      */
     private function resolveTerm(string $option, int $schoolId): ?int
     {
@@ -1061,7 +1083,7 @@ class ImportOpeningBalances extends Command
         ]);
 
         if ($validator->fails()) {
-            $this->error("Invalid --term [{$option}]: it must be a terms.id belonging to this School.");
+            $this->error("Invalid --closing-term [{$option}]: it must be a terms.id belonging to this School.");
 
             return null;
         }

@@ -2679,6 +2679,26 @@
             "teacher"
         ]
     },
+    "POST /api/notifications/ses-events": {
+        "auth": false,
+        "roles": [
+            "accounts_officer",
+            "accounts_supervisor",
+            "admin",
+            "boarding_parent",
+            "executive_director",
+            "finance_lead",
+            "form_teacher",
+            "guardian",
+            "head_of_school",
+            "internal_auditor",
+            "key_stage_coordinator",
+            "principal",
+            "registrar",
+            "super_admin",
+            "teacher"
+        ]
+    },
     "POST /api/notifications/{notification}/actions/{action}": {
         "auth": true,
         "roles": [

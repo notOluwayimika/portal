@@ -31,6 +31,7 @@ class NotificationSuppression extends Model
     protected $fillable = [
         'channel', 'scope', 'reason', 'normalized_address', 'address_hash',
         'contact_point_id', 'source', 'notification_delivery_id', 'expires_at',
+        'cleared_at', 'cleared_by', 'is_live',
     ];
 
     protected $casts = [
@@ -38,6 +39,7 @@ class NotificationSuppression extends Model
         'scope' => SuppressionScope::class,
         'reason' => SuppressionReason::class,
         'expires_at' => 'datetime',
+        'cleared_at' => 'datetime',
     ];
 
     /**
@@ -73,7 +75,14 @@ class NotificationSuppression extends Model
             'contact_point_id' => $contactPointId,
             'source' => $source,
             'notification_delivery_id' => $deliveryId,
+            // MATERIALIZED AT WRITE, not derived at read. The row records the decision
+            // AS MADE, so editing ttlHours() later cannot retroactively rewrite when an
+            // existing suppression lifts. That is the property a consent ledger needs —
+            // and its cost is that a mistaken constant needs a DATA fix, not just a code
+            // fix. The two cannot both be true; this is the correct side for this data.
             'expires_at' => $ttl === null ? null : now()->addHours($ttl),
+            'cleared_at' => null,
+            'is_live' => 1,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -97,8 +106,61 @@ class NotificationSuppression extends Model
         return static::query()
             ->where('address_hash', AddressNormalizer::hash($normalized))
             ->where('channel', $channel->value)
+            // LAPSED **OR** CLEARED, and deliberately REASON-BLIND: the gate asks the
+            // ROW, never the taxonomy. That is what let SMS_INVALID_NUMBER inherit real
+            // expiry the moment it declared a TTL, with no wiring step to forget — the
+            // same instinct as one normalizer rather than one per call site.
+            ->whereNotNull('is_live')
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
             ->exists();
+    }
+
+    /**
+     * Overturn a live suppression early, IF this evidence overturns that reason.
+     *
+     * ⚠️ STAMPED, NEVER DELETED OR OVERWRITTEN. Rewriting `expires_at` to now() would
+     * destroy the decision the row exists to record; deleting it makes an errant clear
+     * invisible BY CONSTRUCTION. If the reason filter below ever regresses and an
+     * opt-out gets cleared by a delivery receipt, the stamped row still carries
+     * `cleared_by = 'delivery_success'` — which is precisely the evidence a consent
+     * audit needs to catch it. The mechanism that can unmute someone must be able to
+     * prove whether it ever unmuted the wrong person.
+     *
+     * REASON-KEYED on WHETHER to clear; the send-time gate stays reason-blind on
+     * WHETHER it is live. Two concerns, two mechanisms, no interaction.
+     */
+    public static function clearIfClearable(ChannelKey $channel, string $rawAddress, string $evidence): int
+    {
+        $normalized = self::normalize($channel, $rawAddress);
+
+        if ($normalized === null) {
+            return 0;
+        }
+
+        $cleared = 0;
+
+        static::query()
+            ->where('address_hash', AddressNormalizer::hash($normalized))
+            ->where('channel', $channel->value)
+            ->whereNotNull('is_live')
+            ->get()
+            ->each(function (self $suppression) use ($evidence, &$cleared): void {
+                if (! $suppression->reason->clearedBy($evidence)) {
+                    return;
+                }
+
+                $suppression->forceFill([
+                    'cleared_at' => now(),
+                    'cleared_by' => $evidence,
+                    // Releases the unique slot so the address can be suppressed again
+                    // later, while the row itself stays as history.
+                    'is_live' => null,
+                ])->save();
+
+                $cleared++;
+            });
+
+        return $cleared;
     }
 
     /**

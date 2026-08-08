@@ -20,13 +20,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * the same nullability the void resource already carries on `amount`.
  *
  * `can_approve` / `can_reject` are POLICY-computed exactly as the four siblings do it — never
- * inferred by the page from abilities it holds locally. THEY ARE FALSE TODAY FOR EVERY VIEWER, and
- * that is correct rather than a defect: there is no OpeningBalanceBatchPolicy and no approve/reject
- * HTTP path yet — the decision surface is §9 step 5b (the U12b operator screen). Writing the flags
- * through the Gate now means 5b flips them on by registering a policy, with no edit here. The queue
- * does not render dead buttons off them: the declared feed list carries NO decision urls for this
- * type, so the row shows where the decision is taken instead (a row an approver can see, try and
- * fail on is worse than one that says where to go).
+ * inferred by the page from abilities it holds locally.
+ *
+ * THEY WERE FALSE FOR EVERY VIEWER UNTIL §9 STEP 5b-ii, and that prediction is worth keeping because
+ * it came true: 5a wrote them through the Gate while no OpeningBalanceBatchPolicy existed to consult,
+ * on the reasoning that the decision surface would then flip them on by registering a policy, with no
+ * edit here. 5b-ii added OpeningBalanceBatchPolicy and the two approve/reject routes, and this file
+ * was not touched. The queue's row is decidable now; the declared feed list carries its decision urls,
+ * and — because approving a batch POSTS the cutover irreversibly — the one confirmation on that
+ * screen.
  *
  * @mixin OpeningBalanceBatch
  */

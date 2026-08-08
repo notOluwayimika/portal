@@ -148,10 +148,11 @@ export type DiscountPolicyChangeApproval = {
 // OpeningBalanceBatchResource on the approvals queue (§9 step 5a). `amount` is the batch's
 // control total — the position approval posts into the subledger in one transaction.
 //
-// `can_approve` / `can_reject` are present for shape parity and are FALSE for every viewer today:
-// there is no policy and no approve/reject endpoint yet (that is §9 step 5b). The queue does not
-// read them for this type — APPROVAL_FEEDS declares no decision urls for it — so no dead button is
-// ever rendered off them.
+// `can_approve` / `can_reject` ARE NOW LIVE for this type. They were false for every viewer until
+// §9 step 5b-ii, which added OpeningBalanceBatchPolicy and the approve/reject endpoints; the
+// Resource never changed, because it always computed them through the Gate. Approving a row of this
+// type POSTS the cutover irreversibly, which is why its feed entry is the only one carrying a
+// confirmation.
 export type OpeningBalanceApproval = {
     type: 'opening_balance';
     id: string; // uuid

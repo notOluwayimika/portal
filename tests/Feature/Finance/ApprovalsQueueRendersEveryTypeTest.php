@@ -322,11 +322,18 @@ it('all five types reach a checker holding all five, in the one shape the queue 
 });
 
 // ── ARM 3b ───────────────────────────────────────────────────────────────────────────────────────
-// The decision flags are the SERVER's, and viewer-relative. The checker above is not the maker, so
-// the four decidable types say true; the opening-balance batch says FALSE for everyone today, because
-// its decision surface (a policy and an approve/reject endpoint) is §9 step 5b and does not exist —
-// which is why the queue renders where that decision is taken instead of a button that cannot work.
-it('decision flags are server-computed per type, and opening balances are not decidable here yet', function () {
+// The decision flags are the SERVER's, and viewer-relative. The checker below is not the maker, so
+// every type says true.
+//
+// OPENING BALANCE SAID FALSE HERE UNTIL §9 STEP 5b-ii, and the arm is kept rather than deleted
+// because the fact it pins has changed rather than gone away. It read false for every viewer while
+// the type had no policy for the Gate to consult and no approve/reject endpoint to press — the queue
+// rendered where its decision was taken instead of a button that could not work. 5b-ii added
+// OpeningBalanceBatchPolicy and the two routes, and the Resource itself was never edited: it computed
+// these flags through the Gate from the start, which is what let the surface land without touching
+// it. The false-for-the-MAKER half of the same statement — the half that shows the Policy is being
+// consulted rather than blanket-allowing — is OpeningBalanceDecisionSurfaceTest's PROOF G.
+it('decision flags are server-computed per type, and every type is decidable by a non-maker checker', function () {
     $ctx = aqContext();
     $school = $ctx['school'];
     aqPlantOneOfEach($ctx, aqMaker($school));
@@ -344,7 +351,7 @@ it('decision flags are server-computed per type, and opening balances are not de
         'void' => true,
         'fee_schedule_change' => true,
         'discount_policy_change' => true,
-        'opening_balance' => false,
+        'opening_balance' => true,
     ]);
 });
 

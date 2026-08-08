@@ -40,8 +40,15 @@ const TH =
  * API, so fee-schedule changes and discount-policy changes were reachable, ability-gated and shown
  * nowhere; an approver holding finance.fee-schedule.change.approve had no screen. That is what a
  * page which cannot enumerate its feeds costs, and it is why the fix is the enumeration rather than
- * two more imports. Everything per-type — the badge, the SUBJECT line, the decision urls — comes off
- * the feed entry. Read that module's docblock before adding a type.
+ * two more imports. Everything per-type — the badge, the SUBJECT line, the decision urls, the
+ * irreversible-approval confirmation — comes off the feed entry. Read that module's docblock before
+ * adding a type.
+ *
+ * ONE APPROVAL ON THIS QUEUE CANNOT BE UNDONE — an opening-balance batch, whose approval posts the
+ * cutover under triggers that deny every exit from `posted`. It is confirmed first, and the four
+ * correctable types are not, because a dialog on every approval is a dialog nobody reads and the one
+ * that matters is then the one clicked through. Which types confirm is DECLARED, not decided here:
+ * this file branches on whether a row's FEED carries a `confirm`, never on the row's type.
  *
  * Approve / Reject are driven by the server-computed `can_approve` / `can_reject` (a checker cannot
  * act on their OWN submission — maker ≠ checker); the Policy is the real guard, these flags only
@@ -56,6 +63,9 @@ export default function FinanceApprovalsQueue() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [rejectFor, setRejectFor] = useState<PendingApproval | null>(null);
     const [reason, setReason] = useState('');
+    // The row whose IRREVERSIBLE approval is waiting on a confirmation. Set only for a feed that
+    // declares `confirm`; every other type's Approve still fires on the click.
+    const [confirmFor, setConfirmFor] = useState<PendingApproval | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -129,6 +139,22 @@ export default function FinanceApprovalsQueue() {
         } finally {
             setBusyId(null);
         }
+    };
+
+    /**
+     * The Approve button's handler. An approval a feed declares as irreversible does not fire here —
+     * it opens that feed's confirmation and fires from there. The branch is on the FEED, so the page
+     * still holds no per-type knowledge: adding or removing a confirmation is an edit to the declared
+     * list, never to this component.
+     */
+    const requestApprove = (row: PendingApproval) => {
+        if (feedFor(row)?.confirm === undefined) {
+            void approve(row);
+
+            return;
+        }
+
+        setConfirmFor(row);
     };
 
     const submitReject = async () => {
@@ -383,7 +409,7 @@ export default function FinanceApprovalsQueue() {
                                                             <Button
                                                                 size="sm"
                                                                 onClick={() =>
-                                                                    void approve(
+                                                                    requestApprove(
                                                                         row,
                                                                     )
                                                                 }
@@ -450,6 +476,59 @@ export default function FinanceApprovalsQueue() {
                     </div>
                 </div>
             </div>
+
+            {/* THE IRREVERSIBLE-APPROVAL CONFIRMATION. Every word of it comes off the feed entry's
+                `confirm`, so this markup carries no knowledge of which type it is describing and a
+                second irreversible type would need no edit here. Reject has no counterpart: no
+                rejection on this queue moves money. */}
+            <Modal
+                isOpen={confirmFor !== null}
+                onClose={() => setConfirmFor(null)}
+                title={
+                    confirmFor
+                        ? (feedFor(confirmFor)?.confirm?.(confirmFor)?.title ??
+                          'Confirm')
+                        : 'Confirm'
+                }
+                size="md"
+            >
+                {confirmFor !== null && (
+                    <div className="space-y-4">
+                        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-950/30">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <div className="space-y-2 text-xs text-amber-900 dark:text-amber-100">
+                                {(
+                                    feedFor(confirmFor)?.confirm?.(confirmFor)
+                                        ?.body ?? []
+                                ).map((paragraph) => (
+                                    <p key={paragraph}>{paragraph}</p>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 border-t pt-3">
+                            <Button
+                                variant="outline"
+                                onClick={() => setConfirmFor(null)}
+                                disabled={busyId !== null}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    const row = confirmFor;
+                                    setConfirmFor(null);
+                                    void approve(row);
+                                }}
+                                disabled={busyId !== null}
+                                className="bg-red-600 text-white hover:bg-red-700"
+                            >
+                                {feedFor(confirmFor)?.confirm?.(confirmFor)
+                                    ?.confirmLabel ?? 'Approve'}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
 
             <Modal
                 isOpen={rejectFor !== null}

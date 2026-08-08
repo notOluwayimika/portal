@@ -8,6 +8,7 @@
         "finance.invoice.generate",
         "finance.invoice.reduction.apply",
         "finance.invoice.void-request.submit",
+        "finance.opening-balance.submit",
         "finance.payment.record"
     ],
     "accounts_supervisor": [
@@ -16,7 +17,8 @@
         "finance.credit-note.reject",
         "finance.fee-schedule.change.submit",
         "finance.invoice.void-request.approve",
-        "finance.invoice.void-request.reject"
+        "finance.invoice.void-request.reject",
+        "finance.opening-balance.submit"
     ],
     "admin": [
         "academic_data.view",
@@ -132,6 +134,8 @@
         "finance.discount-policy.change.reject",
         "finance.fee-schedule.change.approve",
         "finance.fee-schedule.change.reject",
+        "finance.opening-balance.approve",
+        "finance.opening-balance.reject",
         "guardian.create",
         "guardian.detach",
         "guardian.enable_login",

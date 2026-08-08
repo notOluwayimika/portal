@@ -2,6 +2,7 @@
 
 namespace App\Finance\Console;
 
+use App\Finance\Actions\ApproveOpeningBalanceBatch;
 use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
@@ -30,11 +31,13 @@ use Throwable;
  * _rows for a human to look at. `--dry-run` is the only mode that exists; without it the command
  * refuses and exits non-zero rather than stubbing a posting path.
  *
- * THE POSTING ACTION NOW EXISTS AND THIS COMMAND STILL CANNOT REACH IT.
- * {@see PostOpeningBalanceBatch} landed in 4b, but §8 puts posting ON APPROVAL
- * and the approval gate is 4c. Until then the Action is exercised by tests only, and the refusal here
- * names 4c rather than claiming posting is unimplemented — a console flag onto the one irreversible
- * write in this feature, ahead of the gate that is supposed to authorise it, is a second door.
+ * THE POSTING PATH IS BUILT AND THIS COMMAND STILL CANNOT REACH IT — PERMANENTLY, NOT PENDING.
+ * {@see PostOpeningBalanceBatch} landed in 4b and 4c gave it its production caller:
+ * {@see ApproveOpeningBalanceBatch}, which posts a `submitted` batch once a
+ * SECOND user has approved it (§8). So the refusal below is no longer waiting on anything. Posting is
+ * not the terminal act of importing — it is what an approval does — and re-routing it to a console
+ * flag would put a second, unapproved door onto the one irreversible write in this feature. What this
+ * command does is stage a batch for a human to read and, once §9 step 5's screen lands, submit.
  *
  * WHAT 4a CHANGED, because a reader who knows the old shape will otherwise look for it:
  *
@@ -209,18 +212,19 @@ class ImportOpeningBalances extends Command
     public function handle(BillableEnrollmentProvider $enrollments): int
     {
         // The refusal comes FIRST, before any option is even read — commit 1's precedent and its
-        // reasoning, unchanged by 4b: there is no posting path to reach FROM HERE, and a run that got
-        // as far as opening a file before refusing would suggest there is.
+        // reasoning, unchanged by 4b or 4c: there is no posting path to reach FROM HERE, and a run that
+        // got as far as opening a file before refusing would suggest there is.
         //
-        // The posting Action now EXISTS (PostOpeningBalanceBatch, §9 step 4b) and this command still
-        // cannot invoke it, deliberately. Posting happens ON APPROVAL (§8) and the approval gate is
-        // 4c; wiring a console flag to the Action ahead of the gate would put a second, ungated door
-        // onto the one write in this feature that cannot be undone. A flag nobody is supposed to use
-        // is weaker than no flag.
+        // 4c BUILT THE GATE AND THE REFUSAL STILL STANDS. PostOpeningBalanceBatch now has a production
+        // caller — ApproveOpeningBalanceBatch — so this is no longer "not implemented yet"; it is that
+        // the ONE way to post is an approval by a second person, and a console flag beside it would be
+        // an unapproved door onto a write that G1b makes permanent. A flag nobody is supposed to use is
+        // weaker than no flag.
         if (! $this->option('dry-run')) {
             $this->error(
-                'Posting is not reachable from this command. The posting Action exists (§9 step 4b) but '
-                .'runs only on APPROVAL, and the approval gate is §9 step 4c — not built. Re-run with --dry-run.'
+                'Posting is not reachable from this command, by design. An opening-balance batch posts '
+                .'ONLY when a second user approves it (§8) — submit the validated batch for approval '
+                .'instead. Re-run with --dry-run.'
             );
 
             return self::FAILURE;

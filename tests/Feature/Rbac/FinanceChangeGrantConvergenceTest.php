@@ -154,6 +154,16 @@ it('ARM 4 — user-scoped pre-flight bites: a user holding accounts_supervisor +
     // exactly the hazard the assignment-time guard cannot catch, because there is no assignment.
     ccPlantDrift();
 
+    // §9 step 4c added a SECOND maker to accounts_supervisor — finance.opening-balance.submit —
+    // whose checker sits on head_of_school. That pair is nothing to do with this migration's drift,
+    // but it makes the dual-hat assignment below illegal at ASSIGNMENT time, before the migration is
+    // ever reached: the test would then abort on the wrong pair and stop exercising the migration's
+    // user-scoped pre-flight at all. Revoked HERE and not in ccPlantDrift(), because it is a
+    // precondition of this arm, not part of the drift the other arms are about. Nothing is asserted
+    // about it; the throw asserted below still names the fee-schedule pair.
+    ccGlobalRole('accounts_supervisor')->revokePermissionTo('finance.opening-balance.submit');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
     $school = School::factory()->create();
     $dual = User::factory()->create(['school_id' => $school->id]);
     setPermissionsTeamId($school->id);

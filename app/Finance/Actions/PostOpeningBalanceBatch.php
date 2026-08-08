@@ -20,16 +20,19 @@ use Illuminate\Support\Facades\DB;
  *
  * THE NAME DOES NOT BEGIN WITH `Submit`, and that is load-bearing rather than taste:
  * bin/ci-boundary-lint.php's approval-seam-count rule enumerates app/Finance/Actions/Submit*.php from
- * the filesystem and requires exactly one such file per finance `*_SUBMIT` Permission case. This
- * commit adds no Permission case, so a `Submit…` filename here would fail that lint immediately. It
- * is also the honest name: this Action does not submit anything for approval — §8's gate is 4c, and
- * when it lands, posting happens ON approval and this is what the approval calls.
+ * the filesystem and requires exactly one such file per finance `*_SUBMIT` Permission case. 4b added
+ * no Permission case, so a `Submit…` filename here would have failed that lint the day it landed; 4c
+ * added `finance.opening-balance.submit` AND {@see SubmitOpeningBalanceBatch} together, so renaming
+ * this one now would put the count at six files against five cases and fail it again from the other
+ * side. It is also the honest name: this Action submits nothing for approval — it is what an approval
+ * CALLS.
  *
- * NOTHING CALLS IT YET, DELIBERATELY. `finance:import-opening-balances` refuses any non-dry run
- * before it reads a byte, naming 4c — following commit 1's own precedent and its reasoning: "there is
- * no posting path to reach, and a run that got as far as opening a file before refusing would suggest
- * there is". A flag nobody is supposed to use is weaker than no flag. The Action is exercised by
- * tests only until 4c ships the gate.
+ * IT HAS EXACTLY ONE PRODUCTION CALLER, AND IT IS AN APPROVAL. 4c landed
+ * {@see ApproveOpeningBalanceBatch}, which invokes this INSIDE its own transaction once a second user
+ * has signed off a `submitted` batch. `finance:import-opening-balances` still refuses any non-dry run
+ * before it reads a byte — that refusal is permanent, not a placeholder: posting is not a terminal act
+ * of importing, it is what approval does, and a console flag onto it would be a second door around the
+ * gate. The entry state moved with 4c: this Action now posts from `submitted`, never from `validated`.
  *
  * ── WHAT IT WRITES (§3, and NOTHING else) ──
  *
@@ -145,14 +148,20 @@ final class PostOpeningBalanceBatch
             // off the passed model would decide on a value fetched before the transaction opened.
             $locked = OpeningBalanceBatch::query()->whereKey($batch->getKey())->lockForUpdate()->firstOrFail();
 
-            if ($locked->status !== OpeningBalanceBatchStatus::Validated) {
+            // `submitted`, NOT `validated`. 4b posted straight from `validated` because there was no
+            // gate to pass through; 4c inserted one, and leaving `validated` acceptable here would have
+            // left a second, ungated door onto the one irreversible write in this feature — the exact
+            // thing the command's refusal exists to prevent, reappearing one layer down. A batch that
+            // has not been submitted has had no second signature, so it cannot post.
+            if ($locked->status !== OpeningBalanceBatchStatus::Submitted) {
                 throw new BusinessRuleException(
-                    "Only a validated opening-balance batch can be posted; this one is {$locked->status->value}."
+                    "Only a submitted opening-balance batch can be posted; this one is {$locked->status->value}."
                 );
             }
 
-            // Ok rows only. In a validated batch every row IS ok by construction — `validated` means no
-            // rejected row and no batch-level finding — so this filter should never remove anything.
+            // Ok rows only. In a submitted batch every row IS ok by construction — only a `validated`
+            // batch can be submitted, and `validated` means no rejected row and no batch-level finding —
+            // so this filter should never remove anything.
             // It is here because "should never" is not a guarantee, and posting a rejected row is the
             // one mistake this Action cannot undo.
             $rows = OpeningBalanceRow::query()

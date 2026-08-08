@@ -232,6 +232,13 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_REJECT->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT->value,
+                // Opening-balance cutover (§9 step 4c) — the CHECKER side, placed here by reading where
+                // finance.fee-schedule.change.approve/reject already sit rather than by choosing a seat:
+                // this triple mirrors the fee-schedule-change triple, so it lands on the same roles.
+                // Approving posts the arrears into the subledger and can never be undone (G1b), which is
+                // the same "one irreversible act, two people" shape the SUBMIT sides below carry.
+                PermissionEnum::FINANCE_OPENING_BALANCE_APPROVE->value,
+                PermissionEnum::FINANCE_OPENING_BALANCE_REJECT->value,
                 // Route access (C2)
                 PermissionEnum::RESULT_REVIEW_ACCESS->value,
                 PermissionEnum::REPORT_VIEW->value,
@@ -351,6 +358,11 @@ class RbacSeeder extends Seeder
                 // and the discount-policy change (row 20, derived) — both submit-side, so still maker-only.
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
+                // Opening-balance cutover (§9 step 4c) — the MAKER side, on the same two roles that hold
+                // finance.fee-schedule.change.submit (AO here, AS below). Read off this map, not chosen:
+                // the bursar office is who runs the WCBS extract. finance_lead does NOT get it, because
+                // finance_lead does not hold fee-schedule.change.submit either.
+                PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
             // Accounts Supervisor (AS) — renamed from finance_director 2026-08-01 (it is the SUPERVISOR,
             // not the lead: it CHECKS credit-note + void, matrix rows 15/16 = AS=A). The 2026_08_01 rename
@@ -365,6 +377,10 @@ class RbacSeeder extends Seeder
                 // Seat realignment: AS also proposes the fee-schedule change (row 2, AS=P) — a maker side,
                 // distinct pair from its credit-note/void checker sides, so no both-sides violation.
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
+                // Opening-balance cutover (§9 step 4c) — maker side, following fee-schedule.change.submit
+                // above onto the same role. Its checker side sits on head_of_school, so this is a
+                // distinct pair from AS's credit-note/void checker sides: no both-sides violation.
+                PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
             // Finance Lead (FL) — new 2026-08-01. A PROPOSER in the matrix (rows 10, 12, 13, 16, 17):
             // submits credit notes (row 16, FL=P) and discount-policy changes (row 20, derived). Holds no

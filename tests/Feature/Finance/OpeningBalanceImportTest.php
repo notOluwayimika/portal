@@ -816,7 +816,11 @@ it('refuses a re-run of the same batch_reference at the unique index, not in PHP
 
 // ── The scope boundary of this commit ──
 
-it('refuses to run without --dry-run, names 4c, and writes nothing — the Action exists but this door does not', function () {
+it('refuses to run without --dry-run, names the approval, and writes nothing — this door is closed by design', function () {
+    // 4c BUILT the gate and this refusal STILL stands: posting is what an approval does, so the console
+    // never gets a `--post` flag. The assertion moved with the message — it used to demand the words
+    // "the approval gate is §9 step 4c", which after 4c would have been asserting that the feature is
+    // still unbuilt. What must hold now is that the refusal points at the approval, not at a milestone.
     $ctx = obSchool();
     obStudent($ctx, 'ADM-1');
 
@@ -826,7 +830,7 @@ it('refuses to run without --dry-run, names 4c, and writes nothing — the Actio
         '--closing-term' => (string) $ctx['term']->id,
         '--as-at' => '2026-08-06',
         '--control-total' => '0.00',
-    ])->expectsOutputToContain('the approval gate is §9 step 4c')->run();
+    ])->expectsOutputToContain('ONLY when a second user approves it')->run();
 
     expect($exit)->toBe(1)
         ->and(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0)

@@ -5,7 +5,10 @@ namespace App\Finance\Models;
 use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use App\Finance\Actions\ApproveOpeningBalanceBatch;
 use App\Finance\Actions\PostOpeningBalanceBatch;
+use App\Finance\Actions\RejectOpeningBalanceBatch;
+use App\Finance\Actions\SubmitOpeningBalanceBatch;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +22,13 @@ use Illuminate\Support\Carbon;
  * IT IS POSTED BY {@see PostOpeningBalanceBatch} (§9 step 4b), and by nothing
  * else. `posted` is TERMINAL at the database: `posted_school_key` (generated) holds at most one posted
  * batch per school under a unique index, and two triggers deny both exits from the state — UPDATE and
- * DELETE alike (G1/G1b, 2026_08_08_110000). The approval gate that will PRECEDE the post is 4c.
+ * DELETE alike (G1/G1b, 2026_08_08_110000).
+ *
+ * THE APPROVAL GATE PRECEDING THAT POST IS 4c, AND IT HAS LANDED. The lifecycle is validated →
+ * submitted ({@see SubmitOpeningBalanceBatch}) → posted
+ * ({@see ApproveOpeningBalanceBatch}, which posts in the same transaction) or
+ * rejected ({@see RejectOpeningBalanceBatch}). Maker ≠ checker is a CHECK on this
+ * table (`..._maker_ne_checker`, 2026_08_09_100000), not only an Action guard.
  *
  * `term_id` NAMES THE TERM BEING CLOSED OUT — the last term, whose closing position the file carries.
  * It is NOT a cutover term T: R5 puts the cutover on a term boundary, so no such term exists. §9's
@@ -55,6 +64,11 @@ use Illuminate\Support\Carbon;
  * @property int $term_id the term being CLOSED OUT
  * @property int|null $uploaded_by_user_id
  * @property array<int, array<string, mixed>>|null $findings
+ * @property int|null $submitted_by_user_id the MAKER — LOOKUP, not an FK
+ * @property Carbon|null $submitted_at
+ * @property int|null $decided_by_user_id the CHECKER — LOOKUP, not an FK
+ * @property Carbon|null $decided_at
+ * @property string|null $rejection_reason non-null ONLY on a governance rejection (§8), never on the validator's
  * @property Carbon|null $posted_at
  * @property int|null $posted_by_user_id LOOKUP, not an FK
  */
@@ -69,6 +83,8 @@ class OpeningBalanceBatch extends Model
     protected $casts = [
         'status' => OpeningBalanceBatchStatus::class,
         'cutover_date' => 'date',
+        'submitted_at' => 'datetime',
+        'decided_at' => 'datetime',
         'posted_at' => 'datetime',
         'findings' => 'array',
         'control_total' => MoneyCast::class.':control_total_minor,control_total_currency',

@@ -139,6 +139,25 @@ enum Permission: string
     case FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT = 'finance.fee-schedule.change.submit';
     case FINANCE_FEE_SCHEDULE_CHANGE_APPROVE = 'finance.fee-schedule.change.approve';
     case FINANCE_FEE_SCHEDULE_CHANGE_REJECT = 'finance.fee-schedule.change.reject';
+    // Opening-balance cutover governance (§9 step 4c, the FIFTH maker-checker instance): the bursar
+    // office submits a validated WCBS extract; the Head approves, and approval POSTS it into the
+    // subledger in the same transaction. THE BATCH IS THE UNIT OF APPROVAL, not the row (spec §8).
+    //
+    // THE TERMINAL SEGMENT IS THE WHOLE MECHANISM, and three separate things read it rather than a
+    // list: DutySeparation::pairs() derives (submit ↔ approve, submit ↔ reject) from these names;
+    // ApprovalAbility::isExcludedFromSuperAdminBypass() takes the checker halves out of the
+    // super_admin Gate::before bypass (ADR 0040); and bin/ci-boundary-lint.php's approval-seam-count
+    // requires exactly one app/Finance/Actions/Submit*.php per finance `*_SUBMIT` case, which is why
+    // this triple could not land ahead of SubmitOpeningBalanceBatch. A differently-shaped name would
+    // silently opt out of all three.
+    //
+    // THREE SEGMENTS, NOT FOUR (`finance.opening-balance.submit`, not `…batch.submit`): the target
+    // of the act is the batch and there is no second opening-balance noun to disambiguate from, so a
+    // fourth segment would name nothing. spec §2's U12b note coins these three exact strings and
+    // states the route follows the triple, not the other way round.
+    case FINANCE_OPENING_BALANCE_SUBMIT = 'finance.opening-balance.submit';
+    case FINANCE_OPENING_BALANCE_APPROVE = 'finance.opening-balance.approve';
+    case FINANCE_OPENING_BALANCE_REJECT = 'finance.opening-balance.reject';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

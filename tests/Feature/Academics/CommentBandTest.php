@@ -131,8 +131,8 @@ it('resolves every score in 0-100 to exactly one band, both edges included', fun
 
     cb_forSchool($school->id, function () {
         foreach ([0, 0.5, 39.99, 40, 49.99, 50, 69.99, 70, 79.99, 80, 90.99, 91, 99.99, 100] as $score) {
-            expect(CommentBand::commentsFor(null, $score))
-                ->not->toBeEmpty("score {$score} resolved to no band");
+            expect(CommentBand::commentsFor(null, $score)->count())
+                ->toBeGreaterThan(0, "score {$score} resolved to no band");
         }
     });
 });

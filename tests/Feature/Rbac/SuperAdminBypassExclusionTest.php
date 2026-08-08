@@ -49,7 +49,15 @@ it('excludes every terminally-approve/reject enum case from the bypass, and excl
         );
 
         if ($isChecker) {
-            expect($granted)->not->toContain($ability, "precondition: super_admin must not HOLD {$ability}");
+            // THIS ARM USED TO ASSERT NOTHING, and the shape is worth recognising because no gate
+            // catches it. It read `->not->toContain($ability, "precondition: …")`. `toContain` is
+            // VARIADIC IN NEEDLES and has no `$message` parameter at all, so the sentence was a
+            // SECOND NEEDLE: the assertion was "this permission collection contains neither
+            // {$ability} nor the English sentence 'precondition: super_admin must not HOLD …'".
+            // The second half is trivially true, and — worse than a lost message — it made the arm
+            // pass on a claim it never checked whenever the first half would have failed.
+            expect($granted->contains($ability))
+                ->toBeFalse("precondition: super_admin must not HOLD {$ability}");
             expect($superAdmin->can($ability))->toBeFalse(
                 "{$ability} is a checker action (ADR 0040) and must NOT be bypassed — "
                     .'if this is a new permission, that is the point: the convention covered it automatically.',

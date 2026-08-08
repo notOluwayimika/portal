@@ -469,7 +469,7 @@ it('names the FEE-TYPE key specifically, by its columns, not merely a name that 
         ['finance_opening_balance_rows', ImportOpeningBalances::ROW_KEY_INDEX]
     ));
 
-    expect($columns)->not->toBeEmpty(ImportOpeningBalances::ROW_KEY_INDEX.' is not an index on the table')
+    expect($columns->count())->toBeGreaterThan(0, ImportOpeningBalances::ROW_KEY_INDEX.' is not an index on the table')
         ->and((int) $columns->first()->NON_UNIQUE)->toBe(0)
         ->and($columns->pluck('c')->all())->toBe([
             'school_id', 'batch_id', 'admission_number', 'fee_type_label',
@@ -986,8 +986,10 @@ it('freezes R12\'s six columns in the COLUMNS map, with wcbs_bill_reference the 
     // rules the person filling it in never sees.
     foreach (ImportOpeningBalances::COLUMNS as $column => $spec) {
         expect(array_keys($spec))->toBe(['required', 'max', 'format', 'example', 'notes', 'group'], $column)
-            ->and($spec['notes'])->not->toBe('', $column)
-            ->and($spec['example'])->not->toBe('', $column)
+            // Lengths, not `->not->toBe('', $column)`: the column name is the whole diagnostic here
+            // and `->not->` throws it away. The length puts the 0 in the output as well.
+            ->and(mb_strlen($spec['notes']))->toBeGreaterThan(0, $column)
+            ->and(mb_strlen($spec['example']))->toBeGreaterThan(0, $column)
             // The limit is held as a number AND stated in `format`, because `format` is what the
             // data team reads. Two copies of one fact drift, so the agreement is asserted rather
             // than trusted: change one and this goes red.

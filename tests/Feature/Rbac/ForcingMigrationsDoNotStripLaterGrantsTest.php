@@ -57,7 +57,8 @@ it('no forcing convergence migration strips a grant the seeder map adds after it
         'the migrations glob matched almost nothing — this test is scanning the wrong directory, and a green here would mean it looked at zero files');
 
     $grants = RbacSeeder::grantsMap();
-    expect($grants)->toBeArray()->not->toBeEmpty('RbacSeeder::grantsMap() returned nothing — this test would pass vacuously');
+    expect($grants)->toBeArray()
+        ->and(count($grants))->toBeGreaterThan(0, 'RbacSeeder::grantsMap() returned nothing — this test would pass vacuously');
 
     $offenders = [];
     $coveredByTarget = 0;
@@ -81,7 +82,8 @@ it('no forcing convergence migration strips a grant the seeder map adds after it
         $namespace = $constants['NAMESPACE'];
         $target = $constants['TARGET'];
 
-        expect($target)->toBeArray()->not->toBeEmpty("[{$basename}]'s TARGET is empty — nothing would be checked against it");
+        expect($target)->toBeArray()
+            ->and(count($target))->toBeGreaterThan(0, "[{$basename}]'s TARGET is empty — nothing would be checked against it");
 
         // Markers on migrations dated AFTER this one. The filename prefix is `YYYY_MM_DD_HHMMSS_`,
         // so a plain string comparison IS the date comparison — and it is the same ordering Laravel

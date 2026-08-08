@@ -365,6 +365,52 @@ migration. That is true, and it is a statement about **the lint**: a new permiss
 about whether the grant **survives a deploy**. Two different questions; the first does not answer the
 second. The same note now sits beside exemption 1 in the lint itself.
 
+### A REPORT is a dated act too — and it is the one artifact that must NOT be corrected
+
+Added 2026-08-08, from `fix/pest-not-discards-messages`. This ADR's title names the general principle
+and its body has so far only ever applied it to migrations. The principle is wider, and the second
+instance is worth writing down because the correct handling is the **opposite** of everything else in
+`docs/`.
+
+**The boundary.** Two kinds of prose live in this repository and they are governed by opposite rules.
+
+| | Examples | Rule |
+|---|---|---|
+| **Live documentation** | `docs/handoff/finance-mvp-cut-brief.md`, route-block docblocks, class docblocks, these ADRs | **Correct it.** A sentence that has gone false is read as a statement about what the system does today, and a stale one is worse than none — it is a wrong answer with the authority of a written one. |
+| **Dated records** | `docs/handoff/reports/*.md` — implementation reports, review findings, replay evidence | **Do not correct it.** Amend by appending or by a later report; never by editing the claim. |
+
+**Why a report is the exception, stated as the reasoning rather than the rule.** A report's entire
+value is that it says *what was true at the moment it was written, and what the author believed then*.
+Editing it to match today's tree destroys the only thing it is for. Worse, it destroys it invisibly:
+the corrected report still reads as a contemporaneous record, so a reader cannot tell that the claim
+they are trusting was written after the fact and against a different tree.
+
+The case that produced this: §9 step 5b-ii's docs sweep found five sentences asserting that
+opening-balance batches had no decision surface. Four were in
+`docs/handoff/reports/fix-finance-approvals-queue-renders-every-type.md` — 5a's own implementation
+report — and were **left untouched**; the fifth was in the MVP cut brief, a live status document, and
+was corrected. Both halves of that call are this rule.
+
+**This is the same shape as the `up()`/`down()` versus comment boundary above, one level up.** There,
+the executing half of an applied migration is frozen and its comments may be corrected. Here, the
+record is frozen and the live documentation must be corrected. In both cases the question is not "is
+this file allowed to change" but "does this text make a claim about a MOMENT, or about the SYSTEM" —
+and the answer decides the rule.
+
+**Why this is not its own ADR.** The principle is already stated in this document's title; a second
+ADR would be a second place to keep one statement in step, which is the failure mode this ADR exists
+to object to. It is filed here as an extension, clearly dated, rather than as a rewrite of the
+migration sections, which continue to say exactly what they said.
+
+**What it does not license.** A report that was WRONG WHEN WRITTEN is not corrected either — it is
+answered, in the same file if the branch is still open (an appended section, dated) or in the next
+report if it is not. The distinction is between amending a record and forging one.
+
+**There is no gate behind this**, and by this repository's own standard that makes it a convention
+rather than a rule (`bin/quality` cannot tell a report from a brief, and a lint keyed on the
+`docs/handoff/reports/` path would fire on the legitimate append). Recorded as a convention, honestly
+labelled, rather than dressed as a control.
+
 ## The trade, stated rather than buried
 
 This is the honest cost and it is not hypothetical. An environment that genuinely has **not** run

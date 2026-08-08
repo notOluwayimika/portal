@@ -40,7 +40,10 @@ dataset('scheduled detectors', [
 it('registers each scheduled detector, daily', function (string $command, string $cron) {
     $event = sch_find($command);
 
-    expect($event)->not->toBeNull("[{$command}] is not registered in routes/console.php")
+    // `toBeInstanceOf` rather than `->not->toBeNull($message)`: Pest discards a custom message on
+    // every `->not->` matcher, and this one names the command that is missing — which is the only
+    // thing a reader needs. Asserting the type also says more about a value dereferenced below.
+    expect($event)->toBeInstanceOf(Event::class, "[{$command}] is not registered in routes/console.php")
         ->and($event->expression)->toBe($cron);
 })->with('scheduled detectors');
 
@@ -68,7 +71,7 @@ it('logs the command and its exit code when ANY scheduled detector fails', funct
 
     foreach ($expected as $i => $command) {
         $event = sch_find($command);
-        expect($event)->not->toBeNull("[{$command}] is not registered");
+        expect($event)->toBeInstanceOf(Event::class, "[{$command}] is not registered");
 
         $event->exitCode = 40 + $i;   // a distinct code per command, so a cross-wired log line fails
         $event->callAfterCallbacks(app());

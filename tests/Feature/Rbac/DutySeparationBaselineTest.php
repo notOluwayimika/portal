@@ -133,7 +133,7 @@ it('ARM 3 — a FINANCE finding fails even when it IS in the baseline', function
     setPermissionsTeamId(null);
 
     // Fail closed: an empty or non-finance finding set would make the arm vacuous.
-    expect($keys)->not->toBeEmpty('the plant produced no finding at all — this arm would be vacuous')
+    expect($keys->count())->toBeGreaterThan(0, 'the plant produced no finding at all — this arm would be vacuous')
         ->and($keys->reject(fn (string $k): bool => str_contains($k, '|finance.'))->all())
         ->toBe([], 'every planted finding must be in the namespace the baseline can never amnesty');
 
@@ -170,7 +170,7 @@ it('ARM 4 — the resolved-one-appeared-one case a COUNT ratchet would pass', fu
     // finding, each for a user id that does not exist, stages it exactly.
     $found = collect(DutySeparation::violations($user, (int) $school->id));
     setPermissionsTeamId(null);
-    expect($found)->not->toBeEmpty('the plant produced no finding at all — this arm would be vacuous');
+    expect($found->count())->toBeGreaterThan(0, 'the plant produced no finding at all — this arm would be vacuous');
 
     $path = dsbWrite($found->values()
         ->map(fn (array $p, int $i): string => "{$school->id}|".(424242 + $i).'|result.approve|result.submit')
@@ -248,7 +248,7 @@ it('ARM 7 — the COMMITTED baseline file is well-formed and contains no finance
     // SUCCESS before the baseline is ever read, so an unfiltered run on a clean database exits 0.
     // The next new finding then fails as an ordinary non-zero rather than as NOT AUDITED, which is
     // the right failure — nothing has been accepted, so there is nothing to compare against.
-    expect($lines)->not->toBeEmpty('an empty baseline should be deleted along with the --baseline= argument, not committed empty');
+    expect($lines->count())->toBeGreaterThan(0, 'an empty baseline should be deleted along with the --baseline= argument, not committed empty');
 
     $malformed = $lines->reject(fn (string $l): bool => (bool) preg_match('/^\d+\|\d+\|[^|\s]+\|[^|\s]+$/', $l))->values();
     expect($malformed->all())->toBe([],
@@ -278,7 +278,7 @@ it('ARM 8 — every ENFORCED pair is in the namespace the baseline can never amn
     // rename red on the spot.
     $enforced = DutySeparation::enforcedPairs();
 
-    expect($enforced)->not->toBeEmpty('no enforced pairs at all would make this arm vacuous');
+    expect(count($enforced))->toBeGreaterThan(0, 'no enforced pairs at all would make this arm vacuous');
 
     $outside = collect($enforced)
         ->reject(fn (array $p): bool => str_starts_with($p['checker'], AuditDutySeparation::NEVER_BASELINEABLE))

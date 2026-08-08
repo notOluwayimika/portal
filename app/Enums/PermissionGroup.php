@@ -172,6 +172,9 @@ enum PermissionGroup: string
                 Permission::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT,
                 Permission::FINANCE_FEE_SCHEDULE_CHANGE_APPROVE,
                 Permission::FINANCE_FEE_SCHEDULE_CHANGE_REJECT,
+                Permission::FINANCE_OPENING_BALANCE_SUBMIT,
+                Permission::FINANCE_OPENING_BALANCE_APPROVE,
+                Permission::FINANCE_OPENING_BALANCE_REJECT,
             ],
             self::RBAC_ADMIN => [
                 Permission::RBAC_MANAGE_USERS,

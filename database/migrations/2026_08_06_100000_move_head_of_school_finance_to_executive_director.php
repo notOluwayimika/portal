@@ -123,6 +123,38 @@ return new class extends Migration
      * `accounts_officer`, `finance_lead` and `internal_auditor`: this change does not touch them, and
      * governing a role means FORCING it, which is not something to do by accident.
      *
+     * ╔═════════════════════════════════════════════════════════════════════════════════════════════╗
+     * ║ AMENDMENT 2026-08-09 (COMMENT ONLY — the executing half is untouched, ADR 0052's corollary). ║
+     * ║ THIS TARGET IS FORCING, AND A FORCING TARGET FREEZES A NAMESPACE, NOT A ROW SET.             ║
+     * ║                                                                                             ║
+     * ║ Each governed role's `finance.` slice is made to EQUAL the literal above — not to contain    ║
+     * ║ it. So this migration keeps acting on permissions that did not exist when it was written:    ║
+     * ║ any `finance.*` ability added to `executive_director`, `accounts_supervisor` or              ║
+     * ║ `head_of_school` in a LATER commit is REVOKED by this file on every environment where it    ║
+     * ║ has not yet run — silently, whatever the seeder's grants map says. And `rbac:sync` does      ║
+     * ║ not put it back: by then the permission is no longer new, and `sync()` grants an existing    ║
+     * ║ role only permissions created in that same run.                                             ║
+     * ║                                                                                             ║
+     * ║ FIRST CASUALTY, MEASURED: §9 step 4c's three `finance.opening-balance.*` grants. On the      ║
+     * ║ runbook order (`rbac:sync`, then `migrate`) the seeder wrote them and this file revoked the  ║
+     * ║ two it governs — `executive_director`'s `.approve`/`.reject` and `accounts_supervisor`'s     ║
+     * ║ `.submit`. `accounts_officer`'s survived only because that role is not governed here.        ║
+     * ║                                                                                             ║
+     * ║ THE FIX IS ALWAYS TO ROLL FORWARD, never to edit this literal — the frozen act is honest     ║
+     * ║ and must stay so. 4c's repair is                                                            ║
+     * ║ `2026_08_09_110000_converge_opening_balance_grants.php`, additive-only, dated after this.    ║
+     * ║ Anyone adding a `finance.*` grant to a governed role must ship the same kind of file, or     ║
+     * ║ the grant will not survive a deploy — and that is now ENFORCED, not merely written down:    ║
+     * ║ tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php derives this file's        ║
+     * ║ NAMESPACE and TARGET by reflection, reads the grants map and every later `@converges`        ║
+     * ║ marker, and goes red on any governed grant covered by neither. This file is registered in    ║
+     * ║ that test's FORCING_MIGRATIONS list; a second forcing migration must be added there by hand, ║
+     * ║ because "forcing" is a property of the body that no constant declares.                       ║
+     * ║ Also recorded in ADR 0052 and beside exemption 1 in                                          ║
+     * ║ `bin/ci-grants-convergence-lint.php` — "no migration needed" is a statement about the LINT,  ║
+     * ║ never about the deploy.                                                                     ║
+     * ╚═════════════════════════════════════════════════════════════════════════════════════════════╝
+     *
      * @var array<string, list<string>>
      */
     private const TARGET = [

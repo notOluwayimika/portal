@@ -857,7 +857,7 @@
         "auth",
         "tenant",
         "permission:finance.access",
-        "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject|finance.discount-policy.change.approve|finance.discount-policy.change.reject|finance.fee-schedule.change.approve|finance.fee-schedule.change.reject"
+        "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject|finance.discount-policy.change.approve|finance.discount-policy.change.reject|finance.fee-schedule.change.approve|finance.fee-schedule.change.reject|finance.opening-balance.approve|finance.opening-balance.reject"
     ],
     "GET /finance/students/{student}/statement": [
         "web",

@@ -253,6 +253,9 @@ class RbacSeeder extends Seeder
                 // 2026-08-04: "The Principal role should be able to view finance." A secondary
                 // Principal who also holds head_of_school therefore still sees the finance area.
                 // `finance.access` alone is VIEW: no record, no generate, no approve.
+                //
+                // §9 step 4c's opening-balance checker side (finance.opening-balance.approve/.reject)
+                // is NOT here either, for the same decision — it sits with `executive_director`.
                 // Route access (C2)
                 PermissionEnum::RESULT_REVIEW_ACCESS->value,
                 PermissionEnum::REPORT_VIEW->value,
@@ -372,6 +375,12 @@ class RbacSeeder extends Seeder
                 // and the discount-policy change (row 20, derived) — both submit-side, so still maker-only.
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
                 PermissionEnum::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
+                // Opening-balance cutover (§9 step 4c) — the MAKER side, on the same two roles that hold
+                // finance.fee-schedule.change.submit (AO here, AS below). Read off this map, not chosen:
+                // the bursar office is who runs the WCBS extract. finance_lead does NOT get it, because
+                // finance_lead does not hold fee-schedule.change.submit either. The CHECKER side is on
+                // `executive_director` (2026-08-04), never on a maker seat.
+                PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
             // Executive Director (ED) — new 2026-08-04. Brookstone: "The executive director approves
             // scholarships and discounts, concessions, refunds, write offs and other high impact
@@ -400,6 +409,25 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_CREDIT_NOTE_REJECT->value,
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_APPROVE->value,
                 PermissionEnum::FINANCE_INVOICE_VOID_REQUEST_REJECT->value,
+                // Opening-balance cutover (§9 step 4c) — the CHECKER side of the FIFTH pair, and it sits
+                // here because 2026_08_06_100000_move_head_of_school_finance_to_executive_director.php
+                // moved EVERY finance checker side to this role and left `head_of_school` holding no
+                // finance at all (the 2026-08-04 decision; the file is dated by its landing). That is the
+                // placement rule now: a new finance checker ability lands on ED, full stop. It is NOT
+                // derived from where the fee-schedule-change checker happens to sit — that reasoning was
+                // right against the tree it read and wrong against the decision, which is exactly how a
+                // grant ends up on a seat nobody chose for it.
+                //
+                // THESE TWO DO SHIP WITH A CONVERGENCE MIGRATION, and the reason is not the one the
+                // convergence LINT cares about. Exemption 1 waives a migration for a new permission,
+                // correctly: these land in $newPermissions and rbac:sync grants them per this map
+                // everywhere. But 2026_08_06_100000's TARGET is FORCING — it makes this role's
+                // `finance.` slice EQUAL a frozen literal — so on the deploy order (rbac:sync, then
+                // migrate) it REVOKES what the seeder just wrote, and no later sync restores it.
+                // 2026_08_09_110000_converge_opening_balance_grants.php puts them back. Measured, not
+                // reasoned; see ADR 0052 § "A FORCING target freezes a namespace, not a row set".
+                PermissionEnum::FINANCE_OPENING_BALANCE_APPROVE->value,
+                PermissionEnum::FINANCE_OPENING_BALANCE_REJECT->value,
             ],
             // Accounts Supervisor (AS) — renamed from finance_director 2026-08-01. The 2026_08_01 rename
             // migration carries the role row + its holders; this map defines its grants.
@@ -413,6 +441,12 @@ class RbacSeeder extends Seeder
             'accounts_supervisor' => [
                 PermissionEnum::FINANCE_ACCESS->value,
                 PermissionEnum::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
+                // Opening-balance cutover (§9 step 4c) — maker side, following fee-schedule.change.submit
+                // above onto the same role: AS is a maker-and-viewer seat and this is a maker ability.
+                // Its checker side is on `executive_director`, which holds no submit at all, so the pair
+                // cannot land on one role and cannot land on one person without two deliberate role
+                // assignments.
+                PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
             ],
             // Finance Lead (FL) — new 2026-08-01. A PROPOSER in the matrix (rows 10, 12, 13, 16, 17):
             // submits credit notes (row 16, FL=P) and discount-policy changes (row 20, derived). Holds no

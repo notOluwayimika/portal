@@ -102,6 +102,12 @@ it('ED holds every finance checker side and NO submit; HoS holds no finance at a
         'finance.fee-schedule.change.reject',
         'finance.invoice.void-request.approve',
         'finance.invoice.void-request.reject',
+        // §9 step 4c, the FIFTH pair. Added to this exact list because ED genuinely holds it, not to
+        // make a red go away: the 2026-08-04 decision moved every finance checker side to this seat,
+        // so a checker ability created afterwards belongs here by the same rule. The `no submit`
+        // assertion below is unaffected and is what stops this array from being edited into a lie.
+        'finance.opening-balance.approve',
+        'finance.opening-balance.reject',
     ]);
 
     // Stated separately from the exact list above: an equality assertion silently stops being about
@@ -115,9 +121,17 @@ it('ED holds every finance checker side and NO submit; HoS holds no finance at a
     expect($finance('head_of_school'))->toBe([]);
     expect($finance('principal'))->toBe(['finance.access']);
 
-    // accounts_supervisor is now a maker-and-viewer seat: it approves nothing that is built.
+    // accounts_supervisor is now a maker-and-viewer seat: it approves nothing that is built. §9 step
+    // 4c adds a SECOND maker to it and nothing else — the seat's character is unchanged, which is the
+    // claim this list is really making.
     expect($finance('accounts_supervisor'))->toBe([
         'finance.access',
         'finance.fee-schedule.change.submit',
+        'finance.opening-balance.submit',
     ]);
+
+    // The same property, stated so it survives an edit to the array above: AS approves NOTHING.
+    expect(collect($finance('accounts_supervisor'))->filter(
+        fn (string $p): bool => str_ends_with($p, '.approve') || str_ends_with($p, '.reject')
+    ))->toBeEmpty();
 });

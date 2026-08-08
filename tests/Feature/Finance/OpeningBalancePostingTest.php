@@ -82,12 +82,20 @@ function obpContext(): array
 }
 
 /**
- * A VALIDATED batch and its staged rows, written directly rather than through the validator.
+ * A SUBMITTED batch and its staged rows, written directly rather than through the validator.
  *
  * Deliberate: the validator is 4a's subject and has its own 43KB of coverage; what 4b is about is what
- * happens to a batch that has ALREADY reached `validated`. Building the staged state by hand is what
- * lets a proof state exactly which rows exist — and it is the same state the validator produces, since
- * `validated` is defined as "every row ok, no batch-level finding".
+ * happens to a batch that has already reached the state posting runs from. Building the staged state
+ * by hand is what lets a proof state exactly which rows exist — and it is the same state the pipeline
+ * produces, since only a `validated` batch (every row ok, no batch-level finding) can be submitted.
+ *
+ * IT STAGES `submitted`, NOT `validated`, SINCE 4c. The approval gate moved PostOpeningBalanceBatch's
+ * entry state, so a helper still staging `validated` would make every proof below assert a refusal
+ * instead of a post — and the one test that DOES want the refusal now plants `validated` explicitly,
+ * which is a stronger claim than it used to make: it proves the pre-4c door is shut.
+ *
+ * `submitted_by_user_id` is left NULL: 4b's proofs are about the POST, and a null submitter cannot
+ * collide with the maker ≠ checker CHECK. The gate's own proofs (OpeningBalanceApprovalGateTest) set it.
  *
  * @param  list<array{student: Student, label: string, kobo: int, bill?: string|null}>  $rows
  */
@@ -97,7 +105,7 @@ function obpBatch(array $ctx, array $rows, string $reference = 'WCBS-BATCH-1'): 
         $batch = OpeningBalanceBatch::create([
             'batch_reference' => $reference,
             'filename' => $reference.'.csv',
-            'status' => OpeningBalanceBatchStatus::Validated,
+            'status' => OpeningBalanceBatchStatus::Submitted,
             'row_count' => count($rows),
             'file_row_count' => count($rows),
             'control_total' => Money::fromKobo(array_sum(array_column($rows, 'kobo'))),
@@ -164,11 +172,11 @@ it('PROOF 1 — G1: a second batch reaching posted for the same school is refuse
     ActiveSchool::runFor($ctx['school']->id, function () use ($first, $second) {
         expect(OpeningBalanceBatch::query()->where('status', OpeningBalanceBatchStatus::Posted)->count())->toBe(1)
             ->and($first->refresh()->status)->toBe(OpeningBalanceBatchStatus::Posted)
-            ->and($second->refresh()->status)->toBe(OpeningBalanceBatchStatus::Validated);
+            ->and($second->refresh()->status)->toBe(OpeningBalanceBatchStatus::Submitted);
     });
 });
 
-it('PROOF 1b — G1 constrains ONLY the posted state: unlimited draft/validated/rejected batches coexist', function () {
+it('PROOF 1b — G1 constrains ONLY the posted state: unlimited draft/validated/submitted/rejected batches coexist', function () {
     // The NULL exemption is the whole reason the generated column is shaped IF(posted, school, NULL).
     // Without this case, a key that accidentally constrained every batch would still pass PROOF 1.
     $ctx = obpContext();
@@ -436,12 +444,19 @@ it('PROOF 5 — a posted credit is CONSUMED by the next invoice: applyCreditForw
 
 // ── The Action's own refusals ──
 
-it('refuses to post a batch that is not validated, and refuses a batch belonging to another School', function () {
+it('refuses to post a batch that is not submitted — including a VALIDATED one — and one belonging to another School', function () {
+    // The `validated` arm is the 4c gate seen from below: before the approval gate existed, this was
+    // precisely the state that posted. It must now be refused, or the gate has a door beside it.
     $ctx = obpContext();
     $other = obpContext();
     $s1 = Student::factory()->create(['school_id' => $ctx['school']->id]);
 
     $batch = obpBatch($ctx, [['student' => $s1, 'label' => 'Tuition', 'kobo' => 100000]]);
+    ActiveSchool::runFor($ctx['school']->id, fn () => $batch->update(['status' => OpeningBalanceBatchStatus::Validated]));
+
+    expect(fn () => obpPost($ctx, $batch->refresh()))
+        ->toThrow(BusinessRuleException::class);
+
     ActiveSchool::runFor($ctx['school']->id, fn () => $batch->update(['status' => OpeningBalanceBatchStatus::Rejected]));
 
     expect(fn () => obpPost($ctx, $batch->refresh()))
@@ -617,7 +632,7 @@ it('refuses to post with NO active School context — the fail-closed branch, ex
         ->toThrow(BusinessRuleException::class, 'No active School context');
 
     ActiveSchool::runFor($ctx['school']->id, function () use ($batch) {
-        expect($batch->refresh()->status)->toBe(OpeningBalanceBatchStatus::Validated);
+        expect($batch->refresh()->status)->toBe(OpeningBalanceBatchStatus::Submitted);
     });
 
     expect((int) DB::scalar('SELECT COUNT(*) FROM finance_ledger_transactions'))->toBe(0)

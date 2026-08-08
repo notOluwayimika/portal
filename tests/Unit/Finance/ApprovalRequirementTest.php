@@ -2,6 +2,7 @@
 
 use App\Enums\Permission;
 use App\Finance\Approval\ApprovalRequirement;
+use App\Support\ApprovalAbility;
 use App\Support\Money;
 
 /**
@@ -10,7 +11,7 @@ use App\Support\Money;
  * These tests pin that guarantee so a future edit that wires the table cannot accidentally flip the default.
  *
  * F-4 (fail-closed) and F-5 (the straight-through arm is dead for every live caller) live here; the lint
- * (approval-seam-missing / approval-seam-count) proves the four Submit actions actually CALL the seam.
+ * (approval-seam-missing / approval-seam-count) proves the Submit actions actually CALL the seam.
  */
 
 // ── F-4: FAIL CLOSED — every path returns required=true, ruleId=null ──────────────────────────────
@@ -35,16 +36,23 @@ it('requires a checker regardless of amount — null, zero, or very large', func
 
 // ── F-5: the straight-through (throw) arm is DEAD for every real call site ─────────────────────────
 
-it('requires a checker for all four live maker abilities (the throw arm is unreachable today)', function () {
+it('requires a checker for every live maker ability (the throw arm is unreachable today)', function () {
     // Each Submit action branches `if (! ApprovalRequirement::for(<maker>, ...)->required) throw`. Because
-    // the seam returns required=true for each of the four real maker abilities, that throw is provably dead
-    // for every live caller — the marker arm, not a live code path — until finance_approval_rules lands.
-    $makers = [
-        Permission::FINANCE_CREDIT_NOTE_SUBMIT->value,
-        Permission::FINANCE_INVOICE_VOID_REQUEST_SUBMIT->value,
-        Permission::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT->value,
-        Permission::FINANCE_FEE_SCHEDULE_CHANGE_SUBMIT->value,
-    ];
+    // the seam returns required=true for each real maker ability, that throw is provably dead for every
+    // live caller — the marker arm, not a live code path — until finance_approval_rules lands.
+    //
+    // The list is DERIVED from the enum, not typed out: it used to be four names, 4c made it five, and a
+    // hand-list is a thing that silently stops covering the newest instance — the exact drift
+    // approval-seam-count exists to catch one level up. The derivation is the same predicate that lint
+    // uses (a finance ability whose terminal segment is `submit`), so the two cannot disagree.
+    $makers = array_values(array_filter(
+        Permission::values(),
+        fn (string $a) => str_starts_with($a, 'finance.') && ApprovalAbility::terminalSegment($a) === 'submit',
+    ));
+
+    // Not vacuous: an empty list would satisfy the loop below.
+    expect(count($makers))->toBe(count(glob(base_path('app/Finance/Actions/Submit*.php')) ?: []))
+        ->and($makers)->not->toBeEmpty();
 
     foreach ($makers as $maker) {
         expect(ApprovalRequirement::for($maker)->required)->toBeTrue();

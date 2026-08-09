@@ -199,12 +199,6 @@ export function CurriculumCard({
                             <th className="border border-slate-300 px-2 py-1 text-center">
                                 Evaluation
                             </th>
-                            <th className="border border-slate-300 px-2 py-1 text-left">
-                                Subject Teacher
-                            </th>
-                            <th className="border border-slate-300 px-2 py-1 text-left">
-                                Comments
-                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -213,17 +207,19 @@ export function CurriculumCard({
                                 <td className="border border-slate-300 px-2 py-1">
                                     {subject.curriculum_subject?.subject?.name}
                                 </td>
+                                {/*
+                                    Rating only — no subject teacher, no
+                                    per-subject remark. Early Years subject
+                                    teachers do not comment on the report; the
+                                    form tutor writes the single overall comment
+                                    in the block below. The comment a teacher can
+                                    still enter on the score grid is untouched and
+                                    simply not printed.
+                                */}
                                 <td className="border border-slate-300 px-2 py-1 text-center font-bold">
                                     {subject.own_result?.grading_item
                                         ? `${subject.own_result.grading_item.code} — ${subject.own_result.grading_item.label}`
                                         : 'Not assessed'}
-                                </td>
-                                <td className="border border-slate-300 px-2 py-1">
-                                    {subject.curriculum_subject?.teachers?.[0]
-                                        ?.teacher?.full_name || '—'}
-                                </td>
-                                <td className="border border-slate-300 px-2 py-1">
-                                    {subject.comment || '—'}
                                 </td>
                             </tr>
                         ))}

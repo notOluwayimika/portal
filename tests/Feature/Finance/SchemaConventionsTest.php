@@ -71,8 +71,8 @@ function schemaMoneyRows(): array
             [new InvoiceLineSpec('Tuition', Money::fromKobo(50000))],
         );
         app(RecordPayment::class)->handle(
-            $invoice, Money::fromKobo(20000), 'Payer', User::factory()->create(['school_id' => $school->id])
-        );
+            $invoice, Money::fromKobo(20000), 'Payer', User::factory()->create(['school_id' => $school->id]),
+            now()->toDateString(), );
 
         return [
             'invoice' => (int) $invoice->id,

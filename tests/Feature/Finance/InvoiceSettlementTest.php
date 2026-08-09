@@ -87,8 +87,8 @@ it('PART-PAID — outstanding reconciles, void blocked by the payment, credit no
     [$school, $student] = stlSetup();
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id])
-    ));
+        $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id]),
+        now()->toDateString(), ));
 
     $s = stlSettlement($school, $student, $invoice);
     expect($s['outstanding']->toKobo())->toBe(200000)          // 300000 − 100000
@@ -103,8 +103,8 @@ it('SETTLED BY PAYMENT — outstanding zero, record-payment suppressed, void blo
     [$school, $student] = stlSetup();
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id])
-    ));
+        $invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]),
+        now()->toDateString(), ));
 
     $s = stlSettlement($school, $student, $invoice);
     expect($s['outstanding']->toKobo())->toBe(0)
@@ -142,7 +142,7 @@ it('SETTLED THEN CREDIT-NOTED — displayed outstanding floors at zero; the acco
     $invoice = stlInvoice($school, $student, 300000);
 
     ActiveSchool::runFor($school->id, function () use ($school, $invoice, $maker, $checker) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]));
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]), now()->toDateString());
         $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, null, $maker);
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
@@ -181,8 +181,8 @@ it('DECISION 5 — submitting a void against a paid invoice is REFUSED at submit
     $maker = User::factory()->create(['school_id' => $school->id]);
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id])
-    ));
+        $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id]),
+        now()->toDateString(), ));
 
     // Not merely advisory: the request is never created, so it never occupies the open-request slot.
     ActiveSchool::runFor($school->id, function () use ($invoice, $maker) {
@@ -199,7 +199,7 @@ it('BOTH payment AND approved credit note — outstanding still reconciles (atta
     $invoice = stlInvoice($school, $student, 300000);
 
     ActiveSchool::runFor($school->id, function () use ($school, $invoice, $maker, $checker) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(120000), 'Payer', User::factory()->create(['school_id' => $school->id]));
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(120000), 'Payer', User::factory()->create(['school_id' => $school->id]), now()->toDateString());
         $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(30000), CreditNoteKind::CreditNote, null, $maker);
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
@@ -234,8 +234,8 @@ it('ISOLATION — the settlement read is School-scoped; another School\'s alloca
     [$schoolB, $studentB] = stlSetup();
     $invoiceB = stlInvoice($schoolB, $studentB, 300000);
     ActiveSchool::runFor($schoolB->id, fn () => app(RecordPayment::class)->handle(
-        $invoiceB, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $schoolB->id])
-    ));
+        $invoiceB, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $schoolB->id]),
+        now()->toDateString(), ));
 
     expect(stlSettlement($schoolA, $studentA, $invoiceA)['outstanding']->toKobo())->toBe(300000)
         ->and(stlSettlement($schoolB, $studentB, $invoiceB)['outstanding']->toKobo())->toBe(0);

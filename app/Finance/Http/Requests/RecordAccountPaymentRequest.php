@@ -33,6 +33,16 @@ class RecordAccountPaymentRequest extends FormRequest
             // (account currency) and SubledgerPoster backstop this. Reverses the f293358 regex steer.
             'currency' => ['sometimes', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             'payer_name' => ['required', 'string', 'max:255'],
+            // REQUIRED, with no default at any layer. A payment's business date is the operator's
+            // to state: a receipt handed over on Friday and keyed on Monday belongs to Friday, and
+            // finance_payments is append-only so nobody can correct it afterwards. Defaulting it to
+            // today at the edge would make "the operator did not say" indistinguishable from "the
+            // operator said today", forever. The UI pre-fills today; the API refuses silence.
+            'received_at' => ['required', 'date', 'before_or_equal:today'],
+            // Required only when the date is not today — U9's spec. required_unless compares the
+            // SUBMITTED value, so a back-dated receipt cannot arrive without an explanation and a
+            // same-day one is not made to invent one.
+            'received_at_reason' => ['nullable', 'required_unless:received_at,'.now()->toDateString(), 'string', 'max:255'],
         ];
     }
 }

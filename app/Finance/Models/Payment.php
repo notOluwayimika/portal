@@ -30,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $received_by_user_id
  * @property Carbon $created_at
  * @property-read Collection<int, PaymentAllocation> $allocations
+ * @property Carbon $received_at
+ * @property string|null $received_at_reason
  */
 class Payment extends Model
 {
@@ -62,6 +64,9 @@ class Payment extends Model
 
     protected $casts = [
         'amount' => MoneyCast::class.':amount_minor,amount_currency',
+        // A business DAY, not a moment: "received on the 3rd" carries no time of day and the
+        // operator is never asked for one.
+        'received_at' => 'date',
     ];
 
     public function allocations(): HasMany

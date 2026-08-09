@@ -41,14 +41,14 @@ final class DriveFinanceStates
     public function partPaid(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker, now()->toDateString());
     }
 
     /** SETTLED BY PAYMENT. */
     public function settledByPayment(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, now()->toDateString());
     }
 
     /** SETTLED ENTIRELY BY AN APPROVED CREDIT NOTE (settled, never paid). */
@@ -63,7 +63,7 @@ final class DriveFinanceStates
     public function settledThenCredited(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, now()->toDateString());
         $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, 'Post-payment adjustment', $this->maker);
         app(ApproveCreditNote::class)->handle($note, $this->checker);
     }

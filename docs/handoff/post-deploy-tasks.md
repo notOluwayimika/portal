@@ -30,6 +30,30 @@ Every one-way step keeps a STOP-for-review before it. Nothing below is a big-ban
 
 Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
 
+- [ ] **PRE-DEPLOY — CONFIRM THE THREE FINANCE TABLES ARE EMPTY, or the migration will
+      stop the deploy.** `2026_08_09_120000_finance_capture_columns_s2_s3` adds five
+      **NOT NULL columns with no defaults** to `finance_payments`,
+      `finance_ledger_transactions` and `finance_payment_allocations`. MySQL refuses to
+      add such a column to a non-empty table, so a single pre-existing row aborts the
+      migration mid-deploy.
+
+      **That is the design, not a flaw.** The alternative — nullable columns, or NOT NULL
+      with a default — would stamp a fabricated value onto real money rows that nobody
+      observed, on three tables whose `_no_update` triggers mean it could never be
+      corrected. A deploy that stops is recoverable; a fabricated received date is not.
+      This step exists so the stop is anticipated rather than discovered at 2am.
+
+      ```sql
+      -- All three MUST be 0. Any other answer: STOP, do not run the migration, and take
+      -- the result to the project lead — the columns' shape is a decision that changes
+      -- once real rows exist.
+      SELECT 'finance_payments' AS t, COUNT(*) AS rows_present FROM finance_payments
+      UNION ALL SELECT 'finance_ledger_transactions', COUNT(*) FROM finance_ledger_transactions
+      UNION ALL SELECT 'finance_payment_allocations', COUNT(*) FROM finance_payment_allocations;
+      ```
+
+      Verified `0 / 0 / 0` on the production copy on 2026-08-09. Production itself is
+      unconfirmed, which is the whole reason this line exists.
 - [ ] **PRE-DEPLOY — COUNT the authenticated principals with NO resolvable school
       context, BEFORE this goes out.** The finance transactional models are now
       fail-closed (`config/rbac.php`, `rbac.fail_closed_models`), and on the **twelve**

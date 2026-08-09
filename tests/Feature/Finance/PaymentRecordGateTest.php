@@ -70,13 +70,13 @@ function paymentGateFixture(School $school): array
 function postInvoicePayment(User $user, School $school, string $invoiceUuid)
 {
     return test()->actingAs($user)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 50000, 'payer_name' => 'X']);
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 50000, 'received_at' => now()->toDateString(), 'payer_name' => 'X']);
 }
 
 function postAccountPayment(User $user, School $school, string $studentUuid)
 {
     return test()->actingAs($user)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$studentUuid}/payments", ['amount_minor' => 50000, 'payer_name' => 'X']);
+        ->postJson("/api/v1/finance/students/{$studentUuid}/payments", ['amount_minor' => 50000, 'received_at' => now()->toDateString(), 'payer_name' => 'X']);
 }
 
 /**
@@ -97,7 +97,7 @@ function postInvoicePaymentInSchoolContext(User $user, School $school, string $i
 {
     return test()->actingAs($user)->withSession(['school_id' => $school->id])
         ->withHeader('Referer', config('app.url'))
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 50000, 'payer_name' => 'X']);
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 50000, 'received_at' => now()->toDateString(), 'payer_name' => 'X']);
 }
 
 // ── Arm 1 — finance.access WITHOUT finance.payment.record → 403 on both. THE WATCHED-RED ARM: run

@@ -77,11 +77,11 @@ it('C-5 — record-payment currency "ngn" is a 422; "NGN" is accepted', function
     $invoice = mcvInvoice($school);
 
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'ngn', 'payer_name' => 'Parent'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'ngn', 'received_at' => now()->toDateString(), 'payer_name' => 'Parent'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['currency']);
 
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'NGN', 'payer_name' => 'Parent'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'Parent'])
         ->assertCreated();
 });

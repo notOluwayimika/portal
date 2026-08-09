@@ -37,7 +37,15 @@ final class RecordPayment
 {
     public function __construct(private readonly SubledgerPoster $ledger) {}
 
-    public function handle(Invoice $invoice, Money $amount, string $payerName, User $actor): Payment
+    /**
+     * @param  string  $receivedAt  The business date the money was RECEIVED (Y-m-d). REQUIRED and
+     *                              without a default: a payment handed over on Friday and keyed on Monday belongs to Friday,
+     *                              and finance_payments is append-only so the date can never be corrected afterwards. The
+     *                              FormRequest requires it at the edge; this refusal is the backstop for every non-HTTP caller.
+     * @param  string|null  $receivedAtReason  Why the date is not today. Required when it is not,
+     *                                         because a back-dated receipt with no explanation is the first thing an auditor asks about.
+     */
+    public function handle(Invoice $invoice, Money $amount, string $payerName, User $actor, string $receivedAt, ?string $receivedAtReason = null): Payment
     {
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
@@ -55,7 +63,7 @@ final class RecordPayment
             throw new BusinessRuleException("A payment must be in the invoice's currency ({$invoice->total->currency}).");
         }
 
-        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor) {
+        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor, $receivedAt, $receivedAtReason) {
             // Concurrency anchor (#94, UNCHANGED). Lock the INVOICE ROW first so
             // allocations to the same invoice serialise: a competing allocation blocks
             // here, then reads the winner's committed sum for the outstanding cap below.
@@ -90,6 +98,8 @@ final class RecordPayment
                 'amount' => $amount,
                 'payer_name' => $payerName,
                 'received_by_user_id' => $actor->id,
+                'received_at' => $receivedAt,
+                'received_at_reason' => $receivedAtReason,
             ]);
 
             if ($allocateKobo > 0) {
@@ -97,6 +107,12 @@ final class RecordPayment
                     'school_id' => $invoice->school_id,
                     'invoice_id' => $locked->id,
                     'amount' => Money::fromKobo($allocateKobo, $amount->currency),
+                    // THE rule this Action implements: the payment names an invoice and is
+                    // allocated against it, capped at outstanding. Nothing here is a choice a
+                    // human made, so the override is false with no reason.
+                    'allocation_rule' => PaymentAllocation::RULE_PAYMENT_AGAINST_NAMED_INVOICE,
+                    'allocation_overridden' => false,
+                    'allocation_override_reason' => null,
                 ]);
             }
 
@@ -115,6 +131,11 @@ final class RecordPayment
                 .($allocateKobo < $amount->toKobo()
                     ? ' ('.($amount->toKobo() - $allocateKobo).' minor units banked as credit)'
                     : ''),
+                // EFFECTIVE = THE DAY THE MONEY ARRIVED, not the day it was keyed. The ledger
+                // credit and the payment row must agree about which period the cash belongs to,
+                // or a back-dated receipt lands the payment in one month and its ledger effect in
+                // another and neither month reconciles.
+                $receivedAt,
             );
 
             return $payment->load('allocations');

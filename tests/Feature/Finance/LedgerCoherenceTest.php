@@ -99,7 +99,7 @@ function lcSubmittedCredit(School $school, Invoice $invoice, int $kobo, User $ma
 function lcPayment(School $school, Invoice $invoice, int $kobo, User $actor): Payment
 {
     return ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)
-        ->handle($invoice, Money::fromKobo($kobo), 'Payer', $actor));
+        ->handle($invoice, Money::fromKobo($kobo), 'Payer', $actor, now()->toDateString()));
 }
 
 /** Raw-insert a ledger row, bypassing SubledgerPoster (INSERT is the one write the triggers allow). */
@@ -114,7 +114,7 @@ function lcInsertLedger(int $schoolId, int $studentId, string $type, int $amount
         'amount_currency' => $currency,
         'source_type' => $sourceType,
         'source_id' => $sourceId,
-        'narration' => 'planted incoherence',
+        'posted_at' => now(), 'effective_at' => now()->toDateString(), 'narration' => 'planted incoherence',
         'created_at' => now(),
         'updated_at' => now(),
     ]);

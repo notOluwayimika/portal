@@ -24,7 +24,14 @@ class PaymentController extends Controller
         );
 
         try {
-            $payment = $action->handle($invoice, $amount, (string) $request->input('payer_name'), $request->user());
+            $payment = $action->handle(
+                $invoice,
+                $amount,
+                (string) $request->input('payer_name'),
+                $request->user(),
+                (string) $request->input('received_at'),
+                $request->input('received_at_reason'),
+            );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -47,7 +54,14 @@ class PaymentController extends Controller
         );
 
         try {
-            $payment = $action->handle($student->id, $amount, (string) $request->input('payer_name'), $request->user());
+            $payment = $action->handle(
+                $student->id,
+                $amount,
+                (string) $request->input('payer_name'),
+                $request->user(),
+                (string) $request->input('received_at'),
+                $request->input('received_at_reason'),
+            );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

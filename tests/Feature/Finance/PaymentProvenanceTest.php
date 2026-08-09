@@ -100,7 +100,7 @@ function insertPaymentRow(int $schoolId, int $studentId, int $reference, string 
         'reference' => $reference,
         'amount_minor' => 5000,
         'amount_currency' => 'NGN',
-        'payer_name' => 'Raw',
+        'received_at' => now()->toDateString(), 'payer_name' => 'Raw',
         'method' => $method,
         'origin' => $origin,
         'created_at' => now(),
@@ -160,7 +160,7 @@ it("default — the existing payment path writes origin = 'portal' with no code 
 
         // RecordPayment does not mention `origin` anywhere. The column's NOT NULL DEFAULT is what makes
         // every row this system issues self-describing without a single edit to the write path.
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, now()->toDateString());
 
         $row = DB::table('finance_payments')->latest('id')->first();
         expect($row->origin)->toBe('portal')
@@ -191,7 +191,7 @@ it('seed trap, INVOICE door — a migrated row in the reserved band does NOT dra
 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, now()->toDateString());
     });
 
     // Selected by payer_name, NOT by origin: this test is about the COUNTER, and keying it on the
@@ -221,7 +221,7 @@ it('seed trap, ACCOUNT door — the same counter, reached without an invoice, mu
     plantImportedBandRow($school->id, $student->id);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $student) {
-        app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(10000), 'AccountPayer', $admin);
+        app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(10000), 'AccountPayer', $admin, now()->toDateString());
     });
 
     $reference = (int) DB::table('finance_payments')->where('payer_name', 'AccountPayer')->value('reference');

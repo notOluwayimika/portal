@@ -85,10 +85,10 @@ it('X-2 — an append-only ledger tamper (1644) renders 500, not a 400 "Database
     $id = DB::table('finance_ledger_transactions')->insertGetId([
         'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'student_id' => $student->id,
         'type' => 'charge', 'amount_minor' => 100000, 'amount_currency' => 'NGN',
-        'source_type' => 'invoice', 'source_id' => 1, 'narration' => 'seed', 'created_at' => now(), 'updated_at' => now(),
+        'source_type' => 'invoice', 'source_id' => 1, 'posted_at' => now(), 'effective_at' => now()->toDateString(), 'narration' => 'seed', 'created_at' => now(), 'updated_at' => now(),
     ]);
 
-    Route::get('/api/__dberr/tamper', fn () => DB::table('finance_ledger_transactions')->where('id', $id)->update(['narration' => 'tampered']));
+    Route::get('/api/__dberr/tamper', fn () => DB::table('finance_ledger_transactions')->where('id', $id)->update(['posted_at' => now(), 'effective_at' => now()->toDateString(), 'narration' => 'tampered']));
 
     $res = $this->getJson('/api/__dberr/tamper');
     $res->assertStatus(500); // PLANT (watched red): restore the old handler → this same tamper renders 400 "Database error".

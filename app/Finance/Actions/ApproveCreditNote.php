@@ -95,6 +95,24 @@ final class ApproveCreditNote
                 'credit_note',
                 (int) $creditNote->getKey(),
                 "Credit note #{$creditNote->displayNumber()} against invoice #{$invoice->number}",
+                // TODAY, and this deliberately DIFFERS from ApproveVoidRequest, which back-dates
+                // its reversal to the original charge. Flagged in this branch's report for the
+                // project lead to overturn; the reasoning is CreditNoteKind's own docblock.
+                //
+                // A void asserts the charge never should have existed. A credit note asserts the
+                // opposite: the charge was correct, and a NEW decision is being taken now to
+                // forgive part of it. Both kinds this enum carries are present-tense judgements —
+                // CreditNote is "goodwill, correction, an over-charge acknowledged … the money is
+                // forgiven", WriteOff is "the receivable is JUDGED uncollectable". A receivable
+                // becomes uncollectable at the moment someone judges it so; back-dating that to
+                // the invoice's period would assert it was never collectable, restating a period
+                // that was correct when it closed.
+                //
+                // The two therefore land in different periods on purpose. If Brookstone's
+                // accounting policy says a credit note belongs to the period it corrects, this one
+                // line changes — but it should change because the policy says so, not because it
+                // matched its neighbour.
+                now()->toDateString(),
             );
 
             return $creditNote->refresh();

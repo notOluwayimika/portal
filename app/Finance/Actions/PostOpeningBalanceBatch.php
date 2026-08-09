@@ -208,6 +208,11 @@ final class PostOpeningBalanceBatch
                         'opening_balance_row',
                         (int) $row->id,
                         $row->fee_type_label.self::NARRATION_SUFFIX,
+                        // THE CUTOVER DATE, not today. This charge represents what the student owed
+                        // at cutover under WCBS; it is being recorded today but it happened then.
+                        // Dating it today would move a term's worth of receivable into the period
+                        // the import ran and leave every pre-cutover period understated.
+                        $locked->cutover_date->toDateString(),
                     );
 
                     continue;
@@ -253,6 +258,13 @@ final class PostOpeningBalanceBatch
                     // person who ran the post would assert a cash handover that never happened. WHO
                     // posted is recorded where it belongs, on the batch (posted_by_user_id).
                     'received_by_user_id' => null,
+                    // THE CUTOVER DATE for the same reason as the charge above: this money reached
+                    // WCBS on or before cutover, not on the day the batch was posted. There is no
+                    // reason string — "not today" here is the defining property of a migrated row,
+                    // not an exception someone has to justify, and `origin = 'migrated'` already
+                    // says so in a column with a CHECK behind it.
+                    'received_at' => $locked->cutover_date->toDateString(),
+                    'received_at_reason' => null,
                 ]);
 
                 // The crediting ledger row. BYTE-IDENTICAL in vocabulary to both live payment paths —
@@ -275,6 +287,10 @@ final class PostOpeningBalanceBatch
                     'payment',
                     (int) $payment->getKey(),
                     'Payment #'.$reference.self::NARRATION_SUFFIX,
+                    // Cutover, matching the payment row's received_at exactly. If these two ever
+                    // disagreed the payment and its own ledger credit would sit in different
+                    // periods, and neither period would reconcile.
+                    $locked->cutover_date->toDateString(),
                 );
 
                 $reference++;

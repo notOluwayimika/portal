@@ -9,6 +9,7 @@ use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\Concerns\AppendOnly;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * One append-only movement in the per-student receivable subledger. Signed Money:
@@ -24,6 +25,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $source_type
  * @property int $source_id
  * @property string $narration
+ * @property Carbon $posted_at
+ * @property Carbon $effective_at
  */
 class LedgerTransaction extends Model
 {
@@ -36,5 +39,11 @@ class LedgerTransaction extends Model
     protected $casts = [
         'type' => LedgerEntryType::class,
         'amount' => MoneyCast::class.':amount_minor,amount_currency',
+        // posted_at is a moment (when the row was written); effective_at is a DAY (which period
+        // the entry belongs to). The cast difference is the distinction, not an oversight — a
+        // period is not a timestamp, and casting effective_at to datetime would invite
+        // time-of-day comparisons that mean nothing about a business date.
+        'posted_at' => 'datetime',
+        'effective_at' => 'date',
     ];
 }

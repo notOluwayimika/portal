@@ -75,9 +75,12 @@ class SchoolScope implements Scope
     /**
      * Whether this specific model is fail-closed. Rollout is PER-MODEL (roadmap
      * Rollout Flags table, Risk #14): a model throws on missing context only once
-     * it is added to the rbac.fail_closed_models allowlist. Empty by default, so
-     * un-opted-in models keep the legacy fail-open behaviour and each model can
-     * be enabled/reverted independently.
+     * it is added to the rbac.fail_closed_models allowlist, so un-opted-in models
+     * keep the legacy fail-open behaviour and each model can be enabled or
+     * reverted independently. That allowlist is a VERSIONED DEFAULT in
+     * config/rbac.php — the finance transactional set — and is no longer empty;
+     * RBAC_FAIL_CLOSED_MODELS overrides it for a per-environment retreat. Read
+     * the config's own block for what is in the batch and why the catalog is not.
      *
      * There is deliberately NO super-admin exemption: authority and isolation
      * are separate axes. The team-less super_admin bypasses *authorization*

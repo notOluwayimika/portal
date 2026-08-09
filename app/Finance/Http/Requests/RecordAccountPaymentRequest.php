@@ -3,6 +3,7 @@
 namespace App\Finance\Http\Requests;
 
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -38,11 +39,11 @@ class RecordAccountPaymentRequest extends FormRequest
             // finance_payments is append-only so nobody can correct it afterwards. Defaulting it to
             // today at the edge would make "the operator did not say" indistinguishable from "the
             // operator said today", forever. The UI pre-fills today; the API refuses silence.
-            'received_at' => ['required', 'date', 'before_or_equal:today'],
+            'received_at' => ['required', 'date', 'before_or_equal:'.SchoolDay::today()],
             // Required only when the date is not today — U9's spec. required_unless compares the
             // SUBMITTED value, so a back-dated receipt cannot arrive without an explanation and a
             // same-day one is not made to invent one.
-            'received_at_reason' => ['nullable', 'required_unless:received_at,'.now()->toDateString(), 'string', 'max:255'],
+            'received_at_reason' => ['nullable', 'required_unless:received_at,'.SchoolDay::today(), 'string', 'max:255'],
         ];
     }
 }

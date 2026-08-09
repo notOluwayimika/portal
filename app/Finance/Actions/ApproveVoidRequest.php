@@ -7,6 +7,7 @@ use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\LedgerTransaction;
 use App\Finance\Models\VoidRequest;
 use App\Finance\Services\SubledgerPoster;
 use App\Finance\Services\VoidEligibility;
@@ -86,9 +87,43 @@ final class ApproveVoidRequest
                 'invoice',
                 $invoice->id,
                 "Reversal of invoice #{$invoice->number}: {$request->reason}",
+                // THE ORIGINAL CHARGE'S EFFECTIVE DATE, not today — a deliberate accounting
+                // decision, flagged in this branch's report for the project lead to overturn.
+                //
+                // A void says the invoice SHOULD NEVER HAVE EXISTED. VoidEligibility guarantees no
+                // payment was ever allocated to it, so nothing about it is real: the honest record
+                // is a period in which the charge and its reversal both appear and net to zero.
+                // Dating the reversal today would instead leave the original period overstated
+                // forever and understate this one by the same amount — two wrong periods to
+                // describe one invoice that never should have been raised.
+                //
+                // Read from the charge itself rather than recomputed, because the charge is the
+                // only authority on which period it landed in.
+                $this->originalChargeEffectiveAt($invoice),
             );
 
             return $request->refresh();
         });
+    }
+
+    /**
+     * The effective date of the charge this void reverses.
+     *
+     * Falls back to the invoice's creation date only for a charge posted before effective_at
+     * existed. That fallback is unreachable today — the column is NOT NULL and the table was empty
+     * when it was added — and it is here so a missing row degrades to the invoice's own date rather
+     * than to today, which would be the one answer that is certainly wrong.
+     */
+    private function originalChargeEffectiveAt(Invoice $invoice): string
+    {
+        $charge = LedgerTransaction::query()
+            ->where('source_type', 'invoice')
+            ->where('source_id', $invoice->id)
+            ->where('type', LedgerEntryType::Charge)
+            ->orderBy('id')
+            ->first();
+
+        return $charge?->effective_at?->toDateString()
+            ?? $invoice->created_at->toDateString();
     }
 }

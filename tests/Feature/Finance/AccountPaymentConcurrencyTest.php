@@ -82,7 +82,7 @@ it('PROOF A (§5.5) — two account payments both land with no lock; balance is 
 
     // Payment A via the REAL Action (default connection) — creates the account row, balance −300000.
     ActiveSchool::runFor($school->id, fn () => app(RecordAccountPayment::class)
-        ->handle($student->id, Money::fromKobo(300000), 'A', $admin));
+        ->handle($student->id, Money::fromKobo(300000), 'A', $admin, now()->toDateString()));
 
     $accountId = DB::table('finance_student_accounts')->where('student_id', $student->id)->value('id');
     $second = apcSecondConn();
@@ -95,7 +95,7 @@ it('PROOF A (§5.5) — two account payments both land with no lock; balance is 
     expect((int) $second->selectOne('SELECT balance_minor AS b FROM finance_student_accounts WHERE id = ?', [$accountId])->b)->toBe(-300000);
 
     ActiveSchool::runFor($school->id, fn () => app(RecordAccountPayment::class)
-        ->handle($student->id, Money::fromKobo(400000), 'B', $admin)); // default, autocommits → −700000
+        ->handle($student->id, Money::fromKobo(400000), 'B', $admin, now()->toDateString())); // default, autocommits → −700000
 
     $second->update('UPDATE finance_student_accounts SET balance_minor = balance_minor + ? WHERE id = ?', [-100000, $accountId]);
     $second->commit();
@@ -129,7 +129,7 @@ it('PROOF B (§5.6) — first-ever movement: a concurrent account payment WAITS 
     $code = null;
     try {
         ActiveSchool::runFor($school->id, fn () => app(RecordAccountPayment::class)
-            ->handle($student->id, Money::fromKobo(100000), 'X', $admin));
+            ->handle($student->id, Money::fromKobo(100000), 'X', $admin, now()->toDateString()));
     } catch (QueryException $e) {
         $code = (int) ($e->errorInfo[1] ?? 0);
     }
@@ -141,7 +141,7 @@ it('PROOF B (§5.6) — first-ever movement: a concurrent account payment WAITS 
     // Release the gap lock; the payment now commits cleanly and creates the account row.
     $second->rollBack();
     ActiveSchool::runFor($school->id, fn () => app(RecordAccountPayment::class)
-        ->handle($student->id, Money::fromKobo(100000), 'X', $admin));
+        ->handle($student->id, Money::fromKobo(100000), 'X', $admin, now()->toDateString()));
 
     expect((int) DB::table('finance_student_accounts')->where('student_id', $student->id)->value('balance_minor'))->toBe(-100000)
         ->and(DB::table('finance_payments')->where('student_id', $student->id)->count())->toBe(1); // only the committed one

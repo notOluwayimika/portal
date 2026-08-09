@@ -41,7 +41,7 @@ final class RecordAccountPayment
 {
     public function __construct(private readonly SubledgerPoster $ledger) {}
 
-    public function handle(int $studentId, Money $amount, string $payerName, User $actor): Payment
+    public function handle(int $studentId, Money $amount, string $payerName, User $actor, string $receivedAt, ?string $receivedAtReason = null): Payment
     {
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
@@ -76,7 +76,7 @@ final class RecordAccountPayment
             throw new BusinessRuleException("A payment must be in the account's currency ({$expected}).");
         }
 
-        return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor) {
+        return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor, $receivedAt, $receivedAtReason) {
             // Same sequence scope and key as RecordPayment — one receipt series per school across both
             // doors; UNIQUE(school_id, reference) is the backstop that makes a second counter fail loudly.
             // NO SEED CLOSURE, and that omission is load-bearing — do not "harden" this to match
@@ -95,6 +95,8 @@ final class RecordAccountPayment
                 'amount' => $amount,
                 'payer_name' => $payerName,
                 'received_by_user_id' => $actor->id,
+                'received_at' => $receivedAt,
+                'received_at_reason' => $receivedAtReason,
             ]);
 
             // Credit — the FULL payment reduces the receivable, so the ledger amount is negative.
@@ -109,6 +111,11 @@ final class RecordAccountPayment
                 'payment',
                 (int) $payment->getKey(),
                 "Payment #{$reference} received on account",
+                // Same reasoning as RecordPayment: the period is the day the cash arrived, not the
+                // day it was keyed. An account payment has no invoice to anchor it, which makes
+                // received_at the ONLY statement of when this money belongs — all the more reason
+                // it cannot fall out of a default.
+                $receivedAt,
             );
 
             return $payment->load('allocations');

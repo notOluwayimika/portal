@@ -5,6 +5,7 @@ namespace App\Finance\Services;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\LedgerTransaction;
 use App\Support\Money;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -35,6 +36,19 @@ use Illuminate\Support\Str;
  */
 final class SubledgerPoster
 {
+    /**
+     * @param  Carbon|\DateTimeInterface|string  $effectiveAt  The BUSINESS date
+     *                                                         this entry belongs to — the period a statement or ageing report should count it in. It is a
+     *                                                         REQUIRED argument with no default, deliberately: every caller knows which period its entry
+     *                                                         belongs to, and a default would silently make that "today" for the callers that do not
+     *                                                         (a back-dated receipt, a migrated opening balance, a reversal of a prior period). The
+     *                                                         column is NOT NULL, the table is append-only, and a wrong effective date can never be
+     *                                                         corrected — only offset by a further entry. Each call site states its reasoning.
+     *
+     *   posted_at is NOT a parameter: it is when this row was written, which is always now() by
+     *   definition. A caller that could choose it could lie about when the system learned a fact,
+     *   which is the one thing an audit trail must not permit.
+     */
     public function post(
         int $schoolId,
         int $studentId,
@@ -43,6 +57,7 @@ final class SubledgerPoster
         string $sourceType,
         int $sourceId,
         string $narration,
+        Carbon|\DateTimeInterface|string $effectiveAt,
     ): LedgerTransaction {
         $row = LedgerTransaction::create([
             'school_id' => $schoolId,
@@ -52,6 +67,8 @@ final class SubledgerPoster
             'source_type' => $sourceType,
             'source_id' => $sourceId,
             'narration' => $narration,
+            'posted_at' => now(),
+            'effective_at' => $effectiveAt,
         ]);
 
         $this->applyToAccount($schoolId, $studentId, $amount);

@@ -230,6 +230,11 @@ final class GenerateInvoice
                     'invoice',
                     $invoice->id,
                     "Invoice #{$number} — ".count($lines).' line(s)',
+                    // A charge is raised NOW and belongs to NOW. There is no earlier business date
+                    // to honour: the obligation comes into existence when the invoice is issued,
+                    // so effective and posted coincide here. They diverge for corrections and for
+                    // migrated history, not for an invoice raised in the ordinary course.
+                    now()->toDateString(),
                 );
 
                 // Apply carry-forward credit to THIS invoice, capped at its own total,
@@ -417,6 +422,21 @@ final class GenerateInvoice
                 'school_id' => $invoice->school_id,
                 'invoice_id' => $invoice->id,
                 'amount' => Money::fromKobo($draw, $currency),
+                // A DIFFERENT RULE FROM RecordPayment'S, and the distinction is the point of the
+                // column: this allocation links money that arrived BEFORE the charge existed, drawn
+                // oldest-payment-first, whereas RecordPayment allocates a payment against the
+                // invoice that payment itself names. Stamping both with one rule name would make an
+                // append-only row assert a provenance it does not have.
+                //
+                // NO DATE COLUMN HERE, deliberately. The allocation is a settlement LINK, not an
+                // economic event: it posts nothing to the ledger (see this method's docblock), so
+                // it has no period of its own to record. The two dates that matter already exist on
+                // the rows it links — the payment's received_at and the invoice charge's
+                // effective_at — and duplicating either here would create a third date that can
+                // disagree with them and never be corrected.
+                'allocation_rule' => PaymentAllocation::RULE_CREDIT_APPLIED_FORWARD_OLDEST_FIRST,
+                'allocation_overridden' => false,
+                'allocation_override_reason' => null,
             ]);
 
             $remaining -= $draw;

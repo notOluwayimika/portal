@@ -66,7 +66,7 @@ function rawAllocate(Invoice $invoice, int $kobo): void
         'reference' => random_int(1, PHP_INT_MAX),
         'amount_minor' => $kobo,
         'amount_currency' => 'NGN',
-        'payer_name' => 'Raw',
+        'received_at' => now()->toDateString(), 'payer_name' => 'Raw',
         'method' => 'manual',
         'created_at' => now(),
         'updated_at' => now(),
@@ -76,7 +76,7 @@ function rawAllocate(Invoice $invoice, int $kobo): void
         'uuid' => (string) Str::uuid(),
         'school_id' => $invoice->school_id,
         'payment_id' => $paymentId,
-        'invoice_id' => $invoice->id,
+        'allocation_rule' => 'payment_against_named_invoice', 'allocation_overridden' => false, 'invoice_id' => $invoice->id,
         'amount_minor' => $kobo,
         'amount_currency' => 'NGN',
         'created_at' => now(),
@@ -93,7 +93,7 @@ it('OVERPAYMENT IS BANKED, NOT REJECTED (wallet W2) — the Action caps the allo
     [$school, $admin, $invoice] = overAllocSetup(100000);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $invoice) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100001), 'Overpayer', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100001), 'Overpayer', $admin, now()->toDateString());
 
         // Allocation capped at outstanding (100000); the payment records the full cash.
         expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
@@ -127,7 +127,7 @@ it('EXACT-FILL BOUNDARY — an allocation exactly equal to the total is accepted
     [$school, $admin, $invoice] = overAllocSetup(100000);
 
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)
-        ->handle($invoice, Money::fromKobo(100000), 'ExactPayer', $admin));
+        ->handle($invoice, Money::fromKobo(100000), 'ExactPayer', $admin, now()->toDateString()));
 
     expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
         ->toBe(100000);
@@ -137,14 +137,14 @@ it('CUMULATIVE — 60 then 40 fill the invoice (Σ=100); a further 1 banks as cr
     [$school, $admin, $invoice] = overAllocSetup(100);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $invoice) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(60), 'A', $admin);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(40), 'B', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(60), 'A', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(40), 'B', $admin, now()->toDateString());
 
         // Σ is now exactly 100 — the invoice is fully allocated. A further payment finds
         // outstanding = 0, so it banks ENTIRELY as credit: no allocation row is written
         // (an unallocated advance), and Σ(allocations) stays 100 — proving the cap reads
         // ALL prior allocations, not just the incoming one.
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(1), 'C', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(1), 'C', $admin, now()->toDateString());
 
         expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
             ->toBe(100)
@@ -163,13 +163,13 @@ it('CURRENCY — a mismatched allocation currency is rejected at the DB', functi
         'uuid' => (string) Str::uuid(),
         'school_id' => $invoice->school_id, 'student_id' => $invoice->student_id,
         'reference' => 999, 'amount_minor' => 100, 'amount_currency' => 'USD',
-        'payer_name' => 'X', 'method' => 'manual', 'created_at' => now(), 'updated_at' => now(),
+        'received_at' => now()->toDateString(), 'payer_name' => 'X', 'method' => 'manual', 'created_at' => now(), 'updated_at' => now(),
     ]);
 
     expect(fn () => DB::table('finance_payment_allocations')->insert([
         'uuid' => (string) Str::uuid(),
         'school_id' => $invoice->school_id, 'payment_id' => $paymentId,
-        'invoice_id' => $invoice->id, 'amount_minor' => 100, 'amount_currency' => 'USD',
+        'allocation_rule' => 'payment_against_named_invoice', 'allocation_overridden' => false, 'invoice_id' => $invoice->id, 'amount_minor' => 100, 'amount_currency' => 'USD',
         'created_at' => now(), 'updated_at' => now(),
     ]))->toThrow(QueryException::class);
 });
@@ -178,7 +178,7 @@ it('NO REGRESSION — the exact correct-payment path still credits the ledger to
     [$school, $admin, $invoice] = overAllocSetup(100000);
 
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)
-        ->handle($invoice, Money::fromKobo(100000), 'Payer', $admin));
+        ->handle($invoice, Money::fromKobo(100000), 'Payer', $admin, now()->toDateString()));
 
     // charge +100000, payment −100000 → net zero, the walking-skeleton guarantee.
     expect((int) DB::table('finance_ledger_transactions')->where('student_id', $invoice->student_id)->sum('amount_minor'))

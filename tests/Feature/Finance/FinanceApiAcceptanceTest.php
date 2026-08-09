@@ -227,7 +227,7 @@ it('PAYMENTS — appear on the statement read as their own history (Piece B)', f
     mcApi($token)
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", [
             'amount_minor' => 4000,
-            'payer_name' => 'A Parent',
+            'received_at' => now()->toDateString(), 'payer_name' => 'A Parent',
         ])->assertCreated();
 
     mcApi($token)
@@ -258,7 +258,7 @@ it('COMPOSES — the full bursar lifecycle through the real API: generate → pa
     mcApi($maker)
         ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", [
             'amount_minor' => 10000,
-            'payer_name' => 'A Parent',
+            'received_at' => now()->toDateString(), 'payer_name' => 'A Parent',
         ])
         ->assertCreated();
 
@@ -855,7 +855,7 @@ it('VOID PROOF 5 — a payment landing after submit blocks approval (authoritati
 
     // …then a payment is allocated (the "race": state changes between submit and approve).
     mcApi($maker)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments",
-        ['amount_minor' => 10000, 'payer_name' => 'Mr Obi'])->assertCreated();
+        ['amount_minor' => 10000, 'received_at' => now()->toDateString(), 'payer_name' => 'Mr Obi'])->assertCreated();
 
     // Approval re-checks and REFUSES — the invoice is now settled, not cleanly voidable.
     mcApi($checker)->postJson("/api/v1/finance/void-requests/{$vr}/approve")->assertStatus(422);
@@ -1195,7 +1195,7 @@ it('SETTLEMENT WIRE — the statement returns outstanding, settlement_state and 
     // Bill 300000, then pay 100000 → part_paid, outstanding 200000, void blocked by the payment.
     $invoiceUuid = mcInvoice($token, $enrollment, 300000);
     mcApi($token)->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments",
-        ['amount_minor' => 100000, 'payer_name' => 'Payer'])->assertCreated();
+        ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'Payer'])->assertCreated();
 
     mcApi($token)->getJson("/api/v1/finance/students/{$studentUuid}/invoices")
         ->assertOk()

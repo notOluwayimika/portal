@@ -63,7 +63,7 @@ it('PROOF 1 — an overpayment banks credit: allocation caps at outstanding, the
 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(12000), 'Overpayer', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(12000), 'Overpayer', $admin, now()->toDateString());
 
         // Allocation is capped at the 10000 outstanding; the payment records 12000 cash.
         expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
@@ -105,7 +105,7 @@ it('PROOF 6 — NO REGRESSION: an exact payment fully allocates, banks nothing, 
 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'ExactPayer', $admin);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'ExactPayer', $admin, now()->toDateString());
 
         expect((int) DB::table('finance_payment_allocations')->where('invoice_id', $invoice->id)->sum('amount_minor'))
             ->toBe(10000)
@@ -126,7 +126,7 @@ it('PROOF 7 — the projection is faithful across a mix of charges and a partial
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $inv1 = $makeInvoice(15000);          // +15000
         $makeInvoice(5000);                   // +5000 (unpaid)
-        app(RecordPayment::class)->handle($inv1, Money::fromKobo(6000), 'Partial', $admin); // −6000
+        app(RecordPayment::class)->handle($inv1, Money::fromKobo(6000), 'Partial', $admin, now()->toDateString()); // −6000
 
         $ledger = (int) DB::table('finance_ledger_transactions')->where('student_id', $inv1->student_id)->sum('amount_minor');
         $account = StudentAccount::query()->where('student_id', $inv1->student_id)->firstOrFail();
@@ -142,7 +142,7 @@ it('PROOF 5 — reconcile DETECTS drift (poke the mutable balance → non-zero e
 
     $invoice = ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $inv = $makeInvoice(10000);
-        app(RecordPayment::class)->handle($inv, Money::fromKobo(10000), 'Payer', $admin); // balance 0
+        app(RecordPayment::class)->handle($inv, Money::fromKobo(10000), 'Payer', $admin, now()->toDateString()); // balance 0
 
         return $inv;
     });

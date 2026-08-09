@@ -50,7 +50,7 @@ function insertLedger(int $schoolId, int $studentId, string $currency): int
     return DB::table('finance_ledger_transactions')->insertGetId([
         'uuid' => (string) Str::orderedUuid(), 'school_id' => $schoolId, 'student_id' => $studentId,
         'type' => 'payment', 'amount_minor' => -1000, 'amount_currency' => $currency,
-        'source_type' => 'payment', 'source_id' => 1, 'narration' => 'x', 'created_at' => now(), 'updated_at' => now(),
+        'source_type' => 'payment', 'source_id' => 1, 'posted_at' => now(), 'effective_at' => now()->toDateString(), 'narration' => 'x', 'created_at' => now(), 'updated_at' => now(),
     ]);
 }
 
@@ -96,7 +96,7 @@ it('finance_ledger_transactions.amount_currency — CHECK 3819 on insert; immuta
 
     // The pre-existing no_update immutability trigger must not have been displaced by adding the CHECK.
     try {
-        DB::table('finance_ledger_transactions')->where('id', $id)->update(['narration' => 'tampered']);
+        DB::table('finance_ledger_transactions')->where('id', $id)->update(['posted_at' => now(), 'effective_at' => now()->toDateString(), 'narration' => 'tampered']);
         throw new RuntimeException('expected the immutability trigger to fire');
     } catch (QueryException $e) {
         expect((int) ($e->errorInfo[1] ?? 0))->toBe(1644);

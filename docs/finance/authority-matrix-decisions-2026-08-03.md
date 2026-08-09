@@ -21,9 +21,14 @@ Line by line, what that voids:
   balance adjustment is named in the ED list as requiring approval. The switch is not off; there is
   no switch. This is also the one we put in writing to Brookstone as "a switch that is off" — that
   note was never sent, and must not be.
-- **Decision 1 (rows 14 and 19, AS approves) — UNRESOLVED.** Receipt reversal and posted-transaction
-  correction are not named in the ED list; they may or may not be "other high impact financial
-  decisions". Open question, being asked.
+- **Decision 1 (rows 14 and 19, AS approves) — RESOLVED 2026-08-09, AGAINST AS.** Brookstone ruled
+  that receipt reversal and posted-transaction correction ARE "other high impact financial
+  decisions": both map strictly to the **Executive Director**, and the Finance Lead and Supervisors
+  may not process receipt reversals, invoice cancellations, write-offs or posted corrections
+  without ED sign-off. Neither row exists in code — no permission case, no table — so nothing is
+  built by this ruling; it decides who the checker is on the day they are. Two of the four named
+  acts are already ED-only in the tree: invoice cancellation via the void pair and write-off via
+  the credit-note pair.
 - **§2's grid: every `A` in the HoS column is void.** The `D`/`P`/`V` letters still describe who
   *does* and who *prepares*, and those survive.
 - **§5 and §6 survive unchanged** — discount-policy eligibility is still open and still unsized, and
@@ -68,6 +73,9 @@ Two of our three checks are closed by these:
 - **The Internal Auditor approves nothing anywhere.** Rows 14, 18 and 19 were the only three, and
   all three moved. The auditor is a viewer across the whole matrix, which is what the seat is for.
 - **The Accounts Supervisor is a checking seat again**, on rows 14 and 19.
+  **VOID — 2026-08-09.** Rows 14 and 19 went to the ED (see Decision 1 in the banner). The Accounts
+  Supervisor is not a checking seat anywhere, on any row, and there is no row left that would
+  restore one.
 
 ## 2. The corrected block, rows 11 and 14–20
 
@@ -134,7 +142,10 @@ Two consequences to watch, both checkable locally and both in the brief:
   them before migrating; who loses which hat is a business decision.
 
 Note for the record, not to re-litigate: `accounts_supervisor` now approves nothing that is built.
-Its checker side returns only when rows 14 and 19 are built.
+~~Its checker side returns only when rows 14 and 19 are built.~~ **CORRECTED 2026-08-09 — that
+sentence is false and was a trap for whoever builds row 14.** Brookstone gave rows 14 and 19 to the
+Executive Director, so `accounts_supervisor` has no checker side to return to. Building those rows
+must not reinstate one.
 
 ## 5. Still open, unchanged
 

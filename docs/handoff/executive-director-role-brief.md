@@ -43,10 +43,14 @@ school boundary is the `Gate::before` at `app/Providers/AppServiceProvider.php:8
 gets its reach by being assigned to every school, which is a user-assignment fact, not an
 architecture change. Nothing in this brief goes near the isolation boundary.
 
-**One tension on the record, not blocking.** Answer 3 gives rows 14 and 19 to ED; the *"nothing
-changed except HoS → ED"* sentence would leave them with the Accounts Supervisor, where the 3 August
-decision put them. Neither row exists in code — no permission case, no table — so nothing is built
-either way and nothing needs deciding today. I have written ED. One line from Segun flips it.
+**One tension on the record — CLOSED 2026-08-09, in favour of what this brief already wrote.**
+Answer 3 gave rows 14 and 19 to ED; the *"nothing changed except HoS → ED"* sentence would have left
+them with the Accounts Supervisor, where the 3 August decision put them. Brookstone has now ruled:
+both rows map strictly to the **Executive Director**, and the Finance Lead and Supervisors may not
+process receipt reversals, invoice cancellations, write-offs or posted corrections without ED
+sign-off. Neither row exists in code, so nothing is built by the ruling — it fixes who the checker
+is on the day they are, and it removes the Accounts Supervisor's last prospective checker seat
+permanently (see `docs/finance/authority-matrix-decisions-2026-08-03.md`, Decision 1).
 
 ---
 

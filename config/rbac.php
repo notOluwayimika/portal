@@ -1,5 +1,16 @@
 <?php
 
+use App\Finance\Models\CreditNote;
+use App\Finance\Models\Invoice;
+use App\Finance\Models\InvoiceLine;
+use App\Finance\Models\LedgerTransaction;
+use App\Finance\Models\OpeningBalanceBatch;
+use App\Finance\Models\OpeningBalanceRow;
+use App\Finance\Models\Payment;
+use App\Finance\Models\PaymentAllocation;
+use App\Finance\Models\StudentAccount;
+use App\Finance\Models\VoidRequest;
+
 return [
     /*
     |--------------------------------------------------------------------------
@@ -67,16 +78,58 @@ return [
     | given explicit context via Model::withoutSchoolScope() or
     | ActiveSchool::runFor(), verified by driving the affected flows.
     |
-    | Default: EMPTY — no model is fail-closed, so the legacy fail-open behaviour
-    | is preserved until a model is explicitly opted in. Per-environment rollout
-    | is driven by RBAC_FAIL_CLOSED_MODELS, a comma-separated list of fully
-    | qualified model class names, e.g.:
+    | THE DEFAULT IS A VERSIONED LIST, NOT EMPTY — and that is a change from how
+    | this setting started. It defaulted to empty and expected every environment
+    | to set RBAC_FAIL_CLOSED_MODELS itself, which made the protection something
+    | a deploy could forget: a rule that only holds if someone remembers to set
+    | an env var is not a rule, it is a wish. The batch below ships in the
+    | repository, is reviewed like code and arrives in every environment at once.
+    | RBAC_FAIL_CLOSED_MODELS remains, but its meaning is now a per-environment
+    | RETREAT — an override for an environment that must temporarily run without
+    | a model's protection — never the source of the list.
     |
-    |   RBAC_FAIL_CLOSED_MODELS="App\Models\Student,App\Models\Notice"
+    | THE FIRST BATCH IS THE FINANCE TRANSACTIONAL SET, opted in while these
+    | tables still hold seed and drive data. After term-1 billing they hold real
+    | money and the same flip becomes a production risk rather than a cheap one.
+    | The #224 School-context survey is the evidence: of fifteen finance
+    | maker-checker actions, nine were saved from acting on another School's row
+    | only by a firstOrFail() that happens to sit on a scoped read, and three
+    | were not saved at all. That difference was an accident of call order, not a
+    | design, and fail-closed is what turns it into one.
+    |
+    | The finance CATALOG models — FeeSchedule, FeeItem, DiscountPolicy, the two
+    | change tables and SchoolFinanceSettings — are deliberately NOT here yet.
+    | They are a later batch on their own evidence, not a category extended by
+    | analogy.
+    |
+    | To override in one environment (comma-separated, fully qualified). The
+    | override REPLACES the default wholesale; it does not add to it:
+    |
+    |   RBAC_FAIL_CLOSED_MODELS="App\Finance\Models\Invoice,App\Finance\Models\Payment"
+    |
+    | A BLANK value means "not set", and that is deliberate rather than tidy.
+    | env() distinguishes an absent key from a present-but-empty one — an empty
+    | RBAC_FAIL_CLOSED_MODELS= line returns "" and would take the default's place,
+    | switching the entire batch off. That line is exactly what an .env copied
+    | from a template carries, so blank-means-empty would let the protection be
+    | disabled platform-wide by a copy-paste, silently, with nothing to notice it.
+    | Turning a model off is therefore something you can only do by writing down
+    | the models that stay on.
     |
     */
     'fail_closed_models' => array_values(array_filter(array_map(
         'trim',
-        explode(',', (string) env('RBAC_FAIL_CLOSED_MODELS', '')),
+        explode(',', trim((string) env('RBAC_FAIL_CLOSED_MODELS', '')) ?: implode(',', [
+            LedgerTransaction::class,
+            Payment::class,
+            PaymentAllocation::class,
+            Invoice::class,
+            InvoiceLine::class,
+            CreditNote::class,
+            StudentAccount::class,
+            OpeningBalanceBatch::class,
+            OpeningBalanceRow::class,
+            VoidRequest::class,
+        ])),
     ))),
 ];

@@ -12,6 +12,12 @@ namespace App\Enums;
  * files under a prefix that tells you nothing about it being a maker action. The real taxonomy has
  * always existed as SECTION COMMENTS in {@see Permission}; this enum makes them executable.
  *
+ * COINING A PERMISSION? FILING IT HERE IS OBLIGATION 2 OF 3 — the full checklist is in
+ * {@see Permission}'s header, which is the file you open first. If you arrived here from
+ * "Undefined array key" in Permission::group(), that error IS the design working: add the case to
+ * the right group below rather than giving lookup() a fallback, because a fallback would turn this
+ * red build into a permission that exists in code and can never be granted from the console.
+ *
  * MEMBERSHIP IS EXPLICIT, NOT DERIVED. Each group lists its permissions. A `match` over 74 cases
  * would need a `default` arm, and a default arm silently swallows every new case — the permission
  * would simply vanish from the console with nothing going red. Instead PermissionGroupTest asserts
@@ -166,6 +172,7 @@ enum PermissionGroup: string
                 Permission::FINANCE_INVOICE_GENERATE,
                 Permission::FINANCE_INVOICE_REDUCTION_APPLY,
                 Permission::FINANCE_FEE_SCHEDULE_MANAGE,
+                Permission::FINANCE_BANK_ACCOUNT_MANAGE,
                 Permission::FINANCE_DISCOUNT_POLICY_CHANGE_SUBMIT,
                 Permission::FINANCE_DISCOUNT_POLICY_CHANGE_APPROVE,
                 Permission::FINANCE_DISCOUNT_POLICY_CHANGE_REJECT,

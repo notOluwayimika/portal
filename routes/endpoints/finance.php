@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Http\Controllers\BankAccountController;
 use App\Finance\Http\Controllers\CreditNoteController;
 use App\Finance\Http\Controllers\DiscountPolicyChangeController;
 use App\Finance\Http\Controllers\DiscountPolicyController;
@@ -232,3 +233,26 @@ Route::post('/v1/finance/students/{student:uuid}/invoices', [InvoiceController::
  */
 Route::post('/v1/finance/students/{student:uuid}/payments', [PaymentController::class, 'storeForStudent'])
     ->middleware('permission:finance.payment.record');
+
+/*
+ * BANK ACCOUNTS (S6/U3 commit 1) — the accounts money lands in, per School.
+ *
+ * All four gated on finance.bank-account.manage: this is finance CONFIGURATION, and it follows
+ * finance.fee-schedule.manage's shape (a `manage` verb, no maker-checker triple) because a bank
+ * account is a description rather than a decision — there is nothing for a second signature to
+ * approve.
+ *
+ * THERE IS NO DELETE ROUTE, and there must never be one. A bank account that has received money has
+ * to stay nameable forever; retirement is `deactivate`, which withdraws it from choice while leaving
+ * every historical reference resolvable. BankAccountRouteTest fails if a destroy route appears.
+ */
+Route::get('/v1/finance/bank-accounts', [BankAccountController::class, 'index'])
+    ->middleware('permission:finance.bank-account.manage');
+Route::post('/v1/finance/bank-accounts', [BankAccountController::class, 'store'])
+    ->middleware('permission:finance.bank-account.manage');
+Route::patch('/v1/finance/bank-accounts/{bankAccount:uuid}', [BankAccountController::class, 'update'])
+    ->middleware('permission:finance.bank-account.manage');
+Route::post('/v1/finance/bank-accounts/{bankAccount:uuid}/deactivate', [BankAccountController::class, 'deactivate'])
+    ->middleware('permission:finance.bank-account.manage');
+Route::post('/v1/finance/bank-accounts/{bankAccount:uuid}/reactivate', [BankAccountController::class, 'reactivate'])
+    ->middleware('permission:finance.bank-account.manage');

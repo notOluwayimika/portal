@@ -124,6 +124,17 @@ class RbacSeeder extends Seeder
      *
      * @return array<string, list<string>>
      */
+    /*
+     * COINING A PERMISSION? ADDING IT HERE IS OBLIGATION 3 OF 3 — the checklist is in
+     * {@see \App\Enums\Permission}'s header. Two things this file cannot tell you on its own:
+     *
+     *   - A NEW permission is EXEMPT from the grants-convergence lint, because rbac:sync grants it
+     *     in the same run. That exemption answers "will the grant LAND?", never "will it SURVIVE?".
+     *   - The second question is the dangerous one. A role governed by a FORCING convergence
+     *     migration has its namespace slice frozen to a literal, so the seeder writes the grant and
+     *     the migration revokes it on the next deploy — at DEPLOY, not at build. Check the role
+     *     before you add it; {@see \Tests\Feature\Rbac\ForcingMigrationsDoNotStripLaterGrantsTest}.
+     */
     public static function grantsMap(): array
     {
         $activityStaff = [
@@ -222,6 +233,7 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
                 // Fee-schedule authorship (S1 commit 2).
                 PermissionEnum::FINANCE_FEE_SCHEDULE_MANAGE->value,
+                PermissionEnum::FINANCE_BANK_ACCOUNT_MANAGE->value,
                 // Credit-note issuance is now maker-checker (Ph3): admin keeps finance
                 // read access but holds NEITHER the maker nor the checker permission —
                 // even admin cannot forgive money alone. The dedicated accounts_officer /
@@ -367,6 +379,7 @@ class RbacSeeder extends Seeder
                 PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
                 // Fee-schedule authorship (S1 commit 2): the bursar assembles the numbers.
                 PermissionEnum::FINANCE_FEE_SCHEDULE_MANAGE->value,
+                PermissionEnum::FINANCE_BANK_ACCOUNT_MANAGE->value,
                 PermissionEnum::FINANCE_CREDIT_NOTE_SUBMIT->value,
                 // Ph3b — maker side of the void instance too. Holding two MAKER permissions is
                 // fine; the grant guard only forbids a maker + its MATCHING checker in one role.

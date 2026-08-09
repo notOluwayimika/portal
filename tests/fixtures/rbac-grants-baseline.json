@@ -1,6 +1,7 @@
 {
     "accounts_officer": [
         "finance.access",
+        "finance.bank-account.manage",
         "finance.credit-note.submit",
         "finance.discount-policy.change.submit",
         "finance.fee-schedule.change.submit",
@@ -34,6 +35,7 @@
         "edit_behavioral_assessments",
         "edit_psychomotor_skills",
         "finance.access",
+        "finance.bank-account.manage",
         "finance.fee-schedule.manage",
         "finance.invoice.generate",
         "finance.invoice.reduction.apply",

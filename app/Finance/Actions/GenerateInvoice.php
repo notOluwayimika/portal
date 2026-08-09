@@ -15,6 +15,7 @@ use App\Finance\Models\StudentAccount;
 use App\Finance\Services\SubledgerPoster;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use App\Support\Sequences\Sequences;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -234,7 +235,7 @@ final class GenerateInvoice
                     // to honour: the obligation comes into existence when the invoice is issued,
                     // so effective and posted coincide here. They diverge for corrections and for
                     // migrated history, not for an invoice raised in the ordinary course.
-                    now()->toDateString(),
+                    SchoolDay::today(),
                 );
 
                 // Apply carry-forward credit to THIS invoice, capped at its own total,

@@ -11,6 +11,7 @@ use App\Finance\Models\Invoice;
 use App\Finance\Services\SubledgerPoster;
 use App\Models\User;
 use App\Support\SchoolContext;
+use App\Support\SchoolDay;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -112,7 +113,7 @@ final class ApproveCreditNote
                 // accounting policy says a credit note belongs to the period it corrects, this one
                 // line changes — but it should change because the policy says so, not because it
                 // matched its neighbour.
-                now()->toDateString(),
+                SchoolDay::today(),
             );
 
             return $creditNote->refresh();

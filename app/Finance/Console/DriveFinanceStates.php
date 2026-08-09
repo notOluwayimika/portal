@@ -13,6 +13,7 @@ use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Models\Invoice;
 use App\Models\User;
 use App\Support\Money;
+use App\Support\SchoolDay;
 
 /**
  * The FINANCE half of the drive fixture: given ENROLLMENT UUIDs (handed in from outside — this
@@ -41,14 +42,14 @@ final class DriveFinanceStates
     public function partPaid(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker, SchoolDay::today());
     }
 
     /** SETTLED BY PAYMENT. */
     public function settledByPayment(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today());
     }
 
     /** SETTLED ENTIRELY BY AN APPROVED CREDIT NOTE (settled, never paid). */
@@ -63,7 +64,7 @@ final class DriveFinanceStates
     public function settledThenCredited(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today());
         $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, 'Post-payment adjustment', $this->maker);
         app(ApproveCreditNote::class)->handle($note, $this->checker);
     }

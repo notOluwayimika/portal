@@ -188,9 +188,16 @@ foreach ($submitActions as $path) {
 // WHAT IT CATCHES AND WHY IT IS NOT LEFT TO SchoolScope. The scope filters reads by the active
 // School, which is isolation when the context is right and something far worse when it is wrong:
 // every read finds nothing, and an action that reads nothing does not refuse — it succeeds on an
-// empty set. `config/rbac.php:78-81` reads RBAC_FAIL_CLOSED_MODELS from the environment and it is
-// EMPTY everywhere, so the scope is fail-OPEN for every model. The refusal has to be explicit, so
-// this rule requires it to be present.
+// empty set. The refusal has to be explicit, so this rule requires it to be present.
+//
+// FAIL-CLOSED SCOPING DID NOT MAKE THIS RULE REDUNDANT, and the reason matters because the rule's
+// original justification said the opposite. config/rbac.php now ships the finance transactional
+// models in `fail_closed_models` as a versioned default, so SchoolScope throws where it used to
+// return unscoped rows. That is the NULL-context branch. This rule is about the WRONG-context branch:
+// a maker in School A acting on School B's record has a context, the scope filters on it correctly,
+// and the action succeeds on an empty set — there is nothing for fail-closed to detect. Fail-closed
+// is also gated on auth()->check(), so it is silent for every off-request caller. Deleting this rule
+// on the strength of "the models fail closed now" would reopen exactly the hole it was written for.
 //
 // THE STRONG CALL IS THE DEFAULT. `SchoolContext::assertOwns(` refuses a null context AND a record
 // belonging to another School. `SchoolContext::require(` refuses only the first, and is permitted in

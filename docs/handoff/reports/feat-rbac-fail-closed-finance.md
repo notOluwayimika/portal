@@ -2,19 +2,16 @@
 
 ## Headline
 
-**Built, committed, NOT pushed — one decision is yours before it can go.** The ten finance
-transactional models fail closed, the list is a versioned default in `config/rbac.php` rather than an
-env var a deploy can forget, and 13 of `bin/quality`'s 14 steps are green.
+**Done.** The ten finance transactional models fail closed, the list is a versioned default in
+`config/rbac.php` rather than an env var a deploy can forget, and `bin/quality` is green.
 
-The fourteenth is a single test failure, and it is this commit's intended behaviour arriving
-somewhere I was told not to work around it:
+Branch `feat/rbac-fail-closed-finance`, base `cdd224a` (`origin/staging`, #225 merged). Two commits:
+`43ca5c2` (the batch) and the second, which takes the project lead's two rulings and folds in the
+review findings that were rulings rather than tickets.
 
-```
-ratchet: 1 NEW test failure(s) not in the baseline (regression):
-  ✗ tests/Feature/Finance/PaymentRecordGateTest.php::it super_admin is not gate-blocked on either payment route (record is not a checker ability)
-```
-
-Branch `feat/rbac-fail-closed-finance`, base `cdd224a` (`origin/staging`, #225 merged).
+**This report supersedes the version reviewed at `43ca5c2`.** Everything the reviewer found that was
+ruled FOLD-IN is now in the code, and the two claims it correctly said were unproven — the split arm
+and the stale watched reds — are proved below against the files as they ship.
 
 **This is full-review tier** — RBAC, `school_id` isolation, and a platform-wide read-behaviour
 change. Subagent review attached; recommend a cold session before merge.
@@ -55,7 +52,7 @@ six catalog — sum to 16, so the 17 is a slip in the prose, not a missing file.
 | Factories | 0 finance factories exist | **0** | No factory in `database/factories/` matches any finance noun. |
 | Queued jobs (`app/Jobs`) | 8 | **0** | No file references `App\Finance\Models\`. `ProcessOpeningBalanceImport` carries the `SchoolAware` middleware. |
 | Any file outside `app/Finance/` | whole tree | **0** | `grep -rln 'App\Finance\Models\' app database routes bootstrap` returns **nothing** outside `app/Finance/`. |
-| super_admin no-school request path | 41 finance routes (19 GET) | **YES — the whole surface** | `SetSchoolContext:51` reads `if (! $isSuperAdmin && ! $activeSchoolId)`, so a super_admin with no school falls through to every finance route. |
+| super_admin no-school request path | 41 finance routes (19 GET) | **YES — the whole surface** | `SetSchoolContext:51` reads `if (! $isSuperAdmin && ! $activeSchoolId)`, so a super_admin with no school falls through to every finance route. **But see "One correction to my own earlier framing" below — on the twelve routes that BIND a fail-closed model, binding runs before this middleware, so the changed surface is not super_admin-only.** |
 
 **No off-request reader needed code changed to give it context, so the fuse did not fire.** The one
 no-context reader is the super_admin request path, which is a decision about intended behaviour, not
@@ -134,8 +131,12 @@ Pinned by its own arm and its own watched red (RED 2 below).
 
 | File | What |
 |---|---|
-| `config/rbac.php` | The batch as a versioned default; docblock rewritten; blank-means-unset. |
+| `config/rbac.php` | The batch as a versioned default; docblock rewritten; blank-means-unset; the typo warning at the point of use; the off-request limitation stated. |
 | `.env.example` | `RBAC_FAIL_CLOSED_MODELS`, commented out, documented as an override. |
+| `tests/Feature/Finance/PaymentRecordGateTest.php` | Arm 3 split into a bypass arm and an isolation arm (RULING 1). |
+| `app/Support/SchoolContext.php` | **Docblock only.** Its "the list is EMPTY everywhere" premise is now false. |
+| `bin/ci-boundary-lint.php` | **Comment only.** Same premise, but it was a LIVE rule's stated reason to exist. |
+| `docs/roadmap.md` · `docs/rbac-implementation-plan.md` · `docs/Finance Module — …v10.md` | The flag is no longer dark; the deviation is named and argued, not edited away quietly. |
 | `app/Models/Scopes/SchoolScope.php` | **Docblock only.** It said "Empty by default", which is now false. |
 | `tests/Feature/Isolation/FinanceFailClosedBatchTest.php` | **New.** 19 arms. |
 
@@ -143,53 +144,164 @@ Pinned by its own arm and its own watched red (RED 2 below).
 behaviour, and leaving a docblock asserting the opposite of the code is the wallpaper problem in
 miniature — a future reader would have trusted it over the config.
 
-## THE DECISION FOR YOU — one test, and I did not touch it
+## RULING 1 — `PaymentRecordGateTest`, split, and both halves bite
 
-`PaymentRecordGateTest::it super_admin is not gate-blocked on either payment route` fails:
+The reviewer was right and my proposed one-liner was wrong. Changing `assertCreated()` to
+`assertStatus(409)` would have produced a green arm asserting nothing: `SubstituteBindings` sits in
+Laravel's middleware priority list ahead of both `SetSchoolContext` and the route's `permission:`
+middleware, so a contextless request is refused before either gate runs, and a 409 arm passes
+identically with the bypass on or off.
+
+Arm 3 is now two arms with two different subjects, each bite-proved against a **different** mutation:
+
+**Arm 3a — the BYPASS.** super_admin with a school selected records (201). Establishing that context
+needed a real mechanism, not a fixture trick: `api/*` only gets session middleware when Sanctum's
+`EnsureFrontendRequestsAreStateful` judges the request to come from the frontend, from
+`Referer`/`Origin` against `sanctum.stateful`. Without that header `ActiveSchool::id()` never sees
+the session's `school_id`, and a super_admin is explicitly denied the own-school fallback
+(`ActiveSchool.php:54`). The new helper sends the header, which is exactly the transport the SPA uses.
 
 ```
-Expected response status code [201] but received 409.
+RED A — config(['auth.gate_before_superadmin' => false])
+  mutation verified: 1 line, diffed against the pre-mutation file
+  FAILED: super_admin with a school selected is not gate-blocked on either payment route
+    Expected response status code [201] but received 403.
+```
+
+That is the live bypass proof the reviewer said a 409 arm could not be, demonstrated rather than
+asserted.
+
+**Arm 3b — the ISOLATION.** super_admin with no school selected is refused (409).
+
+```
+RED B — the finance transactional batch emptied
+  mutation verified: batch size printed from the running app before the run — size=1, first=App\Nope\NotAModel
+  FAILED: super_admin with NO school selected is refused at 409 before the gate
+    A super_admin with no school selected got 201 posting a payment against an invoice by uuid.
+```
+
+**201 — the payment is recorded.** That is the capability this commit removes, measured.
+
+### The mutation that did NOT bite, and what it taught
+
+My first attempt at RED B removed **only `Invoice`** from the list, on the assumption that the throw
+came from binding the invoice. The arm stayed green. Probing it with
+`withoutExceptionHandling()` gave the reason:
+
+```
+PROBE: Queried the School-scoped model [App\Finance\Models\PaymentAllocation]
+       with no active School context.
+```
+
+`RecordPayment` reads `PaymentAllocation` downstream of the binding, so **two independent models on
+the batch guard the same path** and no single-model mutation is a valid bite-proof for that arm. I
+had already written "goes red if Invoice leaves `rbac.fail_closed_models`" into the test comment
+before checking. It was false, it is corrected in place, and the correction says why — because the
+next person to re-derive it with a one-model mutation would otherwise conclude the arm is dead.
+
+This is also the second time this branch the *first* mutation silently did nothing. Both times the
+"verify the mutation landed" rule caught it, and the second time only because I checked the batch
+size the running application reported rather than trusting the diff — two earlier attempts produced
+clean-looking diffs (`[] ?: [...]`, a trailing `//`) that left the batch at 10.
+
+## RULING 2 — folded in, not ticketed
+
+**(a) Two in-code rationales that asserted the opposite of what ships.** Both said
+*"`config/rbac.php:78-81` reads `RBAC_FAIL_CLOSED_MODELS` … and it is EMPTY everywhere, so the scope
+is fail-OPEN for every model"*, and both cited a line number the array no longer occupies.
+
+- `app/Support/SchoolContext.php` — the kernel guard's justification.
+- `bin/ci-boundary-lint.php` — the **live** `school-context-guard-missing` rule's stated reason to
+  exist, which is the wallpaper problem inside the gate itself.
+
+Rewritten to describe what ships, and to say why fail-closed does **not** make either redundant: the
+two govern different branches of `SchoolScope::apply`. Fail-closed is the **null-context** branch; the
+guard is the **wrong-context** branch — a maker in School A acting on School B's record has a context,
+the scope filters on it correctly, and the action succeeds on an empty set. There is nothing there for
+fail-closed to detect. Deleting the rule on the strength of *"the models fail closed now"* would
+reopen exactly the hole it was written for, so that sentence is now in the rule's own header.
+
+**(b) The flag ships LIT, and the deviation is named rather than edited away.** `docs/roadmap.md` no
+longer lists `rbac.fail_closed_models` under "Rollout flags currently dark"; in its place is a
+paragraph stating plainly that this departs from CLAUDE.md's *"rollout flags ship dark"*, and arguing
+it: a dark flag defers a decision until evidence arrives, whereas this flag's whole design is
+per-model opt-in **after** an audit — so shipping it dark once the audit is done would mean the audit
+produced nothing. The audit, the drive and the measured 200/201 are cited from there. The residual
+(nothing off-request is protected; the catalog is a later batch) is stated in the same paragraph.
+
+I do not think that argument fails. The one place it would is if "dark" were meant to cover *any*
+behaviour change, in which case the versioned default is the wrong shape entirely and the batch should
+go back behind the env var — but that would restore the forgettable-by-deploy property this commit
+exists to remove, so the two readings cannot both be satisfied.
+
+`docs/rbac-implementation-plan.md` and the Finance master plan both carried "empty" as a current fact;
+both now record the ten transactional models, the 2026-08-09 date, and — in both — that Debt item 7
+stays **open**, because the auth-gate means no off-request path is covered.
+
+**(c) The misattribution is out of the config, and RED 4 is in its place.** The block cited the #224
+nine-of-fifteen maker-checker survey as this batch's evidence. It cannot be: all fifteen run *with* a
+context, on the scoped branch. What replaces it is what was observed — 200 with every School's
+accounts, 201 recording money into any School, and 409 once the models are listed. The retraction is
+kept in the docblock in parentheses so it is not reintroduced by someone reaching for the strongest-
+sounding argument.
+
+**(d)** RED 1 and RED 4 re-run against the shipped 19-arm file — see *The watched reds* below.
+
+**(e) The limitation is in the docblock, not only in a ticket.** `config/rbac.php` now states that the
+throw is gated on `auth()->check()`, so **no** off-request path is covered — not a command, not a
+seeder, not a job without an authenticated principal, not an unauthenticated read — and that this is
+why no scheduled command can start throwing because of this list. Someone reading "fail closed" will
+assume console is covered; the docblock is where they are reading.
+
+**The typo warning sits at the point of use.** Immediately under the example `RBAC_FAIL_CLOSED_MODELS=`
+line, because that is where someone is typing when they can cause it: nothing validates the names, so
+one missing character protects nine models instead of ten, silently. Named as the same failure the
+versioned default was introduced to remove, wearing a different hat.
+
+## The behaviour change itself — what six routes now do
+
+The mechanism, from the failure's own stack trace:
+
+```
 App\Exceptions\MissingSchoolContextException: Queried the School-scoped model
 [App\Finance\Models\Invoice] with no active School context.
   #6 ImplicitRouteBinding.php(60): Model->resolveRouteBinding('a275f3f6-...', 'uuid')
+  #10 SubstituteBindings.php(43): Router->substituteImplicitBindings(...)
+  #12 Authenticate.php(63): Pipeline->{closure}(...)
 ```
 
-**The throw is at route-model binding — frame #6 — before the controller and before any Action's own
-context handling.** That is the mechanism, and it is the part worth understanding: `RecordPayment`
-was written to take school off the *bound invoice* rather than off `ActiveSchool`, which is why this
-route worked for a contextless super_admin at all. Binding the invoice is now itself a scoped read.
+Neither `SetSchoolContext` nor either permission-middleware frame appears below `Authenticate`.
+Binding the invoice is itself a scoped read, and it happens before both gates. `RecordPayment` was
+written to take school off the *bound invoice* rather than off `ActiveSchool`, which is the only
+reason this route ever worked for a contextless super_admin.
 
 Twelve finance routes bind a fail-closed model. Six are `approve`/`reject`, which ADR 0040 already
-denies a super_admin, so **six routes actually change behaviour for them**: create a payment, credit
-note or void request against an invoice, and the three opening-balance-batch operations.
-
-The test's own comment already documents the sibling case, and it argues for accepting this:
-
-> *"The account route deliberately asserts 422, NOT 201, and NOT 403 … that 422 is a context refusal
-> from BELOW the gate, and its being 422 rather than 403 is itself proof the gate let super_admin
-> through. (The invoice route sidesteps this: RecordPayment takes school off the bound invoice, not
-> ActiveSchool.)"*
-
-This commit removes the sidestep. The invoice route now behaves like the account route, and the
-test's actual subject — that the gate does not 403 a super_admin — is still true: 409 is not 403.
-
-So the resolution is most likely a one-line change of `assertCreated()` to a 409 assertion plus a
-comment, exactly paralleling the 422 arm above it. **I did not make it.** The brief said a throw on a
-super_admin no-school path *"is a decision for the project lead — not something you work around"*, and
-editing the assertion is the work-around. It is also a real capability being removed: a super_admin
-who has not selected a school can no longer record a payment against an invoice by uuid.
-
-The alternative — dropping `Invoice` from the batch — I do not recommend and did not do. It is the
-central money model and the survey's evidence is mostly about it.
+denies a super_admin, so **six change behaviour for them**: create a payment, credit note or void
+request against an invoice, and the three opening-balance-batch operations. Selecting a school
+restores all six, which is what makes this isolation rather than a capability cut — and arm 3a proves
+it, not just claims it.
 
 **Nothing was added to `tests/ratchet-baseline.txt`.** Baselining an intentional behaviour change is
 how it stops being visible.
+
+### One correction to my own earlier framing
+
+I wrote that `SetSchoolContext:51` was what admitted the contextless super_admin, and used it to
+bound the surface to super_admins. The stack trace says otherwise: binding runs *before* that
+middleware, so on those twelve routes **any** authenticated principal with no resolvable school is
+now refused at 409 where they previously got 403 from `SetSchoolContext:56-58`. Same refusal,
+different code. In the copy that is a population of one (`user#3197`, the super_admin), and no
+frontend code keys on either status — but the reasoning in my STEP 1 table was mechanically wrong and
+would have under-counted the surface again next time.
 
 ## Proof
 
 ```
 DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Isolation/FinanceFailClosedBatchTest.php
-{"tool":"pest","result":"passed","tests":19,"passed":19,"assertions":31,"duration_ms":13607}
+{"tool":"pest","result":"passed","tests":19,"passed":19,"assertions":31,"duration_ms":22001}
+
+DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/PaymentRecordGateTest.php
+{"tool":"pest","result":"passed","tests":5,"passed":5,"assertions":9,"duration_ms":17146}
 ```
 
 ### bin/quality — raw, unedited (ANSI stripped; nothing else removed)
@@ -224,22 +336,16 @@ quality gate — base cdd224a
 [13/14] static analysis (Larastan level 5 vs baseline)
    ✓ larastan
 [14/14] tests (failure ratchet vs tests/ratchet-baseline.txt)
-   ✗ test-ratchet
+   ✓ test-ratchet
 
-       ratchet: 1 NEW test failure(s) not in the baseline (regression):
-         ✗ tests/Feature/Finance/PaymentRecordGateTest.php::it super_admin is not gate-blocked on either payment route (record is not a checker ability)
-
-       Fix the regression, or — if the failure is intentional — add it to tests/ratchet-baseline.txt.
-
-✗ quality: FAIL (1): test-ratchet
-Push blocked. Fix the above, or bypass deliberately with --no-verify (recorded as intent, not accident).
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
 ```
 
-An earlier run also failed `boundary-lint` and `arch` on my own `User::forceCreate(...)` — this
-file's name matches `tests/.*Finance`, so it trips the `force-create-finance-tests` rule, which
+An earlier run at `43ca5c2` also failed `boundary-lint` and `arch` on my own `User::forceCreate(...)`
+— this file's name matches `tests/.*Finance`, so it trips the `force-create-finance-tests` rule, which
 exists because `forceCreate` bypasses `MoneyCast`. Nothing here creates money, so the rule is blunt
-about this file, and I fixed my side rather than the rule: a name-scoped hard rule a test can talk
-its way out of is not a rule. `User::factory()` costs nothing.
+about this file, and I fixed my side rather than the rule: a name-scoped hard rule a test can talk its
+way out of is not a rule. `User::factory()` costs nothing.
 
 ## The watched reds — and the mutation proved landed each time
 
@@ -247,18 +353,32 @@ Per RED 3 in #225, every mutation was diffed **against the pre-mutation file**, 
 Diffing against `HEAD` would have shown my whole commit and told me nothing about whether the
 mutation itself applied.
 
-**RED 1 — `StudentAccount` removed from the batch.** Mutation verified: `diff` showed the single
-deleted line.
+**RED 1 and RED 4 — `StudentAccount` removed from the batch. RE-RUN against the file as it ships**,
+because the reviewer was right that the original output was captured from a 17-arm file and 19 arms
+ship. Stale output is not evidence. Baseline first, then the mutation, then the run:
 
 ```
+BASELINE  {"tool":"pest","result":"passed","tests":19,"passed":19,"assertions":31}
+
+MUTATION LANDED (diffed against the pre-mutation file, not HEAD)
+  - 165             StudentAccount::class,
+
+AFTER     tests=19 -> 18   passed=16   failed=2
+
 FAILED: ships the finance transactional batch as the default, with no env var set
   config/rbac.php no longer ships the finance transactional batch as its DEFAULT. …
   -    6 => 'App\Finance\Models\StudentAccount',
+
+FAILED: refuses a super_admin finance API read with no school as a clean 409, not a 500
+  A super_admin with no school selected got 200 from the finance accounts endpoint. 409 is the
+  fail-closed refusal; 200 means the read went through unscoped and returned every School's accounts,
+  and 500 means the exception escaped its own renderer.
 ```
 
-Arm count went **17 → 16**: the dataset arm for that model *silently disappeared*. That is precisely
-the vacuity the provenance arm exists to catch, and it is why the ten names are written out literally
-in exactly one place.
+**19 → 18.** The dataset arm for that model *silently disappeared* — precisely the vacuity the
+provenance arm exists to catch, and why the ten names are written out literally in exactly one place.
+And **200**: off the list, a contextless super_admin reads every School's student accounts in one
+list. That is the defect, measured on the real route stack rather than argued from the scope.
 
 **RED 2 — the blank-means-unset guard reverted to plain `env(..., default)`.** Mutation verified
 against the pre-mutation file (2 lines modified).
@@ -285,18 +405,8 @@ ERROR: leaves UNAUTHENTICATED reads completely unchanged
 
 The arm that would break login is live.
 
-**RED 4 — the one that shows what the batch is actually for.** `StudentAccount` removed again, this
-time watching the HTTP arm:
-
-```
-FAILED: refuses a super_admin finance API read with no school as a clean 409, not a 500
-  A super_admin with no school selected got 200 from the finance accounts endpoint. 409 is the
-  fail-closed refusal; 200 means the read went through unscoped and returned every School's
-  accounts, and 500 means the exception escaped its own renderer.
-```
-
-**200.** Off the list, a super_admin with no school selected reads every School's student accounts in
-one list. That is the defect, measured on the real route stack rather than argued from the scope.
+**RED A and RED B** — the two halves of the split `PaymentRecordGateTest` arm — are in RULING 1
+above, together with the mutation that did **not** bite and why.
 
 ## The browser drive
 
@@ -351,26 +461,48 @@ consequence of this commit, and it is pinned by an arm so it stays a chosen beha
 
 ## Not done
 
-- **`PaymentRecordGateTest` not touched** — the decision above. `bin/quality` is red until you rule.
-- **Not pushed, no PR** — pushing needs `--no-verify` while that step is red, which is not mine to
-  take unilaterally.
-- **super_admin not driven in a browser** — reason above; blocked, not judged unnecessary.
+- **super_admin not driven in a browser.** `user#3197` exists and is the right seat, but logging in
+  needs a password change on a production copy — reversible (save the hash, set a known one, restore)
+  and still a credential write, which the environment's permission classifier refused. I did not
+  route around it. Covered by HTTP-layer arms instead; your call whether to authorise it.
 - **The catalog batch not flipped** — as instructed, though the enumeration clears it.
+- **No arm pins the 409 for a contextless NON-super-admin** on a bound route, which the stack trace
+  shows is now also possible. One user in the copy is in that state and they are the super_admin.
 - **`SchoolScopeFailsClosedTest`'s first arm is now mis-named.** It reads *"stays fail-open (no throw)
   when no model is opted in — **the default**"*. It sets `config(['rbac.fail_closed_models' => []])`
   explicitly, so it still passes and still tests something true; only the "— the default" clause is
-  now false. Not edited (one test file, per the fuse). **ticket.**
+  now false. **ticket.**
+- **The reviewer's findings 5, 6 and 7 rest on reading code paths, not on planted regressions** — it
+  has no write access. They are carried as tickets below, unverified by a bite-proof.
 
 ## Findings raised, not fixed
 
 - **Fail-closed does not protect off-request paths at all**, because the throw is gated on
-  `auth()->check()`. A queued job that skips `SchoolAware` reads unscoped and silently. The same gate
-  that makes this commit safe for the nightly commands is the one that would not save that job.
+  `auth()->check()`. A queued job that skips `SchoolAware` reads unscoped and silently. Now stated in
+  the config docblock (RULING 2e) rather than only here, because "fail closed" reads broader than it
+  is. Still **ticket** as a gap.
+- **A mistyped override silently empties the batch.** Nothing validates the parsed names;
+  `App\Finance\Model\Invoice` (one missing `s`) matches nothing, raises nothing, logs nothing.
+  Warned about at the point of use in the config (per your ruling); the fix is a `class_exists()`
+  check over the list. **ticket.**
+- **No detector for an environment that already sets `RBAC_FAIL_CLOSED_MODELS`.** The old design
+  expected each environment to set it, so a deployed `.env` may carry a partial list — in which case
+  the versioned default silently does not apply there, which is the failure this change exists to
+  remove, inverted. Check before merge:
+  `php artisan tinker --execute="var_dump(env('RBAC_FAIL_CLOSED_MODELS'));"` per environment. I did
+  not read `.env` (operating constraint), so I have no evidence either way. **ticket.**
+- **`config/rbac.php` names private module classes where both boundary gates are blind.**
+  `docs/module-blueprint.md:45` marks `App\Finance\Models\` private and `ArchitectureBoundaryTest`
+  pins it, but Pest arch only analyses namespaced classes and `bin/ci-boundary-lint.php` scans only
+  `app/` and `tests/` — so a config file naming module internals passes both. Not unprecedented
+  (`routes/endpoints/finance.php` imports private controllers), and string literals are a drop-in.
   **ticket.**
+- **`SetSchoolContext:51` does not bound the blast radius** — binding runs first. Corrected in place
+  above; recorded so the next enumeration does not under-count the surface again. **ticket.**
 - **#225's "zero super_admin holders" is wrong** and the reasoning built on it should be re-read.
   The doubled-backslash `model_type` rule applies to raw SQL, not to query-builder bindings —
   worth correcting in `finance-context`, since it will produce a confident zero again otherwise.
-  **ticket.**
+  `finance-context` also still says `bin/quality` is 13 steps; it is 14. **ticket.**
 - **The `force-create-finance-tests` lint keys on the file NAME**, so an isolation test with
   "Finance" in its name is governed by a MoneyCast rule regardless of whether it touches money. It
   caught me and I complied, but the coupling is incidental. **ticket.**

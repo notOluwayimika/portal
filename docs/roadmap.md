@@ -351,11 +351,34 @@ fixed by correcting test setup, **not** by touching authorization. They are
 **Rollout flags currently dark:** `auth.gate_before_superadmin` (on by
 default, verified — but see the ADR 0045 proposal: super_admin's ambient bypass is
 slated for removal, not permanence) · `rbac.single_source_access` (off;
-parity-gated) · `rbac.fail_closed_models` (empty; per-model — 1.3b landed, so job
-context no longer blocks any model; each enablement still needs its request-path
-audit) · `rbac.two_factor_enforced` (C7 platform master switch; **default on in
+parity-gated) · `rbac.two_factor_enforced` (C7 platform master switch; **default on in
 prod, off in non-prod** — a config flag, deliberately NOT an `environment()` check,
 so the enforcement path stays testable and staging-soakable; audited when flipped).
+
+**`rbac.fail_closed_models` ships LIT, and that is a deviation from "rollout flags
+ship dark" (CLAUDE.md § Workflow) — named here rather than left to be discovered.**
+As of 2026-08-09 the flag carries a versioned default in `config/rbac.php`: the ten
+finance transactional models (`LedgerTransaction`, `Payment`, `PaymentAllocation`,
+`Invoice`, `InvoiceLine`, `CreditNote`, `StudentAccount`, `OpeningBalanceBatch`,
+`OpeningBalanceRow`, `VoidRequest`). `RBAC_FAIL_CLOSED_MODELS` remains, demoted from
+the source of the list to a per-environment retreat.
+
+The argument for the deviation is that this flag is not the kind "ship dark" is
+about. A dark flag defers a decision until evidence arrives; this flag's entire
+design is **per-model opt-in after that model's read paths have been audited**, so
+shipping it dark once the audit is done would mean the audit produced nothing. The
+audit was done and is recorded in
+[docs/handoff/reports/feat-rbac-fail-closed-finance.md](handoff/reports/feat-rbac-fail-closed-finance.md):
+no seeder, factory or job reads a finance Eloquent model, the three commands that do
+wrap their work in `ActiveSchool::runFor`, and both finance seats were driven with
+byte-identical output before and after. What it buys was measured, not argued — with
+the models off the list a `super_admin` with no school selected reads **every**
+School's student accounts at 200 from `/api/v1/finance/accounts`, and records a
+payment against any School's invoice by uuid.
+
+The residual is stated rather than hidden: the throw is gated on `auth()->check()`,
+so fail-closed protects **no** off-request path. The finance **catalog** models are a
+later batch.
 
 **Cross-stream coordination — resolved 2026-07-21 (recorded, not re-litigable):**
 

@@ -91,11 +91,37 @@ return [
     | THE FIRST BATCH IS THE FINANCE TRANSACTIONAL SET, opted in while these
     | tables still hold seed and drive data. After term-1 billing they hold real
     | money and the same flip becomes a production risk rather than a cheap one.
-    | The #224 School-context survey is the evidence: of fifteen finance
-    | maker-checker actions, nine were saved from acting on another School's row
-    | only by a firstOrFail() that happens to sit on a scoped read, and three
-    | were not saved at all. That difference was an accident of call order, not a
-    | design, and fail-closed is what turns it into one.
+    |
+    | THE EVIDENCE IS OBSERVED, NOT INFERRED. SetSchoolContext admits a super_admin
+    | who has selected no school (app/Http/Middleware/SetSchoolContext.php:51), and
+    | with these models OFF the list that was measured, on the real route stack, as:
+    |
+    |   GET /api/v1/finance/accounts  ->  200, every School's student accounts
+    |   POST /api/v1/finance/invoices/{invoice}/payments  ->  201, money recorded
+    |                                                          into any School
+    |
+    | On the list, both are refused — 409 from MissingSchoolContextException, a
+    | deliberate context refusal rather than an unhandled 500. Twelve finance routes
+    | bind one of these models; six of those are approve/reject, which ADR 0040
+    | already denies a super_admin, so six change behaviour. Selecting a school
+    | restores every one of them, which is what makes this isolation rather than a
+    | capability cut.
+    |
+    | (An earlier draft of this block cited the #224 nine-of-fifteen maker-checker
+    | survey. That was wrong and is recorded here so it is not reintroduced: all
+    | fifteen of those run WITH a context, on the scoped branch, and fail-closed
+    | only governs the null-context branch. It cannot have changed any of them —
+    | SchoolContext::assertOwns did.)
+    |
+    | WHAT THIS DOES NOT PROTECT, because "fail closed" reads broader than it is:
+    | the throw is gated on auth()->check() (app/Models/Scopes/SchoolScope.php),
+    | so NO off-request path is covered — not a console command, not a seeder, not
+    | a queued job running without an authenticated principal, and not an
+    | unauthenticated request. Artisan never satisfies that gate, which is why no
+    | scheduled command can start throwing because of this list; it is also why a
+    | job that skips the SchoolAware middleware still reads unscoped and silently.
+    | Off-request context remains ActiveSchool::runFor()'s job, and this setting
+    | does not check that anyone did it.
     |
     | The finance CATALOG models — FeeSchedule, FeeItem, DiscountPolicy, the two
     | change tables and SchoolFinanceSettings — are deliberately NOT here yet.
@@ -106,6 +132,16 @@ return [
     | override REPLACES the default wholesale; it does not add to it:
     |
     |   RBAC_FAIL_CLOSED_MODELS="App\Finance\Models\Invoice,App\Finance\Models\Payment"
+    |
+    | AND IF YOU ARE TYPING THAT LINE, TYPE IT EXACTLY. Nothing validates it. The
+    | names are compared as plain strings (SchoolScope::shouldFailClosed), so
+    | "App\Finance\Model\Invoice" — one missing "s" — matches no model, raises no
+    | error, logs nothing, and leaves that model reading unscoped. A list of ten
+    | with one typo silently protects nine. This is the same failure the versioned
+    | default was introduced to remove, wearing a different hat: there, a deploy
+    | could forget the protection; here, a keystroke can drop it. Ticketed for a
+    | class_exists() check over the parsed list — until that lands, the mitigation
+    | is that overriding at all is the exceptional path and wants a second reader.
     |
     | A BLANK value means "not set", and that is deliberate rather than tidy.
     | env() distinguishes an absent key from a present-but-empty one — an empty

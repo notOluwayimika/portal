@@ -17,10 +17,15 @@ use Illuminate\Database\Eloquent\Model;
  * the twelve unguarded actions did before this commit, and it is why the guard must be an explicit
  * refusal rather than something left to the scope.
  *
- * AND THE SCOPE CANNOT BE MADE TO REFUSE ON ITS OWN. `config/rbac.php:78-81` reads
- * `RBAC_FAIL_CLOSED_MODELS` from the environment and it is EMPTY everywhere, so `SchoolScope` is
- * fail-OPEN for every model in the system. Setting it is a platform-wide change to read behaviour and
- * is deliberately not this class's business — see the ticket in this branch's report.
+ * AND FAIL-CLOSED SCOPING DOES NOT REPLACE THIS GUARD, WHICH IS WORTH SAYING NOW THAT IT IS ON.
+ * `config/rbac.php` ships the finance transactional models in `fail_closed_models` as a versioned
+ * default, so `SchoolScope` now THROWS on a read with no context. That closes a different hole from
+ * this one, and the two do not overlap: fail-closed governs the NULL-context branch
+ * (`SchoolScope::apply`, the `elseif` after the scoped branch), while this guard exists for the
+ * WRONG-context branch — a maker in School A acting on School B's record, where a context is present,
+ * the scope filters happily, and the read returns nothing. The scope cannot refuse that, because from
+ * its side nothing is wrong. Fail-closed also only fires for an authenticated principal, so it is
+ * silent off-request. Both of those are why this refusal stays explicit.
  *
  * TWO ENTRY POINTS, ONE IMPLEMENTATION, AND THE SPLIT IS THE POINT.
  *

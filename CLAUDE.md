@@ -115,6 +115,7 @@ has diverged and needs a human.
 | **Clean-room OS/env**  | Runs on your machine, your extensions, your MySQL. A dependency or extension you have and a teammate lacks is invisible.               |
 | **Remote enforcement** | No required status checks. `--no-verify` bypasses, and a push from a clone without `composer install` has no hook at all.              |
 | **Intent**             | The hook stops forgetting, not deliberate bypass.                                                                                      |
+| **Determinism**        | Byte-identical code has produced both PASS 14/14 and FAIL 23 (ADR 0053, 2026-08-09). Cause investigated, not found — one failure in twelve runs. **A red cannot be told from a flake by looking at it, and retrying until green is indistinguishable from fixing.** Suite artefacts are now kept per run (last 20) so the next one is diagnosable; a red prints their paths. |
 
 Everything else CI would have checked is covered locally, including the database
 dimension CI itself never covered (CI migrated an _empty_ service DB, so incremental

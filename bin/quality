@@ -210,9 +210,40 @@ check "larastan" composer analyse
 
 # 14. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
+#
+#     THE ARTEFACTS ARE KEPT PER RUN, and that is not housekeeping — it is the difference
+#     between a nondeterministic failure being diagnosable and not. Both files used to be
+#     written to a FIXED path, so every run destroyed the previous run's evidence. On
+#     2026-08-09 this gate produced PASS, then FAIL with 23 unrelated permission/seed
+#     failures, then PASS again on byte-identical code; by the time the third run finished,
+#     the second run's messages were gone and only the ratchet's list of test NAMES survived.
+#     Four hypotheses were then built on names and ordering alone and three were disproven —
+#     the fourth could not be tested at all, because a suite failure cannot be diagnosed from
+#     the names of the tests that failed. Eleven further runs did not reproduce it.
+#
+#     A gate that overwrites the record of its own red is a gate whose reds can only be
+#     retried, never investigated. Runs are stamped and the last 20 kept, so the next
+#     occurrence is still on disk whenever anyone notices it.
+QUALITY_ARTEFACTS="${TMPDIR:-/tmp}/quality-runs"
+mkdir -p "$QUALITY_ARTEFACTS"
+QUALITY_RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+QUALITY_JUNIT="$QUALITY_ARTEFACTS/junit-$QUALITY_RUN_ID.xml"
+QUALITY_LOG="$QUALITY_ARTEFACTS/pest-$QUALITY_RUN_ID.log"
+
 step "tests (failure ratchet vs tests/ratchet-baseline.txt)"
-env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit /tmp/quality-junit.xml >/tmp/quality-pest.log 2>&1 || true
-check "test-ratchet" php bin/ci-test-ratchet.php /tmp/quality-junit.xml
+env DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit "$QUALITY_JUNIT" >"$QUALITY_LOG" 2>&1 || true
+
+# The fixed paths stay as symlinks: bin/ci-test-ratchet.php, the docs and everyone's muscle
+# memory refer to them, and "the latest run" is the common case. The per-run copy is what
+# survives the NEXT run.
+ln -sf "$QUALITY_JUNIT" /tmp/quality-junit.xml
+ln -sf "$QUALITY_LOG" /tmp/quality-pest.log
+
+# Bounded so this cannot grow without limit on a machine that runs the hook all day.
+ls -1t "$QUALITY_ARTEFACTS"/junit-*.xml 2>/dev/null | tail -n +21 | xargs -r rm -f
+ls -1t "$QUALITY_ARTEFACTS"/pest-*.log 2>/dev/null | tail -n +21 | xargs -r rm -f
+
+check "test-ratchet" php bin/ci-test-ratchet.php "$QUALITY_JUNIT"
 
 # ---------------------------------------------------------------------- verdict
 echo
@@ -223,4 +254,15 @@ fi
 
 printf '%s✗ quality: FAIL%s (%d): %s\n' "$RED" "$OFF" "${#FAILED[@]}" "${FAILED[*]}"
 printf '%sPush blocked. Fix the above, or bypass deliberately with --no-verify (recorded as intent, not accident).%s\n' "$DIM" "$OFF"
+
+# WHERE THE EVIDENCE IS, printed on the red rather than left to be rediscovered. This gate has
+# produced a red that vanished before anyone could read it (see step 14). If this failure is one
+# you cannot explain, these two files are the only record of it and the NEXT run no longer
+# overwrites them — copy them somewhere before doing anything else.
+if [ -n "${QUALITY_LOG:-}" ] && [ -f "$QUALITY_LOG" ]; then
+    printf '%sThis run'"'"'s suite output: %s%s\n' "$DIM" "$QUALITY_LOG" "$OFF"
+    printf '%sThis run'"'"'s junit:        %s%s\n' "$DIM" "$QUALITY_JUNIT" "$OFF"
+    printf '%sKept for the last 20 runs. A red you cannot reproduce is only diagnosable from these.%s\n' "$DIM" "$OFF"
+fi
+
 exit 1

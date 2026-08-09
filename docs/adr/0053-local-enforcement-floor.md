@@ -63,6 +63,50 @@ unclosed hole, recorded here rather than left to be rediscovered.
 developer's environment hides is wrong in the same way when the gate runs, because it is the same
 environment.
 
+**It is not deterministic, and a red can therefore be retried away.** On 2026-08-09 three consecutive
+runs on this branch produced:
+
+| Run | Tree | Result |
+|---|---|---|
+| A | `aae9459` | **PASS** 14/14 |
+| B | `bb75e3e` — one markdown file on top of A | **FAIL** — 23 new test failures |
+| C | `bb75e3e`, unchanged from B | **PASS** 14/14 |
+
+B and C ran against byte-identical code. The 23 were unrelated to the change and clustered in
+permission- and seed-heavy files — `SuperAdminAuthorityTest` (6), `SharedPermissionsTest` (5),
+`SeededPermissionCoverageTest` (5), and five others; all 69 arms of those eight files pass when run
+together in isolation.
+
+**The cause was investigated and NOT found.** Recorded so nobody repeats the search from zero:
+
+- *Inherited database state* — **disproven.** Three runs after `db:wipe` and three without produced a
+  byte-identical failure set (md5 `f167633e`, 1492 tests, exactly the seven `ratchet-baseline.txt`
+  entries). The two conditions are not actually different: `RefreshDatabase` runs `migrate:fresh` once
+  per *process*, so every invocation already starts from a wiped database.
+- *Test ordering* — **disproven.** PHPUnit sorts test files (`php-file-iterator/src/Facade.php:48`),
+  and `phpunit.xml` sets no random `executionOrder`.
+- *A leaked session variable* — **disproven.** `AccountPaymentConcurrencyTest:128` sets
+  `innodb_lock_wait_timeout = 2` on the default connection where its five siblings use a purged
+  throwaway connection; a probe reads the default 50 both alone and immediately after that file,
+  because Laravel rebuilds the application, and its connections, per test.
+- *The double pest invocation* — **ruled out.** `--group=arch` selects three files that touch no
+  database (23 tests, ~2s).
+- *Spatie's permission cache* — **ruled out.** `CACHE_STORE=array` under test, so it is per-process.
+
+Eleven further runs (six full-suite, four full-gate, one abandoned) did not reproduce it: **one
+observed failure in twelve runs.**
+
+The practical consequence is the one that matters for a floor whose whole job is to be believed:
+**a red here cannot be distinguished from a flake by looking at it, and re-running until green is
+indistinguishable from fixing.** Every "PASS 14/14, pasted raw" in every report rests on a gate with
+this property. Treat a single green as weaker evidence than it looks, and a red that nobody can
+explain as *unexplained* rather than as noise.
+
+What this change does do is make the next occurrence diagnosable. Step 14 used to write its junit and
+suite output to fixed paths, so run C destroyed run B's evidence before anyone could read it — which
+is why four hypotheses had to be built on the names of the failing tests alone. Artefacts are now
+stamped per run and the last 20 kept, and a red prints where they are.
+
 ## Consequences
 
 A document that describes CI as the gate is now wrong by ruling, not merely out of date. `CLAUDE.md`

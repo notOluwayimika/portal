@@ -15,8 +15,10 @@ import {
     PenTool,
     RefreshCw,
     Shield,
+    ShieldCheck,
     UserCog,
     Users,
+    Wallet,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import AppLogo from '@/components/app-logo';
@@ -349,7 +351,7 @@ export function AppSidebar() {
     const roles = auth.roles;
     const isSuperAdmin = !!auth.isSuperAdmin;
     const hasSchoolContext = !!auth.school;
-    const { can } = usePermissions();
+    const { can, permissions } = usePermissions();
 
     const navGroups = useMemo(() => {
         // Super admin without a school context only sees the management area.
@@ -391,6 +393,64 @@ export function AppSidebar() {
                     },
                 ],
             });
+        }
+
+        // FINANCE — a MODULE, not a persona, so it sits after the admin working area
+        // and before the persona menus, and every item gates on the permission its
+        // own route carries. Same compose-by-permission pattern as the Users item
+        // above (C5), which the comment there already names for exactly this.
+        //
+        // THIS IS NOT THE CASE use-permissions.ts WARNS ABOUT. That docblock says not
+        // to gate sidebar PERSONA menus on effective permissions, because super_admin's
+        // effective set is ~everything and would surface every persona at once
+        // (c4-brief D2). A permission-gated module is the opposite situation: the
+        // question "may this user reach this screen" is precisely what the route asks,
+        // so asking it here is what keeps the menu and the route from disagreeing.
+        //
+        // The group itself keys on `finance.access` because the whole /finance route
+        // group requires it — an item shown to someone without it would 403 on click.
+        if (can('finance.access')) {
+            const financeItems: NavItem[] = [
+                { title: 'Accounts', href: '/finance', icon: Wallet },
+            ];
+
+            // THE CHECKER PREDICATE IS DERIVED, NEVER LISTED. /finance/approvals is
+            // gated server-side on a list built from Permission::cases() — every
+            // finance ability whose terminal segment makes it a checker action — so a
+            // future `finance.refund.approve` joins that route the day the case exists,
+            // with no edit. A hard-coded array here would silently hide the item from
+            // that future checker while the route happily admitted them: the same
+            // defect approval-feeds.ts was written to kill, rebuilt in the nav. So the
+            // same predicate is applied to the user's own effective set.
+            const isFinanceChecker = [...permissions].some(
+                (ability) =>
+                    ability.startsWith('finance.') &&
+                    (ability.endsWith('.approve') ||
+                        ability.endsWith('.reject')),
+            );
+
+            if (isFinanceChecker) {
+                financeItems.push({
+                    title: 'Approvals',
+                    href: '/finance/approvals',
+                    icon: ShieldCheck,
+                });
+            }
+
+            // ADR 0040 makes this correct rather than lucky: `approve`/`reject` are
+            // excluded from the super-admin Gate::before bypass, and EffectivePermissions
+            // resolves through the Gate, so a super_admin's shared set holds NO finance
+            // checker ability and this item is hidden from them — which is right, because
+            // the route would refuse them too.
+            if (can('finance.opening-balance.submit')) {
+                financeItems.push({
+                    title: 'Opening balances',
+                    href: '/finance/opening-balances/import',
+                    icon: FileSpreadsheet,
+                });
+            }
+
+            groups.push({ label: 'Finance', items: financeItems });
         }
 
         if (roles.includes('guardian')) {
@@ -435,7 +495,14 @@ export function AppSidebar() {
         }
 
         return groups;
-    }, [roles, auth.user.teacher, isSuperAdmin, hasSchoolContext, can]);
+    }, [
+        roles,
+        auth.user.teacher,
+        isSuperAdmin,
+        hasSchoolContext,
+        can,
+        permissions,
+    ]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

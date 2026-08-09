@@ -30,6 +30,60 @@ Every one-way step keeps a STOP-for-review before it. Nothing below is a big-ban
 
 Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
 
+- [ ] **PRE-DEPLOY — COUNT the authenticated principals with NO resolvable school
+      context, BEFORE this goes out.** The finance transactional models are now
+      fail-closed (`config/rbac.php`, `rbac.fail_closed_models`), and on the **twelve**
+      finance routes that route-model-bind one of them, such a principal now receives
+      **409** where they used to receive **403**. The reason it is not simply "a
+      super_admin thing": `SubstituteBindings` sits in Laravel's middleware priority
+      list **ahead of** `SetSchoolContext`, so the binding throws before the middleware
+      that would have issued the 403 ever runs. Any authenticated principal without a
+      resolvable school is affected, not only a super_admin.
+
+      The local copy has **one** such user and it is the super_admin. **Production has
+      not been counted.** If the number is larger than expected that is a decision for
+      the owner *before* the deploy — after it, the same fact arrives as a support
+      ticket. Counts only; no names, no emails.
+
+      ```sql
+      -- Principals who cannot resolve a school from the database alone.
+      -- ActiveSchool::id() resolves in order: runFor() override, session('school_id'),
+      -- token school_id, then users.school_id — and that last fallback is DENIED to
+      -- super admins (app/Support/ActiveSchool.php:54). The session is runtime state and
+      -- cannot be counted here, so these are the principals whose context depends
+      -- ENTIRELY on having selected a school in the current session.
+      SELECT 'super_admin holders (never get the own-school fallback)' AS bucket,
+             COUNT(DISTINCT u.id) AS principals
+      FROM users u
+      JOIN model_has_roles mhr ON mhr.model_id = u.id AND mhr.model_type = 'App\\Models\\User'
+      JOIN roles r ON r.id = mhr.role_id AND r.name = 'super_admin'
+      UNION ALL
+      SELECT 'non-super-admin with users.school_id IS NULL', COUNT(DISTINCT u.id)
+      FROM users u
+      WHERE u.school_id IS NULL
+        AND u.id NOT IN (
+          SELECT mhr.model_id FROM model_has_roles mhr
+          JOIN roles r ON r.id = mhr.role_id AND r.name = 'super_admin'
+          WHERE mhr.model_type = 'App\\Models\\User')
+      UNION ALL
+      SELECT 'API tokens carrying no school_id', COUNT(*)
+      FROM personal_access_tokens WHERE school_id IS NULL;
+      ```
+
+      **The doubled backslash in `'App\\Models\\User'` is required and is easy to get
+      wrong in the other direction.** `model_has_roles` is polymorphic and the column
+      holds `App\Models\User`; in **raw SQL** the SQL string parser consumes one level,
+      so the literal must be doubled. Pass the doubled form to a **query builder
+      binding** instead and it matches nothing and returns a confident **zero** — that
+      mistake is exactly how the #225 report came to state there were no super_admin
+      holders when there was one.
+
+      **Do not expect a `finance.access` grant to narrow this list.** A super_admin
+      reaches every finance route through the `Gate::before` bypass, not through a
+      grant row, so no query over `role_has_permissions` / `model_has_permissions` will
+      show them. Counting the principals is the check; filtering by ability is not.
+
+      Expected on the copy, for comparison: `1 / 0 / 0`.
 - [ ] Slice-(i) pre-flight: run the prod divergence query
   (`prod-divergence-and-cascade-queries.sql` §C), **list** offenders, remediate to
   zero, *then* migrate — the composite-FK migration aborts mid-deploy otherwise.

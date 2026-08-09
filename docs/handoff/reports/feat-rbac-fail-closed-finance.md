@@ -341,6 +341,37 @@ quality gate — base cdd224a
 ✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
 ```
 
+### The green above is a green, not a guarantee — the suite is nondeterministic
+
+Three full runs on this branch, and the third and fourth differ on **nothing**:
+
+| Run | Tree | Result |
+|---|---|---|
+| A | `aae9459` | **PASS** 14/14 |
+| B | `bb75e3e` (markdown only on top of A) | **FAIL** — 23 new failures |
+| C | `bb75e3e`, unchanged from B | **PASS** 14/14 |
+
+B and C ran against byte-identical code. The 23 were concentrated in permission- and seed-heavy
+files — `SuperAdminAuthorityTest` (6), `SharedPermissionsTest` (5), `SeededPermissionCoverageTest`
+(5), plus `StudentIndexFilterTest`, `IdentifierGeneratorTest`, `TwoFactorEnrollmentTest`,
+`SuperAdminBypassExclusionTest`, `SchoolUserModuleTest` — and all 69 arms of those eight files pass
+when run together in isolation:
+
+```
+{"tool":"pest","result":"passed","tests":69,"passed":69,"assertions":315,"risky":1}
+```
+
+None of them touches a finance model, and the only diff between the passing run A and the failing run
+B is a markdown file, so this branch cannot be the cause. It matches the repository's known
+cross-test state-leak flake (permission cache / activity-log / rate limiter).
+
+Stated because a reviewer who re-runs `bin/quality` here has a real chance of seeing red, and should
+know that is expected noise rather than evidence against the change — and because a report that
+pastes only the run that went green is not reporting the gate, it is selecting from it.
+`tests/ratchet-baseline.txt` and `phpstan-baseline.neon` are **untouched** by this branch (`git diff
+cdd224a..HEAD` on both is empty), and none of the 23 is baselined, so nothing here was made to pass
+by lowering a floor.
+
 An earlier run at `43ca5c2` also failed `boundary-lint` and `arch` on my own `User::forceCreate(...)`
 — this file's name matches `tests/.*Finance`, so it trips the `force-create-finance-tests` rule, which
 exists because `forceCreate` bypasses `MoneyCast`. Nothing here creates money, so the rule is blunt
@@ -497,8 +528,13 @@ consequence of this commit, and it is pinned by an arm so it stays a chosen beha
   `app/` and `tests/` — so a config file naming module internals passes both. Not unprecedented
   (`routes/endpoints/finance.php` imports private controllers), and string literals are a drop-in.
   **ticket.**
-- **`SetSchoolContext:51` does not bound the blast radius** — binding runs first. Corrected in place
-  above; recorded so the next enumeration does not under-count the surface again. **ticket.**
+- **`SetSchoolContext:51` does not bound the blast radius** — binding runs first, so on the twelve
+  bound routes any authenticated principal with no resolvable school now gets 409 where they got 403.
+  **PROMOTED FROM TICKET TO A CHECKLIST LINE** at the project lead's instruction, because the window
+  to act on it closes at deploy: `docs/handoff/post-deploy-tasks.md` now opens Phase 0 with a
+  PRE-deploy step to COUNT that population in production, with the query beside it. A ticket
+  describes a hazard; a checklist line stops it. The copy reads `1 / 0 / 0`; production is uncounted.
+  The query was executed as extracted verbatim from the doc, not merely written into it.
 - **#225's "zero super_admin holders" is wrong** and the reasoning built on it should be re-read.
   The doubled-backslash `model_type` rule applies to raw SQL, not to query-builder bindings —
   worth correcting in `finance-context`, since it will produce a confident zero again otherwise.

@@ -33,6 +33,24 @@ operational facts an agent needs most often.
 - Gates to run locally before pushing: `./vendor/bin/pint --test`,
   `php bin/ci-authz-lint.php`, `php bin/ci-boundary-lint.php`,
   `./vendor/bin/pest --group=arch`, `composer analyse`.
+- **Pint is invoked through `bin/lint-changed.sh`, never directly against a
+  path.** `pint <directory>` reformats every file under it — correctly, and as
+  noise: it has twice swept unrelated files into a commit (#223, and 71 files on
+  `feat/finance-bank-accounts` where the change was 18). Until
+  `bin/lint-changed.sh` can see uncommitted work
+  ([ticket](docs/handoff/tickets/lint-changed-cannot-see-uncommitted-work.md)),
+  pass explicit files **and guard against an empty list** — `pint` with no path
+  argument lints the WHOLE PROJECT, which is how the same mistake recurred a
+  third time on this very branch, from a substitution that expanded to nothing:
+
+  ```bash
+  files=$(git diff --name-only HEAD -- '*.php')
+  [ -n "$files" ] && ./vendor/bin/pint $files
+  ```
+
+  And read `git diff --stat` against your own model of the change before
+  pushing — no gate objects to a commit full of correct formatting, and none
+  should.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
 - **Spatie `sync*` is non-atomic and its events fire POST-write** (vendor-read

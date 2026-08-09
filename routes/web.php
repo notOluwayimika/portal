@@ -152,6 +152,14 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     Route::get('/finance', fn () => Inertia::render('admin/finance/index'))
         ->name('admin.finance.index');
 
+    // Bank accounts (S6/U3 commit 1) — the school's own banking configuration. Gated on
+    // finance.bank-account.manage IN ADDITION to the group's finance.access, so the page is not
+    // reachable by everyone who can view finance: it is configuration, and the nav entry keys on the
+    // same permission so a menu item can never render for someone the route would refuse.
+    Route::get('/finance/bank-accounts', fn () => Inertia::render('admin/finance/bank-accounts'))
+        ->middleware('permission:finance.bank-account.manage')
+        ->name('admin.finance.bank-accounts');
+
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],

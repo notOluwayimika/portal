@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use Tests\Feature\Rbac\ForcingMigrationsDoNotStripLaterGrantsTest;
+
 /**
  * The canonical, magic-string-free registry of application permissions.
  *
@@ -10,6 +12,39 @@ namespace App\Enums;
  * their legacy non-dotted names deliberately — renaming them to the dotted
  * convention would change the stored value and break existing checks, so that
  * is a separate migration, not part of introducing this enum.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * COINING A PERMISSION HAS THREE OBLIGATIONS. ADDING A CASE HERE IS ONE OF THEM.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * This is the file you open to coin one, so the whole checklist lives here rather than in a doc
+ * nobody is reading at the moment they need it. Doing only step 1 costs a full gate cycle: it fails
+ * FIVE tests at build (PermissionGroupTest ×2, PermissionEnumTest, RbacConsoleTest,
+ * SchoolRbacConsoleTest), which is the good kind of failure and still an avoidable hour.
+ *
+ *   1. THE CASE, here.
+ *
+ *   2. ITS GROUP, in App\Enums\PermissionGroup. {@see Permission::group()} resolves through
+ *      PermissionGroup::lookup() with NO FALLBACK, and that is deliberate: an unfiled case must be
+ *      a failing test rather than a permission that silently vanishes from the RBAC console, where
+ *      nobody could ever grant it. Do NOT "fix" a missing-key error by adding a default — the
+ *      absence of a fallback IS the mechanism, and a default would convert a red build into a
+ *      permission that exists in code and cannot be administered.
+ *
+ *   3. ITS GRANT, in Database\Seeders\RbacSeeder::grantsMap() — and CHECK WHICH ROLE. A role
+ *      governed by a forcing convergence migration has its namespace slice frozen: the seeder
+ *      writes the grant and the migration REVOKES it on the next deploy, silently, which fails at
+ *      DEPLOY rather than at build. {@see ForcingMigrationsDoNotStripLaterGrantsTest}
+ *      for the invariant and the `@converges` escape.
+ *
+ *   Then REGENERATE THE ORACLES, in this order:
+ *     php artisan rbac:sync
+ *     php artisan rbac:derive-access          → tests/fixtures/route-access-map.json
+ *     tests/fixtures/rbac-grants-baseline.json (re-dumped from a freshly seeded database)
+ *
+ * A NEW permission is exempt from the grants-convergence lint (exemption 1) because rbac:sync
+ * grants it in the same run. That exemption answers "will the grant LAND?" and not "will it
+ * SURVIVE?" — obligation 3's warning is the second question, and the lint does not ask it.
  */
 enum Permission: string
 {
@@ -123,6 +158,19 @@ enum Permission: string
     // the direct-publish path too; commit 4 narrows it to DRAFT authorship, with a separate
     // finance.fee-schedule.change.submit for proposing the draft for ED approval.
     case FINANCE_FEE_SCHEDULE_MANAGE = 'finance.fee-schedule.manage';
+    // The school's bank accounts (S6/U3 commit 1): create, edit and DEACTIVATE the accounts money
+    // lands in. Named on finance.fee-schedule.manage's pattern — a `manage` verb, not a maker-checker
+    // triple — because it is finance CONFIGURATION and has no second signature: there is no
+    // …bank-account.approve, and coining one would invent a checker for a description rather than a
+    // decision.
+    //
+    // DELIBERATELY NOT GRANTED TO A GOVERNED ROLE. The forcing migration
+    // 2026_08_06_100000_move_head_of_school_finance_to_executive_director makes head_of_school,
+    // accounts_supervisor and executive_director's `finance.` slice EQUAL a frozen literal, so a
+    // grant to any of those three is written by the seeder and revoked by that migration on the next
+    // deploy — the trap ForcingMigrationsDoNotStripLaterGrantsTest exists for. admin and
+    // accounts_officer are ungoverned, which is where fee-schedule.manage already sits.
+    case FINANCE_BANK_ACCOUNT_MANAGE = 'finance.bank-account.manage';
     // Discount-policy governance (S1 commit 3, axis A): the Head proposes create/amend/retire; the ED
     // approves/rejects. Four-segment names so the terminal verb (submit/approve/reject) drives the
     // ApprovalAbility maker-derivation and the super-admin bypass exclusion by CONVENTION — nothing is

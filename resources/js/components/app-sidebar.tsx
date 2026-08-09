@@ -7,6 +7,7 @@ import {
     ClipboardCopyIcon,
     ClipboardList,
     FileSpreadsheet,
+    Landmark,
     GraduationCap,
     Heart,
     History,
@@ -447,6 +448,18 @@ export function AppSidebar() {
                     title: 'Opening balances',
                     href: '/finance/opening-balances/import',
                     icon: FileSpreadsheet,
+                });
+            }
+
+            // Bank accounts (S6/U3) — finance CONFIGURATION, so it keys on its own
+            // finance.bank-account.manage rather than on the group's finance.access. Everyone who
+            // can view finance must not be offered a screen that configures where money lands, and
+            // the route carries the same permission so a visible item can never 403 on click.
+            if (can('finance.bank-account.manage')) {
+                financeItems.push({
+                    title: 'Bank accounts',
+                    href: '/finance/bank-accounts',
+                    icon: Landmark,
                 });
             }
 

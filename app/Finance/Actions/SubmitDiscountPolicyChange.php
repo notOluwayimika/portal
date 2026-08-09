@@ -11,7 +11,7 @@ use App\Finance\Enums\DiscountPolicyChangeStatus;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\DiscountPolicyChange;
 use App\Models\User;
-use App\Support\ActiveSchool;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,9 +28,21 @@ final class SubmitDiscountPolicyChange
 
     public function handle(DiscountPolicyChangeKind $kind, ?DiscountPolicy $target, array $terms, string $reason, User $maker): DiscountPolicyChange
     {
-        $schoolId = ActiveSchool::id();
-        if ($schoolId === null) {
-            throw new BusinessRuleException('No active School context: a discount-policy change cannot be submitted.');
+        // Rule 13, and THE ONE PLACE IN THE FIFTEEN THAT CALLS require() RATHER THAN assertOwns().
+        //
+        // A `create` change names no policy — `:40-41` refuses one that does — so on that path there
+        // is no pre-existing school-owned record for the act to belong to. That is not a weaker guard
+        // over the same surface; it is a COMPLETE guard over a smaller one: the open-request query
+        // below is gated on `$target !== null` and does not run, and the change row's own school_id is
+        // stamped from the context this call returns. The context IS the whole school-sensitive
+        // surface there, and require() closes all of it.
+        //
+        // When a target IS named (amend, retire) the full guard applies, and the ownership half is
+        // NEW — a behaviour change, not a move.
+        $schoolId = SchoolContext::require('discount-policy change', 'submitted');
+
+        if ($target !== null) {
+            SchoolContext::assertOwns($target, 'discount policy', 'submitted');
         }
         if (trim($reason) === '') {
             throw new BusinessRuleException('A reason is required to propose a discount-policy change.');

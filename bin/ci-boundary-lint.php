@@ -183,6 +183,94 @@ foreach ($submitActions as $path) {
     }
 }
 
+// school-context-guard-missing — Constitution 13, enforced on every finance maker-checker Action.
+//
+// WHAT IT CATCHES AND WHY IT IS NOT LEFT TO SchoolScope. The scope filters reads by the active
+// School, which is isolation when the context is right and something far worse when it is wrong:
+// every read finds nothing, and an action that reads nothing does not refuse — it succeeds on an
+// empty set. `config/rbac.php:78-81` reads RBAC_FAIL_CLOSED_MODELS from the environment and it is
+// EMPTY everywhere, so the scope is fail-OPEN for every model. The refusal has to be explicit, so
+// this rule requires it to be present.
+//
+// THE STRONG CALL IS THE DEFAULT. `SchoolContext::assertOwns(` refuses a null context AND a record
+// belonging to another School. `SchoolContext::require(` refuses only the first, and is permitted in
+// exactly ONE file, named below with its reason — an allowlist of one, argued in place. A rule that
+// accepted either call anywhere could not tell the two apart, which is the whole reason the helper
+// has two names rather than one nullable argument.
+//
+// SCOPE STOPS AT Submit/Approve/Reject IN app/Finance/Actions, and that boundary is deliberate:
+// those fifteen are the maker-checker governance surface, where the failure mode is an act that
+// reports success having done nothing. GenerateInvoice, RecordAccountPayment, PostOpeningBalanceBatch
+// and CreateFeeSchedule guard in bespoke form on money-writing paths; converting them is a separate
+// decision, argued on its own, and widening this rule to reach them would smuggle it in. Any Action
+// added to those three prefixes is covered the moment it lands — the set is globbed, never listed.
+// Pure enforcement: ZERO baseline entries.
+$guardStrong = 'SchoolContext::assertOwns(';
+$guardWeak = 'SchoolContext::require(';
+
+// THE ONE FILE THAT MUST CALL require() — and "must", not "may", is the whole correction.
+//
+// A first version of this rule merely PERMITTED require() here. That check was ONE-SIDED and the
+// watched red proved it: stripping require() went red, but replacing it with an unconditional
+// assertOwns() stayed GREEN — and that swap is a real defect, because a `create` change names no
+// policy and assertOwns() would be handed nothing to own. A rule that cannot object to the wrong
+// call in the one file it singles out says less than its name.
+//
+// So the allowlist is an OBLIGATION. SubmitDiscountPolicyChange's `create` kind names no policy —
+// the action itself refuses a create that does — so on that path there is no pre-existing
+// school-owned record for the act to belong to. The change row's own school_id is stamped from the
+// context, and the only school-owned read is gated on a non-null target. The context is therefore
+// the WHOLE school-sensitive surface there, and require() closes all of it: a complete guard over a
+// smaller surface, not a partial guard over the same one. It also calls assertOwns() when a target
+// IS named, which this rule neither requires nor forbids.
+$mustUseWeak = ['app/Finance/Actions/SubmitDiscountPolicyChange.php'];
+
+$governanceActions = array_merge(
+    glob($root.'/app/Finance/Actions/Submit*.php') ?: [],
+    glob($root.'/app/Finance/Actions/Approve*.php') ?: [],
+    glob($root.'/app/Finance/Actions/Reject*.php') ?: [],
+);
+
+foreach ($governanceActions as $path) {
+    $rel = ltrim(str_replace($root, '', $path), '/');
+    $strong = false;
+    $weak = false;
+
+    foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
+        if (isComment($line)) {
+            continue;
+        }
+        if (str_contains($line, $guardStrong)) {
+            $strong = true;
+        }
+        if (str_contains($line, $guardWeak)) {
+            $weak = true;
+        }
+    }
+
+    if (in_array($rel, $mustUseWeak, true)) {
+        // The obligation, not a permission: this file's create path has nothing to own, so the
+        // context refusal is the only guard available and it must be present.
+        if (! $weak) {
+            $add(
+                'school-context-guard-missing',
+                $rel,
+                'does not call SchoolContext::require() on a live line — its create kind names no policy, so the context refusal is the only guard that path can carry (Constitution 13)'
+            );
+        }
+
+        continue;
+    }
+
+    if (! $strong) {
+        $add(
+            'school-context-guard-missing',
+            $rel,
+            'does not call SchoolContext::assertOwns() on a live line — a finance governance act with no School-context refusal (Constitution 13)'
+        );
+    }
+}
+
 // approval-seam-count — the Finance Submit actions must stay in lockstep with the maker abilities the
 // maker-checker convention derives: exactly one Submit*.php per finance `*_SUBMIT` Permission case. A new
 // maker permission with no Submit action (or a Submit action with no maker ability) is coverage drift the
@@ -225,6 +313,10 @@ if ($mode === 'generate') {
 # approval-seam-missing / approval-seam-count have ZERO baseline entries — every Finance
 #   Submit action calls the ApprovalRequirement seam and the maker/action counts match
 #   (ADR 0051), so both rules are pure enforcement (no exceptions).
+# school-context-guard-missing has ZERO baseline entries — every Finance Submit/Approve/Reject
+#   action calls SchoolContext::assertOwns() on a live line, with require() permitted in
+#   SubmitDiscountPolicyChange alone and the reason written beside the allowlist
+#   (Constitution 13). Pure enforcement (no exceptions).
 
 TXT;
     file_put_contents($baselinePath, $header.($found ? implode("\n", $found)."\n" : ''));

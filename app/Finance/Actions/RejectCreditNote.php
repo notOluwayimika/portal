@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Models\CreditNote;
 use App\Models\User;
+use App\Support\SchoolContext;
 
 /**
  * Ph3 checker side — REJECT a pending credit note with a reason. NEVER any ledger effect:
@@ -21,6 +22,9 @@ final class RejectCreditNote
 {
     public function handle(CreditNote $creditNote, User $checker, string $reason): CreditNote
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($creditNote, 'credit note', 'rejected');
+
         if (! $creditNote->isPending()) {
             throw new BusinessRuleException('Only a pending credit note can be rejected.');
         }

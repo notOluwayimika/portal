@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -34,6 +35,9 @@ final class RejectOpeningBalanceBatch
 {
     public function handle(OpeningBalanceBatch $batch, string $reason, User $checker): OpeningBalanceBatch
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($batch, 'opening-balance batch', 'rejected');
+
         if (trim($reason) === '') {
             throw new BusinessRuleException('A reason is required to reject an opening-balance batch.');
         }

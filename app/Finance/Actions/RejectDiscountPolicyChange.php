@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
 use App\Finance\Models\DiscountPolicyChange;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,6 +17,9 @@ final class RejectDiscountPolicyChange
 {
     public function handle(DiscountPolicyChange $change, string $reason, User $checker): DiscountPolicyChange
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($change, 'discount-policy change', 'rejected');
+
         if ($change->status !== DiscountPolicyChangeStatus::Submitted) {
             throw new BusinessRuleException('Only a submitted change can be rejected.');
         }

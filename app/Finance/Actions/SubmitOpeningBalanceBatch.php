@@ -9,7 +9,7 @@ use App\Finance\Approval\NotifiesApprovalCheckers;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Models\User;
-use App\Support\ActiveSchool;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -41,15 +41,10 @@ final class SubmitOpeningBalanceBatch
 
     public function handle(OpeningBalanceBatch $batch, User $maker): OpeningBalanceBatch
     {
-        // Rule 13: no context, no financial governance act. Every read below goes through SchoolScope,
-        // so a mismatched context would silently find nothing and look like a clean refusal.
-        $schoolId = ActiveSchool::id();
-        if ($schoolId === null) {
-            throw new BusinessRuleException('No active School context: an opening-balance batch cannot be submitted.');
-        }
-        if ((int) $batch->school_id !== $schoolId) {
-            throw new BusinessRuleException('That opening-balance batch belongs to another School.');
-        }
+        // Rule 13, via the one implementation every finance governance Action shares. This action is
+        // the CONVERSION in that change: it already carried both halves in longhand, and both of its
+        // messages are unchanged — see SchoolContextGuardTest, which pins them byte-for-byte.
+        SchoolContext::assertOwns($batch, 'opening-balance batch', 'submitted');
         if ($batch->status !== OpeningBalanceBatchStatus::Validated) {
             throw new BusinessRuleException(
                 "Only a validated opening-balance batch can be submitted for approval; this one is {$batch->status->value}."

@@ -11,6 +11,7 @@ use App\Finance\Models\VoidRequest;
 use App\Finance\Services\SubledgerPoster;
 use App\Finance\Services\VoidEligibility;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,6 +40,9 @@ final class ApproveVoidRequest
 
     public function handle(VoidRequest $request, User $checker): VoidRequest
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($request, 'void request', 'approved');
+
         if (! $request->isPending()) {
             throw new BusinessRuleException('Only a pending void request can be approved.');
         }

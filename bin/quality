@@ -77,6 +77,25 @@ check() {
     local label="$1"; shift
     if "$@" >/tmp/quality-step.log 2>&1; then
         printf '   %s✓%s %s\n' "$GREEN" "$OFF" "$label"
+
+        # SAY WHAT A GREEN ACTUALLY CHECKED, for the one step that can legitimately check NOTHING.
+        #
+        # bin/lint-changed.sh reads `git diff "$BASE"...HEAD` — three dots, against HEAD — so it
+        # sees COMMITTED changes only. Uncommitted work is invisible to it, and on a branch with
+        # nothing committed yet it lints zero files and passes. That green is indistinguishable
+        # from one that linted everything, and it shipped: a bare run passed having linted 0 files,
+        # then the pre-push hook (whose $BASE is origin/staging, with the work by then committed)
+        # failed on 9.
+        #
+        # Zero is NOT an error — a docs-only change legitimately lints nothing — so this reports
+        # rather than fails. The silence was the defect, not the zero.
+        #
+        # grep -o rather than a line-anchored sed: Pint prints its JSON without a trailing newline,
+        # so the next heading is concatenated onto it and an anchored match silently drops it —
+        # which would have hidden the Prettier count, the very thing this exists to show.
+        if [ "$label" = "lint-changed" ]; then
+            grep -o '==> [^{]*' /tmp/quality-step.log | sed 's/^==> /       /'
+        fi
     else
         printf '   %s✗%s %s\n' "$RED" "$OFF" "$label"
         sed 's/^/       /' /tmp/quality-step.log | tail -25

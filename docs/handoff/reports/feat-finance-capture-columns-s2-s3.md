@@ -157,6 +157,9 @@ quality gate — base c598e2a
    ✓ wayfinder:generate
 [3/14] lint changed files (Pint / Prettier / ESLint, check mode)
    ✓ lint-changed
+       Pint (check) on 35 changed PHP file(s)
+       Prettier (check) on 1 changed file(s)
+       ESLint on 1 changed file(s)
 [4/14] types (tsc ratchet vs tsc-baseline)
    ✓ tsc-ratchet
 [5/14] frontend build (vite — catches what the tsc ratchet structurally cannot)
@@ -259,22 +262,108 @@ after a red), 2026-08-09 18:12–18:22 WAT, load average 3.24.
 The junit showed **exactly the seven baselined failures** — so `test-ratchet` passed and the red was
 elsewhere. It was `lint-changed`: Pint wanted formatting on nine files.
 
-**The finding is why the bare run had passed twenty minutes earlier.** `bin/lint-changed.sh` lints
-files changed against `$BASE`. Run from a branch whose work was still **uncommitted**, that diff
-resolved to zero files, so the step passed having linted nothing. The pre-push hook computes `$BASE`
-as `origin/staging`, sees all nine, and fails.
+**The finding is why the bare run had passed twenty minutes earlier**, and the mechanism is more
+specific than "the diff was empty". `bin/lint-changed.sh:51` reads:
 
-So a green `lint-changed` on uncommitted work says nothing at all, and it looks identical to a green
-that checked something. That is the same vacuity class as a watched red that never fires — this
-branch has now produced three instances (the `cutover_date => now()` fixture, the regex that skipped
-continuation lines, and this). **ticket:** `lint-changed` should report how many files it linted, so
-"0 files" is visible rather than indistinguishable from "all clean".
+```
+git diff -z --name-only --diff-filter=ACMR "$BASE"...HEAD
+```
+
+Three dots, and against **HEAD** — so it sees **committed changes only**. Uncommitted work is
+invisible to it, and on a branch with nothing committed yet it lints zero files and passes. The
+pre-push hook runs after the commit exists, computes `$BASE` as `origin/staging`, sees all nine, and
+fails.
+
+So a green `lint-changed` over uncommitted work says nothing at all and looks identical to a green
+that checked everything. Same vacuity class as a watched red that never fires — this branch produced
+three instances (the `cutover_date => now()` fixture, the regex that skipped continuation lines, and
+this).
+
+**Folded in rather than ticketed** (see *The received-date field*): `bin/quality` now prints the
+per-tool counts on a green `lint-changed`. Zero is not an error — a docs-only change legitimately
+lints nothing — so it reports rather than fails. The silence was the defect, not the zero.
+
+Writing that surfaced a second, smaller instance of the same thing: Pint emits its JSON with no
+trailing newline, so the next heading is concatenated onto it and a line-anchored match **silently
+dropped the Prettier count** — the exact line most likely to read "no changed frontend files" when it
+should not. Matched with `grep -o` instead. Verified on this branch:
+
+```
+   ✓ lint-changed
+       Pint (check) on 35 changed PHP file(s)
+       Prettier (check) on 1 changed file(s)
+       ESLint on 1 changed file(s)
+```
+
+## The received-date field — folded in before merge, because the branch was shipping a break
+
+`received_at` is required at the FormRequest and both Actions, and `record-payment-modal.tsx` sent
+`amount_minor` and `payer_name` only. **Merging as-is would have 422'd every payment — the only
+money-in path in the product — behind a green gate.** That is #223's template-the-upload-refused
+defect, authored here.
+
+### Proven first, in a browser, before the field was written
+
+```
+[asis] a date field is present: false
+[asis] 422 /api/v1/finance/students/…/payments
+       {"message":"There are validation errors",
+        "errors":{"received_at":["The received at field is required."], …}}
+```
+
+**The drive ran against a DEDICATED drive database, never the production copy.**
+`finance:seed-drive-fixture` refuses anything else by two guards — `APP_ENV=drive` and a database
+name containing `drive` — so `portal_drive` was created for it. This also settles the seat problem
+that blocked earlier drives: the fixture ships `maker@drive.test` holding `accounts_officer` with a
+fixed password, so no credential on the copy had to be touched.
+
+### After
+
+```
+[today]     a date field is present: true
+[today]     pre-filled with: 2026-08-09
+[today]     201 …/payments  reference=4
+
+[backdated] pre-filled with: 2026-08-09
+[backdated] reason field visible after back-dating: true
+[backdated] 201 …/payments  reference=5
+```
+
+Read back out of the database:
+
+```
+payment#4 ref=4 received_at=2026-08-09 reason=NULL
+   ledger#16 effective_at=2026-08-09 posted_at=2026-08-09
+payment#5 ref=5 received_at=2026-08-04 reason='Handed over at the desk on the 4th'
+   ledger#17 effective_at=2026-08-04 posted_at=2026-08-09
+```
+
+The two-date design end to end: the back-dated payment's ledger credit is **effective on the 4th**
+and **posted on the 9th**.
+
+### Pre-fill is not a default, and the comment says why
+
+A server-side default is invisible — the operator submits, a date they never saw is written, and the
+row asserts a business fact nobody observed, permanently. A pre-filled input is on screen, in their
+hands, and submitting it is **confirmation** rather than omission. The modal's docblock says this
+explicitly so the later "just default it server-side" proposal meets its own answer.
+
+The reason field's condition **mirrors** `RecordPaymentRequest`'s `required_unless:received_at,<today>`
+rather than restating it.
+
+### One thing the drive did not cover, found while writing it
+
+`config/app.php` sets `'timezone' => 'UTC'` while a Lagos browser is UTC+1, so **between 00:00 and
+01:00 WAT the client and server disagree about what "today" is**. Left unhandled, the operator would
+get a validation error for a field that was never rendered — a dead end for one hour a day. The
+reason field therefore also renders when the SERVER reports that error, so the disagreement is
+recoverable rather than terminal. Untested by the drive, which ran at 18:06 WAT; the fix is
+reasoning, not measurement, and is flagged as such.
 
 ## Not done
 
-- **No UI change.** `received_at` is required by the API; the screen that pre-fills today and offers
-  the reason field is U9 and is not in this commit. **The bursar screens will 422 until it lands** —
-  worth sequencing before term one.
+- **U9 proper is still not in this commit** — only its received-date half, which had to land or the
+  branch shipped a broken payment path. No bank account (S6), no method changes.
 - **`allocation_overridden` has no writer that can set it true.** Every allocation is computed. The
   column is false everywhere by explicit statement, not by default; its consumer is U10.
 - **The catalog of allocation rules is two, and will be wrong the day a third behaviour ships**

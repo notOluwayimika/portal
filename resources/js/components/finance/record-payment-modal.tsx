@@ -36,10 +36,36 @@ type Props = {
  *     to exceed, so the banking note is the PRIMARY explanation, not a footnote.
  *
  * Amount is entered in naira and converted to minor units ONCE via the money-boundary helper (no
- * arithmetic here). The API accepts amount + payer_name only; "method" (defaults to 'manual'
- * server-side) and "reference" (auto-generated) are not request inputs, so the form does not
- * collect them — binding to the contract, not inventing fields the API ignores.
+ * arithmetic here). "method" (defaults to 'manual' server-side) and "reference" (auto-generated)
+ * are not request inputs, so the form does not collect them — binding to the contract, not
+ * inventing fields the API ignores.
+ *
+ * THE RECEIVED DATE IS PRE-FILLED, NOT DEFAULTED, and the distinction is the whole reason
+ * finance_payments.received_at is NOT NULL with no database default.
+ *
+ * A server-side default is invisible: the operator submits, a date they never saw is written, and
+ * the row asserts a business fact nobody observed — on an append-only table where it can never be
+ * corrected. A pre-filled input is the opposite. The date is on screen, in the operator's hands,
+ * and submitting it is an act of CONFIRMATION rather than of omission. Today is right the large
+ * majority of the time, so pre-filling costs nothing; being SEEN is what makes it honest.
+ *
+ * So: do not "simplify" this by defaulting received_at server-side when the field is absent. That
+ * would restore exactly the silent gap the column's shape was chosen to close.
  */
+/**
+ * Today as the API's `Y-m-d`, in the browser's local timezone.
+ *
+ * NOT `toISOString().slice(0, 10)`, which converts to UTC first and therefore reports YESTERDAY for
+ * anyone west of Greenwich in the evening — a payment silently back-dated by a timezone, which the
+ * server would then demand a reason for. Local parts, assembled directly.
+ */
+function todayIso(): string {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function RecordPaymentModal({
     isOpen,
     onClose,
@@ -47,8 +73,14 @@ export function RecordPaymentModal({
     student,
     onRecorded,
 }: Props) {
+    // Today in the BROWSER's timezone, formatted as the API's Y-m-d. Computed once per render of
+    // the module rather than per keystroke; the modal resets it on every open.
+    const today = todayIso();
+
     const [amount, setAmount] = useState('');
     const [payerName, setPayerName] = useState('');
+    const [receivedAt, setReceivedAt] = useState(today);
+    const [receivedAtReason, setReceivedAtReason] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [formError, setFormError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -56,6 +88,8 @@ export function RecordPaymentModal({
     const reset = () => {
         setAmount('');
         setPayerName('');
+        setReceivedAt(todayIso());
+        setReceivedAtReason('');
         setErrors({});
         setFormError(null);
         setSubmitting(false);
@@ -74,6 +108,12 @@ export function RecordPaymentModal({
     if (!invoice && !student) {
         return null;
     }
+
+    // MIRRORS THE SERVER RULE, not a restatement of it. RecordPaymentRequest (and its account-mode
+    // twin) carry `required_unless:received_at,<today>`, so the reason is required exactly when the
+    // chosen date is not today — never for a same-day payment. This predicate is that condition and
+    // nothing more; if the server's rule changes, this is the line that has to change with it.
+    const backDated = receivedAt !== today;
 
     const heading = accountMode ? student!.name : invoice!.display_number;
 
@@ -99,6 +139,13 @@ export function RecordPaymentModal({
                 {
                     amount_minor: amountMinor,
                     payer_name: payerName,
+                    received_at: receivedAt,
+                    // Sent only when it exists. The server requires it exactly when the date is not
+                    // today; sending an empty string on a same-day payment would fail `nullable`
+                    // less obviously than omitting it.
+                    ...(backDated
+                        ? { received_at_reason: receivedAtReason }
+                        : {}),
                 },
             );
             toast.success(
@@ -169,6 +216,57 @@ export function RecordPaymentModal({
                         </p>
                     )}
                 </div>
+
+                <div>
+                    <Label htmlFor="payment-received-at">Date received</Label>
+                    <Input
+                        id="payment-received-at"
+                        type="date"
+                        max={today}
+                        value={receivedAt}
+                        onChange={(e) => setReceivedAt(e.target.value)}
+                    />
+                    {errors.received_at && (
+                        <p className="mt-0.5 text-xs text-destructive">
+                            {errors.received_at}
+                        </p>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Pre-filled with today. Change it if the money was
+                        received on an earlier day — this is the date the
+                        payment counts from, and it cannot be edited afterwards.
+                    </p>
+                </div>
+
+                {/*
+                 * Shown when the CLIENT thinks the date is back-dated, or when the SERVER says so
+                 * and the client disagreed. That second condition is not defensive padding: the
+                 * app timezone is UTC (config/app.php) while a Lagos browser is UTC+1, so between
+                 * 00:00 and 01:00 WAT the two disagree about what "today" is. Without the error
+                 * clause the operator would receive a validation error for a field that was never
+                 * rendered — a dead end for one hour a day. With it, the field appears carrying the
+                 * server's own message and the payment can be completed.
+                 */}
+                {(backDated || errors.received_at_reason) && (
+                    <div>
+                        <Label htmlFor="received-at-reason">
+                            Why is this back-dated?
+                        </Label>
+                        <Input
+                            id="received-at-reason"
+                            value={receivedAtReason}
+                            onChange={(e) =>
+                                setReceivedAtReason(e.target.value)
+                            }
+                            placeholder="Handed over at the desk on the 4th"
+                        />
+                        {errors.received_at_reason && (
+                            <p className="mt-0.5 text-xs text-destructive">
+                                {errors.received_at_reason}
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 <div className="flex justify-end gap-2 border-t pt-3">
                     <Button

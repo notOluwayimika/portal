@@ -10,6 +10,7 @@ use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\SubledgerPoster;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,6 +33,9 @@ final class ApproveCreditNote
 
     public function handle(CreditNote $creditNote, User $checker): CreditNote
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($creditNote, 'credit note', 'approved');
+
         if (! $creditNote->isPending()) {
             throw new BusinessRuleException('Only a pending credit note can be approved.');
         }

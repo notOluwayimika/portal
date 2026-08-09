@@ -9,6 +9,7 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\FeeScheduleChange;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,6 +24,9 @@ final class RejectFeeScheduleChange
 {
     public function handle(FeeScheduleChange $change, string $reason, User $checker): FeeScheduleChange
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($change, 'fee-schedule change', 'rejected');
+
         if ($change->status !== FeeScheduleChangeStatus::Submitted) {
             throw new BusinessRuleException('Only a submitted change can be rejected.');
         }

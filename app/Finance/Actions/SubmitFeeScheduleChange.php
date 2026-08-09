@@ -12,7 +12,7 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\FeeScheduleChange;
 use App\Models\User;
-use App\Support\ActiveSchool;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,10 +27,18 @@ final class SubmitFeeScheduleChange
 
     public function handle(FeeScheduleChangeKind $kind, FeeSchedule $target, string $reason, User $maker): FeeScheduleChange
     {
-        $schoolId = ActiveSchool::id();
-        if ($schoolId === null) {
-            throw new BusinessRuleException('No active School context: a fee-schedule change cannot be submitted.');
-        }
+        // Rule 13. THIS IS A BEHAVIOUR CHANGE, not a refactor: the null-context refusal below is the
+        // one that was already here, and the ownership refusal is NEW. Without it, a valid-but-wrong
+        // context did not read an empty set and quietly do nothing — it wrote. `$target` arrives as a
+        // model, so nothing re-reads it through the scope on the retire path, and the change row was
+        // created stamped with the ACTIVE school while pointing at another school's schedule.
+        //
+        // On the PUBLISH path the write was already refused, but by accident rather than by intent:
+        // the locked re-read below goes through SchoolScope and firstOrFail() throws
+        // ModelNotFoundException. What this guard buys there is a sentence instead of that, and cover
+        // for the day the lock query stops going through the scope. It closes nothing on that branch,
+        // and claiming otherwise would be false.
+        $schoolId = SchoolContext::assertOwns($target, 'fee-schedule change', 'submitted');
         if (trim($reason) === '') {
             throw new BusinessRuleException('A reason is required to propose a fee-schedule change.');
         }

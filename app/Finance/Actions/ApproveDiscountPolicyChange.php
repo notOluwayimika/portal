@@ -9,6 +9,7 @@ use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\DiscountPolicyChange;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,9 @@ final class ApproveDiscountPolicyChange
 {
     public function handle(DiscountPolicyChange $change, User $checker): DiscountPolicyChange
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($change, 'discount-policy change', 'approved');
+
         if ($change->status !== DiscountPolicyChangeStatus::Submitted) {
             throw new BusinessRuleException('Only a submitted change can be approved.');
         }

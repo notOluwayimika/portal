@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,6 +46,14 @@ final class ApproveOpeningBalanceBatch
      */
     public function handle(OpeningBalanceBatch $batch, User $checker): OpeningBalanceBatch
     {
+        // COVERED BY WHAT IT CALLS IS NOT A GUARANTEE. PostOpeningBalanceBatch guards identically
+        // and this action delegates to it, so the POSTING path was already closed — but that is a
+        // coincidence of the current call graph, not something this action promised. Its own status
+        // transition writes decided_by_user_id/decided_at BEFORE delegating; the shared transaction
+        // rolls that back today, which is a second coincidence. The guard belongs here.
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($batch, 'opening-balance batch', 'approved');
+
         return DB::transaction(function () use ($batch, $checker) {
             $locked = OpeningBalanceBatch::query()->whereKey($batch->getKey())->lockForUpdate()->firstOrFail();
 

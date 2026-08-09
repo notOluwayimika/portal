@@ -6,6 +6,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\VoidRequest;
 use App\Models\User;
+use App\Support\SchoolContext;
 
 /**
  * Ph3b checker side — REJECT a pending void request with a reason. The invoice is NEVER
@@ -19,6 +20,9 @@ final class RejectVoidRequest
 {
     public function handle(VoidRequest $request, User $checker, string $reason): VoidRequest
     {
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($request, 'void request', 'rejected');
+
         if (! $request->isPending()) {
             throw new BusinessRuleException('Only a pending void request can be rejected.');
         }

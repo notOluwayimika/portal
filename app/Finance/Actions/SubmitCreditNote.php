@@ -12,6 +12,7 @@ use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Models\User;
 use App\Support\Money;
+use App\Support\SchoolContext;
 use App\Support\Sequences\Sequences;
 use Illuminate\Support\Facades\DB;
 
@@ -32,6 +33,11 @@ final class SubmitCreditNote
 
     public function handle(Invoice $invoice, Money $amount, CreditNoteKind $kind, ?string $note, User $maker): CreditNote
     {
+        // The INVOICE is the school-owned subject: the credit note does not exist yet and is stamped
+        // from the context this call returns.
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($invoice, 'invoice', 'credited');
+
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A credit note amount must be positive.');
         }

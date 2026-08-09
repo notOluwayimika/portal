@@ -11,6 +11,7 @@ use App\Finance\Models\Invoice;
 use App\Finance\Models\VoidRequest;
 use App\Finance\Services\VoidEligibility;
 use App\Models\User;
+use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -42,6 +43,10 @@ final class SubmitVoidRequest
 
     public function handle(Invoice $invoice, string $reason, User $maker): VoidRequest
     {
+        // The INVOICE is the school-owned subject — the void request is created from it.
+        // Rule 13: no context, no financial governance act (App\Support\SchoolContext).
+        SchoolContext::assertOwns($invoice, 'invoice', 'voided');
+
         if (trim($reason) === '') {
             throw new BusinessRuleException('A reason is required to request a void.');
         }

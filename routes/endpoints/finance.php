@@ -81,8 +81,8 @@ Route::get('/v1/finance/accounts', [FinanceAccountController::class, 'index']);
 
 /*
  * Fee schedules (S1 commit 2, narrowed in commit 4) — the per-School pricing catalog per (term × class
- * level). Reads carry only the group's finance.access; DRAFT authoring (store/update) needs
- * finance.fee-schedule.manage. As of commit 4 `store`/`update` write DRAFTS ONLY — the act of making a
+ * level). Reads carry only the group's finance.access; DRAFT authoring (store/supersede/editDraft) needs
+ * finance.fee-schedule.manage. As of commit 4 `store`/`supersede` write DRAFTS ONLY — the act of making a
  * schedule `active` has moved entirely into the fee-schedule-change approval below, so there is no route
  * by which a schedule reaches `active` without an approved change (proof 31). `prefill` resolves the
  * ACTIVE schedule's items into prefilled charge lines for the bursar's generate form (a draft never prices).
@@ -91,7 +91,13 @@ Route::get('/v1/finance/fee-schedules', [FeeScheduleController::class, 'index'])
 Route::get('/v1/finance/fee-schedules/prefill', [FeeScheduleController::class, 'prefill']);
 Route::post('/v1/finance/fee-schedules', [FeeScheduleController::class, 'store'])
     ->middleware('permission:finance.fee-schedule.manage');
-Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleController::class, 'update'])
+Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}', [FeeScheduleController::class, 'supersede'])
+    ->middleware('permission:finance.fee-schedule.manage');
+// Edit a draft in place: label, and items replaced wholesale. A SUB-RESOURCE rather than a second verb on
+// the collection member, because the two operations are genuinely different — this one mutates the bound
+// row, `supersede` above leaves it alone and authors a new draft beside it. Same permission: both are
+// draft authorship, and neither can make a schedule billable.
+Route::put('/v1/finance/fee-schedules/{feeSchedule:uuid}/draft', [FeeScheduleController::class, 'editDraft'])
     ->middleware('permission:finance.fee-schedule.manage');
 
 /*

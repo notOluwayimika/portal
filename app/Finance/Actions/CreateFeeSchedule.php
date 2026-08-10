@@ -82,7 +82,11 @@ final class CreateFeeSchedule
             // covers draft AND pending_approval as of 4a (a slot with a schedule awaiting approval is also
             // occupied). Translate to a friendly 422 rather than a raw 500.
             if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'finance_fee_schedules_pending_unique')) {
-                throw new BusinessRuleException('A draft or pending schedule already exists for this term and class level; edit, publish, or await its approval.');
+                // The advice names what the operator can actually DO. Until {@see EditFeeScheduleDraft}
+                // shipped, "edit" named nothing in the tree — a draft could be neither edited nor deleted,
+                // so this message sent the reader looking for a door that was not there. A message naming
+                // an action the system does not have is the same defect as a button that 404s.
+                throw new BusinessRuleException('A draft or pending schedule already exists for this term and class level. Edit that draft instead, or submit it for approval; if it is already awaiting approval, await the decision.');
             }
             throw $e;
         }

@@ -39,6 +39,13 @@ class FeeItem extends Model
         'is_discountable' => 'boolean',
     ];
 
+    /**
+     * Untyped until this commit, which is why nothing had ever read a property off it: Larastan resolves a
+     * bare BelongsTo to Model, so `$item->schedule->status` is an undefined-property error. The generic is
+     * the fix, not a cast at the call site.
+     *
+     * @return BelongsTo<FeeSchedule, $this>
+     */
     public function schedule(): BelongsTo
     {
         return $this->belongsTo(FeeSchedule::class, 'fee_schedule_id');

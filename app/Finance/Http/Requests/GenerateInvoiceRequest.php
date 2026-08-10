@@ -3,8 +3,11 @@
 namespace App\Finance\Http\Requests;
 
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Models\FeeItem;
 use App\Support\Money;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -46,7 +49,63 @@ class GenerateInvoiceRequest extends FormRequest
             // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not Money::fromKobo's
             // InvalidArgumentException → 500 inside lineSpecs() one frame later (f293358 finish).
             'lines.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
-            'lines.*.fee_item_id' => ['sometimes', 'nullable', 'integer'],
+            // Provenance of the price. `integer` alone was the whole rule until this commit, and that made
+            // it the one wire field that escaped the principle stated two fields down and at
+            // GenerateInvoice:274-276 — a client does not get to decide a fee ITEM's properties. An
+            // arbitrary id could cite another School's item, or a DRAFT's.
+            //
+            // The draft half is not hypothetical bookkeeping: EditFeeScheduleDraft replaces a draft's items
+            // WHOLESALE, and the argument that this is safe is "a draft's items cannot be cited by any
+            // invoice" — true of every path in the tree (prefill resolves through
+            // FeeScheduleLookup::activeFor, active only) and false of a hand-crafted request. Without this
+            // rule that safety argument is breakable with one curl.
+            //
+            // NOT restricted to ACTIVE schedules, deliberately. Two legitimate paths bill from a
+            // SUPERSEDED one: a void-and-rebill ('This enrollment already has an active invoice. Void it
+            // before billing again.') where a publish was approved in between, and the plain race of a
+            // bursar whose generate form was prefilled before an approval landed —
+            // ApproveFeeScheduleChange:87 moves the previous active to `superseded` under them. Refusing
+            // there would 422 an operator for a change they could not see. GenerateInvoice's own
+            // discountability resolution already tolerates a superseded id (no status filter), so closing
+            // that door here would contradict it. What is closed is the UNPUBLISHED proposal states —
+            // draft and pending_approval — which no legitimate path emits and which are the states this
+            // commit's wholesale replacement operates on.
+            //
+            // A CLOSURE RULE READING THROUGH THE SCOPED MODEL, not Rule::exists. Rule::exists queries the
+            // TABLE, so FeeItem's SchoolScope would not apply and isolation would have to be hand-rolled
+            // as a `where('school_id', …)` beside it — a second implementation of the one boundary this
+            // codebase has. Reading through FeeItem::query() makes SchoolScope the isolation, which is
+            // what Constitution §5 says it is everywhere else.
+            //
+            // A first attempt did use Rule::exists with a status subquery marked withoutGlobalScopes() so
+            // the hand-rolled school term stayed independently observable. bin/ci-boundary-lint.php refused
+            // it — finance-escape-hatches, §17.1 rule 4 — and it was right to: the escape hatch was there
+            // to make a redundant check testable, which is a reason to delete the redundant check, not to
+            // open the hatch. The lint bans the DB::table() form of the same evasion in the next token.
+            'lines.*.fee_item_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    $item = FeeItem::query()->find((int) $value);
+
+                    // Not found = does not exist, OR belongs to another School and SchoolScope hid it.
+                    // The message does not distinguish the two, deliberately: telling a caller that an id
+                    // they cannot see nevertheless exists is itself a leak.
+                    if ($item === null) {
+                        $fail('The selected :attribute is invalid.');
+
+                        return;
+                    }
+
+                    if (in_array($item->schedule?->status, [
+                        FeeScheduleStatus::Draft,
+                        FeeScheduleStatus::PendingApproval,
+                    ], true)) {
+                        $fail('The selected :attribute belongs to a fee schedule that has not been published.');
+                    }
+                },
+            ],
             // The discount policy a REDUCTION line cites (S1 3b). A LOOKUP id, not the wire's to validate
             // beyond shape — the DB reduction_guard is the authority (active + not approval-requiring + same
             // School). There is deliberately NO is_discountable rule: that is a fee-item property resolved

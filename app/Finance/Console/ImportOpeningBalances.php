@@ -8,6 +8,7 @@ use App\Finance\DTOs\OpeningBalanceValidationResult;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Services\OpeningBalanceFileValidator;
+use App\Finance\Services\OpeningBalanceInterpretation;
 use App\Models\School;
 use App\Support\ActiveSchool;
 use App\Support\Money;
@@ -261,10 +262,35 @@ class ImportOpeningBalances extends Command
 
         // §1's L2, printed whether or not it failed. A check whose figures only appear when it fails
         // is one an operator cannot confirm ran.
+        //
+        // AND IT NAMES ITS OWN DERIVATION, on every run rather than only on a mismatch. The left-hand
+        // side is Σ of each student's STATED total where the file gives one and Σ of their own
+        // balances where it does not — and on the cutover's single-column file that is EVERY student.
+        // Printing "Σ stated student totals" there was a quiet mislabelling of a computed figure as
+        // the file's word, on the one line an operator reads to confirm the check ran; a clean run,
+        // which is the run they will actually see, never showed the difference.
         $this->line(sprintf(
-            'L2 (kobo): Σ stated student totals=%d, --control-total=%d, Δ=%d',
-            $r->statedSum->toKobo(), $r->controlTotal->toKobo(), $r->statedSum->toKobo() - $r->controlTotal->toKobo(),
+            'L2 (kobo): Σ student totals=%d over %d student(s) (%d DERIVED from their own balances, '
+            .'%d stated in the file), --control-total=%d, Δ=%d',
+            $r->statedSum->toKobo(),
+            $r->statedContributors,
+            $r->derivedContributors,
+            $r->statedContributors - $r->derivedContributors,
+            $r->controlTotal->toKobo(),
+            $r->statedSum->toKobo() - $r->controlTotal->toKobo(),
         ));
+
+        // WHAT THIS BATCH SAYS. Printed on EVERY run, clean or not, and printed after the arithmetic
+        // rather than among the findings — it is not a defect report, it is the batch's own reading of
+        // the file, in the words the sign convention was agreed in. It is the only control against an
+        // inverted convention: L1 and L2 compare the file against itself and pass either way. The
+        // operator screen prints the same sentence from the same service before approval.
+        $interpretation = app(OpeningBalanceInterpretation::class)->for($batch);
+        $this->line('');
+        $this->line('WHAT THIS FILE SAYS — read it, and stop if it is wrong:');
+        $this->line('  '.$interpretation['convention']);
+        $this->line('  '.$interpretation['sentence']);
+        $this->line('');
 
         foreach ($r->batchFindings as $finding) {
             $this->error("BATCH FINDING [{$finding['code']}] {$finding['message']}");

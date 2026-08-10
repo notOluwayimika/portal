@@ -59,6 +59,50 @@ class OpeningBalanceFileValidator
     public const BATCH_REFERENCE_MAX = 218;
 
     /**
+     * THE SIGN CONVENTION, quoted rather than paraphrased. Confirmed in writing by the project lead
+     * for the Brookstone cutover, and every mapping in this file and in
+     * {@see PostOpeningBalanceBatch} follows from it:
+     *
+     *   "NEGATIVE = the school owes the family; they paid in advance and are in CREDIT.
+     *    POSITIVE = the family owes the school; ARREARS.
+     *    Figures are NAIRA."
+     *
+     * It is a constant and not a comment because the interpretation summary prints it back to the
+     * operator, and the whole value of that summary is that the words on screen are the words the
+     * convention was agreed in. If anything here ever makes a different reading possible, this
+     * sentence is the one to check the code against.
+     *
+     * THE REASON THE SUMMARY EXISTS AT ALL: the batch control total is Σ of the same column, so an
+     * operator who reads it off the same file matches perfectly under an INVERTED convention and the
+     * batch posts silently — every credit filed as arrears and every arrear as credit. G1/G1b then
+     * make it permanent, because a posted batch can never be un-posted. No arithmetic control can
+     * catch that; only a human agreeing with a sentence can.
+     */
+    public const SIGN_CONVENTION = 'NEGATIVE = the school owes the family; they paid in advance and are in CREDIT. '
+        .'POSITIVE = the family owes the school; ARREARS. Figures are NAIRA.';
+
+    /**
+     * The fee-type label applied to every line whose `fee_type_label` is absent or blank.
+     *
+     * IT IS OPERATOR-VISIBLE AND PERMANENT. {@see PostOpeningBalanceBatch} carries the label VERBATIM
+     * into the ledger narration as "<label> — Balance Brought Forward", `finance_ledger_transactions`
+     * is append-only, and this is what a bursar reads on a parent's statement for as long as the
+     * migrated balance is on the account. So the wording is chosen, not defaulted.
+     *
+     * "General Arrears" is accurate under SIGN_CONVENTION: a line that posts a CHARGE under this
+     * label is positive, which is arrears by definition. A negative line never reaches a narration
+     * built from this constant — it nets into the migrated payment, whose narration is
+     * "Payment #<reference> — Balance Brought Forward" and names no fee type at all. So the word
+     * "Arrears" cannot appear on a credit.
+     *
+     * A CONSTANT, NEVER A LITERAL AT A CALL SITE. It is read by the row validator, by the COLUMNS
+     * note that tells an operator what an omitted column means, and by the tests. A second copy is a
+     * second thing to edit on the day the wording changes, and the copy that gets missed is the one
+     * already written onto a statement.
+     */
+    public const FALLBACK_FEE_TYPE_LABEL = 'General Arrears';
+
+    /**
      * THE FILE FORMAT (§2, frozen by R12) — required flag, max length, format, example, notes and
      * group per column, in the guardian import's shape and for its reason: one constant drives both
      * the template the platform issues (R13) and this validator, so they cannot drift apart.
@@ -91,19 +135,34 @@ class OpeningBalanceFileValidator
             'max' => 255,
             'format' => 'string, max 255 characters',
             'example' => 'STU2025001',
-            'notes' => 'The join key. Must already exist in this School — a student is NEVER created from a finance import.',
+            // THE EXCEL WARNING BELONGS HERE, not in a doc, because this note is what the data clerk
+            // reads — on the template AND on the operator screen, both of which render this map.
+            // Brookstone's sample stores the admission number as a NUMBER, which destroys leading
+            // zeros before the file ever reaches us. We CANNOT detect it: "00123" and "123" arrive
+            // identically and both are plausible admission numbers, so the only possible defence is
+            // the person typing.
+            'notes' => 'REQUIRED. The join key. Must already exist in this School — a student is NEVER created from a finance import. FORMAT THIS COLUMN AS TEXT IN EXCEL BEFORE YOU TYPE OR PASTE INTO IT: as a number, Excel silently deletes any leading zeros, and we cannot tell afterwards that it happened.',
             'group' => 'Linking',
         ],
         'wcbs_student_ref' => [
-            'required' => true,
+            // OPTIONAL as of the single-column cutover. It was traceability and was never joined on
+            // — nothing in this system reads it — so demanding it rejected files over a column that
+            // changes no outcome.
+            'required' => false,
             'max' => 255,
             'format' => 'string, max 255 characters',
             'example' => 'WCBS-10233',
-            'notes' => "WCBS's own id, stored for traceability. Never used to join.",
+            'notes' => "OPTIONAL. WCBS's own id, stored for traceability. Never used to join, and a blank here does NOT reject the row.",
             'group' => 'Linking',
         ],
         'fee_type_label' => [
-            'required' => true,
+            // OPTIONAL as of the single-column cutover, and the column is KEPT rather than deleted.
+            // Brookstone's extract carries one closing figure per student with no split, so when this
+            // is absent the importer supplies self::FALLBACK_FEE_TYPE_LABEL. When it is PRESENT it is
+            // honoured exactly as before — which is the point: the per-fee-type capability survives in
+            // the FILE as well as in the database, so a future extract that CAN split does so with no
+            // code change.
+            'required' => false,
             // 229 = 255 − 26: the ledger narration column is varchar(255) and posting appends
             // PostOpeningBalanceBatch::NARRATION_SUFFIX (' — Balance Brought Forward', 26 characters)
             // to this label VERBATIM. It is NOT the storage column's own width for once — that is 255,
@@ -115,7 +174,7 @@ class OpeningBalanceFileValidator
             'max' => 229,
             'format' => 'string, max 229 characters',
             'example' => 'Tuition',
-            'notes' => 'The fee type as WCBS names it, carried verbatim onto the statement. One row per student PER FEE TYPE. Spelling is matched case-insensitively — and also ignoring accents and trailing spaces — so "Tuition", "tuition" and "Tuitión" are ONE fee type, and a second row for it is refused.',
+            'notes' => 'OPTIONAL. The fee type as WCBS names it, carried verbatim onto the statement. Leave the whole column out (or blank) if your extract gives one closing figure per student and cannot split it — every such line is filed under "'.self::FALLBACK_FEE_TYPE_LABEL.'". If you DO supply it, write one row per student PER FEE TYPE. Spelling is matched case-insensitively — and also ignoring accents and trailing spaces — so "Tuition", "tuition" and "Tuitión" are ONE fee type, and a second row for it is refused.',
             'group' => 'Amounts',
         ],
         'balance' => [
@@ -123,15 +182,22 @@ class OpeningBalanceFileValidator
             'max' => 21,
             'format' => 'naira with two decimal places, SIGNED (120000.00 / -5000.00), max 21 characters',
             'example' => '120000.00',
-            'notes' => 'That fee type\'s closing balance for that student. POSITIVE is owed, NEGATIVE is credit. Blank is not zero — write 0.00 if the balance really is nil.',
+            // THE SIGN CONVENTION, in the project lead's confirming words and not a paraphrase —
+            // see self::SIGN_CONVENTION, which this repeats for the person filling in the sheet.
+            'notes' => 'REQUIRED. The closing balance in NAIRA. NEGATIVE = the school owes the family; they paid in advance and are in CREDIT. POSITIVE = the family owes the school; ARREARS. Blank is not zero — write 0.00 if the balance really is nil.',
             'group' => 'Amounts',
         ],
         'student_total_balance' => [
-            'required' => true,
+            // OPTIONAL as of the single-column cutover. Its job was to check Σ(this student's fee
+            // types) against an independently stated total; with ONE row per student that comparison
+            // is Σ(x) = x and proves nothing. It is honoured when supplied — a file that CAN split
+            // still gets the check — and not demanded when it is not. The BATCH control total is
+            // untouched and remains the operator's attestation.
+            'required' => false,
             'max' => 21,
             'format' => 'naira with two decimal places, SIGNED, max 21 characters',
             'example' => '145000.00',
-            'notes' => "The student's total across ALL their fee types. Write the SAME figure on every one of that student's rows — it is the independent check that no line of theirs went missing.",
+            'notes' => "OPTIONAL. The student's total across ALL their fee types, on every one of that student's rows. Only worth supplying when you have MORE THAN ONE row per student — it is the independent check that no line of theirs went missing, and with one row per student it can only repeat the balance beside it. Same sign convention as `balance`.",
             'group' => 'Amounts',
         ],
         'wcbs_bill_reference' => [
@@ -318,7 +384,21 @@ class OpeningBalanceFileValidator
 
             $rawAdmission = $values['admission_number'] ?? '';
             $key = trim($rawAdmission);
+            // THE FALLBACK IS APPLIED HERE, ONCE, before anything reads the label — the duplicate
+            // key, the length check, the staged row and the narration all see the same string. An
+            // absent COLUMN and a blank CELL are the same claim ("this file cannot split the
+            // figure"), so both take the constant; a supplied label is honoured untouched, including
+            // its whitespace, because R7 carries it verbatim onto the statement.
+            //
+            // A consequence worth naming: with the fallback applied, the row key
+            // (school, batch, admission, fee_type_label) collapses to ONE ROW PER STUDENT, and a
+            // second line for the same student is refused as `duplicate_row_key_in_file` rather than
+            // silently summed. That is the correct reading of a single-column extract — two closing
+            // balances for one student is a file defect, not an instruction to add them.
             $rawLabel = $values['fee_type_label'] ?? '';
+            if (trim($rawLabel) === '') {
+                $rawLabel = self::FALLBACK_FEE_TYPE_LABEL;
+            }
             $labelKey = $this->normaliseLabel($rawLabel);
 
             // A repeat of the same (student, fee type) inside ONE file would collide on
@@ -568,16 +648,22 @@ class OpeningBalanceFileValidator
         }
 
         // ── §1's L2 — Σ(student stated totals) against the operator's control total. ──
-        [$statedSum, $contributing, $excluded] = $this->statedTotalSum($staged, $groups);
+        [$statedSum, $contributing, $excluded, $derived] = $this->statedTotalSum($staged, $groups);
         if (! $statedSum->equals($controlTotal)) {
             $batchFindings[] = $this->finding('control_total_mismatch', sprintf(
-                'Σ of the stated student totals = %s over %d student(s) but --control-total = %s (Δ %d kobo).%s',
+                'Σ of the student totals = %s over %d student(s) but --control-total = %s (Δ %d kobo).%s%s',
                 $statedSum->toNaira(),
                 $contributing,
                 $controlTotal->toNaira(),
                 $statedSum->toKobo() - $controlTotal->toKobo(),
+                // Named on the mismatch because it changes what the operator should go and look at:
+                // a derived figure means the file stated no total, so the discrepancy is between
+                // their typed control total and the file's own balances.
+                $derived > 0
+                    ? sprintf(' %d of those %d were DERIVED from the student\'s own balances because the file states no student_total_balance for them.', $derived, $contributing)
+                    : '',
                 $excluded > 0
-                    ? " {$excluded} student(s) stated no usable total and are NOT in the sum."
+                    ? " {$excluded} student(s) state more than one total, or carry an unusable balance, and are NOT in the sum."
                     : '',
             ));
         }
@@ -647,6 +733,8 @@ class OpeningBalanceFileValidator
             nullAdmissions: $nullAdmissions,
             duplicateAfterTrim: $duplicateAfterTrim,
             statedSum: $statedSum,
+            statedContributors: $contributing,
+            derivedContributors: $derived,
             controlTotal: $controlTotal,
             batchFindings: $batchFindings,
         );
@@ -676,21 +764,53 @@ class OpeningBalanceFileValidator
     private function l1Verdict(array $staged, array $indexes): ?array
     {
         $stated = [];
-        $missing = 0;
+        $missingBalance = 0;
+        $missingTotal = 0;
         $sum = Money::fromKobo(0);
 
         foreach ($indexes as $index) {
             $balance = $staged[$index]['balance'];
             $total = $staged[$index]['student_total_balance'];
 
-            if ($balance === null || $total === null) {
-                $missing++;
+            // THE TWO ABSENCES ARE COUNTED SEPARATELY as of the single-column cutover, and that
+            // separation is the whole change here. They used to be one counter, so a group stating no
+            // total was `l1_not_checkable` — a REJECTION. With student_total_balance optional that
+            // would reject every row of Brookstone's extract, which supplies no totals at all.
+            //
+            // A missing BALANCE still rejects: the group cannot be summed, and a balance is required.
+            // A missing TOTAL only removes the check.
+            if ($balance === null) {
+                $missingBalance++;
 
                 continue;
             }
 
             $sum = $sum->plus($balance);
+
+            if ($total === null) {
+                $missingTotal++;
+
+                continue;
+            }
+
             $stated[$total->toKobo()] = $total;
+        }
+
+        if ($missingBalance > 0) {
+            return $this->finding('l1_not_checkable', sprintf(
+                '%d of this student\'s %d row(s) carry no usable balance, so L1 could not be checked; '
+                .'the whole row-group is rejected rather than staged part-checked.',
+                $missingBalance, count($indexes),
+            ));
+        }
+
+        if ($stated === []) {
+            // NOT APPLICABLE, and not a defect. The file states no total for this student anywhere,
+            // which `student_total_balance` being optional expressly permits. There is nothing to
+            // compare Σ against, so there is no verdict to reach — the batch control total remains
+            // the attestation over the whole file, and the interpretation summary is what the
+            // operator signs. Returning a finding here instead would reject a legal file.
+            return null;
         }
 
         if (count($stated) > 1) {
@@ -702,11 +822,17 @@ class OpeningBalanceFileValidator
             ));
         }
 
-        if ($missing > 0) {
+        if ($missingTotal > 0) {
+            // PARTIAL is still a rejection. Some of this student's rows state a total and some do
+            // not, so the file is making the check available and withholding it in the same breath —
+            // summing over the subset that has one would check a different question from the one the
+            // column asks. Distinct from `$stated === []` above, which is a file that consistently
+            // does not use the column.
             return $this->finding('l1_not_checkable', sprintf(
-                '%d of this student\'s %d row(s) carry no usable balance or stated total, so L1 could not be checked; '
-                .'the whole row-group is rejected rather than staged part-checked.',
-                $missing, count($indexes),
+                '%d of this student\'s %d row(s) state no total while the others do, so L1 could not be checked; '
+                .'the whole row-group is rejected rather than staged part-checked. Either state the same total on '
+                .'every row of a student, or leave the column out entirely.',
+                $missingTotal, count($indexes),
             ));
         }
 
@@ -737,34 +863,74 @@ class OpeningBalanceFileValidator
      *
      * @param  list<array<string, mixed>>  $staged
      * @param  array<string, list<int>>  $groups
-     * @return array{0: Money, 1: int, 2: int}
+     * @return array{0: Money, 1: int, 2: int, 3: int} sum, contributing, excluded, and how many of
+     *                                                 the contributing were DERIVED rather than stated
      */
     private function statedTotalSum(array $staged, array $groups): array
     {
         $sum = Money::fromKobo(0);
         $contributing = 0;
         $excluded = 0;
+        $derived = 0;
 
         foreach ($groups as $indexes) {
             $stated = [];
+            $balances = Money::fromKobo(0);
+            $balanceMissing = false;
+
             foreach ($indexes as $index) {
                 $total = $staged[$index]['student_total_balance'];
                 if ($total !== null) {
                     $stated[$total->toKobo()] = $total;
                 }
+
+                $balance = $staged[$index]['balance'];
+                if ($balance === null) {
+                    $balanceMissing = true;
+
+                    continue;
+                }
+                $balances = $balances->plus($balance);
             }
 
-            if (count($stated) !== 1) {
+            if (count($stated) === 1) {
+                $sum = $sum->plus(reset($stated));
+                $contributing++;
+
+                continue;
+            }
+
+            // NO STATED TOTAL — DERIVE THE STUDENT'S POSITION FROM THEIR OWN BALANCES, and count it
+            // as derived so the operator is told how much of L2's left-hand side is the file's word
+            // and how much is our arithmetic.
+            //
+            // This is the single-column cutover's requirement: the batch control total is untouched
+            // and REMAINS the operator's attestation, so L2 must still have something to compare it
+            // against. Excluding these students instead — which is what this method did when the
+            // column was mandatory — would sum over nobody and report the operator's entire control
+            // total as a mismatch on every conforming file, i.e. turn L2 off by making it always red.
+            //
+            // The honesty cost is stated rather than hidden: for a derived student, L2 no longer
+            // compares two INDEPENDENT figures. It compares the operator's typed attestation against
+            // Σ of the file's own balances, which still catches a mistyped control total, a truncated
+            // file and a partially-read extract — and does NOT catch an inverted sign convention,
+            // which is exactly why SIGN_CONVENTION and the interpretation summary exist.
+            //
+            // A group with more than one stated total is EXCLUDED, not derived: it is already
+            // `inconsistent_student_total` at L1 and folding a guess for it into a batch-level sum
+            // would put a figure nobody stated into the operator's attestation.
+            if (count($stated) > 1 || $balanceMissing) {
                 $excluded++;
 
                 continue;
             }
 
-            $sum = $sum->plus(reset($stated));
+            $sum = $sum->plus($balances);
             $contributing++;
+            $derived++;
         }
 
-        return [$sum, $contributing, $excluded];
+        return [$sum, $contributing, $excluded, $derived];
     }
 
     /**

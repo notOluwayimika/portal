@@ -29,6 +29,7 @@ use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Models\OpeningBalanceRow;
+use App\Finance\Services\OpeningBalanceFileValidator;
 use App\Models\AcademicSession;
 use App\Models\Arm;
 use App\Models\ClassLevel;
@@ -216,8 +217,12 @@ it('rejects the whole row-group when the stated total disagrees with itself acro
 
     // And L2 must not silently sum such a student in: a group with two stated totals has no total.
     $message = collect(obBatch($ctx)->findings)->firstWhere('code', 'control_total_mismatch')['message'];
+    // THE WORDING MOVED, THE BEHAVIOUR DID NOT. The single-column cutover made
+    // student_total_balance optional, so "stated no usable total" is no longer a defect on its own —
+    // a group stating NONE is now derived from its own balances. A group stating TWO is still
+    // excluded, which is what this arm is about, and the message now says which of the two it means.
     expect($message)->toContain('over 0 student(s)')
-        ->and($message)->toContain('1 student(s) stated no usable total');
+        ->and($message)->toContain('1 student(s) state more than one total');
 });
 
 it('rejects a student\'s sound rows too when a sibling row has no usable figure, so nothing stages part-checked', function () {
@@ -648,7 +653,15 @@ it('rejects a blank required column but accepts a literal 0.00 as a real zero', 
         ->and($exit)->toBe(1);
 });
 
-it('rejects a blank fee_type_label rather than staging an unnamed fee type', function () {
+it('files a blank fee_type_label under the fallback constant instead of rejecting it', function () {
+    // THIS ARM IS INVERTED BY THE SINGLE-COLUMN CUTOVER, and it is kept rather than deleted because
+    // the behaviour it names is exactly what changed. It used to assert that a blank label REJECTS —
+    // correct while every extract could split by fee type. Brookstone's cannot, so a blank (or an
+    // absent column) is now the normal case and takes OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL.
+    //
+    // What must NOT change is that the row is never staged with an EMPTY label: the posting carries
+    // the label verbatim into the ledger narration, and '' would reach a parent's statement as
+    // " — Balance Brought Forward". That is what this now asserts.
     $ctx = obSchool();
     obStudent($ctx, 'ADM-NOLABEL');
 
@@ -657,10 +670,9 @@ it('rejects a blank fee_type_label rather than staging an unnamed fee type', fun
     ]), ['--control-total' => '100000.00']);
 
     $rows = obRows($ctx);
-    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Rejected)
-        ->and(obCodes($rows[2]))->toContain('blank_required_column')
-        ->and($rows[2]->fee_type_label)->toBe('')
-        ->and($exit)->toBe(1);
+    expect($rows[2]->status)->toBe(OpeningBalanceRowStatus::Ok)
+        ->and($rows[2]->fee_type_label)->toBe(OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL)
+        ->and($exit)->toBe(0);
 });
 
 // ── R8 — `balance` is SIGNED. The retired non-negative rule would have rejected this row. ──
@@ -946,8 +958,11 @@ it('aborts before writing a batch when a required column is missing from the hea
     obStudent($ctx, 'ADM-A');
 
     $path = tempnam(sys_get_temp_dir(), 'ob').'.csv';
-    // No `student_total_balance` — the L1 witness. A file without it cannot be checked at all.
-    file_put_contents($path, "admission_number,wcbs_student_ref,fee_type_label,balance,wcbs_bill_reference\nADM-A,W1,Tuition,100000.00,BILL-1\n");
+    // No `balance`. It used to be `student_total_balance` here — that column became OPTIONAL in the
+    // single-column cutover, so its absence is now legal and this arm would have been asserting a
+    // rule that no longer exists. `balance` is the one column with nothing to fall back to: without
+    // it there is no money in the file at all.
+    file_put_contents($path, "admission_number,wcbs_student_ref,fee_type_label,wcbs_bill_reference\nADM-A,W1,Tuition,BILL-1\n");
 
     $exit = test()->artisan('finance:import-opening-balances', [
         '--file' => $path,
@@ -956,7 +971,7 @@ it('aborts before writing a batch when a required column is missing from the hea
         '--as-at' => '2026-08-06',
         '--control-total' => '100000.00',
         '--dry-run' => true,
-    ])->expectsOutputToContain('Missing required column(s): student_total_balance')->run();
+    ])->expectsOutputToContain('Missing required column(s): balance')->run();
 
     expect($exit)->toBe(1)
         ->and(ActiveSchool::runFor($ctx['school']->id, fn () => OpeningBalanceBatch::query()->count()))->toBe(0);
@@ -964,9 +979,14 @@ it('aborts before writing a batch when a required column is missing from the hea
 
 // ── The format map is the single source of truth (R13) ──
 
-it('freezes R12\'s six columns in the COLUMNS map, with wcbs_bill_reference the only optional one', function () {
+it('freezes R12\'s six columns in the COLUMNS map, with only the join key and the money required', function () {
     // The template the platform issues (R13, step 5) renders THIS constant, so a column added here
     // reaches the data team's spreadsheet and the validator together or not at all.
+    //
+    // THE COLUMN LIST IS STILL FROZEN AT SIX — the single-column cutover relaxed which are REQUIRED
+    // and deleted none of them. That is the point of the ruling: the per-fee-type capability
+    // survives in the FILE as well as in the database, so an extract that CAN split does so with no
+    // code change. A column removed here would close that door permanently.
     expect(array_keys(ImportOpeningBalances::COLUMNS))->toBe([
         'admission_number',
         'wcbs_student_ref',
@@ -980,7 +1000,16 @@ it('freezes R12\'s six columns in the COLUMNS map, with wcbs_bill_reference the 
         ImportOpeningBalances::COLUMNS,
         fn (array $spec) => ! $spec['required'],
     ));
-    expect($optional)->toBe(['wcbs_bill_reference']);
+    // Four optional as of the single-column cutover. `wcbs_student_ref` was traceability and was
+    // never joined on; `fee_type_label` falls back to the constant; `student_total_balance` checked
+    // Σ(fee types) against a stated total, which with one row per student is Σ(x) = x.
+    expect($optional)->toBe(['wcbs_student_ref', 'fee_type_label', 'student_total_balance', 'wcbs_bill_reference']);
+
+    // AND THE TWO THAT CANNOT BE RELAXED, asserted positively so a future "relax one more" has to
+    // come here and argue with it: without the join key there is no student, and without the balance
+    // there is no money.
+    $required = array_keys(array_filter(ImportOpeningBalances::COLUMNS, fn (array $spec) => $spec['required']));
+    expect($required)->toBe(['admission_number', 'balance']);
 
     // Every entry carries what a template needs — a map missing `notes` renders a template whose
     // rules the person filling it in never sees.

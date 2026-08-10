@@ -108,7 +108,7 @@ function fscBothHolder(School $school): User
 function fscDraft(School $school, Term $term, ClassLevel $level, string $label = 'v1', int $amount = 10000000): FeeSchedule
 {
     return ActiveSchool::runFor($school->id, fn () => app(CreateFeeSchedule::class)
-        ->handle($term->id, $level->id, $label, [['description' => 'Tuition', 'amount_minor' => $amount]]));
+        ->handle($term->id, $level->id, $label, [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => $amount]]));
 }
 
 /** POST a submit as $user; returns the TestResponse. */
@@ -281,7 +281,7 @@ it('proof 36 (was 30) — items are free on DRAFT, and FROZEN on both PENDING_AP
 
     // While DRAFT — all three item mutations succeed (on a throwaway item, so Tuition survives to be frozen).
     ActiveSchool::runFor($school->id, function () use ($draft) {
-        $extra = $draft->items()->create(['school_id' => $draft->school_id, 'description' => 'Transport', 'amount' => Money::fromKobo(500000)]);
+        $extra = $draft->items()->create(['school_id' => $draft->school_id, 'bank_account_id' => testBankAccountId(), 'description' => 'Transport', 'amount' => Money::fromKobo(500000)]);
         DB::table('finance_fee_items')->where('id', $extra->id)->update(['amount_minor' => 600000]);
         DB::table('finance_fee_items')->where('id', $extra->id)->delete();
     });
@@ -294,7 +294,7 @@ it('proof 36 (was 30) — items are free on DRAFT, and FROZEN on both PENDING_AP
     $frozen = function () use ($school, $draft, $item) {
         expect(fn () => DB::table('finance_fee_items')->insert([
             'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'fee_schedule_id' => $draft->id,
-            'description' => 'Sneak', 'amount_minor' => 5000000, 'amount_currency' => 'NGN',
+            'bank_account_id' => testBankAccountId(), 'description' => 'Sneak', 'amount_minor' => 5000000, 'amount_currency' => 'NGN',
             'is_mandatory' => 1, 'is_discountable' => 1, 'sort_order' => 9, 'created_at' => now(), 'updated_at' => now(),
         ]))->toThrow(QueryException::class)
             ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 999]))->toThrow(QueryException::class)
@@ -414,7 +414,7 @@ it('proof 32 — after a publish is submitted, its items cannot be INSERTed, UPD
     // PLANT: remove the status flip in SubmitFeeScheduleChange → the schedule stays draft → all three succeed → red.
     expect(fn () => DB::table('finance_fee_items')->insert([
         'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'fee_schedule_id' => $draft->id,
-        'description' => 'Sneak', 'amount_minor' => 1, 'amount_currency' => 'NGN',
+        'bank_account_id' => testBankAccountId(), 'description' => 'Sneak', 'amount_minor' => 1, 'amount_currency' => 'NGN',
         'is_mandatory' => 1, 'is_discountable' => 1, 'sort_order' => 9, 'created_at' => now(), 'updated_at' => now(),
     ]))->toThrow(QueryException::class)
         ->and(fn () => DB::table('finance_fee_items')->where('id', $item->id)->update(['amount_minor' => 1]))->toThrow(QueryException::class)

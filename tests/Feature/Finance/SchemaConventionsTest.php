@@ -72,7 +72,7 @@ function schemaMoneyRows(): array
         );
         app(RecordPayment::class)->handle(
             $invoice, Money::fromKobo(20000), 'Payer', User::factory()->create(['school_id' => $school->id]),
-            now()->toDateString(), );
+            now()->toDateString(), testBankAccountId());
 
         return [
             'invoice' => (int) $invoice->id,

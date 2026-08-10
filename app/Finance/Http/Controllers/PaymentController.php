@@ -8,6 +8,7 @@ use App\Finance\Actions\RecordPayment;
 use App\Finance\Http\Requests\RecordAccountPaymentRequest;
 use App\Finance\Http\Requests\RecordPaymentRequest;
 use App\Finance\Http\Resources\PaymentResource;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\Invoice;
 use App\Models\Student;
 use App\Support\Money;
@@ -30,6 +31,9 @@ class PaymentController extends Controller
                 (string) $request->input('payer_name'),
                 $request->user(),
                 (string) $request->input('received_at'),
+                // uuid -> id. BankAccount is School-scoped, so a foreign uuid resolves to nothing
+                // here rather than being trusted and refused later by the composite foreign key.
+                (int) BankAccount::query()->where('uuid', $request->input('bank_account_id'))->valueOrFail('id'),
                 $request->input('received_at_reason'),
             );
         } catch (BusinessRuleException $e) {
@@ -60,6 +64,9 @@ class PaymentController extends Controller
                 (string) $request->input('payer_name'),
                 $request->user(),
                 (string) $request->input('received_at'),
+                // uuid -> id. BankAccount is School-scoped, so a foreign uuid resolves to nothing
+                // here rather than being trusted and refused later by the composite foreign key.
+                (int) BankAccount::query()->where('uuid', $request->input('bank_account_id'))->valueOrFail('id'),
                 $request->input('received_at_reason'),
             );
         } catch (BusinessRuleException $e) {

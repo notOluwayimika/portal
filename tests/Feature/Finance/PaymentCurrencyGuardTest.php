@@ -17,6 +17,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -51,13 +52,13 @@ it('account payment "USD" is a 422 and no balance moves, no payment, no ledger r
     $url = "/api/v1/finance/students/{$student->uuid}/payments";
 
     // Seed an existing NGN account (so the ON DUPLICATE KEY arm would run on the bad attempt).
-    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($url, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($url, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
     $balBefore = (int) DB::table('finance_student_accounts')->where('student_id', $student->id)->value('balance_minor');
     $payBefore = DB::table('finance_payments')->count();
     $ledBefore = DB::table('finance_ledger_transactions')->count();
 
     $this->actingAs($u)->withSession(['school_id' => $s->id])
-        ->postJson($url, ['amount_minor' => 100000, 'currency' => 'USD', 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson($url, ['amount_minor' => 100000, 'currency' => 'USD', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertStatus(422)->assertJsonValidationErrors(['currency']);
 
     // A 422 alone does not prove nothing landed — assert all four.
@@ -73,7 +74,7 @@ it('invoice payment "USD" is a 422 on both arms (outstanding>0 and fully allocat
     $student = Student::factory()->create(['school_id' => $s->id]);
     $inv = pcgInvoice($s, $student);
     $post = fn (int $amt, string $cur) => $this->actingAs($u)->withSession(['school_id' => $s->id])
-        ->postJson("/api/v1/finance/invoices/{$inv->uuid}/payments", ['amount_minor' => $amt, 'currency' => $cur, 'received_at' => now()->toDateString(), 'payer_name' => 'X']);
+        ->postJson("/api/v1/finance/invoices/{$inv->uuid}/payments", ['amount_minor' => $amt, 'currency' => $cur, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X']);
 
     $post(50000, 'USD')->assertStatus(422)->assertJsonValidationErrors(['currency']); // outstanding>0
     $post(100000, 'NGN')->assertCreated();                                            // fully allocate
@@ -89,14 +90,14 @@ it('NGN and an omitted currency still record on both routes; a fully-allocated N
     $acctUrl = "/api/v1/finance/students/{$student->uuid}/payments";
 
     // account: explicit NGN, then omitted currency (defaults).
-    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($acctUrl, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
-    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($acctUrl, ['amount_minor' => 50000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($acctUrl, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($acctUrl, ['amount_minor' => 50000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
 
     // invoice: fully allocate in NGN, then a further NGN payment banks as an unallocated advance (201).
     $inv = pcgInvoice($s, $student);
     $invUrl = "/api/v1/finance/invoices/{$inv->uuid}/payments";
-    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($invUrl, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
-    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($invUrl, ['amount_minor' => 50000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($invUrl, ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson($invUrl, ['amount_minor' => 50000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
 });
 
 // ── Guard A (SubledgerPoster invariant) fires on a direct Action call, below the HTTP layer ──
@@ -108,13 +109,13 @@ it('SubledgerPoster refuses a currency mismatch against an existing account (Log
 
     // Seed an NGN account through the normal path.
     $this->actingAs($u)->withSession(['school_id' => $s->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'X'])->assertCreated();
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'currency' => 'NGN', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])->assertCreated();
 
     // Call the Action directly with a USD Money, bypassing the request rule — the Action's own check fires
     // first (BusinessRuleException). This proves B independently of C; the SubledgerPoster backstop (A) sits
     // behind it for any future caller that skips B.
     ActiveSchool::runFor($s->id, function () use ($student, $u) {
-        expect(fn () => app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(100000, 'USD'), 'X', $u, now()->toDateString()))
+        expect(fn () => app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(100000, 'USD'), 'X', $u, SchoolDay::today(), testBankAccountId()))
             ->toThrow(BusinessRuleException::class);
     });
 });

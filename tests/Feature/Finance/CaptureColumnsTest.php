@@ -47,6 +47,7 @@ use App\Models\Term;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -148,8 +149,7 @@ it('RecordPayment: the payment carries the stated received date and its ledger c
     $backdated = now()->subDays(4)->toDateString();
 
     $payment = ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $invoice, Money::fromKobo(100000), 'Payer', $actor, $backdated, 'Handed over on the 5th, keyed today',
-    ));
+        $invoice, Money::fromKobo(100000), 'Payer', $actor, $backdated, testBankAccountId(), 'Handed over on the 5th, keyed today'));
 
     expect($payment->fresh()->received_at->toDateString())->toBe($backdated)
         ->and($payment->fresh()->received_at_reason)->toBe('Handed over on the 5th, keyed today');
@@ -171,8 +171,7 @@ it('RecordPayment: its allocation is attributed to the named-invoice rule, not o
     $invoice = capInvoice($school, $student, 100000);
 
     $payment = ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $invoice, Money::fromKobo(60000), 'Payer', $actor, now()->toDateString(),
-    ));
+        $invoice, Money::fromKobo(60000), 'Payer', $actor, SchoolDay::today(), testBankAccountId()));
 
     $allocation = PaymentAllocation::query()->where('payment_id', $payment->id)->firstOrFail();
 
@@ -190,15 +189,18 @@ it('GenerateInvoice: the charge is effective today, and a credit-draw allocation
     $first = capInvoice($school, $student, 10000);
 
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
-        $first, Money::fromKobo(30000), 'Overpayer', $actor, now()->toDateString(),
-    ));
+        $first, Money::fromKobo(30000), 'Overpayer', $actor, SchoolDay::today(), testBankAccountId()));
 
     $second = capInvoice($school, $student, 10000);
 
     $charge = LedgerTransaction::query()->where('source_type', 'invoice')
         ->where('source_id', $second->id)->firstOrFail();
 
-    expect($charge->effective_at->toDateString())->toBe(now()->toDateString(),
+    // SchoolDay::today(), not now()->toDateString(): GenerateInvoice takes the SCHOOL's day, and
+    // between 00:00 and 01:00 WAT the server is still on the previous one. Comparing against the
+    // server clock made this arm fail for one hour a day — which is the bug SchoolDay exists to fix,
+    // reappearing in the test that checks the fix.
+    expect($charge->effective_at->toDateString())->toBe(SchoolDay::today(),
         'A charge comes into existence when the invoice is raised; it has no earlier business date.');
 
     $drawn = PaymentAllocation::query()->where('invoice_id', $second->id)->first();
@@ -214,8 +216,7 @@ it('RecordAccountPayment: an account payment carries its own received date into 
     $backdated = now()->subDays(2)->toDateString();
 
     $payment = ActiveSchool::runFor($school->id, fn () => app(RecordAccountPayment::class)->handle(
-        $student->id, Money::fromKobo(50000), 'Payer', $actor, $backdated, 'Received at the desk on Monday',
-    ));
+        $student->id, Money::fromKobo(50000), 'Payer', $actor, $backdated, testBankAccountId(), 'Received at the desk on Monday'));
 
     $credit = LedgerTransaction::query()->where('source_type', 'payment')
         ->where('source_id', $payment->id)->firstOrFail();
@@ -239,8 +240,12 @@ it('ApproveVoidRequest: the reversal is effective in the ORIGINAL charge’s per
     // append-only trigger, this commit's own subject biting its own test. That refusal is the
     // reason the columns had to be got right at the write, and a test that edited history to set
     // itself up would have been proving something the production path can never do.
-    $expected = now()->subMonth()->toDateString();
+    // THE EXPECTATION IS READ AT THE TRAVELLED INSTANT, IN THE SCHOOL'S TIMEZONE, because that is
+    // what GenerateInvoice stamps. Computed before travelling, from now()->subMonth() in UTC, it
+    // disagreed with the writer for one hour a day — the boundary SchoolDay exists for, reappearing
+    // inside the test that checks it.
     $this->travelTo(now()->subMonth());
+    $expected = SchoolDay::today();
     $invoice = capInvoice($school, $student, 100000);
     $this->travelBack();
 
@@ -255,6 +260,10 @@ it('ApproveVoidRequest: the reversal is effective in the ORIGINAL charge’s per
     expect($reversal->effective_at->toDateString())->toBe($expected,
         'The void reversal landed in a different period from the charge it reverses, leaving both '
         .'periods wrong about an invoice that never should have existed.')
+        // posted_at against the SERVER clock, not the school's — SubledgerPoster stamps it with
+        // now() by design, because it records when the row was WRITTEN rather than which period it
+        // belongs to. Comparing it to SchoolDay::today() failed at the boundary hour, which is the
+        // two columns proving they are genuinely different questions.
         ->and($reversal->posted_at->toDateString())->toBe(now()->toDateString());
 });
 
@@ -275,14 +284,13 @@ it('ApproveCreditNote: the credit is effective TODAY, deliberately unlike a void
 
     ActiveSchool::runFor($school->id, function () use ($invoice, $maker, $checker) {
         $note = app(SubmitCreditNote::class)->handle(
-            $invoice, Money::fromKobo(20000), CreditNoteKind::CreditNote, 'Goodwill', $maker,
-        );
+            $invoice, Money::fromKobo(20000), CreditNoteKind::CreditNote, 'Goodwill', $maker, testBankAccountId());
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
 
     $credit = LedgerTransaction::query()->where('source_type', 'credit_note')->firstOrFail();
 
-    expect($credit->effective_at->toDateString())->toBe(now()->toDateString(),
+    expect($credit->effective_at->toDateString())->toBe(SchoolDay::today(),
         'A credit note was back-dated to the invoice’s period. If that is Brookstone’s accounting '
         .'policy the change belongs in ApproveCreditNote with its reasoning — but it must not '
         .'happen by matching ApproveVoidRequest, which answers a different question.');
@@ -305,7 +313,7 @@ it('refuses a payment with no received date, on both payment routes', function (
     $payer = capSeatWith($school, ['finance.access', 'finance.payment.record']);
 
     $this->actingAs($payer)->withSession(['school_id' => $school->id])
-        ->postJson($url, ['amount_minor' => 10000, 'payer_name' => 'X'])
+        ->postJson($url, ['amount_minor' => 10000, 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['received_at']);
 })->with(['invoice', 'account']);
@@ -322,7 +330,7 @@ it('refuses a BACK-DATED payment with no reason', function () {
     $this->actingAs($payer)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", [
             'amount_minor' => 10000,
-            'payer_name' => 'X',
+            'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X',
             'received_at' => now()->subDays(3)->toDateString(),
         ])
         ->assertStatus(422)

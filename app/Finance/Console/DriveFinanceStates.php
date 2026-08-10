@@ -10,6 +10,7 @@ use App\Finance\Actions\SubmitCreditNote;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\Invoice;
 use App\Models\User;
 use App\Support\Money;
@@ -32,6 +33,22 @@ final class DriveFinanceStates
         private readonly User $checker,
     ) {}
 
+    /**
+     * The drive fixture's bank account for a school, created on first use.
+     *
+     * finance_payments.bank_account_id is required for portal-issued payments (the origin-keyed
+     * CHECK), so the drive cannot bill anything without one. Created here rather than in
+     * DriveCastSeeder because this class is the only thing that records payments, and a fixture
+     * account that exists but is never used would be a row nobody could explain.
+     */
+    private function bankAccountId(int $schoolId): int
+    {
+        return (int) BankAccount::query()->firstOrCreate(
+            ['school_id' => $schoolId, 'account_number' => '90'.str_pad((string) $schoolId, 8, '0', STR_PAD_LEFT)],
+            ['label' => 'Drive account', 'bank_name' => 'Drive Bank'],
+        )->id;
+    }
+
     /** UNPAID — a charge, nothing settled. */
     public function unpaid(string $enrollmentUuid): void
     {
@@ -42,14 +59,14 @@ final class DriveFinanceStates
     public function partPaid(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker, SchoolDay::today());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(100000), 'Guardian', $this->maker, SchoolDay::today(), $this->bankAccountId($invoice->school_id));
     }
 
     /** SETTLED BY PAYMENT. */
     public function settledByPayment(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today(), $this->bankAccountId($invoice->school_id));
     }
 
     /** SETTLED ENTIRELY BY AN APPROVED CREDIT NOTE (settled, never paid). */
@@ -64,7 +81,7 @@ final class DriveFinanceStates
     public function settledThenCredited(string $enrollmentUuid): void
     {
         $invoice = $this->invoice($enrollmentUuid, 300000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Guardian', $this->maker, SchoolDay::today(), $this->bankAccountId($invoice->school_id));
         $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, 'Post-payment adjustment', $this->maker);
         app(ApproveCreditNote::class)->handle($note, $this->checker);
     }

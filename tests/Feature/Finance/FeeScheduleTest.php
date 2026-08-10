@@ -144,9 +144,9 @@ it('proof 19 — fee schedules and items are School-scoped; a School A context s
     [$schoolB, $termB, $levelB] = fsContext();
 
     $a = ActiveSchool::runFor($schoolA->id, fn () => app(CreateFeeSchedule::class)
-        ->handle($termA->id, $levelA->id, 'A', [['description' => 'Tuition', 'amount_minor' => 100000]]));
+        ->handle($termA->id, $levelA->id, 'A', [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]]));
     $b = ActiveSchool::runFor($schoolB->id, fn () => app(CreateFeeSchedule::class)
-        ->handle($termB->id, $levelB->id, 'B', [['description' => 'Tuition', 'amount_minor' => 100000]]));
+        ->handle($termB->id, $levelB->id, 'B', [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]]));
 
     // SchoolScope is context-based, not role-based, so it isolates a super_admin exactly as anyone else
     // (ADR 0036: super_admin bypasses authorization, never isolation).
@@ -198,8 +198,8 @@ it('SMOKE — store authors a DRAFT with items; the draft does NOT prefill (a dr
         ->postJson('/api/v1/finance/fee-schedules', [
             'term_id' => $term->id, 'class_level_id' => $level->id, 'label' => 'JSS1 T1',
             'items' => [
-                ['description' => 'Tuition', 'amount_minor' => 10000000, 'is_discountable' => true],
-                ['description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000000, 'is_discountable' => true],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
             ],
         ])
         ->assertCreated()

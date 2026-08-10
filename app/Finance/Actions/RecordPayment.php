@@ -42,10 +42,14 @@ final class RecordPayment
      *                              without a default: a payment handed over on Friday and keyed on Monday belongs to Friday,
      *                              and finance_payments is append-only so the date can never be corrected afterwards. The
      *                              FormRequest requires it at the edge; this refusal is the backstop for every non-HTTP caller.
+     * @param  int  $bankAccountId  The account the money LANDED IN. Required and without a default:
+     *                              a portal payment that does not say where the cash went cannot be reconciled against a bank
+     *                              statement, which is the only reason finance_bank_accounts exists. The origin-keyed CHECK on
+     *                              finance_payments is the backstop; this is the refusal a caller can act on.
      * @param  string|null  $receivedAtReason  Why the date is not today. Required when it is not,
      *                                         because a back-dated receipt with no explanation is the first thing an auditor asks about.
      */
-    public function handle(Invoice $invoice, Money $amount, string $payerName, User $actor, string $receivedAt, ?string $receivedAtReason = null): Payment
+    public function handle(Invoice $invoice, Money $amount, string $payerName, User $actor, string $receivedAt, int $bankAccountId, ?string $receivedAtReason = null): Payment
     {
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
@@ -63,7 +67,7 @@ final class RecordPayment
             throw new BusinessRuleException("A payment must be in the invoice's currency ({$invoice->total->currency}).");
         }
 
-        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor, $receivedAt, $receivedAtReason) {
+        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor, $receivedAt, $receivedAtReason, $bankAccountId) {
             // Concurrency anchor (#94, UNCHANGED). Lock the INVOICE ROW first so
             // allocations to the same invoice serialise: a competing allocation blocks
             // here, then reads the winner's committed sum for the outstanding cap below.
@@ -100,6 +104,7 @@ final class RecordPayment
                 'received_by_user_id' => $actor->id,
                 'received_at' => $receivedAt,
                 'received_at_reason' => $receivedAtReason,
+                'bank_account_id' => $bankAccountId,
             ]);
 
             if ($allocateKobo > 0) {

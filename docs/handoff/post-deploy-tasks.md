@@ -30,6 +30,35 @@ Every one-way step keeps a STOP-for-review before it. Nothing below is a big-ban
 
 Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
 
+- [ ] **PRE-DEPLOY — EVERY SCHOOL MUST HAVE AT LEAST ONE ACTIVE BANK ACCOUNT, or its bursar
+      cannot record a payment at all.** `2026_08_10_120000_finance_bank_account_foreign_keys`
+      makes `finance_payments.bank_account_id` required for portal-issued payments
+      (CHECK, keyed on `origin`). A school with no active account has nothing to
+      select, so every payment it tries to record is refused.
+
+      **This fails at the OPERATOR, not at the gate**, which is why it is a
+      pre-deploy step rather than a test. The two-commit split
+      (`2026_08_10_100000` creates the table and the screen; this one adds the
+      constraint) solves the CODE half — there is a way to create an account
+      before one is required. It does not solve the DATA half: nothing makes an
+      account EXIST. That is this line.
+
+      ```sql
+      -- Per school, ACTIVE accounts only. Any school showing 0 must have one
+      -- created — through Finance → Bank accounts — BEFORE the migration runs.
+      SELECT s.id   AS school_id,
+             COUNT(b.id) AS active_bank_accounts
+      FROM schools s
+      LEFT JOIN finance_bank_accounts b
+             ON b.school_id = s.id
+            AND b.deactivated_at IS NULL
+      GROUP BY s.id
+      ORDER BY active_bank_accounts ASC, s.id;
+      ```
+
+      Zero rows for a school is the failure. Deactivated accounts do not count —
+      a deactivated account cannot receive new money, which is the whole reason
+      commit 1 chose deactivation over deletion.
 - [ ] **PRE-DEPLOY — CONFIRM THE THREE FINANCE TABLES ARE EMPTY, or the migration will
       stop the deploy.** `2026_08_09_120000_finance_capture_columns_s2_s3` adds five
       **NOT NULL columns with no defaults** to `finance_payments`,

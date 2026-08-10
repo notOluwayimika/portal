@@ -2,7 +2,10 @@
 
 namespace App\Finance\Http\Requests;
 
+use App\Finance\Models\BankAccount;
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Author a fee schedule (S1 commit 2). The route gates on `finance.fee-schedule.manage`; this validates
@@ -30,6 +33,16 @@ class FeeScheduleRequest extends FormRequest
             'label' => ['required', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.description' => ['required', 'string', 'max:255'],
+            // The configured DESTINATION for this charge — active accounts in this School only, the
+            // same rule the payment routes use. finance_fee_items.bank_account_id is NOT NULL with
+            // no default, so this is the layer that turns a missing destination into a 422 an
+            // operator can act on rather than a database error.
+            'items.*.bank_account_id' => [
+                'required',
+                Rule::exists(BankAccount::class, 'uuid')
+                    ->where('school_id', ActiveSchool::id())
+                    ->whereNull('deactivated_at'),
+            ],
             'items.*.amount_minor' => ['required', 'integer', 'min:1'],
             // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not CreateFeeSchedule's
             // Money::fromKobo → InvalidArgumentException → 500 inside the transaction (f293358 finish).

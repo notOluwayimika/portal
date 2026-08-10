@@ -14,6 +14,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\Connection;
 use Illuminate\Database\QueryException;
@@ -110,7 +111,7 @@ it('PROOF 4 (CLOSED, end-to-end) — the REAL GenerateInvoice does not double-sp
     // Overpayment credit 5000 (a 5000 unallocated payment, balance −5000).
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         $paid = w3ConcInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($paid, Money::fromKobo(15000), 'Over', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($paid, Money::fromKobo(15000), 'Over', $admin, SchoolDay::today(), testBankAccountId());
     });
     $accountId = StudentAccount::query()->where('student_id', $student->id)->value('id');
     expect((int) DB::table('finance_student_accounts')->where('id', $accountId)->value('balance_minor'))->toBe(-5000);
@@ -147,7 +148,7 @@ it('PROOF 4 — the account lockForUpdate serialises read-credit→spend; a plai
     // Bank 2000 credit (balance −2000): invoice 2000, overpay 4000.
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         $c = w3ConcInvoice($school, $student, 2000);
-        app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, SchoolDay::today(), testBankAccountId());
     });
     $accountId = StudentAccount::query()->where('student_id', $student->id)->value('id');
     expect((int) DB::table('finance_student_accounts')->where('id', $accountId)->value('balance_minor'))->toBe(-2000);
@@ -185,7 +186,7 @@ it('PROOF 5 — account-first (W3) does not deadlock against invoice-first (#94)
     // and a payment to source an allocation from.
     $x = ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         $inv = w3ConcInvoice($school, $student, 5000);
-        app(RecordPayment::class)->handle($inv, Money::fromKobo(5000), 'Pay', $admin, now()->toDateString()); // account row now exists
+        app(RecordPayment::class)->handle($inv, Money::fromKobo(5000), 'Pay', $admin, SchoolDay::today(), testBankAccountId()); // account row now exists
         // A second invoice Y that B's account-first sequence will settle-link against.
         w3ConcInvoice($school, $student, 3000);
 

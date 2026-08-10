@@ -19,6 +19,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -88,7 +89,7 @@ it('PART-PAID — outstanding reconciles, void blocked by the payment, credit no
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
         $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id]),
-        now()->toDateString(), ));
+        now()->toDateString(), testBankAccountId()));
 
     $s = stlSettlement($school, $student, $invoice);
     expect($s['outstanding']->toKobo())->toBe(200000)          // 300000 − 100000
@@ -104,7 +105,7 @@ it('SETTLED BY PAYMENT — outstanding zero, record-payment suppressed, void blo
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
         $invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]),
-        now()->toDateString(), ));
+        now()->toDateString(), testBankAccountId()));
 
     $s = stlSettlement($school, $student, $invoice);
     expect($s['outstanding']->toKobo())->toBe(0)
@@ -123,7 +124,7 @@ it('SETTLED BY CREDIT NOTE — settled without ever being paid; void blocked by 
     $invoice = stlInvoice($school, $student, 300000);
 
     ActiveSchool::runFor($school->id, function () use ($invoice, $maker, $checker) {
-        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(300000), CreditNoteKind::CreditNote, null, $maker);
+        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(300000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
 
@@ -142,8 +143,8 @@ it('SETTLED THEN CREDIT-NOTED — displayed outstanding floors at zero; the acco
     $invoice = stlInvoice($school, $student, 300000);
 
     ActiveSchool::runFor($school->id, function () use ($school, $invoice, $maker, $checker) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]), now()->toDateString());
-        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, null, $maker);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $school->id]), SchoolDay::today(), testBankAccountId());
+        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
 
@@ -182,7 +183,7 @@ it('DECISION 5 — submitting a void against a paid invoice is REFUSED at submit
     $invoice = stlInvoice($school, $student, 300000);
     ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)->handle(
         $invoice, Money::fromKobo(100000), 'Payer', User::factory()->create(['school_id' => $school->id]),
-        now()->toDateString(), ));
+        now()->toDateString(), testBankAccountId()));
 
     // Not merely advisory: the request is never created, so it never occupies the open-request slot.
     ActiveSchool::runFor($school->id, function () use ($invoice, $maker) {
@@ -199,8 +200,8 @@ it('BOTH payment AND approved credit note — outstanding still reconciles (atta
     $invoice = stlInvoice($school, $student, 300000);
 
     ActiveSchool::runFor($school->id, function () use ($school, $invoice, $maker, $checker) {
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(120000), 'Payer', User::factory()->create(['school_id' => $school->id]), now()->toDateString());
-        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(30000), CreditNoteKind::CreditNote, null, $maker);
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(120000), 'Payer', User::factory()->create(['school_id' => $school->id]), SchoolDay::today(), testBankAccountId());
+        $note = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo(30000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
         app(ApproveCreditNote::class)->handle($note, $checker);
     });
 
@@ -218,8 +219,7 @@ it('PENDING moves no money — a submitted (unapproved) credit note does NOT cha
 
     // A pending credit note (never approved) — must not reduce outstanding.
     ActiveSchool::runFor($school->id, fn () => app(SubmitCreditNote::class)->handle(
-        $invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, null, $maker
-    ));
+        $invoice, Money::fromKobo(50000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId()));
 
     $s = stlSettlement($school, $student, $invoice);
     expect($s['outstanding']->toKobo())->toBe(300000)         // unchanged — pending moves no money
@@ -235,7 +235,7 @@ it('ISOLATION — the settlement read is School-scoped; another School\'s alloca
     $invoiceB = stlInvoice($schoolB, $studentB, 300000);
     ActiveSchool::runFor($schoolB->id, fn () => app(RecordPayment::class)->handle(
         $invoiceB, Money::fromKobo(300000), 'Payer', User::factory()->create(['school_id' => $schoolB->id]),
-        now()->toDateString(), ));
+        now()->toDateString(), testBankAccountId()));
 
     expect(stlSettlement($schoolA, $studentA, $invoiceA)['outstanding']->toKobo())->toBe(300000)
         ->and(stlSettlement($schoolB, $studentB, $invoiceB)['outstanding']->toKobo())->toBe(0);

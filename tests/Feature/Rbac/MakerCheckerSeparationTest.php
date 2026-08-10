@@ -244,7 +244,7 @@ function mc_financeContext(): array
             'end_date' => now()->addMonths(2), 'status' => TermStatusEnum::ACTIVE->value,
         ]);
         $level = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 1', 'order' => 1]);
-        $schedule = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v1', [['description' => 'Tuition', 'amount_minor' => 100000]]);
+        $schedule = app(CreateFeeSchedule::class)->handle($term->id, $level->id, 'v1', [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]]);
 
         return [$invoice, $schedule];
     });

@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -121,7 +122,7 @@ it('records a payment allocated to the invoice, crediting the ledger to zero', f
     $invoiceUuid = $create->json('id');
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'received_at' => now()->toDateString(), 'payer_name' => 'Mr Obi'])
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Mr Obi'])
         ->assertCreated()
         ->assertJsonPath('amount.amount_minor', 150000);
 
@@ -135,7 +136,7 @@ it('GUARD — an invoice with an allocated payment cannot be voided (Ph3b: rever
         ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => oneLine(150000)])->assertCreated();
     $invoiceUuid = $create->json('id');
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'received_at' => now()->toDateString(), 'payer_name' => 'Mr Obi'])->assertCreated();
+        ->postJson("/api/v1/finance/invoices/{$invoiceUuid}/payments", ['amount_minor' => 150000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Mr Obi'])->assertCreated();
 
     // The old one-step cancel let you void a PAID invoice, stranding the payment as a credit.
     // Ph3b VoidEligibility forbids that: a settled invoice is not voidable, so even SUBMITTING a

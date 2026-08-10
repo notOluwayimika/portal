@@ -41,7 +41,7 @@ final class RecordAccountPayment
 {
     public function __construct(private readonly SubledgerPoster $ledger) {}
 
-    public function handle(int $studentId, Money $amount, string $payerName, User $actor, string $receivedAt, ?string $receivedAtReason = null): Payment
+    public function handle(int $studentId, Money $amount, string $payerName, User $actor, string $receivedAt, int $bankAccountId, ?string $receivedAtReason = null): Payment
     {
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
@@ -76,7 +76,7 @@ final class RecordAccountPayment
             throw new BusinessRuleException("A payment must be in the account's currency ({$expected}).");
         }
 
-        return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor, $receivedAt, $receivedAtReason) {
+        return DB::transaction(function () use ($schoolId, $studentId, $amount, $payerName, $actor, $receivedAt, $receivedAtReason, $bankAccountId) {
             // Same sequence scope and key as RecordPayment — one receipt series per school across both
             // doors; UNIQUE(school_id, reference) is the backstop that makes a second counter fail loudly.
             // NO SEED CLOSURE, and that omission is load-bearing — do not "harden" this to match
@@ -97,6 +97,7 @@ final class RecordAccountPayment
                 'received_by_user_id' => $actor->id,
                 'received_at' => $receivedAt,
                 'received_at_reason' => $receivedAtReason,
+                'bank_account_id' => $bankAccountId,
             ]);
 
             // Credit — the FULL payment reduces the receivable, so the ledger amount is negative.

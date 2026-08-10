@@ -67,7 +67,16 @@ function rePolicy(School $school, bool $requiresApproval = false, string $name =
     ]));
 }
 
-/** Author a draft schedule and return its items keyed by description (for is_discountable resolution). */
+/**
+ * Author a schedule, PUBLISH it, and return its items keyed by description (for is_discountable
+ * resolution).
+ *
+ * The publish is not decoration. This helper used to leave the schedule a draft, and proofs 16/17 then
+ * billed from it — which no real path can do, because prefill resolves through FeeScheduleLookup::activeFor
+ * and a draft never prices. GenerateInvoiceRequest now refuses a fee_item_id whose schedule is an
+ * unpublished proposal, and that refusal caught this: the fixture was billing from a draft. Made ACTIVE by
+ * a raw status write, the way the rest of this suite moves a lifecycle it is not testing.
+ */
 function reFeeItems(School $school, array $specs)
 {
     $session = AcademicSession::create(['school_id' => $school->id, 'name' => '2026/2027', 'slug' => 'sess-'.Str::random(8), 'is_current' => true]);
@@ -78,8 +87,12 @@ function reFeeItems(School $school, array $specs)
     ]);
     $level = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 1', 'order' => 1]);
 
-    return ActiveSchool::runFor($school->id, fn () => app(CreateFeeSchedule::class)
-        ->handle($term->id, $level->id, 'v1', $specs))->items->keyBy('description');
+    $schedule = ActiveSchool::runFor($school->id, fn () => app(CreateFeeSchedule::class)
+        ->handle($term->id, $level->id, 'v1', $specs));
+
+    DB::table('finance_fee_schedules')->where('id', $schedule->id)->update(['status' => 'active']);
+
+    return $schedule->items->keyBy('description');
 }
 
 function rePost($test, School $school, User $admin, StudentCurriculum $enrollment, array $lines)
@@ -203,11 +216,22 @@ it('proof 17 — a percentage with NO discountable charge left is the existing 4
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Feeding', 'amount_minor' => 1500000, 'is_discountable' => false],
     ]);
 
-    rePost($this, $school, $admin, $enrollment, [
+    $response = rePost($this, $school, $admin, $enrollment, [
         ['description' => 'Transport', 'amount_minor' => 20000, 'fee_item_id' => $items['Transport']->id],
         ['description' => 'Feeding', 'amount_minor' => 15000, 'fee_item_id' => $items['Feeding']->id],
         ['description' => 'Discount', 'kind' => 'discount', 'percent' => 10, 'discount_policy_id' => $policy->id],
-    ])->assertStatus(422); // "A percentage reduction needs at least one charge line to reduce." — no /0, no zero line.
+    ]);
+
+    // THE MESSAGE, not just the status. This arm asserted a bare 422 and therefore kept passing when the
+    // new fee_item_id rule started rejecting the request for an entirely different reason — the fixture was
+    // billing from a draft. A 422 is the expected outcome of half a dozen distinct refusals on this route;
+    // pinning only the code makes the arm indifferent to which one it got.
+    // str_contains + toBeTrue, NOT toContain — Pest's toContain treats a second argument as ANOTHER
+    // NEEDLE, so a failure message passed there is silently asserted as substring and always fails.
+    $response->assertStatus(422);
+    expect(str_contains((string) $response->json('message'), 'at least one charge line'))->toBeTrue(
+        'Proof 17 got a 422 that is not its own. The arm is about a percentage with no discountable base '
+        .'left — no division by zero and no zero line — and it must fail for that reason or not at all.');
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });

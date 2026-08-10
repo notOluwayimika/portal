@@ -23,8 +23,15 @@ use Illuminate\Support\Facades\DB;
  * approval Action, where it belongs.
  *
  * The schedule is created as a DRAFT so the parent-state trigger permits the item inserts (an item may only
- * be added to a draft). At most one draft per (school, term, class level) exists at a time
- * (finance_fee_schedules_draft_unique) — a second concurrent draft for the same slot is a friendly 422.
+ * be added to a draft). At most one OPEN schedule per (school, term, class level) exists at a time —
+ * `finance_fee_schedules_pending_unique`, which covers draft AND pending_approval. A second one for the
+ * same slot is a friendly 422.
+ *
+ * IT USED TO NAME `finance_fee_schedules_draft_unique`, which S1 4a DROPPED
+ * (2026_07_29_120000_finance_fee_schedule_pending_approval_state.php:38) and replaced with the wider key.
+ * That stale premise is the reason a draft occupied its own slot and could not be edited at all — the
+ * defect {@see EditFeeScheduleDraft} exists to fix — so this file was edited BECAUSE the sentence was
+ * wrong, and left it standing. Corrected here.
  */
 final class CreateFeeSchedule
 {
@@ -82,7 +89,11 @@ final class CreateFeeSchedule
             // covers draft AND pending_approval as of 4a (a slot with a schedule awaiting approval is also
             // occupied). Translate to a friendly 422 rather than a raw 500.
             if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'finance_fee_schedules_pending_unique')) {
-                throw new BusinessRuleException('A draft or pending schedule already exists for this term and class level; edit, publish, or await its approval.');
+                // The advice names what the operator can actually DO. Until {@see EditFeeScheduleDraft}
+                // shipped, "edit" named nothing in the tree — a draft could be neither edited nor deleted,
+                // so this message sent the reader looking for a door that was not there. A message naming
+                // an action the system does not have is the same defect as a button that 404s.
+                throw new BusinessRuleException('A draft or pending schedule already exists for this term and class level. Edit that draft instead, or submit it for approval; if it is already awaiting approval, await the decision.');
             }
             throw $e;
         }

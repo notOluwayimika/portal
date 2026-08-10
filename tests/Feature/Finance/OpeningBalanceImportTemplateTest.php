@@ -224,3 +224,76 @@ it('refuses a user without finance.opening-balance.submit', function () {
         ->get('/api/v1/finance/opening-balance-batches/import/template')
         ->assertForbidden();
 });
+
+// ── The NOTES sheet, which nothing read until the single-column cutover ──────
+
+it('does not let a NOTE instruct the operator to sum an OPTIONAL column', function () {
+    /*
+     * WHY THIS EXISTS. `NOTES` is rendered on the upload screen (routes/web.php) and is the only place
+     * several rules reach the person filling in the file. Nothing in the suite read its CONTENT —
+     * OpeningBalanceOperatorScreenTest asserts the COUNT of entries and nothing more — so when the
+     * single-column cutover made three columns optional, two notes silently became false and survived
+     * a full green suite. One of them told the operator to type the sum of `student_total_balance`,
+     * a column Brookstone's file does not have.
+     *
+     * WHAT THIS CATCHES, AND WHAT IT DOES NOT — stated rather than oversold, because the first version
+     * of this arm was wallpaper and it is worth recording why. That version searched every note for
+     * demanding language near an optional column name. Checked against the two notes that were
+     * actually wrong, it caught NEITHER: "Every amount cell must carry a figure" names no column at
+     * all, and the control-total note named the column without using any demanding verb. It fired
+     * only on a legitimate sentence. A gate that misses both real instances and flags a false one is
+     * worse than no gate, because it is green.
+     *
+     * So this asserts the narrow thing that IS mechanical: the control total is derived from the
+     * closing position of every student, so a note explaining it must not send the operator to an
+     * OPTIONAL column to compute it. A note can still be wrong in ways no string check reaches —
+     * "Every amount cell must carry a figure" is that shape — and no assertion here pretends
+     * otherwise; that class is caught by a human reading the rendered screen, which is how it was
+     * caught this time.
+     */
+    $optional = array_keys(array_filter(
+        ImportOpeningBalances::COLUMNS,
+        fn (array $spec) => ! $spec['required'],
+    ));
+
+    foreach (OpeningBalanceImportTemplateExport::NOTES as [$rule, $meaning]) {
+        if (! str_contains(strtolower($meaning), 'control total')) {
+            continue;
+        }
+
+        foreach ($optional as $column) {
+            expect(str_contains($meaning, $column))->toBeFalse(
+                "NOTES entry [{$rule}] explains the control total in terms of the OPTIONAL column "
+                ."[{$column}]. An operator whose extract omits that column cannot compute the figure "
+                .'the note asks them to type.'
+            );
+        }
+    }
+});
+
+it('names no column in NOTES that the format does not have', function () {
+    // The other mechanical failure this sheet is prone to: prose that outlives the column it names.
+    // Cheap, exact, and it fires on a rename or a removal rather than on a judgement call.
+    $known = array_keys(ImportOpeningBalances::COLUMNS);
+
+    foreach (OpeningBalanceImportTemplateExport::NOTES as [$rule, $meaning]) {
+        preg_match_all('/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/', $meaning, $matches);
+
+        foreach (array_unique($matches[0]) as $token) {
+            expect(in_array($token, $known, true))->toBeTrue(
+                "NOTES entry [{$rule}] names [{$token}], which is not a column in the format."
+            );
+        }
+    }
+});
+
+it('states the sign convention in NOTES using the constant, never a re-wording of it', function () {
+    // The sign note is the one whose exact words are the control (see OpeningBalanceInterpretation).
+    // A paraphrase on the template and a different paraphrase on the screen is how an operator ends
+    // up reading two versions of the one sentence they are being asked to agree with.
+    $meanings = array_column(OpeningBalanceImportTemplateExport::NOTES, 1);
+
+    expect(collect($meanings)->contains(
+        fn (string $meaning) => str_contains($meaning, OpeningBalanceFileValidator::SIGN_CONVENTION),
+    ))->toBeTrue('No NOTES entry carries OpeningBalanceFileValidator::SIGN_CONVENTION verbatim.');
+});

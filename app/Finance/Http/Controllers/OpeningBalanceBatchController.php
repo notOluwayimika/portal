@@ -290,7 +290,17 @@ class OpeningBalanceBatchController extends Controller
             // it. It is the only control against an inverted convention, which L1 and L2 cannot see
             // because they compare the file against itself. Computed from the staged rows on every
             // read, so it can never describe a batch other than the one that would post.
-            'interpretation' => $this->interpretation->for($batch),
+            //
+            // NULL UNTIL THE JOB HAS SPOKEN, and that is the whole point of the guard. `draft` means
+            // "inserted, not yet run to completion": no row is staged yet, so the summary read an
+            // empty set and stated, in the same emphatic words it uses for a real verdict, that the
+            // two sides cancel exactly and that the operator should refuse the batch if that is
+            // wrong — about a file nobody had read, beside the "Validating…" spinner. A control that
+            // delivers a confident verdict on nothing is a control an operator learns to scroll past,
+            // and this one only works if it is read.
+            'interpretation' => $batch->status === OpeningBalanceBatchStatus::Draft
+                ? null
+                : $this->interpretation->for($batch),
             // The one flag the screen needs that it must not infer: only a `validated` batch may be
             // offered for approval, and the state machine is the server's to report.
             'can_submit' => $batch->status === OpeningBalanceBatchStatus::Validated,

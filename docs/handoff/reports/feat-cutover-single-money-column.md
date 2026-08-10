@@ -12,11 +12,18 @@ Written for someone who did not do the work.
 The brief said to stop if the posting path needed editing. **It does not.**
 `app/Finance/Actions/PostOpeningBalanceBatch.php` was read in full and not touched:
 
-- **Step 1** (`:196-215`) — every non-negative balance posts ONE ledger charge per row, narration
-  `fee_type_label . NARRATION_SUFFIX`, dated `cutover_date`.
-- **Step 2** (`:222-232`, `:243-`) — every negative balance accumulates into `$creditByStudent` and
-  becomes ONE netted migrated `Payment` per student plus its ledger credit.
-- **Zero** (`:188`) — `continue`. Posts nothing.
+Citations RE-DERIVED at `1311dfd` after a cold review found every one of them 3–5 lines off. The
+claim was true and the line numbers did not support it, which is the same defect as an unverified
+assertion:
+
+- **Zero** — `if ($balance->isZero())` at **`:192`**, `continue` at `:196`. Posts nothing. Note the
+  condition is on the ROW's own balance, which is the fact behind finding 4.2 below.
+- **Step 1** — `if (! $balance->isNegative())` at **`:199`**, the `$this->ledger->post(` that follows
+  at **`:203`**. One ledger charge per positive ROW, narration `fee_type_label . NARRATION_SUFFIX`,
+  dated `cutover_date`.
+- **Step 2** — accumulation at **`:225`** (`$creditByStudent[$studentId] = isset(...)`), the netted
+  `Payment::create` at **`:241`**, its ledger credit at **`:291`** (`LedgerEntryType::Payment`). One
+  migrated payment per student — credits netted against CREDITS, never against charges.
 
 A single synthetic fee type feeds that unchanged, which the drive then confirmed against real rows.
 
@@ -63,10 +70,22 @@ Missing required column(s): admission_number.
 
 `read()` lowercases and trims header cells but does not fold spaces, so `Admission Number` does not
 match `admission_number`. This is the designed flow — the platform issues the template (R13) and the
-operator pastes into it — and the refusal happens **before a batch row is written**, so no
-idempotency key is spent. I did not add header aliasing: it is outside the fuse, and silently
-accepting a differently-named column is also how a wrong file gets in. Flagging it because the
-person doing the cutover needs to know the extract is pasted into the template, not uploaded raw.
+operator pastes into it. I did not add header aliasing: it is outside the fuse, and silently
+accepting a differently-named column is also how a wrong file gets in.
+
+**CORRECTION (cold review, finding 1.2).** An earlier version of this paragraph said the refusal
+happens "before a batch row is written, so no idempotency key is spent". **That is true of the
+console and FALSE of the screen**, which is the path an operator will actually use.
+`OpeningBalanceBatchController::store()` inserts the batch at `:148` — before the queued job parses a
+byte, deliberately, so §7's key is enforced by the engine and the operator has something to poll —
+and `StoreOpeningBalanceImportRequest::batchReference()` defaults the reference to the uploaded
+FILENAME, which the screen pre-fills. So an operator who tries the raw extract, sees it refused,
+corrects the header and re-uploads **the same filename** hits `unique(school_id, batch_reference)`
+and gets a 409 on a file that is now correct. Nothing un-spends it; a batch row is never deleted.
+
+That consequence now sits in `docs/handoff/post-deploy-tasks.md` beside the paste-into-the-template
+line, because the person it bites is the one running the cutover at the time they are least able to
+diagnose it.
 
 ## What changed
 
@@ -101,6 +120,7 @@ of it reaches both surfaces from one edit.
 | Delete L1's not-applicable branch | **RED** 1/11 — ten arms; this branch is what makes Brookstone's file readable at all |
 | Hardcode the summary's direction (`elseif ($net->isNegative())` → `elseif (true)`) | **RED** 10/11 — the reversal arm |
 | Scale the summary's figures by 1/100 in `naira()` | **RED** 11/12 — the magnitude arm ONLY; see *The magnitude question* below |
+| Restore the original false control-total NOTE | **RED** 10/11 in the template suite — the new NOTES gate, bite-proved against the note that actually shipped |
 
 **Four arms in the existing suite contradicted this commit and were restated, not weakened** — each
 with the reason written into the test:
@@ -113,7 +133,7 @@ with the reason written into the test:
   `['admission_number', 'balance']` are required, so a future "relax one more" has to argue here.
 - an L2 message assertion → wording only; the behaviour (a two-totals group is excluded) is unchanged.
 
-`tests/Feature/Finance` — **460/460**. New file 12/12.
+`tests/Feature/Finance` — **464/464** after remediation. New file 14/14.
 
 **Drive on `portal_drive`, Brookstone's actual six rows** — −846,100 · 0 · 29,000 · −2,597,500 ·
 −61,800 · 0 **NAIRA**, Σ = −₦3,476,400.00:
@@ -248,11 +268,83 @@ work, so at 20:37 it reported "no changed frontend files" and the same gate that
 nothing to check; it only saw the file once it was committed. That is exactly the tech-debt ticket
 raised on `feat/finance-bank-account-fks`, biting from the other direction — and evidence for it.
 
+## Cold-review remediation (on top of `1311dfd`)
+
+A cold review found one defect with three faces — the interpretation sentence is the only control
+against an irreversible sign inversion, and the commit undermined it three ways. All three are fixed.
+
+**4.1 — the summary spoke about a file nobody had read.** `serialize()` computed it unconditionally,
+including on `store()`'s 201 for a `draft` batch with zero staged rows, and the screen gated the panel
+on truthiness rather than status. The operator saw "0 student(s) are in CREDIT … Net: the two sides
+cancel exactly … do not approve it" beside the Validating spinner. The server now sends `null` while
+the batch is `draft`; the TS type is nullable so the check cannot be forgotten. Arm added, and it
+asserts the validated case FIRST so a null cannot pass because the field was dropped entirely.
+
+**4.2 — a correctness bug, not wording.** The summary classified per student NETTED and claimed those
+students "will post nothing". `PostOpeningBalanceBatch` posts per ROW and GROSS: it skips only a row
+whose OWN balance is zero (`:192`), and step 2 nets credits against CREDITS, never against charges.
+So a legal multi-row student with +5,000 Tuition and −5,000 Bus was called square while two ledger
+rows were about to be written for them. The class docblock's own justification was the source of the
+error and said the classification "matches the posting"; it is corrected here and in the TS type.
+Net-zero students are now split — `square_students` (every row zero, posts nothing) and
+`offsetting_students` (rows cancel, both sides post) — and the sentence names the second only when it
+occurs. **All twelve arms used one row per student**, which is the cutover's own shape and why
+nothing reddened; the new arm uses two rows and ends by posting, so the ledger is the oracle rather
+than my reading of it.
+
+**4.3 — two NOTES became false and nothing in the suite read them.** One told the operator to type Σ
+of `student_total_balance`, a column Brookstone's file does not have and which this commit made
+optional; one said every amount cell must carry a figure. `OpeningBalanceOperatorScreenTest` asserts
+the COUNT of notes and nothing else, so both shipped green. Both corrected, and NOTES is now read by
+two arms.
+
+The first version of that gate was wallpaper and it is worth recording why: it searched for demanding
+language near an optional column name, and checked against the two notes that were actually wrong it
+caught **neither** — "Every amount cell must carry a figure" names no column, and the control-total
+note named the column without a demanding verb — while firing on a legitimate sentence. It was
+replaced with two narrow checks that do bite: a note explaining the control total may not name an
+optional column (bite-proved by restoring the original false note — red), and no note may name a
+column the format does not have. The class the string check cannot reach is stated in the test rather
+than papered over.
+
+**Also fixed:** 3.1 (the template docblock argued one row per student was "the exact mistake L1
+exists to refuse", 90 lines above the note this commit added instructing exactly that — restated);
+2.1 (both fallback arms built their expectation FROM the constant, so `FALLBACK_FEE_TYPE_LABEL = ''`
+passed everything — the literal is now asserted, and the arm claiming "spelled exactly once in the
+codebase" was renamed to what it actually tests); 3.2 (the test file recorded Brookstone's figures as
+kobo in one arm and naira in another — the ÷100 confusion this commit's own conclusion identified is
+no longer preserved in its comments); 3.3 (the L2 line printed "Σ stated student totals" on runs
+where every contributor was derived, and only the mismatch path named the derivation, so a clean run
+— the run an operator sees — never showed it; the count is now on the DTO and printed every run);
+1.2 and 1.1 above.
+
+**Re-driven on `portal_drive` after 4.1 and 4.2**, both being screen behaviour neither provable from
+the suite:
+
+```
+L2 (kobo): Σ student totals=0 over 2 student(s) (2 DERIVED from their own balances, 0 stated in the file), --control-total=0, Δ=0
+
+  0 student(s) are in CREDIT … 0 student(s) are in ARREARS …
+  1 student(s) have a zero balance and will post nothing.
+  1 student(s) have lines that CANCEL to zero — they will still post both a charge and a credit.
+  Net: the two sides cancel exactly.
+```
+
+```
+status=validated  interpretation=present
+status=draft      interpretation=NULL — the panel does not render
+```
+
 ## What I did NOT do
 
 - **No review of my own work.** No `finance-reviewer` was spawned — this session is under a standing
-  instruction not to invoke agents unless asked. **Full-review tier**: money, the sign convention, a
-  validator, and the frozen format. Recommend a cold session before merge.
+  instruction not to invoke agents unless asked. A cold review WAS run by the project lead and its
+  findings are remediated above; this report has not been re-reviewed since.
+- **Three tickets I could not raise.** The remediation brief listed tickets `4.4`, `3.4`, `3.5` and
+  `1.3`. Only 4.4 carried a description, and it is written up at
+  `docs/handoff/tickets/opening-balance-index-hydrates-every-row.md`. **I do not have the text of
+  3.4, 3.5 or 1.3** and did not invent it — a ticket whose finding I guessed at is worse than a
+  missing one. They need their text from the review before they can be filed.
 - **No header aliasing** — see the measured observation above.
 - **The drive fixture still seeds no academic slot** (`terms: 0` in `portal_drive`); the drive script
   created the term and the six students itself. Second commit running into this; worth folding into

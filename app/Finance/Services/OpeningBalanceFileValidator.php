@@ -733,6 +733,8 @@ class OpeningBalanceFileValidator
             nullAdmissions: $nullAdmissions,
             duplicateAfterTrim: $duplicateAfterTrim,
             statedSum: $statedSum,
+            statedContributors: $contributing,
+            derivedContributors: $derived,
             controlTotal: $controlTotal,
             batchFindings: $batchFindings,
         );

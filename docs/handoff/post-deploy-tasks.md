@@ -59,6 +59,32 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
       Zero rows for a school is the failure. Deactivated accounts do not count —
       a deactivated account cannot receive new money, which is the whole reason
       commit 1 chose deactivation over deletion.
+- [ ] **CUTOVER — PASTE THE WCBS EXTRACT INTO THE TEMPLATE, AND GET THE FILENAME RIGHT ON
+      THE FIRST UPLOAD.** Two facts that only bite the person actually running the
+      cutover, and they compound.
+
+      **The raw extract is refused.** Brookstone's file heads its columns
+      `Admission Number`, `Balance`, `Last Amended On`. The reader lowercases and trims a
+      header cell but does not fold spaces, so `Admission Number` does not match
+      `admission_number` and the file is refused with
+      `Missing required column(s): admission_number.` Download the template from
+      **Finance → Opening balances → Import**, paste the rows into it, and upload that.
+      (`Last Amended On` may be left in — an unknown column is read past. It is NOT a
+      payment date and nothing maps it onto one.)
+
+      **A refused upload still SPENDS the batch reference.** On the console the refusal
+      happens before the batch row exists, so nothing is consumed. **On the screen it is
+      the other way round**: the controller inserts the batch first — so the operator has
+      something to poll and so §7's key is enforced by the engine — and only then does the
+      queued job parse. The screen defaults `batch_reference` to the FILENAME. So an
+      operator who tries the raw extract, sees it refused, fixes the header and re-uploads
+      **the same filename** hits `unique(school_id, batch_reference)` and gets a **409**,
+      on a file that is now correct.
+
+      That is the guard working, not a bug — but it is unrecoverable-looking at the moment
+      it happens. Either upload the templated file first, or type a fresh
+      `batch_reference` (it is an editable field on the form, shown rather than applied
+      invisibly) on the retry. There is no un-spend: a batch row is never deleted.
 - [ ] **PRE-DEPLOY — CONFIRM THE THREE FINANCE TABLES ARE EMPTY, or the migration will
       stop the deploy.** `2026_08_09_120000_finance_capture_columns_s2_s3` adds five
       **NOT NULL columns with no defaults** to `finance_payments`,

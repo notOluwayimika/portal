@@ -34,7 +34,15 @@ final class OpeningBalanceValidationResult
      * @param  list<array{line: int, admission_number: string, fee_type_label: string, first: int}>  $duplicateInFile
      * @param  list<array{line: int, admission_number: string, columns: list<string>}>  $tooLong
      * @param  list<array{line: int, admission_number: string, code: string}>  $refusedAtWrite
-     * @param  Money  $statedSum  Σ of the stated student totals — §1 L2's left-hand side
+     * @param  Money  $statedSum  Σ of the student totals — §1 L2's left-hand side
+     * @param  int  $statedContributors  students counted into $statedSum
+     * @param  int  $derivedContributors  how many of those were DERIVED from their own balances
+     *                                    because the file states no student_total_balance for them.
+     *                                    Carried so the console can say so on EVERY run: a figure
+     *                                    labelled "stated" that is in fact computed is the kind of
+     *                                    quiet mislabelling this feature's whole L2 exists to avoid,
+     *                                    and until now only the MISMATCH path named the derivation —
+     *                                    so a clean run never showed it.
      * @param  Money  $controlTotal  the operator's typed attestation — §1 L2's right-hand side
      * @param  list<Finding>  $batchFindings
      */
@@ -52,6 +60,8 @@ final class OpeningBalanceValidationResult
         public readonly int $nullAdmissions,
         public readonly int $duplicateAfterTrim,
         public readonly Money $statedSum,
+        public readonly int $statedContributors,
+        public readonly int $derivedContributors,
         public readonly Money $controlTotal,
         public readonly array $batchFindings,
     ) {}

@@ -53,12 +53,22 @@ class OpeningBalanceImportTemplateExport extends StringValueBinder implements Fr
      * to the map appears in every sample row carrying its own example, with no edit to this array —
      * the same derivation the headings and the Columns sheet rely on.
      *
-     * WHY PLURAL, AND WHY THIS SHAPE. The guardian template emits ONE sample row, which structurally
-     * cannot show this format's central rule: `student_total_balance` REPEATS IDENTICALLY across a
-     * student's rows, because the file is one row per (student × fee type). A one-row sample teaches
-     * the reader that one row per student is the shape — which is the exact mistake §1's L1 and the
-     * (student, fee type) key exist to refuse, and the one that makes an operator's first upload
-     * bounce. The most likely mistake must be the one the sample demonstrates.
+     * WHY PLURAL, AND WHY THIS SHAPE — RESTATED, because the single-column cutover made the previous
+     * version of this paragraph false and it sat 90 lines above a NOTE saying the opposite.
+     *
+     * It used to read that a one-row sample "teaches the reader that one row per student is the shape
+     * — which is the exact mistake §1's L1 and the (student, fee type) key exist to refuse". That is
+     * no longer true and must not be repeated: `fee_type_label` and `student_total_balance` are
+     * OPTIONAL, one row per student is the LEGAL and expected shape for an extract that cannot split
+     * (Brookstone's does not), and the NOTES below instruct the operator to produce exactly that. L1
+     * is not-applicable on such a file rather than a refusal, and the (student, fee type) key still
+     * refuses a SECOND row for one student — which under the fallback label is the same statement as
+     * "one closing balance per student", not a contradiction of it.
+     *
+     * The sample stays PLURAL for the reason that survives: it is the only way a template can
+     * demonstrate the SPLITTABLE form — `student_total_balance` repeating identically across a
+     * student's rows — which a one-row sample structurally cannot show. It teaches the richer shape;
+     * the NOTES teach the simpler one and say plainly when to use it.
      *
      * So: STUDENT ONE carries TWO rows whose stated total is the same figure on both and equals the
      * sum of their two balances (120,000.00 + 25,000.00 = 145,000.00 — L1 as an operator will meet
@@ -124,17 +134,20 @@ class OpeningBalanceImportTemplateExport extends StringValueBinder implements Fr
                 .'database restore. Confirm a sample of students against WCBS before the batch is approved.',
         ],
         [
-            'A blank is not a zero',
-            'Every amount cell must carry a figure. If a balance really is nil, write 0.00 — a blank amount '
-                .'REJECTS the row rather than being read as zero, and nothing is ever coerced or corrected on '
-                .'your behalf.',
+            'A blank BALANCE is not a zero',
+            'The balance cell must carry a figure on every row. If a balance really is nil, write 0.00 — a '
+                .'blank REJECTS the row rather than being read as zero, and nothing is ever coerced or '
+                .'corrected on your behalf. This is about `balance` specifically: student_total_balance and '
+                .'fee_type_label are OPTIONAL and a blank in either is read as "not supplied", never as zero.',
         ],
         [
             'The control total is NOT in this file',
-            'The sum of every student_total_balance is read off WCBS\'s own report and TYPED IN at upload, by '
-                .'the person uploading. That is the whole point of the figure: a total carried inside the file '
-                .'was produced by the same export run as the rows, so a student dropped on the way out of WCBS '
-                .'disappears from both and the check still passes. Do not add a total row or a total column.',
+            'The closing position of EVERY student added up — read off WCBS\'s own report and TYPED IN at '
+                .'upload, by the person uploading. That is the whole point of the figure: a total carried '
+                .'inside the file was produced by the same export run as the rows, so a student dropped on the '
+                .'way out of WCBS disappears from both and the check still passes. Signed, on the same '
+                .'convention as `balance` — a school whose families are mostly in credit types a NEGATIVE '
+                .'control total. Do not add a total row or a total column.',
         ],
         [
             'One file per school',

@@ -28,10 +28,25 @@ use App\Support\Money;
  * it cannot disagree with them; a persisted copy would be a second representation of the same facts
  * and the two would eventually differ. It also means no schema change and no migration.
  *
- * PER STUDENT, NOT PER ROW. A student may hold several fee-type lines with different signs, and what
- * a bursar means by "in credit" is the NET position of that family — not that one of their lines
- * happens to be negative. Netting first is also what {@see PostOpeningBalanceBatch} does (step 2 nets
- * a student's credits into ONE migrated payment), so the classification here matches the posting.
+ * PER STUDENT, NOT PER ROW, FOR THE POSITION — and that is NOT the same thing as what posts.
+ *
+ * What a bursar means by "in credit" is the NET position of the family, not that one of their lines
+ * happens to be negative, so credit/arrears are classified on the net. That is a statement about the
+ * ACCOUNT BALANCE the cutover produces, and it is true.
+ *
+ * IT IS NOT A STATEMENT ABOUT WHAT WILL POST, and an earlier version of this docblock said it was —
+ * it claimed the classification "matches the posting" because {@see PostOpeningBalanceBatch} step 2
+ * nets a student's credits. That justification is FALSE and it produced a false sentence.
+ * PostOpeningBalanceBatch posts per ROW and GROSS: it skips only a row whose OWN balance is zero
+ * (`:192`), charges every remaining positive row (`:201-215`), and nets only the NEGATIVE rows —
+ * credits against credits, never credits against charges — into one migrated payment (`:241`).
+ *
+ * So a legal multi-row student with +5,000 Tuition and −5,000 Bus nets to zero AND posts both a
+ * charge and a migrated payment. Calling them "square" is true of their position; saying they "will
+ * post nothing" was false, and this class used to say exactly that. The two are now reported
+ * separately: a student whose every row is zero posts nothing, a student whose rows CANCEL posts both
+ * sides. A single-row file — which is the cutover's own shape — has no offsetting students at all,
+ * which is why twelve arms and a drive all passed over it.
  *
  * PRIVACY. Counts and batch-level aggregates only — no student id, no admission number, no per-student
  * figure. This reaches an operator screen and a report that leaves the building, and the same rule
@@ -45,7 +60,7 @@ final class OpeningBalanceInterpretation
      *     students: int,
      *     credit_students: int, credit_total: Money,
      *     arrears_students: int, arrears_total: Money,
-     *     square_students: int,
+     *     square_students: int, offsetting_students: int,
      *     net: Money,
      *     convention: string,
      *     sentence: string,
@@ -62,6 +77,8 @@ final class OpeningBalanceInterpretation
 
         /** @var array<int|string, Money> $netByStudent */
         $netByStudent = [];
+        /** @var array<int|string, bool> $hasMovingRow whether ANY of the student's rows is non-zero */
+        $hasMovingRow = [];
 
         foreach ($rows as $row) {
             $balance = $row->balance;
@@ -77,23 +94,39 @@ final class OpeningBalanceInterpretation
             $netByStudent[$key] = isset($netByStudent[$key])
                 ? $netByStudent[$key]->plus($balance)
                 : $balance;
+
+            // TRACKED SEPARATELY FROM THE NET, because the net cannot answer it. PostOpeningBalanceBatch
+            // skips a row on ITS OWN balance being zero (`:192`), so "this student posts nothing" is a
+            // fact about their ROWS, and a student whose rows cancel has a zero net and two postings.
+            $hasMovingRow[$key] = ($hasMovingRow[$key] ?? false) || ! $balance->isZero();
         }
 
         $creditStudents = 0;
         $arrearsStudents = 0;
         $squareStudents = 0;
+        $offsettingStudents = 0;
         $creditTotal = Money::fromKobo(0);
         $arrearsTotal = Money::fromKobo(0);
         $net = Money::fromKobo(0);
 
-        foreach ($netByStudent as $position) {
+        foreach ($netByStudent as $key => $position) {
             $net = $net->plus($position);
 
             if ($position->isZero()) {
-                // A student who is square is NOT nothing: they are in the file, they were staged and
-                // counted, and they post no ledger row. Reporting them keeps the three counts adding
-                // up to the student total, so an operator can see the whole file is accounted for.
-                $squareStudents++;
+                // A net of zero is TWO different situations and they must not be reported as one.
+                //
+                //   every row zero      — the student is square and genuinely posts nothing.
+                //   rows that CANCEL    — +5,000 Tuition against −5,000 Bus. Net zero, and the posting
+                //                         writes a charge AND a migrated payment, because it works per
+                //                         row and skips only a row that is itself zero.
+                //
+                // Collapsing them is how this class came to tell an operator that a student "will post
+                // nothing" about a student for whom two ledger rows were about to be written.
+                if ($hasMovingRow[$key] ?? false) {
+                    $offsettingStudents++;
+                } else {
+                    $squareStudents++;
+                }
 
                 continue;
             }
@@ -118,9 +151,10 @@ final class OpeningBalanceInterpretation
             'arrears_students' => $arrearsStudents,
             'arrears_total' => $arrearsTotal,
             'square_students' => $squareStudents,
+            'offsetting_students' => $offsettingStudents,
             'net' => $net,
             'convention' => OpeningBalanceFileValidator::SIGN_CONVENTION,
-            'sentence' => $this->sentence($creditStudents, $creditTotal, $arrearsStudents, $arrearsTotal, $squareStudents, $net),
+            'sentence' => $this->sentence($creditStudents, $creditTotal, $arrearsStudents, $arrearsTotal, $squareStudents, $offsettingStudents, $net),
         ];
     }
 
@@ -132,13 +166,24 @@ final class OpeningBalanceInterpretation
      * confusion this control exists to catch. "Owes families" / "is owed by families" cannot be read
      * two ways.
      */
-    private function sentence(int $creditStudents, Money $creditTotal, int $arrearsStudents, Money $arrearsTotal, int $squareStudents, Money $net): string
+    private function sentence(int $creditStudents, Money $creditTotal, int $arrearsStudents, Money $arrearsTotal, int $squareStudents, int $offsettingStudents, Money $net): string
     {
         $parts = [
             sprintf('%d student(s) are in CREDIT — the school owes them %s in total.', $creditStudents, $this->naira($creditTotal)),
             sprintf('%d student(s) are in ARREARS — they owe the school %s in total.', $arrearsStudents, $this->naira($arrearsTotal)),
-            sprintf('%d student(s) are square and will post nothing.', $squareStudents),
+            sprintf('%d student(s) have a zero balance and will post nothing.', $squareStudents),
         ];
+
+        // NAMED ONLY WHEN IT HAPPENS, and never folded into the line above it. These students net to
+        // zero and still post BOTH a charge and a migrated payment, because the posting works per row.
+        // A single-row-per-student file cannot produce one, so on the cutover's own shape this clause
+        // is absent — which is exactly why its absence must not be mistaken for "cannot happen".
+        if ($offsettingStudents > 0) {
+            $parts[] = sprintf(
+                '%d student(s) have lines that CANCEL to zero — they will still post both a charge and a credit.',
+                $offsettingStudents,
+            );
+        }
 
         if ($net->isZero()) {
             $parts[] = 'Net: the two sides cancel exactly.';

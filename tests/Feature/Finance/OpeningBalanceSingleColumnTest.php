@@ -18,8 +18,9 @@
  * is just the file read back — it is the posting that decides what the sign means to a parent. Swap
  * either mapping and the arms below go red.
  *
- * THE FIXTURE IS BROOKSTONE'S ACTUAL SAMPLE: six rows, -846100, 0, 29000, -2597500, -61800, 0,
- * Σ = -3,476,400. Two of the six are zero, which is the case a "sum is right" test would miss.
+ * THE FIXTURE IS BROOKSTONE'S ACTUAL SAMPLE: six rows, -846100, 0, 29000, -2597500, -61800, 0 — in
+ * NAIRA, as their extract sends them — so Σ = -₦3,476,400.00. Two of the six are zero, which is the
+ * case a "sum is right" test would miss.
  */
 
 use App\Enums\TermStatusEnum;
@@ -169,12 +170,22 @@ it('files an absent fee type under the constant, and honours a supplied one verb
     expect($labels['STU001'])->toBe('Tuition',
         'A supplied fee type was not honoured. The per-fee-type capability has to survive in the FILE, '
         .'so an extract that CAN split still does, with no code change.')
-        ->and($labels['STU002'])->toBe(OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL,
-            'A blank fee type did not take the fallback constant. finance_fee_items carries the label '
+        ->and($labels['STU002'])->toBe('General Arrears',
+            'A blank fee type did not take the fallback label. finance_fee_items carries the label '
             .'verbatim onto the statement narration, so a blank one would read as " — Balance Brought Forward".');
+
+    // THE LITERAL, NOT THE CONSTANT — and that distinction is the point of this pair of assertions.
+    // Both halves of this arm used to build their expectation FROM
+    // OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL, so they moved with it: setting the
+    // constant to '' passed every arm in this file, while two docblocks argue at length that a blank
+    // label is precisely the thing to prevent. A constant asserted against itself is not asserted.
+    expect(OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL)->toBe('General Arrears',
+        'The fallback label changed. It is written verbatim onto append-only ledger narrations and '
+        .'onto a parent\'s statement, so changing it is a decision about a permanent record — make it '
+        .'deliberately, here, and not as a side effect of an edit somewhere else.');
 });
 
-it('reaches the statement narration as the constant, spelled exactly once in the codebase', function () {
+it('reaches the statement narration as the fallback label, verbatim', function () {
     // THE CONSTANT IS OPERATOR-VISIBLE AND PERMANENT — the ledger is append-only, so this string is
     // on a parent's statement for as long as the migrated balance is. Asserted at the NARRATION, not
     // at the staged row, because the staged row is not what anybody reads.
@@ -187,8 +198,10 @@ it('reaches the statement narration as the constant, spelled exactly once in the
     $narration = DB::table('finance_ledger_transactions')
         ->where('type', LedgerEntryType::Charge->value)->value('narration');
 
-    expect($narration)->toBe(
-        OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL.' — Balance Brought Forward');
+    // The literal again, for the same reason: assembled from the constant this would still pass with
+    // the constant blank, and " — Balance Brought Forward" on a statement is the defect the whole
+    // fallback exists to prevent.
+    expect($narration)->toBe('General Arrears — Balance Brought Forward');
 });
 
 // ── The sign convention, proved at the LEDGER in both directions ─────────────
@@ -331,15 +344,22 @@ it('states its own reading of Brookstone’s actual six rows', function () {
         obscStudent($ctx, $admission);
     }
 
-    // Brookstone's sample, verbatim: -846100, 0, 29000, -2597500, -61800, 0 (kobo), Σ = -3,476,400.
+    // Brookstone's sample, verbatim and in NAIRA as they send it: -846100, 0, 29000, -2597500,
+    // -61800, 0. Σ = -₦3,476,400.00.
+    //
+    // AN EARLIER VERSION OF THIS ARM READ THOSE FIGURES AS KOBO and wrote them here divided by 100.
+    // Every internal figure was then self-consistent — L2 read Δ=0 — so nothing looked wrong, and the
+    // ÷100 only surfaced when the drive's sentence was read against the source file. In a commit
+    // whose subject is that a magnitude error cannot be undone, the confusion does not get to stay in
+    // the comments.
     obscRun($ctx, obscCsv([
-        'STU001,-8461.00',
+        'STU001,-846100.00',
         'STU002,0.00',
-        'STU003,290.00',
-        'STU004,-25975.00',
-        'STU005,-618.00',
+        'STU003,29000.00',
+        'STU004,-2597500.00',
+        'STU005,-61800.00',
         'STU006,0.00',
-    ]), ['--control-total' => '-34764.00']);
+    ]), ['--control-total' => '-3476400.00']);
 
     $batch = OpeningBalanceBatch::withoutGlobalScopes()->firstOrFail();
     $summary = ActiveSchool::runFor($ctx['school']->id,
@@ -347,18 +367,21 @@ it('states its own reading of Brookstone’s actual six rows', function () {
 
     expect($summary['students'])->toBe(6)
         ->and($summary['credit_students'])->toBe(3)
-        ->and($summary['credit_total']->toKobo())->toBe(3505400)   // 846100 + 2597500 + 61800
+        ->and($summary['credit_total']->toKobo())->toBe(350540000)   // (846100 + 2597500 + 61800) naira
         ->and($summary['arrears_students'])->toBe(1)
-        ->and($summary['arrears_total']->toKobo())->toBe(29000)
+        ->and($summary['arrears_total']->toKobo())->toBe(2900000)
         ->and($summary['square_students'])->toBe(2)
-        ->and($summary['net']->toKobo())->toBe(-3476400,
-            'The net position does not match Brookstone\'s stated Σ of -3,476,400 kobo.');
+        ->and($summary['offsetting_students'])->toBe(0,
+            'One row per student cannot produce an offsetting student — stated so the ZERO here is a '
+            .'fact about this fixture, not evidence that the case cannot arise.')
+        ->and($summary['net']->toKobo())->toBe(-347640000,
+            'The net position does not match Brookstone\'s stated Σ of -₦3,476,400.00.');
 
     // THE SENTENCE, in the direction a bursar reads. "The school OWES FAMILIES" cannot be read two
     // ways; a signed figure alone can, which is the confusion this control exists to catch.
     expect($summary['sentence'])->toContain('school OWES FAMILIES')
         ->and($summary['sentence'])->toContain('3 student(s) are in CREDIT')
-        ->and($summary['sentence'])->toContain('2 student(s) are square');
+        ->and($summary['sentence'])->toContain('2 student(s) have a zero balance and will post nothing');
 
     // And the convention is quoted from the constant, not re-worded here or on the screen.
     expect($summary['convention'])->toBe(OpeningBalanceFileValidator::SIGN_CONVENTION);
@@ -403,9 +426,55 @@ it('states the magnitude in the sentence, grouped, to the kobo', function () {
     expect($summary['sentence'])->toBe(
         '3 student(s) are in CREDIT — the school owes them ₦3,505,400.00 in total. '
         .'1 student(s) are in ARREARS — they owe the school ₦29,000.00 in total. '
-        .'2 student(s) are square and will post nothing. '
+        .'2 student(s) have a zero balance and will post nothing. '
         .'Net: the school OWES FAMILIES ₦3,476,400.00. '
         .'If that is not what this file means, the sign convention is inverted — do not approve it.');
+});
+
+it('does not call a student square when their lines merely CANCEL, because both sides still post', function () {
+    // THE ARM EVERY OTHER ONE MISSED, and it missed for a structural reason worth naming: all twelve
+    // used ONE ROW PER STUDENT, which is the cutover's own shape. A single-row file cannot produce a
+    // student whose lines offset, so nothing reddened and the drive could not see it either.
+    //
+    // The defect: the summary classifies per student NETTED, and PostOpeningBalanceBatch posts per
+    // ROW and GROSS — it skips only a row whose OWN balance is zero (`:192`). So +5,000 Tuition
+    // against −5,000 Bus nets to zero, and the posting writes a charge AND a migrated payment. The
+    // summary used to call that student square and say they "will post nothing".
+    //
+    // A multi-row file is not hypothetical: this commit deliberately KEPT fee_type_label in the
+    // format so an extract that can split still splits.
+    $ctx = obscSchool();
+    obscStudent($ctx, 'STU001');
+
+    obscRun($ctx,
+        obscCsv([
+            'STU001,Tuition,5000.00',
+            'STU001,Bus,-5000.00',
+        ], 'admission_number,fee_type_label,balance'),
+        ['--control-total' => '0.00']);
+
+    $summary = ActiveSchool::runFor($ctx['school']->id, fn () => app(OpeningBalanceInterpretation::class)
+        ->for(OpeningBalanceBatch::withoutGlobalScopes()->firstOrFail()));
+
+    expect($summary['square_students'])->toBe(0,
+        'A student whose lines cancel was counted as square. Square means every row is zero and '
+        .'nothing posts; this student posts two ledger rows.')
+        ->and($summary['offsetting_students'])->toBe(1)
+        ->and($summary['net']->toKobo())->toBe(0);
+
+    expect($summary['sentence'])->toContain('lines that CANCEL to zero')
+        ->and($summary['sentence'])->toContain('0 student(s) have a zero balance and will post nothing');
+
+    // AND THE POSTING IS THE ORACLE, not my reading of it: both sides really are written.
+    obscPost($ctx);
+
+    $charges = DB::table('finance_ledger_transactions')->where('type', LedgerEntryType::Charge->value)->count();
+    $payments = Payment::withoutGlobalScopes()->count();
+
+    expect($charges)->toBe(1, 'The positive row did not post a charge.')
+        ->and($payments)->toBe(1,
+            'The negative row did not post a migrated payment. If BOTH of these were 0 the summary '
+            .'would have been right and this arm would be asserting the wrong thing.');
 });
 
 it('reverses its sentence when the school is owed', function () {
@@ -421,6 +490,38 @@ it('reverses its sentence when the school is owed', function () {
 
     expect($summary['sentence'])->toContain('school IS OWED')
         ->and($summary['sentence'])->not->toContain('OWES FAMILIES');
+});
+
+it('sends NO interpretation while the batch is still draft', function () {
+    // A `draft` batch is "inserted, not yet run to completion" — no row is staged. The summary
+    // computed over that empty set and announced, in the same emphatic words it uses for a real
+    // verdict, that "the two sides cancel exactly" and that the operator should refuse the batch if
+    // that is wrong — beside the Validating spinner, about a file nobody had read.
+    //
+    // That is not a cosmetic problem on THIS panel. Its only mechanism is that an operator reads it
+    // and takes it seriously; a confident verdict about nothing is how they learn not to.
+    $ctx = obscSchool();
+    obscStudent($ctx, 'STU001');
+    obscRun($ctx, obscCsv(['STU001,-8461.00']), ['--control-total' => '-8461.00']);
+
+    $user = User::factory()->create(['school_id' => $ctx['school']->id]);
+    $user->grantSchoolAccess($ctx['school'], 'accounts_officer');
+    $user->flushSchoolAccessCache();
+
+    $batch = OpeningBalanceBatch::withoutGlobalScopes()->firstOrFail();
+    $this->actingAs($user)->withSession(['school_id' => $ctx['school']->id]);
+
+    // Validated: the summary is there. Asserted FIRST so the null below cannot pass because the
+    // field was dropped from the payload altogether.
+    $this->getJson('/api/v1/finance/opening-balance-batches/'.$batch->uuid)
+        ->assertOk()
+        ->assertJsonPath('interpretation.credit_students', 1);
+
+    DB::table('finance_opening_balance_batches')->where('id', $batch->id)->update(['status' => 'draft']);
+
+    $this->getJson('/api/v1/finance/opening-balance-batches/'.$batch->uuid)
+        ->assertOk()
+        ->assertJsonPath('interpretation', null);
 });
 
 it('carries the interpretation onto the operator’s screen payload', function () {

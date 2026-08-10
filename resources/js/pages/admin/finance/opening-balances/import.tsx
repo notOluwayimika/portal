@@ -798,8 +798,14 @@ export default function OpeningBalanceImport({
                                  * irreversible at the database. Rendered on every status, including
                                  * `rejected`, because the reading is worth seeing even when the file
                                  * will not post.
+                                 *
+                                 * The GATE IS THE SERVER'S: it sends null while the batch is
+                                 * `draft`, because a summary over zero staged rows announced "the
+                                 * two sides cancel exactly … refuse it if that is wrong" beside the
+                                 * Validating spinner, about a file nobody had read. The null check
+                                 * here is how that decision reaches the DOM, not where it is made.
                                  */}
-                                {active.interpretation && (
+                                {active.interpretation !== null && (
                                     <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-4 text-xs text-sky-950 dark:border-sky-500/30 dark:bg-sky-950/30 dark:text-sky-100">
                                         <p className="text-[10px] font-bold tracking-wide uppercase">
                                             What this file says — read it before
@@ -819,12 +825,22 @@ export default function OpeningBalanceImport({
                                                 value={`${active.interpretation.arrears_students} · ${formatNaira(active.interpretation.arrears_total)}`}
                                             />
                                             <Stat
-                                                label="Square"
+                                                label="Zero balance"
                                                 value={
                                                     active.interpretation
                                                         .square_students
                                                 }
                                             />
+                                            {active.interpretation
+                                                .offsetting_students > 0 && (
+                                                <Stat
+                                                    label="Lines cancel"
+                                                    value={
+                                                        active.interpretation
+                                                            .offsetting_students
+                                                    }
+                                                />
+                                            )}
                                             <Stat
                                                 label="Net"
                                                 value={formatNaira(

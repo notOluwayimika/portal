@@ -15,6 +15,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -90,7 +91,7 @@ it('records an ADVANCE payment on the account — no invoice, no allocation, cre
     [$school, $admin, $student] = apSetup();
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 15000000, 'received_at' => now()->toDateString(), 'payer_name' => 'Mr Obi'])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 15000000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Mr Obi'])
         ->assertCreated()
         ->assertJsonPath('amount.amount_minor', 15000000)
         ->assertJsonPath('allocations', []); // whenLoaded → present and empty (identical wire shape)
@@ -113,7 +114,7 @@ it('END-TO-END — a payment banked with NO invoice settles oldest-first across 
 
     // Pay ₦5,000 on account; no invoices exist yet.
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 500000, 'received_at' => now()->toDateString(), 'payer_name' => 'Mr Obi'])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 500000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Mr Obi'])
         ->assertCreated();
     expect(apBalance($student->id))->toBe(-500000); // credit 5,000
 
@@ -137,12 +138,12 @@ it('does not bypass the void rule — account payment succeeds, the invoice-scop
 
     // The account door succeeds (no invoice named).
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertCreated();
 
     // The invoice door STILL refuses the void invoice — unchanged.
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertStatus(422);
 });
 
@@ -155,14 +156,14 @@ it('refuses cross-school at BOTH layers — the route binding 404s, and the Acti
     // Layer 1 — the route binding. Acting in school A, a school-B student uuid resolves to nothing
     // under SchoolScope → 404 before the controller runs.
     $this->actingAs($adminA)->withSession(['school_id' => $schoolA->id])
-        ->postJson("/api/v1/finance/students/{$studentB->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/students/{$studentB->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertNotFound();
 
     // Layer 2 — the Action directly, foreign student_id under school A's context. The binding would
     // have caught it, which is exactly how a guard ends up never written; this proves the guard is
     // its own line, so a console/direct caller cannot cross the boundary.
     ActiveSchool::runFor($schoolA->id, function () use ($studentB, $adminA) {
-        expect(fn () => app(RecordAccountPayment::class)->handle($studentB->id, Money::fromKobo(100000), 'X', $adminA, now()->toDateString()))
+        expect(fn () => app(RecordAccountPayment::class)->handle($studentB->id, Money::fromKobo(100000), 'X', $adminA, SchoolDay::today(), testBankAccountId()))
             ->toThrow(BusinessRuleException::class);
     });
 
@@ -177,10 +178,10 @@ it('shares one receipt series across both doors — the two payments get consecu
     $invoice = apInvoice($school, $student, 300000);
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertCreated();
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertCreated();
 
     $refs = DB::table('finance_payments')->where('student_id', $student->id)->orderBy('id')->pluck('reference')->all();
@@ -195,7 +196,7 @@ it('finance:audit-ledger-coherence stays SUCCESS over a fixture containing an ac
     [$school, $admin, $student] = apSetup();
     apInvoice($school, $student, 300000);
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => now()->toDateString(), 'payer_name' => 'X'])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/payments", ['amount_minor' => 100000, 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'X'])
         ->assertCreated();
 
     expect(Artisan::call('finance:audit-ledger-coherence'))->toBe(0);

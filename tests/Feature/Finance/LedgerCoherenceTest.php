@@ -18,6 +18,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -84,7 +85,7 @@ function lcVoid(School $school, Invoice $invoice, User $maker, User $checker): v
 function lcApprovedCredit(School $school, Invoice $invoice, int $kobo, User $maker, User $checker): CreditNote
 {
     return ActiveSchool::runFor($school->id, function () use ($invoice, $kobo, $maker, $checker) {
-        $cn = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo($kobo), CreditNoteKind::CreditNote, null, $maker);
+        $cn = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo($kobo), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
 
         return app(ApproveCreditNote::class)->handle($cn, $checker);
     });
@@ -93,13 +94,13 @@ function lcApprovedCredit(School $school, Invoice $invoice, int $kobo, User $mak
 function lcSubmittedCredit(School $school, Invoice $invoice, int $kobo, User $maker): CreditNote
 {
     return ActiveSchool::runFor($school->id, fn () => app(SubmitCreditNote::class)
-        ->handle($invoice, Money::fromKobo($kobo), CreditNoteKind::CreditNote, null, $maker));
+        ->handle($invoice, Money::fromKobo($kobo), CreditNoteKind::CreditNote, null, $maker, testBankAccountId()));
 }
 
 function lcPayment(School $school, Invoice $invoice, int $kobo, User $actor): Payment
 {
     return ActiveSchool::runFor($school->id, fn () => app(RecordPayment::class)
-        ->handle($invoice, Money::fromKobo($kobo), 'Payer', $actor, now()->toDateString()));
+        ->handle($invoice, Money::fromKobo($kobo), 'Payer', $actor, SchoolDay::today(), testBankAccountId()));
 }
 
 /** Raw-insert a ledger row, bypassing SubledgerPoster (INSERT is the one write the triggers allow). */

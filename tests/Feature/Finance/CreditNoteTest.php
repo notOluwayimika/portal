@@ -23,6 +23,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -72,7 +73,7 @@ function cnInvoice(School $school, Student $student, int $kobo): Invoice
  */
 function cnApproved(Invoice $invoice, int $kobo, CreditNoteKind $kind, ?string $note, User $maker, User $checker): CreditNote
 {
-    $cn = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo($kobo), $kind, $note, $maker);
+    $cn = app(SubmitCreditNote::class)->handle($invoice, Money::fromKobo($kobo), $kind, $note, $maker, testBankAccountId());
 
     return app(ApproveCreditNote::class)->handle($cn, $checker);
 }
@@ -106,7 +107,7 @@ it('PROOF 1 — THE PAYOFF (account-level): pay an invoice fully, credit it (app
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $a = cnInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($a, Money::fromKobo(10000), 'Payer', $maker, now()->toDateString()); // A fully paid, balance 0
+        app(RecordPayment::class)->handle($a, Money::fromKobo(10000), 'Payer', $maker, SchoolDay::today(), testBankAccountId()); // A fully paid, balance 0
         cnApproved($a, 3000, CreditNoteKind::CreditNote, null, $maker, $checker);
 
         // The approved credit note posted −3000 → an account CREDIT balance of 3000.
@@ -127,7 +128,7 @@ it('PROOF 2 — W3 relax: credit-note credit with no payment applies 0 allocatio
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $a = cnInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($a, Money::fromKobo(10000), 'Payer', $maker, now()->toDateString());
+        app(RecordPayment::class)->handle($a, Money::fromKobo(10000), 'Payer', $maker, SchoolDay::today(), testBankAccountId());
         cnApproved($a, 3000, CreditNoteKind::CreditNote, null, $maker, $checker);
 
         $b = cnInvoice($school, $student, 12000);
@@ -141,7 +142,7 @@ it('PROOF 2b — MIXED: overpayment + approved credit-note credit → W3 allocat
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $a = cnInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($a, Money::fromKobo(15000), 'Over', $maker, now()->toDateString());
+        app(RecordPayment::class)->handle($a, Money::fromKobo(15000), 'Over', $maker, SchoolDay::today(), testBankAccountId());
         cnApproved($a, 3000, CreditNoteKind::CreditNote, null, $maker, $checker);
         expect(cnBalance($student->id))->toBe(-8000);
 
@@ -161,7 +162,7 @@ it('PROOF 3 — the ceiling now fires at APPROVAL, counting approved credits: ap
         // fine (pending consumes no ceiling) but its APPROVAL is rejected (→11000).
         cnApproved($inv, 6000, CreditNoteKind::CreditNote, null, $maker, $checker);
         cnApproved($inv, 3000, CreditNoteKind::CreditNote, null, $maker, $checker);
-        $over = app(SubmitCreditNote::class)->handle($inv, Money::fromKobo(2000), CreditNoteKind::CreditNote, null, $maker);
+        $over = app(SubmitCreditNote::class)->handle($inv, Money::fromKobo(2000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
         expect(fn () => app(ApproveCreditNote::class)->handle($over, $checker))->toThrow(BusinessRuleException::class);
 
         // Exact-fill: the remaining 1000 approves (Σapproved=10000 == total; ≤, not <).
@@ -197,7 +198,7 @@ it('PROOF 5 — write-off is a kind: same mechanism, same ledger effect, distinc
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $inv = cnInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($inv, Money::fromKobo(4000), 'Part', $maker, now()->toDateString()); // balance +6000
+        app(RecordPayment::class)->handle($inv, Money::fromKobo(4000), 'Part', $maker, SchoolDay::today(), testBankAccountId()); // balance +6000
 
         $note = cnApproved($inv, 6000, CreditNoteKind::WriteOff, 'uncollectable', $maker, $checker);
 
@@ -212,7 +213,7 @@ it('PROOF 8 — money-immutable, un-deletable, but STATUS-mutable: raw money UPD
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $inv = cnInvoice($school, $student, 10000);
-        $note = app(SubmitCreditNote::class)->handle($inv, Money::fromKobo(3000), CreditNoteKind::CreditNote, null, $maker);
+        $note = app(SubmitCreditNote::class)->handle($inv, Money::fromKobo(3000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId());
 
         // Money/identity columns immutable; the row un-deletable (mirror the invoice).
         expect(fn () => DB::table('finance_credit_notes')->where('id', $note->id)->update(['amount_minor' => 1]))
@@ -237,8 +238,7 @@ it('PROOF 9 — submitting a credit note against a VOID invoice is rejected; not
         app(ApproveVoidRequest::class)->handle($vr, $checker);
 
         expect(fn () => app(SubmitCreditNote::class)->handle(
-            Invoice::withoutGlobalScopes()->findOrFail($inv->id), Money::fromKobo(1000), CreditNoteKind::CreditNote, null, $maker
-        ))->toThrow(BusinessRuleException::class);
+            Invoice::withoutGlobalScopes()->findOrFail($inv->id), Money::fromKobo(1000), CreditNoteKind::CreditNote, null, $maker, testBankAccountId()))->toThrow(BusinessRuleException::class);
 
         expect((int) DB::table('finance_credit_notes')->count())->toBe(0);
     });
@@ -249,7 +249,7 @@ it('PROOF 10 — overpayment path unchanged: payment-backed credit still shows a
 
     ActiveSchool::runFor($school->id, function () use ($school, $maker, $student) {
         $a = cnInvoice($school, $student, 2000);
-        app(RecordPayment::class)->handle($a, Money::fromKobo(5000), 'Over', $maker, now()->toDateString()); // 3000 unallocated credit
+        app(RecordPayment::class)->handle($a, Money::fromKobo(5000), 'Over', $maker, SchoolDay::today(), testBankAccountId()); // 3000 unallocated credit
 
         $b = cnInvoice($school, $student, 12000);
         expect((int) PaymentAllocation::query()->where('invoice_id', $b->id)->sum('amount_minor'))->toBe(3000);
@@ -261,7 +261,7 @@ it('PROOF 6 & 12 (HTTP) — the statement shows invoice, APPROVED credit note, a
 
     $invoice = ActiveSchool::runFor($school->id, function () use ($school, $maker, $student, $checker) {
         $inv = cnInvoice($school, $student, 10000);
-        app(RecordPayment::class)->handle($inv, Money::fromKobo(10000), 'Payer', $maker, now()->toDateString());
+        app(RecordPayment::class)->handle($inv, Money::fromKobo(10000), 'Payer', $maker, SchoolDay::today(), testBankAccountId());
         cnApproved($inv, 3000, CreditNoteKind::CreditNote, null, $maker, $checker);
 
         return $inv;

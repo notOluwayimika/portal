@@ -14,6 +14,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -100,7 +101,10 @@ function insertPaymentRow(int $schoolId, int $studentId, int $reference, string 
         'reference' => $reference,
         'amount_minor' => 5000,
         'amount_currency' => 'NGN',
-        'received_at' => now()->toDateString(), 'payer_name' => 'Raw',
+        'received_at' => SchoolDay::today(), // PAIRED WITH origin, because finance_payments_bank_account_origin_shape requires it: a portal
+        // payment must name an account and a migrated one must not. This helper is called with a
+        // deliberately invalid origin in some arms, so the pairing is derived rather than fixed.
+        'bank_account_id' => $origin === 'migrated' ? null : testBankAccountId(), 'payer_name' => 'Raw',
         'method' => $method,
         'origin' => $origin,
         'created_at' => now(),
@@ -160,7 +164,7 @@ it("default — the existing payment path writes origin = 'portal' with no code 
 
         // RecordPayment does not mention `origin` anywhere. The column's NOT NULL DEFAULT is what makes
         // every row this system issues self-describing without a single edit to the write path.
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, SchoolDay::today(), testBankAccountId());
 
         $row = DB::table('finance_payments')->latest('id')->first();
         expect($row->origin)->toBe('portal')
@@ -191,7 +195,7 @@ it('seed trap, INVOICE door — a migrated row in the reserved band does NOT dra
 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
-        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, SchoolDay::today(), testBankAccountId());
     });
 
     // Selected by payer_name, NOT by origin: this test is about the COUNTER, and keying it on the
@@ -221,7 +225,7 @@ it('seed trap, ACCOUNT door — the same counter, reached without an invoice, mu
     plantImportedBandRow($school->id, $student->id);
 
     ActiveSchool::runFor($school->id, function () use ($admin, $student) {
-        app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(10000), 'AccountPayer', $admin, now()->toDateString());
+        app(RecordAccountPayment::class)->handle($student->id, Money::fromKobo(10000), 'AccountPayer', $admin, SchoolDay::today(), testBankAccountId());
     });
 
     $reference = (int) DB::table('finance_payments')->where('payer_name', 'AccountPayer')->value('reference');

@@ -2,6 +2,8 @@
 
 namespace App\Finance\Http\Requests;
 
+use App\Finance\Models\BankAccount;
+use App\Support\ActiveSchool;
 use App\Support\Money;
 use App\Support\SchoolDay;
 use Illuminate\Foundation\Http\FormRequest;
@@ -30,6 +32,21 @@ class RecordPaymentRequest extends FormRequest
             // a hardcode. The Action (invoice currency) and SubledgerPoster (account currency) still backstop.
             'currency' => ['sometimes', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             'payer_name' => ['required', 'string', 'max:255'],
+            // THE ACCOUNT THE MONEY LANDED IN. Required with no default — a payment that does not
+            // say where the cash went cannot be reconciled against a bank statement, and
+            // finance_payments is append-only so it can never be answered later.
+            //
+            // ACTIVE ONLY, and scoped to the active School. A deactivated account cannot receive new
+            // money — that is the whole reason commit 1 chose deactivation over deletion — and the
+            // School clause is what makes the composite foreign key's refusal a 422 here rather than
+            // a 500 from the database. Historical payments keep pointing at deactivated rows and
+            // still render their name; only NEW money is refused.
+            'bank_account_id' => [
+                'required',
+                Rule::exists(BankAccount::class, 'uuid')
+                    ->where('school_id', ActiveSchool::id())
+                    ->whereNull('deactivated_at'),
+            ],
             // REQUIRED, with no default at any layer. A payment's business date is the operator's
             // to state: a receipt handed over on Friday and keyed on Monday belongs to Friday, and
             // finance_payments is append-only so nobody can correct it afterwards. Defaulting it to

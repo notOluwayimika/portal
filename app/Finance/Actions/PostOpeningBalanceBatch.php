@@ -265,6 +265,12 @@ final class PostOpeningBalanceBatch
                     // says so in a column with a CHECK behind it.
                     'received_at' => $locked->cutover_date->toDateString(),
                     'received_at_reason' => null,
+                    // NULL, AND THE DATABASE REQUIRES IT TO BE. This money reached WCBS before
+                    // cutover; it never entered one of our bank accounts, so naming one would assert
+                    // a fact that is false. finance_payments_bank_account_origin_shape enforces the
+                    // pairing — origin 'migrated' with a non-null account is refused 3819 at INSERT,
+                    // exactly as origin 'portal' with a null one is.
+                    'bank_account_id' => null,
                 ]);
 
                 // The crediting ledger row. BYTE-IDENTICAL in vocabulary to both live payment paths —

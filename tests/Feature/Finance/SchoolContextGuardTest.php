@@ -120,7 +120,7 @@ function scgFixture(): array
 
         $schedule = app(CreateFeeSchedule::class)->handle(
             $term->id, $level->id, 'JSS 1 — First Term',
-            [['description' => 'Tuition', 'amount_minor' => 500000]],
+            [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 500000]],
         );
 
         $scheduleChange = FeeScheduleChange::create([

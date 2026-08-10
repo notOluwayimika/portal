@@ -45,6 +45,7 @@ use App\Models\Term;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -272,7 +273,7 @@ it('PROOF 3 — the migrated reference comes from the reserved band and the live
     // A real portal receipt first, so there IS a live counter to leave alone.
     $portal = ActiveSchool::runFor(
         $ctx['school']->id,
-        fn () => app(RecordAccountPayment::class)->handle($s1->id, Money::fromKobo(1000), 'Parent', $ctx['actor'], now()->toDateString()),
+        fn () => app(RecordAccountPayment::class)->handle($s1->id, Money::fromKobo(1000), 'Parent', $ctx['actor'], SchoolDay::today(), testBankAccountId()),
     );
     expect($portal->reference)->toBe(1);
 
@@ -300,7 +301,7 @@ it('PROOF 3 — the migrated reference comes from the reserved band and the live
     // side. If the Action had drawn through Sequences, this would be the number that gave it away.
     $next = ActiveSchool::runFor(
         $ctx['school']->id,
-        fn () => app(RecordAccountPayment::class)->handle($s1->id, Money::fromKobo(1000), 'Parent', $ctx['actor'], now()->toDateString()),
+        fn () => app(RecordAccountPayment::class)->handle($s1->id, Money::fromKobo(1000), 'Parent', $ctx['actor'], SchoolDay::today(), testBankAccountId()),
     );
     expect($next->reference)->toBe(2);
 });

@@ -14,6 +14,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -77,11 +78,11 @@ it('C-5 — record-payment currency "ngn" is a 422; "NGN" is accepted', function
     $invoice = mcvInvoice($school);
 
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'ngn', 'received_at' => now()->toDateString(), 'payer_name' => 'Parent'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'ngn', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Parent'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['currency']);
 
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])
-        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'NGN', 'received_at' => now()->toDateString(), 'payer_name' => 'Parent'])
+        ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/payments", ['amount_minor' => 1000, 'currency' => 'NGN', 'received_at' => SchoolDay::today(), 'bank_account_id' => testBankAccountUuid(), 'payer_name' => 'Parent'])
         ->assertCreated();
 });

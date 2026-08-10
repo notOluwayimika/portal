@@ -4,6 +4,7 @@ namespace App\Finance\Actions;
 
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\FeeScheduleStatus;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\FeeSchedule;
 use App\Support\ActiveSchool;
 use App\Support\Money;
@@ -60,6 +61,17 @@ final class CreateFeeSchedule
                         'is_mandatory' => (bool) ($item['is_mandatory'] ?? true),
                         'is_discountable' => (bool) ($item['is_discountable'] ?? true),
                         'sort_order' => (int) ($item['sort_order'] ?? $i),
+                        // The configured DESTINATION for this charge. NOT NULL at the database with
+                        // no default, so an item that does not say where its money should go is not
+                        // a configured charge and cannot be written. FeeScheduleRequest refuses it
+                        // at the edge with a message; this resolves what that rule validated.
+                        //
+                        // uuid -> id, through the School-scoped model: a foreign uuid resolves to
+                        // nothing here rather than being trusted and refused later by the composite
+                        // foreign key, which would surface as a 500 instead of a 422.
+                        'bank_account_id' => BankAccount::query()
+                            ->where('uuid', (string) $item['bank_account_id'])
+                            ->valueOrFail('id'),
                     ]);
                 }
 

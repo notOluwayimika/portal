@@ -14,6 +14,7 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +79,7 @@ it('PROOF 1 — apply-forward basic: prior credit 2000, new invoice 12000 → ap
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         // Bank 2000 credit: invoice 2000, overpay 4000.
         $c = w3Invoice($school, $student, 2000);
-        app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, now()->toDateString());
+        app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, SchoolDay::today(), testBankAccountId());
         expect(w3Balance($student->id))->toBe(-2000); // credit 2000
 
         // New invoice — apply-forward fires.
@@ -98,7 +99,7 @@ it('PROOF 2 — partial: credit 20000 exceeds new invoice 12000 → applies 1200
 
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         $c = w3Invoice($school, $student, 2000);
-        app(RecordPayment::class)->handle($c, Money::fromKobo(22000), 'Over', $admin, now()->toDateString()); // credit 20000
+        app(RecordPayment::class)->handle($c, Money::fromKobo(22000), 'Over', $admin, SchoolDay::today(), testBankAccountId()); // credit 20000
         expect(w3Balance($student->id))->toBe(-20000);
 
         $b = w3Invoice($school, $student, 12000);
@@ -122,9 +123,9 @@ it('PROOF 3 — oldest-payment-first: draws the older payment fully, then splits
         $d1 = w3Invoice($school, $student, 500);
         $d2 = w3Invoice($school, $student, 500);
         // P1 (older): pay 1500 on d1 → 1000 unallocated.
-        $p1 = app(RecordPayment::class)->handle($d1, Money::fromKobo(1500), 'P1', $admin, now()->toDateString());
+        $p1 = app(RecordPayment::class)->handle($d1, Money::fromKobo(1500), 'P1', $admin, SchoolDay::today(), testBankAccountId());
         // P2 (newer): pay 3500 on d2 → 3000 unallocated. Credit now 4000.
-        $p2 = app(RecordPayment::class)->handle($d2, Money::fromKobo(3500), 'P2', $admin, now()->toDateString());
+        $p2 = app(RecordPayment::class)->handle($d2, Money::fromKobo(3500), 'P2', $admin, SchoolDay::today(), testBankAccountId());
         expect(w3Balance($student->id))->toBe(-4000);
 
         // New invoice 1500 → apply 1500: draw P1's 1000 fully, then 500 from P2.
@@ -149,7 +150,7 @@ it('PROOF 6 — the DEFINITION: an unallocated payment does NOT carry forward wh
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         // A 3000 fully-unallocated payment exists (overpay a small invoice)…
         $d = w3Invoice($school, $student, 500);
-        app(RecordPayment::class)->handle($d, Money::fromKobo(3500), 'Adv', $admin, now()->toDateString()); // 3000 unallocated, balance −3000
+        app(RecordPayment::class)->handle($d, Money::fromKobo(3500), 'Adv', $admin, SchoolDay::today(), testBankAccountId()); // 3000 unallocated, balance −3000
         // …but then a big unpaid charge lands: net balance goes POSITIVE (student owes).
         w3Invoice($school, $student, 10000); // balance −3000 + 10000 = +7000
         expect(w3Balance($student->id))->toBe(7000);
@@ -169,7 +170,7 @@ it('PROOF 7 — #94 holds: credit larger than the invoice caps at the total, the
 
     ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         $c = w3Invoice($school, $student, 1000);
-        app(RecordPayment::class)->handle($c, Money::fromKobo(51000), 'Over', $admin, now()->toDateString()); // credit 50000
+        app(RecordPayment::class)->handle($c, Money::fromKobo(51000), 'Over', $admin, SchoolDay::today(), testBankAccountId()); // credit 50000
 
         // Invoice far smaller than the credit: applied caps at total, Σ(alloc) == total,
         // no QueryException from the over-allocation trigger.
@@ -199,7 +200,7 @@ it('PROOF 9 — observability (fork 1): a carried-forward allocation reads credi
     $ids = ActiveSchool::runFor($school->id, function () use ($school, $admin, $student) {
         // Overpay at "today": creates the ordinary allocation to C and banks credit.
         $c = w3Invoice($school, $student, 2000);
-        $payment = app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, now()->toDateString());
+        $payment = app(RecordPayment::class)->handle($c, Money::fromKobo(4000), 'Over', $admin, SchoolDay::today(), testBankAccountId());
 
         // Advance the clock so the next invoice is strictly LATER than the payment.
         test()->travel(1)->days();

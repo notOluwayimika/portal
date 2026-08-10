@@ -95,8 +95,8 @@ it('proof 11 — a reduction citing an active requires_approval=false policy is 
     $policy = rePolicy($school);
 
     rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
     ])->assertCreated();
 
     $reduction = DB::table('finance_invoice_lines')->where('kind', 'discount')->first();
@@ -111,8 +111,8 @@ it('proof 12 (HTTP) — a reduction citing a requires_approval=true policy is re
     $policy = rePolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
     rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
     ])->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(0); // nothing partial
@@ -124,12 +124,12 @@ it('proof 12 (DB) — a RAW reduction-line insert citing a requires_approval=tru
 
     // A charge-only invoice exists to hang the line off; the direct insert bypasses GenerateInvoice, so it
     // is the DATABASE refusing, not the service.
-    rePost($this, $school, $admin, $enrollment, [['description' => 'Tuition', 'amount_minor' => 100000]])->assertCreated();
+    rePost($this, $school, $admin, $enrollment, [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]])->assertCreated();
     $invoiceId = DB::table('finance_invoices')->value('id');
 
     expect(fn () => DB::table('finance_invoice_lines')->insert([
         'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'invoice_id' => $invoiceId,
-        'description' => 'Sneak', 'kind' => 'discount', 'note' => null, 'amount_minor' => -1000, 'amount_currency' => 'NGN',
+        'bank_account_id' => testBankAccountId(), 'description' => 'Sneak', 'kind' => 'discount', 'note' => null, 'amount_minor' => -1000, 'amount_currency' => 'NGN',
         'fee_item_id' => null, 'discount_policy_id' => $policy->id, 'created_by_user_id' => null,
         'created_at' => now(), 'updated_at' => now(),
     ]))->toThrow(QueryException::class);
@@ -141,8 +141,8 @@ it('proof 13 — a reduction line with discount_policy_id = null is refused, and
     [$school, $admin, $enrollment] = reSetup();
 
     rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Free-text discount', 'amount_minor' => -10000, 'kind' => 'discount'], // no policy
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Free-text discount', 'amount_minor' => -10000, 'kind' => 'discount'], // no policy
     ])->assertStatus(422);
 
     // PLANT: neuter the whole reduction-enforcement branch → this 201s → red. (Dropping ONLY the explicit
@@ -163,8 +163,8 @@ it('proof 14 — a School B policy cannot back a reduction under School A (cross
     // Under School A's context, citing School B's policy id: the trigger's v_school <> NEW.school_id fires.
     // ActiveSchool::runFor is School A here (via the session), so SchoolScope is not what is under test.
     rePost($this, $schoolA, $adminA, $enrollmentA, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Foreign discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policyB->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Foreign discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policyB->id],
     ])->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
@@ -176,8 +176,8 @@ it('proof 16 — a non-discountable charge is excluded from the percentage base 
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school);
     $items = reFeeItems($school, [
-        ['description' => 'Tuition', 'amount_minor' => 10000000, 'is_discountable' => true],
-        ['description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000000, 'is_discountable' => true],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
     ]);
 
     // Tuition ₦100,000 (discountable) + Transport ₦20,000 (NOT) + a 10% discount. Base = tuition only, so
@@ -199,8 +199,8 @@ it('proof 17 — a percentage with NO discountable charge left is the existing 4
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school);
     $items = reFeeItems($school, [
-        ['description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
-        ['description' => 'Feeding', 'amount_minor' => 1500000, 'is_discountable' => false],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Feeding', 'amount_minor' => 1500000, 'is_discountable' => false],
     ]);
 
     rePost($this, $school, $admin, $enrollment, [
@@ -220,8 +220,8 @@ it('proof 7 — a RETIRED policy cannot back a NEW reduction, and lines written 
 
     // A reduction citing the policy while ACTIVE — succeeds, total 90000.
     rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
     ])->assertCreated();
     $before = Invoice::query()->firstOrFail();
     expect($before->total->toKobo())->toBe(90000);
@@ -235,8 +235,8 @@ it('proof 7 — a RETIRED policy cannot back a NEW reduction, and lines written 
         'student_id' => $student2->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id, 'status' => 'active',
     ]));
     rePost($this, $school, $admin, $enrollment2, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
     ])->assertStatus(422);
 
     // The line written BEFORE retirement is untouched, still cites the policy, and its total has not moved —

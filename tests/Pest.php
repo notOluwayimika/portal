@@ -2,6 +2,7 @@
 
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\SubmitVoidRequest;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\Invoice;
 use App\Models\Guardian;
 use App\Models\Role;
@@ -175,4 +176,35 @@ function voidInvoiceViaApproval(int $schoolId, string $invoiceUuid, string $reas
     });
 
     return $checker;
+}
+
+/**
+ * An ACTIVE bank account for the school currently in context, created on first use.
+ *
+ * Lives here rather than in each test file because 42 call sites across 12 files need one:
+ * finance_payments.bank_account_id is required for portal-issued payments (the origin-keyed CHECK),
+ * and finance_fee_items.bank_account_id is NOT NULL.
+ *
+ * THE SCHOOL IS RESOLVED FROM CONTEXT, and a wrong resolution CANNOT pass silently: the foreign key
+ * is composite — (bank_account_id, school_id) -> finance_bank_accounts(id, school_id) — so an
+ * account belonging to another school is refused by the database rather than quietly accepted. That
+ * is what makes a context-resolving helper safe here; with a single-column FK it would not be.
+ */
+function testBankAccountId(?int $schoolId = null): int
+{
+    $schoolId ??= ActiveSchool::id() ?? (int) School::query()->value('id');
+
+    return (int) BankAccount::withoutGlobalScopes()->firstOrCreate(
+        ['school_id' => $schoolId, 'account_number' => 'TEST-'.$schoolId],
+        ['label' => 'Test account', 'bank_name' => 'Test Bank'],
+    )->id;
+}
+
+/** The same account as {@see testBankAccountId()}, addressed the way the API addresses it. */
+function testBankAccountUuid(?int $schoolId = null): string
+{
+    $schoolId ??= ActiveSchool::id() ?? (int) School::query()->value('id');
+
+    return (string) BankAccount::withoutGlobalScopes()
+        ->where('id', testBankAccountId($schoolId))->value('uuid');
 }

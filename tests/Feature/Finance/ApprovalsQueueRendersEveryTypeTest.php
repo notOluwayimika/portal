@@ -166,12 +166,12 @@ function aqPlantOneOfEach(array $ctx, User $maker): void
     $creditInvoice = $test->actingAs($maker)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => aqEnrollment($school),
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 300000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 300000]],
         ])->assertCreated()->json('id');
     $voidInvoice = $test->actingAs($maker)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => aqEnrollment($school),
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 250000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 250000]],
         ])->assertCreated()->json('id');
 
     $test->actingAs($maker)->withSession(['school_id' => $school->id])
@@ -186,7 +186,7 @@ function aqPlantOneOfEach(array $ctx, User $maker): void
             $ctx['term']->id,
             $ctx['level']->id,
             'JSS 1 — First Term',
-            [['description' => 'Tuition', 'amount_minor' => 500000]],
+            [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 500000]],
         );
 
         FeeScheduleChange::create([
@@ -386,7 +386,7 @@ it('two pending fee-schedule changes against different targets carry different s
                 $ctx['term']->id,
                 $level->id,
                 $label,
-                [['description' => 'Tuition', 'amount_minor' => 500000]],
+                [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 500000]],
             );
 
             FeeScheduleChange::create([

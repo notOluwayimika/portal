@@ -59,14 +59,14 @@ it('generate: a line currency "ngn" is a 422 naming the field; "NGN" succeeds', 
 
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enr,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'ngn']],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'ngn']],
     ])->assertStatus(422)->assertJsonValidationErrors(['lines.0.currency']); // PLANT: drop regex → 500.
 
     // D-4: valid NGN still bills.
     $enr2 = ncvEnrollment($s);
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enr2,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
     ])->assertCreated();
 });
 
@@ -79,12 +79,12 @@ it('fee schedule: an item currency "ngn" is a 422 naming the field; "NGN" succee
 
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/fee-schedules', [
         'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'L',
-        'items' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'ngn']],
+        'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'ngn']],
     ])->assertStatus(422)->assertJsonValidationErrors(['items.0.currency']); // PLANT: drop regex → 500.
 
     $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/fee-schedules', [
         'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'L2',
-        'items' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
+        'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
     ])->assertCreated();
 });
 

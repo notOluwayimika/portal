@@ -66,6 +66,13 @@ function todayIso(): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+type BankAccountOption = {
+    id: string;
+    label: string;
+    bank_name: string;
+    account_number: string;
+};
+
 export function RecordPaymentModal({
     isOpen,
     onClose,
@@ -80,6 +87,8 @@ export function RecordPaymentModal({
     const [amount, setAmount] = useState('');
     const [payerName, setPayerName] = useState('');
     const [receivedAt, setReceivedAt] = useState(today);
+    const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
+    const [bankAccountId, setBankAccountId] = useState('');
     const [receivedAtReason, setReceivedAtReason] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [formError, setFormError] = useState<string | null>(null);
@@ -89,11 +98,42 @@ export function RecordPaymentModal({
         setAmount('');
         setPayerName('');
         setReceivedAt(todayIso());
+        setBankAccountId('');
         setReceivedAtReason('');
         setErrors({});
         setFormError(null);
         setSubmitting(false);
     };
+
+    useEffect(() => {
+        if (!isOpen) {
+            return;
+        }
+
+        // ACTIVE ACCOUNTS ONLY — the API returns deactivated ones too, because a historical payment
+        // must still render the name of an account that has since been retired. New money may not
+        // go to one, which is the whole reason commit 1 chose deactivation over deletion.
+        void (async () => {
+            try {
+                const { data } = await axios.get(
+                    '/api/v1/finance/bank-accounts',
+                );
+                const active = (data.bank_accounts ?? []).filter(
+                    (a: BankAccountOption & { is_active: boolean }) =>
+                        a.is_active,
+                );
+                setAccounts(active);
+
+                // PRE-SELECT ONLY WHEN THERE IS EXACTLY ONE, and it is a pre-fill rather than a
+                // default for the same reason the received date is: the operator SEES it and can
+                // change it. With two or more accounts there is a real choice and guessing would
+                // assert a destination nobody picked — on a row that is append-only.
+                setBankAccountId(active.length === 1 ? active[0].id : '');
+            } catch {
+                setAccounts([]);
+            }
+        })();
+    }, [isOpen]);
 
     useEffect(() => {
         if (isOpen) {
@@ -140,6 +180,7 @@ export function RecordPaymentModal({
                     amount_minor: amountMinor,
                     payer_name: payerName,
                     received_at: receivedAt,
+                    bank_account_id: bankAccountId,
                     // Sent only when it exists. The server requires it exactly when the date is not
                     // today; sending an empty string on a same-day payment would fail `nullable`
                     // less obviously than omitting it.
@@ -213,6 +254,35 @@ export function RecordPaymentModal({
                     {errors.payer_name && (
                         <p className="mt-0.5 text-xs text-destructive">
                             {errors.payer_name}
+                        </p>
+                    )}
+                </div>
+
+                <div>
+                    <Label htmlFor="payment-bank-account">Paid into</Label>
+                    <select
+                        id="payment-bank-account"
+                        className="mt-1 w-full rounded-md border bg-background p-2 text-sm"
+                        value={bankAccountId}
+                        onChange={(e) => setBankAccountId(e.target.value)}
+                    >
+                        <option value="">Select an account…</option>
+                        {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                                {a.label} — {a.bank_name} {a.account_number}
+                            </option>
+                        ))}
+                    </select>
+                    {errors.bank_account_id && (
+                        <p className="mt-0.5 text-xs text-destructive">
+                            {errors.bank_account_id}
+                        </p>
+                    )}
+                    {accounts.length === 0 && (
+                        <p className="mt-1 text-xs text-destructive">
+                            This school has no active bank account, so a payment
+                            cannot be recorded. Add one under Finance → Bank
+                            accounts first.
                         </p>
                     )}
                 </div>

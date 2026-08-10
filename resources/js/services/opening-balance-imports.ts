@@ -32,10 +32,43 @@ export interface OpeningBalanceBatchRecord {
     control_total: Money | null;
     cutover_date: string | null;
     findings: OpeningBalanceFinding[];
+    /**
+     * What the batch says its own file means, computed server-side from the staged rows on every
+     * read. NOT a finding — findings are defects, and this is a correct batch stating its reading so
+     * a human can disagree with it before approval.
+     *
+     * It exists because no arithmetic can catch an INVERTED sign convention: the control total is the
+     * sum of the same column, so an inverted file matches its own total perfectly, and a posted batch
+     * can never be un-posted. Counts and batch aggregates only — the privacy rule below applies here
+     * too, and this object holds no student.
+     */
+    interpretation: OpeningBalanceInterpretation;
     /** Server-computed. Only a `validated` batch may be offered for approval — never inferred here. */
     can_submit: boolean;
     submitted_at: string | null;
     created_at: string | null;
+}
+
+/**
+ * The batch's own reading of its file, in the words the sign convention was agreed in.
+ *
+ * Every student is classified by their NET position across all of their rows, which is what a bursar
+ * means by "in credit" and is also how the posting nets a student's credits into one migrated
+ * payment. `credit_total` and `arrears_total` are POSITIVE magnitudes; `net` carries the only sign,
+ * and it is the school's position.
+ */
+export interface OpeningBalanceInterpretation {
+    students: number;
+    credit_students: number;
+    credit_total: Money;
+    arrears_students: number;
+    arrears_total: Money;
+    square_students: number;
+    net: Money;
+    /** The convention verbatim, from the server constant — never re-worded on this side. */
+    convention: string;
+    /** The claim, as one paragraph the operator either agrees with or refuses. */
+    sentence: string;
 }
 
 /** A batch- or row-level finding. `code` is stable and machine-readable; `message` is for a human. */

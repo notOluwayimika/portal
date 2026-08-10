@@ -15,6 +15,7 @@ use App\Finance\Http\Requests\StoreOpeningBalanceImportRequest;
 use App\Finance\Http\Resources\OpeningBalanceBatchResource;
 use App\Finance\Jobs\ProcessOpeningBalanceImport;
 use App\Finance\Models\OpeningBalanceBatch;
+use App\Finance\Services\OpeningBalanceInterpretation;
 use App\Http\Controllers\GuardianImportController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
@@ -64,6 +65,8 @@ class OpeningBalanceBatchController extends Controller
      * becomes a false all-clear. The full set is always in the CSV the report route streams.
      */
     private const ROWS_ON_SCREEN = 200;
+
+    public function __construct(private readonly OpeningBalanceInterpretation $interpretation) {}
 
     /**
      * Every batch awaiting a second signature in the active School — School isolation is automatic
@@ -282,6 +285,12 @@ class OpeningBalanceBatchController extends Controller
             // `?->` reads as though it might be absent and Larastan refuses the pretence.
             'cutover_date' => $batch->cutover_date->toDateString(),
             'findings' => $batch->findings ?? [],
+            // WHAT THIS BATCH SAYS, in the sign convention's own words. Not a finding — findings are
+            // defects, and this is a correct batch stating its reading so a human can disagree with
+            // it. It is the only control against an inverted convention, which L1 and L2 cannot see
+            // because they compare the file against itself. Computed from the staged rows on every
+            // read, so it can never describe a batch other than the one that would post.
+            'interpretation' => $this->interpretation->for($batch),
             // The one flag the screen needs that it must not infer: only a `validated` batch may be
             // offered for approval, and the state machine is the server's to report.
             'can_submit' => $batch->status === OpeningBalanceBatchStatus::Validated,

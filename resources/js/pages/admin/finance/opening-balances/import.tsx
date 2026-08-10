@@ -788,6 +788,53 @@ export default function OpeningBalanceImport({
                                     </p>
                                 )}
 
+                                {/*
+                                 * WHAT THIS FILE SAYS — the last thing between the operator and
+                                 * "Submit for approval", and placed here for that reason. It is not
+                                 * a finding: the batch is correct and is stating its reading, so a
+                                 * human can refuse it. No arithmetic control can catch an inverted
+                                 * sign convention — the control total is the sum of the same column,
+                                 * so an inverted file agrees with itself — and posting is
+                                 * irreversible at the database. Rendered on every status, including
+                                 * `rejected`, because the reading is worth seeing even when the file
+                                 * will not post.
+                                 */}
+                                {active.interpretation && (
+                                    <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-4 text-xs text-sky-950 dark:border-sky-500/30 dark:bg-sky-950/30 dark:text-sky-100">
+                                        <p className="text-[10px] font-bold tracking-wide uppercase">
+                                            What this file says — read it before
+                                            you submit
+                                        </p>
+                                        <p className="font-medium">
+                                            {active.interpretation.convention}
+                                        </p>
+                                        <p>{active.interpretation.sentence}</p>
+                                        <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
+                                            <Stat
+                                                label="In credit"
+                                                value={`${active.interpretation.credit_students} · ${formatNaira(active.interpretation.credit_total)}`}
+                                            />
+                                            <Stat
+                                                label="In arrears"
+                                                value={`${active.interpretation.arrears_students} · ${formatNaira(active.interpretation.arrears_total)}`}
+                                            />
+                                            <Stat
+                                                label="Square"
+                                                value={
+                                                    active.interpretation
+                                                        .square_students
+                                                }
+                                            />
+                                            <Stat
+                                                label="Net"
+                                                value={formatNaira(
+                                                    active.interpretation.net,
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-3">
                                     <a
                                         href={openingBalanceImports.reportUrl(

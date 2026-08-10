@@ -3,6 +3,7 @@
 namespace App\Finance\Exports;
 
 use App\Finance\Console\ImportOpeningBalances;
+use App\Finance\Services\OpeningBalanceFileValidator;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -143,11 +144,39 @@ class OpeningBalanceImportTemplateExport extends StringValueBinder implements Fr
                 .'starts at zero.',
         ],
         [
-            'One row per student PER FEE TYPE',
+            'One row per student PER FEE TYPE — if you can split',
             'A student with three fee types has three rows, and student_total_balance carries the SAME figure '
                 .'on all three. See the Import sheet: the first two rows are one student. The totals are what '
                 .'prove no line of theirs went missing, so they are checked and a mismatch rejects that '
-                .'student\'s rows entirely — never part of them.',
+                .'student\'s rows entirely — never part of them. IF YOUR EXTRACT CANNOT SPLIT the closing '
+                .'figure, leave fee_type_label and student_total_balance out and give ONE row per student: '
+                .'every line is then filed under "'.OpeningBalanceFileValidator::FALLBACK_FEE_TYPE_LABEL.'". '
+                .'Two rows for the same student are refused in that case, because a second closing balance for '
+                .'one student is a defect in the file, not an instruction to add them together.',
+        ],
+        [
+            'WHAT THE SIGN MEANS — read this before you type a control total',
+            OpeningBalanceFileValidator::SIGN_CONVENTION.' Get this backwards and every check in this import '
+                .'still passes: the control total is the sum of the same column, so an inverted file matches '
+                .'its own total perfectly, and a posted batch can never be un-posted. Before the batch is '
+                .'approved the portal states what it thinks your file says — how many families are in credit '
+                .'and for how much, how many are in arrears, and the school\'s net position. Read that sentence '
+                .'and refuse it if it is wrong. It is the only check that can catch this.',
+        ],
+        [
+            'Excel destroys leading zeros in admission numbers',
+            'Format the admission_number column as TEXT before you type or paste into it. Excel treats a cell '
+                .'of digits as a NUMBER and silently drops any leading zeros, so 00123 is saved as 123 — and we '
+                .'cannot detect that it happened, because 123 is a perfectly plausible admission number. The '
+                .'row then fails to match a student, or worse, matches the wrong one. This is the single most '
+                .'common way a correct extract arrives broken.',
+        ],
+        [
+            'Extra columns are ignored',
+            'A column this format does not name is read past without comment — WCBS\'s "Last Amended On" is the '
+                .'one you will have. It is NOT a payment date: it records when the record was last touched, '
+                .'which may have been an adjustment, a correction or nothing to do with money, so the portal '
+                .'will not map it onto one. Leave it in the file if it is easier; nothing reads it.',
         ],
     ];
 

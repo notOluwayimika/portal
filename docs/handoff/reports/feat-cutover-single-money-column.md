@@ -111,7 +111,9 @@ of it reaches both surfaces from one edit.
 
 ## Verification
 
-**Watched reds — four mutations, each verified landed in the source before the run:**
+**Watched reds — every mutation verified landed in the source before the run.** No count in this
+heading, deliberately: it said "four" over a five-row table and then a six-row one, and a number
+beside a list it does not govern is a number that goes stale twice.
 
 | Mutation | Result |
 |---|---|
@@ -340,11 +342,16 @@ status=draft      interpretation=NULL — the panel does not render
 - **No review of my own work.** No `finance-reviewer` was spawned — this session is under a standing
   instruction not to invoke agents unless asked. A cold review WAS run by the project lead and its
   findings are remediated above; this report has not been re-reviewed since.
-- **Three tickets I could not raise.** The remediation brief listed tickets `4.4`, `3.4`, `3.5` and
-  `1.3`. Only 4.4 carried a description, and it is written up at
-  `docs/handoff/tickets/opening-balance-index-hydrates-every-row.md`. **I do not have the text of
-  3.4, 3.5 or 1.3** and did not invent it — a ticket whose finding I guessed at is worse than a
-  missing one. They need their text from the review before they can be filed.
+- **The tickets are all filed now.** 4.4 at
+  `docs/handoff/tickets/opening-balance-index-hydrates-every-row.md`; 3.4, 3.5 and 1.3 at
+  `docs/handoff/tickets/opening-balance-three-stale-comments.md`, once their descriptions arrived —
+  they were held rather than guessed at. All three verified before filing: the `'admission:'` key in
+  the interpretation is unreachable because the query filters `status = Ok` and every path leaving
+  `student_id` null also adds a finding; `OpeningBalanceRow`'s docblock still calls "the lines sum to
+  themselves" a degradation when this commit made it the designed normal case; and the watched-reds
+  heading said "four" over what is now a six-row table. **1.3 was fixed rather than deferred** — the
+  count is gone from the heading, since a number that had already gone stale twice would go stale a
+  third time.
 - **No header aliasing** — see the measured observation above.
 - **The drive fixture still seeds no academic slot** (`terms: 0` in `portal_drive`); the drive script
   created the term and the six students itself. Second commit running into this; worth folding into

@@ -211,6 +211,57 @@ it('refuses the CHECKER of the publish this draft feeds — the route is gated o
     expect(FeeItem::withoutGlobalScopes()->where('fee_schedule_id', $draft->id)->count())->toBe(1);
 });
 
+it('refuses a schedule keyed to ANOTHER School’s term or class level, on the routes that read them', function () {
+    /*
+     * `store` and `supersede` READ term_id and class_level_id off the wire, and their `exists` rules
+     * used to be unscoped — `exists:terms,id`, any row in the table. Nothing downstream catches it:
+     * `finance_fee_schedules` carries three SINGLE-column foreign keys and no composite
+     * (school_id, term_id) pair, so another School's term is a valid reference, and the
+     * (school_id, term, class level) uniqueness key asks whether the slot is TAKEN, never whether it
+     * is YOURS. The row would land in this School, priced here, keyed to somebody else's academic
+     * calendar — and SchoolScope would show it to you, because the schedule's own school_id is right.
+     *
+     * `/draft` discards both fields, which is why this was harmless there and is not harmless here.
+     */
+    [$mine, $myTerm, $myLevel] = efsdContext();
+    [$theirs, $theirTerm, $theirLevel] = efsdContext();
+
+    $this->actingAs(efsdAdmin($mine))->withSession(['school_id' => $mine->id]);
+
+    $body = fn (int $termId, int $levelId) => [
+        'term_id' => $termId, 'class_level_id' => $levelId, 'label' => 'v1',
+        'items' => [['description' => 'Tuition', 'amount_minor' => 100000, 'bank_account_id' => testBankAccountUuid($mine->id)]],
+    ];
+
+    // Both foreign — the pair a naive copy of another School's payload would carry.
+    $this->postJson('/api/v1/finance/fee-schedules', $body($theirTerm->id, $theirLevel->id))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['term_id', 'class_level_id']);
+
+    // EACH ONE ALONE, PAIRED WITH MY OWN — a rule that scoped only `term_id` would still pass the
+    // arm above, because assertJsonValidationErrors only checks the named key is PRESENT. So each of
+    // these holds one field valid and makes the other the sole reason for the 422.
+    $this->postJson('/api/v1/finance/fee-schedules', $body($theirTerm->id, $myLevel->id))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('term_id')
+        ->assertJsonMissingValidationErrors('class_level_id');
+
+    $this->postJson('/api/v1/finance/fee-schedules', $body($myTerm->id, $theirLevel->id))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('class_level_id')
+        ->assertJsonMissingValidationErrors('term_id');
+
+    // NOT VACUOUS: my own pair is accepted, so the three refusals above are the scoping and not a
+    // rule that rejects everything.
+    $this->postJson('/api/v1/finance/fee-schedules', $body($myTerm->id, $myLevel->id))
+        ->assertCreated();
+
+    // Exactly one schedule exists in my School: the legitimate one. None of the foreign attempts
+    // wrote anything.
+    expect(FeeSchedule::withoutGlobalScopes()->where('school_id', $mine->id)->count())->toBe(1,
+        'A schedule was authored against another School’s academic calendar.');
+});
+
 it('refuses when the schedule stops being a draft between the check and the write', function () {
     // THE LOCKED RE-CHECK, ON ITS OWN. The arms above cannot reach it: the route resolves a fresh model, so
     // the pre-lock check answers first and this layer never speaks. Here the model in hand still says

@@ -28,8 +28,26 @@ class FeeScheduleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'term_id' => ['required', 'integer', 'exists:terms,id'],
-            'class_level_id' => ['required', 'integer', 'exists:class_levels,id'],
+            // SCOPED TO THE ACTIVE SCHOOL, and the bare `exists:terms,id` they replace was a real hole
+            // on `store` and `supersede`, which READ these two. Nothing at the database catches it:
+            // `finance_fee_schedules` carries three SINGLE-column foreign keys — term_id → terms.id,
+            // class_level_id → class_levels.id, school_id → schools.id (read from
+            // information_schema, not from the migration) — and no composite (school_id, term_id)
+            // pair, so another School's term id is a perfectly valid reference. The
+            // (school_id, term, class level) uniqueness key does not help either: it prevents a second
+            // OPEN schedule for a slot, it does not ask whether the slot belongs to you.
+            //
+            // The result would be a schedule sitting in your School, priced by you, keyed to a term
+            // and a class level that are somebody else's — and `SchoolScope` would happily show it to
+            // you, because the schedule's own school_id is correct.
+            //
+            // Written as an explicit `where` rather than through the scoped model because
+            // Rule::exists queries the TABLE and no global scope applies to it. Same shape and same
+            // reason as `items.*.bank_account_id` below, and as the fee_item_id rule on
+            // GenerateInvoiceRequest — leaving one of the three unscoped after scoping the others
+            // would be incoherent rather than merely incomplete.
+            'term_id' => ['required', 'integer', Rule::exists('terms', 'id')->where('school_id', ActiveSchool::id())],
+            'class_level_id' => ['required', 'integer', Rule::exists('class_levels', 'id')->where('school_id', ActiveSchool::id())],
             'label' => ['required', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.description' => ['required', 'string', 'max:255'],

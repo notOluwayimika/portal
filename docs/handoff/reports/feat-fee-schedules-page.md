@@ -240,8 +240,28 @@ lived only inside `feat-rbac-fail-closed-finance.md:97-98`);
 `edit-draft-request-reuse-decide-at-u1.md` (R1, flagged for U1 and pointed at from the controller
 docblock, not fixed here).
 
-**C3 and C4 could not be filed** — listed by number with no description, and their text was not
-supplied. Not guessed at.
+**C3 and C4** filed once their descriptions arrived, at
+`fee-schedule-actions-two-copied-docblock-defects.md`. Both verified: `valueOrFail` is `firstOrFail`
+(`Builder.php:870-875`) so it throws `ModelNotFoundException`, which `bootstrap/app.php:153-155`
+renders **404** — not the "422 instead of a 500" both Actions claim — and it is unreachable from the
+route because `FeeScheduleRequest`'s `Rule::exists` on `items.*.bank_account_id` refuses first. The
+`@param` item-spec lines disagree between the two Actions on the same array shape, and it is
+`CreateFeeSchedule`'s that is stale.
+
+**R1's isolation half was FIXED rather than deferred**, on the project lead's ruling: `store` and
+`supersede` read `term_id`/`class_level_id`, and nothing downstream checked ownership. Confirmed from
+`information_schema`: `finance_fee_schedules` carries three **single-column** foreign keys and **no
+composite `(school_id, term_id)` pair**, and the `(school_id, term, class level)` uniqueness key asks
+whether a slot is taken, never whether it is yours. So a schedule could sit in your School keyed to
+another School's calendar, with `SchoolScope` showing it to you because its own `school_id` is right.
+
+Both rules now carry `->where('school_id', ActiveSchool::id())` — the same shape as the
+`bank_account_id` rule beside them and the `fee_item_id` rule scoped two commits earlier. New arm:
+another School's term and class level posted to `store`, together and then **each alone paired with
+the caller's own**, so a rule scoping only the first cannot pass; the caller's own pair asserted
+**201** so the refusals are the scoping and not a blanket rejection. Watched red by restoring
+`exists:terms,id`, with `rules()` read out of the **running program** showing the degraded rule beside
+the still-scoped one.
 
 ## What I did NOT do
 

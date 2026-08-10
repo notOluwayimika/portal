@@ -1,7 +1,11 @@
 # Report — editing a draft fee schedule (U1 domain prerequisite)
 
-**Branch:** `feat/fee-schedules-page` · **Base:** `staging` @ `f9abe6a` · **Commit:** `b772147` ·
-**PR:** #234, open, not merged · **Shape:** 8 files, one commit, no migration.
+**Branch:** `feat/fee-schedules-page` · **Base:** `staging` @ `f9abe6a` · **PR:** #234, open, not merged
+
+**Commit:** `1457f51` at the time of the cold review, plus this remediation on top. The header
+previously named `b772147`, which is **not an ancestor of the PR head** — it was the pre-amend SHA,
+and amending to add the report file produced `1457f51`. A reader could not have found the commit the
+report described.
 
 Written for someone who did not do the work. Every claim below is checkable against the repo.
 
@@ -51,8 +55,10 @@ zero invoice lines today.
 accounting of which of the three actually hold it up.
 
 **3. What rejecting a publish does.** It returns the schedule to `draft`, under lock, in the same
-transaction: `app/Finance/Actions/RejectFeeScheduleChange.php:43-48`. The state model has a LOOP, not
-a dead end. Its docblock is the commit's justification and is quoted in the commit message.
+transaction: `app/Finance/Actions/RejectFeeScheduleChange.php:43-46`. The state model has a LOOP, not
+a dead end. The sentence quoted in the commit message is the class **docblock at `:19-21`**, not that
+code — this line previously cited `:43-48` for both, which sends a reader to the lock-and-flip
+looking for prose.
 
 **4. The route's verb and path.** `PUT /v1/finance/fee-schedules/{feeSchedule:uuid}/draft`. A
 sub-resource rather than a second verb on the collection member, because the two operations differ:
@@ -106,7 +112,7 @@ touched; not in scope.
 | A | Remove the locked `assertDraft($locked)` only | **RED** — 1 arm. `QueryException` instead of `BusinessRuleException`: without it the write reaches the trigger and surfaces as a 500. |
 | B | Remove BOTH Action state checks | **RED** — 5 arms. All four state arms 500-instead-of-422; the DB-backstop arm stayed green, proving those arms test the Action. |
 | C | Delete the `del` trigger from the 4a migration's `up()` | **RED** — 1 arm, the backstop. Running DB confirmed only `_ins` and `_upd` present. |
-| D | Remove the isolation term from the `fee_item_id` rule | **RED** — 1 arm. 201 instead of 422: a foreign School's item billed. |
+| D | `FeeItem::query()` → `FeeItem::withoutGlobalScopes()` in the closure rule | **RED** — 1 arm. 201 instead of 422: a foreign School's item billed. |
 | E | Remove the status check from the `fee_item_id` rule | **RED** — 1 arm. 201 instead of 422: a draft's item billed. |
 | F | Remove the pre-lock check only | **GREEN 12/12** — the measurement behind deviation 2. |
 
@@ -180,6 +186,62 @@ instead, or submit it for approval; if it is already awaiting approval, await th
 ```
 
 ---
+
+## Cold-review remediation (on top of `1457f51`)
+
+Every finding was verified against the repo before being acted on. All four FIX items confirmed.
+
+**A1 — the one that mattered, and it was worse than "an extra role can edit".** The new route's
+`->middleware('permission:finance.fee-schedule.manage')` was pinned by nothing. Deleting it left all
+twelve arms, `RouteMiddlewareBaselineTest`, `RouteAccessParityTest` and `FinanceNavCoverageTest`
+green — **37/37** — and `route:list` then showed the live route falling back to the group's
+`finance.access`.
+
+Read off `RbacSeeder::grantsMap()` in the running app: six roles hold `finance.access` and **four do
+not hold `finance.fee-schedule.manage`** — `principal`, `accounts_supervisor`, `finance_lead` and
+**`executive_director`**. The ED is the CHECKER who approves the publish of this very draft. So the
+fallback is not a wider audience, it is a **duty-separation hole**: an ED could edit the draft and
+then approve numbers they wrote — precisely what S1 4a closed by prevention.
+
+Arm added: an `executive_director` PUTs `/draft` and gets 403, with a preceding `GET /fee-schedules`
+asserted **200** so the 403 is the manage gate refusing and not the module. Watched red with the
+mutation confirmed **in the live route table** rather than in the file — middleware list showed
+`finance.access` alone — and the arm returned **200 instead of 403**: the ED edited the draft.
+Restored, and the restore re-read from the route table.
+
+**C1** — the isolation arm's comment described `Rule::exists` and "the explicit `school_id` term".
+Neither shipped; the boundary lint killed that shape before the commit landed. A reviewer following
+it to mutate the money-side isolation would have found nothing to mutate. The comment now describes
+the closure over `FeeItem::query()` and names the mutation that actually reds it.
+
+**C2** — `CreateFeeSchedule`'s docblock still named `finance_fee_schedules_draft_unique`, dropped at
+`2026_07_29_120000:38`. This commit edited that file **because** that premise was stale and left the
+sentence standing. Corrected, with the trail.
+
+**F2** — `GenerateInvoice:274-276` is blank/throw/brace; the `is_discountable` principle is at
+**`:280-282`**. Cited in three places including shipped code at `GenerateInvoiceRequest.php:54`. All
+three corrected.
+
+**F1** — the header named `b772147`, which is not an ancestor of the PR head: it was the pre-amend
+SHA. Corrected above.
+
+**F3 and F4, which the brief listed as tickets, were cheaper to fix than to file** — both are
+citation errors in this report, which was open anyway. F3: the Reject quote is the class docblock at
+`:19-21`; `:43-46` is the lock-and-flip. F4: RED row D described the abandoned `Rule::exists` shape.
+Rather than mark it UNCONFIRMED I re-ran that mutation against the shape that **shipped** —
+`FeeItem::query()` → `FeeItem::withoutGlobalScopes()` — and it reds the same arm, 201 instead of 422.
+The row now names the mutation a reader can reproduce.
+
+**Tickets filed:** `fail-closed-catalog-batch.md` (A4 — verified: the list holds ten transactional
+models, neither catalog model among them, so "SchoolScope IS the isolation" is accurate about the
+mechanism and stronger than the config guarantees; **no catalog-batch ticket existed**, the deferral
+lived only inside `feat-rbac-fail-closed-finance.md:97-98`);
+`edit-draft-two-unreachable-assertions.md` (A2 + A3, both verified);
+`edit-draft-request-reuse-decide-at-u1.md` (R1, flagged for U1 and pointed at from the controller
+docblock, not fixed here).
+
+**C3 and C4 could not be filed** — listed by number with no description, and their text was not
+supplied. Not guessed at.
 
 ## What I did NOT do
 

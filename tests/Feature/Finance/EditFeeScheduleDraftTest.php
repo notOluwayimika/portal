@@ -171,6 +171,46 @@ it('refuses to edit a schedule in every non-draft state', function (string $stat
     'retired' => 'retired',
 ]);
 
+it('refuses the CHECKER of the publish this draft feeds — the route is gated on manage, not on access', function () {
+    /*
+     * THE ROUTE'S PERMISSION MIDDLEWARE WAS PINNED BY NOTHING, and a cold review found it. Deleting
+     * `->middleware('permission:finance.fee-schedule.manage')` left all twelve arms of this file,
+     * RouteMiddlewareBaselineTest, RouteAccessParityTest and FinanceNavCoverageTest green — 37/37 —
+     * and the live route table then showed the route falling back to the group's `finance.access`.
+     *
+     * That fallback is not a wider audience, it is a DUTY-SEPARATION HOLE. Six roles hold
+     * finance.access and four of them do NOT hold finance.fee-schedule.manage — principal,
+     * accounts_supervisor, finance_lead, and executive_director. The ED is the CHECKER who approves
+     * the publish of this very draft (finance.fee-schedule.change.approve). An ED who can edit the
+     * draft can approve numbers they wrote, which is the exact thing S1 4a closed by prevention.
+     *
+     * The ED is chosen deliberately over the other three: the others would merely be an authorization
+     * mistake, this one is a governance one.
+     */
+    [$school, $term, $level] = efsdContext();
+    $draft = efsdDraft($school, $term, $level);
+
+    $checker = User::factory()->create(['school_id' => $school->id]);
+    $checker->grantSchoolAccess($school, 'executive_director');
+    $checker->flushSchoolAccessCache();
+
+    // NOT VACUOUS: the ED really does reach finance, so a 403 here is the manage gate refusing and
+    // not the module refusing. Asserted first, because without it this arm passes just as well
+    // against a user who cannot see Finance at all.
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/fee-schedules')
+        ->assertOk();
+
+    $this->actingAs($checker)->withSession(['school_id' => $school->id])
+        ->putJson('/api/v1/finance/fee-schedules/'.$draft->uuid.'/draft', efsdBody($school, $term, $level))
+        ->assertForbidden();
+
+    // And nothing was written — a 403 that still edited would be the worst of both.
+    $fresh = FeeSchedule::withoutGlobalScopes()->findOrFail($draft->id);
+    expect($fresh->label)->toBe('v1');
+    expect(FeeItem::withoutGlobalScopes()->where('fee_schedule_id', $draft->id)->count())->toBe(1);
+});
+
 it('refuses when the schedule stops being a draft between the check and the write', function () {
     // THE LOCKED RE-CHECK, ON ITS OWN. The arms above cannot reach it: the route resolves a fresh model, so
     // the pre-lock check answers first and this layer never speaks. Here the model in hand still says
@@ -280,15 +320,21 @@ it('the database refuses an item write against a non-draft parent, with the Acti
  * These arms are about GenerateInvoiceRequest, and they live HERE because they exist for this commit. The
  * safety argument for replacing a draft's items wholesale is "a draft's items cannot be cited by any
  * invoice" — true of every path in the tree, and false of a hand-crafted request, because `fee_item_id`
- * was validated as `['sometimes','nullable','integer']` and nothing more. GenerateInvoice:274-276 already
+ * was validated as `['sometimes','nullable','integer']` and nothing more. GenerateInvoice:280-282 already
  * states the principle for the field beside it — is_discountable "is a property of the fee ITEM", resolved
  * server-side, "never from the wire", because a client does not get to decide it. The rule was written;
  * this field is the one that escaped it.
  */
 
 it('refuses an invoice line citing ANOTHER School’s fee item', function () {
-    // THE ISOLATION HALF. Rule::exists queries the TABLE, so FeeItem's SchoolScope does not apply to it —
-    // without the explicit school_id term this rule would confirm a foreign item exists and bill against it.
+    // THE ISOLATION HALF, and this comment describes the rule that SHIPPED. It briefly described an
+    // abandoned one — a `Rule::exists` with a hand-rolled `school_id` term — which bin/ci-boundary-lint
+    // killed before the commit landed, and a reviewer following that description to mutate the
+    // money-side isolation would have found nothing to mutate.
+    //
+    // The shipped rule is a closure over `FeeItem::query()`, so SchoolScope IS the isolation: a
+    // foreign item does not resolve and the closure fails the attribute. To red this arm, change that
+    // to `FeeItem::withoutGlobalScopes()` — which is what was actually done, and it returned 201.
     [$mine] = efsdContext();
     [$theirs, $theirTerm, $theirLevel] = efsdContext();
 

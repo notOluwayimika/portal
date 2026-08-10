@@ -51,7 +51,7 @@ class GenerateInvoiceRequest extends FormRequest
             'lines.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             // Provenance of the price. `integer` alone was the whole rule until this commit, and that made
             // it the one wire field that escaped the principle stated two fields down and at
-            // GenerateInvoice:274-276 — a client does not get to decide a fee ITEM's properties. An
+            // GenerateInvoice:280-282 — a client does not get to decide a fee ITEM's properties. An
             // arbitrary id could cite another School's item, or a DRAFT's.
             //
             // The draft half is not hypothetical bookkeeping: EditFeeScheduleDraft replaces a draft's items

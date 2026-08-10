@@ -55,6 +55,13 @@ class FeeScheduleController extends Controller
      * request's `term_id`/`class_level_id` are validated but IGNORED here, because a draft's slot is fixed
      * by the row and re-slotting it silently would be the same defect {@see self::supersede} avoids.
      *
+     * THAT REUSE IS A DECISION U1 HAS TO SETTLE, NOT A FINISHED CONTRACT. Both fields are `required`, so
+     * the page must send two values the server discards, and a page that omits them gets a 422 naming
+     * fields its operator cannot see. Their `exists` rules are also UNSCOPED — harmless here because the
+     * values are thrown away, not harmless on `store`/`supersede`, which read them. Do not "fix" this by
+     * making the Action consume them: see docs/handoff/tickets/edit-draft-request-reuse-decide-at-u1.md
+     * for the three options and why this commit deliberately left it open.
+     *
      * This is the route the pending_unique 422 points at. Before it existed a draft occupied its own slot
      * and could be neither edited nor deleted — see {@see EditFeeScheduleDraft} for why that was a brick.
      */

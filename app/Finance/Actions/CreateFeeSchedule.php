@@ -23,8 +23,15 @@ use Illuminate\Support\Facades\DB;
  * approval Action, where it belongs.
  *
  * The schedule is created as a DRAFT so the parent-state trigger permits the item inserts (an item may only
- * be added to a draft). At most one draft per (school, term, class level) exists at a time
- * (finance_fee_schedules_draft_unique) — a second concurrent draft for the same slot is a friendly 422.
+ * be added to a draft). At most one OPEN schedule per (school, term, class level) exists at a time —
+ * `finance_fee_schedules_pending_unique`, which covers draft AND pending_approval. A second one for the
+ * same slot is a friendly 422.
+ *
+ * IT USED TO NAME `finance_fee_schedules_draft_unique`, which S1 4a DROPPED
+ * (2026_07_29_120000_finance_fee_schedule_pending_approval_state.php:38) and replaced with the wider key.
+ * That stale premise is the reason a draft occupied its own slot and could not be edited at all — the
+ * defect {@see EditFeeScheduleDraft} exists to fix — so this file was edited BECAUSE the sentence was
+ * wrong, and left it standing. Corrected here.
  */
 final class CreateFeeSchedule
 {

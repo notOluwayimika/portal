@@ -51,6 +51,27 @@ export function nairaToMinor(input: string): number | null {
 }
 
 /**
+ * Render a stored amount back into the plain string an amount INPUT holds ("250075" →
+ * "2500.75") — the inverse of nairaToMinor, and the shape it accepts back verbatim. This is
+ * what prefills an edit form: formatNaira's output ("₦2,500.75") is for reading, and feeding
+ * it to an input would make nairaToMinor reject the operator's own unchanged value.
+ *
+ * Mirrors the backend Money::toNaira() exactly, and is float-free the same way: integer trunc
+ * and modulo, no division of the significant digits, no toFixed. It lives here because this is
+ * the ONE file where money conversion is allowed to happen at all (bin/ci-money-lint.php exempts
+ * it and bans the arithmetic everywhere else) — a caller doing `amount_minor / 100` itself is
+ * exactly what that gate exists to refuse.
+ */
+export function minorToNairaInput(money: Money): string {
+    const { amount_minor } = money;
+    const abs = Math.abs(amount_minor);
+    const naira = Math.trunc(abs / 100); // exact for amounts < 2^53
+    const kobo = abs % 100; // exact
+
+    return `${amount_minor < 0 ? '-' : ''}${naira}.${String(kobo).padStart(2, '0')}`;
+}
+
+/**
  * Sum integer minor-unit amounts (e.g. a live invoice-line running total). The third and
  * last sanctioned money op — display→formatNaira, input→nairaToMinor, total→sumMinor — so
  * the create form never does ad-hoc `+`/`reduce` on amounts (banned by the money-lint).

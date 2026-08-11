@@ -1,11 +1,15 @@
-# U1 — the fee schedules page, COMMIT 1 (the data surface)
+# U1 — the fee schedules page (commits 1 and 2)
 
-**Scope of this file.** The four blocks below are what was asked of the implementing side for U1
-**commit 1**, reproduced verbatim in the order they arrived. All four arrived on **2026-08-11**.
+**Scope of this file.** The blocks below are what was asked of the implementing side for U1,
+reproduced verbatim in the order they arrived. Blocks 1–4 are **commit 1** (the data surface) and all
+four arrived on **2026-08-11**. Block 5 is **commit 2** (the route, the page and the sidebar entry)
+and arrived on **2026-08-11**.
 
-**Commit 2 — the route, the page (`.tsx`), and the sidebar entry — is NOT yet written and is NOT
-covered by this file.** Commit 1 deliberately ships no route, no `.tsx` and no sidebar entry; block 1
-says so explicitly and every later block works within that boundary.
+**This header used to say commit 2 was "NOT yet written and NOT covered by this file".** That was
+true when blocks 1–4 were the whole file and stopped being true the moment block 5 was appended;
+corrected here by the commit that appended it. Commit 1 still deliberately ships no route, no `.tsx`
+and no sidebar entry — block 1 says so explicitly and blocks 2–4 work within that boundary. Commit 2
+is where all three arrive.
 
 **Why verbatim.** A reviewer's first attack is whether a faithful implementation was built on a false
 premise — the one failure that passes every other check. That attack needs the text that was asked
@@ -13,8 +17,11 @@ for, not a summary of it. Nothing below is paraphrased, tidied or merged into a 
 are fenced so their indentation, backticks and line breaks survive rendering; the fences are the only
 thing added.
 
-The implementation report that answers these blocks is
-[`reports/feat-fee-schedules-data-surface.md`](reports/feat-fee-schedules-data-surface.md).
+The implementation reports that answer these blocks are
+[`reports/feat-fee-schedules-data-surface.md`](reports/feat-fee-schedules-data-surface.md)
+(commit 1, blocks 1–4) and
+[`reports/feat-fee-schedules-screen.md`](reports/feat-fee-schedules-screen.md)
+(commit 2, block 5).
 
 ---
 
@@ -682,4 +689,227 @@ Append under a dated heading. Facts, evidence, deviations, what you could not ve
 output, cuts by whole lines and marked. No severity calls on your own work.
 
 For FIX A, paste the two rewritten passages in full — they are the deliverable.
+```
+
+---
+
+## Block 5 — the commit-2 brief (2026-08-11)
+
+The screen itself: the route, `fee-schedules.tsx`, the sidebar entry, the one endpoint change
+(the schedule total), the two gates that fire, the fixture regeneration and a browser drive. This
+is the block that closes the gap the header above used to name.
+
+```text
+CONTEXT
+
+Branch off `staging` AFTER the U1 commit-1 PR is merged. Confirm first:
+
+  git fetch origin && git log --oneline origin/staging -3
+
+`origin/staging` must contain the fee-schedules data surface commit. If it does not, stop.
+
+  git switch -c feat/fee-schedules-screen origin/staging
+
+Read docs/handoff/u1-fee-schedules-brief.md before you start. It is the four blocks that
+produced commit 1, verbatim, and it states that commit 2 is not covered by it. This block is
+commit 2. Append it to that file as Block 5 as part of this commit.
+
+This is ONE commit. Route, page, sidebar, the two gates that fire, the fixture regeneration,
+and a browser drive.
+
+
+WHAT EXISTS AND WHAT DOES NOT
+
+Every endpoint is built: index (with term_id/status filters), prefill, store, editDraft,
+supersede, and the publish/retire change flow. The resource carries term_label,
+class_level_label and each item's bank_account_id. A fee schedule can be authored today only
+with curl. This commit is the screen. No new endpoint, with ONE exception named below.
+
+
+1. THE ROUTE
+
+routes/web.php, inside the existing `['auth','tenant','permission:finance.access']` group.
+
+  Route::get('/finance/fee-schedules', …)
+      ->middleware('permission:finance.fee-schedule.manage')
+      ->name('admin.finance.fee-schedules');
+
+The extra permission is the bank-accounts precedent (routes/web.php:159-161) and the same
+reasoning: this is AUTHORING, not viewing. Everyone who can read finance must not be offered
+a screen that sets prices. The nav entry keys on the same ability so a visible item can never
+403 on click.
+
+TERMS AND CLASS LEVELS ARE PROPS, NOT A FETCH. Same reason as the opening-balance operator
+screen: the only API listing terms is gated on `academic_data.view`, which the finance seat
+does not hold. Widening that seat or coining a finance-side terms endpoint are both bigger
+changes than the screen.
+
+  - `ActiveSchool::getOrFail()->id` — the INT, not the model. Binding the model into a
+    `where('school_id', …)` matched nothing and rendered an EMPTY term select on the
+    opening-balance screen, and every test still passed. routes/web.php:207-213 carries that
+    scar; do not reopen it.
+  - Terms: `->with('academicSession')`, ordered id desc, labelled with `Term::displayLabel()`
+    — the method, not a fourth copy of the expression.
+  - Class levels: scoped to the School, ordered by `order`, `{id, name}`.
+
+BANK ACCOUNTS ARE A FETCH, NOT PROPS — and this is a decision, not an omission.
+`GET /v1/finance/bank-accounts` is gated on `finance.bank-account.manage`, a DIFFERENT ability
+from the one gating this page. Today every role holding `finance.fee-schedule.manage` also
+holds `finance.bank-account.manage` (admin at RbacSeeder.php:235-236, accounts_officer at
+:381-382), so the fetch cannot 403. Props are for data the seat CANNOT fetch; accounts are
+data it can, and a second source for them is the drift shape.
+
+Turn that implicit coupling into a checked one: ONE arm asserting that every role in
+grantsMap() holding `finance.fee-schedule.manage` also holds `finance.bank-account.manage`,
+with a message saying the fee-schedules screen's account picker fetches an endpoint gated on
+the latter and would render empty-and-broken for a holder of only the former. Watched red by
+removing the bank-account grant from one role in the map.
+
+
+2. THE ONE ENDPOINT CHANGE — THE SCHEDULE TOTAL
+
+resources/js/lib/format.ts states the rule and bin/ci-money-lint.php enforces it: the frontend
+performs NO monetary arithmetic, because JS numbers are floats and the backend moved to integer
+minor units precisely to avoid that. The API returns every total already computed; the UI only
+displays.
+
+So the page CANNOT sum a schedule's items, and a schedule list without a total is close to
+useless to the person deciding whether to submit it for approval.
+
+  - `FeeScheduleResource` gains `total`, the Money wire shape {amount_minor, currency},
+    summed in PHP from the items. Under `whenLoaded('items', …)` — the same treatment the
+    items themselves get, so prefill's payload does not grow a key.
+  - Sum through `App\Support\Money`, not by adding ints. If the items disagree on currency
+    that is a condition worth surfacing rather than silently adding — decide what it does and
+    say why in the report.
+  - Extend the existing prefill key-list arm to prove `total` is ABSENT there, and add an
+    index arm asserting the value. Watched red on both.
+  - The page renders it with `formatNaira`. It never computes it.
+
+
+3. THE PAGE
+
+resources/js/pages/admin/finance/fee-schedules.tsx
+
+The shape precedent is resources/js/pages/admin/finance/bank-accounts.tsx — read it first.
+Same layout export (`FeeSchedules.layout = { breadcrumbs: [...] }`), same axios + modal +
+422-bag pattern, same `@/components/ui` imports.
+
+FIVE ACTS, AND NO SIXTH:
+
+  a. LIST. Filter by term and status through the query params commit 1 added — server-side,
+     not by fetching everything and filtering in the browser. Columns: label, term_label,
+     class_level_label, status, item count, total. Default filter: no term (all), because a
+     school arriving in September has one term of schedules and hiding them behind a
+     preselected filter is worse than a short list.
+
+  b. AUTHOR A DRAFT. Modal: term select, class level select, label, and item rows —
+     description, amount, bank account select, mandatory, discountable. POST to
+     /api/v1/finance/fee-schedules.
+
+  c. EDIT A DRAFT. The same modal, prefilled from the row INCLUDING each item's
+     bank_account_id (this is what commit 1 added the field for). PUT to
+     /api/v1/finance/fee-schedules/{uuid}/draft. It sends label and items ONLY —
+     EditFeeScheduleDraftRequest carries no term_id or class_level_id and sending them is
+     harmless but wrong.
+
+  d. SUBMIT FOR APPROVAL. POST /api/v1/finance/fee-schedule-changes with kind=publish, the
+     schedule uuid as `target`, and a REASON — required, max 255, and the ED reads it.
+
+  e. RETIRE. Same endpoint, kind=retire. Active schedules only.
+
+NO APPROVE, NO REJECT. That is /finance/approvals and duplicating the checker surface here
+would give a second place for the ED's decision to live.
+
+BUTTONS BY STATUS — the Action already refuses the wrong ones (SubmitFeeScheduleChange:49-53),
+so this is about not offering an operator a button that 422s:
+  draft            → Edit, Submit for approval
+  pending_approval → nothing; show that it is with the ED
+  active           → Retire; and a path to author a superseding draft (items are frozen —
+                     re-pricing is a NEW draft plus a publish, per FeeScheduleStatus's docblock)
+  superseded, retired → read only
+
+MONEY:
+  - `nairaToMinor` from '@/lib/format' for input, `formatNaira` for display. Both already
+    exist. Do NOT write `* 100`, `parseFloat`, `toFixed` or `Intl` anywhere in this file —
+    bin/ci-money-lint.php is a gate step and will refuse it.
+  - nairaToMinor returns null on malformed input. That is inline validation, not a crash:
+    show it on the row, do not submit.
+
+THE 422 BAG IS NESTED, and this is the real difference from bank-accounts.tsx. Laravel returns
+keys like `items.0.bank_account_id` and `items.2.amount_minor`. Mapping them flat the way
+bank-accounts.tsx does puts every item error in one place with no indication of WHICH line is
+wrong — on a form with eight fee lines that is an operator staring at a red box. Parse the
+index out and render the message beside its row.
+
+THE SLOT COLLISION. finance_fee_schedules_pending_unique permits at most one draft-or-pending
+schedule per (school, term, class level). Authoring a second one for an occupied slot fails.
+DETERMINE WHAT THE API ACTUALLY RETURNS for that case — read the code and provoke it, do not
+assume it is a 422 with a usable message — and make the page say something actionable ("there
+is already an open schedule for this term and class level; edit that one"). Report what you
+found, including if it is a raw 500, in which case say so rather than papering it.
+
+TOASTS: bank-accounts.tsx imports `toast` from 'sonner'; opening-balances/import.tsx imports
+from 'react-toastify'. Both are live in this repo. Pick ONE, say in the report which and why,
+and do not introduce a third.
+
+No localStorage, no sessionStorage.
+
+
+4. THE TWO GATES THAT FIRE THE MOMENT THE ROUTE REGISTERS
+
+  a. tests/Feature/Finance/FinanceNavCoverageTest.php fails unless app-sidebar.tsx contains
+     the literal quoted string '/finance/fee-schedules'. Add the item to the Finance group
+     beside Bank accounts, gated on `can('finance.fee-schedule.manage')` — the same ability
+     as the route, for the reason the bank-accounts comment there already gives.
+
+  b. tests/fixtures/route-access-map.json gains `GET /finance/fee-schedules`. Regenerate it,
+     do not hand-edit:
+
+         php artisan rbac:sync
+         php artisan rbac:derive-access
+
+     rbac:derive-access reads grants from the CONNECTED DATABASE (RbacDeriveAccessMap.php:14),
+     so syncing first is not optional — an un-synced database bakes the wrong access set into
+     the fixture. UNVERIFIED: I have not run either command; treat this as the sequence the
+     source describes and report what actually happened.
+
+No new permission is coined, so app/Enums/Permission.php, PermissionGroup, grantsMap() and
+rbac-grants-baseline.json are all untouched. If you find yourself editing one, stop and say why.
+
+
+5. DRIVE IT
+
+The fixture now has what it needs — commit 1 seeded the academic slot and a bank account per
+school, and the report table prints 1/1/2/1.
+
+  php artisan drive:seed   (or whatever the command is — read app/Console/Commands/SeedDriveFixture.php)
+
+Drive as TWO seats and report both:
+  - maker@drive.test (accounts_officer) — author a draft end to end, edit it, submit it for
+    approval. Screenshots or a GIF.
+  - school-b@drive.test (the isolation seat) — the term select, the class level select and the
+    bank account picker must all be populated with SCHOOL B's rows and none of School A's.
+
+Report what the selects actually contained, by count and by label. This is the check that a
+passing test suite cannot make.
+
+
+GATE
+
+  bin/quality
+
+Raw, 14 steps, unedited. Two runs reported as two if the first is red. Note that this commit
+touches TypeScript, so tsc-ratchet and lint-changed are live in a way they were not for
+commit 1.
+
+
+REPORT
+
+docs/handoff/reports/, the established shape. Facts, evidence, deviations, what you could not
+verify. Raw output, cuts by whole lines and marked. No severity calls on your own work, no
+nominating what you think is contentious, no references to material the reader does not have.
+
+Append this block verbatim to docs/handoff/u1-fee-schedules-brief.md as Block 5, dated, and
+correct that file's header line which currently says commit 2 is not covered by it.
 ```

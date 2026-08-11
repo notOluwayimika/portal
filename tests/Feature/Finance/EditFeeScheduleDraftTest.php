@@ -105,8 +105,8 @@ function efsdBody(School $school, Term $term, ClassLevel $level, string $label =
     return [
         'term_id' => $term->id, 'class_level_id' => $level->id, 'label' => $label,
         'items' => [
-            ['description' => 'Tuition', 'amount_minor' => 250000, 'bank_account_id' => testBankAccountUuid($school->id), 'sort_order' => 0],
-            ['description' => 'Transport', 'amount_minor' => 30000, 'bank_account_id' => testBankAccountUuid($school->id), 'sort_order' => 1],
+            ['description' => 'Tuition', 'amount_minor' => 250000, 'currency' => 'NGN', 'bank_account_id' => testBankAccountUuid($school->id), 'sort_order' => 0],
+            ['description' => 'Transport', 'amount_minor' => 30000, 'currency' => 'NGN', 'bank_account_id' => testBankAccountUuid($school->id), 'sort_order' => 1],
         ],
     ];
 }
@@ -276,7 +276,7 @@ it('refuses a schedule keyed to ANOTHER School’s term or class level, on the r
 
     $body = fn (int $termId, int $levelId) => [
         'term_id' => $termId, 'class_level_id' => $levelId, 'label' => 'v1',
-        'items' => [['description' => 'Tuition', 'amount_minor' => 100000, 'bank_account_id' => testBankAccountUuid($mine->id)]],
+        'items' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN', 'bank_account_id' => testBankAccountUuid($mine->id)]],
     ];
 
     // Both foreign — the pair a naive copy of another School's payload would carry.

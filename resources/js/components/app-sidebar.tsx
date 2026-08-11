@@ -14,6 +14,7 @@ import {
     LayoutDashboard,
     MessageSquare,
     PenTool,
+    ReceiptText,
     RefreshCw,
     Shield,
     ShieldCheck,
@@ -460,6 +461,18 @@ export function AppSidebar() {
                     title: 'Bank accounts',
                     href: '/finance/bank-accounts',
                     icon: Landmark,
+                });
+            }
+
+            // Fee schedules (U1) — finance CONFIGURATION beside Bank accounts, and it keys on its
+            // own finance.fee-schedule.manage for the reason the comment above already gives: this
+            // screen SETS PRICES, so everyone who can view finance must not be offered it, and the
+            // route carries the same ability so a visible item can never 403 on click.
+            if (can('finance.fee-schedule.manage')) {
+                financeItems.push({
+                    title: 'Fee schedules',
+                    href: '/finance/fee-schedules',
+                    icon: ReceiptText,
                 });
             }
 

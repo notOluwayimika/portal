@@ -143,6 +143,52 @@ it('edits a draft in place — same row, items replaced wholesale', function () 
             .'would be an item nobody submitted still priced on the schedule.');
 });
 
+it('accepts an edit that sends NO term_id and NO class_level_id — the two fields the Action never reads', function () {
+    /*
+     * U1 commit 1 — the request split. This route was validated by FeeScheduleRequest, which requires
+     * `term_id` and `class_level_id`; EditFeeScheduleDraft::handle(FeeSchedule, string, array) receives
+     * neither. So the endpoint demanded two fields and then discarded them, and a page that omitted
+     * them got a 422 naming fields its operator cannot see. EditFeeScheduleDraftRequest carries `label`
+     * and the `items.*` rules only.
+     *
+     * WATCHED RED by pointing the route's action back at FeeScheduleRequest: this arm fails with
+     * "Expected response status code [200] but received 422" and the errors bag names term_id and
+     * class_level_id.
+     */
+    [$school, $term, $level] = efsdContext();
+    $draft = efsdDraft($school, $term, $level);
+
+    $body = efsdBody($school, $term, $level);
+    unset($body['term_id'], $body['class_level_id']);
+
+    $this->actingAs(efsdAdmin($school))
+        ->withSession(['school_id' => $school->id])
+        ->putJson('/api/v1/finance/fee-schedules/'.$draft->uuid.'/draft', $body)
+        ->assertOk()
+        ->assertJsonPath('label', 'v2')
+        ->assertJsonPath('items.0.bank_account_id', testBankAccountUuid($school->id));
+
+    // AND THE SLOT DID NOT MOVE. The fields are absent from the request because nothing reads them —
+    // not because the edit quietly re-slots the draft from somewhere else.
+    $fresh = FeeSchedule::withoutGlobalScopes()->findOrFail($draft->id);
+    expect($fresh->term_id)->toBe($term->id)
+        ->and($fresh->class_level_id)->toBe($level->id);
+});
+
+it('still refuses an edit whose items are missing — the shared item rules did not go with the split', function () {
+    // The split moved `items.*` into a trait both requests read. If the edit request had simply dropped
+    // them, this route would accept a body with no items at all and the Action's BusinessRuleException
+    // would be the only thing left — a 422 raised from inside a transaction instead of at the door.
+    [$school, $term, $level] = efsdContext();
+    $draft = efsdDraft($school, $term, $level);
+
+    $this->actingAs(efsdAdmin($school))
+        ->withSession(['school_id' => $school->id])
+        ->putJson('/api/v1/finance/fee-schedules/'.$draft->uuid.'/draft', ['label' => 'v2'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['items']);
+});
+
 it('refuses to edit a schedule in every non-draft state', function (string $status) {
     // ONE ARM PER STATE, keyed, so a failure names the state rather than an index. An unkeyed dataset of
     // bare strings has produced ZERO tests here before and reported a bare failure.
@@ -308,9 +354,12 @@ it('refuses to edit another School’s draft', function () {
 });
 
 it('refuses an edit whose item names no bank account, and one naming a deactivated account', function () {
-    // FeeScheduleRequest IS REUSED, not re-implemented — so the rule #233 put on create bites on edit for
-    // free. Both halves asserted: the missing field and the deactivated account, because `required` alone
-    // would pass the second one.
+    // THIS ARM IS WHAT PROVES THE U1 REQUEST SPLIT DID NOT DROP THE ISOLATION RULE. The claim it used to
+    // carry — "FeeScheduleRequest IS REUSED, not re-implemented" — stopped being true when U1 commit 1
+    // pointed this route at EditFeeScheduleDraftRequest. The rule #233 put on create now reaches the edit
+    // path through HasFeeScheduleItemRules, shared by both requests rather than copied into each, and this
+    // arm passing unchanged across that move is the evidence that the share is real. Both halves asserted:
+    // the missing field and the deactivated account, because `required` alone would pass the second one.
     [$school, $term, $level] = efsdContext();
     $draft = efsdDraft($school, $term, $level);
 

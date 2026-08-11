@@ -195,9 +195,15 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
      * THE TERMS ARE PROPS, NOT A FETCH. The form needs the term being CLOSED OUT, and the only API
      * that lists terms is gated on `academic_data.view` — an ability the finance maker seat does not
      * hold. Passing them from the route avoids either widening that seat or coining a finance-side
-     * terms endpoint, both of which would be a bigger change than the screen. Scoped by the active
-     * School through the `tenant` middleware and an explicit where: `terms` is not a BelongsToSchool
-     * model, so this one is written rather than inherited.
+     * terms endpoint, both of which would be a bigger change than the screen.
+     *
+     * Scoped by the active School twice over, and the explicit `where` is the REDUNDANT one. This
+     * comment used to say `terms` "is not a BelongsToSchool model, so this one is written rather than
+     * inherited" — false since before this branch (`git show 59e1da8:app/Models/Term.php` line 16 is
+     * `use BelongsToSchool, LogsActivity;`), which means SchoolScope already bounds this query. The
+     * `where` is kept rather than deleted because the route runs inside `tenant` and an explicit
+     * predicate on a props query is readable at the call site: the next person to read this closure can
+     * see what the select is bounded by without going to the model to find out.
      */
     Route::get('/finance/opening-balances/import', function () {
         // `->id`, NOT the model. `ActiveSchool::getOrFail()` returns a School (ActiveSchool.php:66)
@@ -213,7 +219,9 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
             ->get()
             ->map(fn (Term $term) => [
                 'id' => $term->id,
-                'label' => trim(($term->academicSession->name ?? '').' — '.$term->name),
+                // Term::displayLabel() — the same method the fee-schedules list and the approvals queue
+                // read. This expression used to live here in full, and was copied twice.
+                'label' => $term->displayLabel(),
             ])
             ->values();
 

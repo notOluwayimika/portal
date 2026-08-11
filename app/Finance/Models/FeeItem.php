@@ -50,4 +50,20 @@ class FeeItem extends Model
     {
         return $this->belongsTo(FeeSchedule::class, 'fee_schedule_id');
     }
+
+    /**
+     * WHERE THIS LINE'S MONEY LANDS. `finance_fee_items.bank_account_id` is NOT NULL, so this is never
+     * absent on a row — but it is nullable HERE, because BankAccount carries SchoolScope and a read
+     * from another School's context resolves to null rather than leaking the account.
+     *
+     * Added by U1 commit 1: `FeeScheduleResource` now serialises the account's uuid on every item, so
+     * an operator editing a draft is shown the destination each line already points at instead of
+     * re-picking it from nothing. Without a relation that is one query per item; `index()` eager-loads it.
+     *
+     * @return BelongsTo<BankAccount, $this>
+     */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
 }

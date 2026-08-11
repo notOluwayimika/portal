@@ -54,7 +54,11 @@ class FeeScheduleChangeResource extends JsonResource
             // free text — so the (class level × term) pair the schedule IS goes beside it.
             'target_label' => $this->whenLoaded('target', fn () => $this->target?->label),
             'target_class_level' => $this->whenLoaded('target', fn () => $this->target?->classLevel?->name),
-            'target_term' => $this->whenLoaded('target', fn () => $this->target?->term?->name),
+            // Term::displayLabel(), NOT the bare name. This is the screen where the ED decides whether a
+            // schedule becomes billable, and every session has a "First Term" — the bare name does not
+            // say which one, on the one screen where the decision is made. Same string the fee-schedules
+            // list and the opening-balance term select read, from the same method.
+            'target_term' => $this->whenLoaded('target', fn () => $this->target?->term?->displayLabel()),
             'reason' => $this->reason,
             // The queue reads every type's free text under one column.
             'note' => $this->reason,

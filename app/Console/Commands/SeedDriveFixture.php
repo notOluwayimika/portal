@@ -75,6 +75,17 @@ class SeedDriveFixture extends Command
         $states = new DriveFinanceStates($cast->maker, $cast->checker);
         $e = $cast->enrollments;
 
+        // A BANK ACCOUNT PER SCHOOL, BEFORE ANY STATE RUNS. School B's only state is a plain invoice,
+        // which records no payment — so nothing would ever have created an account there, and the
+        // isolation seat (school-b@drive.test holds accounts_officer, which holds
+        // finance.fee-schedule.manage) would open the fee-schedules author screen onto an EMPTY account
+        // picker and be unable to create a single line. Same failure the academic slot above was written
+        // to prevent, one field over. Seeded through DriveFinanceStates::ensureBankAccount so the
+        // account_number formula has exactly one definition: the payment paths call the same
+        // firstOrCreate and FIND this row rather than making a second one.
+        ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureBankAccount($cast->schoolAId));
+        ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureBankAccount($cast->schoolBId));
+
         ActiveSchool::runFor($cast->schoolAId, function () use ($states, $e) {
             $states->unpaid($e['ursula']);
             $states->partPaid($e['paula']);
@@ -87,12 +98,12 @@ class SeedDriveFixture extends Command
         });
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->plainInvoice($e['bola'], 250000));
 
-        $this->report();
+        $this->report($cast, $states);
 
         return self::SUCCESS;
     }
 
-    private function report(): void
+    private function report(DriveCastSeeder $cast, DriveFinanceStates $states): void
     {
         $this->newLine();
         $this->info('Drive fixture seeded. Sign in at APP_URL with any user below (password: '.DriveCastSeeder::PASSWORD.'):');
@@ -106,6 +117,37 @@ class SeedDriveFixture extends Command
                 ['School B bursar (isolation)', 'school-b@drive.test'],
             ],
         );
+        $this->newLine();
+
+        /*
+         * WHAT THE FEE-SCHEDULES SCREEN NEEDS, COUNTED FROM THE DATABASE — not from the seeder's own
+         * variables, which would only ever report what the seeder intended. That screen selects a term,
+         * a class level and a destination bank account per line; before U1 commit 1 this fixture seeded
+         * none of the four, and a drive would have opened on empty selects. These counts are what the
+         * next drive reads instead of trusting a paragraph in a brief. Zero in any column means the
+         * screen cannot author anything — which is why the bank-accounts column is here beside the
+         * academic three rather than left to the comment above it.
+         *
+         * Read through DB::table rather than the models because AcademicSession, Term and ClassLevel all
+         * carry SchoolScope and this runs with no active-School context — the scoped models would return
+         * every row or none depending on the context, which is exactly the ambiguity a count must not have.
+         */
+        $count = fn (string $table, int $schoolId): int => (int) DB::table($table)->where('school_id', $schoolId)->count();
+
+        // The account count comes through DriveFinanceStates, not through the closure above: the boundary
+        // lint forbids a `finance_*` table literal outside app/Finance, so the Finance side counts its own
+        // table. It reads the scoped model, hence the runFor.
+        $accounts = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->bankAccountCount($schoolId));
+
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account:');
+        $this->table(
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts'],
+            [
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId)],
+            ],
+        );
+
         $this->info('Statements: open /finance and click a student; the queue is /finance/approvals.');
     }
 }

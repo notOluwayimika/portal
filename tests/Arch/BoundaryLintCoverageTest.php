@@ -27,8 +27,8 @@ uses()->group('arch');
  * host leaves an UNTRACKED file, which is the one outcome that outlives the run and is committable.
  *
  * ⚠️ THIS PLANTS INTO THE REAL TREE, SO IT IS SAFE ONLY WHILE PEST RUNS SEQUENTIALLY. Verified at
- * this commit: `bin/quality:153` is `pest --group=arch` and `:161` is plain `pest`; `--parallel`
- * appears only on Pint (`composer.json:67,70`). If you are adding `--parallel` to step 13, THIS FILE
+ * this commit: `bin/quality:225` is `pest --group=arch` and `:253` is plain `pest`; `--parallel`
+ * appears only on Pint (`composer.json:67,70`). If you are adding `--parallel` to either, THIS FILE
  * BREAKS FIRST — test 3 asserts the lint is GREEN over the tree while tests 1 and 2 have violations
  * planted in it, so the three tests contradict each other the moment they overlap in time. Give the
  * lint a root argument and point the fixtures at a temp dir before you parallelise, or exclude this

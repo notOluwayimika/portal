@@ -174,6 +174,7 @@ Everything here is deferred, named, and reversible. Nothing here is cancelled.
 | **Bulk everything *except* invoice generation and opening-balance import** — bulk discount award (Ph4), bulk re-pricing / credit-note-and-reissue (Ph7), bulk statement print/email (Ph8), bulk reminders (Ph9) | Ph4/7/8/9 | ~2wk | Bulk paths belong to the phase owning the single-record path (v10:1131), so every one of these is purely additive later. A bursar can do thirty students by hand for one term. |
 | **`Idempotency` table + middleware** | Ph1E | — | Ships with Paystack. Webhooks are the hostile input it exists for; V2's natural key covers bulk invoicing. |
 | **Refunds (S10)** — approval-gated cash-out posting, one path, one modal | Ph7 | ~1wk incl. the third-state design | **The first time Brookstone issues a refund.** Moved here 2026-08-09 on their answer that none has been issued in the last three terms. It is a *shape*, not a surface, so it does not become additive with time — money leaving the building must be in the ledger. Nothing may pay a refund out by hand in the meantime and call it something else. U15 goes with it. |
+| **Sibling credit transfer** — moving a leaver's credit balance onto a sibling's account | **Nowhere in v10. New.** | — | *Added 2026-08-11 by the project lead.* **After U2/U8, post-September. Not cutover-blocking**, because the cutover has an answer that needs no code: the credit imports onto the leaver's own account, which is where it truthfully was on the last day of term (`opening-balance-import-spec.md` R16). What makes it a real item rather than a wish is that **doing it in the spreadsheet instead is refused** — a credit moved between two children in a file has no actor, no date and no reason, and the sibling's opening balance then disagrees with the extract Brookstone sent. **Four design constraints, recorded so whoever scopes it does not rediscover them.** ①  **Its OWN `LedgerEntryType` case, posted on both legs — not `Payment`.** The enum's docblock gives the reason for the credit-note case and it transfers verbatim: a self-describing type *"keeps 'payments received' reporting from ever double-counting it"*, and the `type` column is *"a free varchar (no DB enum/CHECK), so adding a case is a PHP-only change"* (`app/Finance/Enums/LedgerEntryType.php:16-19`). A transfer posted as a Payment is money the school never received appearing in receipts. ②  **A PESSIMISTIC LOCK on the source account.** `RecordAccountPayment` deliberately takes none because *"the amount comes from the request, never from a prior read"* (`app/Finance/Actions/RecordAccountPayment.php:30-31`); a transfer must first check the leaver holds that much credit, which is a genuine read-modify-write. `SubledgerPoster`'s docblock already names where that arrives: *"the pessimistic lock arrives in W3, where applying credit is a genuine read-modify-write of the balance"* (`app/Finance/Services/SubledgerPoster.php:34-35`). ③  **Maker–checker with ED approval**, the `SubmitVoidRequest` / `ApproveVoidRequest` shape — it moves money between two families. ④  **Its own append-only table** carrying from, to, amount, reason, submitter, approver: the ledger rows on both legs need a real `source_type` / `source_id` to point at. |
 | **Instalment schedules · late fees · penalties · cross-School anything** | §2.3 | — | **Never.** Already ruled out by Brookstone 2026-07-29 and by §2.1. Listed here only so nobody "restores" them. |
 
 ---
@@ -204,6 +205,44 @@ What I will state:
 4. ~~**Are the fee schedules for all three terms going to exist before term-1 billing?**~~ **WITHDRAWN 2026-08-09 — the question is refused rather than answered.** Boards adjust prices mid-year, so the portal must not require a commitment the school cannot make. V10/U20 absorb it: unpublished terms are hidden and the year total is withheld until the whole structure is published. No Brookstone commitment is needed.
 5. ~~**Has a refund been issued in the last three terms?**~~ **ANSWERED 2026-08-09 — NO.** S10
    leaves the cut and takes the third-state design question with it. Moved to §5; see §8.
+6. **For a leaver in arrears, does Brookstone want the balance chased, or written off before the
+   file? — OUTSTANDING, and it changes nothing.** *Added 2026-08-11.* Recorded here because it is
+   waiting on a person, and **only** here: it is not an open decision in
+   `opening-balance-import-spec.md` §12, because §12 is for things that would change the build and
+   this cannot. **Both answers are already implemented and neither needs code.** The default is
+   import-and-chase (spec R14/R18). A write-off is R17's mechanism applied deliberately — zero those
+   specific rows in the CSV before upload, leave them in the file. So this is a **preference to be
+   confirmed**, not a decision to be made, and the file format, the import and the posting are
+   identical whichever way it lands. Ask it; do not wait on it. Their original note covered credit
+   balances only, which is why it was never asked.
+7. ~~**Will the MySQL server timezone be aligned in a maintenance window?**~~ **ANSWERED
+   2026-08-11 — NO, AND NOT BY ANY WINDOW** (project lead). Recorded on this list because a reader
+   needs to stop expecting a window that is not coming; the open item itself was carried in
+   `docs/handoff/tickets/stored-epoch-offset.md`, never here. **Production stays as it is.**
+
+   **It is not a scheduling problem, and reading it as one is the mistake this item exists to
+   prevent.** The deployment is **shared hosting**: the global database server clock is physically
+   restricted and is not ours to set. There is no maintenance window that would help, because a
+   window is not what is missing. The reason that was already recorded still holds and is now the
+   second reason rather than the first — changing the server zone would reinterpret **data already
+   written**, across `activity_log` and the finance tables, both append-only by trigger and so
+   unable to accept the UPDATE that would correct them.
+
+   **Connection pinning was proposed and is REFUSED.** Adding `'timezone' => '+01:00'` to the
+   `mysql` block in `config/database.php` is the standard Laravel answer for shared hosting, and it
+   is the wrong answer here: **the session zone governs rendering as well as storage, so pinning
+   re-renders every `TIMESTAMP` row already written.** The measurement in the ticket is the proof —
+   the PHP-written path stores −3600s and reads back 0s, and that cancellation is exactly what
+   pinning breaks. On production every PHP-written historical timestamp would then render **4.5
+   hours earlier**, across payments, invoices, ledger transactions and the activity log. **And it
+   does not even close the gap it targets**: it shrinks the `NOW()`-written error from the scaled
+   +19,800s to +3,600s rather than removing it.
+
+   **`App\Support\SchoolDay` absorbs the business-date half permanently**, not as an interim
+   measure: dates the application derives come from the school's timezone rather than the server's.
+   **What is left is one two-clock residual, and its remedy is a CODE FIX that has not been made** —
+   binding a PHP-supplied timestamp in place of the two `NOW()` calls in `SubledgerPoster`. **This
+   item is answered; the ticket stays OPEN until that lands in its own commit.**
 
 ---
 

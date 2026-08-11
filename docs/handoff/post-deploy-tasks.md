@@ -85,6 +85,63 @@ Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
       it happens. Either upload the templated file first, or type a fresh
       `batch_reference` (it is an editable field on the form, shown rather than applied
       invisibly) on the retry. There is no un-spend: a batch row is never deleted.
+- [ ] **PRE-CUTOVER — THREE DECISIONS THE PERSON PREPARING THE ROSTER AND THE CSV MAKES, ALL ABOUT
+      LEAVERS, NONE VISIBLE TO ANY CHECK.** Rulings of 2026-08-11; full text at
+      `opening-balance-import-spec.md` R15, R17 and R18 — the first two are listed as procedural in
+      that document's §11 because **nothing in the portal can hold them**, and the third is decided
+      in its §7 and needs no decision here at all. A leaver is the one student
+      whose correct handling is decided entirely before the file is uploaded.
+
+      **1. A leaver carrying a balance must NOT be soft-deleted. Withdrawn or graduated is the
+      correct state.** This is a roster instruction, and it is held before the extract is even
+      prepared. Trashing the record does not retire the money, and it fails twice, silently: the
+      import **rejects** them (soft-deleted students are outside the admission-number roster, so
+      their arrears never arrive at all), and any balance they already hold **still counts in the
+      /finance KPIs** while the row renders as `Student #<id>` with a null uuid and no linkable
+      statement — a debtor the bursar cannot open. Nothing refuses the soft delete and nothing
+      flags it afterwards.
+
+      **The portal can only tell you WHO is trashed, never who among them owes money** — at cutover
+      `finance_student_accounts` is empty, and the balance lives in WCBS. So this query is a
+      **worklist to cross-check against the extract by hand**, not a check that passes or fails. A
+      query that could go green here would be the false comfort §11 exists to refuse.
+
+      ```sql
+      -- Soft-deleted students in this school, with their admission numbers, so the person
+      -- preparing the extract can look each one up in WCBS. Any that owes money must be
+      -- RESTORED and set to withdrawn/graduated BEFORE the extract is prepared.
+      -- Ids and admission numbers only; no names.
+      SELECT s.id AS student_id, s.admission_number, s.deleted_at
+      FROM students s
+      WHERE s.school_id = ?
+        AND s.deleted_at IS NOT NULL
+      ORDER BY s.id;
+      ```
+
+      **2. A row already settled in cash outside the portal is ZEROED, NOT DELETED.** No internal
+      disbursement record is built for pre-cutover payouts. **"Zero it" and "delete it" are not the
+      same instruction and the import cannot tell them apart** — both post nothing. What differs is
+      what survives: a zeroed row still stages, still counts toward the file's row count and the L1
+      check, so **the file still reconciles against what Brookstone sent**; a deleted row takes that
+      reconciliation with it and leaves no trace the student was ever in the extract. Set the
+      balance to `0` and leave the line in the file.
+
+      **And do not reach for a credit note instead.** `SubmitCreditNote::handle` takes an `Invoice`
+      and `CreditNoteKind` defines both of its kinds as a post-issuance credit *against an invoice*.
+      A migrated leaver credit has no invoice. The instrument does not exist for this case.
+
+      **3. A leaver in ARREARS is imported and chased — that is the default, and it needs no
+      decision.** Their charges post like anyone else's; withdrawal and graduation exclude a student
+      from being *invoiced*, never from holding a balance (spec R14/R18). **A debt Brookstone has
+      decided to write off is handled by decision 2's mechanism, before the upload** — zero those
+      specific rows, leave them in the file. There is no write-off instrument at import time and
+      none is coming. Two things to know before agreeing to a write-off list: it is **irreversible
+      by any live path** (R3 — the correction for a wrong imported balance is a database restore
+      inside the cutover window, nothing smaller), and once posted, the portal **cannot say how much
+      of a leaver's outstanding is tuition** — the per-fee-type split exists only as narrated ledger
+      rows dated D and stops being derivable at the first payment (spec §10). Whether Brookstone
+      *prefers* chase-or-write-off is still outstanding with them (`finance-mvp-cut-brief.md` §7
+      item 6); it changes nothing here, so do not wait on it.
 - [ ] **PRE-DEPLOY — CONFIRM THE THREE FINANCE TABLES ARE EMPTY, or the migration will
       stop the deploy.** `2026_08_09_120000_finance_capture_columns_s2_s3` adds five
       **NOT NULL columns with no defaults** to `finance_payments`,

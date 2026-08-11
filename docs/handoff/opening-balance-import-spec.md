@@ -127,6 +127,60 @@ dictated and Brookstone is handed it as non-negotiable.
 
   §2 records the shape and the commit split.
 
+**Rev 6** — 2026-08-11. **The leaver questions are answered.** They supersede nothing: R14 records a
+boundary the code already held, and R15–R18 are rulings about what the person preparing the file
+does, which is why four of the five land in §11's procedural half as well as in §7. Each is written
+to be quotable on its own, the way R8 and R12 are, because these are cited by number from §7, §11 and
+from code comments.
+
+- **R14 — LEAVERS ARE IN THE EXTRACT, AND THE IMPORT ALREADY HANDLES THEM. No code change was
+  needed.** A withdrawn or graduated student resolves through `admissionNumberIndex()` like any
+  other, and their lines post: *"Withdrawn and graduated students ARE included: §7 imports their
+  arrears and payments — their balance stays chaseable — and only excludes them from being
+  invoiced"* (`app/Finance/Contracts/BillableEnrollmentProvider.php:73-75`). Recorded as a ruling
+  precisely **because** nothing was built for it — a future reader must be able to find this
+  answered rather than re-derive it from the roster's default scope.
+
+- **R15 — A LEAVER CARRYING A BALANCE MUST NOT BE SOFT-DELETED. Withdrawn or graduated is the
+  correct state.** This is an instruction to whoever administers the roster, not a description of
+  code. Soft-deleting them does not remove their money: the balance still counts in the /finance
+  KPIs, while the row renders as `Student #<id>` with a null uuid and **no linkable statement** —
+  *"uuid may be null for a soft-deleted student (its balance still counts in the KPIs, but there is
+  no linkable statement) — the UI renders a non-linked label"*
+  (`app/Finance/Http/Controllers/FinanceAccountController.php:58-63`). A debtor nobody can open a
+  statement for is not chaseable, and the import will not stage them either (§7).
+
+- **R16 — A SIBLING CREDIT TRANSFER IS A PORTAL ACT, NEVER FILE ARITHMETIC** (project lead). A
+  leaver's credit imports **as-is, onto the leaver's own account**, which is where it truthfully was
+  on the last day of term. Moving it to a sibling is a separate, later, audited act. The reason is
+  the same one R6 gives for refusing a derived payment: a credit moved between two children inside a
+  spreadsheet has **no actor, no date and no reason**, and the sibling's opening balance would then
+  silently disagree with the extract Brookstone sent. The roadmap shape is in
+  `docs/handoff/finance-mvp-cut-brief.md` §5.
+
+- **R17 — CASH SETTLED OUTSIDE THE PORTAL BEFORE GO-LIVE: THE ROW IS SET TO 0 AND LEFT IN THE FILE,
+  NEVER DELETED** (project lead). No internal disbursement record is built for pre-cutover payouts.
+  Zeroing is not a softer spelling of deleting: `PostOpeningBalanceBatch` skips a zero-balance row —
+  *"It moves no money, so it posts nothing: a zero ledger row would be a movement that did not
+  happen"* (`app/Finance/Actions/PostOpeningBalanceBatch.php:192-196`) — so the row **stages, counts
+  toward L1, keeps the file's row count reconciling against what Brookstone sent, and posts
+  nothing.** A deleted row posts nothing either and takes the reconciliation with it.
+  **And a credit note is NOT the instrument for this, stated so nobody reaches for it.**
+  `SubmitCreditNote::handle` takes an `Invoice` (`app/Finance/Actions/SubmitCreditNote.php:34`) and
+  `CreditNoteKind` defines both of its cases as *"the kind of post-issuance credit against an
+  invoice"* (`app/Finance/Enums/CreditNoteKind.php:5-16`). A migrated leaver credit has no invoice.
+  The instrument does not exist for this case.
+
+- **R18 — A LEAVER IN ARREARS IS IMPORTED AND STAYS CHASEABLE. A write-off is a zeroed row, decided
+  before the upload.** The default is R14's: the balance comes in and is pursued. The exception has
+  one mechanism and it is R17's — zero those specific rows in the CSV, leave them in the file. **No
+  code change either way, and there is no live write-off instrument at import time.** §10's
+  per-fee-type limitation applies to these balances **permanently** — after D the portal cannot say
+  how much of a leaver's outstanding is tuition, because the split exists as N narrated ledger rows
+  dated D and nowhere else. That is not a gap the import can close for them. What is outstanding with
+  Brookstone is a **preference**, not a decision — it is on `finance-mvp-cut-brief.md` §7 and the
+  default stands whatever they answer.
+
 ---
 
 ## 0. ~~What was decided, and one thing I got wrong~~ — SUPERSEDED BY R5
@@ -640,8 +694,11 @@ re-worded — a rule about a column that no longer exists is the decoration R10 
 | L1 fails for a student | Reject that student's whole row-group with both sides in the finding. Not a partial post — posting three of four lines is worse than posting none. |
 | L2 fails for the batch | A finding on the BATCH. Every line may be internally consistent and the file still be missing a student. |
 | Student in WCBS, absent from the portal | Reject the row and name it. **Never create a student from a finance import** — unchanged, and the one rule that has survived every revision. |
-| Student exists but is SOFT-DELETED | Rejected, but under **its own finding code**. `admissionNumberIndex()` excludes soft-deleted students by the Student model's default scope (`app/Finance/Contracts/BillableEnrollmentProvider.php:72-75`). Today that path emits `student_not_found` with the text *"No student in this School has admission number [X]"* (`app/Finance/Console/ImportOpeningBalances.php:311-312`), which is **false** for a trashed student and hides the one case an operator must decide by hand. Commit 4 splits it: a distinct `student_soft_deleted` code with its own message (§9). Both still reject; the operator is told which. |
-| A student has no active enrollment | **Their lines post anyway.** Under R6 the import resolves a **student**, not an episode — `admissionNumberIndex()` is a Student roster (`app/Academics/BillableEnrollmentAdapter.php:128-138`), and the contract states the boundary: *"Withdrawn and graduated students ARE included: §7 imports their arrears and payments — their balance stays chaseable"* (`app/Finance/Contracts/BillableEnrollmentProvider.php:72-75`). This is **deliberate, not an oversight of R5**. Rev 3's `no_active_enrollment` rejection was §5's precondition — the comparison needed an episode to reach a fee schedule — not a rule about who may hold a balance, and it retired with §5. **DO NOT RE-ADD AN ENROLLMENT CHECK TO THE IMPORT**: it would reject exactly the debtors the cutover exists to carry. |
+| Student exists but is SOFT-DELETED | Rejected, but under **its own finding code**. `admissionNumberIndex()` excludes soft-deleted students by the Student model's default scope (`app/Finance/Contracts/BillableEnrollmentProvider.php:73-75`). **R15 is the operational half of this row: a leaver carrying a balance must not be soft-deleted in the first place** — withdrawn or graduated is the correct state, and this rejection is one of the two things that go wrong if they are. Today that path emits `student_not_found` with the text *"No student in this School has admission number [X]"* (`app/Finance/Console/ImportOpeningBalances.php:311-312`), which is **false** for a trashed student and hides the one case an operator must decide by hand. Commit 4 splits it: a distinct `student_soft_deleted` code with its own message (§9). Both still reject; the operator is told which. |
+| A student has no active enrollment — i.e. **a leaver: withdrawn or graduated (R14)** | **Their lines post anyway, and no code change was needed for this.** Under R6 the import resolves a **student**, not an episode — `admissionNumberIndex()` is a Student roster (`app/Academics/BillableEnrollmentAdapter.php:128-138`), and the contract states the boundary: *"Withdrawn and graduated students ARE included: §7 imports their arrears and payments — their balance stays chaseable — and only excludes them from being invoiced"* (`app/Finance/Contracts/BillableEnrollmentProvider.php:73-75`). This is **deliberate, not an oversight of R5**. Rev 3's `no_active_enrollment` rejection was §5's precondition — the comparison needed an episode to reach a fee schedule — not a rule about who may hold a balance, and it retired with §5. **DO NOT RE-ADD AN ENROLLMENT CHECK TO THE IMPORT**: it would reject exactly the debtors the cutover exists to carry. |
+| A leaver is in **arrears** (R18) | Ordinary, and the default is import-and-chase: their charges post and the balance stays chaseable, exactly as R14 describes. A debt Brookstone has decided to write off is handled **before the upload** by R17's mechanism — zero those rows, leave them in the file — not by anything at import time. §10's per-fee-type limit binds these balances permanently. |
+| A leaver is in **credit**, and the credit is meant for a **sibling** (R16) | The credit imports **onto the leaver's own account**, unchanged. **Never move it to the sibling inside the file.** The transfer is a separate, later, audited portal act; done in a spreadsheet it has no actor, no date and no reason, and the sibling's opening balance then disagrees with the extract Brookstone sent. Roadmap shape: `finance-mvp-cut-brief.md` §5. |
+| The balance was **settled in cash outside the portal** before go-live (R17) | **Set that row to 0 and LEAVE IT IN THE FILE.** It stages, counts toward L1, keeps the row count reconciling against what Brookstone sent, and posts nothing — the zero-line rule two rows above is the mechanism. **Deleting the row is not the same instruction**: it also posts nothing, and it breaks the reconciliation. No internal disbursement record is built for pre-cutover payouts, and **a credit note is not available** for it either — `SubmitCreditNote::handle` takes an `Invoice` (`app/Finance/Actions/SubmitCreditNote.php:34`) and `CreditNoteKind` defines both kinds as a post-issuance credit against an invoice (`app/Finance/Enums/CreditNoteKind.php:5-16`); a migrated credit has no invoice. |
 | Student in the portal, absent from the file | Report as unimported. Their opening position is zero, which is a claim someone must make deliberately. |
 | Duplicate `(admission_number, fee_type_label)` in one file | Refused at the DB by the R9 key. Two lines for the same fee type are an extract defect, not a rule for the import to decide. |
 | Import posted in error | **R3 (2026-08-06): no live reversal instrument, and there will not be one.** A wrong imported balance found before go-live is corrected by **restoring the database** and re-running a corrected batch. See below. |
@@ -1000,7 +1057,9 @@ precondition it must be argued for on its own merits, not inherited from Rev 3.
 
 ### PROCEDURAL — not enforceable, and must not be written up as if it were
 
-Four things now, and none has a mechanism:
+Seven things now, and none has a mechanism. Items 0–3 are held during the cutover window; **items 4–6
+are held earlier, by whoever prepares the CSV**, and they are all leaver rulings — a leaver is the
+one student whose correct handling is entirely a decision made before the file is uploaded.
 
 0. **PURE ARREARS — the file contains no new-term fees (R11).** Listed first because it is the most
    expensive assumption in the cutover, and the only one whose failure is invisible until after the
@@ -1051,6 +1110,30 @@ Four things now, and none has a mechanism:
    decision at that point. **This is advisory and unenforceable. It is not a gate and must not be
    dressed as one.**
 
+4. **NO LEAVER CARRYING A BALANCE IS SOFT-DELETED (R15).** Held by whoever administers the roster,
+   before the extract is even prepared. Withdrawn or graduated is the correct state for a leaver;
+   trashing the record does not retire the money. **Both failure modes are silent.** The import
+   rejects them — soft-deleted students are outside `admissionNumberIndex()`, so their arrears never
+   arrive (§7). And any balance they already hold still counts in the /finance KPIs while the row
+   renders as `Student #<id>` with a null uuid and **no linkable statement**
+   (`app/Finance/Http/Controllers/FinanceAccountController.php:58-63`) — a debtor the bursar cannot
+   open. Nothing refuses the soft delete, and nothing flags it afterwards.
+
+5. **A SIBLING'S CREDIT IS NOT MOVED INSIDE THE FILE (R16).** The leaver's credit is entered on the
+   **leaver's** row and left there. This one is procedural for the same reason item 0 is: **the file
+   cannot testify to whose money a number is.** A credit typed onto the sibling's row is
+   byte-identical to a credit that was always the sibling's — L1 and L2 both pass, the totals agree,
+   and the only witness that it moved is a person who remembers doing it. The transfer is a later
+   audited portal act; there is no instrument for it today, and the roadmap shape is in
+   `finance-mvp-cut-brief.md` §5.
+
+6. **A ROW SETTLED IN CASH BEFORE GO-LIVE IS ZEROED, NOT DELETED (R17).** Both post nothing, so **the
+   import cannot tell them apart** — that is exactly why it is here and not in the enforced half.
+   What differs is what survives: a zeroed row still counts toward the file's row count and L1, so
+   the file still reconciles against what Brookstone sent; a deleted row takes that reconciliation
+   with it and leaves no trace that the student was ever in the extract. Whoever prepares the CSV
+   holds this distinction, and it is one keystroke wide.
+
 **Why G2 was demoted, stated so nobody re-proposes it.** G2 refused a post when a payment with
 `origin = 'migrated'` had an allocation. Under §3 that predicate goes true when **the system**
 consumed the imported credit at the next invoice — not when a parent's real receipt arrived; a real
@@ -1060,19 +1143,31 @@ could not fire in any sequence R3 produces. A gate that cannot fire in the scena
 for is wallpaper, and leaving it in the ENFORCED half would have been worse than having nothing
 there: it would have made the procedural half look shorter than it is.
 
-**Why the procedural four cannot be automated, stated plainly so nobody proposes a checkbox.**
-Item 0 fails for its own reason — the file cannot testify to its own meaning — and the other three
-fail for one shared reason. A
+**Why the procedural seven cannot be automated, stated plainly so nobody proposes a checkbox.**
+There are three distinct reasons, and collapsing them is how a checkbox gets proposed.
+
+Items 1–3 fail for one shared reason. A
 restore happens **below the application**. The portal is not running when it occurs, it is not
 consulted, and afterwards it cannot tell that it happened — there is no row to read, no event to
 observe, no invariant to violate. The application cannot see a restore, cannot refuse one, and cannot
 verify that a snapshot preceded one. Any control claiming otherwise would report green in the one
 scenario it was built for.
 
-So these need **a named person at cutover time, holding them for the duration of the window** — not a
-line in a runbook that someone ticks. Name that person in the cutover plan and give them the window's
-start and end explicitly. A procedural control with no owner is not weaker than an enforced one; it
-is absent.
+Items 0, 5 and 6 fail for a second reason, and it is the sharper one: **the file cannot testify to
+its own meaning.** Arrears that include a term's fees, a credit typed onto the wrong sibling, and a
+settled row that was deleted rather than zeroed are each **byte-identical** to the correct thing at
+the point the import reads them. No checksum reaches any of them — L1 checks the file against itself,
+L2 against a total, and neither knows what a number MEANS or whose it is.
+
+Item 4 fails for a third reason: it is held **before the extract exists**, by whoever administers the
+roster rather than by anyone at cutover, and the import's only response to it is a rejection that
+arrives too late to be a control.
+
+So items 0–3 need **a named person at cutover time, holding them for the duration of the window** —
+not a line in a runbook that someone ticks. Name that person in the cutover plan and give them the
+window's start and end explicitly. **Items 4–6 need a named person earlier, at the point the roster
+is tidied and the CSV is prepared**, and it will not be the same person; say who, in the same plan. A
+procedural control with no owner is not weaker than an enforced one; it is absent.
 
 ### The thing that connects them
 

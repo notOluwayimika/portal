@@ -2,12 +2,16 @@
 
 namespace Database\Seeders;
 
+use App\Enums\TermStatusEnum;
+use App\Models\AcademicSession;
+use App\Models\ClassLevel;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\Term;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -48,6 +52,9 @@ class DriveCastSeeder extends Seeder
         $this->schoolAId = (int) $schoolA->id;
         $this->schoolBId = (int) $schoolB->id;
 
+        $this->seedAcademicSlot($schoolA);
+        $this->seedAcademicSlot($schoolB);
+
         $this->seedCast($schoolA, $schoolB);
 
         // One episode per state (F7: one active invoice per episode). Emma gets a student but no
@@ -68,6 +75,58 @@ class DriveCastSeeder extends Seeder
         $this->enrollments['patVoid'] = $this->enrollFor($schoolA, $pat);
 
         $this->student($schoolA, 'Emma', 'Empty'); // no enrollment — the "no invoices" edge
+    }
+
+    /**
+     * ONE ACADEMIC SLOT PER DRIVE SCHOOL: a session, a term inside it, and TWO class levels.
+     *
+     * Before U1 commit 1 this fixture seeded NONE of the three — enrollments were built straight onto a
+     * Curriculum factory, and the Finance half touches none of them. A drive of the fee-schedules screen
+     * would therefore have landed on an EMPTY term select and an EMPTY class level select and been able
+     * to create nothing: the same class of failure as the opening-balance operator screen (routes/web.php
+     * `->id` vs the model), except caused by the fixture rather than by the query. Fixed here so U1
+     * commit 2's drive does not discover it.
+     *
+     * TWO class levels, not one, deliberately — one renders a select and proves nothing about whether it
+     * LISTS. The counts are printed by `SeedDriveFixture::report()` so the next drive reads them
+     * rather than trusting this comment.
+     *
+     * Columns are the ones the tables actually require, read from information_schema rather than
+     * inferred from $fillable: `terms` needs academic_session_id, school_id, name, slug, order,
+     * start_date and end_date all NOT NULL (status defaults to 'upcoming'; uuid is filled by the model);
+     * `class_levels` needs name, with order defaulting to 0 and level_type nullable;
+     * `academic_sessions` needs name and slug, with is_current defaulting to 0. The unique keys that
+     * bite are terms(academic_session_id, slug), terms(academic_session_id, order) and
+     * academic_sessions(slug, school_id) — hence the per-school slug suffix.
+     */
+    private function seedAcademicSlot(School $school): void
+    {
+        $session = AcademicSession::create([
+            'school_id' => $school->id,
+            'name' => '2026/2027',
+            'slug' => 'drive-2026-2027-'.$school->id,
+            'is_current' => true,
+        ]);
+
+        Term::create([
+            'academic_session_id' => $session->id,
+            'school_id' => $school->id,
+            'name' => 'First Term',
+            'slug' => 'drive-first-term-'.$school->id,
+            'order' => 1,
+            'status' => TermStatusEnum::ACTIVE->value,
+            'start_date' => now()->subMonth(),
+            'end_date' => now()->addMonths(2),
+        ]);
+
+        foreach ([['JSS 1', 1], ['JSS 2', 2]] as [$name, $order]) {
+            ClassLevel::create([
+                'school_id' => $school->id,
+                'name' => $name,
+                'order' => $order,
+                'level_type' => 'JSS',
+            ]);
+        }
     }
 
     private function seedCast(School $schoolA, School $schoolB): void

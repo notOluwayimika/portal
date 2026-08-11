@@ -34,19 +34,56 @@ final class DriveFinanceStates
     ) {}
 
     /**
-     * The drive fixture's bank account for a school, created on first use.
+     * THE DRIVE FIXTURE'S BANK ACCOUNT FOR A SCHOOL — the one place it is defined, for both readers.
      *
-     * finance_payments.bank_account_id is required for portal-issued payments (the origin-keyed
-     * CHECK), so the drive cannot bill anything without one. Created here rather than in
-     * DriveCastSeeder because this class is the only thing that records payments, and a fixture
-     * account that exists but is never used would be a row nobody could explain.
+     * Two things need it, and only one of them records a payment. `finance_payments.bank_account_id` is
+     * required for portal-issued payments (the origin-keyed CHECK), so the drive cannot bill anything
+     * without one; and `finance_fee_items.bank_account_id` is NOT NULL with a School-scoped, not-
+     * deactivated `exists` rule in front of it, so the fee-schedules AUTHORING screen cannot create a
+     * single line in a school that has no account either.
+     *
+     * The docblock here used to say the account is created in this class "because this class is the only
+     * thing that records payments, and a fixture account that exists but is never used would be a row
+     * nobody could explain". That reasoning is FALSE as of U1: School B records no payment and still
+     * needs an account, because the isolation seat has `finance.fee-schedule.manage` and would open the
+     * author screen onto an empty picker. The account is now seeded for both schools by
+     * `SeedDriveFixture` and this method is the single source of its identity.
+     *
+     * `firstOrCreate` keyed on (school_id, account_number) is what makes calling it twice safe: the
+     * payment paths below call it again and FIND the row rather than making a second one. The
+     * account_number formula lives here and nowhere else — a second copy in the seeder, keyed to match,
+     * is the drift this commit's trait extraction argues against.
      */
-    private function bankAccountId(int $schoolId): int
+    public function ensureBankAccount(int $schoolId): int
     {
         return (int) BankAccount::query()->firstOrCreate(
             ['school_id' => $schoolId, 'account_number' => '90'.str_pad((string) $schoolId, 8, '0', STR_PAD_LEFT)],
             ['label' => 'Drive account', 'bank_name' => 'Drive Bank'],
         )->id;
+    }
+
+    /**
+     * The account id for a payment about to be recorded. Kept as its own name because the three call
+     * sites below are asking "which account did this money land in", not "make sure one exists" — and
+     * because it must keep resolving to the SAME row the seeding call made.
+     */
+    private function bankAccountId(int $schoolId): int
+    {
+        return $this->ensureBankAccount($schoolId);
+    }
+
+    /**
+     * How many accounts a school has, for the fixture's own report.
+     *
+     * It lives HERE rather than beside the academic counts in the command because the boundary lint
+     * (Constitution 3) forbids a `finance_*` table literal outside app/Finance — the command counts
+     * `terms` and `class_levels` with DB::table and cannot name this one. Read through the scoped model
+     * rather than the table, so it must be called inside `ActiveSchool::runFor($schoolId, …)`; the
+     * explicit `where` then agrees with SchoolScope instead of relying on it.
+     */
+    public function bankAccountCount(int $schoolId): int
+    {
+        return BankAccount::query()->where('school_id', $schoolId)->count();
     }
 
     /** UNPAID — a charge, nothing settled. */

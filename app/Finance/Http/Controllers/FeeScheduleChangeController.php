@@ -70,7 +70,10 @@ class FeeScheduleChangeController extends Controller
     {
         $changes = FeeScheduleChange::query()
             ->where('status', FeeScheduleChangeStatus::Submitted->value)
-            ->with(['submitter', 'target.term', 'target.classLevel'])
+            // `target.term.academicSession`, not `target.term`: U1's remediation moved `target_term` onto
+            // Term::displayLabel(), which reads the session name. Without the extra hop it lazy-loads one
+            // session per pending row — same reason index() loads it on the fee-schedules list.
+            ->with(['submitter', 'target.term.academicSession', 'target.classLevel'])
             ->orderBy('id')
             ->get();
 

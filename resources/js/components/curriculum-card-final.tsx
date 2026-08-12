@@ -664,12 +664,6 @@ function CategoricalCurriculumCard({
                         <th className="border border-slate-300 px-2 py-1 text-center">
                             Evaluation
                         </th>
-                        <th className="border border-slate-300 px-2 py-1 text-left">
-                            Subject Teacher
-                        </th>
-                        <th className="border border-slate-300 px-2 py-1 text-left">
-                            Comments
-                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -679,31 +673,20 @@ function CategoricalCurriculumCard({
                                 {subject.curriculum_subject?.subject?.name}
                             </td>
                             {/*
-                                Code alone. The rating's meaning belongs in the
-                                Comments column beside it (below), not doubled up
-                                here — the school asked for "GP" under Evaluation
-                                and "Good Progress" under Comment.
+                                Code alone, and it is now the row's only content
+                                besides the subject. The Subject Teacher and
+                                Comments columns that used to sit beside it were
+                                removed at the school's instruction: subject
+                                teachers do not comment on this report, and only
+                                ONE comment — the form tutor's overall remark in
+                                the attribution block below — is allowed on the
+                                sheet. The code's meaning is carried by the
+                                code/label legend printed under the table, so
+                                nothing is lost by not repeating it per row.
                             */}
                             <td className="border border-slate-300 px-2 py-1 text-center font-bold">
                                 {subject.own_result?.grading_item?.code ??
                                     'Not assessed'}
-                            </td>
-                            <td className="border border-slate-300 px-2 py-1">
-                                {convertNameToResultFmt(
-                                    subject.curriculum_subject?.teachers?.[0]
-                                        ?.teacher?.full_name ?? '',
-                                ) || '—'}
-                            </td>
-                            {/*
-                                The rating's DESCRIPTION, not the subject teacher's
-                                remark: Early Years subject teachers do not write
-                                per-subject comments — only the class teacher
-                                comments on the report. The comment a teacher CAN
-                                still enter on the score grid is untouched and
-                                simply not printed here.
-                            */}
-                            <td className="border border-slate-300 px-2 py-1">
-                                {subject.own_result?.grading_item?.label ?? '—'}
                             </td>
                         </tr>
                     ))}

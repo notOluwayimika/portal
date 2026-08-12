@@ -128,7 +128,7 @@ function AttributionRows({ scDetails }: { scDetails: any }) {
                 value={scDetails?.keyStageCoordinator?.full_name}
             />
             <DetailRow
-                label="Key Stage Coordinator's Comment:"
+                label="Key Stage Coordinator's Remark:"
                 value={
                     scDetails?.keyStageCoordinator
                         ? scDetails?.studentCurriculum

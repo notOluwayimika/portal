@@ -111,6 +111,77 @@ follow-up. An honest gap is cheap; a discovered gap is not.
 
 ---
 
+## Your scratch lives in a private temp directory
+
+A standing rule, not a suggestion.
+
+**Every file you create that is not destined for the commit is written into a
+private temporary directory you create yourself — `mktemp -d` — and nowhere
+else.** Not the working directory. Not the scratchpad the session handed you.
+
+Two clauses, because they close two different holes.
+
+**The private directory.** Use `mktemp -d`, not the scratchpad you were given. A
+handed scratchpad is *inherited*: a subagent gets its parent session's, so the
+reviewer you spawn is handed the same directory you have been writing into.
+Inherited is the whole problem — "outside the repository" is not enough on its
+own, because the shared scratchpad is already outside the repository. Create your
+own.
+
+Then: **do not export that path, and do not write it into the report.** A private
+directory whose path is published is not private.
+
+**Nothing untracked in the working directory.** A separate hole, closed
+separately. Named explicitly, because these are the kinds actually observed on
+`fix/subledger-single-clock-frame`:
+
+- partially-edited and saved-good copies of source files (`*.fixed.php`, `*.ok`)
+  kept so a planted regression can be restored after each watched red;
+- saved command output — suite logs, gate transcripts;
+- status markers, gate-passed flags;
+- drafts of the message you will send to the project lead, including the ones you
+  discard.
+
+The test is not *"is it ignored"*. It is *"is it in the repository directory at
+all"*.
+
+**Do not solve this with `.gitignore`** — recorded here so nobody proposes it as
+an obvious improvement. Ignoring the scratch patterns makes them invisible to
+`git status` while leaving them on disk exactly where the reviewer can read them.
+That is strictly worse than doing nothing, because it removes the one signal that
+would have surfaced them. The rule is absence from the directory, not absence
+from the diff.
+
+### Why this is a rule and not hygiene
+
+The cold review is worth what it is because the reviewer works from exactly two
+inputs: the committed tree, and the report. It does not know what you tried, what
+you believed, or what you concluded. That is what makes *"this arm does not test
+what it claims"* an independent finding rather than an echo of a doubt you
+already had. Hand over your drafts, your intermediate states and your own suite
+logs, and the reviewer becomes a more confident version of you — which is the one
+thing the separation exists to prevent.
+
+Two specific losses, if this reads as tidiness:
+
+1. **Your logs are artifacts the reviewer is supposed to reproduce, not read.**
+   The difference between "I ran the suite and got these numbers" and "I read the
+   numbers the implementer got" is the entire evidentiary weight of the review,
+   and nothing in the transcript distinguishes them afterwards.
+2. **Your message drafts carry your reasoning, including reasoning you
+   discarded** — precisely the frame the separation exists to keep out.
+
+This rule exists because a reviewer could see the scratch, declined to open it,
+and reported the exposure itself as a finding. A separation protected by the
+reviewer choosing not to look is a courtesy, not a control, and this project does
+not accept a rule with no mechanism behind it anywhere else.
+
+What this closes and what it does not is recorded in
+`docs/handoff/tickets/reviewer-can-see-implementer-scratchpad.md`. Read it before
+concluding the channel is shut: it is not, and the residual is deliberate.
+
+---
+
 ## Where this skill ends
 
 Your task ends when the report is emitted. **Do not review your own work.**

@@ -25,6 +25,39 @@ gates reporting green while blocking nothing, and a migration-rollback audit
 that passed while testing the wrong migration. Every one of those was green to
 the hand that wrote it.
 
+## Your inputs, and the tree you read them in
+
+**Your inputs are the committed tree and the report path. Nothing else.**
+
+Do not read untracked files in the working directory. If you find any — saved
+suite logs, saved-good copies of source files, gate markers, drafts of someone's
+message to the project lead — **say so in the review's "what I did not check"
+section, naming them by pattern and never by contents.** Reporting the exposure
+is part of the job: this rule exists because a reviewer did exactly that.
+
+Reading them would not feel like cheating at the time, which is the danger. A
+review that read the implementer's logs and a review that reproduced them are
+indistinguishable afterwards — from the output, and from the transcript. The
+implementer's half of this is in `finance-execute`: its scratch belongs in a
+private temp directory of its own. But a rule the *other* side keeps is not a
+mechanism you can rely on, which is why there is a second one.
+
+**For high-impact branches and release validation, run against a fresh clone of
+the branch, not the working directory.** A clone cannot contain another session's
+scratch, so the overlap is zero by construction rather than by discipline.
+
+**State in the review which of the two you ran against.** The reader needs to
+know whether the isolation was engineered or merely observed — those are
+different strengths of evidence, and the review is the only place that
+distinction gets recorded.
+
+The project lead decides which branches are high-impact. Do not invent a
+threshold.
+
+Neither rule closes the channel completely. What each one does and does not close
+is set out in `docs/handoff/tickets/reviewer-can-see-implementer-scratchpad.md`,
+which stays open on purpose.
+
 ---
 
 A review that reads the diff and agrees with it is a cost with no product. The

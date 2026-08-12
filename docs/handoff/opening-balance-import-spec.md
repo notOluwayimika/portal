@@ -177,9 +177,15 @@ from code comments.
   code change either way, and there is no live write-off instrument at import time.** §10's
   per-fee-type limitation applies to these balances **permanently** — after D the portal cannot say
   how much of a leaver's outstanding is tuition, because the split exists as N narrated ledger rows
-  dated D and nowhere else. That is not a gap the import can close for them. What is outstanding with
-  Brookstone is a **preference**, not a decision — it is on `finance-mvp-cut-brief.md` §7 and the
-  default stands whatever they answer.
+  dated D and nowhere else. That is not a gap the import can close for them.
+
+  **CONFIRMED BY BROOKSTONE 2026-08-12 — chased. The ruling did not move.** It was made on the
+  project lead's authority (2026-08-11) and is now also confirmed by the party whose money it is;
+  the confirmation matches the default, so nothing above is rewritten. Recorded as its own dated
+  line because a reader cannot otherwise tell a ruling the client has agreed with from a ruling
+  nobody has checked, and the two are not equally strong. It was always a **preference**, not a
+  decision — the default stood whatever they answered — and it closes item 6 of
+  `finance-mvp-cut-brief.md` §7.
 
 ---
 

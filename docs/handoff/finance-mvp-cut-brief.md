@@ -205,16 +205,15 @@ What I will state:
 4. ~~**Are the fee schedules for all three terms going to exist before term-1 billing?**~~ **WITHDRAWN 2026-08-09 — the question is refused rather than answered.** Boards adjust prices mid-year, so the portal must not require a commitment the school cannot make. V10/U20 absorb it: unpublished terms are hidden and the year total is withheld until the whole structure is published. No Brookstone commitment is needed.
 5. ~~**Has a refund been issued in the last three terms?**~~ **ANSWERED 2026-08-09 — NO.** S10
    leaves the cut and takes the third-state design question with it. Moved to §5; see §8.
-6. **For a leaver in arrears, does Brookstone want the balance chased, or written off before the
-   file? — OUTSTANDING, and it changes nothing.** *Added 2026-08-11.* Recorded here because it is
-   waiting on a person, and **only** here: it is not an open decision in
-   `opening-balance-import-spec.md` §12, because §12 is for things that would change the build and
-   this cannot. **Both answers are already implemented and neither needs code.** The default is
-   import-and-chase (spec R14/R18). A write-off is R17's mechanism applied deliberately — zero those
-   specific rows in the CSV before upload, leave them in the file. So this is a **preference to be
-   confirmed**, not a decision to be made, and the file format, the import and the posting are
-   identical whichever way it lands. Ask it; do not wait on it. Their original note covered credit
-   balances only, which is why it was never asked.
+6. ~~**For a leaver in arrears, does Brookstone want the balance chased, or written off before the
+   file?**~~ **ANSWERED 2026-08-12 — CHASED, which is the default that was already ruled.** *Added
+   2026-08-11.* The answer **confirms** the ruling rather than changing it: no code, no change to
+   the file format, and no change to the substance of the rulings. The substance stays where it is
+   written — `opening-balance-import-spec.md` **R18**, with R17's mechanism for the write-off
+   exception. What moved is the standing of the ruling, not its content: it was held on the project
+   lead's authority and is now also confirmed by the party whose money it is. **This was the last
+   open POLICY question on the cutover** — what remains outstanding with Brookstone is the extract
+   file itself.
 7. ~~**Will the MySQL server timezone be aligned in a maintenance window?**~~ **ANSWERED
    2026-08-11 — NO, AND NOT BY ANY WINDOW** (project lead). Recorded on this list because a reader
    needs to stop expecting a window that is not coming; the open item itself was carried in

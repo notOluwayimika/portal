@@ -441,8 +441,18 @@ export function ResultDetails({
                 <AppLogoIcon />
             </div>
             <div className="mb-1 text-center leading-tight">
+                {/*
+                    The masthead is the BUILD's app name, not the school record's
+                    `name`. Requested so every printed result carries one
+                    consistent heading rather than whatever each school row
+                    happens to hold. Note the trade-off this accepts: the value
+                    is baked in at build time from VITE_APP_NAME, so it is the
+                    same on every school's sheet — the per-school identity on the
+                    result now rests entirely on `name_on_result`, the address
+                    and the website below.
+                */}
                 <h1 className="text-lg font-bold uppercase">
-                    {school?.name ?? 'School'}
+                    {import.meta.env.VITE_APP_NAME || 'School'}
                 </h1>
                 {school?.name_on_result && (
                     <p className="text-sm text-slate-600">

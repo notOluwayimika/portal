@@ -1,6 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import type { ResultSignature } from '@/components/curriculum-card-final';
 import {
@@ -184,7 +184,14 @@ export default function List() {
                 </div>
             </div>
             {/* height a4 */}
-            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800">
+            {/*
+                print:p-0 — the ONLY child here is the toolbar below, which is
+                print:hidden. Hiding it removes the buttons but NOT this
+                wrapper's padding, so the sheet printed a 32px band of nothing
+                above the first card and pushed the report down the page. Same
+                reclaim active.tsx already does on its equivalent wrapper.
+            */}
+            <div className="relative z-10 mx-auto max-w-3xl p-4 font-sans text-slate-800 print:p-0">
                 <div className="flex items-center justify-between print:hidden">
                     <button
                         className="btn btn-ghost btn-sm btn-icon cursor-pointer p-4"
@@ -238,13 +245,25 @@ export default function List() {
             </div>
             {/* height a4 */}
             <div className="print-wrapper mx-auto max-w-3xl">
+                {/*
+                    Fragments, NOT divs. The PRINT_STYLES exemption above is
+                    `.print-page:last-child`, and :last-child is scoped to the
+                    element's own parent — with a div per arm and per curriculum,
+                    the LAST PAGE OF EVERY GROUP matched it and lost its forced
+                    break, so the next curriculum's first pupil continued on the
+                    same sheet instead of starting a new one. Fragments emit no
+                    DOM, which makes every .print-page a direct sibling under
+                    .print-wrapper and :last-child mean the one thing it reads
+                    as: the final page of the whole sheet. Neither div carried
+                    styling, so nothing on screen changes.
+                */}
                 {armData.map((classLevelArm) => (
-                    <div key={classLevelArm.id}>
+                    <Fragment key={classLevelArm.id}>
                         {/* <p className="pt-4 text-center text-lg font-bold">
                             {classLevelArm.name}
                         </p> */}
                         {classLevelArm.curricula?.map((curriculum) => (
-                            <div className="" key={curriculum.id}>
+                            <Fragment key={curriculum.id}>
                                 {curriculum.student_curricula?.map(
                                     (sc: StudentCurriculum) => {
                                         // Defence in depth on a print path. The
@@ -272,7 +291,14 @@ export default function List() {
                                         return (
                                             <div
                                                 key={sc.id}
-                                                className="print-page block p-4"
+                                                // p-4 is screen spacing; in
+                                                // print it cost 4.2mm off the
+                                                // top AND bottom of every
+                                                // sheet, on top of the 1cm
+                                                // @page margin. active.tsx's
+                                                // page divs carry no padding
+                                                // at all.
+                                                className="print-page block p-4 print:p-0"
                                             >
                                                 <ResultDetails
                                                     curricula={sc}
@@ -374,9 +400,9 @@ export default function List() {
                                         );
                                     },
                                 )}
-                            </div>
+                            </Fragment>
                         ))}
-                    </div>
+                    </Fragment>
                 ))}
             </div>
         </div>

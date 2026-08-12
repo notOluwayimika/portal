@@ -218,8 +218,9 @@ A rule without a gate is wallpaper. Add
 - name the four files in the test's header comment as the ones this branch converted, so a reader
   knows the rule is retroactive and not just forward-looking.
 
-Repo-wide and unconditional, so it runs under `bin/quality` step 13 on every push. It deliberately does
-**not** go into `bin/ci-grants-convergence-lint.php` (step 7): that gate is diff-based and reads only
+Repo-wide and unconditional, so it runs under `bin/quality`'s suite step on every push (step 13 when
+this was written; the suite is the LAST step, whatever its number). It deliberately does
+**not** go into `bin/ci-grants-convergence-lint.php` (the grants-convergence lint step): that gate is diff-based and reads only
 files the branch *adds*, so a migration already on the base would be invisible to it. This invariant is
 about files that already exist.
 

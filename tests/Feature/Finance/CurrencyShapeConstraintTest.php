@@ -34,7 +34,19 @@ function expect3819(Closure $fn): void
     }
 }
 
-/** Raw-insert a finance_student_accounts row the way SubledgerPoster does, with the given currency. */
+/**
+ * Raw-insert a finance_student_accounts row with the given currency, bypassing every PHP path — the
+ * refusal below is then a proof about the DATABASE rather than about an Action.
+ *
+ * IT NO LONGER MIRRORS SubledgerPoster, and the comment that said it did was made false by
+ * `fix/subledger-single-clock-frame`: that method now BINDS a PHP-captured instant into created_at
+ * and updated_at, because MySQL's NOW() is in the session zone and every other timestamp in the
+ * schema is in app.timezone (docs/handoff/tickets/stored-epoch-offset.md). The NOW(), NOW() here is
+ * deliberately left alone: this helper exists to trip the balance_currency CHECK, no assertion in
+ * this file reads a timestamp, and the clock frame is irrelevant to what it proves — changing it
+ * would be churn. It is, however, the one occurrence of the pattern in tests/, which
+ * docs/handoff/tickets/sql-clock-lint.md records against its survey.
+ */
 function insertAccount(int $schoolId, int $studentId, string $currency): void
 {
     DB::insert(

@@ -22,6 +22,16 @@ Do not ask the spawning context for context. It cannot give you any that would
 help, and every answer it gives narrows you toward its own frame. If the report
 is missing something you need, that absence is a finding.
 
+The same rule holds for the filesystem: **the committed tree and the report path
+are your inputs; untracked files in the working directory are not.** Do not read
+them. If you find any, name them by pattern — never by contents — in your
+review's "what I did not check". For high-impact branches and release validation,
+run against a **fresh clone** of the branch rather than the working directory, and
+say in the review which of the two you used. The project lead decides what is
+high-impact; do not invent a threshold. Full reasoning, and the record of what
+this does and does not close, is in `finance-review` § "Your inputs, and the tree
+you read them in".
+
 ## Start
 
 1. Load `finance-method`, `finance-context`, and `finance-review`.

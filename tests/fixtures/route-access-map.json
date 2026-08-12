@@ -1415,6 +1415,14 @@
             "super_admin"
         ]
     },
+    "GET /finance/fee-schedules": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "super_admin"
+        ]
+    },
     "GET /finance/opening-balances/import": {
         "auth": true,
         "roles": [
@@ -3607,6 +3615,14 @@
         ]
     },
     "PUT /api/v1/finance/fee-schedules/{feeSchedule}": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "super_admin"
+        ]
+    },
+    "PUT /api/v1/finance/fee-schedules/{feeSchedule}/draft": {
         "auth": true,
         "roles": [
             "accounts_officer",

@@ -6,6 +6,7 @@
 // asserts the row was NOT created, not merely a 422.
 
 use App\Enums\TermStatusEnum;
+use App\Finance\Models\FeeSchedule;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\Curriculum;
@@ -86,6 +87,58 @@ it('fee schedule: an item currency "ngn" is a 422 naming the field; "NGN" succee
         'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'L2',
         'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
     ])->assertCreated();
+});
+
+// ── #2b FeeSchedule items.*.currency — the ABSENT one, beside the malformed one ──
+
+it('fee schedule: an item with NO currency at all is a 422 naming the field', function () {
+    /*
+     * THE OTHER HALF OF THE SAME RULE, and a different failure. The arm above catches a MALFORMED
+     * currency, which without the regex is a 500 (Money::fromKobo throws inside the transaction).
+     * This catches an ABSENT one, which was not a failure at all until U1 commit 2: `items.*.currency`
+     * was `sometimes`, so an item with no currency was a valid request and CreateFeeSchedule wrote
+     * `$item['currency'] ?? Money::DEFAULT_CURRENCY`.
+     *
+     * That silence is what made it worth closing. An edit replaces a schedule's items WHOLESALE, so a
+     * body that omitted the field did not leave a USD line alone — it re-inserted it as NGN with the
+     * same minor units, and the schedule then reported a total that is not an amount of anything. A
+     * price changed and nothing said so.
+     *
+     * WATCHED RED by restoring `sometimes` on HasFeeScheduleItemRules' currency rule — the state this
+     * commit leaves behind, so the red IS the defect: the assertion fails with
+     * "Failed to find a validation error in the response for key: 'items.0.currency'" and the request
+     * 201s, writing an NGN item.
+     *
+     * THE `?? Money::DEFAULT_CURRENCY` IN BOTH ACTIONS IS NOT DEAD CODE and must not be tidied away on
+     * the strength of this arm. This rule governs bodies that pass through a FormRequest; the Actions
+     * are also called in-process — the suite alone does so around a hundred times — and those callers
+     * never see a validation rule. Required at the HTTP edge, defaulted at the Action.
+     */
+    $s = School::factory()->create();
+    $u = ncvUser($s, 'accounts_officer');
+    [$term, $lvl] = ncvTermLevel($s);
+
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/fee-schedules', [
+        'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'L',
+        'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]],
+    ])->assertStatus(422)->assertJsonValidationErrors(['items.0.currency']);
+
+    // NOT VACUOUS: the same body WITH a currency is accepted, so the 422 above is the missing field
+    // and not something else in the payload.
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/fee-schedules', [
+        'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'L2',
+        'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN']],
+    ])->assertCreated();
+
+    // AND THE EDIT ROUTE TOO. Both requests share HasFeeScheduleItemRules, and the edit path is the
+    // one the re-denomination actually travelled — a rule that bit only on create would leave it open.
+    $uuid = (string) FeeSchedule::query()->withoutGlobalScopes()->where('school_id', $s->id)->value('uuid');
+
+    $this->actingAs($u)->withSession(['school_id' => $s->id])
+        ->putJson("/api/v1/finance/fee-schedules/{$uuid}/draft", [
+            'label' => 'L3',
+            'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]],
+        ])->assertStatus(422)->assertJsonValidationErrors(['items.0.currency']);
 });
 
 // ── #3 Discount value_currency — the silent one: assert NO ROW is created ──

@@ -203,8 +203,8 @@ it('SMOKE — store authors a DRAFT with items; the draft does NOT prefill (a dr
         ->postJson('/api/v1/finance/fee-schedules', [
             'term_id' => $term->id, 'class_level_id' => $level->id, 'label' => 'JSS1 T1',
             'items' => [
-                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000000, 'is_discountable' => true],
-                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 2000000, 'is_discountable' => false],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000000, 'currency' => 'NGN', 'is_discountable' => true],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 2000000, 'currency' => 'NGN', 'is_discountable' => false],
             ],
         ])
         ->assertCreated()
@@ -284,6 +284,86 @@ it('index serialises each item’s destination account as a uuid, and names the 
         ->assertJsonPath('0.class_level_label', $level->name);
 });
 
+it('index carries the schedule TOTAL, summed in PHP from the items', function () {
+    /*
+     * THE PAGE CANNOT SUM. resources/js/lib/format.ts states the rule and bin/ci-money-lint.php
+     * enforces it — the frontend performs no monetary arithmetic — so a schedule list with no total is
+     * a list the person deciding whether to send it to the ED has to add up in their head.
+     *
+     * TWO ITEMS, NOT ONE. A one-item schedule's total equals its only item's amount, so a resource that
+     * returned `items[0].amount` and called it a total would pass. Two different amounts is what makes
+     * this an assertion about a SUM.
+     *
+     * WATCHED RED by dropping `->withTotal()` from index()'s ::catalog(): the total assertion fails with
+     * "Failed asserting that null is identical to 325075" (assertJsonPath reads an absent path as null).
+     */
+    [$school, $term, $level] = fsContext();
+    $accountUuid = testBankAccountUuid($school->id);
+
+    $as = fn () => $this->actingAs(fsAdmin($school))->withSession(['school_id' => $school->id]);
+
+    $as()->postJson('/api/v1/finance/fee-schedules', [
+        'term_id' => $term->id,
+        'class_level_id' => $level->id,
+        'label' => 'JSS1 T1',
+        'items' => [
+            ['description' => 'Tuition', 'amount_minor' => 250000, 'currency' => 'NGN', 'bank_account_id' => $accountUuid],
+            ['description' => 'Books', 'amount_minor' => 75075, 'currency' => 'NGN', 'bank_account_id' => $accountUuid],
+        ],
+    ])->assertCreated()
+        // The write response carries it too — a page re-renders the row it just saved from this payload.
+        ->assertJsonPath('total.amount_minor', 325075)
+        ->assertJsonPath('total.currency', 'NGN');
+
+    $as()->getJson('/api/v1/finance/fee-schedules')
+        ->assertOk()
+        ->assertJsonPath('0.total.amount_minor', 325075)
+        ->assertJsonPath('0.total.currency', 'NGN');
+});
+
+it('a schedule whose items disagree on currency reports a NULL total rather than 500ing the list', function () {
+    /*
+     * A MIXED-CURRENCY SCHEDULE IS REPRESENTABLE AND NOTHING PREVENTS IT. `items.*.currency` accepts any
+     * /^[A-Z]{3}$/ (HasFeeScheduleItemRules) and the database CHECK on finance_fee_items.amount_currency
+     * is a SHAPE check, deliberately not `= 'NGN'` (2026_08_01_120000_add_currency_shape_checks's
+     * docblock says so in as many words). So this row is reachable through the ordinary write path, not
+     * only by a raw insert — which is why the resource has to have an answer for it.
+     *
+     * Money::plus THROWS on a currency mismatch. Summed naively, ONE such schedule would take the whole
+     * School's list down with an uncaught InvalidArgumentException — a 500 on a screen whose other
+     * fifteen rows are fine. Adding the minor units instead would be worse: a number that is not an
+     * amount of anything, rendered as naira.
+     *
+     * So the third answer: `total` is null, the key is present, the list is 200, and the screen prints
+     * "Mixed currencies" on that row.
+     *
+     * WATCHED RED by deleting the unique-currency guard from FeeScheduleResource::scheduleTotal(): the
+     * 200 becomes a 500 and the assertion fails with "Expected response status code [200] but received
+     * 500", the exception being "Cannot operate on Money of different currencies".
+     */
+    [$school, $term, $level] = fsContext();
+    $accountUuid = testBankAccountUuid($school->id);
+
+    $as = fn () => $this->actingAs(fsAdmin($school))->withSession(['school_id' => $school->id]);
+
+    $as()->postJson('/api/v1/finance/fee-schedules', [
+        'term_id' => $term->id,
+        'class_level_id' => $level->id,
+        'label' => 'JSS1 T1',
+        'items' => [
+            ['description' => 'Tuition', 'amount_minor' => 250000, 'bank_account_id' => $accountUuid, 'currency' => 'NGN'],
+            ['description' => 'Exchange trip', 'amount_minor' => 90000, 'bank_account_id' => $accountUuid, 'currency' => 'USD'],
+        ],
+    ])->assertCreated()->assertJsonPath('total', null);
+
+    $response = $as()->getJson('/api/v1/finance/fee-schedules')->assertOk();
+
+    // PRESENT AND NULL, not absent — absent would say "this shape has no total", and the row does have
+    // one, it just cannot be stated as a single amount.
+    expect((array) $response->json('0'))->toHaveKey('total')
+        ->and($response->json('0.total'))->toBeNull();
+});
+
 it('prefill’s payload keeps its shape — the two labels are ABSENT there, not present-and-null', function () {
     /*
      * prefill is the BILLING read path and builds this resource with only `items` loaded. Both labels go
@@ -309,6 +389,26 @@ it('prefill’s payload keeps its shape — the two labels are ABSENT there, not
         ->toBe(['id', 'term_id', 'class_level_id', 'label', 'status', 'items'],
             'prefill grew or lost a top-level key on the schedule. term_label/class_level_label must be '
             .'ABSENT on this path, not present-and-null, and nothing else about this payload moves.');
+
+    /*
+     * AND `total` IS ABSENT TOO — asserted by name, because the key list above would also pass if the
+     * whole catalog shape collapsed, and this one key is the one a future change is most likely to add
+     * here by accident.
+     *
+     * IT IS NOT ABSENT BECAUSE OF whenLoaded. prefill DOES load items (loadMissing('items.bankAccount'),
+     * FeeScheduleController::prefill) — the key list above proves it, `items` is present — so a total
+     * hung off `whenLoaded('items')` would appear RIGHT HERE. It is absent because the catalog responses
+     * ask for it by name (FeeScheduleResource::withTotal) and this one does not.
+     *
+     * AND IT MUST STAY ABSENT: this is the billing read path, where `lines` is what the bursar confirms
+     * and posts. A `schedule.total` beside it is a figure that reads as "what to charge this student"
+     * on the one payload where that reading is wrong — a schedule prices a SLOT, an invoice prices a
+     * student, and GenerateInvoice computes the second from the lines actually confirmed.
+     *
+     * WATCHED RED by swapping the resource's `when($this->withTotal, …)` for `whenLoaded('items', …)`:
+     * both this assertion and the key list above fail with `total` present in `actual`.
+     */
+    expect((array) $response->json('schedule'))->not->toHaveKey('total');
 });
 
 it('index filters by term and by status, and REFUSES a term_id belonging to another School', function () {
@@ -401,11 +501,11 @@ it('the three WRITE routes return the same schedule shape as index — labels in
      */
     [$school, $term, $level] = fsContext();
     $accountUuid = testBankAccountUuid($school->id);
-    $expectedKeys = ['id', 'term_id', 'class_level_id', 'term_label', 'class_level_label', 'label', 'status', 'items'];
+    $expectedKeys = ['id', 'term_id', 'class_level_id', 'term_label', 'class_level_label', 'label', 'status', 'items', 'total'];
     $expectedLabel = '2026/2027 — First Term';
 
     $as = fn () => $this->actingAs(fsAdmin($school))->withSession(['school_id' => $school->id]);
-    $items = [['description' => 'Tuition', 'amount_minor' => 100000, 'bank_account_id' => $accountUuid]];
+    $items = [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'NGN', 'bank_account_id' => $accountUuid]];
     $full = fn (string $label) => ['term_id' => $term->id, 'class_level_id' => $level->id, 'label' => $label, 'items' => $items];
 
     $shape = function (string $route, array $payload) use ($expectedKeys, $expectedLabel) {

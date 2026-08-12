@@ -160,6 +160,55 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ->middleware('permission:finance.bank-account.manage')
         ->name('admin.finance.bank-accounts');
 
+    /*
+     * The fee-schedules screen (U1 commit 2) — where a school's prices are authored.
+     *
+     * Gated on `finance.fee-schedule.manage` IN ADDITION to the group's finance.access, the
+     * bank-accounts precedent above and the same reasoning: this is AUTHORING, not viewing.
+     * Everyone who can read finance must not be offered a screen that sets prices. The nav entry
+     * keys on the same ability so a visible item can never 403 on click.
+     *
+     * TERMS AND CLASS LEVELS ARE PROPS, NOT A FETCH — the same reason the opening-balance operator
+     * screen below carries its terms as props: the only API listing terms is gated on
+     * `academic_data.view`, an ability the finance seat does not hold. Widening that seat or coining
+     * a finance-side terms endpoint are each a bigger change than the screen.
+     *
+     * BANK ACCOUNTS ARE NOT PROPS, and that is a decision rather than an omission. The picker
+     * fetches GET /api/v1/finance/bank-accounts, gated on `finance.bank-account.manage` — a
+     * DIFFERENT ability from the one gating this page. Props are for data the seat CANNOT fetch;
+     * accounts are data it can, and a second source for them is the drift shape. The implicit
+     * coupling that makes the fetch safe is asserted rather than assumed — see the grants arm in
+     * tests/Feature/Finance/FeeSchedulesScreenTest.php.
+     */
+    Route::get('/finance/fee-schedules', function () {
+        // `->id`, NOT the model — see the opening-balance route below, where binding the School
+        // MODEL into `where('school_id', …)` matched nothing and rendered an EMPTY term select that
+        // every test still passed. That scar is not being reopened one screen over.
+        $schoolId = ActiveSchool::getOrFail()->id;
+
+        return Inertia::render('admin/finance/fee-schedules', [
+            'terms' => Term::query()
+                ->where('school_id', $schoolId)
+                ->with('academicSession')
+                ->orderByDesc('id')
+                ->get()
+                // Term::displayLabel() — the METHOD, not a fourth copy of the expression. The same
+                // string the opening-balance term select, the fee-schedules list and the approvals
+                // queue name a term by; two screens naming one term differently is how an operator
+                // picks the wrong one.
+                ->map(fn (Term $term) => ['id' => $term->id, 'label' => $term->displayLabel()])
+                ->values(),
+            'class_levels' => ClassLevel::query()
+                ->where('school_id', $schoolId)
+                ->orderBy('order')
+                ->get()
+                ->map(fn (ClassLevel $level) => ['id' => $level->id, 'name' => $level->name])
+                ->values(),
+        ]);
+    })
+        ->middleware('permission:finance.fee-schedule.manage')
+        ->name('admin.finance.fee-schedules');
+
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],

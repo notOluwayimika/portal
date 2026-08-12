@@ -74,7 +74,9 @@ class FeeScheduleController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        return response()->json(FeeScheduleResource::collection($schedules));
+        // ::catalog(), not ::collection() — the catalog shape carries `total`, which the screen renders
+        // and cannot compute (the frontend does no money arithmetic). See FeeScheduleResource::withTotal().
+        return response()->json(FeeScheduleResource::catalog($schedules));
     }
 
     public function store(FeeScheduleRequest $request, CreateFeeSchedule $action): JsonResponse
@@ -95,7 +97,7 @@ class FeeScheduleController extends Controller
         // class_level_label those two columns would go blank on save. Loaded HERE and not in
         // CreateFeeSchedule — the Action's return value is its contract with every caller including its
         // tests, and what a payload renders is the controller's business.
-        return response()->json(new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')), 201);
+        return response()->json((new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')))->withTotal(), 201);
     }
 
     /**
@@ -126,7 +128,7 @@ class FeeScheduleController extends Controller
 
         // Same shape as index(), labels included — see store(). This is the response a page is most
         // likely to re-render a row from.
-        return response()->json(new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')), 200);
+        return response()->json((new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')))->withTotal(), 200);
     }
 
     /**
@@ -154,7 +156,7 @@ class FeeScheduleController extends Controller
         }
 
         // Same shape as index(), labels included — see store().
-        return response()->json(new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')), 200);
+        return response()->json((new FeeScheduleResource($schedule->loadMissing('items.bankAccount', 'term.academicSession', 'classLevel')))->withTotal(), 200);
     }
 
     /**

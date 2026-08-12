@@ -43,9 +43,27 @@ trait HasFeeScheduleItemRules
                     ->whereNull('deactivated_at'),
             ],
             'items.*.amount_minor' => ['required', 'integer', 'min:1'],
-            // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not CreateFeeSchedule's
-            // Money::fromKobo → InvalidArgumentException → 500 inside the transaction (f293358 finish).
-            'items.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            // TWO DIFFERENT FAILURES, ONE LINE.
+            //
+            // The regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not
+            // CreateFeeSchedule's Money::fromKobo → InvalidArgumentException → 500 inside the
+            // transaction (f293358 finish). That half stops a MALFORMED currency.
+            //
+            // `required` — U1 commit 2 — stops an ABSENT one, which is the worse failure because it
+            // is silent. An edit replaces a schedule's items WHOLESALE, so an omitted currency is not
+            // "unchanged": the Actions read `$item['currency'] ?? Money::DEFAULT_CURRENCY` and the
+            // line comes back with the same minor units under a different denomination. A USD item
+            // edited through a body that forgot this field became an NGN item, and the schedule then
+            // reported a total that is not an amount of anything. `sometimes` made that a valid
+            // request; `required` makes it unrepresentable at the edge.
+            //
+            // REQUIRED AT THE HTTP EDGE, DEFAULTED AT THE ACTION — and BOTH are live, so neither is
+            // dead code to be tidied away. This rule governs only bodies that pass through a
+            // FormRequest; {@see \App\Finance\Actions\CreateFeeSchedule} and
+            // {@see \App\Finance\Actions\EditFeeScheduleDraft} are also called in-process (the suite
+            // alone does so ~100 times), and those callers never see a validation rule, so the `??`
+            // in each Action is what keeps a direct `handle()` call working.
+            'items.*.currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'items.*.is_mandatory' => ['sometimes', 'boolean'],
             'items.*.is_discountable' => ['sometimes', 'boolean'],
             'items.*.sort_order' => ['sometimes', 'integer', 'min:0'],

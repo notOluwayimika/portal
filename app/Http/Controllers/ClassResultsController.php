@@ -100,7 +100,17 @@ class ClassResultsController extends Controller
             'curricula.classLevelArm.classLevel',
             'curricula.classLevelArm.arm',
             'curricula.classLevelArm.stream',
-            'curricula.term.academicSession',
+            // `.terms` IS LOAD-BEARING, not a spare leaf. TermResource derives
+            // `is_last_term` by comparing the term's order against the session's
+            // highest, and it reads that ONLY from already-loaded relations —
+            // without `academicSession.terms` present it does not query, it
+            // silently returns false (TermResource::toArray). The result card
+            // gates "Promoted To Year X" on that flag, so the class sheet
+            // omitted the promotion line for every pupil in the final term while
+            // the single-student page — whose routes do load this leaf — printed
+            // it from the same component. Same bug shape as any derived field
+            // that degrades quietly instead of failing.
+            'curricula.term.academicSession.terms',
             'curricula.academicSession',
             'curricula.gradingScheme.items',
             'curricula.markingScheme.components',

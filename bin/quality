@@ -12,11 +12,11 @@
 # this too — a fork between the two re-creates the bug that started the tsc saga,
 # where CI and a developer measured different trees and both reported green.
 #
-#   lint.yml (job: quality)          -> steps 2..13 below
-#   tests.yml (job: ci)              -> step 14 below
+#   lint.yml (job: quality)          -> steps 2..14 below
+#   tests.yml (job: ci)              -> step 15 below
 #
-# (The two numbers above are re-derived, not carried: the step count is 14 as of the
-# dependency-integrity lint. They were already one behind at 12 steps, then 13.)
+# (The two numbers above are re-derived, not carried: the step count is 15 as of the
+# sql-clock lint. They were already one behind at 12 steps, then 13, then 14.)
 #
 # STEP 1 IS THE ONE EXCEPTION TO THE MIRROR, and deliberately: CI runs `composer install`
 # in the job immediately before, so a lock-vs-vendor check there is vacuous by construction.
@@ -35,7 +35,7 @@
 #                                      existing encrypted data unreadable. Never here.
 #   php artisan migrate --force      - CI migrates a fresh service DB; locally the
 #                                      suite's RefreshDatabase migrates per run, so
-#                                      a broken migration still fails step 14. (This
+#                                      a broken migration still fails step 15. (This
 #                                      read "step 11" and was already two behind; the
 #                                      suite is the last step, whatever its number.)
 #   pnpm run build                   - asset compilation, not a quality signal. The
@@ -56,7 +56,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/14]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/15]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -64,10 +64,10 @@ step() {
 # locally is strictly more useful and cannot make the gate weaker — any failure
 # still fails the whole run.)
 #
-# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-14 each measure a
+# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-15 each measure a
 # property of the code. Step 1 measures whether the code being measured is the code that
 # was declared. When step 1 is red the later steps are not extra findings — they are
-# readings from an instrument that has just reported itself untrustworthy, and thirteen
+# readings from an instrument that has just reported itself untrustworthy, and fourteen
 # green ticks printed beside one red line tell the reader the opposite of the truth. So
 # step 1 alone uses abort_check() and exits 2, which is the severity the `[ -d vendor ]`
 # precondition it replaced always had; moving it into check() would have quietly demoted
@@ -143,8 +143,8 @@ fi
 printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE" 2>/dev/null || echo "$BASE")" "$OFF"
 
 # 1. Dependency integrity BEFORE ANYTHING ELSE. Every step below measures a tree, and
-#    a tree that does not match composer.lock makes all fourteen answers meaningless —
-#    in whichever direction. It also reconciles step 13's phpstan result cache against
+#    a tree that does not match composer.lock makes all fifteen answers meaningless —
+#    in whichever direction. It also reconciles step 14's phpstan result cache against
 #    composer.lock, because that cache cannot see vendor/ moving underneath it. Full
 #    reasoning, and the two failure cases, in the lint's header.
 #
@@ -221,13 +221,26 @@ check "runtime-zero-lint" php bin/ci-runtime-zero-lint.php
 step "identifier-generation bypass guard (1.4b)"
 check "identifier-generation-lint" php bin/ci-identifier-generation-lint.php
 
+# 12. sql-clock lint. MySQL's clock is a different FRAME from the application's — the server's
+#     session zone is not app.timezone and on the shared production host it cannot be made to be
+#     (+05:30, not ours to set). A value NOW() produces is stored true and read back offset, while
+#     every timestamp Laravel writes is stored offset and read back true, so one SQL-side clock
+#     read puts two frames in one table. That shipped in the single writer of the money projection
+#     and put `last_activity` 5.5 hours in the future on the bursar's accounts index.
+#
+#     ADDED AT ZERO, which is the only moment a rule like this is free: the two occurrences it
+#     would have failed on are removed in the same commit, and the one historical exception is
+#     named in the lint with its reason. See docs/handoff/tickets/stored-epoch-offset.md.
+step "sql-clock lint (no MySQL clock functions in raw SQL — two frames, one table)"
+check "sql-clock-lint" php bin/ci-sql-clock-lint.php
+
 step "architecture tests (§17.1)"
 check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
 
 step "static analysis (Larastan level 5 vs baseline)"
 check "larastan" composer analyse
 
-# 14. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
+# 15. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
 #
 #     THE ARTEFACTS ARE KEPT PER RUN, and that is not housekeeping — it is the difference
@@ -275,7 +288,7 @@ printf '%s✗ quality: FAIL%s (%d): %s\n' "$RED" "$OFF" "${#FAILED[@]}" "${FAILE
 printf '%sPush blocked. Fix the above, or bypass deliberately with --no-verify (recorded as intent, not accident).%s\n' "$DIM" "$OFF"
 
 # WHERE THE EVIDENCE IS, printed on the red rather than left to be rediscovered. This gate has
-# produced a red that vanished before anyone could read it (see step 14). If this failure is one
+# produced a red that vanished before anyone could read it (see step 15). If this failure is one
 # you cannot explain, these two files are the only record of it and the NEXT run no longer
 # overwrites them — copy them somewhere before doing anything else.
 if [ -n "${QUALITY_LOG:-}" ] && [ -f "$QUALITY_LOG" ]; then

@@ -563,7 +563,7 @@ a call site and any extracted variable walks past it; static analysis has no opi
 arities type-check. The one mechanism available is a test —
 `PaymentProvenanceTest`'s seed case plants a migrated row at 900,000,001, records a portal payment and
 asserts the reference is `1` — and it is stated plainly in that test's header as the only one. It runs
-in `bin/quality` step 14, so it blocks a push; it does not stop anyone writing the seed in the first
+in `bin/quality` step 15, so it blocks a push; it does not stop anyone writing the seed in the first
 place. The one constraint that *would* be structural — `CHECK (origin = 'migrated' OR reference <
 900000000)` — is expressible and is deliberately **rejected**: it converts a silent corruption into a
 hard 3819 on every payment the school takes after the import, i.e. it closes the bursar's front door

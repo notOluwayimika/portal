@@ -35,7 +35,7 @@ Three facts that are each correct and together produce it:
 1. `public/build/` is **gitignored** (`.gitignore:4`), so a clone has no manifest. Committing built
    assets would be worse.
 2. `bin/quality` builds them — **step 5**, `pnpm run build` (`bin/quality:194-195`) — and step 5 runs
-   _before_ step 14's suite. Anyone running the gate never sees this.
+   _before_ step 15's suite. Anyone running the gate never sees this.
 3. A **standalone** suite run (`./vendor/bin/pest`, or a filtered subset) skips step 5 entirely. A
    reviewer verifying one arm of a report runs exactly that.
 

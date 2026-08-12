@@ -66,7 +66,7 @@ Verified by reading the tree on 2026-08-06, not from the plan. `app/Finance/` is
 | **Sequences** | `sequences` table + `Support\Sequences\Sequences` with `lockForUpdate` — gap-free numbering primitive exists. |
 | **UI** | 3 admin pages (`index`, `approvals`, `statement`), 5 modals, 9 controllers, wayfinder actions generated. |
 | **Policy doc** | `docs/finance/accounting-policy.md`, co-signed by Brookstone Finance. |
-| **Phase 1 substrate** | 12 of 17 §4.4 debt items ✅. `ActiveSchool`, `SchoolAccessParity`, `SchoolScope` fail-closed (built), `PermissionCatalog`, `EffectivePermissions`, `RouteAccessMap`, grants-convergence lint, duty-separation audit, six content-keyed ratchet baselines (ADR 0041), `bin/quality` 14 steps + `.githooks/pre-push`. |
+| **Phase 1 substrate** | 12 of 17 §4.4 debt items ✅. `ActiveSchool`, `SchoolAccessParity`, `SchoolScope` fail-closed (built), `PermissionCatalog`, `EffectivePermissions`, `RouteAccessMap`, grants-convergence lint, duty-separation audit, six content-keyed ratchet baselines (ADR 0041), `bin/quality` 15 steps + `.githooks/pre-push`. |
 
 **Read this column honestly.** v10:1600 warns: *"Do not read the skeleton as 'Phase 5 done.'"* What exists is a **frozen module template with real invariants** — the shapes are right and proven. What is missing is almost everything a bursar would actually touch.
 

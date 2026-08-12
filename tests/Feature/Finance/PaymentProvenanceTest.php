@@ -48,7 +48,7 @@ use Illuminate\Support\Str;
  *  - Static analysis has no opinion: the parameter is genuinely optional and both arities type-check.
  *
  * So THE TESTS BELOW ARE THE ONLY MECHANISM, and that is stated plainly rather than dressed up. They
- * are real ones — they fail the suite, and the suite is bin/quality step 14 — but they catch the
+ * are real ones — they fail the suite, and the suite is bin/quality step 15 — but they catch the
  * mistake at push time, not at write time. The comments at Payment::MIGRATED_REFERENCE_FLOOR and at
  * both Actions are documentation, not enforcement.
  *

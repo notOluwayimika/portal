@@ -66,19 +66,85 @@ created with, on a server where the setting was OFF. The evidence for OFF is the
 definition itself*, not a variable reading, and that distinction is worth keeping: the setting
 cannot be read for the environment that matters from here at all.
 
-### The four declaration sites
+### The exhaustive reading — one row, not "the four we knew about"
 
-Every column in `portaa10_portal` carrying a server-clock default, with where it comes from:
+**This is the claim the ticket rests on, so it is a schema-wide query rather than a set of spot
+checks.** Proposed by the project lead and re-run here against the production copy, 2026-08-13:
 
-| Column | Declared as | Origin | Status |
-|---|---|---|---|
-| `jobs.failed_at` | `$table->timestamp('failed_at')->useCurrent()` | explicit | named exception in the lint |
-| `audit_logs.created_at` | `$table->timestampTz('created_at')->useCurrent()` | explicit | named exception in the lint |
-| `authz_observations.occurred_at` | `$table->timestamp('occurred_at')->useCurrent()` | explicit | named exception in the lint |
-| `notices.starts_at` | `$table->timestampTz('starts_at')` | **implicit — the server added it** | invisible to the lint, and always will be |
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, COLUMN_DEFAULT, EXTRA
+  FROM information_schema.COLUMNS
+ WHERE TABLE_SCHEMA = 'portaa10_portal'
+   AND EXTRA LIKE '%on update CURRENT_TIMESTAMP%'
+   AND COLUMN_NAME NOT IN ('updated_at');
+```
 
-The first three are visible to `scanUseCurrent()` and exempt with their reasons. The fourth is this
-ticket.
+```
+notices  starts_at  default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+```
+
+**Exactly one row, in the entire schema.** "We checked the four declarations we knew about" and
+"there is one in the whole database" are different claims, and only the second lets this ticket call
+its LIVE set complete.
+
+**The `updated_at` carve-out turns out to be unnecessary, which strengthens the reading rather than
+weakening it.** Re-run without it, the same query returns **1** — no `updated_at` column in this
+schema carries `ON UPDATE CURRENT_TIMESTAMP` at all (Laravel's `timestamps()` emits nullable
+columns, which the implicit rule does not touch). So the exclusion is hiding nothing.
+
+The wider query — **any** server-clock default, not just `ON UPDATE` — returns four:
+
+```
+audit_logs           created_at   default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+authz_observations   occurred_at  default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+failed_jobs          failed_at    default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+notices              starts_at    default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+```
+
+### LIVE — one
+
+**`notices.starts_at`.** The only column in the schema whose value the server rewrites on **every
+UPDATE that does not assign it**. Declared `$table->timestampTz('starts_at')`
+(`2026_06_27_000001_create_notices_tables.php:32`) with no default; the clause is the server's.
+Its live consequence: [`notice-end-destroys-starts-at.md`](notice-end-destroys-starts-at.md).
+
+### The three explicit `->useCurrent()` columns are NOT the latent set
+
+Stated separately because it is easy — and wrong — to fold them in as "the other three".
+
+`jobs.failed_at`, `audit_logs.created_at` and `authz_observations.occurred_at` carry
+`DEFAULT CURRENT_TIMESTAMP` **by design**, written by `->useCurrent()` in their migrations. They are
+**not environment-dependent**: a freshly-migrated `portal_testing` on this host carries exactly the
+same three, and no others. They carry **no `ON UPDATE` clause**, so nothing rewrites them. Their only
+hazard is an INSERT that omits the column, and every writer supplies it (re-derived above). They are
+visible to `scanUseCurrent()` and exempt with their reasons.
+
+Nothing about them is latent. They are the *explicit* set.
+
+### LATENT — a different set, three, and it is a SOURCE-side count
+
+The genuinely latent members are declarations that are clean here and would materialise with
+`DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` wherever the DDL is created under
+`explicit_defaults_for_timestamp = OFF`: **`NOT NULL` `TIMESTAMP` columns declared with no default**.
+That is a property of the migration, not of any schema, so it is counted from source
+(`database/migrations/`, excluding `->nullable()`, `->useCurrent()` and the `timestamps()` helpers):
+
+| Declaration | Migration | State |
+|---|---|---|
+| `$table->timestampTz('starts_at')` | `2026_06_27_000001_create_notices_tables.php:32` | **already materialised** — this is the LIVE row |
+| `$table->timestamp('posted_at')->after('narration')` | `2026_08_09_120000_finance_capture_columns_s2_s3.php:74` | latent — `finance_ledger_transactions`, see below |
+| `$table->timestampTz('expires_at')` | `2026_08_04_140000_create_notification_actions.php` | latent |
+| `$table->timestampTz('registration_deadline')` | `2026_04_26_120713_create_curricula_table.php` | latent |
+
+Four declarations of the shape; one has already gone live; **three remain latent**. They are latent
+in the environment sense — clean in both databases on this machine, and they would not be clean
+where the DDL was created under the other setting. `notices.starts_at` is the proof that the
+distinction is real rather than theoretical.
+
+*(This departs from the shape first proposed for this section, which had the three exempted
+`->useCurrent()` columns as the latent set. They are not: they are explicit, identical across
+environments, and carry no `ON UPDATE`. The latent set is derived from source, and it happens also
+to number three — a coincidence worth not glossing over, because it is a different three.)*
 
 ### The finance declaration, and why it is benign for a reason
 

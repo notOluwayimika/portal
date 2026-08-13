@@ -578,3 +578,116 @@ Pint-checked by hand (`{"tool":"pint","result":"passed"}`) before the run.
 
 `tests/` count re-confirmed at this commit: **27** (21 / 3 / 2 / 1), matching what is now written in
 the lint, the ticket and this report.
+
+---
+
+# Addendum — the exhaustive reading, and the notices ticket un-stale
+
+Two items, both re-derived here rather than taken from the addendum brief.
+
+## 1. The completeness claim now rests on a schema-wide query
+
+The point is accepted and was a real gap: the previous round verified **four declaration sites it
+already knew about**, which establishes those four and says nothing about a fifth. Re-run against
+the production copy, 2026-08-13 (query proposed by the project lead):
+
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, COLUMN_DEFAULT, EXTRA
+  FROM information_schema.COLUMNS
+ WHERE TABLE_SCHEMA = 'portaa10_portal'
+   AND EXTRA LIKE '%on update CURRENT_TIMESTAMP%'
+   AND COLUMN_NAME NOT IN ('updated_at');
+```
+
+```
+notices  starts_at  default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+```
+
+**Exactly one row.** Reproduces. Written into the ticket as the exhaustive reading, dated and
+attributed.
+
+**One addition to it.** Re-run **without** the `NOT IN ('updated_at')` carve-out, the query still
+returns **1** — no `updated_at` column in this schema carries `ON UPDATE CURRENT_TIMESTAMP` at all,
+because Laravel's `timestamps()` emits nullable columns and the implicit rule does not touch those.
+Worth recording: it means the exclusion is hiding nothing, which is what makes the one-row result a
+completeness claim rather than a filtered one.
+
+### A departure — "LATENT: three" is not the three exempted columns
+
+The addendum's restructure had the LIVE row plus **the three exempted `->useCurrent()` columns** as
+the latent set. That does not hold, and folding them in would have made the ticket wrong in a way
+that reads plausible:
+
+- They carry `DEFAULT CURRENT_TIMESTAMP` **by design**, written by `->useCurrent()` in their
+  migrations — not by the server.
+- They are **not environment-dependent**: a freshly-migrated `portal_testing` on this host carries
+  exactly the same three and no others.
+- They carry **no `ON UPDATE` clause**, so nothing rewrites them.
+
+Nothing about them is latent; they are the *explicit* set, and the ticket now says so under its own
+heading.
+
+**The genuinely latent set is a SOURCE-side count**, because the property is of the migration rather
+than of any schema: `NOT NULL` `TIMESTAMP` columns declared with no default, which materialise with
+`DEFAULT … ON UPDATE …` wherever the DDL is created under the other setting. Measured over
+`database/migrations/` (excluding `->nullable()`, `->useCurrent()`, and the `timestamps()` helpers):
+**four declarations of the shape**, of which one — `notices.starts_at` — has already materialised.
+
+| Declaration | Migration | State |
+|---|---|---|
+| `$table->timestampTz('starts_at')` | `2026_06_27_000001_create_notices_tables.php:32` | already materialised — the LIVE row |
+| `$table->timestamp('posted_at')->after('narration')` | `2026_08_09_120000_finance_capture_columns_s2_s3.php:74` | latent |
+| `$table->timestampTz('expires_at')` | `2026_08_04_140000_create_notification_actions.php` | latent |
+| `$table->timestampTz('registration_deadline')` | `2026_04_26_120713_create_curricula_table.php` | latent |
+
+So **three remain latent** — the same number as proposed, and a **different three**. The ticket
+flags the coincidence explicitly so a later reader does not merge the two sets back together.
+
+## 2. The notices ticket, un-staled
+
+**The attribute is now OBSERVED** — `COLUMN_DEFAULT = CURRENT_TIMESTAMP`,
+`EXTRA = DEFAULT_GENERATED on update CURRENT_TIMESTAMP`, read off the copy. **The code-path
+consequence stays DERIVED**: nobody has ended a notice and watched the value move. The ticket now
+carries the two as a two-row table with separate evidence and separate status, so they cannot
+collapse into one claim.
+
+**Damage assessment recorded — real defect, no victims.** Reproduced under the privacy rule:
+
+```
+notices rows = 3
+  notice#1  school#1  edited=no    starts_at − created_at = -130,185 s
+  notice#2  school#1  edited=no    starts_at − created_at =      -171 s
+  notice#3  school#1  edited=yes   starts_at − created_at = -911,310 s
+                                   starts_at − updated_at = -912,844 s
+```
+
+One notice has ever been edited and its `starts_at` is untouched — 911,310 s before its own
+`created_at`, a human back-date. Had `ON UPDATE` fired it would sit at roughly
+`updated_at + 19,800` (the session offset); it sits 912,844 s behind. **The clause has never fired
+on any row that exists.**
+
+The ticket also now records *why*, so it does not read as luck: `NoticeController::update()`
+(`:170-175`) sends `starts_at`, so a normal edit assigns the column and `ON UPDATE` does not apply.
+Only `end()` omits it. And it records what the data cannot show — whether `end()` was ever called on
+a row since deleted.
+
+**Ownership named:** `fix/notices-starts-at-server-clock`, and the ticket closes when that merges.
+The reproduction is no longer a blocking prerequisite, since the cause is established rather than
+guessed; what remains is the route's effect, which that branch's arm covers.
+
+### What I could NOT verify about the fix branch, and it is in the ticket
+
+`fix/notices-starts-at-server-clock` **exists locally**, but
+`git log origin/staging..fix/notices-starts-at-server-clock` returned **nothing** and its working
+tree was clean — so on this machine it carries **no commits over `staging`**. The migration, the
+code change and the arm are either uncommitted or live elsewhere. The ticket names the owner and
+carries that caveat in a block quote, because "owned" and "written and waiting" are different
+states and only the first is supported from here.
+
+### And a branch-state note about this session
+
+**HEAD was on `fix/notices-starts-at-server-clock` at the start of this addendum**, not on
+`fix/sql-clock-lint-v2`. The working tree was clean, nothing was written while it was checked out,
+and the first write of this round came after switching back — verified `d42812f` still at the tip of
+`fix/sql-clock-lint-v2` before editing. Recorded because a reader reconstructing this branch's
+history from reflog would otherwise find an unexplained checkout in the middle of it.

@@ -204,9 +204,45 @@ class NoticeController extends Controller
         return response()->noContent();
     }
 
+    /**
+     * THE BELT, NOT THE FIX. The fix is
+     * `database/migrations/2026_08_13_100000_timestamp_columns_drop_implicit_on_update.php`, which
+     * takes `ON UPDATE CURRENT_TIMESTAMP` off `notices.starts_at` (and off the two other columns
+     * production carries it on). Do not read this method as the
+     * remedy and delete that migration as redundant — the migration protects every write path to
+     * this table, present and future; this protects one.
+     *
+     * WHAT IT DEFENDS AGAINST. Where the column still carries the clause (any database built while
+     * `explicit_defaults_for_timestamp` was OFF — see the migration's docblock), MySQL rewrites
+     * `starts_at` from the server clock on any UPDATE whose SET list omits it. `starts_at` is a
+     * start time an admin typed by hand and the schema holds no second copy, so that loss is silent
+     * and unrecoverable. Assigning the column its own value keeps it in the SET list, which is what
+     * suppresses the clause.
+     *
+     * WHY THIS IS NOT `$notice->update(['ends_at' => …, 'starts_at' => $notice->starts_at])`, which
+     * is the shape a reader will expect and which DOES NOT WORK. Eloquent omits a clean attribute
+     * from the SET list: `originalIsEquivalent()` normalises both sides of a date attribute through
+     * `fromDateTime()`, so re-assigning `starts_at` its current value leaves it not-dirty and the
+     * emitted statement is `set ends_at = ?, updated_at = ?` — the exact statement the clause fires
+     * on. Measured on this model, not assumed. Writing through the builder is what puts the column
+     * in the statement; the query still carries `SchoolScope`, so isolation is unchanged.
+     *
+     * No model events are lost by not going through `save()`: `Notice` has no observer, and its two
+     * concerns hook `creating` only.
+     */
     public function end(Notice $notice)
     {
-        $notice->update(['ends_at' => now()]);
+        $now = now();
+
+        $notice->newQuery()
+            ->whereKey($notice->getKey())
+            ->update([
+                'ends_at' => $now,
+                'starts_at' => $notice->starts_at,
+                'updated_at' => $now,
+            ]);
+
+        $notice->refresh();
 
         $notice->load(['category', 'creator', 'classLevels', 'classLevelArms', 'students']);
 

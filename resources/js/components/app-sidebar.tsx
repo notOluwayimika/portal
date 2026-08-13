@@ -14,6 +14,7 @@ import {
     LayoutDashboard,
     MessageSquare,
     PenTool,
+    Percent,
     ReceiptText,
     RefreshCw,
     Shield,
@@ -473,6 +474,18 @@ export function AppSidebar() {
                     title: 'Fee schedules',
                     href: '/finance/fee-schedules',
                     icon: ReceiptText,
+                });
+            }
+
+            // Discount policies (U2) — finance CONFIGURATION beside Fee schedules, keyed on the same
+            // ability its route carries. There is no separate `manage` ability for this catalog: the
+            // page and every control on it post the one endpoint gated on change.submit, so this item
+            // and the route ask exactly the same question and a visible entry cannot 403 on click.
+            if (can('finance.discount-policy.change.submit')) {
+                financeItems.push({
+                    title: 'Discount policies',
+                    href: '/finance/discount-policies',
+                    icon: Percent,
                 });
             }
 

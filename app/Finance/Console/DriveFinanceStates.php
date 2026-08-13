@@ -3,14 +3,19 @@
 namespace App\Finance\Console;
 
 use App\Finance\Actions\ApproveCreditNote;
+use App\Finance\Actions\ApproveDiscountPolicyChange;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\Actions\SubmitCreditNote;
+use App\Finance\Actions\SubmitDiscountPolicyChange;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
+use App\Finance\Enums\DiscountBasis;
+use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Models\BankAccount;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
 use App\Models\User;
 use App\Support\Money;
@@ -28,6 +33,9 @@ use App\Support\SchoolDay;
  */
 final class DriveFinanceStates
 {
+    /** The seeded policy's name, in one place: both the create and the idempotence check read it. */
+    private const DRIVE_POLICY_NAME = 'Sibling discount';
+
     public function __construct(
         private readonly User $maker,
         private readonly User $checker,
@@ -84,6 +92,74 @@ final class DriveFinanceStates
     public function bankAccountCount(int $schoolId): int
     {
         return BankAccount::query()->where('school_id', $schoolId)->count();
+    }
+
+    /**
+     * ONE ACTIVE DISCOUNT POLICY PER DRIVE SCHOOL — the U2 screen's amend and retire targets.
+     *
+     * VERIFIED ABSENT BEFORE IT WAS ADDED: neither this class nor DriveCastSeeder created a discount
+     * policy, so `finance_discount_policies` was empty in every drive. Two consequences, and the second
+     * is the one that matters here. `finance_invoice_lines_reduction_guard` refuses a reduction line
+     * that cites no policy, so no invoice in the fixture could carry a discount at all; and the
+     * discount-policies screen offers three acts — propose, amend, retire — of which only the first has
+     * anything to work on when the catalog is empty. A drive that can exercise one of three paths is a
+     * third of a drive, which is the same precondition-not-discovery argument the academic slot and the
+     * bank account above were each written for.
+     *
+     * THROUGH THE REAL ACTIONS, never a row write: submit as the maker, approve as the checker, which
+     * is the only path that writes this table ({@see ApproveDiscountPolicyChange}) and the one the
+     * screen itself drives. `$maker` is a parameter because School B's bursar is a different user and
+     * the maker ≠ checker CHECK is a database fact — the fixture must not fake its way around it.
+     *
+     * A PERCENTAGE, and `requires_approval` false: the standing sibling discount is the case the flag's
+     * `false` arm is FOR, so the seeded row reads as the thing an operator would recognise. The drive
+     * authors the other combinations live.
+     *
+     * Idempotent by name, like ensureBankAccount: a second call finds the row rather than proposing a
+     * duplicate, which the active-name unique would refuse at approval anyway.
+     */
+    public function ensureDiscountPolicy(int $schoolId, ?User $maker = null): int
+    {
+        $existing = DiscountPolicy::query()
+            ->where('school_id', $schoolId)
+            ->where('name', self::DRIVE_POLICY_NAME)
+            ->first();
+
+        if ($existing !== null) {
+            return (int) $existing->id;
+        }
+
+        $change = app(SubmitDiscountPolicyChange::class)->handle(
+            DiscountPolicyChangeKind::Create,
+            null,
+            [
+                'name' => self::DRIVE_POLICY_NAME,
+                'description' => 'Second and subsequent children enrolled in the same term.',
+                'basis' => DiscountBasis::Percent->value,
+                'percent' => 10,
+                'requires_approval' => false,
+            ],
+            'Standing arrangement — carried over from last session.',
+            $maker ?? $this->maker,
+        );
+
+        app(ApproveDiscountPolicyChange::class)->handle($change, $this->checker);
+
+        return (int) DiscountPolicy::query()
+            ->where('school_id', $schoolId)
+            ->where('name', self::DRIVE_POLICY_NAME)
+            ->value('id');
+    }
+
+    /**
+     * How many discount policies a school has, for the fixture's own report — here rather than in the
+     * command for the reason bankAccountCount() gives: the boundary lint forbids a `finance_` table
+     * literal outside app/Finance, so the Finance side counts its own table. Reads the scoped model, so
+     * it must be called inside `ActiveSchool::runFor($schoolId, …)`.
+     */
+    public function discountPolicyCount(int $schoolId): int
+    {
+        return DiscountPolicy::query()->where('school_id', $schoolId)->count();
     }
 
     /** UNPAID — a charge, nothing settled. */

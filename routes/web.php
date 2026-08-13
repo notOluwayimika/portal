@@ -209,6 +209,31 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ->middleware('permission:finance.fee-schedule.manage')
         ->name('admin.finance.fee-schedules');
 
+    /*
+     * The discount-policies screen (U2) — where the discount catalog is authored.
+     *
+     * Gated on `finance.discount-policy.change.submit` IN ADDITION to the group's finance.access,
+     * following Bank accounts and Fee schedules: this is CONFIGURATION, and everyone who can read
+     * finance must not be offered a screen that defines what may be taken off a bill.
+     *
+     * THE SPLIT THAT BIT U1 CANNOT HAPPEN HERE, and that is a fact about the permission catalog rather
+     * than a hope. Fee schedules has two abilities — `manage` opens the screen and
+     * `fee-schedule.change.submit` sends a proposal — so a seat holding the first without the second
+     * gets a page whose buttons 403 (FeeSchedulesScreenTest pins the gate that fixes it). Discount
+     * policies has NO `manage` ability at all: the three cases are change.submit / change.approve /
+     * change.reject (App\Enums\Permission:178-180), nothing on this page writes a policy directly, and
+     * every control on it posts the SAME endpoint the page gate names. Page gate and button gate are
+     * therefore one permission by construction, so the page asks once, here.
+     *
+     * NO PROPS. Unlike fee schedules there is nothing here the seat cannot fetch: the catalog comes
+     * from GET /api/v1/finance/discount-policies, which carries only the group's finance.access —
+     * held by every role in grantsMap() that holds this route's ability (asserted in
+     * tests/Feature/Finance/DiscountPoliciesScreenTest.php, not assumed).
+     */
+    Route::get('/finance/discount-policies', fn () => Inertia::render('admin/finance/discount-policies'))
+        ->middleware('permission:finance.discount-policy.change.submit')
+        ->name('admin.finance.discount-policies');
+
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],

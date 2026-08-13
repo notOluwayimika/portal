@@ -38,6 +38,15 @@ class DriveCastSeeder extends Seeder
 
     public User $checker;
 
+    /**
+     * School B's bursar — the isolation seat, exposed because the FINANCE half needs a maker inside
+     * School B. `maker` above is a School A user, and a discount-policy change proposed by them in
+     * School B's context would attribute the proposal to someone with no access to that school. The
+     * checker is shared (ED holds every finance checker side; maker ≠ checker is what the DB CHECK
+     * actually requires, and it holds either way).
+     */
+    public User $schoolBMaker;
+
     public int $schoolAId;
 
     public int $schoolBId;
@@ -154,7 +163,7 @@ class DriveCastSeeder extends Seeder
         $super->assignRole('super_admin');
         $super->flushSchoolAccessCache();
 
-        $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
+        $this->schoolBMaker = $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
     }
 
     /** A drive user: fixed password, verified email, NO 2FA secret, optionally school-scoped to $role. */

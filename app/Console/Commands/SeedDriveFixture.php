@@ -86,6 +86,14 @@ class SeedDriveFixture extends Command
         ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureBankAccount($cast->schoolAId));
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureBankAccount($cast->schoolBId));
 
+        // ONE ACTIVE DISCOUNT POLICY PER SCHOOL, for the same reason and by the same argument as the
+        // account above: the U2 discount-policies screen offers propose / amend / retire, and the last
+        // two have nothing to act on in a school whose catalog is empty. Seeded through the real
+        // submit-then-approve path — the only thing that writes that table — so School B's proposal is
+        // made by School B's own bursar. See DriveFinanceStates::ensureDiscountPolicy().
+        ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureDiscountPolicy($cast->schoolAId));
+        ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureDiscountPolicy($cast->schoolBId, $cast->schoolBMaker));
+
         ActiveSchool::runFor($cast->schoolAId, function () use ($states, $e) {
             $states->unpaid($e['ursula']);
             $states->partPaid($e['paula']);
@@ -139,12 +147,17 @@ class SeedDriveFixture extends Command
         // table. It reads the scoped model, hence the runFor.
         $accounts = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->bankAccountCount($schoolId));
 
-        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account:');
+        // Same route and same reason as the accounts column: the discount catalog is a `finance_` table
+        // the command may not name, and a zero here means the discount-policies screen can only be
+        // driven along its create path — amend and retire would have no target.
+        $policies = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->discountPolicyCount($schoolId));
+
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId)],
             ],
         );
 

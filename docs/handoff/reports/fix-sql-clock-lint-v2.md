@@ -58,9 +58,9 @@ invisible one.
 ## Contradictions of the premise
 
 **One, and it changes the size of the tests/ decision.** The ticket records "**1** live occurrence
-in `tests/`". Running the shipped matcher over `tests/` returns **16**. The ticket's figure was a
+in `tests/`". Running the shipped matcher over `tests/` returns **27**. The ticket's figure was a
 hand survey for `NOW()` in a raw-insert shape; the matcher also sees assertion messages, PHP source
-held in strings, and this lint's own planted fixtures. The extra 15 are all false positives — which
+held in strings, and this lint's own planted fixtures. The extra 26 are all false positives — which
 strengthens rather than weakens the ticket's instinct, but a reader sizing the decision on "1 hit"
 would have sized it wrong in the other direction.
 
@@ -108,17 +108,24 @@ false positive existed only as an example of itself.
 
 ### The measurement that decided tests/
 
-The shipped matcher, `SCANNED_DIRS` set to `['tests']` (16 findings; the full output is in the
-ticket's resolution block). Distribution:
+The shipped matcher, `SCANNED_DIRS` set to `['tests']` and `$root` pinned to the repo root, over
+`tests/` **as it stands at the shipping commit — i.e. including this branch's own four new coverage
+arms**. **27 findings.** Distribution:
 
 | Where | Hits | What they are |
 |---|---|---|
-| `tests/Arch/SqlClockLintCoverageTest.php` | 10 | this lint's own planted fixtures and the strings it asserts on |
+| `tests/Arch/SqlClockLintCoverageTest.php` | 21 | this lint's own planted fixtures and the strings it asserts on |
 | `tests/Feature/Support/SchoolDayTest.php` | 3 | an assertion MESSAGE quoting `now()` as prose; PHP source held in a string so an arch test can scan it |
 | `tests/Feature/Finance/CurrencyShapeConstraintTest.php:54` | 2 | the known fixture insert — two `NOW()` on one line |
 | `tests/Feature/Finance/SubledgerClockFrameTest.php:69` | 1 | the `SELECT NOW()` probe that exists TO PROVE the two frames differ |
 
-**Decision: `tests/` stays out.** Not one of the 16 is the defect. Scanning it buys a day-one
+*(The first version of this report said **16**, with 10 in the coverage test. That count was taken
+before this branch's own coverage arms landed and was then written into a permanent docblock — the
+same carried-number failure this report corrects the ticket for one section above. Corrected in the
+lint, the ticket and here. The extra 11 are all in the coverage test's new fixture strings, so the
+categories and the decision are untouched.)*
+
+**Decision: `tests/` stays out.** Not one of the 27 is the defect. Scanning it buys a day-one
 baseline of permanent exemptions — including exemptions for the lint's own coverage test — and being
 free of a baseline is the entire reason this rule was worth adding at zero.
 `CurrencyShapeConstraintTest:54` is left exactly as it was.
@@ -194,7 +201,12 @@ printf '%s[%d/15]%s %s\n'          →  the one literal, in step()
 
 Sweep run over `docs/ tests/ bin/ .githooks/ .claude/` **and** `CLAUDE.md CONTRIBUTING.md README.md`
 for both digits (`14`, `x/14`, `step 14`) and spelled-out numerals (`twelve|thirteen|fourteen|
-fifteen`). Root files: no hits. `.claude/` produced two, both real —
+fifteen`). **Root files: one hit, found and deliberately left** — `CLAUDE.md:136` carries
+`PASS 14/14` inside the ADR 0053 determinism row, which records a specific pair of runs against a
+14-step gate. It is a dated record, the same class preserved in ADR 0053's own A/B/C table.
+*(An earlier version of this line said "Root files: no hits." That was wrong, and the distinction
+matters: a found-and-deliberately-left hit and a hit that was never seen read identically from
+"no hits", and only the second means the sweep was incomplete.)* `.claude/` produced two, both real —
 `.claude/skills/finance-context/SKILL.md:162` and `:165` — and that directory was outside every
 earlier sweep, which is the shape the brief warned about.
 
@@ -361,3 +373,208 @@ about from their writers in source, not from row counts; no database was read.
 - `docs/handoff/reports/fix-subledger-single-clock-frame.md:240` — **ticket.** Points at
   `docs/handoff/tickets/sql-clock-lint-blind-to-usecurrent.md`, which is deleted. Harmless (the same
   line says it was folded), noted so it is not mistaken for a live pointer.
+
+---
+
+# Remediation round — the cold review's four findings
+
+Appended after the subagent review. Each finding was **re-verified against the tree and the
+databases before acting**; the brief that requested this remediation was written without repo
+access and said so, so nothing below rests on its restatement.
+
+## One restated claim did NOT reproduce, and the correction is load-bearing
+
+The brief (following the reviewer) said `explicit_defaults_for_timestamp` is **"OFF on the
+production copy and ON on this host"**. Re-derived from `performance_schema.global_variables`:
+
+```
+DB=portaa10_portal  version=8.0.43
+  explicit_defaults_for_timestamp = ON
+  system_time_zone = WAT
+  time_zone = SYSTEM
+```
+
+The production copy **is** on this host and reports **ON**. So the setting cannot be read as OFF
+anywhere reachable from here, and a ticket asserting it would have been a carried number of its own.
+
+**The finding it supports survives intact, on better evidence.** Same migration, two databases on
+this one machine:
+
+```
+                  notices.starts_at  —  $table->timestampTz('starts_at');
+
+portaa10_portal   timestamp NOT NULL  default='CURRENT_TIMESTAMP'
+                                      extra=DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+portal_testing    timestamp NOT NULL  default=NULL   extra=
+```
+
+`portal_testing` is freshly migrated here, under `ON`, and gets no implicit default.
+`portaa10_portal` is a **copy of production** and carries the DDL its `notices` table was created
+with, on a server where the setting was OFF. The evidence for OFF is therefore the *column
+definition*, not a variable reading — which is a sharper statement of the point than the original,
+because it shows the divergence directly instead of inferring it.
+
+That distinction is written into the new ticket rather than smoothed over.
+
+## What each finding reproduced as
+
+**Finding 1 — reproduces exactly.** Four columns, not three:
+
+```
+  audit_logs           created_at   default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+  authz_observations   occurred_at  default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+  failed_jobs          failed_at    default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED
+  notices              starts_at    default=CURRENT_TIMESTAMP  extra=DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+```
+
+`bin/ci-sql-clock-lint.php` said "the tree is at zero in BEHAVIOUR as well as in tokens". False, and
+false in the gate file itself. Corrected.
+
+**Finding 2 — reproduces exactly.** 27, not 16: 21 / 3 / 2 / 1 across the same four files.
+
+**Finding 3 — reproduces exactly.** `CLAUDE.md:136` carries `PASS 14/14`.
+
+**Finding 4 (notices) — the code reproduces; the behaviour is still unobserved.**
+`NoticeController.php:206-209`, `routes/endpoints/notice.php:14` and the migration line are all as
+described.
+
+## Fix 1 — the claim is corrected, and `ddl-default` was NOT grown
+
+**`scanUseCurrent()` is unchanged.** Extending it was rejected on the reviewer's own reasoning: the
+implicit default is created by the **server**, from a declaration byte-identical to the safe case,
+so a source-reading check can never distinguish them. A rule that tried would have to flag every
+bare `$table->timestamp(...)` in the repository — refusing safe code, which is the failure mode this
+lint's design history spent three rounds removing.
+
+What changed instead:
+
+- `bin/ci-sql-clock-lint.php` — the exemption block now asserts zero **in tokens** and says plainly
+  that behaviour is not observable from source. The old sentence is quoted as having been false
+  rather than deleted, so a reader who saw it can tell it was corrected.
+- Its **"WHAT IT CANNOT SEE"** block gained the implicit-default origin as a second, numbered item,
+  with the two-database observation inline — that block is the one place a reader looks before
+  trusting a green.
+- `docs/handoff/tickets/sql-clock-lint.md` — the defect-3 resolution carries the same correction.
+
+**New ticket: `docs/handoff/tickets/server-settings-the-code-cannot-see.md`.** The class, with two
+members — the session time zone (member 1, `stored-epoch-offset.md`) and
+`explicit_defaults_for_timestamp` (member 2). One shape: a server-level MySQL variable that differs
+between environments, changes what the database does with a `TIMESTAMP`, and is invisible to every
+source-reading gate. It records that the only instrument that could observe either is a
+schema-level check against a live database, which `bin/quality` is not; it names all four
+declaration sites; and it cross-references `stored-epoch-offset.md`, which now links back.
+
+**The finance declaration, and why it is benign for a reason.**
+`2026_08_09_120000_finance_capture_columns_s2_s3.php:74` declares
+`$table->timestamp('posted_at')->after('narration')` on `finance_ledger_transactions` — exactly the
+shape that acquires the implicit default. Three independent reasons, each re-derived:
+
+1. **`ON UPDATE` cannot fire.** From `information_schema.TRIGGERS`:
+   `finance_ledger_transactions_no_update  (UPDATE)` and
+   `finance_ledger_transactions_no_delete  (DELETE)`. The append-only triggers refuse the UPDATE
+   with SQLSTATE 45000 before any `ON UPDATE CURRENT_TIMESTAMP` could rewrite the column. The
+   data-destroying half is structurally unreachable on this table.
+2. **The `DEFAULT` is moot** — every writer supplies the column:
+   `app/Finance/Services/SubledgerPoster.php:113` (`'posted_at' => $postedAt`) and
+   `app/Finance/Actions/PostOpeningBalanceBatch.php:310` (`'posted_at' => now()`).
+3. **On this host it carries no default at all** — `default=NULL, extra=''` on `portaa10_portal`,
+   because the migration ran here under `ON`.
+
+Reasons 1 and 2 hold on production too. Reason 3 would not, and the ticket says so.
+
+## Fix 2 — the count, corrected with its provenance
+
+16 → **27** in all three places (the lint docblock, the ticket resolution, the report section
+above). Each now states **what it counts** (findings this matcher reports with
+`SCANNED_DIRS = ['tests']`) and **when it was taken** (at the shipping commit, including this
+branch's own coverage arms), plus the command to reproduce it — so a different figure later reads
+as drift or as a different question rather than as a contradiction.
+
+The wrong figure is recorded as having been wrong, not silently overwritten. **The decision does not
+move**: it rests on the structural argument, and the 11 extra hits are all in the coverage test's
+new fixture strings.
+
+## Fix 3 — "Root files: no hits", corrected
+
+The sweep **did** hit `CLAUDE.md:136`, and leaving it was right — it is a dated record of two
+specific runs, the same class as ADR 0053's A/B/C table. The report now says found-and-left, with
+the reason. A found-and-deliberately-left hit and a hit never seen read identically from "no hits",
+and only the second means the sweep was incomplete.
+
+## Not fixed here — the notices bug, filed
+
+**`docs/handoff/tickets/notice-end-destroys-starts-at.md`.** Outside Finance, and it does not belong
+in a lint commit. Filed with the full derivation and with **"DERIVED, NOT OBSERVED"** in its status
+line and again as its first heading: the **first task on whatever branch takes it is to reproduce
+it against the production copy's schema**, not to fix it. A fix for an unproven cause is a guess
+with a commit message — and the reproduction has to run against the copy specifically, because
+`portal_testing` does not carry the `ON UPDATE` clause and the bug cannot occur there.
+
+The ticket flags that it is a **live route** (`POST /notices/{notice:uuid}/end`) touching **data a
+user typed**, with the suspected loss silent and unrecoverable, and that scheduling urgency is the
+project lead's call. Both candidate fixes are named with the trade-off; neither is applied.
+
+## A limit of the review, recorded as one
+
+**The cold review did not run `bin/quality` end to end.** `dependency-integrity`,
+`wayfinder:generate`, `tsc-ratchet`, the vite `build` and `larastan` — five of fifteen steps — rest
+on my transcript alone and were not independently reproduced. That is a limit of the review, not a
+defect in the work, and it is recorded here so the next reader does not read "reviewed" as "every
+gate step re-run by a second party". The reviewer did independently reproduce defect 2's bite-proof
+in an isolated sandbox, re-derive every number in the report, and confirm the exemption writers.
+
+Its other stated limits, carried forward verbatim in substance: it did not read production; every
+database fact in it is from `portaa10_portal` and `portal_testing`; and finding 4's `ON UPDATE`
+firing is derived from the column definition and documented MySQL semantics, not observed. That last
+one is now the first line of the ticket it produced.
+
+## Gate, remediation round — raw, 15 steps
+
+```
+quality gate — base 4928064
+
+[1/15] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/15] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/15] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+       Pint (check) on 6 changed PHP file(s)
+       Prettier: no changed frontend files
+       ESLint: no changed JS/TS files
+[4/15] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/15] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/15] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/15] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/15] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/15] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/15] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/15] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/15] sql-clock lint (no MySQL clock functions in raw SQL — two frames, one table)
+   ✓ sql-clock-lint
+[13/15] architecture tests (§17.1)
+   ✓ arch
+[14/15] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[15/15] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+One run, green, no re-run. **Step 3 now reads `Pint (check) on 6 changed PHP file(s)`** rather than
+the `no changed PHP files` of the first round — the earlier commit landed, so `lint-changed` can see
+those files against the base. That is the same limitation reported in the first round, seen from the
+other side: its green covers committed work only, and this round's uncommitted edits were again
+Pint-checked by hand (`{"tool":"pint","result":"passed"}`) before the run.
+
+`tests/` count re-confirmed at this commit: **27** (21 / 3 / 2 / 1), matching what is now written in
+the lint, the ticket and this report.

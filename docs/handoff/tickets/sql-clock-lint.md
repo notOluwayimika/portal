@@ -84,15 +84,25 @@ excluded `tests/` from its scanned directories.
 it.** What is handed over is the fact: one hit, at that file and line, and a survey that never
 looked there until now. A reader who takes a bare "zero" at face value will size the rollout wrong.
 
-> **RESOLVED — `tests/` stays OUT, and the one-hit figure above understated it by fifteen.** Running
-> the shipped matcher over `tests/` returns **16 hits, none of them the defect**:
+> **RESOLVED — `tests/` stays OUT, and the one-hit figure above understated it by twenty-six.**
+>
+> **What the number counts, and when:** findings the SHIPPED matcher reports with
+> `SCANNED_DIRS = ['tests']`, over `tests/` as it stands at the commit that ships this lint — which
+> includes this lint's own four new coverage arms. On that basis: **27 hits, none of them the
+> defect.**
 >
 > | Where | Hits | What they are |
 > |---|---|---|
-> | `tests/Arch/SqlClockLintCoverageTest.php` | 10 | this lint's own planted fixtures and the strings it asserts on |
+> | `tests/Arch/SqlClockLintCoverageTest.php` | 21 | this lint's own planted fixtures and the strings it asserts on |
 > | `tests/Feature/Support/SchoolDayTest.php` | 3 | an assertion MESSAGE quoting `now()` as prose, and PHP source held in a string so an arch test can scan it |
 > | `tests/Feature/Finance/CurrencyShapeConstraintTest.php:54` | 2 | the known fixture insert — two `NOW()` on one line; no assertion reads a timestamp back |
 > | `tests/Feature/Finance/SubledgerClockFrameTest.php:69` | 1 | the `SELECT NOW()` probe that exists TO PROVE the two frames differ |
+>
+> **A first pass reported 16 and that figure was wrong** — taken before this branch's own coverage
+> arms landed, then written into a permanent docblock. Corrected in the lint, here, and in the
+> report. The extra 11 are all in the coverage test's new fixture strings, so the categories and the
+> decision are unchanged; only the number moved. Recorded rather than quietly overwritten, because
+> it is the same carried-number failure this ticket's own §"The count, and its scope" corrects.
 >
 > The reason is structural rather than a count: the discriminator this lint rests on — **SQL is a
 > STRING, the helper is CODE** — is precisely what a test suite breaks. Tests put prose and PHP
@@ -280,8 +290,16 @@ their reason, or converting.
 > rather than assumed**: `DatabaseFailedJobProvider.php:57` (`Date::now()`) for `jobs.failed_at`;
 > Eloquent's own timestamp handling for `audit_logs.created_at` (`App\Models\AuditLog` sets
 > `UPDATED_AT = null` only, so `created_at` is still supplied on create); `app/Support/Authz.php:78`
-> for `authz_observations.occurred_at`. So the tree is at zero in BEHAVIOUR as well as in tokens,
-> and the three are exempt as history rather than as an argument that the pattern is acceptable.
+> for `authz_observations.occurred_at`. The three are exempt as history rather than as an argument
+> that the pattern is acceptable.
+>
+> **A first version of this resolution said "the tree is at zero in BEHAVIOUR as well as in tokens".
+> That was false and is corrected** — a fourth column, `notices.starts_at`, carries
+> `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` on the production copy from a bare
+> `$table->timestampTz('starts_at')`, with no token and no `->useCurrent()` anywhere in source.
+> `ddl-default` was NOT grown to chase it, deliberately: the default is added by the SERVER, so no
+> source-reading check can ever see it. What this gate asserts is zero **in tokens**.
+> `docs/handoff/tickets/server-settings-the-code-cannot-see.md` carries the class.
 >
 > Bite-proven three ways: a planted `->useCurrent()` / `->useCurrentOnUpdate()` pair goes `exit=0`
 > pre-fix → `exit=1` post-fix; a SECOND `->useCurrent()` added to an exempted file is reported

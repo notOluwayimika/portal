@@ -55,19 +55,47 @@
  * TESTS/ IS OUT OF SCOPE, and that is a measurement rather than an oversight. The discriminator
  * this whole lint rests on — SQL is a STRING, the helper is CODE — is exactly the thing tests break:
  * an assertion message quotes `now()` as prose, an arch test puts PHP source inside a string to
- * scan it, and this lint's own coverage test plants the violations it asserts on. Measured over
- * tests/ at the commit that added this lint: 16 hits, and NOT ONE of them the defect — 10 in this
- * lint's coverage fixtures, 3 prose or PHP-in-a-string in tests/Feature/Support/SchoolDayTest.php,
- * 1 the deliberate `SELECT NOW()` probe in SubledgerClockFrameTest that exists TO PROVE the two
- * frames differ, and 2 the raw fixture insert at CurrencyShapeConstraintTest:54, which reads no
- * timestamp back. Scanning tests/ would therefore buy a day-one baseline of permanent exemptions,
- * which is the one thing this rule got to avoid by being added at zero.
+ * scan it, and this lint's own coverage test plants the violations it asserts on.
  *
- * WHAT IT CANNOT SEE, stated so a green is not over-read: it matches TOKENS. A raw comparison that
- * comes at the same defect without naming a clock function — a stored column compared against a
- * value the database computed some other way — is invisible to it. That half was surveyed by hand
- * at the commit that added this lint (57 raw-SQL entry points in app/; no cross-frame comparison
- * found) and stays a reading exercise.
+ * THE MEASUREMENT, and read what it counts before comparing a figure to it: findings this exact
+ * matcher reports with SCANNED_DIRS = ['tests'], over tests/ as it stands at the commit that
+ * SHIPPED this lint — i.e. including this lint's own coverage arms. **27**, and NOT ONE of them the
+ * defect: 21 in this lint's coverage fixtures and the strings it asserts on, 3 prose or
+ * PHP-in-a-string in tests/Feature/Support/SchoolDayTest.php, 2 the raw fixture insert at
+ * CurrencyShapeConstraintTest:54 (two NOW() on one line) which reads no timestamp back, and 1 the
+ * deliberate `SELECT NOW()` probe in SubledgerClockFrameTest that exists TO PROVE the two frames
+ * differ. Reproduce with SCANNED_DIRS swapped to ['tests'] and $root pinned to the repo root.
+ *
+ * (An earlier draft of this comment said 16. That figure was taken BEFORE this branch's own four
+ * coverage arms landed and was then written here as though it were durable — the same
+ * carried-number failure this branch corrects one file over. The DECISION does not rest on the
+ * count: it rests on the structural argument above, which is why the corrected figure changes
+ * nothing but the number.)
+ *
+ * Scanning tests/ would therefore buy a day-one baseline of permanent exemptions, including
+ * exemptions for this lint's own coverage test, which is the one thing this rule got to avoid by
+ * being added at zero.
+ *
+ * WHAT IT CANNOT SEE, stated so a green is not over-read. Two things, and the second is a whole
+ * CLASS this gate is structurally unable to reach:
+ *
+ *   1. It matches TOKENS. A raw comparison that comes at the same defect without naming a clock
+ *      function — a stored column compared against a value the database computed some other way —
+ *      is invisible to it. That half was surveyed by hand at the commit that added this lint (57
+ *      raw-SQL entry points in app/; no cross-frame comparison found) and stays a reading exercise.
+ *   2. THE SERVER ADDS COLUMN DEFAULTS THIS FILE NEVER SEES. When
+ *      `explicit_defaults_for_timestamp` is OFF, MySQL gives a NOT NULL `TIMESTAMP` column declared
+ *      with no default `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` on its own. A bare
+ *      `$table->timestamp('x')` is then a server-clock column with no banned token, no
+ *      `->useCurrent()`, and nothing in the source that differs from the safe case — so NO amount
+ *      of source reading can distinguish them, and scanUseCurrent() must not be grown to try.
+ *
+ *      This is observed, not theoretical: `notices.starts_at` is declared
+ *      `$table->timestampTz('starts_at')` and lands `DEFAULT CURRENT_TIMESTAMP ON UPDATE
+ *      CURRENT_TIMESTAMP` on the production copy and with NO default on a freshly-migrated
+ *      portal_testing — same migration, two databases, different DDL. The only instrument that
+ *      could see it is a SCHEMA check against a live database, which bin/quality is not.
+ *      Full write-up, and the sibling setting: docs/handoff/tickets/server-settings-the-code-cannot-see.md
  *
  * Usage:
  *   php bin/ci-sql-clock-lint.php     # exit 1 on any occurrence outside the named exceptions
@@ -186,9 +214,14 @@ const EXCEPTIONS = [
     //                          (UPDATED_AT = null only), so Eloquent supplies created_at on create
     //   authz_observations.occurred_at  app/Support/Authz.php:78 — `'occurred_at' => now()`
     //
-    // So the tree is at zero in BEHAVIOUR as well as in tokens, and these three are exempt as
-    // history rather than as an argument that the pattern is fine. A NEW column written this way
-    // fails, which is the point.
+    // So these three are exempt as history rather than as an argument that the pattern is fine,
+    // and a NEW column written this way fails, which is the point.
+    //
+    // AN EARLIER VERSION OF THIS COMMENT SAID "the tree is at zero in BEHAVIOUR as well as in
+    // tokens". THAT WAS FALSE, and the correction matters more than the claim did — see
+    // scanUseCurrent() and docs/handoff/tickets/server-settings-the-code-cannot-see.md. What this
+    // gate can assert is that the tree is at zero IN TOKENS. Behaviour is not observable from
+    // source at all here.
     'database/migrations/0001_01_01_000002_create_jobs_table.php' => [
         "\$table->timestamp('failed_at')->useCurrent();",
     ],

@@ -65,7 +65,7 @@
  *
  * IT READS SOURCE AS TEXT, and the precedent is already here twice — ApprovalsQueueFeedCoverageTest
  * and NotificationDeepLinkRouteTest — for the same reason each of them gives: the alternative is
- * nothing. It is a TEST rather than a bin/quality step because step 14 runs the suite, so the gate
+ * nothing. It is a TEST rather than a bin/quality step because step 15 runs the suite, so the gate
  * runs on every push either way, and growing the gate script for something a test enforces would put
  * one rule in two places.
  */

@@ -88,7 +88,7 @@ of the change, at the push — not by the number the gate had already printed fo
 
 So the requirement is **placement**: the count must reach the moment of decision — surfaced in the
 pre-push summary, beside the number of files the commit touches, where a person is about to choose to
-push. A number in the middle of a fourteen-step log is data nobody reads; the same number at the push
+push. A number in the middle of a fifteen-step log is data nobody reads; the same number at the push
 prompt is a check.
 
 Zero examined stays a legitimate outcome — a docs-only change lints nothing. What must not happen is
@@ -105,20 +105,20 @@ pushing. That is a judgement, not a rule, and it is what caught this one.
 
 ## The enumeration — walked from `bin/quality`
 
-Exactly **two** of the fourteen steps are diff-aware; both are passed `"$BASE"` explicitly.
+Exactly **two** of the fifteen steps are diff-aware; both are passed `"$BASE"` explicitly.
 
 | Step | Line | Diff-aware? |
 |---|---|---|
 | **3 lint-changed** | 177 | **YES** — `bash bin/lint-changed.sh "$BASE"` |
 | **8 grants-convergence-lint** | 213 | **YES** — `php bin/ci-grants-convergence-lint.php "$BASE"` |
-| 1 dependency-integrity · 2 wayfinder · 5 build · 7 boundary-lint · 9 money-lint · 10 runtime-zero · 11 identifier-generation · 12 arch · 13 larastan | — | no — whole-tree or state |
-| 4 tsc-ratchet · 6 authz-lint · 14 test-ratchet | — | no — **baseline** comparisons |
+| 1 dependency-integrity · 2 wayfinder · 5 build · 7 boundary-lint · 9 money-lint · 10 runtime-zero · 11 identifier-generation · 12 sql-clock · 13 arch · 14 larastan | — | no — whole-tree or state |
+| 4 tsc-ratchet · 6 authz-lint · 15 test-ratchet | — | no — **baseline** comparisons |
 
 Derived two ways that agree: `grep -n '"\$BASE"' bin/quality` returns those two `check` lines, and
 `grep -l "git diff" bin/*` returns only `lint-changed.sh`, `ci-grants-convergence-lint.php` and
 `quality` itself.
 
-**The baseline steps (4, 6, 14) are a different shape and are NOT in scope.** They compare against a
+**The baseline steps (4, 6, 15) are a different shape and are NOT in scope.** They compare against a
 committed baseline rather than a diff, so they always examine the whole tree; their failure mode is a
 stale baseline — ADR 0041's subject.
 

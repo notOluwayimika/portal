@@ -30,15 +30,15 @@ something near it.
 
 ## What the floor guarantees
 
-Fourteen steps, and a run means: the working tree matches what `composer.json` and `composer.lock`
+Fifteen steps, and a run means: the working tree matches what `composer.json` and `composer.lock`
 declare; generated route/action files are current; changed files pass Pint, Prettier and ESLint;
 TypeScript, PHPStan and the test suite hold against their ratchet baselines, which may only shrink
 (ADR 0041); the frontend builds; and every architectural and authorization lint passes.
 
-Step 1 is different in kind from the rest, and the difference is deliberate. Steps 2–14 each measure
+Step 1 is different in kind from the rest, and the difference is deliberate. Steps 2–15 each measure
 a property of the code. Step 1 measures whether the code being measured is the code that was
 declared — so it **aborts** the run (exit 2) rather than collecting its failure like the others.
-Thirteen green ticks printed beside one red dependency line tell the reader the opposite of the
+Fourteen green ticks printed beside one red dependency line tell the reader the opposite of the
 truth: they are not additional findings, they are readings from an instrument that has just reported
 itself untrustworthy.
 
@@ -102,7 +102,8 @@ indistinguishable from fixing.** Every "PASS 14/14, pasted raw" in every report 
 this property. Treat a single green as weaker evidence than it looks, and a red that nobody can
 explain as *unexplained* rather than as noise.
 
-What this change does do is make the next occurrence diagnosable. Step 14 used to write its junit and
+What this change does do is make the next occurrence diagnosable. The suite step (14 when this was
+written, **15** since the sql-clock lint) used to write its junit and
 suite output to fixed paths, so run C destroyed run B's evidence before anyone could read it — which
 is why four hypotheses had to be built on the names of the failing tests alone. Artefacts are now
 stamped per run and the last 20 kept, and a red prints where they are.

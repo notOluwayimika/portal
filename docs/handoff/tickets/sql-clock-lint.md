@@ -1,10 +1,15 @@
 # TICKET — the read-layer rule has no gate: `sql-clock-lint`, written and split out unshipped
 
-**Status:** OPEN. Preventive — **zero live violations in the four scanned directories, one in
-`tests/`** (see "The count, and its scope" below) — so it can take its time.
+**Status: CLOSED** on `fix/sql-clock-lint-v2`, re-cut from `staging` @ `4928064`. All three defects
+below are fixed and bite-proven, `tests/` is decided (OUT, with the measurement), and `bin/quality`
+is 15 steps. What each fix cost and what it bought is in
+`docs/handoff/reports/fix-sql-clock-lint-v2.md`; the resolutions are appended to each defect section
+here so this file stays the one place. **Everything below the resolutions is the original text,
+preserved** — the measurements are what made the fourth attempt cheaper than the first three.
 
-**Where the work is:** branch `fix/sql-clock-lint`, commit `a08ddca`. Nothing below has to be
-rebuilt from memory; it is all there, with three known defects that must be fixed before it ships.
+**Where the work WAS:** branch `fix/sql-clock-lint`, commit `a08ddca` — reference only, superseded.
+Nothing was cherry-picked from it beyond the three lint artifacts; see the box below, which was the
+instruction and was followed.
 
 > **`a08ddca` IS A REFERENCE, NOT A BASE TO BRANCH FROM.** It holds sixteen files against staging
 > and only three of them are the lint. The other thirteen are a SUPERSEDED copy of the money fix
@@ -79,6 +84,35 @@ excluded `tests/` from its scanned directories.
 it.** What is handed over is the fact: one hit, at that file and line, and a survey that never
 looked there until now. A reader who takes a bare "zero" at face value will size the rollout wrong.
 
+> **RESOLVED — `tests/` stays OUT, and the one-hit figure above understated it by twenty-six.**
+>
+> **What the number counts, and when:** findings the SHIPPED matcher reports with
+> `SCANNED_DIRS = ['tests']`, over `tests/` as it stands at the commit that ships this lint — which
+> includes this lint's own four new coverage arms. On that basis: **27 hits, none of them the
+> defect.**
+>
+> | Where | Hits | What they are |
+> |---|---|---|
+> | `tests/Arch/SqlClockLintCoverageTest.php` | 21 | this lint's own planted fixtures and the strings it asserts on |
+> | `tests/Feature/Support/SchoolDayTest.php` | 3 | an assertion MESSAGE quoting `now()` as prose, and PHP source held in a string so an arch test can scan it |
+> | `tests/Feature/Finance/CurrencyShapeConstraintTest.php:54` | 2 | the known fixture insert — two `NOW()` on one line; no assertion reads a timestamp back |
+> | `tests/Feature/Finance/SubledgerClockFrameTest.php:69` | 1 | the `SELECT NOW()` probe that exists TO PROVE the two frames differ |
+>
+> **A first pass reported 16 and that figure was wrong** — taken before this branch's own coverage
+> arms landed, then written into a permanent docblock. Corrected in the lint, here, and in the
+> report. The extra 11 are all in the coverage test's new fixture strings, so the categories and the
+> decision are unchanged; only the number moved. Recorded rather than quietly overwritten, because
+> it is the same carried-number failure this ticket's own §"The count, and its scope" corrects.
+>
+> The reason is structural rather than a count: the discriminator this lint rests on — **SQL is a
+> STRING, the helper is CODE** — is precisely what a test suite breaks. Tests put prose and PHP
+> source inside string literals as a matter of course, so under `tests/` the matcher's precision
+> collapses to a substring grep. Scanning it would buy a day-one baseline of permanent exemptions,
+> including exemptions for the lint's own coverage test, and being free of a baseline is the whole
+> reason this rule was worth adding at zero.
+>
+> `CurrencyShapeConstraintTest:54` is left exactly as it was, for the reason already recorded above.
+
 ## Design history, and why each step was taken
 
 Keep these measurements. They are what makes the next attempt cheaper than the last three.
@@ -118,7 +152,7 @@ Keep these measurements. They are what makes the next attempt cheaper than the l
    migration is a dated act (ADR 0052) and the rows it wrote do not exist (0 on the dev copy,
    production pre-cutover).
 
-## The three OPEN defects — all must be closed before this ships
+## The three defects — ALL THREE CLOSED on `fix/sql-clock-lint-v2`
 
 ### 1. Bare forms need a SQL keyword in the literal, and Laravel's raw fragments never carry one
 
@@ -155,6 +189,24 @@ looks-like-SQL test. Whichever: **add coverage arms planting `whereRaw('due_date
 and `DB::raw('LOCALTIMESTAMP')` and asserting exit 1** — the shapes that pass today. The current
 coverage test has no arm asserting a bare form is CAUGHT; its only bare-form arm asserts one is not.
 
+> **CLOSED — the requirement is dropped outright, on the measurement the ticket asked for.** The
+> first option, not the enclosing-call one. Re-measured where the test actually applies — over
+> string literals only, with the requirement removed, across `app/`, `database/`, `routes/` and
+> `bin/` — the bare forms produce **0 hits on every file in scope**. The 24-to-1 figure that once
+> justified the requirement was taken over LINES, where `->update([...])` and `->where(...)` hand
+> over UPDATE and WHERE for free; inside a single literal it bought nothing and hid the dominant
+> case. The enclosing-call discriminator was considered and rejected as more code with a real hole
+> (heredoc SQL assigned to a variable, then passed to `DB::statement($sql)`).
+>
+> **The residual is priced and pinned, not waved away.** A literal carrying `current_date` or
+> `current_time` for a non-SQL reason — prose, or an array key `'current_time' => now()` — is now
+> reported, and no lexical test separates `DB::raw('LOCALTIMESTAMP')` from `'current_time'` when
+> both are the whole literal. The coverage test now has an arm ASSERTING that false positive, so it
+> is a decision on the record rather than a later surprise. It is the safe direction: a false
+> positive is loud and lands on the author's own new line; the miss it replaces was silent.
+>
+> Coverage arms added as instructed — all four shapes from the evidence block, plus the residual.
+
 ### 2. `findToken()` returns the first LISTED token, not the first OCCURRING one
 
 It iterates the token map in declaration order and returns on the first match anywhere in the
@@ -189,6 +241,18 @@ the right reason by accident.
 Then plant the arrangement above as a coverage arm — a violation *before* the exempted line,
 asserting exit 1.
 
+> **CLOSED exactly as prescribed.** `findToken()` now scans the whole map and returns the lowest
+> offset; `scanPhp()` already walked every match, and with the earliest-first return the walk is
+> correct. Bite-proven against the REAL exempted migration, not a synthetic: with
+> `SELECT * FROM (SELECT UTC_TIMESTAMP) x WHERE 1=0 UNION ALL` inserted above the exempted line,
+> the pre-fix lint printed `OK — no SQL-side clock reads` and `exit=0`; the fixed lint reports
+> `…create_finance_student_accounts.php:83 [UTC_TIMESTAMP — clock-read]` and `exit=1`, **with the
+> exempted line still exempt** — one finding, not two. Migration restored, gate back to green.
+>
+> The coverage arm does not depend on EXCEPTIONS (a planted fixture cannot be in the map), so it
+> pins the mechanism instead: one literal, `UTC_TIMESTAMP` on line 13 and `NOW()` on line 14, both
+> lines asserted. The pre-fix matcher reports `:14` twice and never `:13` — that is the arm's red.
+
 ### 3. `->useCurrent()` is invisible (folded in from the separate ticket, now deleted)
 
 `$table->timestamp('x')->useCurrent()` compiles to `DEFAULT CURRENT_TIMESTAMP` and
@@ -210,6 +274,38 @@ scoped to `database/` — the matcher reads string literals precisely so PHP's `
 it, so this needs a second, narrower pass. The three sites above then need naming as exceptions with
 their reason, or converting.
 
+> **CLOSED, not deferred** — `scanUseCurrent()` is that second pass. Two deviations from the sketch
+> above, both deliberate:
+>
+> 1. **Scoped to all four scanned directories, not just `database/`.** `useCurrent` appears
+>    nowhere outside those three migrations (re-derived over `app/ database/ routes/ bin/ tests/
+>    config/`), so the wider scope costs nothing and does not depend on Blueprints only ever living
+>    under `database/`.
+> 2. **It matches on `->` followed by the name, and compares case-insensitively.** Matching the
+>    method CALL rather than the word keeps the docblock explaining this rule from reporting itself;
+>    matching case-insensitively is because PHP method names are case-insensitive at the call site,
+>    so `->UseCurrent()` runs and a case-sensitive gate would be evadable by typing.
+>
+> The three sites are named as exceptions, keyed to the line, each with its writer **re-derived
+> rather than assumed**: `DatabaseFailedJobProvider.php:57` (`Date::now()`) for `jobs.failed_at`;
+> Eloquent's own timestamp handling for `audit_logs.created_at` (`App\Models\AuditLog` sets
+> `UPDATED_AT = null` only, so `created_at` is still supplied on create); `app/Support/Authz.php:78`
+> for `authz_observations.occurred_at`. The three are exempt as history rather than as an argument
+> that the pattern is acceptable.
+>
+> **A first version of this resolution said "the tree is at zero in BEHAVIOUR as well as in tokens".
+> That was false and is corrected** — a fourth column, `notices.starts_at`, carries
+> `DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` on the production copy from a bare
+> `$table->timestampTz('starts_at')`, with no token and no `->useCurrent()` anywhere in source.
+> `ddl-default` was NOT grown to chase it, deliberately: the default is added by the SERVER, so no
+> source-reading check can ever see it. What this gate asserts is zero **in tokens**.
+> `docs/handoff/tickets/server-settings-the-code-cannot-see.md` carries the class.
+>
+> Bite-proven three ways: a planted `->useCurrent()` / `->useCurrentOnUpdate()` pair goes `exit=0`
+> pre-fix → `exit=1` post-fix; a SECOND `->useCurrent()` added to an exempted file is reported
+> (the exception is keyed to a line, not a file); and rewording an exempted line makes the
+> exemption stop matching and the gate fail — the safe direction.
+
 ## What the lint could never see, gate or no gate
 
 It matches **tokens**. A cross-frame comparison that names no clock function — a stored column
@@ -217,13 +313,20 @@ compared against a value the database computed some other way — is invisible t
 surveyed by hand across all 57 raw-SQL entry points in `app/` and found clean; it stays a reading
 exercise.
 
-## When this ships
+## When this ships — it did
 
-`bin/quality` gains a step, and **the step count moves 14 → 15**. That is not a detail: it took
-eleven prose sites moved by hand last time and six were missed on the first pass. Two things make it
-cheaper now — `tests/Feature/Quality/QualityStepCountTest.php` (shipped with the money fix) ties the
-printed total to the actual `step()` count, and the sweep must be run for **spelled-out numerals**
-("fourteen", "thirteen") as well as digits, which is the shape that was missed.
+`bin/quality` gained a step and **the step count moved 14 → 15 for real** (sql-clock lint is step
+**12**; arch 13, larastan 14, suite 15). The sweep was run for spelled-out numerals as well as
+digits, across `docs/ tests/ bin/ .githooks/ .claude/` plus the repo-root files, and the sites moved
+are listed in the report. Two things that were not obvious going in:
+
+- **Dated records must NOT be swept.** `PASS 14/14` in ADR 0053's A/B/C table, the merged briefs and
+  every file under `docs/handoff/reports/` record runs that happened against a 14-step gate.
+  Rewriting those falsifies history; only claims about the CURRENT gate were moved.
+- **Two coverage tests cite `bin/quality` LINE numbers**, not just step numbers, for the
+  runs-sequentially argument — `BoundaryLintCoverageTest` and `SqlClockLintCoverageTest`. Inserting a
+  step moved them. Those are re-derived here (`:238` arch, `:266` plain pest);
+  `QualityStepCountTest` cannot see them, and neither can any other gate.
 
 ## Related
 

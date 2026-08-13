@@ -386,3 +386,10 @@ change or the two will disagree in a new way.
 - The multi-school condition is a separate ticket: `SchoolDay::TIMEZONE` is a constant, correct while
   every school is in Nigeria, and must become a per-school column with this value as its default the
   day a school outside West Africa is onboarded.
+- [`server-settings-the-code-cannot-see.md`](server-settings-the-code-cannot-see.md) — **the class
+  this condition belongs to.** The session time zone is member 1;
+  `explicit_defaults_for_timestamp` is member 2, and it turns a bare `$table->timestamp('x')` into a
+  server-clock column with nothing in the source to see. Same shape: a server-level MySQL variable
+  that differs between environments, changes what the database does with a `TIMESTAMP`, and is
+  invisible to every source-reading gate — including `bin/ci-sql-clock-lint.php`, which enforces
+  the source half of *this* ticket and cannot observe the setting that makes it necessary.

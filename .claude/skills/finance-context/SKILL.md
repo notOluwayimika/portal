@@ -159,11 +159,12 @@ including 1452, 1644, 3819, 3995 — falls through to a generic 500.
 
 ## Gates and oracles
 
-`bin/quality` is a **14**-step script (grants-convergence lint is step **8**); `core.hooksPath =
-.githooks` and `.githooks/pre-push` runs it. The last step runs the full Pest suite with no group
-filter. **Re-derive both numbers before using them** — `grep -c '^\s*step "' bin/quality` and the
-`[%d/N]` literal in `step()`; they have moved four times (11 → 12 → 13 → 14, and 14 → 15 → 14 on one
-branch), and this line has been wrong before. `tests/Feature/Quality/QualityStepCountTest.php` keeps
+`bin/quality` is a **15**-step script (grants-convergence lint is step **8**, sql-clock lint step
+**12**); `core.hooksPath = .githooks` and `.githooks/pre-push` runs it. The last step runs the full
+Pest suite with no group filter. **Re-derive both numbers before using them** — `grep -c '^\s*step "'
+bin/quality` and the `[%d/N]` literal in `step()`; they have moved five times (11 → 12 → 13 → 14, a
+14 → 15 → 14 round trip on one branch when the step that caused it was split out, and 14 → 15 for
+real when the sql-clock lint landed), and this line has been wrong before. `tests/Feature/Quality/QualityStepCountTest.php` keeps
 the script's two numbers consistent with each other; it cannot see prose like this line.
 
 Three fixture oracles, regenerated in this strict order:

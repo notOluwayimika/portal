@@ -5,17 +5,18 @@
  *
  * WHY THIS EXISTS. The gate prints `[N/TOTAL]` from a single hardcoded TOTAL in step(), while the
  * actual total is however many times step() is called. Nothing tied those two numbers together, and
- * a 14 → 15 → 14 round trip on this branch proved what that costs: the printf and ten prose sites
- * had to be moved by hand, six of them were missed on the first pass with no red anywhere in the
- * repo, and the whole set had to be moved back when the step that caused it was split out. A number
- * that only a human can check is a number that drifts.
+ * a 14 → 15 → 14 round trip on the branch that added this proved what that costs: the printf and ten
+ * prose sites had to be moved by hand, six of them were missed on the first pass with no red
+ * anywhere in the repo, and the whole set had to be moved back when the step that caused it was
+ * split out. A number that only a human can check is a number that drifts. The split-out step
+ * has since landed on its own and the count is 15 for real.
  *
- * The assertion is RELATIONAL, not a pinned count — it holds at 14, held at 15, and will hold at
+ * The assertion is RELATIONAL, not a pinned count — it held at 14, holds at 15, and will hold at
  * whatever comes next. It is the one piece of that branch's gate work that survives on its own.
  *
  * WHAT IT DOES NOT COVER, and this matters more than what it does. It catches the FILE disagreeing
  * with ITSELF. It cannot catch documentation drift — the ADRs, tickets, briefs and test comments
- * that name a step by number ("the suite is step 14", "fourteen steps guarantee…") are prose in
+ * that name a step by number ("the suite is step 15", "fifteen steps guarantee…") are prose in
  * other files, and every one of those has to be moved by hand. Do not read a green here as "the
  * step count is consistent across the repo"; read it as "the script's own two numbers still match".
  * The wider half stays unmechanised.

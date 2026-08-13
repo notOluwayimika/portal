@@ -110,12 +110,30 @@ function capInvoice(School $school, Student $student, int $kobo): Invoice
 
 // ── The shape itself. Pins the DECISION, not just the behaviour. ────────────────────────────────
 
-it('ships the five capture columns NOT NULL with no defaults, and the two reasons nullable', function (string $table, string $column, string $nullable) {
+it('ships the five capture columns NOT NULL with no defaults, and the two reasons nullable', function (string $table, string $column, string $nullable, ?string $default = null) {
     // THE ARM THAT PROTECTS THE OTHERS. Every behavioural arm below would still pass if someone
     // made these columns nullable — the writers would keep supplying values and the tests would
     // keep seeing them. What would change is that a FUTURE writer could omit one silently, which
     // is precisely the failure the NOT NULL was chosen to prevent. A default would do the same
     // damage more quietly: the writer omits, the database fills in, nobody is told.
+    //
+    // ONE COLUMN IS EXEMPT FROM "NO DEFAULT", AND IT IS NOT A RELAXATION — read the fourth
+    // parameter as a TIGHTER claim than the one it replaces. `finance_ledger_transactions.posted_at`
+    // is the table's FIRST `TIMESTAMP` column, and on a host with `explicit_defaults_for_timestamp`
+    // OFF — which production is — MySQL assigns such a column `DEFAULT CURRENT_TIMESTAMP ON UPDATE
+    // CURRENT_TIMESTAMP` when it declares neither. **"NOT NULL with no default" is therefore a shape
+    // production cannot have**: on an OFF host there is no reachable state that has neither the
+    // clause nor a default (measured — `ALTER COLUMN … DROP DEFAULT` re-adds both). This assertion
+    // passed here only because every local host is ON, and it never described production, where the
+    // column has carried `DEFAULT CURRENT_TIMESTAMP` since it was added.
+    //
+    // So the choice on production is which default, not whether. `2026_08_13_100000_timestamp_columns_drop_implicit_on_update.php`
+    // takes the sentinel, and the exchange is in this arm's own terms: `CURRENT_TIMESTAMP` is
+    // precisely "the writer omits, the database fills in, nobody is told" — a ledger row silently
+    // dated NOW, indistinguishable from a correct one, on an append-only table where it can never be
+    // corrected. `1970-01-02` is the same omission made VISIBLE. Asserting the exact value, rather
+    // than merely "not CURRENT_TIMESTAMP", is what keeps this arm biting: a drift back to the server
+    // clock still fails here.
     $row = DB::selectOne(
         'SELECT IS_NULLABLE n, COLUMN_DEFAULT d FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
@@ -125,16 +143,24 @@ it('ships the five capture columns NOT NULL with no defaults, and the two reason
     expect($row)->not->toBeNull();
     expect($row->n)->toBe($nullable, "{$table}.{$column} nullability changed.");
 
-    if ($nullable === 'NO') {
+    if ($nullable === 'NO' && $default === null) {
         expect($row->d)->toBeNull(
             "{$table}.{$column} gained a DEFAULT. A default lets a writer omit the value and get one "
             .'anyway, which reintroduces the silent gap NOT NULL was chosen to close — on an '
             .'append-only table where it can never be corrected.');
     }
+
+    if ($default !== null) {
+        expect($row->d)->toBe($default,
+            "{$table}.{$column} does not carry the sentinel default this column is pinned to. If it "
+            .'is now CURRENT_TIMESTAMP the implicit attributes are back and an omitted write is '
+            .'silently dated NOW; if it is NULL the ON UPDATE half can return on any host where '
+            .'explicit_defaults_for_timestamp is OFF. Either way, see the migration.');
+    }
 })->with([
     ['finance_payments', 'received_at', 'NO'],
     ['finance_payments', 'received_at_reason', 'YES'],
-    ['finance_ledger_transactions', 'posted_at', 'NO'],
+    ['finance_ledger_transactions', 'posted_at', 'NO', '1970-01-02 00:00:01'],
     ['finance_ledger_transactions', 'effective_at', 'NO'],
     ['finance_payment_allocations', 'allocation_rule', 'NO'],
     ['finance_payment_allocations', 'allocation_overridden', 'NO'],

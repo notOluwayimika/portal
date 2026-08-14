@@ -61,6 +61,14 @@ well-meaning fix would have made things worse and taken a day to unwind.
 **Not in scope.** Bound the blast radius. Name the adjacent tempting things that
 must not be touched, including known flakes so they are not chased.
 
+**The drive is a pointer, not a section.** If the change touches a screen, ask
+for the drive in three lines — which screen, which seats, what to look at there —
+and point at the `finance-drive` skill for everything else. Do not re-specify how
+to seed the fixture, how to sign in, or how to check isolation. Every brief for
+months carried its own near-identical copy of that procedure, each drive
+rediscovered the same friction independently, and the only part that ever varied
+was the screen. The procedure now lives in one place that gets corrected once.
+
 Two more rules for the writer:
 
 - **Derive targets, never hardcode a second copy.** If a value exists in a
@@ -91,6 +99,14 @@ output. The reader is checking your output, not your reading of it.
 **Watch the red.** Plant the regression the brief names, confirm the failure
 message names the right thing, restore, paste both. If you cannot make it fail,
 that is the most important thing you found today — report it and stop.
+
+**If a screen changed, drive it — and load `finance-drive` before you do.** The
+suite is structurally blind to rendering: a 200 with the right list, a 200 with
+an empty list and a 200 rendering an error where a list should be are the same
+assertion. The brief names the screen and the seats; the skill carries the
+environment, the fixture check that comes before the browser, the seats and what
+each proves, the isolation-by-id method, and the friction you would otherwise
+pay for again.
 
 **Deviations are first-class.** If you departed from the brief — dropped a
 check, changed a shape, chose differently at a fork — that goes at the top of

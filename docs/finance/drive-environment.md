@@ -1,5 +1,10 @@
 # The drive environment — look at the application in five minutes
 
+> This file is the **environment**: how to stand the instance up and what is in the fixture. What to
+> *do* with it — check the count table before you open a browser, which seat proves what, why
+> isolation is checked by id and never by label, the friction already paid for, and what the drive
+> report must contain — is the `finance-drive` skill (`.claude/skills/finance-drive/SKILL.md`).
+
 The acceptance tests prove the HTTP stack and are **structurally blind to rendering**: a 200 with an
 empty list, a 200 with the right list, and a 200 rendering an error where a list should be are the
 same assertion. Two of Finance's defects were found by a human loading a page. This is how you

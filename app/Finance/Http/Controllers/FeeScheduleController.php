@@ -183,12 +183,26 @@ class FeeScheduleController extends Controller
 
         return response()->json([
             'schedule' => new FeeScheduleResource($schedule->loadMissing('items.bankAccount')),
+            // `lines` IS A REQUEST BODY, not a view model. The route comment above this method's
+            // registration says what it is for — "prefilled charge lines for the bursar's generate form" —
+            // so every key here is read back by GenerateInvoiceRequest, and the two shapes are one contract
+            // even though nothing in the type system says so. `fee_item_id` carried the INTEGER id until
+            // U8 commit 2, which was already the wrong form for a payload nobody hand-writes and became a
+            // 422 the moment commit 1 made the wire uuid-only: prefill was emitting the one value that
+            // endpoint refuses. It is `$item->uuid` now, and FinancePrefillRoundTripTest posts this array
+            // back VERBATIM so the contract has a test rather than a comment.
             'lines' => $schedule->items->map(fn (FeeItem $item) => [
                 'description' => $item->description,
                 'amount_minor' => $item->amount->toKobo(),
                 'currency' => $item->amount->currency,
                 'kind' => 'charge',
-                'fee_item_id' => $item->id,
+                'fee_item_id' => $item->uuid,
+                // NEITHER FLAG IS VALIDATED BY GenerateInvoiceRequest, and that is not an oversight to be
+                // tidied by deleting them. They are ignored on the way back — extra keys pass validation
+                // and `lineSpecs()` never reads them — and they are here for the FORM, which pre-ticks
+                // mandatory items and greys out non-discountable ones. `is_discountable` in particular is
+                // re-resolved server-side from the fee item (GenerateInvoice:281, :301) precisely so that
+                // a client echoing this value back cannot move the percentage base.
                 'is_mandatory' => $item->is_mandatory,
                 'is_discountable' => $item->is_discountable,
             ])->values(),

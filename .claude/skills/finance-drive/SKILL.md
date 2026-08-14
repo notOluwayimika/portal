@@ -74,8 +74,9 @@ writing rows, so nothing you see is a state the system cannot reach —
 **Drive the fixture, not the production copy.** Past drives disagreed on this. The
 2026-08-09 drives of the sidebar, the fail-closed RBAC change and the
 opening-balance operator screen all ran against the local production copy; the
-bank-accounts report of the same day is titled *"the browser drive — portal_drive,
-never the production copy"* and every drive since has used the fixture. The
+bank-accounts report of the same day is titled *"The browser drive — portal_drive,
+never the production copy"* (`docs/handoff/reports/feat-finance-bank-accounts.md:200`)
+and every drive since has used the fixture. The
 copy-based drives are what settled it: one left five `DRIVE-*` batches and two
 minted users behind in `school#1`
 (`docs/handoff/reports/feat-finance-ob-operator-screen.md:283-295`), one could not
@@ -186,7 +187,7 @@ alternatives that were rejected, is in
 
 **`:8001` must be in `SANCTUM_STATEFUL_DOMAINS`**, or every SPA call to
 `/api/v1/finance/*` 401s and every statement renders "Could not load the
-statement". It is already in the committed `.env.drive.example:39`; if you built
+statement". It is already in the committed `.env.drive.example:40`; if you built
 your `.env.drive` from something else, this is the first thing you will hit
 (`docs/handoff/drives/2026-07-25/README.md:77-83`).
 

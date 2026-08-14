@@ -1415,6 +1415,14 @@
             "super_admin"
         ]
     },
+    "GET /finance/discount-policies": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "finance_lead",
+            "super_admin"
+        ]
+    },
     "GET /finance/fee-schedules": {
         "auth": true,
         "roles": [

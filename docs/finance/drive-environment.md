@@ -1,5 +1,10 @@
 # The drive environment — look at the application in five minutes
 
+> This file is the **environment**: how to stand the instance up and what is in the fixture. What to
+> *do* with it — check the count table before you open a browser, which seat proves what, why
+> isolation is checked by id and never by label, the friction already paid for, and what the drive
+> report must contain — is the `finance-drive` skill (`.claude/skills/finance-drive/SKILL.md`).
+
 The acceptance tests prove the HTTP stack and are **structurally blind to rendering**: a 200 with an
 empty list, a 200 with the right list, and a 200 rendering an error where a list should be are the
 same assertion. Two of Finance's defects were found by a human loading a page. This is how you
@@ -29,7 +34,8 @@ login — but a drive env does not need it.)
 ## Stand one up from nothing
 
 ```bash
-# 1. A throwaway database (any name WITHOUT brookstone/staging/prod/portal_testing).
+# 1. A throwaway database. The name MUST contain a `drive` token — portal_drive, drive,
+#    my_drive_db. This is the allowlist above, not a denylist: portal_scratch is refused.
 mysql -e "CREATE DATABASE portal_drive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # 2. A drive env file. Copy the template and fill in your local MySQL creds + an app key.
@@ -53,7 +59,7 @@ fixture with no duplication.
 | Sign in as | Email | Drives |
 |---|---|---|
 | Maker (`accounts_officer`) | `maker@drive.test` | the statements + submitting credit notes / voids |
-| Full checker (`accounts_supervisor`) | `checker@drive.test` | the unified approvals queue (both feeds) |
+| Full checker (`executive_director` since 2026-08-04 — `DriveCastSeeder.php:144-146`) | `checker@drive.test` | the unified approvals queue (both feeds) |
 | Void-only checker (`void-request.approve`, **no** `credit-note.approve`) | `void-checker@drive.test` | the per-feed 403-tolerant queue |
 | Super admin | `super@drive.test` | the bypass exclusion (cannot approve) |
 | School B bursar | `school-b@drive.test` | cross-School isolation |

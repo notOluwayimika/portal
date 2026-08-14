@@ -88,6 +88,23 @@ New file `<path>`. <n> arms:
 re-run, confirm it fails naming <what>. Restore. Paste both. A green you have
 not watched go red proves nothing.
 
+## Part 4 — drive it
+
+<Only if a screen changed. Three lines, not a procedure — the procedure is the
+`finance-drive` skill and the brief must not restate it.>
+
+Load the `finance-drive` skill and drive `<the screen / route>`.
+
+- **`<seat>`** — <what this seat is here to establish on this screen.>
+- **`<isolation seat>`** — <which selects/lists must carry only their own school's
+  rows.>
+- <Anything specific to this screen the drive would not otherwise think to look
+  at — a total the server computes, a control that must disappear, a lifecycle
+  state the fixture can or cannot reach.>
+
+<If this screen needs something the fixture's count table does not yet count, say
+so here: the column is part of this change.>
+
 ## Stop and report
 
 1. <Condition — the proof does not land as predicted.>

@@ -17,6 +17,21 @@ for, not a summary of it. Nothing below is paraphrased, tidied or merged into a 
 are fenced so their indentation, backticks and line breaks survive rendering; the fences are the only
 thing added.
 
+**Block 5's `DRIVE IT` section has been superseded, and is deliberately left standing.** The browser
+drive procedure it spells out — seed the fixture, sign in as these seats, report what the selects
+contained — is now the `finance-drive` skill (`.claude/skills/finance-drive/SKILL.md`), and a brief
+written today asks for a drive in three lines and points there. That section is **not** edited to
+match, because this file's contract is verbatim: a reviewer attacking whether commit 2 was built on
+a false premise needs the text as it arrived, not the text as it would be written now. Read it as
+the record of what was asked, and the skill as what to do.
+
+**The one substantive difference, named so nobody has to diff for it.** Line 909 asks for the
+selects *"by count and by label"*. The skill's rule is by count and by **value**, because both drive
+schools are seeded with identical labels by construction — `First Term`, `JSS 1`, `JSS 2` —
+so a label comparison across two seats proves nothing about isolation. The report answering this
+block did it by value and said so, which is where the rule came from; the instruction it answered
+is the one still standing above. On this point the brief is wrong and the skill is right.
+
 The implementation reports that answer these blocks are
 [`reports/feat-fee-schedules-data-surface.md`](reports/feat-fee-schedules-data-surface.md)
 (commit 1, blocks 1–4) and

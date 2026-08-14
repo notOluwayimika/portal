@@ -44,6 +44,18 @@ message named the right thing. Confirmation you restored.>
 <If you could not produce a red: say so prominently. That is a finding about the
 guard, not a formality you skipped.>
 
+## The drive
+
+<Only if a screen changed. The `finance-drive` skill lists what this section
+carries: the fixture count table pasted from the command, what the selects
+actually contained by count and by value (raw, uncut), what each observation
+establishes, both seats side by side with ids visible for the isolation check,
+and what was not driven. Screenshots in
+`docs/handoff/drives/<date>-<screen>/`, named so a reader knows what each shows.>
+
+<If no screen changed, delete this section. If a screen changed and you did not
+drive it, say that here and say why — do not delete it.>
+
 ## Database observations
 
 <Under the privacy rule: `user#<id>`, `school#<id>`, counts, structure. No

@@ -177,7 +177,7 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
         ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 50000, 'kind' => 'charge'],
-                ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+                ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])
         ->assertCreated()

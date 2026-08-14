@@ -58,7 +58,7 @@ function postPct(array $lines): TestResponse
 
     $lines = array_map(function (array $line) use ($policy) {
         if (($line['kind'] ?? 'charge') !== 'charge' && ! isset($line['discount_policy_id'])) {
-            $line['discount_policy_id'] = $policy->id;
+            $line['discount_policy_id'] = $policy->uuid;
         }
 
         return $line;
@@ -165,7 +165,31 @@ it('a percentage on a CHARGE line is rejected — percent is a reduction concept
 
 it('a percentage with no charge to reduce is rejected', function () {
     // Only a percentage reduction, no charge line: nothing to take a percentage of.
-    postPct([
+    //
+    // ASSERTS THE MESSAGE, NOT THE STATUS, AND THAT CHANGED IN U8. A bare `assertStatus(422)` was
+    // sufficient while a reduction line could only ever be refused by the domain — a bogus
+    // `discount_policy_id` was an integer nobody validated, so it reached the DB guard, and this arm's
+    // 422 could only have come from GenerateInvoice. Since U8 commit 1 the policy id is a uuid with an
+    // existence rule, so an unresolvable one is a VALIDATION 422, and a status-only assertion passes
+    // whether or not the rule this arm is named for ever fires. Demonstrated: replacing `$policy->uuid`
+    // in `postPct()` with a uuid that resolves to nothing reds 12 of the 17 arms in these two files and
+    // leaves this one green.
+    //
+    // The second expectation is the guard against that recurring. If the request is refused at the edge
+    // for a policy the fixture is supposed to have made valid, this arm says so instead of quietly
+    // reporting success for the wrong reason.
+    $response = postPct([
         ['description' => 'Orphan discount', 'kind' => 'discount', 'percent' => 10],
     ])->assertStatus(422);
+
+    // The error bag is keyed by the LITERAL string 'lines.0.discount_policy_id', dots and all, so it is
+    // read with array_key_exists rather than a dot path — `json('errors.lines.0.…')` would traverse into
+    // nested keys that do not exist and report absence for the wrong reason.
+    $errors = (array) $response->json('errors');
+
+    expect((string) $response->json('message'))->toBe('A percentage reduction needs at least one charge line to reduce.')
+        ->and(array_key_exists('lines.0.discount_policy_id', $errors))->toBeFalse(
+            'The reduction line was refused at the EDGE, over its discount policy — so this arm’s 422 '
+            .'says nothing about the rule it is named for. postPct() is supposed to inject a policy that '
+            .'resolves.');
 });

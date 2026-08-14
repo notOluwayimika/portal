@@ -420,7 +420,9 @@ it('the database refuses an item write against a non-draft parent, with the Acti
  * These arms are about GenerateInvoiceRequest, and they live HERE because they exist for this commit. The
  * safety argument for replacing a draft's items wholesale is "a draft's items cannot be cited by any
  * invoice" — true of every path in the tree, and false of a hand-crafted request, because `fee_item_id`
- * was validated as `['sometimes','nullable','integer']` and nothing more. GenerateInvoice:280-282 already
+ * was validated as `['sometimes','nullable','integer']` and nothing more. (It is `uuid` + a closure over
+ * the scoped model since U8 commit 1; what changed is the wire FORM, not what the rule guards.)
+ * GenerateInvoice:280-282 already
  * states the principle for the field beside it — is_discountable "is a property of the fee ITEM", resolved
  * server-side, "never from the wire", because a client does not get to decide it. The rule was written;
  * this field is the one that escaped it.
@@ -440,7 +442,12 @@ it('refuses an invoice line citing ANOTHER School’s fee item', function () {
 
     $theirSchedule = efsdDraft($theirs, $theirTerm, $theirLevel);
     DB::table('finance_fee_schedules')->where('id', $theirSchedule->id)->update(['status' => 'active']);
-    $theirItemId = $theirSchedule->items->first()->id;
+    // THE UUID, NOT THE INTEGER ID (U8 commit 1) — and the isolation claim is unchanged by that. The wire
+    // form moved; the rule is still a closure over `FeeItem::query()`, so what hides School B's item is
+    // still SchoolScope and the red is still `FeeItem::withoutGlobalScopes()`. A uuid is if anything the
+    // sharper probe: it is unguessable, so this arm can only be reached by a caller who was legitimately
+    // shown the other School's item somewhere — which is the leak the rule exists to make harmless.
+    $theirItemUuid = $theirSchedule->items->first()->uuid;
 
     $enrollment = efsdEnrollment($mine);
 
@@ -448,7 +455,7 @@ it('refuses an invoice line citing ANOTHER School’s fee item', function () {
         ->withSession(['school_id' => $mine->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItemId]],
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItemUuid]],
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors('lines.0.fee_item_id');
@@ -468,7 +475,19 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
     // not see.
     [$school, $term, $level] = efsdContext();
     $draft = efsdDraft($school, $term, $level);
-    $itemId = $draft->items->first()->id;
+    // THE WIRE FORM AND THE STORED FORM ARE NOW DIFFERENT THINGS, so this arm holds both. The request
+    // carries `$item->uuid` (U8 commit 1); the assertion below reads the INTEGER out of
+    // finance_invoice_lines, which is stronger than an `isNotNull` — a resolution that dropped the
+    // provenance to null is caught here.
+    //
+    // IT DOES NOT CATCH A RESOLUTION THAT RETURNS THE WRONG ROW, and an earlier version of this comment
+    // claimed it did. `efsdContext()` creates ONE School and `efsdDraft()` seeds ONE item, so the right
+    // row and the first row are the same row and no assertion here can separate them. Measured, not
+    // reasoned: with `where('uuid', …)` removed from `GenerateInvoiceRequest::idForUuid()` this arm stays
+    // GREEN while InvoiceWireIdsTest's resolution arm — two items, citing the second — reds on
+    // "Failed asserting that 1 is identical to 2". That arm is where the right-row property lives; this
+    // one is about schedule STATUS.
+    $item = $draft->items->first();
 
     $enrollment = efsdEnrollment($school);
 
@@ -476,7 +495,7 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
 
     $post = fn () => $this->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollment->uuid,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $itemId]],
+        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->uuid]],
     ]);
 
     $post()->assertStatus(422)->assertJsonValidationErrors('lines.0.fee_item_id');
@@ -484,9 +503,10 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
     DB::table('finance_fee_schedules')->where('id', $draft->id)->update(['status' => 'superseded']);
 
     $post()->assertCreated();
-    expect((int) DB::table('finance_invoice_lines')->value('fee_item_id'))->toBe($itemId,
-        'A superseded schedule’s item was refused. Void-and-rebill and the prefill/approval race both bill '
-        .'from one, and GenerateInvoice’s own discountability resolution already tolerates it.');
+    expect((int) DB::table('finance_invoice_lines')->value('fee_item_id'))->toBe($item->id,
+        'A superseded schedule’s item was refused, or its provenance was dropped. Void-and-rebill and '
+        .'the prefill/approval race both bill from a superseded schedule, and GenerateInvoice’s own '
+        .'discountability resolution already tolerates one.');
 });
 
 it('an edited draft still submits for approval, and the approver sees the edited numbers', function () {

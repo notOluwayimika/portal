@@ -120,13 +120,24 @@ it('proof 11 — a reduction citing an active requires_approval=false policy is 
 // ── Proof 12 — requires_approval=true is refused, at BOTH layers ─────────────
 
 it('proof 12 (HTTP) — a reduction citing a requires_approval=true policy is refused (422)', function () {
+    // THE MESSAGE, NOT JUST THE STATUS — the same overclaim proof 14 (HTTP) was renamed for, checked
+    // here and found. A bare `assertStatus(422)` was unambiguous while the policy id was an unvalidated
+    // integer: the only thing that could refuse a reduction line was the DB guard. Since U8 commit 1 an
+    // unresolvable policy uuid is a validation 422, so a status-only assertion would go on passing if
+    // the fixture's policy stopped resolving and the requires_approval branch never ran at all.
+    //
+    // The message asserted is the trigger's own, surfaced by GenerateInvoice's 1644 catch — so this arm
+    // still names the layer it always meant to, and now says so.
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
-    rePost($this, $school, $admin, $enrollment, [
+    $response = rePost($this, $school, $admin, $enrollment, [
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422);
+
+    expect((string) $response->json('message'))
+        ->toBe('This discount policy requires per-application approval: apply it as a credit note, not an invoice line.');
 
     expect(DB::table('finance_invoices')->count())->toBe(0); // nothing partial
 });
@@ -168,19 +179,26 @@ it('proof 13 — a reduction line with discount_policy_id = null is refused, and
 
 // ── Proof 14 — a cross-School policy is refused under the other School's context ──
 
-it('proof 14 (HTTP) — a School B policy cannot back a reduction under School A', function () {
+it('proof 14 (HTTP) — a discount policy uuid this School cannot resolve is refused at the edge', function () {
     [$schoolA, $adminA, $enrollmentA] = reSetup();
     $schoolB = School::factory()->create();
     $policyB = rePolicy($schoolB, name: 'B-only'); // active, but belongs to School B
 
-    // WHICH LAYER REFUSES THIS MOVED IN U8 COMMIT 1, and the arm was split rather than left saying the old
-    // thing. While the wire carried the INTEGER id, validation checked shape only, the id reached the
-    // INSERT, and the trigger's `v_school <> NEW.school_id` arm was what produced this 422. The wire now
-    // carries a uuid, GenerateInvoiceRequest resolves it through DiscountPolicy::query(), and SchoolScope
-    // hides School B's row under School A's context — so the refusal is a validation error and the INSERT
-    // is never reached. That is a strictly earlier refusal, but it is a DIFFERENT one, and an arm named
-    // "DB-enforced" that no longer reaches the DB is the kind of false green this suite exists to avoid.
-    // The trigger arm it used to cover is now proof 14 (DB), below, which reaches the INSERT directly.
+    // TITLED FOR WHAT IT PROVES, WHICH IS LESS THAN ITS FIRST TITLE CLAIMED. It used to read "a School B
+    // policy cannot back a reduction under School A", and its assertion cannot support that: a validation
+    // error on `lines.1.discount_policy_id` is produced by ANY uuid that does not resolve — a foreign
+    // School's, a deleted one, or one belonging to nothing at all. Nothing in an HTTP response can tell
+    // those apart, and that is not a gap to close: it is the byte-identical property U8 commit 1 exists
+    // to hold (InvoiceWireIdsTest asserts the two responses are the same bytes), because a caller who can
+    // distinguish them has been told that an id they may not see exists. The isolation claim therefore
+    // cannot live at this layer at all. It lives in proof 14 (DB), which reaches the INSERT and reads the
+    // trigger's own error code.
+    //
+    // WHICH LAYER REFUSES ALSO MOVED IN U8 COMMIT 1. While the wire carried the INTEGER id, validation
+    // checked shape only, the id reached the INSERT, and the trigger's `v_school <> NEW.school_id` arm
+    // produced this 422. The wire now carries a uuid, GenerateInvoiceRequest resolves it through
+    // DiscountPolicy::query(), SchoolScope hides School B's row under School A's context, and the INSERT
+    // is never reached. Strictly earlier, and a different refusal.
     rePost($this, $schoolA, $adminA, $enrollmentA, [
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Foreign discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policyB->uuid],

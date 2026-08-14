@@ -159,11 +159,33 @@ it('SCOPED RELAXATION — a negative CHARGE is still rejected; a negative reduct
 });
 
 it('a ZERO line is rejected for either kind — it carries no arithmetic and no meaning', function () {
-    postInvoice([['description' => 'Nothing', 'amount_minor' => 0]])->assertStatus(422);
-    postInvoice([
+    // NAMES THE FIELD, NOT JUST THE STATUS, AND THAT CHANGED IN U8. Both halves are refused by
+    // `lines.*.amount_minor`'s `not_in:0` at the edge, and the arm now says so. A bare
+    // `assertStatus(422)` was enough while nothing else about a reduction line could produce a
+    // validation error; since U8 commit 1 an unresolvable `discount_policy_id` uuid can, so the waiver
+    // half would have gone on passing with the zero rule deleted. Demonstrated: replacing
+    // `$policy->uuid` in `postInvoice()` with a uuid that resolves to nothing reds 12 of the 17 arms in
+    // these two files and leaves this one green.
+    //
+    // The `discount_policy_id` check on the second half is what keeps that from coming back: the
+    // fixture's policy is supposed to resolve, so an error on that key means this 422 arrived for a
+    // reason the arm is not about.
+    postInvoice([['description' => 'Nothing', 'amount_minor' => 0]])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('lines.0.amount_minor');
+
+    $waiver = postInvoice([
         ['description' => 'Tuition', 'amount_minor' => 500000],
         ['description' => 'Empty waiver', 'amount_minor' => 0, 'kind' => 'waiver'],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.amount_minor');
+
+    // Keyed by the literal string, dots included — a dot path would traverse instead of looking up.
+    $errors = (array) $waiver->json('errors');
+
+    expect(array_key_exists('lines.1.discount_policy_id', $errors))->toBeFalse(
+        'The waiver line was refused over its discount policy rather than its zero amount, so this arm’s '
+        .'422 says nothing about the rule it is named for. postInvoice() is supposed to inject a policy '
+        .'that resolves.');
 });
 
 it('DISPLAY — the API returns full fee and reduction as separate tagged lines, never a net', function () {

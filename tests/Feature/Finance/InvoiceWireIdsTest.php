@@ -260,3 +260,100 @@ it('keeps a DISTINCT message for an item whose schedule is Draft or PendingAppro
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });
+
+// ── 5. An empty string is "no provenance", not a malformed uuid ──────────────
+
+it('treats an EMPTY STRING on either id as no provenance, exactly as an explicit null does', function () {
+    // `""` NEVER REACHES A RULE IN THIS CLASS. Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull
+    // sits in the global middleware stack — confirmed by reflecting the HTTP kernel's $middleware property;
+    // bootstrap/app.php:47 removes nothing — so it rewrites `""` to null before validation runs at all.
+    // The value then satisfies `nullable`, skips the closure, and resolves to no provenance.
+    //
+    // THAT IS THE CHOSEN BEHAVIOUR AND THIS ARM IS WHERE IT IS WRITTEN DOWN, because the next commit is a
+    // form and an unselected `<select>` posts `""`. Refusing `""` as a malformed uuid is not implementable
+    // here: by the time any rule can look, the value is already null. Charge lines legitimately carry no
+    // fee item — free-text entry is the whole reason finance_invoice_lines.fee_item_id is nullable with no
+    // foreign key — so "the operator picked nothing" and "there is nothing to pick" produce the same row.
+    //
+    // Both spellings are asserted TOGETHER, in one invoice, because the claim is that they are the same
+    // thing and a single-value arm cannot say that.
+    [$school, $admin, $enrollment] = wireSetup();
+
+    wirePost($this, $school, $admin, $enrollment, [
+        ['description' => 'Empty string', 'amount_minor' => 100000, 'fee_item_id' => ''],
+        ['description' => 'Explicit null', 'amount_minor' => 100000, 'fee_item_id' => null],
+        ['description' => 'Key absent', 'amount_minor' => 100000],
+    ])->assertCreated();
+
+    $stored = DB::table('finance_invoice_lines')->pluck('fee_item_id', 'description');
+
+    expect($stored['Empty string'])->toBeNull()
+        ->and($stored['Explicit null'])->toBeNull()
+        ->and($stored['Key absent'])->toBeNull();
+});
+
+it('still refuses a REDUCTION line whose discount policy went empty — at the DB guard', function () {
+    // The bounded cost of the decision above, named. `""` on `discount_policy_id` becomes null, so the
+    // edge lets it through; the row is then refused by finance_invoice_lines_reduction_guard, which is the
+    // authority on reduction provenance and does not care how the null arose. So no reduction is ever
+    // written without a policy, whichever spelling of "nothing" the form sends.
+    [$school, $admin, $enrollment] = wireSetup();
+
+    $response = wirePost($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
+    ])->assertStatus(422);
+
+    // NOT a validation error — the refusal comes from the trigger, surfaced by GenerateInvoice's 1644
+    // catch as a BusinessRuleException. Asserting the message distinguishes the two layers; a bare 422
+    // would pass if the edge had started refusing it for some unrelated reason.
+    expect((string) $response->json('message'))->toContain('must reference an active discount policy');
+
+    expect(DB::table('finance_invoices')->count())->toBe(0)
+        ->and(DB::table('finance_invoice_lines')->count())->toBe(0);
+});
+
+// ── 6. What SchoolScope does NOT cover, and what refuses instead ─────────────
+
+it('resolves a foreign School’s uuid for a super_admin with NO active School — and the WRITE is refused', function () {
+    // THE ONE PRINCIPAL FOR WHOM "SchoolScope is the isolation" IS FALSE, recorded so the comments on the
+    // rules above can say something true instead of something convenient.
+    //
+    // SetSchoolContext:51 admits a super_admin with no School selected (`! $isSuperAdmin && ! $activeSchoolId`
+    // is what redirects, and the first half is false here). ActiveSchool::id() is then null, and
+    // SchoolScope's null-context branch only throws for models on config/rbac.php's `fail_closed_models`
+    // list — ten transactional models, of which FeeItem and DiscountPolicy are not two. So it adds NO
+    // predicate, both lookups run unscoped, and the uuid resolves to its real integer id.
+    //
+    // NOTHING IS WRITTEN ANYWAY, and the layer that refuses is GenerateInvoice, not the edge:
+    // `SchoolContext` has no id to stamp the invoice with, so the Action raises
+    // "No active School context: an invoice cannot be raised." (422). The gap is between the two — the
+    // edge accepts an id it should not have been able to see — and closing it is a fail_closed_models
+    // entry, ticketed, not done here.
+    $theirs = School::factory()->create();
+    $theirItem = wireFeeItem($theirs);
+    $theirEnrollment = wireSetup()[2];
+
+    setPermissionsTeamId(null);
+    $super = User::factory()->create();
+    $super->assignRole('super_admin');
+    $super->flushSchoolAccessCache();
+
+    // No `withSession(['school_id' => …])` — that absence IS the condition under test.
+    $response = $this->actingAs($super)->postJson('/api/v1/finance/invoices', [
+        'enrollment_id' => $theirEnrollment->uuid,
+        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItem->uuid]],
+    ]);
+
+    expect($response->status())->toBe(422)
+        ->and((string) $response->json('message'))->toBe('No active School context: an invoice cannot be raised.');
+
+    // AND THE EDGE DID NOT REFUSE IT. Asserted explicitly: if the uuid had failed validation the response
+    // would be a 422 too, and this arm would read as proof of an isolation that did not happen.
+    expect($response->json('errors'))->toBeNull(
+        'The fee item uuid was refused at validation. If that becomes true — a fail_closed_models entry '
+        .'would do it — this arm and the rule comments it backs both need rewriting, because the claim '
+        .'they make is that the edge does NOT stop this.');
+
+    expect(DB::table('finance_invoices')->count())->toBe(0);
+});

@@ -477,10 +477,16 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
     $draft = efsdDraft($school, $term, $level);
     // THE WIRE FORM AND THE STORED FORM ARE NOW DIFFERENT THINGS, so this arm holds both. The request
     // carries `$item->uuid` (U8 commit 1); the assertion below reads the INTEGER out of
-    // finance_invoice_lines. It therefore proves two things at once where it used to prove one: that a
-    // superseded schedule's item is accepted, and that GenerateInvoiceRequest::lineSpecs() resolved the
-    // uuid to the RIGHT row rather than to some row — a resolution that returned the wrong id, or the
-    // first id, would sail past an `isNotNull` and is caught here.
+    // finance_invoice_lines, which is stronger than an `isNotNull` — a resolution that dropped the
+    // provenance to null is caught here.
+    //
+    // IT DOES NOT CATCH A RESOLUTION THAT RETURNS THE WRONG ROW, and an earlier version of this comment
+    // claimed it did. `efsdContext()` creates ONE School and `efsdDraft()` seeds ONE item, so the right
+    // row and the first row are the same row and no assertion here can separate them. Measured, not
+    // reasoned: with `where('uuid', …)` removed from `GenerateInvoiceRequest::idForUuid()` this arm stays
+    // GREEN while InvoiceWireIdsTest's resolution arm — two items, citing the second — reds on
+    // "Failed asserting that 1 is identical to 2". That arm is where the right-row property lives; this
+    // one is about schedule STATUS.
     $item = $draft->items->first();
 
     $enrollment = efsdEnrollment($school);
@@ -498,9 +504,9 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
 
     $post()->assertCreated();
     expect((int) DB::table('finance_invoice_lines')->value('fee_item_id'))->toBe($item->id,
-        'A superseded schedule’s item was refused, or its uuid resolved to the wrong fee item. '
-        .'Void-and-rebill and the prefill/approval race both bill from a superseded schedule, and '
-        .'GenerateInvoice’s own discountability resolution already tolerates one.');
+        'A superseded schedule’s item was refused, or its provenance was dropped. Void-and-rebill and '
+        .'the prefill/approval race both bill from a superseded schedule, and GenerateInvoice’s own '
+        .'discountability resolution already tolerates one.');
 });
 
 it('an edited draft still submits for approval, and the approver sees the edited numbers', function () {

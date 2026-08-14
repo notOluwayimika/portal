@@ -295,6 +295,32 @@ files while writing this report, and three of which were wrong on the first pass
 (`drive-environment.md:11-15` → `:13-14`, `SeedDriveFixture.php:136-138` → `:135-137`,
 `.env.drive.example:39` → `:40`).
 
+**That third correction was applied here and not to the skill**, which kept `:39` until `86eb511`.
+The sentence above was true of this report and false of the file it described — see the next
+section. Left standing as written, with this note, because a corrected sentence would hide the more
+useful fact: re-deriving a citation and then writing it down in one place is not the same act, and
+nothing in this repository catches the difference.
+
+## Post-report verification pass
+
+A verification pass over this report found **one uncited load-bearing quote** in the skill: the
+"Drive the fixture, not the production copy" paragraph quoted the bank-accounts report's title with
+no `path:LINE` beside it, while every other claim in that paragraph carried one — and that title is
+the pivot of the ruling. Fixed in **`86eb511`**, cited to
+`docs/handoff/reports/feat-finance-bank-accounts.md:200`; the quoted title was also corrected to
+match that line exactly, the skill having lowercased its leading "The".
+
+**The sweep run to verify that fix found a second defect, in the same commit's scope.** The skill
+cited `.env.drive.example:39` for `SANCTUM_STATEFUL_DOMAINS`, which is on **line 40**. The "Which
+steps examined this change" section below claims that citation was among three corrected on the
+first pass — the correction had been applied **to this report and never to the skill**, so the
+report asserted a fix that did not exist in the file it described. Also fixed in `86eb511`.
+
+The sweep now returns **27** `path:LINE` tokens over the whole skill, every one resolving to a file
+that exists with its highest cited line within that file's length, plus one bare continuation
+(`:56-63`, belonging to `SeedDriveFixture.php`, 166 lines) that a `path:LINE` pattern does not
+match. Zero missing, zero out of range.
+
 ## Not done
 
 - **`finance-review` did not gain the manifest setup step** its own ticket asks for. Named above.

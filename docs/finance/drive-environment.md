@@ -34,7 +34,8 @@ login — but a drive env does not need it.)
 ## Stand one up from nothing
 
 ```bash
-# 1. A throwaway database (any name WITHOUT brookstone/staging/prod/portal_testing).
+# 1. A throwaway database. The name MUST contain a `drive` token — portal_drive, drive,
+#    my_drive_db. This is the allowlist above, not a denylist: portal_scratch is refused.
 mysql -e "CREATE DATABASE portal_drive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # 2. A drive env file. Copy the template and fill in your local MySQL creds + an app key.
@@ -58,7 +59,7 @@ fixture with no duplication.
 | Sign in as | Email | Drives |
 |---|---|---|
 | Maker (`accounts_officer`) | `maker@drive.test` | the statements + submitting credit notes / voids |
-| Full checker (`accounts_supervisor`) | `checker@drive.test` | the unified approvals queue (both feeds) |
+| Full checker (`executive_director` since 2026-08-04 — `DriveCastSeeder.php:144-146`) | `checker@drive.test` | the unified approvals queue (both feeds) |
 | Void-only checker (`void-request.approve`, **no** `credit-note.approve`) | `void-checker@drive.test` | the per-feed 403-tolerant queue |
 | Super admin | `super@drive.test` | the bypass exclusion (cannot approve) |
 | School B bursar | `school-b@drive.test` | cross-School isolation |

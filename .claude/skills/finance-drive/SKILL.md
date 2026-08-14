@@ -15,7 +15,7 @@ expensive.
 The acceptance suite proves the HTTP stack and is **structurally blind to
 rendering**. A 200 with the right list, a 200 with an empty list, and a 200
 rendering an error where a list should be are the same assertion
-(`docs/finance/drive-environment.md:3-6`). Everything in the class the suite
+(`docs/finance/drive-environment.md:8-10`). Everything in the class the suite
 cannot see is what you are here for: a select rendering empty because the fixture
 seeds nothing behind it; a label that says the wrong thing; a button that 403s for
 a seat no test ever acts as; a page that loads and cannot be submitted.
@@ -40,8 +40,10 @@ it. It paid on the first run.
 only a `plainInvoice`, which records no payment, so School B had **no bank
 account** while `school-b@drive.test` holds the ability to open the author screen
 (`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`). A drive would
-have opened onto three empty selects and authored nothing — and no test could see
-it, because tests build their own rows and never touch this fixture. Both were
+have opened onto three empty selects and authored nothing — and **no test can see
+this fixture at all**: the seed command refuses outside `APP_ENV=drive`
+(`SeedDriveFixture.php:49-54`) and `phpunit.xml:29` pins the suite to
+`APP_ENV=testing`, so the suite could not run it if it tried. Both were
 caught by *reading the seeder* before the drive rather than by the drive itself,
 which is the entire reason the next section exists and comes before you open a
 browser.
@@ -55,9 +57,37 @@ Full setup, including the one-time `.env.drive`, is
 do not restate it in a brief, link it.
 
 ```bash
+pnpm install && pnpm run build                         # REQUIRED — see below, before the browser
 APP_ENV=drive php artisan finance:seed-drive-fixture   # migrate:fresh + seed, idempotent
 APP_ENV=drive php artisan serve --port=8001
 ```
+
+**The build is not optional and it comes first.** `public/build/` is gitignored, so a fresh clone has
+no manifest, and every Inertia page — which is every finance screen — answers
+`ViteManifestNotFoundException: Vite manifest not found at: …/public/build/manifest.json`. A manifest
+that predates the page you are driving gets the sibling
+`ViteException: Unable to locate file in Vite manifest: …`. `pnpm run dev` left running is the
+alternative; it serves the assets from the dev server instead, which is what
+`docs/finance/drive-environment.md:51` assumes. Either way this happens **before** you seed, because
+the failure it prevents looks like a broken feature and arrives at the moment you open a page.
+**Do not fabricate a `manifest.json`** — someone did, to get past exactly this; it satisfies the
+lookup with a file that was never compiled, so the guarantee that the bundle *builds* is skipped
+while everything looks fine. The whole argument, and the alternatives rejected, is in
+[`docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md`](../../../docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md).
+
+**`pnpm`, not `npm`.** The committed lockfile is `pnpm-lock.yaml` (there is no `package-lock.json`),
+and `bin/quality` shells `pnpm` throughout (`bin/quality:195`). Two committed files still say `npm`
+— `composer.json:54-61`'s `setup` script and `docs/finance/drive-environment.md:51` — and both work,
+since they resolve the same `package.json` scripts. Prefer `pnpm` so you are installing against the
+lockfile the gate installs against.
+
+**There is no committed drive script.** Nothing under `git ls-files` matches puppeteer, playwright or
+a drive harness, and `package.json` declares neither. Where this file says "the drive script", it
+means the throwaway script you write for your own drive and do not commit — past drives used
+`puppeteer-core` against system Chrome (`docs/handoff/drives/2026-07-25/README.md:3-4`) and
+Playwright-driven Chromium (`docs/handoff/reports/feat-finance-ob-operator-screen.md:191-193`). Both
+are fine. Neither is provided for you, and whichever you pick, install it **outside the repository**
+(see Friction).
 
 The command **refuses** to run unless `APP_ENV` is exactly `drive`
 (`SeedDriveFixture.php:49-54`) **and** the database name contains a `drive` token
@@ -69,23 +99,38 @@ honestly; neither is a thing to route around.
 Every state in the fixture is produced by **executing the real Actions**, never by
 writing rows, so nothing you see is a state the system cannot reach —
 `finance:reconcile-accounts` runs clean on the result
-(`docs/finance/drive-environment.md:13-14`).
+(`docs/finance/drive-environment.md:17-19`).
 
-**Drive the fixture, not the production copy.** Past drives disagreed on this. The
-2026-08-09 drives of the sidebar, the fail-closed RBAC change and the
-opening-balance operator screen all ran against the local production copy; the
-bank-accounts report of the same day is titled *"The browser drive — portal_drive,
-never the production copy"* (`docs/handoff/reports/feat-finance-bank-accounts.md:200`)
-and every drive since has used the fixture. The
-copy-based drives are what settled it: one left five `DRIVE-*` batches and two
-minted users behind in `school#1`
-(`docs/handoff/reports/feat-finance-ob-operator-screen.md:283-295`), one could not
-drive the `super_admin` seat at all because logging in as a real user needs a
+**Drive the fixture, not the production copy.** Past drives disagreed on this.
+Three ran against the local production copy — the sidebar
+(`docs/handoff/reports/feat-finance-sidebar-section.md:167-170`), the fail-closed
+RBAC change (`docs/handoff/reports/feat-rbac-fail-closed-finance.md:442-447`) and
+the opening-balance operator screen
+(`docs/handoff/reports/feat-finance-ob-operator-screen.md:189-198`). The
+bank-accounts report is titled *"The browser drive — portal_drive, never the
+production copy"* (`docs/handoff/reports/feat-finance-bank-accounts.md:200`), and
+both drives since have opened by seeding the fixture
+(`docs/handoff/reports/feat-fee-schedules-screen.md:246`,
+`docs/handoff/reports/feat-discount-policies-page.md:343`).
+
+The copy-based drives are what settled it. One left six `DRIVE-*` batches — *"1
+validated and 5 rejected"* — behind in `school#1`
+(`docs/handoff/reports/feat-finance-ob-operator-screen.md:283`), along with two
+minted users that are still there
+(`docs/handoff/reports/feat-finance-ob-operator-screen.md:297-298`). One could not
+drive the `super_admin` seat at all, because logging in as a real user needs a
 **credential write on a production copy** and the environment refused it
-(`docs/handoff/reports/feat-rbac-fail-closed-finance.md:469-476`), and the
-approve path on the opening-balance import remains undriven to this day because
-approving there consumes that school's single posting slot permanently. A
-throwaway database is one you are willing to spend; that is the whole argument.
+(`docs/handoff/reports/feat-rbac-fail-closed-finance.md:469-476`). And the
+opening-balance **approve** has never been driven anywhere, under a condition set
+down before the fixture era: *"Approve stays undriven until there is a database we
+are willing to spend"*, because the first approval consumes that school's single
+posting slot permanently, with no un-post, no delete and no move
+(`docs/handoff/reports/feat-finance-ob-decision-surface.md:653-655`).
+
+That phrase is the argument for the fixture, and it is worth reading in its
+original frame: it was written about a **production copy**, where the price of an
+irreversible action is real. A throwaway database is one you are willing to spend
+by construction.
 
 ## Check the fixture before you drive anything
 
@@ -96,10 +141,11 @@ accounts, discount policies. It is counted from the database through
 **not** from the seeder's own variables, which would only ever report what the
 seeder intended (`SeedDriveFixture.php:130-153`).
 
-Read it first, every time. **A zero in any column means the screen under drive
-cannot author anything, and the drive is worthless before it starts.** That
-sentence is the rule the table was built to serve
-(`SeedDriveFixture.php:135-137`); it is also the exact failure U1 was written to
+Read it first, every time. The rule the table was built to serve, in the source's
+own words: **"Zero in any column means the screen cannot author anything"**
+(`SeedDriveFixture.php:135-137`). What follows from that is mine and not the
+source's: **the drive is then worthless before it starts**, so this is a check you
+run and act on, not one you record. It is also the exact failure U1 was written to
 prevent, and the reason the bank-accounts and discount-policies columns were added
 beside the academic three as each new screen arrived. If your screen depends on
 something the table does not count, the table needs a column before your drive
@@ -118,9 +164,9 @@ from a brief, since a brief that pastes it goes stale silently.
 | Seat | Holds | What it proves |
 | --- | --- | --- |
 | `maker@drive.test` | `accounts_officer`, School A | The flow works end to end: the authoring screens open, the selects are populated, a thing can be created, edited and submitted. |
-| `checker@drive.test` | `executive_director`, School A | The approvals queue, and therefore every outcome a proposal has. The ED holds **every** finance checker side. |
+| `checker@drive.test` | `executive_director`, School A | The approvals queue, and therefore every outcome a proposal has. The ED holds **every** finance checker side — fee-schedule, discount-policy, credit-note, invoice-void and opening-balance, approve and reject (`RbacSeeder.php:413-444`), the placement rule being *"a new finance checker ability lands on ED, full stop"* (`RbacSeeder.php:427-432`). |
 | `void-checker@drive.test` | a dedicated role holding **only** `finance.access` and the two void-request abilities | A **partial** checker is not locked out. This seat exists because the first drive found exactly that: `/finance/approvals` was gated on one permission, so the unified queue's per-feed 403-tolerance never executed and a void-only checker got a full-page 403 (`docs/handoff/drives/2026-07-25/README.md:30-46`). |
-| `super@drive.test` | `super_admin`, no finance grant | The bypass exclusion — a super admin does not approve. Bypass is *authorization*, never *isolation* or a checker ability. |
+| `super@drive.test` | `super_admin`, no finance grant | The bypass exclusion — a super admin does not approve: *"checker abilities are never bypassed — ADR 0040/0045"* (`docs/handoff/drives/2026-07-25/README.md:92`). Bypass is *authorization*, never *isolation*. |
 | `school-b@drive.test` | `accounts_officer`, School B | Isolation. See the next section; this is the seat that section is about. |
 
 `checker@drive.test` held `accounts_supervisor` until 2026-08-04 and now holds
@@ -131,7 +177,7 @@ names a role for a seat, check the seeder rather than the brief.
 segregation of duties refuses to give one user both sides of a Finance pair —
 `User::assignRole` throws before the write, with no flag, no `--force` and no
 super-admin shortcut, because the guard lives in the model below every path
-(`docs/finance/drive-environment.md:63-72`). You cannot add both roles to a single
+(`docs/finance/drive-environment.md:69-74`). You cannot add both roles to a single
 login to click through the whole flow yourself. Sign in as each in turn; a second
 browser profile or a private window keeps both sessions live.
 
@@ -147,43 +193,55 @@ What proves it is the **ids**, disjoint across the two seats. U1's drive is the
 recorded method
 (`docs/handoff/reports/feat-fee-schedules-screen.md:258-303`):
 
+Copied from that report unaltered — the seat headings are its own
+(`:258`, `:294`), and the option lines are its `MODAL` lines verbatim
+(`:266-268`, `:298-300`). Nothing here is abridged; read it as a sample of what
+your own drive log should look like.
+
 ```
-Seat 1 — maker@drive.test (school#1)
+Seat 1 — `maker@drive.test` (accounts_officer, school#1)
   MODAL term options   (1): ["1|2026/2027 — First Term"]
   MODAL level options  (2): ["1|JSS 1","2|JSS 2"]
-  MODAL account options(2): ["…|Choose an account…","a27ab5dc-57c5-…|Drive account · Drive Bank"]
+  MODAL account options(2): ["|Choose an account…","a27ab5dc-57c5-43f4-a08b-f192871f6eb9|Drive account · Drive Bank"]
 
-Seat 2 — school-b@drive.test (school#2)
+Seat 2 — `school-b@drive.test` (isolation, school#2)
   MODAL term options   (1): ["2|2026/2027 — First Term"]
   MODAL level options  (2): ["3|JSS 1","4|JSS 2"]
-  MODAL account options(2): ["…|Choose an account…","a27ab5dc-58b0-…|Drive account · Drive Bank"]
+  MODAL account options(2): ["|Choose an account…","a27ab5dc-58b0-4fba-96e9-504f192c0530|Drive account · Drive Bank"]
 ```
 
 Term `1` against term `2`; levels `1,2` against `3,4`; two different account
-uuids — and three label strings that match character for character. Read the
-option **values** out of the DOM, not the option text, and put both seats' lists
-side by side in the report so the disjointness is visible rather than asserted.
-Then check the second half: School A's newly authored row must be **absent** from
-School B's list.
+uuids — and three label strings that match character for character.
+
+**Look at the placeholder option.** Its value is the **empty string** — `"|Choose
+an account…"` is a `|` with nothing to its left, and the ellipsis belongs to the
+*label*, on the far side of the separator. That is what an unselected select looks
+like, and it is the reason this section says read values and not text: a reader
+skimming the label would see three dots and a sentence, and a script comparing
+labels would find both schools identical. Never abbreviate a value when you paste
+a log — an elision in the value column is indistinguishable from a value.
+
+Read the option **values** out of the DOM, not the option text, and put both
+seats' lists side by side in the report so the disjointness is visible rather than
+asserted. Then check the second half: School A's newly authored row must be
+**absent** from School B's list.
 
 ## Friction, already paid for
 
 Each of these cost someone a session. None of them is a defect in the change you
 are driving.
 
-**Assets must be genuinely built, or every Inertia page 500s.** `public/build/` is
-gitignored, `bin/quality` builds it at its frontend-build step (`bin/quality:195`,
-`pnpm run build`), and nothing else does — so a fresh clone, or a standalone run
-outside the gate, gets
-`ViteManifestNotFoundException: Vite manifest not found at: …/public/build/manifest.json`,
-and a stale manifest gets its sibling
-`ViteException: Unable to locate file in Vite manifest: …`. Run `pnpm install &&
-pnpm run build` (or keep `pnpm run dev` running, which serves the assets from the
-dev server instead). **Do not fabricate a `manifest.json`** — someone did, to get
-past this, and it satisfies the lookup with a file that was never compiled, which
-skips the one guarantee the build step exists to give. The whole argument, and the
-alternatives that were rejected, is in
-[`docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md`](../../../docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md).
+**The assets prerequisite is in "Stand the environment up", not here** — it fires
+before you reach any of this, so it is stated where you will read it in time.
+
+**`/dashboard` 403s for the finance seats, and bounces them to `/login`.**
+`maker@drive.test` and `school-b@drive.test` sign in successfully and are then
+refused on `GET /dashboard`. Every finance page is reachable directly, so it does
+not block a drive — but it is the first screen a first-time driver sees, and it
+looks exactly like a broken login. **Pre-existing**, filed as a ticket by the drive
+that observed it, and unrelated to whatever you are driving
+(`docs/handoff/reports/feat-discount-policies-page.md:456-460`). Navigate straight
+to `/finance`.
 
 **`:8001` must be in `SANCTUM_STATEFUL_DOMAINS`**, or every SPA call to
 `/api/v1/finance/*` 401s and every statement renders "Could not load the
@@ -207,8 +265,8 @@ download must not land in `node_modules`; the drive that got this right recorded
 it as a property of the run
 (`docs/handoff/reports/feat-finance-ob-operator-screen.md:191-193`). A mutated
 `node_modules` is how a `tsc` baseline once got calibrated against a corrupted
-tree — `CLAUDE.md` names that as its own class of failure, and this is the same
-directory.
+tree — `CLAUDE.md:72` names *"the corrupt-`node_modules` tsc lie"* as its own class
+of failure, and this is the same directory.
 
 **`page.request.get()` on an API route returns 401** under Playwright: no
 `Referer`, so Sanctum does not treat the request as stateful. That is a harness
@@ -235,16 +293,25 @@ carries:
 5. **What was NOT driven, and why.** On every drive so far this has been the
    lifecycle states the fixture cannot reach: the retire and supersede paths that
    need an *active* schedule, which only the ED's approval creates; a *rejected*
-   proposal, because the ED approved everything; the opening-balance *approve*,
-   which is refused on a database anyone would miss. Name them. This is the
-   largest untested-by-eye area of most commits and it should be stated rather
-   than left to be discovered.
+   proposal, because the ED approved everything; and **anything opening-balance**,
+   for a blunter reason — the fixture seeds no opening-balance state whatsoever.
+   `DriveFinanceStates` exposes fourteen public state methods, spanning
+   `ensureBankAccount` to `plainInvoice`
+   (`app/Finance/Console/DriveFinanceStates.php:65-225`), and not one of them is an
+   opening-balance batch; `SeedDriveFixture` and `DriveCastSeeder` between them
+   mention opening balances once, in a comment (`DriveCastSeeder.php:95`). So there
+   is nothing on this fixture to approve, and the "database we are willing to
+   spend" condition is not what is stopping you — that condition was written about
+   a production copy and does not transfer to a database that is thrown away.
+   Name what you skipped. This is the largest untested-by-eye area of most commits
+   and it should be stated rather than left to be discovered.
 
 Everything here is under the same privacy rule as the rest of the project:
 `user#<id>`, `school#<id>`, counts and structure. The drive of the
 opening-balance findings screen is the demonstration that the rule survives a
-*rendered page* — line numbers, admission numbers and both sides of a failed
-check, no name anywhere.
+*rendered page* — *"line numbers, admission numbers and both sides of the failed
+check; no name anywhere"*
+(`docs/handoff/reports/feat-finance-ob-operator-screen.md:238-240`).
 
 ## A drive observes; it does not fix
 
@@ -255,7 +322,12 @@ yours.
 
 Two exceptions, both narrow and both already exercised. If the **fixture** cannot
 reach the state your brief told you to drive, fixing the fixture is in scope: it
-is a precondition of the drive, not a finding from it, and U1 commit 1 is the
-precedent. And a **drive-environment config** change — the `:8001` Sanctum entry —
-is config, not the feature. Everything else, including the obvious one-line fix
-sitting in front of you, is reported and left alone.
+is a precondition of the drive, not a finding from it. U1 commit 1 is the
+precedent — it added the academic slot and the per-school bank account to the
+seeder so that commit 2's drive would not open onto empty selects
+(`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`,
+`DriveCastSeeder.php:91-97`). And a **drive-environment config** change — the
+`:8001` Sanctum entry, added to `.env.drive.example` by the drive that hit it
+(`docs/handoff/drives/2026-07-25/README.md:77-83`) — is config, not the feature.
+Everything else, including the obvious one-line fix sitting in front of you, is
+reported and left alone.

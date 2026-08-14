@@ -321,6 +321,107 @@ that exists with its highest cited line within that file's length, plus one bare
 (`:56-63`, belonging to `SeedDriveFixture.php`, 166 lines) that a `path:LINE` pattern does not
 match. Zero missing, zero out of range.
 
+## The cold review
+
+A cold review of the branch returned findings across eight groups. All were verified against the
+tree and all are fixed in one commit. Listed in the review's own order; no ranking is implied.
+
+**A — citations into a file this branch itself edited.** `bfccb62` prepended 5 lines to
+`docs/finance/drive-environment.md`; three citations into that file had been derived before the
+insert and were never re-derived. Re-derived against the file at HEAD, by reading the sentence and
+finding the lines that carry it rather than adding 5: `:3-6` → `:8-10` (structurally blind to
+rendering), `:13-14` → `:17-19` (real Actions / `finance:reconcile-accounts` clean), `:63-72` →
+`:69-74` (the `assignRole` guard — the old range also stopped before "lives in the model, below every
+path", which is the clause the skill's sentence ends on). Sweeping for other citations into files
+this branch modified: `docs/finance/drive-environment.md` is the only such file the skill cites, and
+those were the only three.
+
+The same defect recurred twice inside this commit and was caught by re-deriving rather than by
+assuming. Editing `drive-environment.md:37` added a line, shifting the two citations that sit below
+it — `:50` → `:51` (the vite line) and `:68-73` → `:69-74`. Adding the header clause to
+`u1-fee-schedules-brief.md` shifted the line that clause names, from 902 to 909.
+
+**B — four factual corrections.**
+
+1. "five `DRIVE-*` batches" was wrong: the source reads *"1 validated and 5 rejected"*, which is six
+   (`docs/handoff/reports/feat-finance-ob-operator-screen.md:283`).
+2. The two minted users were cited under the batches' range. Split: batches at `:283`, users at
+   `:297-298`.
+3. The fenced U1 block rendered the placeholder option as `"…|Choose an account…"`. The source has
+   `"|Choose an account…"` — the **value is empty**, and the ellipsis is part of the label, on the far
+   side of the separator. An ellipsis had been written where the source has nothing, inside the
+   section that teaches reading values rather than text. The block is now byte-identical to
+   `feat-fee-schedules-screen.md:266-268` and `:298-300` (verified by `diff`, 6 lines, no output),
+   with full uuids rather than shortened ones, and the seat headings restored to the source's form at
+   `:258` and `:294`. A paragraph was added making the empty value the worked example of why values
+   are read and never abbreviated.
+4. The bolded rule attributed to `SeedDriveFixture.php:135-137` carried a second clause — "and the
+   drive is worthless before it starts" — that the source does not contain. The source's clause is
+   now quoted alone under the attribution; the second is stated separately as not the source's.
+
+**C — a wrong reason.** The skill said the opening-balance approve is out of reach "because it is
+refused on a database anyone would miss". On the drive fixture that is not the reason.
+`DriveFinanceStates` exposes fourteen public state methods
+(`app/Finance/Console/DriveFinanceStates.php:65-225`) and none is an opening-balance state;
+`SeedDriveFixture` and `DriveCastSeeder` mention opening balances once, in a comment
+(`DriveCastSeeder.php:95`). The entry now says the fixture seeds no opening-balance state, so there
+is nothing to approve. The "willing to spend" framing is attributed to where it came from
+(`docs/handoff/reports/feat-finance-ob-decision-surface.md:653-655`) and marked as belonging to the
+production-copy era.
+
+**D — two defects in `docs/finance/drive-environment.md`.** Line 37 gave denylist advice ("any name
+WITHOUT brookstone/staging/prod/portal_testing") contradicting the allowlist stated at `:21-24`; a
+driver following it and choosing `portal_scratch` is refused by `SeedDriveFixture.php:58`. It now
+states the allowlist requirement. The cast table still listed the full checker as
+`accounts_supervisor`; corrected to `executive_director` with the seeder cited
+(`DriveCastSeeder.php:144-146`).
+
+**E — uncited claims.** The database ruling's opening sentence carried no citation and asserted a
+date, `2026-08-09`, that appears in none of the sources — it was derived from git commit dates, not
+from the tree. The date is removed; the three copy drives are cited individually
+(`feat-finance-sidebar-section.md:167-170`, `feat-rbac-fail-closed-finance.md:442-447`,
+`feat-finance-ob-operator-screen.md:189-198`) and "every drive since" is cited to the two later
+drives' own seed commands (`feat-fee-schedules-screen.md:246`,
+`feat-discount-policies-page.md:343`). The posting-slot claim and the near-quote following it are
+cited and attributed (`feat-finance-ob-decision-surface.md:653-655`). "`bin/quality` builds it and
+nothing else does" was false — `composer.json:54-61`'s `setup` script also runs `npm run build`; the
+exclusivity clause is gone. `CLAUDE.md` gained its line (`:72`). Five further claims were cited:
+that no test can see the fixture (rewritten to what is provable — the seed command refuses outside
+`APP_ENV=drive`, `SeedDriveFixture.php:49-54`, and `phpunit.xml:29` pins the suite to `testing`);
+the ED holding every finance checker side (`RbacSeeder.php:413-444`, `:427-432`); the super-admin
+bypass exclusion (`docs/handoff/drives/2026-07-25/README.md:92`); the privacy rule surviving a
+rendered page (`feat-finance-ob-operator-screen.md:238-240`); and U1 commit 1 as the fixture-fix
+precedent (`feat-fee-schedules-data-surface.md:437-450`, `DriveCastSeeder.php:91-97`).
+
+**F — reading order.** The assets prerequisite sat 120 lines below the two commands that send the
+reader to a browser, so following the file top-to-bottom produced a 500 before the explanation. It
+is now in "Stand the environment up", as the first command, with the exception it prevents named
+there. The count-table-before-browser ordering is unchanged.
+
+**G — three gaps.** The file assumed a drive script and never introduced one; it now says plainly
+that **no drive script is committed** — nothing under `git ls-files` matches puppeteer or playwright
+and `package.json` declares neither — and names what past drives used
+(`docs/handoff/drives/2026-07-25/README.md:3-4`,
+`feat-finance-ob-operator-screen.md:191-193`). On `npm` versus `pnpm`: the committed lockfile is
+`pnpm-lock.yaml`, there is no `package-lock.json`, and `bin/quality:195` shells `pnpm`; the skill now
+prescribes `pnpm` and names the two committed files that still say `npm`
+(`composer.json:54-61`, `docs/finance/drive-environment.md:51`), noting both work. And `/dashboard`
+403s for `maker@drive.test` and `school-b@drive.test`, bouncing them to `/login` — added to Friction,
+marked pre-existing, cited to `feat-discount-policies-page.md:456-460`.
+
+**H — the U1 header clause.** The header added by `bfccb62` said the `DRIVE IT` section was
+superseded without naming the one substantive difference: the brief asks for the selects "by count
+and by label" and the skill's rule is by **value**. Named, with the reason. Nothing inside a fence
+was touched — `git diff` on that file shows zero deleted lines.
+
+### Sweep after the fix
+
+**46 `path:LINE` tokens, 0 missing, 0 out of range.** The earlier sweep checked only that a cited
+line exists inside a file of that length; it could not have caught any of group A, because a
+citation shifted by five lines still lands inside the file. Every citation corrected above was
+re-derived by reading the target and comparing it to the sentence it supports, and that reading is
+the check the sweep does not perform.
+
 ## Not done
 
 - **`finance-review` did not gain the manifest setup step** its own ticket asks for. Named above.

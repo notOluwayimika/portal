@@ -5,9 +5,11 @@ namespace App\Finance\Http\Requests;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeItem;
 use App\Support\Money;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -82,12 +84,29 @@ class GenerateInvoiceRequest extends FormRequest
             // it — finance-escape-hatches, §17.1 rule 4 — and it was right to: the escape hatch was there
             // to make a redundant check testable, which is a reason to delete the redundant check, not to
             // open the hatch. The lint bans the DB::table() form of the same evasion in the next token.
+            //
+            // A UUID, NOT THE INTEGER PRIMARY KEY (U8 commit 1). Every id this platform puts on the wire is
+            // a uuid — DiscountPolicyResource:15, FeeScheduleResource:69 and :93, InvoiceResource:23,
+            // InvoiceLineResource:17, and every finance route binds {model:uuid}. These two fields were the
+            // exception: they accepted an integer PRIMARY KEY from a client. A screen built from those
+            // Resources holds uuids and nothing else, so it could not have constructed a valid payload.
+            //
+            // An integer is now REFUSED, not accepted alongside — `string` + `uuid` reject it. There is no
+            // transition period because there is no client to break: no caller of either field exists under
+            // resources/js. `bail` keeps a non-uuid to ONE message rather than a shape error plus a
+            // never-resolves error naming the same field twice.
+            //
+            // The integer id stays server-side. lineSpecs() resolves uuid → id below, so InvoiceLineSpec,
+            // GenerateInvoice and finance_invoice_lines.fee_item_id are all unchanged, and the integer is
+            // never handed back out: adding it to a Resource is the thing this rule exists to prevent.
             'lines.*.fee_item_id' => [
                 'sometimes',
                 'nullable',
-                'integer',
+                'bail',
+                'string',
+                'uuid',
                 function (string $attribute, mixed $value, Closure $fail): void {
-                    $item = FeeItem::query()->find((int) $value);
+                    $item = FeeItem::query()->where('uuid', (string) $value)->first();
 
                     // Not found = does not exist, OR belongs to another School and SchoolScope hid it.
                     // The message does not distinguish the two, deliberately: telling a caller that an id
@@ -106,11 +125,34 @@ class GenerateInvoiceRequest extends FormRequest
                     }
                 },
             ],
-            // The discount policy a REDUCTION line cites (S1 3b). A LOOKUP id, not the wire's to validate
-            // beyond shape — the DB reduction_guard is the authority (active + not approval-requiring + same
-            // School). There is deliberately NO is_discountable rule: that is a fee-item property resolved
-            // server-side in the Action, never a client claim (it would let a caller move the percentage base).
-            'lines.*.discount_policy_id' => ['sometimes', 'nullable', 'integer'],
+            // The discount policy a REDUCTION line cites (S1 3b). A LOOKUP id — the DB reduction_guard stays
+            // the authority on what makes it USABLE (active + not approval-requiring + same School), and this
+            // rule deliberately does not duplicate any of those three. There is likewise NO is_discountable
+            // rule: that is a fee-item property resolved server-side in the Action, never a client claim (it
+            // would let a caller move the percentage base).
+            //
+            // What it does check is EXISTENCE, which `integer` alone did not need to and a uuid does: the
+            // wire id is no longer the stored id, so lineSpecs() has to resolve it, and an unresolvable uuid
+            // would otherwise become a silent NULL — turning a bad reference into "no policy cited", which
+            // for a reduction line is a DIFFERENT refusal with a different message, and for a charge line is
+            // no refusal at all. Refusing it here keeps the resolution total.
+            //
+            // Read through the SCOPED model, same shape and same reason as fee_item_id above: SchoolScope is
+            // the isolation, not a hand-rolled `where('school_id', …)`. And the same single message for both
+            // outcomes — a policy uuid that does not exist and one that belongs to another School are
+            // indistinguishable to the caller, because saying "that exists, but not for you" is the leak.
+            'lines.*.discount_policy_id' => [
+                'sometimes',
+                'nullable',
+                'bail',
+                'string',
+                'uuid',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (DiscountPolicy::query()->where('uuid', (string) $value)->doesntExist()) {
+                        $fail('The selected :attribute is invalid.');
+                    }
+                },
+            ],
         ];
     }
 
@@ -146,16 +188,42 @@ class GenerateInvoiceRequest extends FormRequest
                         (int) $line['amount_minor'],
                         (string) ($line['currency'] ?? Money::DEFAULT_CURRENCY),
                     ),
-                feeItemId: isset($line['fee_item_id']) ? (int) $line['fee_item_id'] : null,
+                // WIRE UUID → STORED INTEGER ID. This is the whole of U8 commit 1's server side: the
+                // boundary translates, and nothing downstream learns that it did. InvoiceLineSpec keeps
+                // `?int $feeItemId` / `?int $discountPolicyId`, GenerateInvoice:218/221 keeps writing
+                // integers into finance_invoice_lines, and neither the Action nor the DTO nor the trigger
+                // changes. The rules above have already resolved both uuids once, so a null here means the
+                // field was absent or null, never that a validated uuid failed to resolve.
+                feeItemId: isset($line['fee_item_id'])
+                    ? self::idForUuid(FeeItem::query(), (string) $line['fee_item_id'])
+                    : null,
                 kind: isset($line['kind'])
                     ? InvoiceLineKind::from((string) $line['kind'])
                     : InvoiceLineKind::Charge,
                 note: isset($line['note']) ? (string) $line['note'] : null,
                 percent: isset($line['percent']) ? (int) $line['percent'] : null,
-                discountPolicyId: isset($line['discount_policy_id']) ? (int) $line['discount_policy_id'] : null,
+                discountPolicyId: isset($line['discount_policy_id'])
+                    ? self::idForUuid(DiscountPolicy::query(), (string) $line['discount_policy_id'])
+                    : null,
                 // isDiscountable is NOT read from the wire — the Action resolves it from the fee item.
             ),
             $lines,
         ));
+    }
+
+    /**
+     * The uuid → id lookup, through the SCOPED query the caller hands in.
+     *
+     * Taking a Builder rather than a class-string is what keeps SchoolScope applied: both callers pass
+     * `Model::query()`, so a foreign School's row is invisible here for the same reason it is invisible
+     * to the validation rules. It is not a `withoutGlobalScopes()` seam and must not become one.
+     *
+     * @param  Builder<covariant \Illuminate\Database\Eloquent\Model>  $query
+     */
+    private static function idForUuid(Builder $query, string $uuid): ?int
+    {
+        $id = $query->where('uuid', $uuid)->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 }

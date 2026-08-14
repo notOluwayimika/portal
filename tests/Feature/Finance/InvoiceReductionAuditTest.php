@@ -86,7 +86,7 @@ it('records the acting user on every invoice line (the audit hole closed)', func
             'enrollment_id' => $enrollment,
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 100000],
-                ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+                ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])->assertCreated();
 
@@ -114,7 +114,7 @@ it('refuses a reduction line without finance.invoice.reduction.apply — 403, an
             'enrollment_id' => $enrollment,
             'lines' => [
                 ['description' => 'Tuition', 'amount_minor' => 100000],
-                ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
+                ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])->assertStatus(403);
 

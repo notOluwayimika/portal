@@ -64,7 +64,7 @@ function postInvoice(array $lines): TestResponse
 
     $lines = array_map(function (array $line) use ($policy) {
         if (($line['kind'] ?? 'charge') !== 'charge' && ! isset($line['discount_policy_id'])) {
-            $line['discount_policy_id'] = $policy->id;
+            $line['discount_policy_id'] = $policy->uuid;
         }
 
         return $line;

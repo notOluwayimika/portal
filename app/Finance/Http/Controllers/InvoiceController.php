@@ -32,6 +32,12 @@ class InvoiceController extends Controller
     {
         $this->assertMayReduce($request);
 
+        // Reduction provenance, refused as FIELD errors before the Action's transaction (U8 commit 3).
+        // AFTER assertMayReduce on purpose, so a principal without the reduction grant still gets its
+        // 403 and is told nothing about a policy it may not apply. The DB reduction_guard remains the
+        // authority and the backstop — see the method for what it does and does not cover.
+        $request->assertDiscountPoliciesUsable();
+
         try {
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
@@ -74,6 +80,7 @@ class InvoiceController extends Controller
         $enrollment = $enrollments->currentForStudent($student->id);
 
         $this->assertMayReduce($request);
+        $request->assertDiscountPoliciesUsable();
 
         if ($enrollment === null) {
             return response()->json(['message' => 'This student has no active enrollment to bill.'], 422);

@@ -3,6 +3,60 @@
 **Raised by:** the cold review of U2 (`feat/discount-policies-page`), which removed the catalog
 endpoint's implicit `active` filter.
 
+**CLOSED by U8 commit 3 (`fix/u8-reduction-guard-field-errors`), and this ticket asserted one thing
+that was never true.** Read the correction below before the body: the "surfaces as a generic 500"
+claim in *What is true today* is FALSE, and was false when written. It was never measured — it was
+derived from `bootstrap/app.php`'s handler in isolation, without following the path that actually
+reaches it.
+
+## Correction — measured, not reasoned (2026-08-15, base `833ba97`)
+
+Every edge-reachable arm of `finance_invoice_lines_reduction_guard` already answered **422, never
+500**, before a line of the fix was written. Driven over HTTP against `POST
+/api/v1/finance/invoices`, status and body raw:
+
+| Arm | Status | Body |
+| --- | --- | --- |
+| reduction, `discount_policy_id` absent | 422 | `{"message":"A reduction line must reference an active discount policy; discretionary reductions go through a credit note."}` |
+| reduction, `discount_policy_id` = `""` | 422 | *(identical to the row above)* |
+| reduction, policy `status = retired` | 422 | `{"message":"The referenced discount policy is not active."}` |
+| reduction, policy `status = superseded` | 422 | `{"message":"The referenced discount policy is not active."}` |
+| reduction, policy `requires_approval = 1` | 422 | `{"message":"This discount policy requires per-application approval: apply it as a credit note, not an invoice line."}` |
+| reduction, policy of another School | 422 | `{"message":"There are validation errors","errors":{"lines.1.discount_policy_id":["The selected lines.1.discount_policy_id is invalid."]}}` |
+| charge line carrying a policy | 422 | `{"message":"A charge line may not reference a discount policy."}` |
+
+**Why the 500 never happened.** `bootstrap/app.php:196-204` does leave 1644 unmapped, and that part
+of the ticket is right. But the `QueryException` never reaches that handler on this route:
+`GenerateInvoice::isReductionGuardViolation` (`GenerateInvoice.php:478-482`) matches driver code 1644
+**plus the substring `"discount policy"`**, and all five of the trigger's `MESSAGE_TEXT` strings
+contain it — including the two the ticket did not enumerate. So `GenerateInvoice.php:271-273`
+converts every one to a `BusinessRuleException`, and `InvoiceController` answers 422
+(`InvoiceController.php:47-49`). The ticket's §"The remedy" (2) describes this catch as something to
+be built; it already existed.
+
+**What WAS actually wrong** — the defect the fix addresses — is the *shape* of that 422, not its
+code: `{"message": "<a database trigger's sentence>"}` with **no `errors` key**. A form cannot attach
+that to a field, so the bursar sees a sentence about triggers and credit notes floating above a
+screen with nothing highlighted. `GenerateInvoiceRequest::assertDiscountPoliciesUsable()` now refuses
+arms 1, 2, 3 and 5 before the transaction opens, keyed to `lines.N.discount_policy_id`, in operator
+wording. The trigger is untouched and remains the authority and the backstop.
+
+**Arm 4 (cross-School) has no pre-check arm, because it cannot fire from this edge** — established,
+not assumed. With an active School, `SchoolScope` hides the foreign policy and the uuid fails the
+existence rule first (the row above). A `super_admin` with no School selected does resolve it
+unscoped, but `GenerateInvoice.php:100-102` refuses for want of a context before the transaction:
+`422 {"message":"No active School context: an invoice cannot be raised."}`. The trigger keeps the arm
+for raw writes, and `ReductionEnforcementTest`'s proof 14 (DB) is what still holds it.
+
+**And the prediction in §"Why U2 made it more likely rather than less" is half wrong for the same
+reason.** "The save 500s" was never the failure mode. "with no indication of which line was wrong"
+was exactly right, and is what got fixed.
+
+---
+
+*Original text below, unaltered apart from this correction. The 500 claim in the next section is the
+one corrected above.*
+
 **This is not a free-floating ticket. It is the first item in U8's scope** — awarding a discount at
 invoice time — in the same way U1's drive-fixture seeding was folded into the commit that needed it.
 A known trap that belongs to the next commit is that commit's precondition, not something the next

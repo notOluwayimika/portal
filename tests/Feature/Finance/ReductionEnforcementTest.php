@@ -126,18 +126,24 @@ it('proof 12 (HTTP) — a reduction citing a requires_approval=true policy is re
     // unresolvable policy uuid is a validation 422, so a status-only assertion would go on passing if
     // the fixture's policy stopped resolving and the requires_approval branch never ran at all.
     //
-    // The message asserted is the trigger's own, surfaced by GenerateInvoice's 1644 catch — so this arm
-    // still names the layer it always meant to, and now says so.
+    // WHICH LAYER ANSWERS MOVED AGAIN IN U8 COMMIT 3. It used to be the trigger's own sentence, surfaced
+    // by GenerateInvoice's 1644 catch as a bare `{"message": …}`;
+    // GenerateInvoiceRequest::assertDiscountPoliciesUsable now refuses requires_approval before the
+    // transaction opens, as a validation error keyed to the offending line. Asserted as the KEY plus the
+    // message, so the arm is still specific to this refusal and not to "some 422".
+    //
+    // THE DB HALF DID NOT MOVE and is proof 12 (DB) directly below — a raw insert with no Action in the
+    // path still trips the trigger, which remains the authority.
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
     $response = rePost($this, $school, $admin, $enrollment, [
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
-    expect((string) $response->json('message'))
-        ->toBe('This discount policy requires per-application approval: apply it as a credit note, not an invoice line.');
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toBe('That discount policy needs approval for each use. Raise it as a credit note rather than an invoice line.');
 
     expect(DB::table('finance_invoices')->count())->toBe(0); // nothing partial
 });
@@ -173,6 +179,13 @@ it('proof 13 — a reduction line with discount_policy_id = null is refused, and
     // null-check does NOT red: a null discount_policy_id makes the next arm's SELECT return no row, so
     // v_status is NULL and the "not active" check refuses it anyway — the null-check and not-active arms are
     // two faces of one guarantee. Watched red by removing the branch; see the PR body.)
+    //
+    // SINCE U8 COMMIT 3 THAT PLANT NEEDS BOTH LAYERS NEUTERED to red this arm, because
+    // GenerateInvoiceRequest::assertDiscountPoliciesUsable refuses the null before the insert is ever
+    // attempted. The status here is now the pre-check's; the trigger's half of the guarantee is proof
+    // 12 (DB) / proof 14 (DB), which reach it by raw insert. The FIELD-error form of this same case is
+    // asserted in ReductionPreCheckTest — this arm deliberately keeps asserting only that nothing was
+    // written, which is the claim it was always about.
     expect(DB::table('finance_invoices')->count())->toBe(0)
         ->and(DB::table('finance_invoice_lines')->count())->toBe(0);
 });
@@ -322,6 +335,9 @@ it('proof 7 — a RETIRED policy cannot back a NEW reduction, and lines written 
     ActiveSchool::runFor($school->id, fn () => $policy->update(['status' => DiscountPolicyStatus::Retired]));
 
     // A NEW reduction citing the now-retired policy is refused (a second enrollment to avoid the F7 collision).
+    // Since U8 commit 3 the refusal is GenerateInvoiceRequest's pre-check rather than the trigger's
+    // `v_status <> 'active'` arm; the guarantee — a retired policy cannot back a NEW reduction — is
+    // unchanged, and the trigger still holds it for any write that does not come through the Action.
     $student2 = Student::factory()->create(['school_id' => $school->id]);
     $enrollment2 = ActiveSchool::runFor($school->id, fn () => StudentCurriculum::create([
         'student_id' => $student2->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id, 'status' => 'active',

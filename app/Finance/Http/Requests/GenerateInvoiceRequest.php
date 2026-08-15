@@ -3,6 +3,7 @@
 namespace App\Finance\Http\Requests;
 
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Models\DiscountPolicy;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Authorization is by route middleware (role:admin|super_admin) for the skeleton —
@@ -196,6 +198,114 @@ class GenerateInvoiceRequest extends FormRequest
                 },
             ],
         ];
+    }
+
+    /**
+     * Refuse the reduction-provenance mistakes a FORM can make, as FIELD errors, before anything is
+     * written — U8 commit 3.
+     *
+     * THE TRIGGER IS STILL THE AUTHORITY AND STILL THE BACKSTOP. This does not replace
+     * finance_invoice_lines_reduction_guard and does not narrow it: every arm it refuses, the trigger
+     * refuses again one layer down, and a write that never passes through this Action (a job, a raw
+     * insert, tinker) meets the trigger exactly as before. What this adds is only WHICH FIELD was
+     * wrong. The trigger cannot say that — it raises SQLSTATE '45000', GenerateInvoice's 1644 catch
+     * turns it into a 422 carrying the trigger's own sentence, and a sentence with no `errors` key is
+     * a message a form cannot attach to anything. Measured before this was written: all four
+     * edge-reachable arms already returned 422, never 500, and every one of them returned a bare
+     * `{"message": …}`. So this commit is not fixing a status code; it is fixing an unattachable one.
+     *
+     * WHY HERE AND NOT IN rules(). Called from the controller AFTER assertMayReduce, so a principal
+     * without `finance.invoice.reduction.apply` still gets its 403 first and learns nothing about a
+     * policy's status from a refusal it was never entitled to reach. A rule in rules() would run
+     * before that 403 and invert the order.
+     *
+     * ONE QUERY, NO SECOND RESOLUTION PASS. lineSpecs() has already resolved every uuid → id and
+     * memoized the result (assertMayReduce → hasReductionLine() → lineSpecs() ran first, so this
+     * call is a cache hit and costs nothing), and the policies those ids name are loaded with a
+     * single whereIn regardless of how many reduction lines the invoice carries.
+     *
+     * ARM 4 — "the policy belongs to another School" — IS DELIBERATELY NOT IMPLEMENTED, because it
+     * cannot fire from this edge and a pre-check arm that cannot fire is a control that reads live
+     * and tests nothing. Three paths, all measured over HTTP:
+     *   - with an active School, SchoolScope hides the foreign policy, so the uuid fails the
+     *     existence rule above and never reaches here (this is proof 14 (HTTP)'s subject);
+     *   - a super_admin with NO School selected does resolve it unscoped, but GenerateInvoice:100
+     *     refuses the request for want of a context before the transaction opens;
+     *   - in every case where the policy DOES resolve, it resolved under the active School, the
+     *     line's school_id is the enrollment's, and GenerateInvoice:110 has already refused a
+     *     foreign enrollment — so the trigger's `v_school <> NEW.school_id` is false by then.
+     * The trigger keeps the arm, because a raw write is not bound by any of the above. If a
+     * `fail_closed_models` entry ever changes the second bullet, this paragraph is what needs
+     * rewriting, and proof 14 (DB) is the arm that still holds the guarantee.
+     *
+     * @throws ValidationException
+     */
+    public function assertDiscountPoliciesUsable(): void
+    {
+        $specs = $this->lineSpecs();
+
+        // The ORIGINAL wire keys, not 0..n-1. lineSpecs() array_values()s its result, so a payload
+        // posting `lines` as a keyed object would otherwise get an error keyed to a line index that
+        // does not exist on the wire — and an error the form cannot find is the defect this fixes.
+        $keys = array_keys((array) $this->input('lines', []));
+
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn (InvoiceLineSpec $spec) => $spec->discountPolicyId, $specs),
+            static fn (?int $id) => $id !== null,
+        )));
+
+        // ONE query for every cited policy. Read through the SCOPED model, same reason as the rules
+        // above: SchoolScope is the isolation and this must not become a second implementation of it.
+        $policies = $ids === []
+            ? collect()
+            : DiscountPolicy::query()->whereIn('id', $ids)->get()->keyBy('id');
+
+        $errors = [];
+
+        foreach ($specs as $index => $spec) {
+            $field = 'lines.'.($keys[$index] ?? $index).'.discount_policy_id';
+
+            if (! $spec->isReduction()) {
+                if ($spec->discountPolicyId !== null) {
+                    $errors[$field][] = 'A charge line cannot carry a discount policy. Clear it, or change this line to a waiver or discount.';
+                }
+
+                continue;
+            }
+
+            if ($spec->discountPolicyId === null) {
+                // The likeliest mistake the coming form can make: an unselected <select> posts "",
+                // ConvertEmptyStringsToNull rewrites it to null, and "no provenance" on a reduction
+                // line is exactly this refusal (U8 commit 1; InvoiceWireIdsTest pins the rewrite).
+                $errors[$field][] = 'Select the discount policy that authorises this reduction. A reduction with no policy has to go through a credit note instead.';
+
+                continue;
+            }
+
+            $policy = $policies->get($spec->discountPolicyId);
+
+            if ($policy === null) {
+                // Should be unreachable — the existence rule above resolved this id through the same
+                // scoped query. Left to the trigger rather than given a message of its own, because
+                // inventing one here would be a new way to distinguish a uuid that does not exist
+                // from one this School may not see, and those two must stay indistinguishable.
+                continue;
+            }
+
+            if ($policy->status !== DiscountPolicyStatus::Active) {
+                $errors[$field][] = 'That discount policy is no longer active, so it cannot back a new reduction. Choose a current one.';
+
+                continue;
+            }
+
+            if ($policy->requires_approval) {
+                $errors[$field][] = 'That discount policy needs approval for each use. Raise it as a credit note rather than an invoice line.';
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     /**

@@ -103,7 +103,8 @@ export function patchForKind(kind: DraftLine['kind']): Partial<DraftLine> {
  * `discount_policy_id` GOES ONLY ON REDUCTION LINES — the second half of the same rule patchForKind
  * enforces in state, kept here as well because DraftLine is a plain object and any future edit path
  * that sets `discountPolicyId` without going through the kind select would otherwise put it on the
- * wire. Neither half is the server's guard; see selectablePolicies above for what is.
+ * wire. Neither half refuses anything — the refusals are the server pre-check and the DB trigger,
+ * both named in selectablePolicies' docblock above.
  *
  * On a reduction the value is sent AS IS, including `''` when nothing was picked. That is the
  * designed path and not a gap: `''` is rewritten to null by ConvertEmptyStringsToNull before any
@@ -208,8 +209,18 @@ function errorLinesFrom(data: unknown): string[] {
  * running UI could submit was refused — by the pre-check since U8 commit 3, and by
  * finance_invoice_lines_reduction_guard before that. The catalog is fetched on open
  * (`?status=active`, then narrowed again by selectablePolicies), the select appears only on a
- * reduction line, and the id is CLEARED when a line flips back to `charge`. Nothing here refuses
- * anything: see selectablePolicies for what does.
+ * reduction line, and the id is CLEARED when a line flips back to `charge`. NOTHING IN THIS FILE
+ * REFUSES ANYTHING — the refusals are GenerateInvoiceRequest::assertDiscountPoliciesUsable() and
+ * finance_invoice_lines_reduction_guard, both named in selectablePolicies' docblock above.
+ *
+ * THREE FUNCTIONS ARE EXPORTED WITH NO IMPORTER — selectablePolicies, patchForKind and wireLine.
+ * That is deliberate and it is a cost paid on purpose. This module's only importer is statement.tsx,
+ * which takes `NewInvoiceModal` alone, so nothing in the bundle reaches them and neither tsc nor
+ * eslint will tell you if one becomes dead. They are exported because they are the only pure,
+ * mechanically-testable seam in a file whose logic is otherwise entangled with React state, and
+ * because un-exporting them would make the file untestable BY CONSTRUCTION on the day a JavaScript
+ * runner lands (docs/handoff/tickets/no-javascript-test-runner.md). Keeping the seam open costs an
+ * unused export today; closing it costs the first test tomorrow.
  */
 export function NewInvoiceModal({
     isOpen,

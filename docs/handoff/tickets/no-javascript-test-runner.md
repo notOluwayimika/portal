@@ -8,9 +8,16 @@ ratcheted like `tsc`), not something a feature commit gets to settle on the way 
 
 ## The fact
 
-`resources/js/` is **62,912 lines of hand-written TypeScript and TSX with zero automated tests**
-(99,220 lines including the wayfinder-generated `resources/js/actions/` and `resources/js/routes/`),
-because there is no runner that could run one. Derived, not remembered:
+`resources/js/` is **63,177 lines of hand-written TypeScript and TSX with zero automated tests** at
+`7894086`, the commit that ships this ticket. A clean checkout carries no `resources/js/actions/` or
+`resources/js/routes/` — both are wayfinder-generated and gitignored — so hand-written and total
+coincide on any named sha; a working tree where wayfinder has run adds roughly another 36,000 lines
+of generated client, which are not source and are excluded here. (An earlier draft said 62,912,
+which is the figure at the branch point `9fa55a7`, and quoted a 99,220 total that belonged to a
+working tree rather than to a commit. Re-derive with the sha you care about:
+`git worktree add --detach <dir> <sha> && cd <dir> && find resources/js -name '*.ts' -o -name '*.tsx' | xargs wc -l | tail -1`.)
+
+There is no runner that could run a test. Derived, not remembered:
 
 ```
 $ node -e "const p=require('./package.json');console.log(Object.keys({...p.devDependencies,...p.dependencies}).filter(d=>/(^|[^a-z])(vitest|jest|mocha|karma|ava|tape|cypress|playwright|puppeteer|happy-dom|jsdom)([^a-z]|$)|testing-library/i.test(d)))"

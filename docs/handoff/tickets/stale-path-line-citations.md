@@ -42,29 +42,81 @@ That distinction matters for what a gate can catch, below.
 
 ## The measurement
 
-A census over the tree at `a4524be` — every `path.ext:LINE` token in `.php`, `.ts`, `.tsx`, `.js`,
-`.md` and `.sh` files, excluding `vendor/`, `node_modules/`, `public/build/`, and the
-wayfinder-generated `resources/js/actions/` and `resources/js/routes/`:
+**Corrected, and the correction is itself an instance of the class.** The figures first published
+here — 1074 / 59 / 1015 / 1012 / 3 — were labelled "a census over `a4524be`" and were not: they were
+taken on a working copy that already carried this round's uncommitted files, so the number sat
+between the two commits it could have belonged to. A cold review re-ran it, got different figures
+under two resolvers, and diagnosed exactly that. Re-taken below on clean `git worktree` checkouts of
+named shas.
+
+**The rule, stated so the number is re-derivable** (it was not, before):
+
+- **Regex:** `#(?<![\w/.-])([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:php|ts|tsx|js|jsx|md|sh|sql|json|xml)):(\d+)#`
+- **Scanned:** files tracked by `git ls-files` with extension `php|ts|tsx|js|jsx|md|sh`.
+- **Excluded:** `vendor/`, `node_modules/`, `public/`, `storage/`, `resources/js/actions/`,
+  `resources/js/routes/`.
+- **Resolution:** (1) the cited string taken as repo-relative is a tracked file → resolved;
+  (2) else exactly one tracked path ends with `/`+basename → resolved; (3) else unresolvable.
+- **Vendor guard:** a citation on a line whose text contains `vendor` is counted separately and
+  **never** basename-resolved. See the triage below for why that clause exists.
+- **Past-EOF:** resolved, and the cited line number exceeds `wc -l` of the resolved file.
 
 ```
-citations found (path:LINE)      : 1074
-  path not resolvable            : 59
-  resolvable                     : 1015
-    line within file length      : 1012
-    line PAST end of file        : 3
+$ php census.php <clean checkout of a4524be>
+citations matched                 : 1010
+  line mentions 'vendor' (skipped): 28
+  unresolvable                    : 44
+  resolved                        : 938
+    line within file              : 936
+    line PAST end of file         : 2
 
-  ✗ tests/Feature/Rbac/RbacDiffGrantsTest.php:173  cites Models/Role.php:186  (file is 36 lines)
-  ✗ docs/handoff/reports/feat-opening-balance-import-staging.md:630  cites ImportOpeningBalances.php:506  (file is 447 lines)
-  ✗ docs/handoff/reports/rbac-diff-grants.md:429  cites Models/Role.php:186  (file is 36 lines)
+  ✗ docs/handoff/reports/feat-opening-balance-import-staging.md:630  cites ImportOpeningBalances.php:506  → resolved app/Finance/Console/ImportOpeningBalances.php (447 lines)
+  ✗ docs/handoff/reports/rbac-diff-grants.md:429  cites Models/Role.php:186  → resolved app/Models/Role.php (36 lines)
 ```
 
-All three confirmed by hand: `app/Models/Role.php` is 36 lines, `app/Finance/Console/ImportOpeningBalances.php`
-is 447.
+### Past-EOF triage — 1 real, 2 manufactured by the method
 
-**Read that as the argument against tier 1 being the whole answer.** 1012 of 1015 resolvable
-citations already pass the cheap check. Every one of the seven real defects listed above would have
-passed it too, because each pointed at a line that exists. A gate whose baseline is 3 and whose
-recall on the actual failure mode is 0 is a green that means nothing.
+The three hits first published here were said to be "confirmed by hand". Two of them were not
+findings at all, and the confirmation confirmed the length of a file the citation does not point at:
+
+| Hit | Verdict |
+| --- | --- |
+| `feat-opening-balance-import-staging.md:630` → `ImportOpeningBalances.php:506` | **Real.** `app/Finance/Console/ImportOpeningBalances.php` is 447 lines. No vendor path involved. |
+| `RbacDiffGrantsTest.php:173` → `Models/Role.php:186-188` | **Manufactured.** The citing line reads "findByParam (**vendor** Models/Role.php:186-188)". `vendor/spatie/laravel-permission/src/Models/Role.php` is **221** lines and `:186-188` is exactly the `findByParam` team-scoping block the sentence describes. The census excludes `vendor/`, so the basename fell through to `app/Models/Role.php` (36 lines) and invented the hit. |
+| `rbac-diff-grants.md:429` → `Models/Role.php:186-188` | **Manufactured, same way** — and this one the review did not name. The word "Vendor" opens the *previous* line, so a line-scoped vendor guard still misses it. Same vendor file, same 221 lines, same real target. |
+
+The corrected census above carries the vendor guard, which is why it reports 2 rather than 3 — and
+why the second manufactured hit still survives it. **A line-scoped guard is not sufficient**; nothing
+short of resolving against `vendor/` as well would have been.
+
+### The self-reference cost, measured
+
+Quoting census output into a ticket **creates `path:LINE` tokens**. At `2b3cdbb` the same census
+reports:
+
+```
+$ php census.php <clean checkout of 2b3cdbb>
+citations matched                 : 1117
+  line mentions 'vendor' (skipped): 28
+  unresolvable                    : 45
+  resolved                        : 1044
+    line within file              : 1035
+    line PAST end of file         : 9
+```
+
+**9 past-EOF, of which 7 are this branch's own two files** — four in this ticket (`:56`, `:57`,
+`:58`, `:79`) and three in `docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md`
+(`:920`, `:921`, `:922`), every one of them a quotation of the very output above. Two pre-existed,
+and one of those two is itself manufactured.
+
+So the branch proposing this check is, at the moment it proposes it, **the largest single source of
+violations under it** — and 4 of its 7 are quotations of hits that are not defects. A lint written
+without an answer for quoted output would open on a baseline dominated by its own documentation.
+
+**Read that together with the headline.** 1035 of 1044 resolvable citations already pass the cheap
+check, all seven real defects across three branches would have passed it too, and the only failures
+it does surface are two artifacts of its own resolver plus seven self-quotations. That is the case
+against tier 1 as a standalone gate, stated in its own numbers.
 
 ## What a lint could check — three tiers, weakest first
 
@@ -76,12 +128,22 @@ committed shrink-only baseline for the exceptions.
 - **Catches:** a file renamed or deleted out from under a citation, and a citation into a file that
   has since shrunk past the cited point.
 - **Cannot catch:** the failure this ticket is about. A shift inside the file is invisible.
-- **Cost:** 59 unresolvable paths to triage first. Most are not defects — a bare `Role.php:186`
-  cannot be resolved without a path, and reports quote raw `grep -n` output that looks identical to
-  a citation (`docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:711-713` is literally
-  pasted grep output). A resolver that guesses by basename will produce false positives; one that
-  requires a repo-relative path will silently ignore most citations in prose.
-- **Verdict:** worth having, not worth having alone.
+- **Cost, and both halves were paid in this very ticket:**
+  - **44 unresolvable paths** to triage first. Reports quote raw `grep -n` output that is
+    indistinguishable from a citation — `docs/handoff/reports/fix-u8-reduction-guard-field-errors.md`
+    carries three pasted grep lines of exactly that shape.
+  - **AN EXCLUDED DIRECTORY IS A FALSE-POSITIVE GENERATOR.** This is the mechanism, not a caveat: the
+    scan excludes `vendor/`, so a citation into `vendor/spatie/.../Models/Role.php` cannot resolve
+    where it points, the basename fallback retargets it at `app/Models/Role.php`, and the lint
+    reports a defect that does not exist. Two of the three hits first published here were made this
+    way. A resolver that guesses by basename manufactures findings; one that demands a repo-relative
+    path ignores most citations in prose. There is no third option that is free.
+  - **QUOTED OUTPUT IS INDISTINGUISHABLE FROM A CITATION**, so any document discussing citations —
+    including this one — adds violations. 7 of the 9 past-EOF hits at `2b3cdbb` are self-quotations.
+  - False positives are what kill a lint nobody keeps. Tier 1 opens with a baseline in which the
+    majority of entries are its own artifacts and its own documentation.
+- **Verdict:** worth having, not worth having alone, and not worth having before the resolver
+  question is settled.
 
 ### Tier 2 — a citation INTO a file this commit modified must have been re-derived in this commit
 

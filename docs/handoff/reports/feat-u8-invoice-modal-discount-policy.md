@@ -68,8 +68,13 @@ $ node -e "console.log(Object.keys(require('./package.json').scripts))"
 [ 'build', 'build:ssr', 'dev', 'format', 'format:check', 'lint', 'lint:check', 'types:check' ]
 ```
 
-62,912 lines of hand-written TS/TSX (99,220 including `resources/js/actions/` and
-`resources/js/routes/`), zero tests, no runner to run one, no `test` script for one to hang off.
+**63,177** lines of hand-written TS/TSX at `7894086`, the commit that ships the ticket — **corrected**
+from the 62,912 first published here, which is the figure at `9fa55a7`, the branch point. A clean
+checkout of either sha has no `resources/js/actions/` or `resources/js/routes/` at all (both are
+wayfinder-generated and gitignored), so hand-written and total coincide there; the 99,220 first
+quoted alongside was measured on a working tree where wayfinder had run, and is a property of that
+tree rather than of any commit. Zero tests, no runner to run one, no `test` script for one to hang
+off.
 
 The ticket records what `bin/quality` has for frontend code (steps 3, 4, 5 and 9 — the other eleven
 never read `resources/js`) and what each can and cannot catch, and names `errorLinesFrom`
@@ -92,7 +97,7 @@ the probe I first wrote reported `['@radix-ui/react-avatar']` — the pattern `a
 | The wire takes a uuid | **True** | `GenerateInvoiceRequest.php` `lines.*.discount_policy_id` → `['sometimes','nullable','bail','string','uuid', <closure>]`; `lineSpecs()` resolves uuid → id |
 | `DiscountPolicyResource` serialises `id` as the uuid, plus name/basis/value_minor/percent/requires_approval/status | **True** | `app/Finance/Http/Resources/DiscountPolicyResource.php:15-24` — `'id' => $this->uuid` |
 | An active policy that requires per-application approval is still refused by the guard | **True** | `2026_07_26_140002_add_discount_policy_to_finance_lines.php:85-88` — a **separate** `IF v_requires = 1` arm, after the status arm at `:80-83`. Status alone is necessary and not sufficient |
-| `discount-policies.tsx:169-180` is the fetch precedent | **True** | `:162-177` in the current file — `axios.get('/api/v1/finance/discount-policies')` inside a `useCallback`, `try/catch/finally`, driven from a `useEffect`. Its own comment says a caller wanting only the choosable ones asks `?status=active` |
+| `discount-policies.tsx:169-180` is the fetch precedent | **True** | the `load` useCallback is `:162-178` and the `useEffect` that drives it is `:180-186` — **corrected** from `:162-177`, which closed before the callback did and excluded the effect entirely — `axios.get('/api/v1/finance/discount-policies')` inside a `useCallback`, `try/catch/finally`, driven from a `useEffect`. Its own comment says a caller wanting only the choosable ones asks `?status=active` |
 | `DraftLine` at `types/finance.ts:254-258` | **True** | exact |
 | `bin/ci-money-lint.php:42-43` puts `resources/js/components/finance/` in the strict zone | **True** | `:41-44`, `isFinanceUi()` |
 
@@ -354,7 +359,37 @@ Procedure per `.claude/skills/finance-drive/SKILL.md`. `APP_ENV=drive`, database
 `php artisan serve --port=8001`, `pnpm run build` before the browser. Browser: system Chrome via
 `puppeteer-core`, installed **outside** the repository (`node_modules` untouched).
 
+### Redaction policy for this drive
+
+Every log line below redacts the student as `<student>`. **The committed PNGs do not** — they show
+the fixture's own generated names, which is not a disclosure (they are `Student::factory()` output on
+a throwaway database, not real people) but is an inconsistency the report did not previously
+declare. Declared now, with the subject of each shot named so the text and the images agree:
+
+| Shot | Seat | Student |
+| --- | --- | --- |
+| `maker-01-policy-select-on-reduction.png` | `maker@drive.test` | `student#6` (school#1) |
+| `maker-02-two-lines-policy-picked.png` | `maker@drive.test` | `student#6` (school#1) |
+| `maker-03-after-submit.png` | `maker@drive.test` | `student#6` (school#1) |
+| `maker-04-empty-catalog.png` | `maker@drive.test` | **`student#2` (school#1)** — a different student from the one the surrounding text describes, and the shot also carries the F7 "already has an active invoice" banner, which neither the text nor the filename mentioned |
+| `isolation-01-school-b-policy-select.png` | `school-b@drive.test` | `student#7` (school#2) |
+| `school-b-01-unselected-policy-refused.png` | `school-b@drive.test` | `student#7` (school#2) |
+
+`maker-04` was taken by a separate script run after the policy was retired, and that script reused
+`student#2` rather than `student#6`. The observation it supports — no `<select>` rendered, the words
+shown instead — does not depend on which student, but the report implied continuity that did not
+exist.
+
 ### The fixture count table, verbatim from the command
+
+**On the padding.** A review read the block below as reflowed — borders at the original widths with
+every data row's inner padding stripped. It is not reflowed; that is what the command prints. Re-run
+with stdout redirected to a **file**, and again through a pseudo-TTY via `script(1)`, and again with
+`COLUMNS=200`: `od -c` on the School A row is byte-identical in all three
+(`|` `space` `A` `(school#1)` `space` `|` `space` `1` `space` `|` …), differing only by the `\r`
+`script` adds. Both tables the command prints behave the same way. Why Symfony's table sizes its
+borders from the widest cell and then emits cells unpadded, I did not determine. The block below is
+the raw file capture.
 
 ```
 Drive fixture seeded. Sign in at APP_URL with any user below (password: drive-password):
@@ -422,18 +457,44 @@ could reach a 201. School B: `student#7`, the only active enrollment there.
 ]
 ```
 
-**Side by side, by value:**
+**Side by side, in the skill's `(n):` count-and-value form.** The counts are the lengths of the two
+arrays pasted above — the same measurement, reformatted; the drive was not re-run to obtain them, and
+the script that produced those arrays did not print a count of its own:
 
-| | Seat 1 (school#1) | Seat 2 (school#2) |
-| --- | --- | --- |
-| placeholder | `|Choose a policy…` | `|Choose a policy…` |
-| policy | `a282757e-f36d-4fce-b6ed-70afa0d694a0` | `a282757e-f774-4b83-98b2-53d1d708d543` |
-| its **label** | `Sibling discount` | `Sibling discount` |
+```
+Seat 1 — `maker@drive.test` (accounts_officer, school#1)
+  MODAL kind options    (3): ["charge|Charge","waiver|Waiver","discount|Discount"]
+  MODAL policy options  (2): ["|Choose a policy…","a282757e-f36d-4fce-b6ed-70afa0d694a0|Sibling discount"]
 
-Two disjoint uuids behind one label string that matches character for character — the case the skill
-warns about, and the reason this is read by value. School A's policy is **absent** from School B's
-list and vice versa. The placeholder's value is the empty string; `|Choose a policy…` is a `|` with
-nothing to its left.
+Seat 2 — `school-b@drive.test` (isolation, school#2)
+  MODAL policy options  (2): ["|Choose a policy…","a282757e-f774-4b83-98b2-53d1d708d543|Sibling discount"]
+```
+
+The kind options are read from the JSX rather than from the DOM — Radix renders its items into a
+portal only while open, and the script did not enumerate them; they are listed for completeness and
+are not a drive measurement. The placeholder's value is the empty string: `|Choose a policy…` is a
+`|` with nothing to its left, the ellipsis belonging to the label.
+
+**WHAT THIS ESTABLISHES, CORRECTED.** The first version of this report called it isolation. It is
+not, and the count table two sections up says why: **Discount policies — A: 1, B: 1.** With exactly
+one row per school, "seat 1 sees uuid X, seat 2 sees uuid Y, X ≠ Y" is bit-for-bit identical to what
+a scope that SWAPPED the two schools would render — each seat still sees exactly one option, the
+values are still disjoint, the labels are still identical. The absence half does not rescue it
+either: under a swap, School A's row genuinely is absent from School B's list.
+
+What these two logs support is **disjointness**, and nothing about **ownership**. The uuid↔school
+mapping was derived from the database before the browser was opened and then not pasted, so the one
+artifact that would have closed the gap is the one this report left out.
+
+**What settles it is a Pest arm that predates this branch and that no drive report has cited:**
+`tests/Feature/Finance/DiscountPoliciesScreenTest.php:130-145` — *"shows School B its OWN policies,
+and none of School A's"*. It seeds distinctly named policies in two schools, gives School A **two**
+and School B **one**, and asserts the returned ids are exactly `[$mine->uuid]`. Under a swap School
+B's caller receives School A's two ids and the expectation fails on both count and value. The
+asymmetry is what makes it able to see a swap; the drive fixture has none.
+
+The gap in the procedure that produced this over-claim is written up in
+`docs/handoff/tickets/drive-isolation-check-cannot-see-a-swap.md`.
 
 ### The empty catalog, as rendered
 
@@ -478,15 +539,33 @@ row prefix. That is the whole designed path in one run.
    through the form.
 2. A reduction line's select contains the placeholder plus exactly the School's one usable policy,
    by uuid.
-3. The uuid in the option value is `DiscountPolicyResource`'s `id` — it matches the row's `uuid`
-   column, derived before the drive; the integer primary key never appears.
+3. **CORRECTED.** This said the option value "matches the row's `uuid` column, derived before the
+   drive". The mapping was derived and **was never pasted**, so the claim rested on an artifact the
+   report does not contain. What the logs support unaided is narrower: the option value is a uuid and
+   not an integer — 36 characters in the `8-4-4-4-12` shape, where `DiscountPolicyResource:15`
+   serialises `'id' => $this->uuid` and the integer primary key has no path to the wire. That the
+   uuid is **this school's** is not established by the drive; see the isolation correction above.
 4. Picking sets the state; flipping to charge unmounts the select **and** clears the state; flipping
    back shows `""`.
 5. The posted body carries `discount_policy_id` on the reduction line and omits the key entirely on
    the charge line — the transition bug is absent in the running UI, not only in the pure function.
 6. `201` on a policy-bearing reduction; `422` with a line-keyed field error on an unselected one.
-7. Two schools, two disjoint uuids, one identical label.
+7. **CORRECTED.** This said "two schools, two disjoint uuids, one identical label" and was filed
+   under isolation. Disjointness is what it shows; ownership is not, on an N=1-per-school fixture.
 8. A School with no usable policy is told so in a sentence, with no select rendered.
+9. **THE ARITHMETIC, which this report previously carried nowhere despite a total being on screen.**
+   `maker-02-two-lines-policy-picked.png` shows Description `Tuition` / Kind `Charge` / Amount `1000`
+   on line 1, `Sibling discount` / `Discount` / `100` on line 2, and **Total ₦900.00**.
+   `1000 − 100 = 900`, rendered `₦900.00`. In minor units that is `100000 + (−10000) = 90000`, which
+   is the arithmetic the page actually performs: the sign is applied per kind and the sum goes
+   through `sumMinor`, the sanctioned integer helper — nothing in the browser multiplies, divides or
+   rounds, and `bin/ci-money-lint.php` is the gate that says so. `maker-03-after-submit.png` shows
+   `₦900.00` twice, on the statement after the modal closed: **Account balance ₦900.00** and
+   **Total billed ₦900.00**, with **Available credit ₦0.00**, the toast "Invoice created.", and the
+   invoices tab reading `1` / "Showing 1 of 1". So the client's pre-submit preview (`₦900.00` in
+   maker-02) and the server-derived invoice total (`₦900.00` in maker-03) agree on the same figure by
+   two independent routes — the browser's `sumMinor` over the draft lines, and `GenerateInvoice`'s F6
+   total derived server-side from the stored lines.
 
 **The 403 in every console is `GET /dashboard`** — isolated by re-running with a
 status-code-only listener, which printed `[ GET 403 ] http://localhost:8001/dashboard` and nothing
@@ -562,7 +641,7 @@ and the literal at `bin/quality:59` is `[%d/15]`.
 ```
 
 Everything else green, `✓ quality: PASS`. **This PASS is worth naming, not just reporting.**
-`bin/lint-changed.sh:52` diffs `"$BASE"...HEAD`, so staged-but-uncommitted work is invisible to it —
+`bin/lint-changed.sh:51` diffs `"$BASE"...HEAD`, so staged-but-uncommitted work is invisible to it —
 the known ticket `docs/handoff/tickets/lint-changed-cannot-see-uncommitted-work.md`, which
 `CLAUDE.md` names. A gate that prints ✓ three times while linting zero files is the exact shape of a
 green that means "I did not look". I committed and re-ran rather than accept it.
@@ -1043,3 +1122,332 @@ quality gate — base 9fa55a7
 5. **Whether tier 2's false-positive rate is tolerable.** Asserted as "real and unbounded" in the
    ticket from the observation that `new-invoice-modal.tsx` is cited from four places. Not measured
    across the tree.
+
+---
+
+# Round 3 — U8 commit 6, the second cold review
+
+**Base:** `2b3cdbb`. One commit. Every correction below is applied **in place** in the sections
+above and marked **CORRECTED** there; this section carries the evidence, not a second copy of the
+wrong sentences.
+
+## Deviation — finding 4a is declined, with the measurement
+
+The review read the fixture count table in §7 as "reflowed, not verbatim: the borders keep the
+original widths but every data row has had its inner padding stripped", and asked for it re-pasted
+as the command printed it. **It was already as the command printed it.** Three captures, all
+byte-identical on the School A row:
+
+```
+$ APP_ENV=drive php artisan finance:seed-drive-fixture > seed.raw.txt          # stdout to a FILE
+$ grep 'A (school#1)' seed.raw.txt | od -c
+0000000    |       A       (   s   c   h   o   o   l   #   1   )       |
+0000020        1       |       1       |       2       |       1       |
+0000040        1       |  \n
+
+$ script -q seed.tty.txt env APP_ENV=drive php artisan finance:seed-drive-fixture   # pseudo-TTY
+0000040        1       |  \r  \n                                        # identical but for the \r
+
+$ COLUMNS=200 APP_ENV=drive php artisan finance:seed-drive-fixture             # wide terminal
+0000040        1       |  \n                                            # identical
+```
+
+The command sizes its borders from the widest cell and then emits the cells unpadded. Both tables it
+prints behave this way, and `COLUMNS` does not change it. **Why** Symfony's table does that here I did
+not determine, and it is a property of the seeder's output rather than of this branch. The note is now
+in §7 so the next reader does not re-open it as a capture problem.
+
+One consequence to record: obtaining these captures **re-ran `finance:seed-drive-fixture`, which is
+`migrate:fresh`**. The drive fixture in `portal_drive` is a new instance; the policy and student uuids
+quoted throughout §7 belong to the earlier instance and are not re-derivable from the current database.
+
+## 1. The catalog contract
+
+### The inverted filter ships green — reproduced
+
+Planted at `new-invoice-modal.tsx:78`, `policy.requires_approval !== true` → `=== true`. Every
+school's catalog goes empty and every bursar is told, in words, "This school has no active discount
+policy that can back a reduction."
+
+```
+quality gate — base 9fa55a7
+
+[1/15] dependency integrity (composer.lock vs composer.json vs vendor/)          ✓
+[2/15] wayfinder:generate --with-form                                            ✓
+[3/15] lint changed files (Pint / Prettier / ESLint, check mode)                  ✓
+       Pint (check) on 2 changed PHP file(s)
+       Prettier (check) on 2 changed file(s)
+       ESLint on 2 changed file(s)
+[4/15] types (tsc ratchet vs tsc-baseline)                                       ✓
+[5/15] frontend build (vite …)                                                   ✓
+[6/15] authorization guard                                                       ✓
+[7/15] boundary lint (§17.2)                                                     ✓
+[8/15] grants-convergence lint                                                   ✓
+[9/15] money lint                                                                ✓
+[10/15] runtime-zero lint                                                        ✓
+[11/15] identifier-generation bypass guard                                       ✓
+[12/15] sql-clock lint                                                           ✓
+[13/15] architecture tests (§17.1)                                               ✓
+[14/15] static analysis (Larastan level 5 vs baseline)                           ✓
+[15/15] tests (failure ratchet vs tests/ratchet-baseline.txt)                    ✓
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+**15 of 15, no warning, no console entry, no non-2xx status.** Restored; `git status --porcelain`
+clean afterwards. (The step lines are abridged to one column here for width; the unabridged form of
+the same 15 steps is §9's final run.)
+
+### No test pinned either key — confirmed
+
+`DiscountPoliciesScreenTest`'s three response-body expectations pluck `name` (twice) and `id` (once).
+Repo-wide, every other occurrence of `requires_approval` in `tests/` is a **model create**, not an
+assertion on a payload; there is no `assertJsonStructure` over a discount-policies response anywhere.
+So `axios.get<SelectablePolicy[]>` — erased at runtime — was the only thing standing between a
+Resource rename and the same false sentence, with nobody touching JavaScript.
+
+### The new arm, and its three watched reds
+
+`tests/Feature/Finance/DiscountPoliciesScreenTest.php` —
+*"carries `status` and `requires_approval`, in the shapes the invoice modal reads"*. Asserts key
+presence, `requires_approval` is a **boolean** (not the integer `1`, which `!== true` would pass
+through), `status` is one of the three enum values the client's union declares, and that a genuine
+`active` actually arrives rather than every row happening to be inactive. Its comment says plainly
+that it pins the **server's half only** and that the client's half stays unguarded until there is a
+runner.
+
+Green: `{"tool":"pest","result":"passed","tests":9,"passed":9,"assertions":39,"duration_ms":14500}`
+
+```
+############ RED A — 'status' removed from DiscountPolicyResource ############
+{"tool":"pest","result":"failed","tests":9,"passed":8,"assertions":29,"failed":1,"failures":[
+ {"test":"…it_carries__status__and__requires__approval___in_the_shapes_the_invoice_modal_reads",
+  "file":"…/DiscountPoliciesScreenTest.php","line":177,
+  "message":"Failed asserting that an array has the key 'status'"}]}
+
+############ RED B — 'requires_approval' removed from DiscountPolicyResource ############
+{"tool":"pest","result":"failed","tests":9,"passed":8,"assertions":30,"failed":1,"failures":[
+ {"test":"…it_carries__status__and__requires__approval___in_the_shapes_the_invoice_modal_reads",
+  "file":"…/DiscountPoliciesScreenTest.php","line":177,
+  "message":"Failed asserting that an array has the key 'requires_approval'"}]}
+
+############ RED C — the model's boolean cast dropped ('boolean' → 'integer') ############
+{"tool":"pest","result":"failed","tests":9,"passed":8,"assertions":31,"failed":1,"failures":[
+ {"test":"…it_carries__status__and__requires__approval___in_the_shapes_the_invoice_modal_reads",
+  "file":"…/DiscountPoliciesScreenTest.php","line":180,
+  "message":"Failed asserting that 0 is of type bool."}]}
+```
+
+One failure each time, always this arm, never another in the file. RED C is the one no reviewer asked
+for and the one worth having: a Resource that stops casting makes every approval-requiring policy
+**selectable**, which the reduction guard's third arm then refuses at the database with a message the
+operator did not expect. Restored after each.
+
+## 2. The census
+
+Corrected in `docs/handoff/tickets/stale-path-line-citations.md`, in place.
+
+**The label was false.** The published figures were not "a census over `a4524be`" — they were taken
+on a working copy already carrying round 2's uncommitted files. Re-taken on `git worktree` checkouts
+of named shas, with the regex, the scanned set, the exclusions and the resolution rule now written
+into the ticket so the number is re-derivable:
+
+```
+$ php census.php <clean checkout of a4524be>
+citations matched                 : 1010
+  line mentions 'vendor' (skipped): 28
+  unresolvable                    : 44
+  resolved                        : 938
+    line within file              : 936
+    line PAST end of file         : 2
+
+$ php census.php <clean checkout of 2b3cdbb>
+citations matched                 : 1117
+  line mentions 'vendor' (skipped): 28
+  unresolvable                    : 45
+  resolved                        : 1044
+    line within file              : 1035
+    line PAST end of file         : 9
+```
+
+My figures differ from the review's (1042 / 103 / 939 / 936 / 3) because the regexes and the
+resolvers differ — which is the point the review was making, and the reason the rule is now stated
+rather than implied.
+
+### Past-EOF triage, per hit
+
+| Hit | Verdict |
+| --- | --- |
+| `feat-opening-balance-import-staging.md:630` → `ImportOpeningBalances.php:506` | **Real.** `app/Finance/Console/ImportOpeningBalances.php` is 447 lines. |
+| `RbacDiffGrantsTest.php:173` → `Models/Role.php:186-188` | **Manufactured by my method.** The citing line reads "findByParam (**vendor** Models/Role.php:186-188)". `vendor/spatie/laravel-permission/src/Models/Role.php` is **221** lines and `:186-188` is exactly the `findByParam` team-scoping block: `$query->where(fn ($q) => $q->whereNull($teamsKey)->orWhere($teamsKey, …))`. The census excludes `vendor/`, so the basename fell through to `app/Models/Role.php` (36 lines). |
+| `rbac-diff-grants.md:429` → `Models/Role.php:186-188` | **Manufactured the same way, and the review did not name this one.** Same vendor file, same real target. The word "Vendor" opens the **previous** line, so a line-scoped vendor guard still misses it. |
+
+So **1 real, 2 manufactured**, and the ticket's "all three confirmed by hand" confirmed the length of
+a file two of the citations do not point at. Corrected there.
+
+### Self-reference, verified
+
+At `2b3cdbb`: **9** past-EOF hits, **7 of them from this branch's own two files** — four in the
+ticket, three in this report, every one a quotation of the census output. Two pre-existed, and one of
+those two is itself manufactured. The branch proposing the check is the largest single contributor of
+violations under it. (The review said 10; I measure 9, the difference being my vendor-line guard,
+which removes `RbacDiffGrantsTest.php:173`.)
+
+Both mechanisms are now in the ticket's Tier 1 cost list: **an excluded directory forces basename
+mis-resolution and manufactures findings**, and **quoted output is indistinguishable from a
+citation**.
+
+## 3. The isolation claim
+
+§7 and observation 3 and 7 corrected in place. What the two seats' logs support is **disjointness**;
+**ownership** is not established, because with one policy per school "A sees X, B sees Y, X ≠ Y" is
+bit-for-bit what a swapped scope would render, and the absence half is satisfied by a swap too. The
+uuid↔school mapping was derived and never pasted.
+
+Verified before citing: `tests/Feature/Finance/DiscountPoliciesScreenTest.php:130-145` seeds
+`School A bursary` + `School A retired` in school A and `School B sibling` in school B, and asserts
+`collect($response->json())->pluck('id')->all()` `->toBe([$mine->uuid])`. The asymmetry — two rows
+against one — is what lets it fail on both count and value under a swap. It predates this branch.
+
+`docs/handoff/tickets/drive-isolation-check-cannot-see-a-swap.md` records the gap in the procedure.
+`.claude/skills/finance-drive/SKILL.md` is **not** edited.
+
+## 4. The drive report's three misses
+
+- **Count table** — declined with measurement, see the deviation above; the note is in §7.
+- **Counts on the select lines** — added in the skill's `(n):` form, stated as a reformat of the same
+  arrays rather than a re-drive.
+- **Arithmetic** — added as observation 9: `1000 − 100 = 900` rendered `₦900.00`; in minor units
+  `100000 + (−10000) = 90000`; `₦900.00` again on the statement as **Account balance** and **Total
+  billed** after the modal closed, so the browser's `sumMinor` preview and the server's F6 total agree
+  by two independent routes. (My first draft of this said maker-03 showed the figure "once in the
+  modal and once on the statement row"; the modal is closed in that shot. Corrected before commit by
+  reading the image.)
+
+## 5. Five corrections of record
+
+| | Was | Now |
+| --- | --- | --- |
+| a | `bin/lint-changed.sh:52` | `:51` — round 2 stated the correction and did not apply it |
+| b | 62,912 lines hand-written TS/TSX | **63,177** at `7894086`, the sha that ships the ticket; 62,912 is the figure at `9fa55a7`. The 99,220 "total" belonged to a working tree where wayfinder had run, not to any commit — a clean checkout has no `resources/js/actions/` at all. Corrected in both the report and the ticket, with a re-derivation command |
+| c | modal `:106` / `:212`, both parsing as naming `selectablePolicies` **as** the guard | rewritten to name `assertDiscountPoliciesUsable()` and the trigger explicitly and point at the docblock only for where they are described |
+| d | `discount-policies.tsx:162-177` | the `load` useCallback is `:162-178`, the `useEffect` `:180-186` |
+| e | student redacted in text, named in the PNGs, `maker-04` a different student | redaction policy declared in §7 with a per-shot table; `maker-04` named as `student#2` and its unmentioned F7 banner recorded |
+
+## 6. The three exports with no importers
+
+Verified: the module's only importer is `statement.tsx:17`, which takes `NewInvoiceModal` alone.
+`selectablePolicies`, `patchForKind` and `wireLine` are reachable from nothing in the bundle.
+
+**Kept exported, with the reason now in the file's docblock.** They are the only pure,
+mechanically-testable seam in a module whose logic is otherwise entangled with React state, and
+un-exporting them would make the file untestable by construction on the day a runner lands. The cost
+is stated rather than hidden: nothing imports them, so neither `tsc` nor `eslint` will report one
+going dead, and an unused export is real surface. Keeping the seam open costs an unused export today;
+closing it costs the first test tomorrow.
+
+## 7. `git diff --stat`, raw
+
+Excluding this report, for the reason round 2 records — a report cannot state its own size, and
+quoting a figure that the next paragraph invalidates is the failure this branch keeps correcting:
+
+```
+$ git diff --stat 2b3cdbb -- . ':!docs/handoff/reports/'
+ .../drive-isolation-check-cannot-see-a-swap.md     |  79 +++++++++++++++
+ docs/handoff/tickets/no-javascript-test-runner.md  |  13 ++-
+ docs/handoff/tickets/stale-path-line-citations.md  | 110 ++++++++++++++++-----
+ .../js/components/finance/new-invoice-modal.tsx    |  17 +++-
+ .../Feature/Finance/DiscountPoliciesScreenTest.php |  63 ++++++++++++
+ 5 files changed, 252 insertions(+), 30 deletions(-)
+```
+
+The sixth file is this report, edited in place and appended to. `git diff --stat 2b3cdbb` gives the
+full figure; any number written here would be one amend out of date.
+
+The only executable changes are the new Pest arm and two comment blocks in the modal. No behaviour
+changed.
+
+## 8. `bin/quality`, raw
+
+**15** steps, re-derived: `grep -c '^\s*step "' bin/quality` → `15`; the literal at `bin/quality:59`
+is `[%d/15]`.
+
+**Two runs this round, and the first is the planted one.** Run 1 is §1's inverted-filter
+reproduction — a deliberate regression, PASS 15/15, which is the finding. Run 2 is the committed
+tree.
+
+```
+quality gate — base 9fa55a7
+
+[1/15] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/15] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/15] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+       Pint (check) on 3 changed PHP file(s)
+       Prettier (check) on 2 changed file(s)
+       ESLint on 2 changed file(s)
+[4/15] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/15] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/15] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/15] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/15] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/15] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/15] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/15] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/15] sql-clock lint (no MySQL clock functions in raw SQL — two frames, one table)
+   ✓ sql-clock-lint
+[13/15] architecture tests (§17.1)
+   ✓ arch
+[14/15] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[15/15] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+**Which steps read this round's files.**
+
+- **Step 3** — `3 changed PHP file(s)`: this round's `DiscountPoliciesScreenTest.php` plus round 2's
+  two test files (`$BASE` is the branch point, so the diff spans all three commits). The
+  `2 changed frontend file(s)` are the modal and `types/finance.ts`; the modal's two comment blocks
+  are this round's.
+- **Steps 4, 5** — read the modal. Comment-only changes there, but the file is re-typechecked and
+  re-bundled.
+- **Step 9** — money lint over `resources/js`, including the modal.
+- **Step 15** — the suite. `DiscountPoliciesScreenTest` directly: `9 tests, 9 passed, 39 assertions`.
+- **The three ticket/report Markdown files are read by nothing.** `bin/lint-changed.sh` passes `.md`
+  to neither Prettier nor ESLint. Unchanged from round 2, and still the same shape of gap as the
+  citation ticket describes.
+
+## 9. What I could not verify
+
+1. **Why the seeder's tables print unpadded cells.** Reproduced three ways and confirmed it is the
+   command, not the capture; the cause inside Symfony's table renderer was not chased.
+2. **The client's half of the catalog contract, still.** The new arm pins the server. Inverting
+   `selectablePolicies`' own predicate still ships green through all 15 steps — measured this round —
+   and nothing will change that until there is a JavaScript runner.
+3. **The 44/45 unresolvable citations** in the census. Still untriaged; how many are real is unknown.
+4. **That the census regex is the right one.** Two independent resolvers gave different totals; mine
+   is now written down and reproducible, which makes it checkable, not correct. The past-EOF figure
+   is the only part I triaged hit by hit.
+5. **Ownership from the drive.** Not established and now not claimed; the Pest arm is what carries it,
+   and the drive fixture would need asymmetry before a browse could.
+6. **The drive itself was not re-run.** The observations in §7 stand as recorded from the original
+   run; re-seeding for the count-table capture destroyed that fixture instance, so those uuids can no
+   longer be reconciled against the database.
+7. **`maker-04`'s F7 banner.** Recorded now, but I did not go back and check whether it changes what
+   the shot demonstrates; the empty-catalog branch does not depend on invoice state, and I did not
+   drive a student without an active invoice to confirm that independently.
+8. **The PHP-version matrix, clean-room OS, remote enforcement and determinism** — the four standing
+   residuals of a local-only floor.

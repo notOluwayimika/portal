@@ -39,8 +39,9 @@ browser once, not a regression check that runs again next month.
 
 ## The example this ticket is named after
 
-`errorLinesFrom` in `resources/js/components/finance/new-invoice-modal.tsx:55-98` is real branching
-logic, written to a specification, with edge cases its own docblock enumerates at length:
+`errorLinesFrom` in `resources/js/components/finance/new-invoice-modal.tsx:153-196` (docblock from
+`:131`) is real branching logic, written to a specification, with edge cases its own docblock
+enumerates at length:
 
 - an `errors` object present vs. absent;
 - **every** message rather than `Object.values(errors)[0]?.[0]`, explicitly departing from the
@@ -68,7 +69,7 @@ U8 commit 4 adds `selectablePolicies` and `patchForKind` in the same file, on th
 
 Runs `bin/lint-changed.sh "$BASE"`, which is diff-aware: Prettier over changed
 `resources/*.{ts,tsx,js,jsx,vue,css,json}`, ESLint over changed `*.{ts,tsx,js,jsx}`
-(`bin/lint-changed.sh:63-77`).
+(`bin/lint-changed.sh:62-67` and `:69-74`; the changed-file list itself is built at `:51`).
 
 - **Catches:** formatting drift; unused variables; `import/order`; `@typescript-eslint` recommended
   rules; `react-hooks` recommended-latest (missing/incorrect dependency arrays,
@@ -89,7 +90,7 @@ and fails only when the count **exceeds** the committed baseline (`tsc-baseline`
   1. **Behaviour.** Types constrain shape, never value. `kind === 'charge'` and `kind !== 'charge'`
      typecheck identically.
   2. **A syntax error.** A file that fails to parse produces no `error TS` lines from that file, so
-     the count does not rise. This is `bin/quality:186-193`'s own stated reason for step 5 existing.
+     the count does not rise. This is `bin/quality:184-193`'s own stated reason for step 5 existing.
   3. **It is a count, not a set.** Removing one pre-existing error while adding one new one nets to
      zero and passes. `docs/` already records the ratchet as a known false-green.
 
@@ -98,7 +99,7 @@ and fails only when the count **exceeds** the committed baseline (`tsc-baseline`
 `pnpm run build`. Not ratcheted and not changed-files-scoped.
 
 - **Catches:** the bundle failing to compile — a syntax error, an unresolvable import, a broken JSX
-  block. The comment at `bin/quality:186-193` records the merge artifact that got past all eleven
+  block. The comment at `bin/quality:184-193` records the merge artifact that got past all eleven
   gates then in place and was found by a human running the build by hand.
 - **Cannot catch:** anything a compiling bundle can do wrong, which is everything this ticket is
   about. A bundle that builds perfectly and posts the wrong payload is a green.
@@ -107,7 +108,7 @@ and fails only when the count **exceeds** the committed baseline (`tsc-baseline`
 
 `bin/ci-money-lint.php`. Line-regex over `resources/js`, with a total ban inside
 `resources/js/pages/admin/finance/` and `resources/js/components/finance/`
-(`bin/ci-money-lint.php:41-44`).
+(`bin/ci-money-lint.php:40-44`, the two path predicates at `:42-43`).
 
 - **Catches:** `Intl.NumberFormat` / `.toLocaleString(` outside `resources/js/lib/format.ts`; a money
   identifier adjacent to an arithmetic operator; any `.reduce(` inside the Finance UI.

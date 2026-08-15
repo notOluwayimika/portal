@@ -76,15 +76,20 @@ function rpcPost($test, School $school, User $admin, StudentCurriculum $enrollme
  * The OTHER route, and the one that matters most — POST /v1/finance/students/{student:uuid}/invoices,
  * InvoiceController::generateForStudent.
  *
- * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:133` posts
+ * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:349` posts
  * `generateForStudent.url(student.uuid)`, and it is the sole hand-written import of an
- * invoice-generation action under resources/js — `statement.tsx` imports only `forStudent`, a read.
- * routes/endpoints/finance.php:222-225 says the same from the other side: the student POST is "the
+ * invoice-generation action under resources/js — `statement.tsx:13` imports only `forStudent`, a read.
+ * routes/endpoints/finance.php:222-227 says the same from the other side: the student POST is "the
  * bursar UI's path" and the enrollment-id POST "stays for the harness".
  *
  * Every arm below therefore exists because the pre-check landed on this route with NO test on it. The
  * four `FinanceApiAcceptanceTest` posts to it all carry payloads the pre-check accepts, so deleting
- * InvoiceController.php:83 left the whole suite green.
+ * InvoiceController.php:114 left the whole suite green.
+ *
+ * THE THREE NUMBERS ABOVE WERE ALL WRONG BEFORE U8 COMMIT 5, AND TWO OF THEM WERE WRONG WHEN THIS
+ * DOCBLOCK WAS WRITTEN — the modal post was cited at `:133` and the pre-check call site at `:83`,
+ * neither of which this branch moved. Re-derived by reading each file, not by applying an offset.
+ * The recurring failure is written up in docs/handoff/tickets/stale-path-line-citations.md.
  */
 function rpcPostForStudent($test, School $school, User $admin, StudentCurriculum $enrollment, array $lines)
 {
@@ -371,17 +376,38 @@ it('student route — arm 1: the EMPTY-STRING policy the modal posts when nothin
 });
 
 it('student route — the ACCEPTED payload has the modal’s exact shape, key for key', function () {
-    // The success direction of the same contract. Every other passing arm posts a payload a human
-    // composed; this one posts what wireLine() emits — `discount_policy_id` present on the reduction
-    // line and ABSENT on the charge line — and asserts the stored provenance on both.
+    // WHAT THIS PROVES: the SERVER accepts the exact payload shape new-invoice-modal.tsx's wireLine()
+    // emits — `discount_policy_id` present on the reduction line, the key ABSENT on the charge line —
+    // and resolves the wire uuid to the right stored provenance on both.
     //
-    // THE CHARGE LINE'S ABSENT KEY IS THE HALF THAT MATTERS. It is the observable end of the
-    // charge → discount → pick a policy → back to charge transition: if patchForKind() stopped
-    // clearing `discountPolicyId`, or wireLine() stopped omitting the key on a charge, this payload
-    // would instead carry the policy on line 0 and the request would be refused by arm 5. Nothing in
-    // JavaScript can be tested on this platform (docs/handoff/tickets/no-javascript-test-runner.md),
-    // so this arm pins the payload SHAPE the modal is supposed to produce, from the server's side.
-    // It cannot see whether the modal still produces it.
+    // WHAT IT DOES NOT AND CANNOT PROVE: anything about the modal. The payload below is a PHP array
+    // literal; it does not change when JavaScript changes. If patchForKind() stopped clearing
+    // `discountPolicyId`, or wireLine() stopped omitting the key on a charge line, this arm would go
+    // on passing unchanged. An earlier version of this comment claimed the opposite, and it was
+    // wrong. Nothing on this platform can test that JavaScript — see
+    // docs/handoff/tickets/no-javascript-test-runner.md. This arm is the server half of a two-sided
+    // contract whose client half is unguarded.
+    //
+    // BOTH DATABASE ASSERTIONS BELOW ARE DOCUMENTATION, NOT TESTS, and that was MEASURED rather than
+    // reasoned. Neither can fail while assertCreated() passes, because the trigger gets there first:
+    //
+    //   - the charge line's null-check — a charge line carrying a policy is refused by the pre-check
+    //     and again by the guard's fifth arm, both pinned by 'student route — arm 5' above;
+    //   - the reduction's resolved integer id — planted `'discount_policy_id' => null` at
+    //     GenerateInvoice's line write, expecting a 201 with a null provenance to expose it. The
+    //     guard's FIRST arm refused the insert instead and the arm failed on
+    //     "Expected response status code [201] but received 422", never reaching the expectation.
+    //     Same outcome for breaking the uuid → id resolution in lineSpecs(): the pre-check answers
+    //     422 first. There is no plant that leaves a 201 standing with the wrong provenance, because
+    //     every wrong provenance this route can produce is already refused by something.
+    //
+    // They are kept because they state the shape where a reader looks for it, and they are ordered
+    // reduction-first so the more informative one reports first if the guards below them ever move.
+    //
+    // WHAT ACTUALLY CARRIES THIS ARM IS assertCreated() ON THIS EXACT KEY SHAPE — a payload with
+    // `discount_policy_id` present on one line and the key absent on the other, which is what
+    // wireLine() emits and what no other arm posts. It reds whenever the server stops accepting that
+    // shape (measured: the lineSpecs() plant above reds it).
     [$school, $admin, $enrollment] = rpcSetup();
     $policy = rpcPolicy($school);
 
@@ -393,8 +419,8 @@ it('student route — the ACCEPTED payload has the modal’s exact shape, key fo
     $charge = DB::table('finance_invoice_lines')->where('kind', 'charge')->first();
     $reduction = DB::table('finance_invoice_lines')->where('kind', 'discount')->first();
 
-    expect($charge->discount_policy_id)->toBeNull()
-        ->and((int) $reduction->discount_policy_id)->toBe($policy->id);
+    expect((int) $reduction->discount_policy_id)->toBe($policy->id)
+        ->and($charge->discount_policy_id)->toBeNull();
 });
 
 it('student route — arm 2: a reduction citing a RETIRED policy is a field error on that line', function () {

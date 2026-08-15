@@ -652,3 +652,394 @@ The other ten steps do not read `resources/js` at all.
    resolves — but I did not force the interleaving to observe it.
 7. **The PHP-version matrix, clean-room OS, remote enforcement and determinism** — the four standing
    residuals of a local-only floor, per `CLAUDE.md`.
+
+---
+
+# Round 2 — U8 commit 5, the review findings
+
+**Base for this round:** `a4524be`. One commit on top. No source behaviour changed: comments, a test
+comment, two ticket edits and one new ticket. The one code change is an assertion **reorder** inside
+an arm added in round 1.
+
+## Deviation — the brief's premise about the arm's assertions is false, and I measured it
+
+The brief offered a choice: "add an assertion that can independently fail — **the reduction's
+resolved integer id already is one**, so say so — or say in the comment that the null-check is
+documentation."
+
+The reduction's integer id is **not** independently failable either. Planted
+`'discount_policy_id' => null` at `GenerateInvoice`'s line write, expecting a 201 carrying a null
+provenance:
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":1,"duration_ms":11373,"failed":1,
+ "failures":[{"test":"…it_student_route_—_the_ACCEPTED_payload_has_the_modal’s_exact_shape__key_for_key",
+ "message":"Expected response status code [201] but received 422.\nFailed asserting that 422 is identical to 201."}]}
+```
+
+The guard's **first** arm refused the insert; the expectation was never reached. Round 1's `lineSpecs()`
+plant behaves the same way — the pre-check answers 422 first. Every wrong provenance this route can
+produce is already refused by something, so no plant leaves a 201 standing with the wrong id.
+
+**So I took neither branch of the offered choice.** The comment now says both database assertions are
+documentation, shows the measurement for each, and names what actually carries the arm:
+`assertCreated()` on this exact key shape — `discount_policy_id` present on one line and the key
+absent on the other, which is what `wireLine()` emits and what no other arm posts. Restored after the
+plant; `git diff --stat app/Finance/Actions/GenerateInvoice.php` empty.
+
+The assertions are also reordered reduction-first, so the more informative one reports first if the
+guards above them ever move. That reorder is the round's only executable change.
+
+## 1. The stale citations — sweep, raw
+
+### Before
+
+Run per file this branch touched, not only the modal:
+
+```
+--- citations into new-invoice-modal.tsx ---
+tests/Feature/Finance/ReductionPreCheckTest.php:79: * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:133` posts
+tests/Feature/Finance/ReductionEnforcementTest.php:243:    // running UI exercises: new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no
+docs/handoff/tickets/no-javascript-test-runner.md:42:`errorLinesFrom` in `resources/js/components/finance/new-invoice-modal.tsx:55-98` is real branching
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:37:`ReductionPreCheckTest.php:321-323` said "new-invoice-modal.tsx:135-138 sends description,
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:76:(`new-invoice-modal.tsx:55-98` pre-commit) as the existing example: at least eight enumerated
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:90:| The modal offers `waiver`/`discount` but sends only description, amount_minor, kind | **True** | pre-commit `new-invoice-modal.tsx:202-206` (payload) and `:305-310` (the two reduction options in the kind select) |
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:703:resources/js/components/finance/new-invoice-modal.tsx:133
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:711:resources/js/components/finance/new-invoice-modal.tsx:7:    generateForStudent,
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:712:resources/js/components/finance/new-invoice-modal.tsx:8:} from '@/actions/App/Finance/Http/Controllers/InvoiceController';
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:713:resources/js/components/finance/new-invoice-modal.tsx:133:            await axios.post(generateForStudent.url(student.uuid), {
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:723:kind select (`new-invoice-modal.tsx:229-232`) but sends only `description`, `amount_minor` and `kind`
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:915:  key is therefore unverified. Worth naming, because `new-invoice-modal.tsx:145-149` reads
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:970:WHAT new-invoice-modal.tsx:145-148 SETS AS formError: 'A reduction line must reference an active discount policy; discretionary reductions go through a credit note.'
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:978:WHAT new-invoice-modal.tsx:145-148 SETS AS formError: 'There are validation errors'
+--- citations into types/finance.ts ---
+docs/handoff/tickets/integer-primary-keys-still-on-the-wire.md:67:back: `resources/js/types/finance.ts:57` (`CreditNote.invoice_id: number`), `:82`
+docs/handoff/reports/feat-finance-ob-approval-gate.md:461:   (`resources/js/types/finance.ts:100`). There is no third fetch and no third discriminator.
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:96:| `DraftLine` at `types/finance.ts:254-258` | **True** | exact |
+--- citations into ReductionPreCheckTest.php ---
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:18:- `tests/Feature/Finance/ReductionPreCheckTest.php:422` (pre-commit numbering) —
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:37:`ReductionPreCheckTest.php:321-323` said "new-invoice-modal.tsx:135-138 sends description,
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:91:| So every reduction the running UI can submit is refused | **True** | `ReductionPreCheckTest.php:320-335`'s own comment says the same, and its arm asserts the refusal |
+--- citations into no-javascript-test-runner.md ---
+(none)
+--- citations into feat-u8-invoice-modal-discount-policy.md ---
+(none)
+```
+
+The sweep found **more than the three named**. Classified:
+
+| Hit | Action |
+| --- | --- |
+| `ReductionPreCheckTest.php:79` → `new-invoice-modal.tsx:133` | corrected |
+| `ReductionPreCheckTest.php:87` → `InvoiceController.php:83` | corrected — **not in the brief, and not found by the modal sweep**; it sits in the same docblock and is wrong |
+| `ReductionPreCheckTest.php:82` → `statement.tsx` (no line) | line added |
+| `ReductionPreCheckTest.php:83` → `routes/endpoints/finance.php:222-225` | corrected to `:222-227` — the comment block ends at `:227` |
+| `ReductionEnforcementTest.php:243` → `new-invoice-modal.tsx:135-138` | corrected; the false claim is quoted and refuted rather than deleted |
+| `no-javascript-test-runner.md:42` → `:55-98` | corrected |
+| `no-javascript-test-runner.md` → `bin/lint-changed.sh:63-77`, `bin/quality:186-193` ×2, `bin/ci-money-lint.php:41-44` | corrected — my own ticket, re-derived while I was in it |
+| `fix-u8-reduction-guard-field-errors.md` (7 hits) | **left alone.** A landed report is the record of what was claimed when it was claimed; rewriting it falsifies history. Three of those hits are pasted `grep -n` output, not citations at all |
+| `feat-finance-ob-approval-gate.md:461`, `integer-primary-keys-still-on-the-wire.md:67` | **verified, no change needed** — they cite `types/finance.ts:57`, `:82`, `:100`, all above my insertion point at `:254`, and all three still land on what they claim |
+| this report's own `:18`, `:37`, `:76`, `:90`, `:96` | left — each is explicitly marked "pre-commit" or is a verified pre-commit premise |
+
+### Each correction, with the `sed` of the line landed on
+
+**A. `new-invoice-modal.tsx:133` → `:349`**
+
+```
+$ grep -n 'generateForStudent.url\|axios.post' resources/js/components/finance/new-invoice-modal.tsx
+349:            await axios.post(generateForStudent.url(student.uuid), {
+```
+
+**B. `InvoiceController.php:83` → `:114`**
+
+```
+$ grep -n 'assertDiscountPoliciesUsable();' app/Finance/Http/Controllers/InvoiceController.php
+39:        $request->assertDiscountPoliciesUsable();
+114:        $request->assertDiscountPoliciesUsable();
+```
+
+`:39` is `generate()`, `:114` is `generateForStudent()` — the docblock is about the student route, so
+`:114`.
+
+**C. `statement.tsx` → `:13`**
+
+```
+$ grep -n "forStudent" resources/js/pages/admin/finance/statement.tsx
+13:import { forStudent } from '@/actions/App/Finance/Http/Controllers/InvoiceController';
+90:                forStudent.url(student.uuid),
+```
+
+**D. `routes/endpoints/finance.php:222-225` → `:222-227`**
+
+```
+$ sed -n '220,228p' routes/endpoints/finance.php
+    ->middleware('permission:finance.opening-balance.submit');
+
+/*
+ * Bill a STUDENT (the bursar UI's path). Enrollment resolution is server-side via the
+ * ACL port, so the frontend never handles an enrollment id. The read powers the "New
+ * invoice" modal's episode-confirm + F7 preview; the write generates and delegates to the
+ * same GenerateInvoice (unchanged). The old enrollment-id POST above stays for the harness.
+ */
+Route::get('/v1/finance/students/{student:uuid}/billable-enrollment', [InvoiceController::class, 'billableEnrollment']);
+```
+
+Both quoted phrases are inside `:222-227`; `:225` cut the block one line before "stays for the harness".
+
+**E. `new-invoice-modal.tsx:135-138` "sends … no discount_policy_id whatsoever" → false**
+
+```
+$ sed -n '113p;123,125p' resources/js/components/finance/new-invoice-modal.tsx
+export function wireLine(
+    if (line.kind !== 'charge') {
+        wire.discount_policy_id = line.discountPolicyId;
+    }
+```
+
+`wireLine()` spans `:113-128`. The comment in `ReductionEnforcementTest` now quotes the old sentence,
+states both halves are false, and says what actually happens: a UI reduction with nothing picked
+reaches arm 1 as `""` via `ConvertEmptyStringsToNull`, not as an absent key.
+
+**F. `errorLinesFrom` `:55-98` → `:153-196`**
+
+```
+$ grep -n 'function errorLinesFrom' resources/js/components/finance/new-invoice-modal.tsx
+153:function errorLinesFrom(data: unknown): string[] {
+$ sed -n '196p' resources/js/components/finance/new-invoice-modal.tsx
+}
+$ grep -n 'Turn a 422 body into the lines to show above the form' resources/js/components/finance/new-invoice-modal.tsx
+131: * Turn a 422 body into the lines to show above the form.
+```
+
+**G–J. The ticket's other four**
+
+```
+$ grep -n '^\s*step "\|\[%d/' bin/quality
+59:    printf '%s[%d/15]%s %s\n' …
+176:step "lint changed files (Pint / Prettier / ESLint, check mode)"
+180:step "types (tsc ratchet vs tsc-baseline)"
+194:step "frontend build (vite — catches what the tsc ratchet structurally cannot)"
+215:step "money lint (UI: money via formatNaira, no JS money math)"
+```
+
+`:59`, `:176`, `:180`, `:194`, `:215` were all already exact. The four that were not:
+
+```
+$ sed -n '184p' bin/quality
+# 5. Frontend build. The tsc ratchet CANNOT stand in for this: a syntax error that
+```
+`bin/quality:186-193` → `:184-193` (the comment block starts at `:184`, twice in the ticket).
+
+```
+$ grep -n 'function isFinanceUi' -A 4 bin/ci-money-lint.php
+40:function isFinanceUi(string $rel): bool
+41-{
+42-    return str_starts_with($rel, 'resources/js/pages/admin/finance/')
+43-        || str_starts_with($rel, 'resources/js/components/finance/');
+44-}
+```
+`bin/ci-money-lint.php:41-44` → `:40-44`, predicates at `:42-43`.
+
+```
+$ grep -n 'prettier_files\|eslint_files' bin/lint-changed.sh
+62:if [ "${#prettier_files[@]}" -gt 0 ]; then
+...
+69:if [ "${#eslint_files[@]}" -gt 0 ]; then
+...
+$ grep -n 'BASE"\.\.\.HEAD' bin/lint-changed.sh
+51:done < <(git diff -z --name-only --diff-filter=ACMR "$BASE"...HEAD)
+```
+`bin/lint-changed.sh:63-77` → `:62-67` and `:69-74`, with the changed-file list at `:51`.
+(Round 1's report body cited that same construct as `:52`; it is `:51`.)
+
+### After
+
+```
+--- citations into new-invoice-modal.tsx ---
+tests/Feature/Finance/ReductionPreCheckTest.php:79: * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:349` posts
+tests/Feature/Finance/ReductionEnforcementTest.php:246:    // "new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no discount_policy_id
+tests/Feature/Finance/ReductionEnforcementTest.php:248:    // false as of U8 commit 4: `wireLine()` (new-invoice-modal.tsx:113-128) puts `discount_policy_id`
+docs/handoff/tickets/stale-path-line-citations.md:35:| `ReductionEnforcementTest`, the `proof 12b (DB)` arm's opening comment | `new-invoice-modal.tsx:135-138` "sends … no discount_policy_id whatsoever" | …
+docs/handoff/tickets/stale-path-line-citations.md:36:| `docs/handoff/tickets/no-javascript-test-runner.md`, … | `new-invoice-modal.tsx:55-98` | `errorLinesFrom` | …
+docs/handoff/tickets/stale-path-line-citations.md:37:| `ReductionPreCheckTest`, the `rpcPostForStudent()` docblock | `new-invoice-modal.tsx:133` | the `axios.post` is far below that | …
+docs/handoff/tickets/no-javascript-test-runner.md:42:`errorLinesFrom` in `resources/js/components/finance/new-invoice-modal.tsx:153-196` (docblock from
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:37: … (pre-commit, unchanged)
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md: … (7 hits, landed report, unchanged)
+--- citations into types/finance.ts ---
+docs/handoff/reports/feat-finance-ob-approval-gate.md:461: … (verified, unchanged)
+docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md:96: … (pre-commit, unchanged)
+docs/handoff/tickets/integer-primary-keys-still-on-the-wire.md:67: … (verified, unchanged)
+--- citations into ReductionEnforcementTest.php ---
+docs/handoff/reports/fix-u8-reduction-guard-field-errors.md:661,664 … (landed report, unchanged)
+--- citations into no-javascript-test-runner.md ---
+(none)
+--- citations into stale-path-line-citations.md ---
+(none)
+```
+
+Every remaining `new-invoice-modal.tsx:135-138` and `:55-98` is a **quotation of the wrong text**,
+inside a sentence saying it is wrong. Those are the record and must stay.
+
+The three `types/finance.ts` citations verified rather than assumed:
+
+```
+$ sed -n '57p;82p;100p' resources/js/types/finance.ts
+    invoice_id: number;
+    invoice_id: number;
+    type: 'fee_schedule_change';
+```
+
+All three land on what the citing text claims; my insertion was at `:254` and shifts nothing above it.
+
+## 2. The over-claiming arm
+
+Comment rewritten. It now states what the arm proves (the server accepts `wireLine()`'s exact key
+shape and resolves the uuid to the right stored provenance), states that a PHP array literal cannot
+detect a JavaScript regression and that the earlier claim was wrong, and — per the deviation above —
+records that **both** database assertions are documentation with the measurement for each. The
+assertions are reordered reduction-first.
+
+```
+$ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/ReductionPreCheckTest.php tests/Feature/Finance/ReductionEnforcementTest.php
+{"tool":"pest","result":"passed","tests":34,"passed":34,"assertions":159,"duration_ms":25652}
+```
+
+## 3. The ticket for the recurring class
+
+`docs/handoff/tickets/stale-path-line-citations.md`. A gate proposal, not a lament. No lint built.
+
+Its load-bearing measurement, a census over `a4524be`:
+
+```
+citations found (path:LINE)      : 1074
+  path not resolvable            : 59
+  resolvable                     : 1015
+    line within file length      : 1012
+    line PAST end of file        : 3
+
+  ✗ tests/Feature/Rbac/RbacDiffGrantsTest.php:173  cites Models/Role.php:186  (file is 36 lines)
+  ✗ docs/handoff/reports/feat-opening-balance-import-staging.md:630  cites ImportOpeningBalances.php:506  (file is 447 lines)
+  ✗ docs/handoff/reports/rbac-diff-grants.md:429  cites Models/Role.php:186  (file is 36 lines)
+```
+
+All three past-EOF hits confirmed by hand (`app/Models/Role.php` is 36 lines,
+`app/Finance/Console/ImportOpeningBalances.php` is 447).
+
+That census is the argument the ticket is built on: **1012 of 1015 resolvable citations already pass
+the cheap check, and all seven defects across the three branches would have passed it too**, because
+each pointed at a line that exists. `chore-finance-drive-skill.md:419-423` had already recorded the
+same thing from the other side — "0 out of range … it could not have caught any of group A, because
+a citation shifted by five lines still lands inside the file."
+
+Three tiers sketched, weakest first: file-exists-and-in-range (state-based, `ci-money-lint` shape);
+citation-into-a-file-this-commit-modified-must-be-in-the-diff (`$BASE`-aware, the
+`ci-grants-convergence-lint` shape, and the only tier that would have paid); and citations naming a
+symbol checked against the line. Each carries what it cannot catch — tier 2's honest limit is that it
+proves you looked, never that you were right, which is exactly why two of this branch's four were
+born wrong. A fourth option is named because it may be cheapest and best: ban line numbers in new
+comments and cite symbols only. Building order, baselining and `bin/quality` placement are all left
+open.
+
+`bin/ci-sql-clock-lint.php` was read first, as instructed; four things it did that this lint would
+need are carried into the ticket, including its coverage test at
+`tests/Arch/SqlClockLintCoverageTest.php`.
+
+## 4. `git diff --stat`, raw
+
+**Excluding this report, because a report cannot state its own size.** The first version of this
+section quoted `294 …| 508 insertions` for all five files; filling in §5 grew the report and made
+that figure wrong inside the same commit — the carried-number failure, live, in the round whose
+subject is stale facts. The four other files are stable under further edits here, so they are what
+is quoted:
+
+```
+$ git diff --stat a4524be -- docs/handoff/tickets/ tests/
+ docs/handoff/tickets/no-javascript-test-runner.md  |  13 +-
+ docs/handoff/tickets/stale-path-line-citations.md  | 152 +++++++++++++++++++++
+ tests/Feature/Finance/ReductionEnforcementTest.php |  16 ++-
+ tests/Feature/Finance/ReductionPreCheckTest.php    |  58 +++++---
+ 4 files changed, 214 insertions(+), 25 deletions(-)
+```
+
+The fifth file is this report, appended to. Re-derive its delta with `git diff --stat a4524be` if
+you need it; any figure written here would be one amend out of date.
+
+No `resources/js` file is in either. The modal and `types/finance.ts` are untouched this round —
+every correction was to something pointing AT them.
+
+## 5. `bin/quality`, raw
+
+**15** steps, re-derived this round: `grep -c '^\s*step "' bin/quality` → `15`, literal at
+`bin/quality:59` → `[%d/15]`. Run once, on the committed tree, `BASE=origin/staging` so the diff
+spans both commits of the branch. **No red runs this round.**
+
+```
+quality gate — base 9fa55a7
+
+[1/15] dependency integrity (composer.lock vs composer.json vs vendor/)
+   ✓ dependency-integrity-lint
+[2/15] wayfinder:generate --with-form (must match vite.config.ts formVariants)
+   ✓ wayfinder:generate
+[3/15] lint changed files (Pint / Prettier / ESLint, check mode)
+   ✓ lint-changed
+       Pint (check) on 2 changed PHP file(s)
+       Prettier (check) on 2 changed file(s)
+       ESLint on 2 changed file(s)
+[4/15] types (tsc ratchet vs tsc-baseline)
+   ✓ tsc-ratchet
+[5/15] frontend build (vite — catches what the tsc ratchet structurally cannot)
+   ✓ build
+[6/15] authorization guard (no new commented-out checks)
+   ✓ authz-lint
+[7/15] boundary lint (§17.2)
+   ✓ boundary-lint
+[8/15] grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)
+   ✓ grants-convergence-lint
+[9/15] money lint (UI: money via formatNaira, no JS money math)
+   ✓ money-lint
+[10/15] runtime-zero lint (S7 legacy access sources)
+   ✓ runtime-zero-lint
+[11/15] identifier-generation bypass guard (1.4b)
+   ✓ identifier-generation-lint
+[12/15] sql-clock lint (no MySQL clock functions in raw SQL — two frames, one table)
+   ✓ sql-clock-lint
+[13/15] architecture tests (§17.1)
+   ✓ arch
+[14/15] static analysis (Larastan level 5 vs baseline)
+   ✓ larastan
+[15/15] tests (failure ratchet vs tests/ratchet-baseline.txt)
+   ✓ test-ratchet
+
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+**Which steps read THIS round's files.** Only two, and that is the honest answer:
+
+- **Step 3** — `Pint (check) on 2 changed PHP file(s)` is exactly this round's two test files
+  (`ReductionPreCheckTest.php`, `ReductionEnforcementTest.php`); round 1 changed no PHP. The
+  `2 changed frontend file(s)` through Prettier and ESLint are round 1's, pulled in because `$BASE`
+  is the branch point rather than `a4524be`.
+- **Step 15** — the suite, through the ratchet. The two files directly:
+  `34 tests, 34 passed, 159 assertions`.
+- **Steps 4, 5 and 9** ran green and read **round 1's** frontend files; no `resources/js` file
+  changed this round, so they had nothing new of this round's to see.
+- **Nothing in the gate read the two ticket files or this report.** `bin/quality` does not lint
+  Markdown at all — `bin/lint-changed.sh` passes `.md` to neither Prettier nor ESLint (its Prettier
+  case matches `resources/*` only). Three of this round's five changed files are therefore
+  ungated entirely, which is the same shape of gap the new ticket is about.
+
+## 6. What I could not verify
+
+1. **That the sweep is complete.** `grep -rn "<file>:[0-9]"` finds a citation only when the basename
+   appears literally. A citation written as "the modal, line 349" or "InvoiceController line 114" is
+   invisible to it, and I did not search for prose forms. The new ticket's census (1074 tokens) is a
+   lower bound for the same reason.
+2. **The 59 unresolvable paths in the census.** Not triaged. Some are certainly pasted `grep -n`
+   output rather than citations; how many are real is unknown and is work the ticket leaves open.
+3. **That the corrected numbers stay correct.** Nothing checks them — that is the ticket's whole
+   subject, and this round did not build the lint.
+4. **Anything about the frontend, still.** No JS test runner; unchanged from round 1, and no drive
+   was re-run because no `resources/js` file changed.
+5. **Whether tier 2's false-positive rate is tolerable.** Asserted as "real and unbounded" in the
+   ticket from the observation that `new-invoice-modal.tsx` is cited from four places. Not measured
+   across the tree.

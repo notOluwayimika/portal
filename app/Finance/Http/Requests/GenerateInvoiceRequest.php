@@ -229,8 +229,17 @@ class GenerateInvoiceRequest extends FormRequest
      * and tests nothing. Three paths, all measured over HTTP:
      *   - with an active School, SchoolScope hides the foreign policy, so the uuid fails the
      *     existence rule above and never reaches here (this is proof 14 (HTTP)'s subject);
-     *   - a super_admin with NO School selected does resolve it unscoped, but GenerateInvoice:100
-     *     refuses the request for want of a context before the transaction opens;
+     *   - a super_admin with NO School selected does resolve it unscoped, and is refused without
+     *     anything being written — but WHICH LAYER refuses depends on the policy, and the earlier
+     *     wording of this bullet ("GenerateInvoice:100 refuses it for want of a context") was made
+     *     false by this very method. This runs at InvoiceController:39, the context refusal at
+     *     GenerateInvoice:100, so for an active no-approval policy the Action answers ("No active
+     *     School context: an invoice cannot be raised.") and for a retired, superseded or
+     *     approval-requiring one THIS method answers first, with the field error. Both arms are
+     *     pinned in ReductionPreCheckTest. The consequence worth naming: that principal can now
+     *     learn a policy's lifecycle state while holding no School context. They can also select
+     *     the School and read the row directly, which is why this is recorded rather than closed
+     *     with an ActiveSchool::id() early return — but it IS a behaviour change, not a no-op;
      *   - in every case where the policy DOES resolve, it resolved under the active School, the
      *     line's school_id is the enrollment's, and GenerateInvoice:110 has already refused a
      *     foreign enrollment — so the trigger's `v_school <> NEW.school_id` is false by then.

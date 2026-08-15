@@ -73,6 +73,28 @@ function rpcPost($test, School $school, User $admin, StudentCurriculum $enrollme
 }
 
 /**
+ * The OTHER route, and the one that matters most — POST /v1/finance/students/{student:uuid}/invoices,
+ * InvoiceController::generateForStudent.
+ *
+ * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:133` posts
+ * `generateForStudent.url(student.uuid)`, and it is the sole hand-written import of an
+ * invoice-generation action under resources/js — `statement.tsx` imports only `forStudent`, a read.
+ * routes/endpoints/finance.php:222-225 says the same from the other side: the student POST is "the
+ * bursar UI's path" and the enrollment-id POST "stays for the harness".
+ *
+ * Every arm below therefore exists because the pre-check landed on this route with NO test on it. The
+ * four `FinanceApiAcceptanceTest` posts to it all carry payloads the pre-check accepts, so deleting
+ * InvoiceController.php:83 left the whole suite green.
+ */
+function rpcPostForStudent($test, School $school, User $admin, StudentCurriculum $enrollment, array $lines)
+{
+    $student = ActiveSchool::runFor($school->id, fn () => Student::query()->findOrFail($enrollment->student_id));
+
+    return $test->actingAs($admin)->withSession(['school_id' => $school->id])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", ['lines' => $lines]);
+}
+
+/**
  * NOTHING WAS WRITTEN — asserted as counts, not as "the status was 422". A refusal that 422s and
  * still leaves a row behind is the failure mode this is here to catch, and the status alone cannot
  * see it. Both tables, because the invoice and its lines are created in one transaction and a
@@ -210,12 +232,17 @@ it('arm 4 — a foreign School’s policy is refused EARLIER than the pre-check,
     rpcAssertNothingWritten();
 });
 
-it('arm 4 — a super_admin with NO School context is refused for want of a context, not by the pre-check', function () {
-    // The other path to the trigger's cross-School branch, and it is closed one layer further in.
+it('arm 4 — a super_admin with NO School context: an ACCEPTABLE policy leaves the context refusal first', function () {
+    // The other path to the trigger's cross-School branch, closed one layer further in.
     // FeeItem and DiscountPolicy are not in config/rbac.php `fail_closed_models`, so with no active
     // School SchoolScope adds no predicate and the uuid resolves unscoped — the pre-check therefore
-    // sees a real, active, no-approval policy and passes it. GenerateInvoice:100 refuses the request
-    // before the transaction opens. Asserted so the docblock's second bullet has a test behind it.
+    // sees a real, active, no-approval policy and passes it, and GenerateInvoice:100 refuses the
+    // request before the transaction opens.
+    //
+    // THE TITLE NOW SAYS "AN ACCEPTABLE POLICY", because that qualifier is load-bearing and this arm
+    // used to hide it. It plants an active, no-approval policy, so it exercises only the case where
+    // the pre-check has nothing to say. The case where it DOES is the arm directly below, and the two
+    // together are what the docblock's second bullet is allowed to claim.
     [$schoolA, , $enrollmentA] = rpcSetup();
     $policy = rpcPolicy($schoolA, name: 'A-only');
 
@@ -239,6 +266,132 @@ it('arm 4 — a super_admin with NO School context is refused for want of a cont
         .'started answering a case the docblock says it cannot see.');
 
     rpcAssertNothingWritten();
+});
+
+it('arm 4 — a super_admin with NO School context: a RETIRED policy is answered by the PRE-CHECK first', function () {
+    // THE ORDERING THIS COMMIT ACTUALLY CREATED, measured rather than assumed, and the arm the one
+    // above could not be. The pre-check runs at InvoiceController:39, the context refusal inside the
+    // Action at GenerateInvoice:100 — so once the pre-check has something to say, it says it first.
+    //
+    // A super_admin with no School selected is the only principal who reaches this (SetSchoolContext:46
+    // redirects everyone else), the policy resolves unscoped for them, and the response is the field
+    // error rather than "No active School context". Body, raw:
+    //
+    //   {"message":"There are validation errors","errors":{"lines.1.discount_policy_id":
+    //    ["That discount policy is no longer active, so it cannot back a new reduction. Choose a current one."]}}
+    //
+    // This is written down because the pre-check's docblock previously claimed the context refusal
+    // always wins, and it does not. Nothing is written either way, and arm 4 of the trigger is still
+    // unreachable — what changed is which sentence the operator gets, and that a policy's lifecycle
+    // state is now visible to a principal holding no School context. Pinned so the next reader finds
+    // the ordering asserted rather than described.
+    [$schoolA, , $enrollmentA] = rpcSetup();
+    $policy = rpcPolicy($schoolA, status: 'retired', name: 'A-retired');
+
+    setPermissionsTeamId(null);
+    $super = User::factory()->create();
+    $super->assignRole('super_admin');
+    $super->flushSchoolAccessCache();
+
+    $response = $this->actingAs($super)->postJson('/api/v1/finance/invoices', [
+        'enrollment_id' => $enrollmentA->uuid,
+        'lines' => [
+            ['description' => 'Tuition', 'amount_minor' => 100000],
+            ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toBe('That discount policy is no longer active, so it cannot back a new reduction. Choose a current one.');
+
+    // NOT the Action's message — asserted explicitly, because "which layer answered" is the whole
+    // subject of this arm and a bare 422 cannot distinguish them.
+    expect((string) $response->json('message'))->not->toBe('No active School context: an invoice cannot be raised.');
+
+    rpcAssertNothingWritten();
+});
+
+// ── The SAME arms over the route the running UI actually posts to ────────────
+//
+// Not a copy for symmetry. InvoiceController has TWO call sites of the pre-check (:39 and :83) and
+// they are independent lines: everything above exercises :39 only, so :83 could be deleted with the
+// whole suite staying green. These arms are what makes the watched red attributable per call site.
+
+it('student route — arm 1: a reduction with NO policy is a field error on that line', function () {
+    // THE CASE THE LIVE UI PRODUCES TODAY. new-invoice-modal.tsx:135-138 sends description,
+    // amount_minor and kind, and no discount_policy_id at all, while offering `waiver` and `discount`
+    // in its kind select (:229-232). So every reduction that screen can currently submit is this arm.
+    [$school, $admin, $enrollment] = rpcSetup();
+
+    $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['description' => 'Free-text discount', 'amount_minor' => -10000, 'kind' => 'discount'],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toContain('Select the discount policy that authorises this reduction');
+
+    rpcAssertNothingWritten();
+});
+
+it('student route — arm 2: a reduction citing a RETIRED policy is a field error on that line', function () {
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school, status: 'retired', name: 'Retired');
+
+    $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])->toContain('no longer active');
+
+    rpcAssertNothingWritten();
+});
+
+it('student route — arm 3: a reduction citing a requires_approval policy is a field error on that line', function () {
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school, requiresApproval: true, name: 'NeedsApproval');
+
+    $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])->toContain('credit note');
+
+    rpcAssertNothingWritten();
+});
+
+it('student route — arm 5: a charge line carrying a discount policy is a field error on that line', function () {
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school);
+
+    $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $policy->uuid],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.0.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.0.discount_policy_id'][0])
+        ->toContain('A charge line cannot carry a discount policy');
+
+    rpcAssertNothingWritten();
+});
+
+it('student route — an ACTIVE, no-approval policy still generates the invoice', function () {
+    // The other direction on this route too, for the same reason it exists on the other one: without
+    // it, a pre-check that refused every reduction would turn all four arms above green.
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school);
+
+    rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+    ])->assertCreated();
+
+    expect(DB::table('finance_invoices')->count())->toBe(1)
+        ->and(DB::table('finance_invoice_lines')->count())->toBe(2);
+
+    $reduction = DB::table('finance_invoice_lines')->where('kind', 'discount')->first();
+    expect((int) $reduction->discount_policy_id)->toBe($policy->id);
 });
 
 // ── The other direction — the pre-check is not refusing everything ───────────

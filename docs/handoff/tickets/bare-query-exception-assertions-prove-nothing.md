@@ -46,16 +46,41 @@ work estimate; treating it as a defect count would be the same mistake
 `PestNegatedExpectationMessagesTest`'s docblock warns about at length — a property of the
 discriminator read as a fact about the tree.
 
-## The worked example that started this
+## The worked example that started this — **FIXED**, and the sweep it generalises is not
 
-`tests/Feature/Finance/ReductionEnforcementTest.php:134-149`, `proof 12 (DB)`. Its raw insert carries a
-`bank_account_id` key; `finance_invoice_lines` has no such column, so MySQL rejects the statement at
-**1054** before firing any trigger. The assertion passes. It passes just as well with a policy the
-guard is supposed to ACCEPT — measured by swapping one in — so it is insensitive to the condition its
-name describes.
+`tests/Feature/Finance/ReductionEnforcementTest.php`, `proof 12 (DB)`. Its raw insert carried a
+`bank_account_id` key; `finance_invoice_lines` has no such column, so MySQL rejected the statement at
+**1054** before firing any trigger. The assertion passed. It passed just as well with a policy the
+guard is supposed to ACCEPT — measured by swapping one in — so it was insensitive to the condition its
+name described.
 
-Full write-up, including the migration evidence that the column's absence is deliberate:
-`docs/handoff/tickets/reduction-guard-proof-12-db-is-vacuous.md`.
+**Closed by `fix/u8-reduction-guard-field-errors` (U8 commit 3).** Its dedicated ticket,
+`reduction-guard-proof-12-db-is-vacuous.md`, was deleted there and its still-open half moved to
+`bank-accounts-migration-docblock-describes-a-commit-that-did-not-happen.md`. The repair went further
+than the one arm: `ReductionEnforcementTest` now has **zero** bare `toThrow(QueryException::class)`
+assertions, every raw insert goes through one `reRawLine()` helper that writes the column list once,
+and all five DB arms assert `errorInfo[1] === 1644` plus their own `MESSAGE_TEXT`, each bite-proved by
+substituting a row the guard should accept.
+
+**That file is the worked precedent for the rest of this ticket. The other 25 files are untouched.**
+
+## The count, re-derived — and the earlier grep over-counted
+
+Run against `fix/u8-reduction-guard-field-errors`, **excluding comment lines**, which the counts at the
+top of this ticket did not:
+
+```bash
+grep -rn "toThrow(QueryException::class)" tests/ | grep -v ':[0-9]*: *\*' | grep -v ':[0-9]*: *//' | wc -l   # 73
+grep -rn "toThrow(QueryException::class)" tests/ | grep -v ':[0-9]*: *\*' | grep -v ':[0-9]*: *//' \
+  | cut -d: -f1 | sort -u | wc -l                                                                            # 25 files
+grep -rn "toThrow(QueryException"        tests/ | grep -v ':[0-9]*: *\*' | grep -v ':[0-9]*: *//' | wc -l   # 83
+```
+
+The unfiltered greps in the section above now return 76 / 26 / 86 — **higher** than the 75 / 26 / 85
+recorded when this ticket was written, despite one real assertion having been removed, because U8
+commit 3 added comment lines that mention the pattern while explaining why it is wrong. A discriminator
+that counts prose about a defect as instances of the defect will drift upward every time someone
+documents it. Use the filtered form.
 
 ## The shape a fix takes
 

@@ -275,13 +275,23 @@ export default function FinanceBankAccounts() {
                     {/* ── KPI Stat Cards ───────────────────────────────────────── */}
                     {/* Row counts, not money — nothing here is summed, and the whole list is in
                         hand (the endpoint does not paginate), so these describe every account the
-                        school has rather than a page of them. */}
+                        school has rather than a page of them.
+
+                        A FAILED LOAD RENDERS AN EM DASH, NEVER A NUMBER. `accounts` is [] both when
+                        the school has no accounts and when the fetch died, so `String(0)` here is a
+                        count the page does not actually have — the exact empty-vs-error confusion
+                        the table's error state was added to remove, one region higher up the page.
+                        A dash is the repo's existing "no value" convention (the table's own cells
+                        render `account_name ?? '—'`) and cannot be read as a real zero. It is not a
+                        skeleton, because a skeleton says "still arriving" and would pulse forever
+                        beside a Retry button; and the card is not suppressed, because the label is
+                        what tells the reader WHICH figure is missing. */}
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <FinanceStatCard
                             icon={Landmark}
                             tone="indigo"
                             label="Bank accounts"
-                            value={String(accounts.length)}
+                            value={error ? '—' : String(accounts.length)}
                             subText="Every account this school has added"
                             loading={loading && accounts.length === 0}
                         />
@@ -289,7 +299,7 @@ export default function FinanceBankAccounts() {
                             icon={CheckCircle2}
                             tone="emerald"
                             label="Active"
-                            value={String(activeCount)}
+                            value={error ? '—' : String(activeCount)}
                             subText="Offered as a destination for fees and payments"
                             loading={loading && accounts.length === 0}
                         />
@@ -297,7 +307,7 @@ export default function FinanceBankAccounts() {
                             icon={Ban}
                             tone="slate"
                             label="Deactivated"
-                            value={String(deactivatedCount)}
+                            value={error ? '—' : String(deactivatedCount)}
                             subText="Withdrawn from choice, still nameable on old payments"
                             loading={loading && accounts.length === 0}
                         />
@@ -336,16 +346,24 @@ export default function FinanceBankAccounts() {
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
-                                    <span className="hidden text-xs font-medium text-slate-500 sm:inline">
-                                        Showing{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {rows.length}
-                                        </span>{' '}
-                                        of{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {accounts.length}
+                                    {/* SUPPRESSED ON A FAILED LOAD, for the same reason the cards
+                                        render a dash: both numbers come from an array that is empty
+                                        because the fetch died, so "Showing 0 of 0" states a count
+                                        the page does not have. There is no honest number to show —
+                                        the error row below says what happened — so the counter is
+                                        not rendered at all rather than dashed. */}
+                                    {!error && (
+                                        <span className="hidden text-xs font-medium text-slate-500 sm:inline">
+                                            Showing{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {rows.length}
+                                            </span>{' '}
+                                            of{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {accounts.length}
+                                            </span>
                                         </span>
-                                    </span>
+                                    )}
                                     {hasFilters && (
                                         <Button
                                             type="button"

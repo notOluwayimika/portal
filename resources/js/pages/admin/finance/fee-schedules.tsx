@@ -631,12 +631,21 @@ export default function FeeSchedules({
                     )}
 
                     {/* ── KPI Stat Cards ───────────────────────────────────────── */}
+                    {/* A FAILED LOAD RENDERS AN EM DASH, NEVER A NUMBER. `schedules` is [] both
+                        when the filter matched nothing and when the fetch died, so counting it on
+                        the error path states "0 drafts" about a school whose drafts were never
+                        retrieved — the empty-vs-error confusion the table's error state exists to
+                        remove, reappearing in the row above it. A dash is the repo's existing
+                        "no value" convention (this table renders `term_label ?? '—'`) and cannot be
+                        misread as a real zero; a skeleton would claim the data is still arriving
+                        while a Retry button sits below saying it is not, and suppressing the cards
+                        would remove the labels that say WHICH figures are missing. */}
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <FinanceStatCard
                             icon={FileText}
                             tone="slate"
                             label="Drafts"
-                            value={String(countOf('draft'))}
+                            value={error ? '—' : String(countOf('draft'))}
                             subText="In this view — priced, not yet submitted"
                             loading={loading && schedules.length === 0}
                         />
@@ -644,7 +653,11 @@ export default function FeeSchedules({
                             icon={Clock}
                             tone="amber"
                             label="With the ED"
-                            value={String(countOf('pending_approval'))}
+                            value={
+                                error
+                                    ? '—'
+                                    : String(countOf('pending_approval'))
+                            }
                             subText="In this view — frozen until the decision"
                             loading={loading && schedules.length === 0}
                         />
@@ -652,7 +665,7 @@ export default function FeeSchedules({
                             icon={CheckCircle2}
                             tone="emerald"
                             label="Active"
-                            value={String(countOf('active'))}
+                            value={error ? '—' : String(countOf('active'))}
                             subText="In this view — currently billable"
                             loading={loading && schedules.length === 0}
                         />
@@ -702,16 +715,22 @@ export default function FeeSchedules({
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
-                                    <span className="hidden text-xs font-medium text-slate-500 sm:inline">
-                                        Showing{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {visible.length}
-                                        </span>{' '}
-                                        of{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                                            {schedules.length}
+                                    {/* SUPPRESSED ON A FAILED LOAD — see bank-accounts.tsx for the
+                                        argument. Both numbers come from an array left empty by a
+                                        dead fetch, so the counter would assert "0 of 0" about a
+                                        school whose schedules were never retrieved. */}
+                                    {!error && (
+                                        <span className="hidden text-xs font-medium text-slate-500 sm:inline">
+                                            Showing{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {visible.length}
+                                            </span>{' '}
+                                            of{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {schedules.length}
+                                            </span>
                                         </span>
-                                    </span>
+                                    )}
                                     {hasFilters && (
                                         <Button
                                             type="button"

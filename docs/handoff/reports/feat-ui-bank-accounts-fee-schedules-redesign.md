@@ -30,6 +30,11 @@ seconds after the toast faded. Both pages now carry an `error` boolean and rende
 distinguishable branch: a red `AlertCircle`, "Could not load …", and a **Retry** button that re-runs
 the fetch. Driven and screenshotted — § 6.6.
 
+The first cut of this applied the distinction to **the table only**, which left the KPI cards and the
+"Showing X of Y" counter still rendering hard zeros above a correct error row — the same lie, two
+elements higher. That was caught by the drive, not by reasoning, and is fixed in § 11. The error
+state is now page-wide: **on a failed load, nothing on either screen renders a number.**
+
 ### 1.2 Search and filters, and the argument that makes them legal
 
 Both pages gained a search box; bank-accounts also gained an active/deactivated status filter.
@@ -467,27 +472,30 @@ docs/handoff/drives/2026-08-15-drive-log.txt        the raw drive log
 
 ---
 
-## 8. Findings — reported, not fixed
+## 8. Findings
 
-Per the skill: a drive observes; the decision is the project lead's. All three are left in place.
+The drive produced three. **The first was a defect in this branch and has since been fixed and
+re-driven — see § 11.** The other two are pre-existing, on code this branch does not own, and were
+filed as tickets rather than fixed.
 
-### 8.1 The KPI cards render `0` when the load FAILED — a defect in this branch
+### 8.1 The KPI cards render `0` when the load FAILED — FIXED in § 11
 
-Visible in `docs/handoff/drives/2026-08-15-error-states/bank-accounts-01-error-light.png`: the table
-correctly says "Could not load bank accounts" with a Retry button, while the three cards above it
-read **"Bank accounts 0 / Active 0 / Deactivated 0"**.
+_As originally observed, kept for the record:_ the table correctly said "Could not load bank
+accounts" with a Retry button, while the three cards above it read **"Bank accounts 0 / Active 0 /
+Deactivated 0"**.
 
-Cause: the cards receive `loading={loading && accounts.length === 0}`. Once the fetch fails,
+Cause: the cards received `loading={loading && accounts.length === 0}`. Once the fetch fails,
 `loading` is `false` and `accounts` is `[]`, so the skeleton stops and a **hard zero** is rendered —
 a number presented as fact when the truth is that we do not know. This is § 1.1's defect (empty and
-failed looking alike) surviving in the one region of the page I did not extend the error state to,
-which is a fair description of how partial fixes fail.
+failed looking alike) surviving in the one region of the page the error state had not been extended
+to, which is a fair description of how partial fixes fail.
 
-The fix is one condition per card — pass `loading={loading || error}`, or render `—` on `error` —
-in both files. **Not applied**, per the observe-don't-fix rule; flagging it as the finding I would
-action first.
+**Fixed in the round documented in § 11**, along with the same lie one element over in the
+"Showing X of Y" counter, which the original write-up missed.
 
 ### 8.2 The application's dark-mode toggle is inert (pre-existing, not this branch)
+
+**Filed as [`dark-mode-is-unreachable-for-every-user.md`](../tickets/dark-mode-is-unreachable-for-every-user.md).**
 
 `resources/js/hooks/use-appearance.tsx:40-42`:
 
@@ -521,6 +529,14 @@ this seat. Both are on a page this branch does not modify; noted because the dri
 it. The scroll proof in § 6.5 is unaffected — the panel renders and is measurable regardless of how
 many options it holds.
 
+**Filed as [`students-index-403s-render-two-placeholder-only-selects.md`](../tickets/students-index-403s-render-two-placeholder-only-selects.md)**,
+where tracing the routes corrected this write-up's implicit reading: **both 403s are the `tenant`
+middleware refusing a `super_admin` who has not selected a school**, which is isolation working as
+designed (ADR 0036 — bypass is authorization, never isolation), not a permission defect. The defect
+is purely that the page proceeds as though the request succeeded — a `.then()` with no `.catch()` at
+`students/index.tsx:115`. The ticket also records that this was only ever observed on that one seat
+state, which is the least representative seat on the platform.
+
 ---
 
 ## 9. Gates
@@ -532,13 +548,14 @@ Three runs, all green, all reported.
 | 1   | commit `119c820`, ticket edit uncommitted                                      | **PASS 15/15**, exit 0 |
 | 2   | + `data-value`/a11y on `base-dropdown`, + both documents, staged not committed | **PASS 15/15**, exit 0 |
 | 3   | the committed tree (`c4c19da`)                                                 | **PASS 15/15**, exit 0 |
+| 4   | the committed tree after the § 11 fix (`1679072`)                              | **PASS 15/15**, exit 0 |
 
-**No red on any run.** Run 3 exists because of a limitation worth stating rather than glossing:
+**No red on any run.** Runs 3 and 4 exist because of a limitation worth stating rather than glossing:
 `bin/lint-changed.sh` diffs against the merge-base and therefore **only ever sees committed work**
 (the known gap, ticketed in
 [`lint-changed-cannot-see-uncommitted-work.md`](../tickets/lint-changed-cannot-see-uncommitted-work.md)).
-Runs 1 and 2 linted the four `.tsx` from `119c820`; only run 3 is a gate result for the tree that is
-actually being handed over.
+Runs 1 and 2 linted the four `.tsx` from `119c820`; only runs 3 and 4 are gate results for a tree
+that was actually being handed over.
 
 **And even run 3 does not lint the two documents.** `lint-changed.sh:46` selects Prettier's file set
 as `resources/*.{ts,tsx,js,jsx,vue,css,json}` — **`.md` is not in it**, and neither are the PNGs. So
@@ -580,9 +597,132 @@ diff `CLAUDE.md` warns about.
 ```
 docs/handoff/reports/feat-ui-bank-accounts-fee-schedules-redesign.md  (this file)
 docs/handoff/tickets/fee-schedule-index-unpaginated.md                (+ dependency section)
+docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md       (new — § 8.2)
+docs/handoff/tickets/students-index-403s-render-two-placeholder-only-selects.md  (new — § 8.3)
 docs/handoff/drives/2026-08-15-*/                                     (drive artefacts)
 resources/js/components/finance/status-pill.tsx                       (new)
 resources/js/components/ui/base-dropdown.tsx                          (scroll tracking, id, data-value, roles)
 resources/js/pages/admin/finance/bank-accounts.tsx
 resources/js/pages/admin/finance/fee-schedules.tsx
 ```
+
+---
+
+## 11. Round 3 — fixing § 8.1, and two tickets
+
+### 11.1 What a card shows when the load failed, and why
+
+**An em dash.** Both screens, one condition per card:
+`value={error ? '—' : String(count)}`.
+
+The three candidates and why this one:
+
+- **A dash** — chosen. It is the repo's existing "no value" convention: the tables on these very
+  screens already render `account_name ?? '—'` and `term_label ?? '—'`, so the glyph already means
+  "there is no value here" to anyone who has used the app. It cannot be parsed as a quantity, which
+  is the brief's actual requirement.
+- **A skeleton** — rejected. `animate-pulse` means "still arriving". On a failed load it would pulse
+  indefinitely **beside a Retry button that exists precisely because nothing more is arriving** — two
+  parts of the same card row contradicting each other. It also makes a hung request and a failed one
+  look identical, which is a new instance of the defect being fixed, not a fix for it.
+- **Suppressing the cards** — rejected. The label is the part carrying the information on an error
+  path: "Deactivated —" says _which_ figure is unavailable, and an absent card says nothing at all.
+  It would also collapse the layout under the hero, so the page would visibly restructure itself
+  between the failed and successful renders of the same screen.
+
+**A real zero still renders as `0`.** That distinction is the whole point and it is proved below: on
+the healthy path `Deactivated` reads `0` and `With the ED` reads `0`, because those are counts the
+page actually has. `—` is reserved for _unknown_.
+
+### 11.2 Scope extended by one element, deliberately
+
+The brief said one condition per card. **I also suppressed the "Showing X of Y" counter on the error
+path**, on both screens.
+
+It is the same defect the cards had: both numbers come from an array left empty by a dead fetch, so
+it rendered **"Showing 0 of 0"** — a sentence that asserts the school has nothing, immediately above
+a row saying the data could not be retrieved. I found it by looking at the § 11.4 screenshot rather
+than by reasoning about the diff.
+
+Suppressed rather than dashed: "Showing — of —" is a sentence with no content, and the error row
+directly below already says what happened. There is no honest number, so there is no counter.
+
+Flagged as a scope extension so it can be reverted independently if the call goes the other way —
+it is two `{!error && (…)}` wrappers and nothing else depends on them.
+
+### 11.3 Two tickets, not fixes
+
+- **[`dark-mode-is-unreachable-for-every-user.md`](../tickets/dark-mode-is-unreachable-for-every-user.md)**
+  — `isDarkMode` returns a constant `false`, both call sites (`:49`, `:97`) are therefore constant,
+  and `applyTheme` is the only writer of the `dark` class. Traced: `:49` drives
+  `classList.toggle('dark', …)` + `colorScheme` and is reached from all three theme-changing paths
+  (load, user click, OS change); `:97` drives `resolvedAppearance`, read only by the 2FA QR
+  inversion. Not fixed here, per the brief — appearance is app-wide and needs its own drive.
+  **The ticket states, about this report's own screenshots, that they were produced by setting the
+  class directly and are not evidence a user can reach dark mode.**
+- **[`students-index-403s-render-two-placeholder-only-selects.md`](../tickets/students-index-403s-render-two-placeholder-only-selects.md)**
+  — both 403s recorded with their routes, the two placeholder-only selects recorded by value, the
+  resemblance to the U1 empty-select defect drawn out, and the `/dashboard` 403 cross-referenced.
+
+    **Two corrections came out of writing it.** First, the 403s are not a permission defect: both
+    routes carry `tenant`, and a `super_admin` bypasses `permission:` but never isolation, so a seat
+    with no school selected is refused correctly. The defect is the unhandled `.then()`. Second, the
+    `/dashboard` 403 **has no ticket to cross-reference** — the `finance-drive` skill calls it "filed
+    as a ticket", but it exists only as a `ticket`-tagged bullet inside
+    `docs/handoff/reports/feat-discount-policies-page.md:456-460`, and no file for it exists under
+    `docs/handoff/tickets/`. The ticket links the report bullet and says so.
+
+### 11.4 Bite-proof — re-driven, not reasoned
+
+The fix is invisible to every gate this project has (no JS test runner renders a component and reads
+a computed value), so the drive is the proof. One state re-driven on both screens, list fetch aborted
+at the network layer:
+
+```
+=== bank-accounts — list fetch aborted ===
+  CARD "Bank accounts" value="—" sub="Every account this school has added"
+  CARD "Active" value="—" sub="Offered as a destination for fees and payments"
+  CARD "Deactivated" value="—" sub="Withdrawn from choice, still nameable on old payments"
+  table state      : {"couldNotLoad":true,"retry":true,"emptyCopy":false,"counter":false}
+  numeric cards    : 0  (PASS — no card renders a count)
+
+=== fee-schedules — list fetch aborted ===
+  CARD "Drafts" value="—" sub="In this view — priced, not yet submitted"
+  CARD "With the ED" value="—" sub="In this view — frozen until the decision"
+  CARD "Active" value="—" sub="In this view — currently billable"
+  table state      : {"couldNotLoad":true,"retry":true,"emptyCopy":false,"counter":false}
+  numeric cards    : 0  (PASS — no card renders a count)
+```
+
+`numeric cards` is the assertion made mechanically rather than by eye: every card's rendered value is
+matched against `/^-?\d[\d,]*$/` and the count of matches must be zero. `counter:false` is the § 11.2
+suppression.
+
+**And the other direction, because a fix that dashes unconditionally would also pass the above.** The
+healthy path, same build, same seat:
+
+```
+/finance/bank-accounts  ["Bank accounts=1","Active=1","Deactivated=0"]
+/finance/fee-schedules  ["Drafts=1","With the ED=0","Active=0"]
+```
+
+Real counts, **including two genuine zeros** — which is precisely the case that must not be confused
+with the dash. Without this half, "all six cards show —" would be consistent with having broken the
+cards entirely.
+
+Screenshots, light and dark, both screens:
+`docs/handoff/drives/2026-08-15-error-states/` (overwritten with the post-fix state; the pre-fix
+images they replace are described in § 8.1). Raw log:
+`docs/handoff/drives/2026-08-15-error-state-redrive-log.txt`.
+
+### 11.5 What this round did NOT verify
+
+- **The `Retry` button was rendered but not clicked.** The recovery path — error state → Retry →
+  successful load → cards return to real counts — is unproven end to end. The two halves of § 11.4
+  were driven as separate page loads, not as a transition.
+- **Only the aborted-request failure mode.** A 500, a 403 or a timeout all set the same `error`
+  boolean, but only a network abort was exercised.
+- **Nothing in the two tickets was fixed or driven**, by instruction. The `/students` ticket's own
+  scope caveat stands: one seat state observed, three plausible states unchecked.
+- **The unchanged parts of the branch were not re-driven this round.** § 6's evidence stands from the
+  earlier run; only the failed-load state was re-driven, plus the healthy KPI row as its control.

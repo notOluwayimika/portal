@@ -101,6 +101,76 @@ function rePost($test, School $school, User $admin, StudentCurriculum $enrollmen
         ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => $lines]);
 }
 
+/**
+ * A RAW insert into finance_invoice_lines, bypassing GenerateInvoiceRequest, GenerateInvoice and the
+ * whole HTTP edge — so what refuses it is the DATABASE and nothing else. Returns
+ * `[driverCode, message]`, or `[null, null]` if the insert SUCCEEDED.
+ *
+ * THIS EXISTS AS A HELPER FOR ONE REASON, and it is not tidiness. The column list is written ONCE.
+ * proof 12 (DB) shipped for months passing a `bank_account_id` key that finance_invoice_lines has no
+ * column for; MySQL rejected the statement at 1054 during preparation, before any BEFORE INSERT
+ * trigger could fire, and `toThrow(QueryException::class)` could not tell that apart from the guard
+ * doing its job. It was green while proving nothing, and swapping in a policy the guard should have
+ * ACCEPTED left it green too. Single-sourcing the columns makes that whole class of false green
+ * unreachable: an arm can now get the SUBJECT of its insert wrong, but not the SHAPE.
+ *
+ * Derived, not copied — `Schema::getColumnListing('finance_invoice_lines')` on the migrated test
+ * database returns exactly: id, uuid, school_id, invoice_id, description, kind, note, amount_minor,
+ * amount_currency, fee_item_id, discount_policy_id, created_by_user_id, created_at, updated_at. There
+ * is no bank_account_id and its absence is a decision, argued in
+ * 2026_08_10_120000_finance_bank_account_foreign_keys.php:49-62 — the test was wrong, not the schema.
+ *
+ * @return array{0: ?int, 1: ?string}
+ */
+function reRawLine(int $schoolId, int $invoiceId, string $kind, ?int $discountPolicyId, int $amountMinor = -1000): array
+{
+    try {
+        DB::table('finance_invoice_lines')->insert([
+            'uuid' => (string) Str::uuid(),
+            'school_id' => $schoolId,
+            'invoice_id' => $invoiceId,
+            'description' => 'Raw insert',
+            'kind' => $kind,
+            'note' => null,
+            'amount_minor' => $amountMinor,
+            'amount_currency' => 'NGN',
+            'fee_item_id' => null,
+            'discount_policy_id' => $discountPolicyId,
+            'created_by_user_id' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    } catch (QueryException $e) {
+        return [(int) ($e->errorInfo[1] ?? 0), (string) ($e->errorInfo[2] ?? '')];
+    }
+
+    return [null, null];
+}
+
+/** A charge-only invoice to hang a raw line off. Returns its id. */
+function reInvoiceId($test, School $school, User $admin, StudentCurriculum $enrollment): int
+{
+    rePost($test, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000],
+    ])->assertCreated();
+
+    return (int) DB::table('finance_invoices')->value('id');
+}
+
+/**
+ * The assertion every DB arm below shares. 1644 is what MySQL reports for the `SIGNAL SQLSTATE
+ * '45000'` the guard raises; ANY other code — or a null, meaning the insert succeeded — means the row
+ * did not die at the trigger and the arm proves nothing about the branch it names.
+ */
+function reExpectGuardRefusal(?int $code, ?string $message, string $expectedText, string $branch): void
+{
+    expect($code)->toBe(1644,
+        "The insert was not refused by finance_invoice_lines_reduction_guard's {$branch} branch. A "
+        .'different error code means the row died before the trigger ran; a null means it was WRITTEN. '
+        .'Either way this arm proves nothing.')
+        ->and($message)->toContain($expectedText);
+}
+
 // ── Proof 11 — the happy path: an active, no-approval policy backs a reduction line ──
 
 it('proof 11 — a reduction citing an active requires_approval=false policy is stored with policy + actor', function () {
@@ -126,37 +196,92 @@ it('proof 12 (HTTP) — a reduction citing a requires_approval=true policy is re
     // unresolvable policy uuid is a validation 422, so a status-only assertion would go on passing if
     // the fixture's policy stopped resolving and the requires_approval branch never ran at all.
     //
-    // The message asserted is the trigger's own, surfaced by GenerateInvoice's 1644 catch — so this arm
-    // still names the layer it always meant to, and now says so.
+    // WHICH LAYER ANSWERS MOVED AGAIN IN U8 COMMIT 3. It used to be the trigger's own sentence, surfaced
+    // by GenerateInvoice's 1644 catch as a bare `{"message": …}`;
+    // GenerateInvoiceRequest::assertDiscountPoliciesUsable now refuses requires_approval before the
+    // transaction opens, as a validation error keyed to the offending line. Asserted as the KEY plus the
+    // message, so the arm is still specific to this refusal and not to "some 422".
+    //
+    // THE DB HALF DID NOT MOVE and is proof 12 (DB) directly below. Stated carefully, because an earlier
+    // draft of this comment claimed coverage that did not exist: proof 12 (DB) was VACUOUS when this
+    // sentence was first written — a stray column killed its insert at 1054 before the trigger ran — and
+    // it is repaired in the same commit as this correction. It now reaches the trigger and reads 1644.
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
     $response = rePost($this, $school, $admin, $enrollment, [
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['bank_account_id' => testBankAccountUuid(), 'description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
-    expect((string) $response->json('message'))
-        ->toBe('This discount policy requires per-application approval: apply it as a credit note, not an invoice line.');
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toBe('That discount policy needs approval for each use. Raise it as a credit note rather than an invoice line.');
 
     expect(DB::table('finance_invoices')->count())->toBe(0); // nothing partial
 });
 
 it('proof 12 (DB) — a RAW reduction-line insert citing a requires_approval=true policy trips the trigger', function () {
+    // REPAIRED. This arm shipped passing a `bank_account_id` key into a table that has no such column,
+    // so the statement died at 1054 before the trigger ran and `toThrow(QueryException::class)` accepted
+    // that as proof. It was measured green with a policy the guard should have ACCEPTED, which is the
+    // definition of an arm that does not test its subject. Ticketed at the time
+    // (reduction-guard-proof-12-db-is-vacuous.md) and closed by this commit; the stray column is gone,
+    // the columns are single-sourced in reRawLine(), and the assertion now reads errorInfo[1].
     [$school, $admin, $enrollment] = reSetup();
     $policy = rePolicy($school, requiresApproval: true, name: 'NeedsApproval');
+    $invoiceId = reInvoiceId($this, $school, $admin, $enrollment);
 
-    // A charge-only invoice exists to hang the line off; the direct insert bypasses GenerateInvoice, so it
-    // is the DATABASE refusing, not the service.
-    rePost($this, $school, $admin, $enrollment, [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]])->assertCreated();
-    $invoiceId = DB::table('finance_invoices')->value('id');
+    // BITE-PROOF: swap $policy for `rePolicy($school)` — active, no approval, same School, a row the
+    // guard has no reason to refuse. The insert then SUCCEEDS, $code is null, and the arm reds.
+    [$code, $message] = reRawLine($school->id, $invoiceId, 'discount', $policy->id);
 
-    expect(fn () => DB::table('finance_invoice_lines')->insert([
-        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'invoice_id' => $invoiceId,
-        'bank_account_id' => testBankAccountId(), 'description' => 'Sneak', 'kind' => 'discount', 'note' => null, 'amount_minor' => -1000, 'amount_currency' => 'NGN',
-        'fee_item_id' => null, 'discount_policy_id' => $policy->id, 'created_by_user_id' => null,
-        'created_at' => now(), 'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    reExpectGuardRefusal($code, $message, 'requires per-application approval', 'requires_approval');
+});
+
+it('proof 12b (DB) — a RAW reduction-line insert with a NULL policy trips the trigger', function () {
+    // ARM 1 OF THE GUARD, WHICH HAD NO DB COVERAGE AT ALL until this commit — and it is the arm the
+    // running UI exercises: new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no
+    // discount_policy_id whatsoever, so every reduction that screen can currently produce is this case.
+    //
+    // Its HTTP half moved to GenerateInvoiceRequest's pre-check in U8 commit 3. That pre-check is a
+    // convenience layer producing a better message; THIS is the arm that proves the invariant is still
+    // true at the database, where a job, a console command or a tinker session cannot route around it.
+    [$school, $admin, $enrollment] = reSetup();
+    $invoiceId = reInvoiceId($this, $school, $admin, $enrollment);
+
+    // BITE-PROOF: pass `rePolicy($school)->id` instead of null → the insert succeeds → red.
+    [$code, $message] = reRawLine($school->id, $invoiceId, 'discount', null);
+
+    reExpectGuardRefusal($code, $message, 'must reference an active discount policy', 'IS NULL');
+});
+
+it('proof 12c (DB) — a RAW reduction-line insert citing a RETIRED policy trips the trigger', function () {
+    // ARM 2, previously reached only over HTTP. `v_status <> 'active'`, not `= 'retired'` — a superseded
+    // policy takes the same branch, and proof 7 covers that lifecycle at the service layer.
+    [$school, $admin, $enrollment] = reSetup();
+    $policy = rePolicy($school, status: 'retired', name: 'Retired');
+    $invoiceId = reInvoiceId($this, $school, $admin, $enrollment);
+
+    // BITE-PROOF: create the policy with the default `status: 'active'` → the insert succeeds → red.
+    [$code, $message] = reRawLine($school->id, $invoiceId, 'discount', $policy->id);
+
+    reExpectGuardRefusal($code, $message, 'is not active', "v_status <> 'active'");
+});
+
+it('proof 12d (DB) — a RAW CHARGE-line insert carrying a discount policy trips the trigger', function () {
+    // ARM 5, previously reached only over HTTP. The one branch outside the `kind <> 'charge'` block:
+    // provenance on a charge line is refused because a charge is not a reduction and has no policy to
+    // cite. Nothing about it involves reductions, which is why it needs its own arm.
+    [$school, $admin, $enrollment] = reSetup();
+    $policy = rePolicy($school);
+    $invoiceId = reInvoiceId($this, $school, $admin, $enrollment);
+
+    // BITE-PROOF: pass null for the policy → a plain charge line → the insert succeeds → red.
+    // A POSITIVE amount, because a charge is what this line claims to be; the guard does not read the
+    // sign, but an arm whose fixture contradicts its own title is one nobody can reason about.
+    [$code, $message] = reRawLine($school->id, $invoiceId, 'charge', $policy->id, amountMinor: 1000);
+
+    reExpectGuardRefusal($code, $message, 'may not reference a discount policy', "kind = 'charge'");
 });
 
 // ── Proof 13 — a policy-less reduction line is refused (Part 0's hole, closed) ──
@@ -173,6 +298,16 @@ it('proof 13 — a reduction line with discount_policy_id = null is refused, and
     // null-check does NOT red: a null discount_policy_id makes the next arm's SELECT return no row, so
     // v_status is NULL and the "not active" check refuses it anyway — the null-check and not-active arms are
     // two faces of one guarantee. Watched red by removing the branch; see the PR body.)
+    //
+    // SINCE U8 COMMIT 3 THAT PLANT NEEDS BOTH LAYERS NEUTERED to red this arm, because
+    // GenerateInvoiceRequest::assertDiscountPoliciesUsable refuses the null before the insert is ever
+    // attempted. The status here is now the pre-check's. The trigger's half of THIS arm's guarantee is
+    // proof 12b (DB) above — a raw insert with a null policy, asserting errorInfo 1644 and the guard's
+    // own message. (An earlier draft of this comment cited proof 12 (DB) and proof 14 (DB) as covering
+    // it. That was false: proof 12 (DB) was vacuous until this commit repaired it, and proof 14 (DB) is
+    // the cross-School arm, which is a different branch.) The FIELD-error form is asserted in
+    // ReductionPreCheckTest — this arm deliberately keeps asserting only that nothing was written,
+    // which is the claim it was always about.
     expect(DB::table('finance_invoices')->count())->toBe(0)
         ->and(DB::table('finance_invoice_lines')->count())->toBe(0);
 });
@@ -213,42 +348,29 @@ it('proof 14 (DB) — a RAW reduction-line insert citing another School’s poli
     // refusing. This is the arm that stays red if finance_invoice_lines_reduction_guard's
     // `v_school <> NEW.school_id` branch is removed.
     //
-    // TWO THINGS HERE ARE NOT COPIED FROM PROOF 12 (DB) ABOVE, AND MUST NOT BE "MADE CONSISTENT" WITH IT.
-    // First, no `bank_account_id` key: finance_invoice_lines HAS NO SUCH COLUMN (SHOW COLUMNS: id, uuid,
-    // school_id, invoice_id, description, kind, note, amount_minor, amount_currency, fee_item_id,
-    // discount_policy_id, created_by_user_id, timestamps). Second, the assertion reads errorInfo[1]
-    // rather than accepting any QueryException. Both exist because the loose form is a FALSE GREEN: with
-    // the stray column the insert dies at 1054 "Unknown column 'bank_account_id' in 'field list'" before
-    // MySQL ever fires a trigger, and `toThrow(QueryException::class)` cannot tell that apart from the
-    // guard doing its job. Measured, not reasoned: dumping errorInfo from this arm printed 1054, and the
-    // arm passed just the same when the policy was swapped to School A's own — which is the condition it
-    // claims to be testing. 1644 is the SIGNAL SQLSTATE '45000' the guard raises.
+    // TWO THINGS MADE THIS ARM REAL WHILE PROOF 12 (DB) WAS VACUOUS, and both now live in reRawLine()
+    // so no arm in this file can lose them again. First, no `bank_account_id` key: finance_invoice_lines
+    // HAS NO SUCH COLUMN (Schema::getColumnListing: id, uuid, school_id, invoice_id, description, kind,
+    // note, amount_minor, amount_currency, fee_item_id, discount_policy_id, created_by_user_id,
+    // timestamps). Second, the assertion reads errorInfo[1] rather than accepting any QueryException.
+    // Both exist because the loose form is a FALSE GREEN: with the stray column the insert dies at 1054
+    // "Unknown column 'bank_account_id' in 'field list'" before MySQL ever fires a trigger, and
+    // `toThrow(QueryException::class)` cannot tell that apart from the guard doing its job. Measured, not
+    // reasoned: dumping errorInfo from proof 12 (DB) printed 1054, and it passed just the same when the
+    // policy was swapped to one the guard should accept. 1644 is the SIGNAL SQLSTATE '45000' the guard
+    // raises.
+    //
+    // MOVED ONTO THE SHARED HELPER in U8 commit 3 — the body it used to carry inline is now reRawLine()
+    // verbatim, and the mutation below still reds it, which is what proves the move did not weaken it.
     [$schoolA, $adminA, $enrollmentA] = reSetup();
     $schoolB = School::factory()->create();
     $policyB = rePolicy($schoolB, name: 'B-only'); // active, but belongs to School B
+    $invoiceId = reInvoiceId($this, $schoolA, $adminA, $enrollmentA);
 
-    rePost($this, $schoolA, $adminA, $enrollmentA, [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]])->assertCreated();
-    $invoiceId = DB::table('finance_invoices')->value('id');
+    // BITE-PROOF: swap $policyB for `rePolicy($schoolA)` — School A's own — and the insert succeeds.
+    [$code, $message] = reRawLine($schoolA->id, $invoiceId, 'discount', $policyB->id);
 
-    $code = null;
-    $message = null;
-
-    try {
-        DB::table('finance_invoice_lines')->insert([
-            'uuid' => (string) Str::uuid(), 'school_id' => $schoolA->id, 'invoice_id' => $invoiceId,
-            'description' => 'Foreign discount', 'kind' => 'discount', 'note' => null, 'amount_minor' => -1000, 'amount_currency' => 'NGN',
-            'fee_item_id' => null, 'discount_policy_id' => $policyB->id, 'created_by_user_id' => null,
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-    } catch (QueryException $e) {
-        $code = (int) ($e->errorInfo[1] ?? 0);
-        $message = (string) ($e->errorInfo[2] ?? '');
-    }
-
-    expect($code)->toBe(1644,
-        'The insert was not refused by finance_invoice_lines_reduction_guard. A different error code '
-        .'means the row died before the trigger ran and this arm proves nothing about isolation.')
-        ->and($message)->toContain('another School');
+    reExpectGuardRefusal($code, $message, 'another School', 'v_school <> NEW.school_id');
 });
 
 // ── Proof 16 — is_discountable narrows the percentage base ───────────────────
@@ -322,6 +444,9 @@ it('proof 7 — a RETIRED policy cannot back a NEW reduction, and lines written 
     ActiveSchool::runFor($school->id, fn () => $policy->update(['status' => DiscountPolicyStatus::Retired]));
 
     // A NEW reduction citing the now-retired policy is refused (a second enrollment to avoid the F7 collision).
+    // Since U8 commit 3 the refusal is GenerateInvoiceRequest's pre-check rather than the trigger's
+    // `v_status <> 'active'` arm; the guarantee — a retired policy cannot back a NEW reduction — is
+    // unchanged, and the trigger still holds it for any write that does not come through the Action.
     $student2 = Student::factory()->create(['school_id' => $school->id]);
     $enrollment2 = ActiveSchool::runFor($school->id, fn () => StudentCurriculum::create([
         'student_id' => $student2->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id, 'status' => 'active',

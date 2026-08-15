@@ -292,22 +292,33 @@ it('treats an EMPTY STRING on either id as no provenance, exactly as an explicit
         ->and($stored['Key absent'])->toBeNull();
 });
 
-it('still refuses a REDUCTION line whose discount policy went empty — at the DB guard', function () {
+it('still refuses a REDUCTION line whose discount policy went empty — now as a FIELD error', function () {
     // The bounded cost of the decision above, named. `""` on `discount_policy_id` becomes null, so the
-    // edge lets it through; the row is then refused by finance_invoice_lines_reduction_guard, which is the
-    // authority on reduction provenance and does not care how the null arose. So no reduction is ever
-    // written without a policy, whichever spelling of "nothing" the form sends.
+    // uuid rules let it through; a reduction with no policy is then refused, and no reduction is ever
+    // written without one, whichever spelling of "nothing" the form sends. That claim is unchanged.
+    //
+    // WHICH LAYER REFUSES IT MOVED IN U8 COMMIT 3, and this arm is rewritten rather than relaxed. It
+    // used to assert the trigger's own sentence arriving as a bare `{"message": …}`, because
+    // finance_invoice_lines_reduction_guard was the first thing to see the null and GenerateInvoice's
+    // 1644 catch surfaced its text verbatim. GenerateInvoiceRequest::assertDiscountPoliciesUsable now
+    // refuses it first, as a validation error keyed to the offending line — which is the whole point
+    // of that commit, since a sentence with no `errors` key is one a form cannot attach to a field.
+    //
+    // THE TRIGGER IS STILL THE AUTHORITY AND IS NOT WHAT THIS ARM STOPPED TESTING: it re-refuses the
+    // same insert one layer down, and ReductionEnforcementTest's proof 12 (DB) / proof 14 (DB) reach
+    // it by raw insert with no Action in the path. What is asserted here is strictly MORE than before
+    // — the key AND the message AND that nothing was written — so the arm did not get looser.
     [$school, $admin, $enrollment] = wireSetup();
 
     $response = wirePost($this, $school, $admin, $enrollment, [
         ['description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
-    // NOT a validation error — the refusal comes from the trigger, surfaced by GenerateInvoice's 1644
-    // catch as a BusinessRuleException. Asserting the message distinguishes the two layers; a bare 422
-    // would pass if the edge had started refusing it for some unrelated reason.
-    expect((string) $response->json('message'))->toContain('must reference an active discount policy');
+    // The KEY names the line the bursar has to fix, and the message is operator wording rather than
+    // the trigger's. Asserting both distinguishes this refusal from every other 422 on this route.
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toContain('Select the discount policy that authorises this reduction');
 
     expect(DB::table('finance_invoices')->count())->toBe(0)
         ->and(DB::table('finance_invoice_lines')->count())->toBe(0);

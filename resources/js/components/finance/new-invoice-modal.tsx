@@ -30,6 +30,74 @@ type Props = {
 const EMPTY_LINE: DraftLine = { description: '', amount: '', kind: 'charge' };
 
 /**
+ * Turn a 422 body into the lines to show above the form.
+ *
+ * WHY THIS EXISTS, measured on both sides of U8 commit 3. Before it, a reduction whose policy was
+ * missing, retired or approval-requiring came back as
+ * `{"message": "A reduction line must reference an active discount policy; …"}` — the DB trigger's own
+ * sentence, in `message`, which this modal displayed. After it, the same request comes back as
+ * `{"message": "There are validation errors", "errors": {"lines.1.discount_policy_id": ["Select the
+ * discount policy that authorises this reduction. …"]}}`, and reading `message` alone showed the
+ * operator "There are validation errors" and nothing else. The server got MORE specific and the screen
+ * got LESS: a regression, and this closes it.
+ *
+ * EVERY message, not the first. `Object.values(errors)[0]?.[0]` is the established shape elsewhere in
+ * this codebase (edit-pivot-modal, student-guardians-panel) and it is wrong here: the pre-check
+ * deliberately names every offending line in one response, so taking the first would hide the rest and
+ * make the bursar fix the form one round trip per bad line.
+ *
+ * THE KEY IS NEVER REQUIRED TO BE A SMALL INTEGER. Laravel keys these by the caller's own array key —
+ * this modal always sends a JS array, so its own keys are 0..n-1, but a keyed-object payload produces
+ * `lines.7.discount_policy_id` for a line at key 7. The row prefix is therefore best-effort: the index
+ * segment is used only when it parses as a non-negative integer, and any other shape (or a non-`lines`
+ * key entirely) falls through to the bare message rather than rendering "Line NaN".
+ */
+function errorLinesFrom(data: unknown): string[] {
+    const body = data as
+        | { message?: unknown; errors?: Record<string, unknown> }
+        | undefined;
+    const errors = body?.errors;
+
+    if (errors && typeof errors === 'object') {
+        const out: string[] = [];
+
+        for (const [field, messages] of Object.entries(errors)) {
+            const segments = field.split('.');
+            const index =
+                segments.length === 3 && segments[0] === 'lines'
+                    ? Number(segments[1])
+                    : NaN;
+            const prefix =
+                Number.isInteger(index) && index >= 0
+                    ? `Line ${index + 1} — `
+                    : '';
+
+            for (const message of Array.isArray(messages)
+                ? messages
+                : [messages]) {
+                if (typeof message === 'string' && message !== '') {
+                    out.push(`${prefix}${message}`);
+                }
+            }
+        }
+
+        if (out.length > 0) {
+            return out;
+        }
+    }
+
+    // FALLBACK, and it is load-bearing rather than defensive. GenerateInvoice still answers a plain
+    // `{"message": …}` with no `errors` key for every BusinessRuleException it raises — the F7 duplicate
+    // invoice, a negative total, a percentage with no discountable base, the no-context refusal. Those
+    // are not going away and must keep rendering.
+    return [
+        typeof body?.message === 'string' && body.message !== ''
+            ? body.message
+            : 'The invoice could not be created.',
+    ];
+}
+
+/**
  * Create an invoice for the STUDENT. Enrollment resolution is server-side: on open the
  * modal reads the current billable episode (academic context + F7 preview) — the frontend
  * never handles an enrollment id. Line entry is manual (no fee catalog yet); the live total
@@ -48,13 +116,13 @@ export function NewInvoiceModal({
     );
     const [blocked, setBlocked] = useState<string | null>(null); // no active enrollment
     const [lines, setLines] = useState<DraftLine[]>([{ ...EMPTY_LINE }]);
-    const [formError, setFormError] = useState<string | null>(null);
+    const [formErrors, setFormErrors] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
 
     const loadEnrollment = useCallback(async () => {
         setEnrollment(null);
         setBlocked(null);
-        setFormError(null);
+        setFormErrors([]);
         setLines([{ ...EMPTY_LINE }]);
 
         try {
@@ -109,20 +177,20 @@ export function NewInvoiceModal({
     const previewTotal = allValid ? sumMinor(signedMinors as number[]) : null;
 
     const submit = async () => {
-        setFormError(null);
+        setFormErrors([]);
 
         if (!allValid) {
-            setFormError(
+            setFormErrors([
                 'Every line needs a description and a non-zero amount.',
-            );
+            ]);
 
             return;
         }
 
         if (previewTotal !== null && previewTotal < 0) {
-            setFormError(
+            setFormErrors([
                 'Reductions may not exceed the charges — the total would be negative.',
-            );
+            ]);
 
             return;
         }
@@ -142,12 +210,13 @@ export function NewInvoiceModal({
             onClose();
         } catch (err: unknown) {
             if (axios.isAxiosError(err) && err.response?.status === 422) {
-                setFormError(
-                    err.response.data?.message ??
-                        'The invoice could not be created.',
-                );
+                // EVERY message the server named, keyed by line where it said so.
+                // Reading `message` alone here is what made the screen show
+                // "There are validation errors" for a refusal the server had
+                // described precisely — see errorLinesFrom.
+                setFormErrors(errorLinesFrom(err.response.data));
             } else {
-                setFormError('Something went wrong creating the invoice.');
+                setFormErrors(['Something went wrong creating the invoice.']);
             }
         } finally {
             setSubmitting(false);
@@ -183,10 +252,17 @@ export function NewInvoiceModal({
                             </p>
                         )}
 
-                        {formError && (
-                            <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-                                {formError}
-                            </p>
+                        {formErrors.length > 0 && (
+                            <div className="space-y-1 rounded-md bg-destructive/10 p-2">
+                                {formErrors.map((error) => (
+                                    <p
+                                        key={error}
+                                        className="text-sm text-destructive"
+                                    >
+                                        {error}
+                                    </p>
+                                ))}
+                            </div>
                         )}
 
                         <div className="space-y-2">

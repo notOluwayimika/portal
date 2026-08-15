@@ -32,6 +32,12 @@ class InvoiceController extends Controller
     {
         $this->assertMayReduce($request);
 
+        // Reduction provenance, refused as FIELD errors before the Action's transaction (U8 commit 3).
+        // AFTER assertMayReduce on purpose, so a principal without the reduction grant still gets its
+        // 403 and is told nothing about a policy it may not apply. The DB reduction_guard remains the
+        // authority and the backstop — see the method for what it does and does not cover.
+        $request->assertDiscountPoliciesUsable();
+
         try {
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
@@ -64,6 +70,26 @@ class InvoiceController extends Controller
      * Resolves the student's current billable episode, then delegates to the SAME
      * GenerateInvoice (unchanged domain). No active enrollment → 422; F7/negative-total →
      * the Action's 422.
+     *
+     * THE TWO GENERATE ROUTES ORDER THEIR REFUSALS DIFFERENTLY, and the asymmetry is recorded here
+     * rather than left to be rediscovered. On THIS route the enrollment is resolved at the top, so the
+     * "no active enrollment" refusal is available before anything else and runs FIRST: a student who
+     * cannot be billed at all is told that, not that a discount policy is retired. On `generate()`
+     * above, the enrollment is not validated until inside GenerateInvoice (:73-112), so the pre-check
+     * necessarily answers first there and a caller gets the policy problem before the enrollment one.
+     *
+     * That is not fixable without moving the pre-check into the Action, and the Action throws
+     * BusinessRuleException, whose handler answers a plain `{"message": …}` with no `errors` key — so
+     * the move would cost the field keys this whole commit exists to produce. The trade is taken
+     * knowingly and only on the harness route: `generate()` is the enrollment-id POST, used by tests
+     * and no client (routes/endpoints/finance.php:222-225), while this one is what the "New invoice"
+     * modal posts to.
+     *
+     * NOT A DISCLOSURE FIX, and no comment here should say it is. GET /v1/finance/discount-policies
+     * carries no permission beyond `finance.access` and already returns `status` and
+     * `requires_approval` for every policy the principal can see, so the pre-check's messages tell an
+     * authorised caller nothing they could not already read. The reorder is about which refusal is
+     * USEFUL to the operator, not about what they may know.
      */
     public function generateForStudent(
         GenerateInvoiceForStudentRequest $request,
@@ -75,9 +101,17 @@ class InvoiceController extends Controller
 
         $this->assertMayReduce($request);
 
+        // BEFORE the pre-check, deliberately. "This student has no active enrollment to bill" is the
+        // more fundamental refusal: nothing about the lines can be acted on until there is something
+        // to bill, and telling a bursar to pick a different discount policy for an invoice that cannot
+        // exist sends them to fix the wrong thing. Measured before the reorder: that request answered
+        // with the policy field error.
         if ($enrollment === null) {
             return response()->json(['message' => 'This student has no active enrollment to bill.'], 422);
         }
+
+        // Reduction provenance as FIELD errors, still before the Action's transaction (U8 commit 3).
+        $request->assertDiscountPoliciesUsable();
 
         try {
             $invoice = $action->handle($enrollment->enrollmentUuid, $request->lineSpecs(), $request->user()?->id);

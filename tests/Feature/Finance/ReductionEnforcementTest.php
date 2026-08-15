@@ -239,9 +239,19 @@ it('proof 12 (DB) — a RAW reduction-line insert citing a requires_approval=tru
 });
 
 it('proof 12b (DB) — a RAW reduction-line insert with a NULL policy trips the trigger', function () {
-    // ARM 1 OF THE GUARD, WHICH HAD NO DB COVERAGE AT ALL until this commit — and it is the arm the
-    // running UI exercises: new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no
-    // discount_policy_id whatsoever, so every reduction that screen can currently produce is this case.
+    // ARM 1 OF THE GUARD, WHICH HAD NO DB COVERAGE AT ALL until the commit that added this arm.
+    //
+    // IT IS NO LONGER THE ARM THE RUNNING UI EXERCISES, and the sentence that said so is corrected
+    // here rather than deleted, because the correction is the useful part. This comment used to read
+    // "new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no discount_policy_id
+    // whatsoever, so every reduction that screen can currently produce is this case." Both halves are
+    // false as of U8 commit 4: `wireLine()` (new-invoice-modal.tsx:113-128) puts `discount_policy_id`
+    // on every non-charge line, so an unpicked policy reaches the server as `""` rather than as an
+    // absent key — which lands on this same arm only because ConvertEmptyStringsToNull rewrites it to
+    // null first. A UI reduction is therefore still refused, by a longer route than this said.
+    //
+    // The claim was left standing by the commit that falsified it; see
+    // docs/handoff/tickets/stale-path-line-citations.md for the class and the gate proposed for it.
     //
     // Its HTTP half moved to GenerateInvoiceRequest's pre-check in U8 commit 3. That pre-check is a
     // convenience layer producing a better message; THIS is the arm that proves the invariant is still

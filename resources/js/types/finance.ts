@@ -255,4 +255,30 @@ export type DraftLine = {
     description: string;
     amount: string; // naira, converted via nairaToMinor on submit
     kind: 'charge' | 'waiver' | 'discount';
+    // The discount policy uuid a REDUCTION line cites (U8 commit 4). NOT optional and NOT nullable:
+    // `''` is the unselected state, which is what a native <select> with an empty placeholder option
+    // posts, and what the server reads as "no provenance" (ConvertEmptyStringsToNull rewrites it to
+    // null before any rule sees it — GenerateInvoiceRequest documents this at length). A required
+    // string with one meaningful empty value keeps every DraftLine the same shape, so nothing
+    // downstream has to ask whether the field is present.
+    //
+    // A CHARGE LINE MUST CARRY `''` HERE, never a stale uuid: the reduction guard's fifth arm refuses
+    // a charge line that references a policy. new-invoice-modal.tsx's patchForKind() is what clears
+    // it on the flip back.
+    discountPolicyId: string;
+};
+
+// The subset of DiscountPolicyResource (app/Finance/Http/Resources/DiscountPolicyResource.php) that
+// choosing a policy at invoice time needs. A PROJECTION, deliberately named differently from the
+// fuller `DiscountPolicy` type in pages/admin/finance/discount-policies.tsx, which is the authoring
+// screen's own and carries basis/value/percent/description because it renders them. Naming the
+// narrow one `SelectablePolicy` keeps it from reading as a second, drifting copy of the wide one.
+//
+// `id` IS THE UUID. DiscountPolicyResource:15 serialises `'id' => $this->uuid`; the integer primary
+// key never reaches the wire (U8 commit 1).
+export type SelectablePolicy = {
+    id: string;
+    name: string;
+    requires_approval: boolean;
+    status: 'active' | 'superseded' | 'retired';
 };

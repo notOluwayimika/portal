@@ -127,6 +127,69 @@ it('lists superseded and retired policies, not only the active ones', function (
     $as()->getJson('/api/v1/finance/discount-policies?status=lapsed')->assertStatus(422);
 });
 
+it('carries `status` and `requires_approval`, in the shapes the invoice modal reads', function () {
+    /*
+     * THE CATALOG CONTRACT, PINNED FROM THE SERVER'S SIDE ONLY (U8 commit 6).
+     *
+     * new-invoice-modal.tsx's selectablePolicies() decides which policies a bursar may cite on a
+     * reduction with `policy.status === 'active' && policy.requires_approval !== true`. Both keys
+     * come from DiscountPolicyResource, and until this arm NOTHING asserted either of them in a
+     * response body: the three existing expectations in this file pluck `name` (twice) and `id`
+     * (once), and a repo-wide search for an assertion on those two keys in a discount-policies
+     * payload returns nothing.
+     *
+     * WHAT THAT COST. `axios.get<SelectablePolicy[]>` is a COMPILE-TIME assertion — TypeScript
+     * erases it, so at runtime the client trusts whatever arrives. Rename or drop `status` in the
+     * Resource and every row's `policy.status` is `undefined`, `undefined === 'active'` is false for
+     * all of them, and the modal tells every bursar in words "This school has no active discount
+     * policy that can back a reduction." No error, no console entry, no non-2xx status — a false
+     * sentence, silently, with nobody having touched JavaScript. This arm is what fails instead.
+     *
+     * SHAPES, NOT JUST PRESENCE. `requires_approval` must be a BOOLEAN: `!== true` is false for the
+     * integer 1, so a Resource that stopped casting would silently make every approval-requiring
+     * policy selectable — the opposite failure, and the one the reduction guard's third arm then
+     * refuses at the database with a message the operator did not expect. `status` must be one of
+     * the three enum values the client's union declares.
+     *
+     * THIS PINS THE SERVER'S HALF AND ONLY THE SERVER'S HALF. If someone inverts the client's own
+     * predicate — `!== true` to `=== true` — every catalog goes empty, the same false sentence is
+     * shown, and this arm still passes, as do all fifteen gate steps (measured). There is no
+     * JavaScript test runner in this repository, so the client's half stays unguarded until there
+     * is one: docs/handoff/tickets/no-javascript-test-runner.md.
+     *
+     * WATCHED REDS: delete `'status'` from DiscountPolicyResource::toArray(), then
+     * `'requires_approval'`, then change the model's boolean cast. Each reds this arm and nothing
+     * else in the file.
+     */
+    $school = School::factory()->create();
+    dpsPolicy($school, 'Sibling discount', 'active');
+    dpsPolicy($school, 'Old bursary', 'retired');
+
+    $body = test()->actingAs(dpsUser($school, ['finance.access', 'finance.discount-policy.change.submit']))
+        ->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/discount-policies')
+        ->assertOk()
+        ->json();
+
+    expect($body)->toHaveCount(2);
+
+    foreach ($body as $row) {
+        expect($row)->toHaveKeys(['id', 'name', 'status', 'requires_approval']);
+
+        // A BOOLEAN, not 0/1 — `requires_approval !== true` in the client is false for the integer.
+        expect($row['requires_approval'])->toBeBool();
+
+        // One of the three the client's `SelectablePolicy['status']` union declares. A fourth value
+        // would be filtered out by the client with no way to tell that from "no policies".
+        expect($row['status'])->toBeIn(['active', 'superseded', 'retired']);
+    }
+
+    // And the one value the client's predicate turns on actually arrives, rather than every row
+    // happening to be inactive — without this the arm would pass over a Resource that hardcoded a
+    // wrong-but-well-shaped status.
+    expect(collect($body)->pluck('status')->sort()->values()->all())->toBe(['active', 'retired']);
+});
+
 it('shows School B its OWN policies, and none of School A’s', function () {
     // The isolation the browser drive checks by eye, asserted. DiscountPolicy carries SchoolScope; this
     // is the arm that fails if the catalog query ever loses its bound.

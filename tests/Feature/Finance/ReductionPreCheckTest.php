@@ -318,9 +318,14 @@ it('arm 4 — a super_admin with NO School context: a RETIRED policy is answered
 // whole suite staying green. These arms are what makes the watched red attributable per call site.
 
 it('student route — arm 1: a reduction with NO policy is a field error on that line', function () {
-    // THE CASE THE LIVE UI PRODUCES TODAY. new-invoice-modal.tsx:135-138 sends description,
-    // amount_minor and kind, and no discount_policy_id at all, while offering `waiver` and `discount`
-    // in its kind select (:229-232). So every reduction that screen can currently submit is this arm.
+    // THIS WAS THE CASE THE LIVE UI PRODUCED, AND AS OF U8 COMMIT 4 IT IS NOT. Written when
+    // new-invoice-modal.tsx sent only description, amount_minor and kind while offering `waiver` and
+    // `discount` in its kind select — so every reduction that screen could submit was this arm. The
+    // modal now sends `discount_policy_id` on every reduction line (wireLine()), so the shape it
+    // produces when nothing is picked is the EMPTY STRING, not an absent key. That is the arm
+    // immediately below; this one keeps the absent-key case, which is still what a hand-built payload
+    // or any non-browser caller sends. Line numbers deliberately not re-cited: the previous ones went
+    // stale inside one commit.
     [$school, $admin, $enrollment] = rpcSetup();
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
@@ -332,6 +337,64 @@ it('student route — arm 1: a reduction with NO policy is a field error on that
         ->toContain('Select the discount policy that authorises this reduction');
 
     rpcAssertNothingWritten();
+});
+
+it('student route — arm 1: the EMPTY-STRING policy the modal posts when nothing is picked', function () {
+    // THE EXACT PAYLOAD THE RUNNING UI NOW PRODUCES (U8 commit 4). new-invoice-modal.tsx's wireLine()
+    // puts `discount_policy_id` on every reduction line and sends `line.discountPolicyId` AS IS, so an
+    // untouched policy select posts `""` rather than omitting the key. The equivalent arm on the
+    // enrollment-id route already existed; this route had only the absent-key one, and the two travel
+    // through different code — `""` is rewritten to null by ConvertEmptyStringsToNull, which is a
+    // GLOBAL MIDDLEWARE and therefore a dependency of this behaviour that no test on this route
+    // pinned. Remove it from the stack and this arm is the one that notices.
+    //
+    // The modal deliberately does NOT block this client-side. The point of U8 commit 3 was that the
+    // server names the offending line; a client that refuses first would hide whether it still does.
+    [$school, $admin, $enrollment] = rpcSetup();
+
+    $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
+        ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
+    ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
+
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->toContain('Select the discount policy that authorises this reduction');
+
+    // NOT the "invalid" message the existence rule would produce if `""` ever reached it as a literal
+    // uuid candidate. Asserted because the two refusals are both 422s on the same field, and only the
+    // text tells them apart — which is what says the empty string became "no provenance" rather than
+    // "a malformed id".
+    expect((string) $response->json('errors')['lines.1.discount_policy_id'][0])
+        ->not->toContain('is invalid');
+
+    rpcAssertNothingWritten();
+});
+
+it('student route — the ACCEPTED payload has the modal’s exact shape, key for key', function () {
+    // The success direction of the same contract. Every other passing arm posts a payload a human
+    // composed; this one posts what wireLine() emits — `discount_policy_id` present on the reduction
+    // line and ABSENT on the charge line — and asserts the stored provenance on both.
+    //
+    // THE CHARGE LINE'S ABSENT KEY IS THE HALF THAT MATTERS. It is the observable end of the
+    // charge → discount → pick a policy → back to charge transition: if patchForKind() stopped
+    // clearing `discountPolicyId`, or wireLine() stopped omitting the key on a charge, this payload
+    // would instead carry the policy on line 0 and the request would be refused by arm 5. Nothing in
+    // JavaScript can be tested on this platform (docs/handoff/tickets/no-javascript-test-runner.md),
+    // so this arm pins the payload SHAPE the modal is supposed to produce, from the server's side.
+    // It cannot see whether the modal still produces it.
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school);
+
+    rpcPostForStudent($this, $school, $admin, $enrollment, [
+        ['description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
+        ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+    ])->assertCreated();
+
+    $charge = DB::table('finance_invoice_lines')->where('kind', 'charge')->first();
+    $reduction = DB::table('finance_invoice_lines')->where('kind', 'discount')->first();
+
+    expect($charge->discount_policy_id)->toBeNull()
+        ->and((int) $reduction->discount_policy_id)->toBe($policy->id);
 });
 
 it('student route — arm 2: a reduction citing a RETIRED policy is a field error on that line', function () {

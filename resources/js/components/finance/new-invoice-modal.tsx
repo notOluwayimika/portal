@@ -18,7 +18,11 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { formatNaira, nairaToMinor, sumMinor } from '@/lib/format';
-import type { BillableEnrollmentInfo, DraftLine } from '@/types/finance';
+import type {
+    BillableEnrollmentInfo,
+    DraftLine,
+    SelectablePolicy,
+} from '@/types/finance';
 
 type Props = {
     isOpen: boolean;
@@ -27,7 +31,101 @@ type Props = {
     onCreated: () => void;
 };
 
-const EMPTY_LINE: DraftLine = { description: '', amount: '', kind: 'charge' };
+const EMPTY_LINE: DraftLine = {
+    description: '',
+    amount: '',
+    kind: 'charge',
+    discountPolicyId: '',
+};
+
+// The one shape a native <select> needs here. fee-schedules.tsx:133-134 and discount-policies.tsx
+// each carry their own identical copy; this is the third and it is deliberately not extracted,
+// because moving it would edit two files this commit has no other business in.
+const SELECT_CLASS =
+    'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+
+/**
+ * Which policies this form will offer.
+ *
+ * BOTH FILTERS ARE CONVENIENCE, NOT ENFORCEMENT, and the distinction is the whole reason this
+ * comment is longer than the function. Nothing here refuses anything. What refuses a reduction
+ * citing an unusable policy is, in order:
+ *
+ *   1. `GenerateInvoiceRequest::assertDiscountPoliciesUsable()` — the server pre-check, which turns
+ *      each refusal into a FIELD error keyed to the offending line (U8 commit 3);
+ *   2. `finance_invoice_lines_reduction_guard` — the BEFORE INSERT trigger, which is the authority
+ *      and the backstop, and which a job, a raw insert or tinker meets exactly as an HTTP request
+ *      does (2026_07_26_140002_add_discount_policy_to_finance_lines.php:62-101).
+ *
+ * A reader who takes this predicate for a guard stops checking that those two still exist, which is
+ * how a control gets deleted with everything staying green. It is here so the bursar is not offered
+ * a policy that will be bounced back at them, and for no other reason.
+ *
+ * `status === 'active'` IS REDUNDANT WITH THE REQUEST and kept anyway: the fetch asks for
+ * `?status=active`, so the server has already filtered. Repeating it makes this function total over
+ * whatever it is actually handed, rather than correct only while the query string holds.
+ *
+ * `requires_approval` IS NOT REDUNDANT WITH ANYTHING. `?status=active` does not exclude it, and the
+ * trigger's third arm refuses an ACTIVE policy that requires per-application approval
+ * (…:85-88 — "apply it as a credit note, not an invoice line"). Status alone is necessary and not
+ * sufficient, so a list filtered on status alone would offer policies that cannot be applied here.
+ */
+export function selectablePolicies(
+    policies: SelectablePolicy[],
+): SelectablePolicy[] {
+    return policies.filter(
+        (policy) =>
+            policy.status === 'active' && policy.requires_approval !== true,
+    );
+}
+
+/**
+ * The patch to apply when a line's KIND changes.
+ *
+ * THE CLEAR IS THE POINT. Flipping a line back to `charge` must DISCARD the policy the operator
+ * picked while it was a reduction, not merely stop showing it: the reduction guard's fifth arm
+ * refuses a charge line that references a policy at all (…:96-99), and the server pre-check refuses
+ * it one layer up with "A charge line cannot carry a discount policy." A hidden-but-retained id is
+ * therefore a submission the server rejects for a field the operator can no longer see — the exact
+ * shape of the bug this function exists to not have.
+ *
+ * Re-selecting on a flip BACK to a reduction is intended, not an oversight. Remembering the previous
+ * choice would leave a policy silently attached to a line whose meaning changed twice, and an
+ * unnoticed stale selection on a reduction is worse than one extra click.
+ */
+export function patchForKind(kind: DraftLine['kind']): Partial<DraftLine> {
+    return kind === 'charge' ? { kind, discountPolicyId: '' } : { kind };
+}
+
+/**
+ * One line, as the wire carries it.
+ *
+ * `discount_policy_id` GOES ONLY ON REDUCTION LINES — the second half of the same rule patchForKind
+ * enforces in state, kept here as well because DraftLine is a plain object and any future edit path
+ * that sets `discountPolicyId` without going through the kind select would otherwise put it on the
+ * wire. Neither half is the server's guard; see selectablePolicies above for what is.
+ *
+ * On a reduction the value is sent AS IS, including `''` when nothing was picked. That is the
+ * designed path and not a gap: `''` is rewritten to null by ConvertEmptyStringsToNull before any
+ * rule sees it, and the pre-check answers with a field error naming that line. Blocking the request
+ * client-side instead would hide whether the server still names it.
+ */
+export function wireLine(
+    line: DraftLine,
+    amountMinor: number,
+): Record<string, unknown> {
+    const wire: Record<string, unknown> = {
+        description: line.description.trim(),
+        amount_minor: amountMinor,
+        kind: line.kind,
+    };
+
+    if (line.kind !== 'charge') {
+        wire.discount_policy_id = line.discountPolicyId;
+    }
+
+    return wire;
+}
 
 /**
  * Turn a 422 body into the lines to show above the form.
@@ -104,6 +202,14 @@ function errorLinesFrom(data: unknown): string[] {
  * goes through sumMinor (the sanctioned integer sum), reductions carry a negative amount, and
  * the preview MIRRORS the server's F6 total. Submit posts to the student-scoped generate
  * endpoint; no-enrollment / already-invoiced (F7) / negative-total come back as 422 inline.
+ *
+ * A REDUCTION CITES A POLICY (U8 commit 4). Until this commit the modal offered `waiver` and
+ * `discount` in its Kind select and sent no `discount_policy_id` at all, so every reduction the
+ * running UI could submit was refused — by the pre-check since U8 commit 3, and by
+ * finance_invoice_lines_reduction_guard before that. The catalog is fetched on open
+ * (`?status=active`, then narrowed again by selectablePolicies), the select appears only on a
+ * reduction line, and the id is CLEARED when a line flips back to `charge`. Nothing here refuses
+ * anything: see selectablePolicies for what does.
  */
 export function NewInvoiceModal({
     isOpen,
@@ -118,6 +224,12 @@ export function NewInvoiceModal({
     const [lines, setLines] = useState<DraftLine[]>([{ ...EMPTY_LINE }]);
     const [formErrors, setFormErrors] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    // The discount catalog, already narrowed by selectablePolicies. Three states worth telling apart:
+    // still loading, loaded-and-empty (the School has nothing that can back a reduction — said in
+    // words below, never as an empty select), and loaded-but-the-request-failed.
+    const [policies, setPolicies] = useState<SelectablePolicy[]>([]);
+    const [policiesLoading, setPoliciesLoading] = useState(true);
+    const [policiesFailed, setPoliciesFailed] = useState(false);
 
     const loadEnrollment = useCallback(async () => {
         setEnrollment(null);
@@ -142,12 +254,48 @@ export function NewInvoiceModal({
         }
     }, [student.uuid]);
 
+    /**
+     * The discount catalog the policy select is built from.
+     *
+     * `?status=active` FOLLOWS discount-policies.tsx:167-172, which is the in-repo precedent for
+     * reading this endpoint and which says in its own comment that a caller wanting only the
+     * choosable ones asks for exactly this. DiscountPolicyController::index treats an absent `status`
+     * as UNFILTERED, so omitting it would hand this select every superseded and retired policy the
+     * School has ever had.
+     *
+     * A FAILED FETCH IS NOT AN EMPTY CATALOG, and the two are kept apart on purpose: an empty list
+     * rendered after a network error would tell the bursar their School has no policies, which is a
+     * different and possibly false statement. The failure gets its own sentence below.
+     */
+    const loadPolicies = useCallback(async () => {
+        setPoliciesLoading(true);
+        setPoliciesFailed(false);
+
+        try {
+            const { data } = await axios.get<SelectablePolicy[]>(
+                '/api/v1/finance/discount-policies',
+                { params: { status: 'active' } },
+            );
+            setPolicies(selectablePolicies(data ?? []));
+        } catch {
+            setPolicies([]);
+            setPoliciesFailed(true);
+        } finally {
+            setPoliciesLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         if (isOpen) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             void loadEnrollment();
+            // NO SECOND DISABLE. The rule fires once per effect, on the first offending call, so a
+            // directive here is unused and eslint reports it as a warning — the same point
+            // discount-policies.tsx:183-185 makes about copying one across for symmetry. Measured:
+            // adding it produced "Unused eslint-disable directive"; removing it, zero warnings.
+            void loadPolicies();
         }
-    }, [isOpen, loadEnrollment]);
+    }, [isOpen, loadEnrollment, loadPolicies]);
 
     const setLine = (index: number, patch: Partial<DraftLine>) =>
         setLines((prev) =>
@@ -199,11 +347,12 @@ export function NewInvoiceModal({
 
         try {
             await axios.post(generateForStudent.url(student.uuid), {
-                lines: lines.map((l, i) => ({
-                    description: l.description.trim(),
-                    amount_minor: signedMinors[i],
-                    kind: l.kind,
-                })),
+                // `allValid` above has already established that every signedMinors entry is a number,
+                // which is what makes the cast honest rather than hopeful. Same cast, same reason and
+                // same guard as `sumMinor(signedMinors as number[])` on the preview line.
+                lines: lines.map((l, i) =>
+                    wireLine(l, signedMinors[i] as number),
+                ),
             });
             toast.success('Invoice created.');
             onCreated();
@@ -267,75 +416,165 @@ export function NewInvoiceModal({
 
                         <div className="space-y-2">
                             {lines.map((line, index) => (
-                                <div
-                                    key={index}
-                                    className="flex items-end gap-2"
-                                >
-                                    <div className="flex-1">
-                                        {index === 0 && (
-                                            <Label>Description</Label>
-                                        )}
-                                        <Input
-                                            placeholder="Tuition"
-                                            value={line.description}
-                                            onChange={(e) =>
-                                                setLine(index, {
-                                                    description: e.target.value,
-                                                })
-                                            }
-                                        />
-                                    </div>
-                                    <div className="w-32">
-                                        {index === 0 && <Label>Kind</Label>}
-                                        <Select
-                                            value={line.kind}
-                                            onValueChange={(v) =>
-                                                setLine(index, {
-                                                    kind: v as DraftLine['kind'],
-                                                })
-                                            }
+                                <div key={index} className="space-y-1">
+                                    <div className="flex items-end gap-2">
+                                        <div className="flex-1">
+                                            {index === 0 && (
+                                                <Label>Description</Label>
+                                            )}
+                                            <Input
+                                                placeholder="Tuition"
+                                                value={line.description}
+                                                onChange={(e) =>
+                                                    setLine(index, {
+                                                        description:
+                                                            e.target.value,
+                                                    })
+                                                }
+                                            />
+                                        </div>
+                                        <div className="w-32">
+                                            {index === 0 && <Label>Kind</Label>}
+                                            <Select
+                                                value={line.kind}
+                                                onValueChange={(v) =>
+                                                    setLine(
+                                                        index,
+                                                        patchForKind(
+                                                            v as DraftLine['kind'],
+                                                        ),
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="charge">
+                                                        Charge
+                                                    </SelectItem>
+                                                    <SelectItem value="waiver">
+                                                        Waiver
+                                                    </SelectItem>
+                                                    <SelectItem value="discount">
+                                                        Discount
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="w-32">
+                                            {index === 0 && (
+                                                <Label>Amount (₦)</Label>
+                                            )}
+                                            <Input
+                                                inputMode="decimal"
+                                                placeholder="0.00"
+                                                value={line.amount}
+                                                onChange={(e) =>
+                                                    setLine(index, {
+                                                        amount: e.target.value,
+                                                    })
+                                                }
+                                            />
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeLine(index)}
+                                            disabled={lines.length === 1}
+                                            aria-label="Remove line"
                                         >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="charge">
-                                                    Charge
-                                                </SelectItem>
-                                                <SelectItem value="waiver">
-                                                    Waiver
-                                                </SelectItem>
-                                                <SelectItem value="discount">
-                                                    Discount
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
                                     </div>
-                                    <div className="w-32">
-                                        {index === 0 && (
-                                            <Label>Amount (₦)</Label>
-                                        )}
-                                        <Input
-                                            inputMode="decimal"
-                                            placeholder="0.00"
-                                            value={line.amount}
-                                            onChange={(e) =>
-                                                setLine(index, {
-                                                    amount: e.target.value,
-                                                })
-                                            }
-                                        />
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => removeLine(index)}
-                                        disabled={lines.length === 1}
-                                        aria-label="Remove line"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
+
+                                    {/*
+                                     * THE POLICY THIS REDUCTION CITES — shown only for a reduction,
+                                     * because a charge line may not carry one at all (the reduction
+                                     * guard's fifth arm). patchForKind() has already cleared the
+                                     * stored id by the time this stops rendering, so nothing hidden
+                                     * here rides along on the next submit.
+                                     *
+                                     * A NATIVE <select>, not the Radix one the Kind column uses, and
+                                     * the reason is the empty option: Radix's SelectItem cannot take
+                                     * `value=""`, and the unselected state is a designed path here —
+                                     * it posts `''`, the server reads no provenance, and the
+                                     * pre-check answers with a field error naming this line. The
+                                     * shape follows fee-schedules.tsx:903-925, the in-repo precedent
+                                     * for a "choose one, or leave empty" select in the Finance UI.
+                                     */}
+                                    {line.kind !== 'charge' && (
+                                        <div className="pl-1">
+                                            <Label
+                                                htmlFor={`ni-policy-${index}`}
+                                                className="text-xs"
+                                            >
+                                                Discount policy
+                                            </Label>
+                                            {policiesLoading ? (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Loading the discount
+                                                    policies…
+                                                </p>
+                                            ) : policiesFailed ? (
+                                                <p className="text-xs text-destructive">
+                                                    The discount policies could
+                                                    not be loaded, so this
+                                                    reduction cannot cite one.
+                                                    Close the dialog and reopen
+                                                    it to try again.
+                                                </p>
+                                            ) : policies.length === 0 ? (
+                                                /*
+                                                 * NEVER AN EMPTY SELECT. A select with only the
+                                                 * placeholder in it looks like a control the
+                                                 * operator has not used yet, so they hunt for the
+                                                 * option that is not there; this says what is
+                                                 * actually true and where to go. The same defect
+                                                 * class — a screen rendering an empty control over
+                                                 * a fixture that seeds nothing behind it — is what
+                                                 * two earlier drives on this project were spent on.
+                                                 */
+                                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                                    This school has no active
+                                                    discount policy that can
+                                                    back a reduction. Have one
+                                                    authorised on the Discount
+                                                    policies screen, or raise
+                                                    this as a credit note
+                                                    instead — submitting without
+                                                    one will be refused.
+                                                </p>
+                                            ) : (
+                                                <select
+                                                    id={`ni-policy-${index}`}
+                                                    className={SELECT_CLASS}
+                                                    value={
+                                                        line.discountPolicyId
+                                                    }
+                                                    onChange={(e) =>
+                                                        setLine(index, {
+                                                            discountPolicyId:
+                                                                e.target.value,
+                                                        })
+                                                    }
+                                                >
+                                                    <option value="">
+                                                        Choose a policy…
+                                                    </option>
+                                                    {policies.map((policy) => (
+                                                        <option
+                                                            key={policy.id}
+                                                            value={policy.id}
+                                                        >
+                                                            {policy.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                             <Button

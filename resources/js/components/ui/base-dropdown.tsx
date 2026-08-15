@@ -6,6 +6,8 @@ interface Option {
 }
 
 interface SelectProps {
+  /** Put on the trigger button so a <Label htmlFor> can name this control (a11y). */
+  id?: string
   value?: string | number | null
   onChange?: (value: string | number | null | undefined) => void
   options: (string | number | Option)[]
@@ -42,6 +44,7 @@ const DEFAULT_DROPDOWN_CLASS =
   'border border-slate-100 dark:border-slate-700 py-1 z-[9999] overflow-hidden'
 
 export default function Select({
+  id,
   value,
   onChange,
   options = [],
@@ -126,12 +129,32 @@ export default function Select({
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
+  // The panel is portalled to <body> and positioned `fixed`, so its coordinates are only correct
+  // for the scroll position they were measured at. Without this the panel detaches from its
+  // trigger the moment anything scrolls — the page, or a scrollable modal body, which is where
+  // this control sits on the fee-schedule form. `capture: true` is what makes an ancestor's
+  // scroll reach us: scroll does not bubble, so a listener on document only sees it on the way
+  // down. Listeners exist only while the panel is open.
+  useEffect(() => {
+    if (!isOpen) return
+    const reposition = () => updateDropdownPosition()
+    document.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      document.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [isOpen, updateDropdownPosition])
+
   return (
     <div className="relative inline-block w-full" ref={triggerRef}>
       <button
+        id={id}
         type="button"
         onClick={toggleDropdown}
         disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         className={`${buttonClass} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <div className="flex items-center gap-2 overflow-hidden">

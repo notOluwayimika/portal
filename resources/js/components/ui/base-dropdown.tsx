@@ -155,6 +155,8 @@ export default function Select({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        data-slot="base-dropdown-trigger"
+        data-value={String(value ?? '')}
         className={`${buttonClass} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <div className="flex items-center gap-2 overflow-hidden">
@@ -186,12 +188,23 @@ export default function Select({
             ref={contentRef}
             className={`origin-top-left ${dropdownClass}`}
             style={dropdownStyle}
+            role="listbox"
+            data-slot="base-dropdown-panel"
           >
             <div className="max-h-60 overflow-y-auto custom-scrollbar">
               {header}
               {normalizedOptions.map(option => (
+                // `data-value` carries the option's VALUE into the DOM. A native <select> exposes
+                // it as `option.value`; this control renders buttons, so without it the only thing
+                // readable from the page is the label — and a drive checking School isolation reads
+                // values precisely because the two Schools' labels are identical strings by
+                // construction (finance-drive skill, "Isolation is checked by id, never by label").
+                // Inert: no styling and no behaviour keys on it.
                 <button
                   key={String(option.value)}
+                  role="option"
+                  aria-selected={value === option.value}
+                  data-value={String(option.value ?? '')}
                   onClick={() => handleSelect(option)}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 ${
                     value === option.value

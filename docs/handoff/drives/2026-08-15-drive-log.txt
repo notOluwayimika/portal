@@ -1,0 +1,90 @@
+=== SEAT 1: maker@drive.test (accounts_officer, School A) ===
+  login maker@drive.test -> http://localhost:8001/login  (title: "Log in - Laravel")
+  post-login events: ["http 403: GET http://localhost:8001/dashboard","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)"]
+
+[maker] /finance/bank-accounts  h1="Bank accounts"
+  KPI cards : ["Bank accounts = 1","Active = 1","Deactivated = 0"]
+  counter   : "Showing 1 of 1"
+  rows(1)   : ["Drive accountDrive Bank | 9000000001 | — | Active | "]
+  badges    : ["MD","Active"]
+  PAGE select #0 current="" options(3): ["|All accounts","active|Active","inactive|Deactivated"]
+  EDIT modal: title="Edit Drive account" inputs=["","ba-label","ba-account_name"]
+  events    : clean
+
+[maker] /finance/fee-schedules  h1="Fee schedules"
+  KPI cards : ["Drafts = 0","With the ED = 0","Active = 0"]
+  counter   : "Showing 0 of 0"
+  rows(0)   : []
+  PAGE select #0 current="" options(2): ["|All terms","1|2026/2027 — First Term"]
+  PAGE select #1 current="" options(6): ["|Any status","draft|Draft","pending_approval|With the ED","active|Active","superseded|Superseded","retired|Retired"]
+  props.terms        : ["1|2026/2027 — First Term"]
+  props.class_levels : ["1|JSS 1","2|JSS 2"]
+  MODAL select #0 current="" options(2): ["|All terms","1|2026/2027 — First Term"]
+  MODAL select #1 current="" options(6): ["|Any status","draft|Draft","pending_approval|With the ED","active|Active","superseded|Superseded","retired|Retired"]
+  MODAL select #2 current="1" options(1): ["1|2026/2027 — First Term"]
+  MODAL select #3 current="1" options(2): ["1|JSS 1","2|JSS 2"]
+  MODAL select #4 current="" options(2): ["|Choose an account…","a282b8eb-ac0b-49e7-abc0-94218e41b7aa|Drive account · Drive Bank"]
+  MODAL after fill, selects: ["","","1","1","a282b8eb-ac0b-49e7-abc0-94218e41b7aa","a282b8eb-ac0b-49e7-abc0-94218e41b7aa"]
+  modal body overflow: {"scrollHeight":1611,"clientHeight":630,"canScroll":true}
+  SCROLL PROOF (fee-schedule modal body): {"scrolledBy":250,"before":{"triggerTop":1641,"panelTop":1679,"deltaTop":38,"deltaLeft":0},"after":{"triggerTop":1391,"panelTop":1429,"deltaTop":38,"deltaLeft":0},"deltaTopMoved":0}
+  AFTER CREATE — KPI cards : ["Drafts = 1","With the ED = 0","Active = 0"]
+  AFTER CREATE — counter   : "Showing 1 of 1"
+  AFTER CREATE — rows(1) : ["DRIVE JSS 1 — First Term | 2026/2027 — First Term | JSS 1 | Draft | 2 | ₦262,000.50 | "]
+  SEARCH "zzz-no-match" — counter="Showing 0 of 1" rows=0 cards=["Drafts = 0","With the ED = 0","Active = 0"]
+  events    : clean
+
+=== ERROR STATE (list fetch aborted at the network layer) ===
+  login maker@drive.test -> http://localhost:8001/login  (title: "Log in - Laravel")
+  post-login events: ["http 403: GET http://localhost:8001/dashboard","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)"]
+  bank-accounts: {"showsCouldNotLoad":true,"showsRetry":true,"showsEmptyCopy":false}
+  login maker@drive.test -> http://localhost:8001/login  (title: "Log in - Laravel")
+  post-login events: ["http 403: GET http://localhost:8001/dashboard","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)"]
+  fee-schedules: {"showsCouldNotLoad":true,"showsRetry":true,"showsEmptyCopy":false}
+
+=== UNTOUCHED CONSUMER 1: /finance (admin/finance/index.tsx) ===
+  url=http://localhost:8001/finance h1="Finance accounts"
+  PAGE select #0 current="" options(4): ["|All accounts","outstanding|Outstanding","in_credit|In credit","settled|Settled"]
+  SCROLL PROOF (/finance, window): {"scrolledBy":106,"before":{"triggerTop":333,"panelTop":371,"deltaTop":38,"deltaLeft":0},"after":{"triggerTop":227,"panelTop":265,"deltaTop":38,"deltaLeft":0},"deltaTopMoved":0}
+  events    : clean
+
+=== SEAT 2: school-b@drive.test (accounts_officer, School B — isolation) ===
+  login school-b@drive.test -> http://localhost:8001/login  (title: "Log in - Laravel")
+  post-login events: ["http 403: GET http://localhost:8001/dashboard","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)"]
+
+[school-b] /finance/bank-accounts
+  KPI cards : ["Bank accounts = 1","Active = 1","Deactivated = 0"]
+  counter   : "Showing 1 of 1"
+  rows(1)   : ["Drive accountDrive Bank | 9000000002 | — | Active | "]
+
+[school-b] /finance/fee-schedules
+  KPI cards : ["Drafts = 0","With the ED = 0","Active = 0"]
+  counter   : "Showing 0 of 0"
+  rows(0)   : []
+  PAGE select #0 current="" options(2): ["|All terms","2|2026/2027 — First Term"]
+  PAGE select #1 current="" options(6): ["|Any status","draft|Draft","pending_approval|With the ED","active|Active","superseded|Superseded","retired|Retired"]
+  props.terms        : ["2|2026/2027 — First Term"]
+  props.class_levels : ["3|JSS 1","4|JSS 2"]
+  MODAL select #0 current="" options(2): ["|All terms","2|2026/2027 — First Term"]
+  MODAL select #1 current="" options(6): ["|Any status","draft|Draft","pending_approval|With the ED","active|Active","superseded|Superseded","retired|Retired"]
+  MODAL select #2 current="2" options(1): ["2|2026/2027 — First Term"]
+  MODAL select #3 current="3" options(2): ["3|JSS 1","4|JSS 2"]
+  MODAL select #4 current="" options(2): ["|Choose an account…","a282b8eb-ad71-482f-9153-ea08d9c6622f|Drive account · Drive Bank"]
+  events    : clean
+
+=== UNTOUCHED CONSUMER 2: /students (admin/students/index.tsx) ===
+  login super@drive.test -> http://localhost:8001/super-admin/schools  (title: "Schools - Laravel")
+  post-login events: ["http 403: GET http://localhost:8001/api/notifications/unread-count","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)"]
+  url=http://localhost:8001/students h1="Students"
+  PAGE select #0 current="" options(1): ["|All class levels"]
+  PAGE select #1 current="" options(1): ["|All arms"]
+  PAGE select #2 current="" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #3 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #4 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #5 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #6 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #7 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #8 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #9 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  PAGE select #10 current="active" options(4): ["active|Active","promoted|Promoted","repeated|Repeated","withdrawn|Withdrawn"]
+  SCROLL PROOF (/students, window): {"scrolledBy":80,"before":{"triggerTop":207,"panelTop":245,"deltaTop":38,"deltaLeft":0},"after":{"triggerTop":127,"panelTop":165,"deltaTop":38,"deltaLeft":0},"deltaTopMoved":0}
+  events    : ["http 403: GET http://localhost:8001/api/notifications/unread-count","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)","console.error: Failed to load resource: the server responded with a status of 403 (Forbidden)","pageerror: AxiosError: Request failed with status code 403","http 403: GET http://localhost:8001/api/students/resources"]

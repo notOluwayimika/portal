@@ -376,6 +376,49 @@ it('student route — arm 5: a charge line carrying a discount policy is a field
     rpcAssertNothingWritten();
 });
 
+it('student route — a student with NO enrollment gets the ENROLLMENT refusal, not the policy one', function () {
+    // THE ORDERING FIX. The pre-check used to run above the `$enrollment === null` check, so a student
+    // who could not be billed at all was told a discount policy was retired — a message that sends the
+    // bursar to fix the wrong thing on an invoice that cannot exist. Measured before the reorder:
+    //
+    //   {"message":"There are validation errors","errors":{"lines.1.discount_policy_id":
+    //    ["That discount policy is no longer active, so it cannot back a new reduction. Choose a current one."]}}
+    //
+    // The payload is deliberately bad in BOTH ways at once — no billable episode AND a retired policy —
+    // because that is the only shape that can tell the two orderings apart.
+    $school = School::factory()->create();
+    $admin = User::factory()->create(['school_id' => $school->id]);
+    setPermissionsTeamId($school->id);
+    $role = Role::firstOrCreate(['name' => 'rpc_admin', 'guard_name' => 'web']);
+    foreach (['finance.access', 'finance.invoice.generate', 'finance.invoice.reduction.apply'] as $p) {
+        Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
+    }
+    $role->syncPermissions(['finance.access', 'finance.invoice.generate', 'finance.invoice.reduction.apply']);
+    $admin->assignRole('rpc_admin');
+    setPermissionsTeamId(null);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    // No StudentCurriculum at all — nothing to bill. rpcSetup() cannot be reused; it creates one.
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $policy = rpcPolicy($school, status: 'retired', name: 'Retired');
+
+    $response = $this->actingAs($admin)->withSession(['school_id' => $school->id])
+        ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", ['lines' => [
+            ['description' => 'Tuition', 'amount_minor' => 100000],
+            ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+        ]])->assertStatus(422);
+
+    expect((string) $response->json('message'))->toBe('This student has no active enrollment to bill.');
+
+    // AND NOT the pre-check's shape. Asserted explicitly: a bare 422 passes under either ordering, so
+    // the absence of `errors` is what actually pins which refusal won.
+    expect($response->json('errors'))->toBeNull(
+        'The pre-check answered a request for a student with nothing to bill. The enrollment refusal '
+        .'is the more fundamental one and must come first on this route.');
+
+    rpcAssertNothingWritten();
+});
+
 it('student route — an ACTIVE, no-approval policy still generates the invoice', function () {
     // The other direction on this route too, for the same reason it exists on the other one: without
     // it, a pre-check that refused every reduction would turn all four arms above green.
@@ -450,6 +493,34 @@ it('names EVERY offending line, not just the first', function () {
         'lines.2.discount_policy_id',
         'lines.3.discount_policy_id',
     ]);
+
+    rpcAssertNothingWritten();
+});
+
+it('keys the error by the CALLER’s key, not by position, for a keyed-object payload', function () {
+    // ROUND 1 LISTED THIS AS UNVERIFIABLE-IN-PRACTICE AND IT IS VERIFIABLE IN ONE REQUEST. The
+    // pre-check reads array_keys($this->input('lines')) rather than the 0-based index of the
+    // array_values()'d spec list, so a payload posting `lines` as a keyed OBJECT keys the error by the
+    // caller's own key. Posted at key 7 with no line 0..6 in sight; the error comes back on
+    // `lines.7.discount_policy_id`, not `lines.0.discount_policy_id`.
+    //
+    // Nothing this platform ships sends that shape — the modal builds a JS array — so this is not a
+    // path anyone travels. It is asserted because the alternative (indexing by position) would put the
+    // error on a line number the caller never used, and an error a form cannot find is exactly the
+    // defect this commit exists to remove.
+    [$school, $admin, $enrollment] = rpcSetup();
+    $policy = rpcPolicy($school, status: 'retired', name: 'Retired');
+
+    $response = $this->actingAs($admin)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/invoices', [
+            'enrollment_id' => $enrollment->uuid,
+            'lines' => [
+                3 => ['description' => 'Tuition', 'amount_minor' => 100000],
+                7 => ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('lines.7.discount_policy_id');
+
+    expect(array_keys((array) $response->json('errors')))->toBe(['lines.7.discount_policy_id']);
 
     rpcAssertNothingWritten();
 });

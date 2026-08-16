@@ -571,9 +571,33 @@ the fetch. Errors are recoverable, never a dead end.
 …<Button size="sm" variant="outline" onClick={() => void load()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
 ```
 
-**Success** — a `react-toastify` toast (`toast.success('Invoice created.')`). Success
-is transient feedback, not a persistent banner. Errors from mutations also toast
+**Success** — a toast (`toast.success('Invoice created.')`). Success is transient
+feedback, not a persistent banner. Errors from mutations also toast
 (`toast.error(...)`), unless shown inline in a form.
+
+**Two toast libraries ship in this app, and neither is the rule.** Measured on
+`staging` at `e484a46`: `react-toastify` is imported in **39** files under
+`resources/js`, `sonner` in **18**. No file imports both. Both containers are
+mounted — sonner's `<Toaster />` in [`app.tsx`](../resources/js/app.tsx) inside
+`withApp`, react-toastify's `<ToastContainer>` in
+[`app-layout.tsx`](../resources/js/layouts/app-layout.tsx), and nothing else in
+`resources/js` mounts a `ToastContainer`. Server-side flash toasts go through
+sonner: [`use-flash-toast.ts`](../resources/js/hooks/use-flash-toast.ts) calls
+sonner's `toast[type]`. Finance itself is split — the four modals under
+`components/finance/` plus `approvals`, `opening-balances/import` and `receipt` use
+react-toastify; `bank-accounts`, `discount-policies` and `fee-schedules` use sonner.
+Convergence is [ticketed](handoff/tickets/two-toast-libraries.md), not decided. Until
+it is decided, match whichever library the file you are editing already imports, and
+do not import the other one into it.
+
+**The trap that follows from where the containers are.** `<ToastContainer>` lives
+inside `AppLayout`. The layout resolver in `app.tsx` gives `welcome` no layout and
+`auth/*` the `AuthLayout`, so a `react-toastify` toast raised from a welcome or auth
+screen renders **nothing** — silently, with no console error and no visible failure.
+Sonner's `<Toaster />` is mounted in `withApp`, above the layout, so it is present on
+every page including those two. A toast on an auth or welcome screen must therefore
+use sonner. No auth or welcome page raises a toast today; this is written down so the
+first one that does is not debugged from scratch.
 
 **Design rules**
 
@@ -586,6 +610,9 @@ is transient feedback, not a persistent banner. Errors from mutations also toast
 - Only a spinner and nothing for the error path (a failed load looks identical to an
   empty result).
 - Persistent success banners.
+- Importing the second toast library into a file that already uses the other one.
+- Raising a `react-toastify` toast from an auth or welcome screen, where no
+  `ToastContainer` is mounted.
 
 ---
 

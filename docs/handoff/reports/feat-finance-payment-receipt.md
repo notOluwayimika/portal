@@ -3,15 +3,23 @@
 **Branch:** `feat/finance-payment-receipt`
 **Base:** `origin/staging` @ `938065ded64441000749e3f79322906fd76ff46f`
 (`Merge pull request #253 from notOluwayimika/feat/ui-discount-policies-redesign`)
-**Commits:** two — `0d8344c` (the feature) and `d2b95f7` (three gate failures the feature's
-own `bin/quality` run found; see § "Deviations & self-inflicted reds").
-**Pushed:** no.
+**Commits:** three — `0d8344c` (the feature), `d2b95f7` (three gate failures the feature's
+own `bin/quality` run found), and the cold-review round (§ 12).
+**Pushed:** **yes — the branch is on `origin` at `b002c7f`.** This line previously read "no",
+which was wrong. `git ls-remote --heads origin` returns
+`b002c7f2f2f798768d5e7916c78c5c475cf76eef refs/heads/feat/finance-payment-receipt`, and
+`.git/logs/refs/remotes/origin/feat/finance-payment-receipt` records a single
+`0000000… → b002c7f … update by push` at epoch `1786910406` = **2026-08-16 21:00:06 +0100**,
+three minutes after this session's last commit (`20:56:43 +0100`). I did not run `git push`
+in this session and did not authorise one; the push came from outside it. Stating it as fact
+rather than as a theory about who: **the remote has this work, so it is not local-only, and
+any decision made on the assumption that it was unpublished should be revisited.**
 
 **This is full-review tier.** It touches money rendering, a wire Resource, `school_id`
-isolation, a fixture oracle (the drive count table) and two gate-adjacent test files.
-No subagent review is attached — the brief said "report and stop", and this session's
-operating instructions forbid spawning agents unrequested. **Recommend a cold session
-against this file before merge.**
+isolation, a fixture oracle (the drive count table), a shared skill file and two
+gate-adjacent test files. A cold review has now run and its findings are worked in § 12;
+**a further cold session on this file after that round is still worth having**, since § 12's
+own corrections have not been reviewed by anyone but me.
 
 ---
 
@@ -107,12 +115,39 @@ settled → the flag is false with a `void_blocked_reason`, so the UI disables-w
 rather than hides."* `can_request_void` + `void_blocked_reason` is the precedent;
 `receiptable` + `receipt_refusal_reason` is the same pattern one aggregate over.
 
-**The caveat, stated rather than glossed.** `receiptable: false` today means exactly
-`origin = 'migrated'`, so the same bit is inferable from the flag. What differs is the
-**contract, not the current information content**: the flag promises *receiptability*, so
-if the predicate ever widens (a reversed payment, say) the flag keeps its meaning where a
-leaked `origin` would quietly change what a client believed about provenance. I would not
-claim this hides anything today.
+**The disclosure argument, at its real strength — this is stronger than the first version
+of this section claimed.** I originally wrote that the migrated bit "is inferable from the
+flag" and left it there, which understated the case by conceding a disclosure that had
+already happened. It had: the bit was **already fully legible on this exact payload**,
+before this branch, twice over and not by inference.
+
+- **`reference`.** `PaymentResource:42` has always emitted it. `PostOpeningBalanceBatch`
+  draws a migrated row's reference from the reserved band at or above
+  `Payment::MIGRATED_REFERENCE_FLOOR = 900_000_000`, allocated inside that Action; a portal
+  receipt number comes from a counter that starts at 0. A nine-digit reference beside a
+  four-digit one is not a hint.
+- **`payer_name`.** `PaymentResource:43`, also always emitted. That same Action writes it as
+  `PAYER_NAME_PREFIX . $batch_reference . PAYER_NAME_SUFFIX`
+  (`PostOpeningBalanceBatch.php:124-126, :249`) — literally
+  `"Balance brought forward (WCBS batch …)"`. It names the previous system in the string.
+
+Both render on the statement today, and **this branch's own drive shows them doing it**:
+
+```text
+PAYMENTS ROW: {"cells":["Balance brought forward (WCBS batch WCBS-DRIVE-1)","#900000001","migrated","16/08/2026"], …}
+```
+
+`method` is a third tell (`'migrated'`). So the question these fields answer was never
+"should the client be able to tell?" — it already could, in three places — but "should the
+client have to infer the rule from a number's magnitude and a sentence's wording, and
+hard-code its own copy of the refusal?" **A derived flag carrying the server's own reason
+removes a client-side rule; it does not add a disclosure.** That is the argument, and it is
+now also in `PaymentResource`'s docblock.
+
+What still differs from exposing `origin` is the **contract**: the flag promises
+*receiptability*, so if the predicate ever widens (a reversed payment, say) the flag keeps
+its meaning where a leaked `origin` would quietly change what a client believed about
+provenance.
 
 **The reason string lives once**, as `Payment::RECEIPT_REFUSAL_REASON`, and both consumers
 read it — the controller's refusal branch and the Resource. The page renders the server's
@@ -206,14 +241,44 @@ printing the reason.
 **Colour is forced back to light inside `.receipt-document`.** Browsers drop backgrounds
 when printing but keep text colour, so a sheet printed from dark mode would otherwise be
 `dark:text-white` on white paper — an invisible receipt, exactly §26's class (renders,
-returns 200, cannot be used). Measured: the print PDFs generated from light mode and from
-dark mode are **byte-identical** (`md5 f4cf2bd1bb555827e63a3b050a10ef31` for both).
+returns 200, cannot be used).
+
+**The evidence for that, stated at its real strength.** The claim rests on the
+**computed-style read taken from the dark render**:
+`PRINT-from-dark document color: {"color":"rgb(15, 23, 42)"}` — slate-900, read off the live
+page with `dark` on the root element and `emulateMediaType('print')` active. That is a
+measurement of the rule doing its job.
+
+The two byte-identical PDFs (`md5 f4cf2bd1bb555827e63a3b050a10ef31` for both) were originally
+called "the decisive one" here. **That overstated them** and the description is withdrawn:
+identical bytes are consistent with two renders that agree, but they are equally consistent
+with a copy — the two files carry the same `CreationDate` and git stores them as a single
+blob, so nothing in the artefact distinguishes the two cases. They are corroboration, not
+proof.
+
+**What the single sample does not cover, whatever its strength.** Both PDFs are the *same
+receipt*: one allocation, `fully_applied`, no remainder. So the print path has **not** been
+seen for `held_on_account` (the "the remaining ₦X is held as credit" paragraph), for
+`nothing_applied` (the account-level sentence, which replaces the whole table), for a
+multi-row allocation table with its `tfoot` total, or for any content long enough to break
+across pages — which is the one case the `break-inside: avoid` rule on `tr` exists for and
+the one nothing here exercises.
 
 **One shared-component edit, named because §26 says to count the blast radius:**
 `impersonation-banner.tsx` gains `print:hidden` (one Tailwind class). It sits above every
 page's content, so without it the banner lands on every sheet this application prints —
 including the two result sheets that already print today. It is not in the ESLint/Prettier
 ignore list (that is `components/ui/*`), so the lint step did see it.
+
+**And it has a consequence nobody asked for, stated because it is a judgement call I made
+silently:** a document printed *during an impersonated session* now carries **no indication
+that it was produced while impersonating**. Before this class, a printed receipt or result
+sheet would have shown the amber "Impersonating — you are acting as …" bar. I removed it
+because it is a fact about the *session*, not about the *document*, and a receipt handed to
+a parent should not carry the operator's session state. That is a defensible call and it is
+not obviously the only one: an audit-minded reading would want the printed artefact to say
+it was produced under impersonation. The activity log still records the act; the paper no
+longer does. Flagging it rather than deciding it unilaterally.
 
 **Scope held:** one payment per page. No batch, no date range, no PDF library, no email, no
 storage, no parent access.
@@ -226,9 +291,15 @@ Every fixture goes through the **real Actions** (`RecordPayment`, `RecordAccount
 `PostOpeningBalanceBatch`) — no hand-written `origin = 'migrated'` row, because a planted
 string would prove the refusal fires on a value the *test* wrote.
 
+```text
+{"tool":"pest","result":"passed","tests":10,"passed":10,"assertions":107}
 ```
-{"tool":"pest","result":"passed","tests":9,"passed":9,"assertions":102}
-```
+
+**Corrected.** This line first read `tests":9 … "assertions":102`. The assertion count was
+stale — 102 was a run made *before* I replaced two `->not->toBeNull(…)` assertions with a
+single positive one (§ 8, item 5), and I did not re-derive it after that edit. The cold
+review measured **101**, which is what the 9-arm file produces, and I reproduced that. The
+figures above are the current file, re-derived after § 12 added a tenth arm.
 
 | Arm | What it pins |
 | --- | --- |
@@ -703,3 +774,251 @@ No PDF library. No email — `NotificationType::PAYMENT_RECEIVED` still has no d
 this commit does not write one. No storage or archival of generated receipts. No
 parent-facing access. No batch or date-range printing. No new endpoint over
 `finance_payments`. No change to how a payment is recorded, allocated or numbered.
+
+---
+
+## 12. The cold-review round
+
+A cold review ran against `b002c7f` and returned six findings. **All six reproduce.** Nothing
+below is a finding I talked down; where I went further than proposed I say so, and where I
+left a gap open I name it.
+
+Everything in this section is one commit on top of `b002c7f`.
+
+### 12.1 The refusal reason was a denylist behind an allowlist predicate — FIXED
+
+**Verified.** `receiptRefusalReason()` was
+`return $this->isReceiptable() ? null : self::RECEIPT_REFUSAL_REASON;`. The predicate is an
+allowlist and refuses an unknown origin correctly; the **explanation** defaulted, so any
+third origin would have been told — on the wire, and on the operator's screen — that it was
+collected by WCBS before the cutover. A specific factual claim about a parent's payment,
+made by a system that had merely not been taught the value. Unreachable today (the
+`finance_payments_origin_shape` CHECK admits exactly two values), and the project lead ruled
+**fix, not ticket**, on the grounds that a ticket only works if a future author reads it
+while writing an unrelated migration.
+
+**Landed:** a `match (true)` — `isReceiptable() → null`, `ORIGIN_MIGRATED → the WCBS text`,
+`default → RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN`.
+
+```php
+    public function receiptRefusalReason(): ?string
+    {
+        return match (true) {
+            $this->isReceiptable() => null,
+            $this->origin === self::ORIGIN_MIGRATED => self::RECEIPT_REFUSAL_REASON,
+            default => self::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN,
+        };
+    }
+```
+
+**Neutral reason, not a throw — the choice, and why.** Throwing would turn an unrecognised
+row into a 500 on a page an operator deliberately opened, and **a 500 destroys the refusal
+itself**: the operator learns nothing at all, which is precisely the failure mode the
+"never silently hide the row" rule exists to prevent. A refusal that declines to explain is
+strictly better than no refusal. The database is what stops a third origin existing; this
+branch is what keeps the system honest if one ever does. The new constant says what is
+actually known — provenance could not be confirmed — and names no system.
+
+**Arm added**, and it asserts the neutral text does not smuggle the claim back in by wording
+(`not->toContain('WCBS')`, `not->toContain('previous system')`), that both reachable branches
+keep their answers, and that the unknown row is **still refused** — the predicate was never
+the defect.
+
+**It is a model-level arm, and that is the honest limit rather than a shortcut:** the CHECK
+makes the state unpersistable, so no HTTP arm in the file can reach this branch. Said so in
+the test's own docblock.
+
+**Watched red** — the old line restored:
+
+```text
+ ✗ gives an UNRECOGNISED origin a refusal that claims nothing about where the money came from
+   Failed asserting that two strings are identical.
+   --- Expected  'This system cannot confirm that it collected this payment, so it will not issue a
+                  receipt for it. Ask the bursar’s office to check how this payment was recorded…'
+   +++ Actual    'This payment was collected in the previous system before the cutover and brought
+                  across as an opening balance. Brookstone never issued a receipt for it…'
+```
+
+### 12.2 The nav guard was weaker than its own docblock — FIXED, and further than proposed
+
+**All three mutations reproduced against the old arm**, exactly as reported:
+
+```text
+### MUTATION A — wrap the whole <td> in {payment.receiptable && …}
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":5}
+### MUTATION B — filter the row out upstream
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":5}
+### MUTATION C — wrap the Link alone
+{"tool":"pest","result":"failed","tests":1,"passed":0,"failed":1,
+ "message":"Failed asserting that 2 is identical to 1."}
+```
+
+The old arm measured occurrences **between** the first `!payment.receiptable` and the first
+`receiptUrl.url(`. A and B both add their occurrence *before* that window, so both sailed
+through — and B is literally the "silently hide the row" the opening-balance spec forbids,
+passing a guard whose docblock claimed to stop it.
+
+**Landed:** a whole-source occurrence count. The review proposed counting
+`payment.receiptable`; **I counted the bare identifier `receiptable` instead**, which is
+strictly stronger — B's upstream filter is written `.filter((p) => p.receiptable)`, so a
+count keyed on `payment.receiptable` would still have missed it. `receiptable` occurs
+exactly once in the file today (`grep -c` = 1, at `statement.tsx:778`).
+
+**All three now red**, plus the unmutated baseline green:
+
+```text
+### BASELINE (unmutated)
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":4}
+### MUTATION A — whole <td> wrapped
+{"result":"failed","message":"The statement mentions `receiptable` more than once… Failed asserting that 2 is identical to 1."}
+### MUTATION B — rows filtered upstream
+{"result":"failed","message":"The statement mentions `receiptable` more than once… Failed asserting that 2 is identical to 1."}
+### MUTATION C — Link alone wrapped
+{"result":"failed","message":"The statement mentions `receiptable` more than once… Failed asserting that 2 is identical to 1."}
+```
+
+**The gap that remains is now stated in the arm rather than implied away**, per the ruling.
+This is a text check on a file and there is no JavaScript test runner in this repository
+(`package.json` carries vite, eslint, prettier and tsc — no vitest, no jest). It cannot see:
+a row filtered out by something *other* than this flag (`receipt_refusal_reason !== null`, a
+`method === 'migrated'` test, or a filter applied server-side in the feed); or whether the
+link, once rendered, is clickable or points anywhere. The arm's title changed from "on EVERY
+payment row" to "and the flag is used exactly once", so **it now claims only what it
+measures**. A false positive is possible by design — naming `receiptable` in a new *comment*
+reds it — and the failure message says so, because a guard whose failure is unexplained is
+one people delete.
+
+### 12.3 The page stated an independence it did not have — FIXED, and bite-proved
+
+**Verified.** `receipt.tsx:69-70` said the breadcrumb header's `print:hidden` was "kept here
+as well so this page does not depend on a class in a file it does not own", and
+`PRINT_STYLES` contained **no selector for it**. The header was removed solely by
+`app-sidebar-header.tsx:13`'s bare utility class. Someone deleting that class — in a file
+nobody associates with receipts — would have put a 4rem bar carrying the sidebar trigger,
+the bell and the school switcher on every printed receipt, with this docblock saying in
+writing that it could not happen.
+
+**I chose to make it true rather than to soften the sentence**, because the sentence was
+describing the property that actually matters. Landed:
+`[data-slot="sidebar-inset"] > header` — where `AppSidebarLayout` puts `AppSidebarHeader`, a
+direct child of `SidebarInset` (`sidebar.tsx:300-310`). Scoped to the **direct** child so a
+future `<header>` inside the document is not caught by it.
+
+**Bite-proved rather than asserted.** I deleted `print:hidden` from
+`app-sidebar-header.tsx`, rebuilt, and re-read the computed style off the live page:
+
+```text
+### CONTROL — header keeps its own print:hidden
+  header matched by [data-slot="sidebar-inset"] > header: true
+  header className contains print:hidden: true
+  PRINT computed: {"header":"none","sidebar":"none","toolbar":"none","document":"block","documentColor":"rgb(15, 23, 42)"}
+
+### BITE-PROOF — the header's own print:hidden DELETED   (grep -c print:hidden → 0)
+  header matched by [data-slot="sidebar-inset"] > header: true
+  header className contains print:hidden: false
+  PRINT computed: {"header":"none","sidebar":"none","toolbar":"none","document":"block","documentColor":"rgb(15, 23, 42)"}
+```
+
+The header stays gone with its own class deleted. The class was restored and the bundle
+rebuilt.
+
+**`.swal2-container` added** — verified as the real class name in the installed
+`sweetalert2@11.26.24`, mounted at body level by `SwalProvider` (`app.tsx`). It was missing
+from the hidden list; sonner and react-toastify were already there.
+
+**The impersonation banner's dependency is left standing and is now named as real and
+deliberate.** It has no stable hook to select on, and the `print:hidden` on it is this
+commit's own edit which is correct for *every* printable page — the two result sheets have
+the same problem today and a page-local selector here could not help them. The docblock now
+says: if that class is ever removed, this page prints the banner. See also § 5, where the
+consequence of removing the banner from printed sheets is flagged.
+
+### 12.4 The drive skill's reading rule had acquired a silent permanent exception — FIXED
+
+**Verified.** `Payments (migrated)` is zero in every fresh fixture **by construction** —
+nothing stages an opening-balance batch and `PostOpeningBalanceBatch` is the only writer of
+`'migrated'` — while the skill says a zero in any column means stop. Every future drive of
+every screen would have opened on a count table with a zero and a rule saying abort. The
+skill file was untouched by this branch, which is the whole defect: I added a column and
+left the rule that reads it alone.
+
+**Landed** in `.claude/skills/finance-drive/SKILL.md`: the column is named as exempt, with
+what the zero *actually* means (the migrated cases cannot be reached from the seeded state)
+and what to do about it (walk the real cutover — about ten minutes — or say plainly the case
+was proven by test only and never rendered). Every other column keeps the original rule.
+
+**Citations re-derived — every one into that file, not only the one flagged.** Measured with
+`awk` line numbers against the current source:
+
+| Citation | Before | Now | Verdict |
+| --- | --- | --- | --- |
+| the count table | `:155-162` | `:162-169` | **stale — fixed.** `:155-162` now lands on the `$payments` closure I added |
+| "not from the seeder's own variables" | `:130-153` | `:130-160` | **stale — fixed.** The block gained the `$payments` closure at `:155-160` |
+| "Zero in any column…" | `:135-137` | `:135-137` | accurate, unchanged |
+| `APP_ENV=drive` refusal | `:49-54` | `:49-54` | accurate, unchanged |
+| DB-name allowlist | `:44`, `:56-63` | same | accurate, unchanged |
+| `DriveFinanceStates` state methods | "fourteen … `:65-225`" | fifteen `public function` incl. the constructor; `ensureBankAccount` at `:66`, `plainInvoice` at `:250` | **stale — fixed** (my `paymentCount` moved both the count and the span) |
+| `DriveCastSeeder.php:91-97`, `:95`, `:35`, `:141-167`, `:144-146` | — | — | all still accurate, checked individually |
+
+The skill's claim that *"not one of them is an opening-balance batch"* survives, and is now
+qualified: three of the fifteen (`bankAccountCount`, `discountPolicyCount`, `paymentCount`)
+are the count table's readers rather than state at all.
+
+**And the fact the review established is recorded in the skill itself, not only here:**
+`SeedDriveFixture` refuses outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the
+suite to `APP_ENV=testing`, so **no test in this repository can execute the count table this
+commit changed. That column has no automated reader at all** — its only proof is the output
+pasted into a report, which is why the skill asks for it verbatim.
+
+### 12.5 Three report corrections — LANDED IN PLACE
+
+Each is corrected where the false claim was, not appended here.
+
+- **(a) The print evidence.** The two PDFs are the same git blob with an identical
+  `CreationDate`, so they cannot distinguish two renders from a copy. "The decisive one" is
+  **withdrawn**; the computed-style read from the dark render is what carries the claim, and
+  § 5 now names what the single sample does not cover: `held_on_account`,
+  `nothing_applied`, a multi-row allocation table with its `tfoot`, and page-breaking.
+- **(b) The disclosure argument.** Understated, and the stronger version was free.
+  **Verified both halves:** `reference` draws from the `>= 900_000_000` reserved band, and
+  `payer_name` is written as `'Balance brought forward (WCBS batch ' . $ref . ')'`
+  (`PostOpeningBalanceBatch.php:124-126, :249`) — both already on this payload
+  (`PaymentResource:42-43`) and both visible in this branch's own drive row dump. The bit was
+  already legible, so the new fields **remove a client-side rule rather than adding a
+  disclosure**. Now stated in § 3 and in `PaymentResource`'s docblock.
+- **(c) Push state and assertion count.** The header said "Pushed: no"; the branch is on the
+  remote at `b002c7f` and the header now says so, with the reflog evidence and the timestamp.
+  The assertion count read 102 where the 9-arm file produces **101** — a figure carried from
+  a run made before I replaced two assertions, and not re-derived. Both corrected.
+
+### 12.6 Two tickets — WRITTEN
+
+- **`docs/handoff/tickets/nothing-constrains-allocations-to-a-payments-amount.md`.** Verified:
+  the only trigger on `finance_payment_allocations` guards Σ per **invoice**
+  (`2026_07_22_120000_…:35-40`), not per **payment**. `Money::minus` produces a negative and
+  `held_on_account` is true for a negative, so the receipt would print "The remaining
+  **-₦X** is held as credit". What **is** guaranteed, and by what, measured rather than
+  assumed: `RecordPayment:89` caps at `min($amount, $outstanding)`, and
+  `GenerateInvoice:412-418` computes each payment's unallocated remainder, skips it at `<= 0`
+  and draws `min($remaining, $unallocated)`. Those are the only two writers. **So the
+  invariant holds by construction in code and by nothing in the database** — on an
+  append-only table, with the sibling axis guarded at the database, which is exactly what
+  makes it worth writing down. The ticket also records that the concurrency argument the
+  invoice trigger relies on has *not* been established for the payment axis.
+- **`docs/handoff/tickets/the-receipt-says-nothing-about-a-voided-invoice-it-paid.md`.**
+  Verified reachable: `PaymentAllocation:16-19` states that an allocation *survives* invoice
+  cancellation. The receipt reads no status and renders a voided invoice identically to a
+  live one, under "What this paid for". Recorded as **unverified** — no test constructs it,
+  the drive did not see it — and deliberately not fixed here, because what a receipt should
+  say about a reversed charge is a policy question about a document a parent keeps.
+
+### 12.7 What this round did NOT do
+
+- **It did not re-drive the receipt.** The header bite-proof above ran in the browser against
+  the live drive instance, so the print path was re-measured; the full drive (both themes,
+  the refusal, isolation) was not repeated, because nothing in this round changes what those
+  screens render. The `.swal2-container` rule is unexercised — no dialog opens on this page.
+- **It did not close 12.2's real gap.** An upstream filter that does not name the flag is
+  still invisible, and no mechanism in this repository could catch it.
+- **It did not review itself.** § 12's corrections have had one pair of eyes.
+

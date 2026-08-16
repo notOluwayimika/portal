@@ -82,10 +82,29 @@ class Payment extends Model
      * route refuses with it (PaymentReceiptController) and PaymentResource carries it onto the
      * statement so the row can say why before anyone clicks. A second spelling of it in the UI is
      * exactly the drift this constant exists to prevent.
+     *
+     * IT IS A FACTUAL CLAIM ABOUT WCBS, so it is reachable ONLY from `origin = 'migrated'` — see
+     * receiptRefusalReason() below, which matches rather than defaulting to it.
      */
     public const RECEIPT_REFUSAL_REASON = 'This payment was collected in the previous system before the cutover and '
         .'brought across as an opening balance. Brookstone never issued a receipt for it from this system, so this '
         .'system will not print one now. The receipt the parent holds is the one the previous system issued.';
+
+    /**
+     * The refusal for an origin this code does not recognise. It states what is actually known —
+     * that provenance could not be confirmed — and asserts NOTHING about where the money came from.
+     *
+     * Unreachable today: the `finance_payments_origin_shape` CHECK admits exactly `portal` and
+     * `migrated`, so no third value can be persisted. It exists because the two halves of this
+     * decision must not be allowed to drift apart. `isReceiptable()` is an allowlist and refuses the
+     * unknown correctly; before this constant, the EXPLANATION was a denylist — every non-portal row
+     * got the WCBS text — so the day a third origin is added by an unrelated migration, this system
+     * would have told a bursar a specific, false thing about a parent's receipt. The predicate would
+     * have been right and the sentence wrong, which is worse than either being obviously broken.
+     */
+    public const RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN = 'This system cannot confirm that it collected this payment, '
+        .'so it will not issue a receipt for it. Ask the bursar’s office to check how this payment was recorded '
+        .'before anything is issued to the payer.';
 
     protected $table = 'finance_payments';
 
@@ -154,9 +173,28 @@ class Payment extends Model
         return $this->origin === self::ORIGIN_PORTAL;
     }
 
-    /** The stated reason a receipt is refused, or null when one may be issued. */
+    /**
+     * The stated reason a receipt is refused, or null when one may be issued.
+     *
+     * A MATCH ON `origin`, NOT A DEFAULT. The first version was
+     * `isReceiptable() ? null : RECEIPT_REFUSAL_REASON` — an allowlist predicate with a DENYLIST
+     * explanation, so any origin that was not `portal` was told it came from WCBS. The refusal was
+     * right; the sentence would have been a specific false claim about a parent's payment, put on
+     * the wire and shown to a bursar.
+     *
+     * The unknown branch RETURNS A NEUTRAL REASON rather than throwing, deliberately. Throwing would
+     * turn an unrecognised row into a 500 on a page an operator deliberately opened — and a 500
+     * destroys the refusal itself, so the operator learns nothing at all, which is the failure mode
+     * the whole "never silently hide the row" rule exists to prevent. A refusal that declines to
+     * explain is strictly better than no refusal. The DATABASE is what keeps a third origin from
+     * existing (the CHECK); this branch is what keeps the system honest if it ever does.
+     */
     public function receiptRefusalReason(): ?string
     {
-        return $this->isReceiptable() ? null : self::RECEIPT_REFUSAL_REASON;
+        return match (true) {
+            $this->isReceiptable() => null,
+            $this->origin === self::ORIGIN_MIGRATED => self::RECEIPT_REFUSAL_REASON,
+            default => self::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN,
+        };
     }
 }

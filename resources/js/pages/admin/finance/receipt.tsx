@@ -66,12 +66,26 @@ type Props = {
  * GONE — every part of the application rather than of the document:
  *   • the sidebar and its rail/trigger ([data-slot="sidebar"] and friends), and the inset's
  *     margin, rounding and shadow, which exist to float the content area inside the shell;
- *   • the breadcrumb header (AppSidebarHeader already carries `print:hidden`, kept here as
- *     well so this page does not depend on a class in a file it does not own);
- *   • both toast layers — sonner's [data-sonner-toaster] and react-toastify's .Toastify —
- *     which are mounted at body level on every page by AppLayout;
- *   • the impersonation banner;
+ *   • the breadcrumb header — `[data-slot="sidebar-inset"] > header`, which is where
+ *     AppSidebarLayout puts AppSidebarHeader (a direct child of SidebarInset, sidebar.tsx:300-310).
+ *     An earlier version of this comment claimed the header was "kept here as well so this page
+ *     does not depend on a class in a file it does not own" while PRINT_STYLES named NO selector
+ *     for it: it was removed solely by a bare `print:hidden` utility on app-sidebar-header.tsx:13,
+ *     and deleting that class — in a file nobody associates with receipts — would have put a 4rem
+ *     bar carrying the sidebar trigger, the bell and the school switcher on every printed receipt,
+ *     with this docblock saying in writing that it could not happen. The selector is scoped to the
+ *     inset's DIRECT child so a future `<header>` INSIDE the document is not caught by it;
+ *   • all three overlay layers mounted at body level, none of which this page controls — sonner's
+ *     [data-sonner-toaster], react-toastify's .Toastify (both from AppLayout) and sweetalert2's
+ *     .swal2-container (from SwalProvider in app.tsx, sweetalert2 11.26.24);
  *   • this page's own toolbar: Back, and the Print button itself.
+ *
+ * ONE DEPENDENCY IS LEFT STANDING, DELIBERATELY, AND IS NAMED HERE: the impersonation banner is
+ * removed by `print:hidden` on impersonation-banner.tsx, not by anything below. That class is this
+ * commit's own edit and it is correct for every printable page in the application (the two result
+ * sheets have the same problem today), so duplicating a selector for it here would be the wrong
+ * fix — a page-local rule cannot help the result sheets. The banner has no stable hook to select
+ * on in any case. If that class is ever removed, this page prints the banner.
  *
  * SURVIVES — the document and nothing else: the school block, the receipt number, both dates,
  * the payer, the student, the method and bank account, the amount, and the whole "what this
@@ -97,8 +111,10 @@ const PRINT_STYLES = `
     [data-slot="sidebar"],
     [data-slot="sidebar-rail"],
     [data-slot="sidebar-trigger"],
+    [data-slot="sidebar-inset"] > header,
     [data-sonner-toaster],
     .Toastify,
+    .swal2-container,
     .receipt-screen-only {
         display: none !important;
     }

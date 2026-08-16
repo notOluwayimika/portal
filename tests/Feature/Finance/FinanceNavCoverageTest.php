@@ -138,7 +138,7 @@ it('the statement exemption really is linked from the accounts list', function (
     expect($accounts)->toContain('/finance/students/${row.student.uuid}/statement');
 });
 
-it('the receipt exemption really is linked from the statement, on EVERY payment row', function () {
+it('the receipt exemption really is linked from the statement, and the flag is used exactly once', function () {
     /*
      * The same check, one level in, for U11 — and it asserts two separate things because the second
      * is a RULE and not a styling choice.
@@ -146,11 +146,38 @@ it('the receipt exemption really is linked from the statement, on EVERY payment 
      * The link exists: the statement builds it through the wayfinder action for the receipt
      * controller, so the path lives in routes/web.php alone and a rename cannot leave a dead link.
      *
-     * And it is UNCONDITIONAL. The opening-balance spec's wording is "never silently hide the row",
-     * so a migrated payment — the one the route will refuse — must still carry the link; the row
-     * states the refusal beside it instead. Asserting the link is not wrapped in `receiptable` is
-     * what stops the next reasonable-looking edit ("don't offer a receipt we won't issue") from
-     * quietly turning the refusal back into a hide.
+     * And the entry point is UNCONDITIONAL. The opening-balance spec's wording is "never silently
+     * hide the row", so a migrated payment — the one the route will refuse — must still carry the
+     * link; the row states the refusal beside it instead.
+     *
+     * ── HOW THIS IS MEASURED, AND EXACTLY WHAT IT DOES NOT COVER ──
+     *
+     * `receiptable` appears in this file EXACTLY ONCE, on the chip that states the refusal in place.
+     * That is the whole rule, so the assertion is a whole-source occurrence count rather than a
+     * window between two offsets. The first version of this arm counted only between the chip and
+     * the anchor, and a cold review broke it with two mutations in ten minutes:
+     *
+     *   • wrapping the whole `<td>` in `{payment.receiptable && …}` — chip AND link vanish — PASSED,
+     *     because the added occurrence sits BEFORE the window;
+     *   • filtering the rows upstream (`.filter((p) => p.receiptable)`) so the row never renders at
+     *     all — PASSED, for the same reason. That second one is literally the "silently hide the
+     *     row" the spec forbids, sailing through a guard whose comment claimed to stop it.
+     *
+     * The count below reds on all three shapes, including the two that used to pass, because every
+     * one of them names the flag a second time.
+     *
+     * WHAT IT STILL CANNOT SEE, stated rather than implied — this is a TEXT check on a file, not a
+     * behavioural one, and there is no JavaScript test runner in this repository (package.json
+     * carries vite, eslint, prettier and tsc; no vitest, no jest):
+     *
+     *   • a row filtered out by something OTHER than this flag — `receipt_refusal_reason !== null`,
+     *     a `method === 'migrated'` test, or a filter applied server-side in the feed. Nothing here
+     *     would notice, and nothing in this repository could;
+     *   • whether the link, once rendered, is clickable, enabled, or points anywhere useful.
+     *
+     * A false positive is possible and is by design: mentioning `receiptable` a second time even in
+     * a COMMENT reds this arm. The message says so, because a guard whose failure is unexplained is
+     * one people delete.
      */
     $statement = fncRead('resources/js/pages/admin/finance/statement.tsx');
 
@@ -159,13 +186,13 @@ it('the receipt exemption really is linked from the statement, on EVERY payment 
         // The chip is what `receiptable` gates. The LINK is not.
         ->and($statement)->toContain('!payment.receiptable');
 
-    // The link must not sit inside a `receiptable` conditional. Measured on the source between the
-    // flag's only use (the chip) and the anchor: the anchor comes AFTER the chip's closing brace, at
-    // the same level, so no `payment.receiptable &&` may appear between the chip block and the link.
-    $chipAt = strpos($statement, '!payment.receiptable');
-    $linkAt = strpos($statement, 'receiptUrl.url(');
-    expect($linkAt)->toBeGreaterThan($chipAt);
-    expect(substr_count(substr($statement, $chipAt, $linkAt - $chipAt), 'payment.receiptable'))->toBe(1);
+    expect(substr_count($statement, 'receiptable'))->toBe(1,
+        'The statement mentions `receiptable` more than once. There is exactly one legitimate use — '
+        .'the chip that states the refusal in place — and every second use found so far has been a '
+        .'HIDE: the receipt cell wrapped in it, or the payment rows filtered by it. "Never silently '
+        .'hide the row" is the opening-balance spec\'s wording and the refusal is the server\'s '
+        .'(PaymentReceiptController), not this screen\'s. If you have only NAMED the flag in a new '
+        .'comment, reword the comment — this check cannot tell the two apart.');
 });
 
 it('gates the Finance group on the permission its routes require', function () {

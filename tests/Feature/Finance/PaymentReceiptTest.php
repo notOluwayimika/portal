@@ -225,6 +225,38 @@ it('refuses a migrated payment that HAS acquired allocations, so the predicate i
         ->assertInertia(fn ($page) => $page->where('refusal', Payment::RECEIPT_REFUSAL_REASON));
 });
 
+it('gives an UNRECOGNISED origin a refusal that claims nothing about where the money came from', function () {
+    /*
+     * THE COLD REVIEW'S FINDING 1, pinned. `isReceiptable()` is an allowlist and refuses an unknown
+     * origin correctly. The REASON used to be a denylist — `isReceiptable() ? null : <the WCBS
+     * text>` — so a row with any third origin would have been told, on the wire and on the screen,
+     * that it was collected by WCBS before the cutover. A specific false claim about a parent's
+     * payment, made by a system that had simply not been taught the value.
+     *
+     * ASSERTED ON AN IN-MEMORY MODEL, and that is the honest limit of this arm rather than a
+     * shortcut. `finance_payments_origin_shape` admits exactly 'portal' and 'migrated', so a third
+     * value cannot be persisted and the ROUTE cannot be driven into this branch — the arms below
+     * that go through HTTP are structurally unable to reach it. What is being pinned is the mapping
+     * itself, which is where the defect lived.
+     *
+     * WATCHED RED: restore `return $this->isReceiptable() ? null : self::RECEIPT_REFUSAL_REASON;`.
+     * The unknown row then answers the WCBS text and the first expectation fails.
+     */
+    $unknown = new Payment(['origin' => 'reversed']);
+    $migrated = new Payment(['origin' => Payment::ORIGIN_MIGRATED]);
+    $portal = new Payment(['origin' => Payment::ORIGIN_PORTAL]);
+
+    expect($unknown->receiptRefusalReason())->toBe(Payment::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN)
+        // The neutral reason must not smuggle the provenance claim back in by wording.
+        ->and(Payment::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN)->not->toContain('WCBS')
+        ->and(Payment::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN)->not->toContain('previous system')
+        // …and the two branches that ARE reachable keep their answers.
+        ->and($migrated->receiptRefusalReason())->toBe(Payment::RECEIPT_REFUSAL_REASON)
+        ->and($portal->receiptRefusalReason())->toBeNull()
+        // The unknown row is still REFUSED — the predicate was never the defect.
+        ->and($unknown->isReceiptable())->toBeFalse();
+});
+
 // ── 2. The happy paths — both doors ──────────────────────────────────────────────────────────────
 
 it('renders the allocated invoices for an INVOICE-ALLOCATED payment', function () {

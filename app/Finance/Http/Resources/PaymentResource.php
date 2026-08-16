@@ -25,11 +25,28 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * uses for exactly this (`can_request_void` + `void_blocked_reason`, InvoiceSettlement:32-34:
  * "the flag is false with a void_blocked_reason, so the UI disables-with-reason rather than hides").
  *
- * Said plainly, because it would be dishonest to imply otherwise: `receiptable: false` today means
- * `origin = 'migrated'`, so the same bit is inferable. What differs is the CONTRACT, not the current
- * information content — the flag promises receiptability, so if the predicate ever widens (a
- * reversed payment, say) the flag keeps its meaning where a leaked `origin` would quietly change
- * what a client believed about provenance.
+ * AND THE NEW FIELDS LEAK NOTHING, because the migrated bit was ALREADY FULLY LEGIBLE on this exact
+ * payload before they existed — twice over, not by inference:
+ *
+ *   • `reference` (below) is drawn for a migrated row from the reserved band at or above
+ *     Payment::MIGRATED_REFERENCE_FLOOR = 900,000,000, allocated in PostOpeningBalanceBatch; a
+ *     portal receipt number is a small integer from a counter that starts at 0. A nine-digit
+ *     reference beside a four-digit one is not a hint, it is the answer.
+ *   • `payer_name` (below) is written by that same Action as
+ *     PAYER_NAME_PREFIX.$batch_reference.PAYER_NAME_SUFFIX — literally
+ *     "Balance brought forward (WCBS batch …)". It names the previous system in the string.
+ *
+ * Both render today in the statement's payments tab, and the U11 drive shows them doing it:
+ * `{"cells":["Balance brought forward (WCBS batch WCBS-DRIVE-1)","#900000001","migrated", …]}`.
+ * `method` is a third tell ('migrated'). So the question these two fields answer was never
+ * "should the client be able to tell?" — it already could — but "should the client have to INFER
+ * the rule from a number's magnitude and a sentence's wording, and hard-code its own copy of the
+ * refusal?" A derived flag with the server's own reason is the answer to that, and it removes a
+ * client-side rule rather than adding a disclosure.
+ *
+ * What still differs from exposing `origin` is the CONTRACT: the flag promises receiptability, so
+ * if the predicate ever widens (a reversed payment, say) the flag keeps its meaning where a leaked
+ * `origin` would quietly change what a client believed about provenance.
  *
  * @mixin Payment
  */

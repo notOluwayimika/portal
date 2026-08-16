@@ -135,19 +135,42 @@ by construction.
 ## Check the fixture before you drive anything
 
 The seed command prints a **count table** of the authoring slot per school
-(`SeedDriveFixture.php:155-162`) — academic sessions, terms, class levels, bank
-accounts, discount policies. It is counted from the database through
-`DB::table` and through the Finance side's own scoped counters, deliberately
-**not** from the seeder's own variables, which would only ever report what the
-seeder intended (`SeedDriveFixture.php:130-153`).
+(`SeedDriveFixture.php:162-169`) — academic sessions, terms, class levels, bank
+accounts, discount policies, and payments split by `origin`. It is counted from the
+database through `DB::table` and through the Finance side's own scoped counters,
+deliberately **not** from the seeder's own variables, which would only ever report
+what the seeder intended (`SeedDriveFixture.php:130-160`).
+
+**Nothing in this repository can execute that table.** `SeedDriveFixture` refuses
+outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the suite to
+`APP_ENV=testing`, so no test reads a single one of these columns. Its only proof
+is the output you paste into your report, which is the reason this section asks
+for it verbatim rather than summarised.
 
 Read it first, every time. The rule the table was built to serve, in the source's
 own words: **"Zero in any column means the screen cannot author anything"**
 (`SeedDriveFixture.php:135-137`). What follows from that is mine and not the
 source's: **the drive is then worthless before it starts**, so this is a check you
-run and act on, not one you record. It is also the exact failure U1 was written to
-prevent, and the reason the bank-accounts and discount-policies columns were added
-beside the academic three as each new screen arrived. If your screen depends on
+run and act on, not one you record.
+
+**ONE COLUMN IS EXEMPT AND IS ZERO BY CONSTRUCTION: `Payments (migrated)`.** Do not
+read it as an abort. `origin = 'migrated'` has exactly ONE writer in the codebase —
+`PostOpeningBalanceBatch` — reachable only by approving a submitted opening-balance
+batch, and nothing in this fixture stages one (`DriveFinanceStates` exposes no
+opening-balance state method). So **every** fresh fixture shows a zero there, for
+every screen, forever, and a rule that said "stop" would fire on every future drive
+of every screen. What the zero actually means is narrower and still worth printing:
+*the migrated-payment cases of whatever you are driving cannot be reached from the
+seeded state.* If your screen has one — U11's receipt refusal is the first — you
+either walk the real cutover yourself (upload and submit as `maker@drive.test`,
+approve as `checker@drive.test`; the receipt drive did exactly this and it takes
+about ten minutes) or you say plainly in your report that the case was proven by
+test only and never rendered. **Do not claim a rendering you did not see.**
+
+Every other column keeps the original rule: a zero is a stop. It is also the exact
+failure U1 was written to prevent, and the reason the bank-accounts and
+discount-policies columns were added beside the academic three as each new screen
+arrived. If your screen depends on
 something the table does not count, the table needs a column before your drive
 needs a browser — and that is a change to the fixture, in your commit, argued.
 
@@ -295,14 +318,21 @@ carries:
    need an *active* schedule, which only the ED's approval creates; a *rejected*
    proposal, because the ED approved everything; and **anything opening-balance**,
    for a blunter reason — the fixture seeds no opening-balance state whatsoever.
-   `DriveFinanceStates` exposes fourteen public state methods, spanning
-   `ensureBankAccount` to `plainInvoice`
-   (`app/Finance/Console/DriveFinanceStates.php:65-225`), and not one of them is an
-   opening-balance batch; `SeedDriveFixture` and `DriveCastSeeder` between them
+   `DriveFinanceStates` exposes fourteen public methods besides its constructor,
+   spanning `ensureBankAccount` to `plainInvoice`
+   (`app/Finance/Console/DriveFinanceStates.php:66-250`), and not one of them stages
+   an opening-balance batch — three of them (`bankAccountCount`,
+   `discountPolicyCount`, `paymentCount`) are the count table's readers rather than
+   state at all; `SeedDriveFixture` and `DriveCastSeeder` between them
    mention opening balances once, in a comment (`DriveCastSeeder.php:95`). So there
    is nothing on this fixture to approve, and the "database we are willing to
    spend" condition is not what is stopping you — that condition was written about
    a production copy and does not transfer to a database that is thrown away.
+   **U11's drive proved the corollary:** you can stage one yourself through the real
+   screens in about ten minutes, and the opening-balance **approve** — undriven
+   anywhere until then — has now been driven on the fixture, irreversibly spending
+   that school's single posting slot exactly as intended
+   (`docs/handoff/reports/feat-finance-payment-receipt.md` § 7).
    Name what you skipped. This is the largest untested-by-eye area of most commits
    and it should be stated rather than left to be discovered.
 

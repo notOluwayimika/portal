@@ -7,14 +7,30 @@ body**, and that is the one path an aborted-request drive structurally cannot re
 
 ## What is true today
 
-Every Finance list screen unwraps its response with `??` and no shape check:
+Every Finance list screen unwraps its response with `??` and no shape check.
+**Re-derived 2026-08-16** (the discount-policies entry had gone stale by 84 lines when that screen was
+redesigned, and two further sites were missing from the original table). Re-derive again before
+trusting these — the code shapes in the last column are the durable part:
 
-| File                                                     | Line  | Code                                     |
-| -------------------------------------------------------- | ----- | ---------------------------------------- |
-| `resources/js/pages/admin/finance/fee-schedules.tsx`     | `288` | `setSchedules(data ?? []);`              |
-| `resources/js/pages/admin/finance/fee-schedules.tsx`     | `299` | `setAccounts(data.bank_accounts ?? []);` |
-| `resources/js/pages/admin/finance/bank-accounts.tsx`     | `102` | `setAccounts(data.bank_accounts ?? []);` |
-| `resources/js/pages/admin/finance/discount-policies.tsx` | `172` | `setPolicies(data ?? []);`               |
+```bash
+grep -rn '?? \[\]' resources/js/pages/admin/finance resources/js/components/finance
+```
+
+| File                                                       | Line  | Code                                           |
+| ---------------------------------------------------------- | ----- | ---------------------------------------------- |
+| `resources/js/pages/admin/finance/fee-schedules.tsx`       | `288` | `setSchedules(data ?? []);`                    |
+| `resources/js/pages/admin/finance/fee-schedules.tsx`       | `299` | `setAccounts(data.bank_accounts ?? []);`       |
+| `resources/js/pages/admin/finance/bank-accounts.tsx`       | `102` | `setAccounts(data.bank_accounts ?? []);`       |
+| `resources/js/pages/admin/finance/discount-policies.tsx`   | `256` | `setPolicies(data ?? []);`                     |
+| `resources/js/components/finance/new-invoice-modal.tsx`    | `291` | `setPolicies(selectablePolicies(data ?? []));` |
+| `resources/js/components/finance/record-payment-modal.tsx` | `121` | `(data.bank_accounts ?? []).filter(…)`         |
+
+The last two are **modals, not list screens**, and they are worse for it: a malformed 200 there does
+not render a misleading sentence, it renders a **select with only its placeholder** — the failure
+class § 26 records under "a control that renders is not a control that works", on a screen that looks
+healthy. `record-payment-modal.tsx:121` is worse again, because the array it derives feeds an
+auto-selection of a **payment destination** (see
+[`fee-schedule-index-unpaginated.md`](fee-schedule-index-unpaginated.md)).
 
 `??` only guards `null` / `undefined`. A **200 whose body is well-formed JSON but the wrong shape** —
 `{}`, `{"data": [...]}` after someone adds an envelope, `{"bank_account": …}` after a typo in a
@@ -61,8 +77,11 @@ above is the code that decides which — and it currently makes that decision by
   read" is a different operator action from "the request failed" (the first is a bug report, the
   second is a retry) — but sharing the error state is far better than the status quo and is the
   minimum.
-- Apply it to all four sites in the table above, including `discount-policies.tsx`, which is not a
-  screen this branch redesigned but carries the identical unwrap.
+- Apply it to **all six** sites in the table above. `discount-policies.tsx` has since been redesigned
+  (`feat/ui-discount-policies-redesign`, 2026-08-16) and gained the error state and the dashed cards
+  the rest of this ticket assumes — **and still carries the identical unwrap**, so the redesign closed
+  the `catch` door on that screen and left this one open exactly as described here. The two modal
+  sites were missed by the original table and need the same treatment.
 - If a validation helper appears, it belongs beside the other shared Finance frontend utilities
   rather than being written four times.
 

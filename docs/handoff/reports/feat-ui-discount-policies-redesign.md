@@ -63,16 +63,29 @@ active row's Actions cell reported `buttons: ["Amend Sibling discount","Retire S
 (aria-labels) — nothing else. The ED's decision was taken on `/finance/approvals`, a second seat and a
 second screen, as the rule requires.
 
-**Still enforced by more than a comment:** `DiscountPoliciesScreenTest`'s
-_"has ONE MAKER ability, so the page gate and the button gate cannot disagree"_ arm asserts the
-permission catalog carries exactly one maker-side discount ability. A fifth act on this page would
-have to post a second endpoint, and that arm is what notices.
+**CORRECTED 2026-08-16 (cold review). This rule is held by the component's markup and nothing
+else.** The first version of this report claimed it was "still enforced by more than a comment" by
+`DiscountPoliciesScreenTest`'s _"has ONE MAKER ability"_ arm. That is wrong, and wrong in the
+direction that matters. That arm filters the permission catalog with
+`str_contains(strtolower($ability), 'discount') && ! ApprovalAbility::isExcludedFromSuperAdminBypass($ability)`,
+and `isExcludedFromSuperAdminBypass` is true for any ability whose terminal segment is `approve` or
+`reject` (`app/Support/ApprovalAbility.php:40-47`). **The fifth act this rule forbids is precisely an
+approve or a reject** — so an Approve button added to this page would post
+`finance.discount-policy.change.approve`, the filter would exclude it, `$makerAbilities` would still
+be `['finance.discount-policy.change.submit']`, and the arm would stay green through exactly the
+change it was cited as catching.
+
+What that arm actually pins is narrower and still worth having: that no **second maker** ability
+appears, which is the U1 defect (page gate and button gate asking different questions). It says
+nothing about a checker control appearing here. Nothing does. The four-acts rule is a convention
+with no mechanism — a wish, by the project's own definition — and it is held by the fact that this
+file renders four things.
 
 ### 2.2 Retired and superseded rows stay on the list, below the active ones, without controls
 
 Expressed as an **ordering inside one table** rather than as a second table:
 
-- `resources/js/pages/admin/finance/discount-policies.tsx:439-442` — `rows` is
+- `resources/js/pages/admin/finance/discount-policies.tsx:458-461` (re-derived 2026-08-16) — `rows` is
   `[...visible.filter(active), ...visible.filter(!active)]`. Active first, always, whatever the
   filter or the search box is doing.
 - A **spanning divider row** is emitted before the first closed row (derived from the ordering, not
@@ -80,7 +93,24 @@ Expressed as an **ordering inside one table** rather than as a second table:
   one set of column widths, so a superseded policy's terms line up directly under the active policy
   that replaced it — which is the comparison a reader of this list is making.
 - A closed row's Actions cell renders `Kept for the invoices it priced` **instead of** the two
-  buttons, so a control that would post a request the Action refuses is never offered.
+  buttons.
+
+**CORRECTED 2026-08-16 (cold review): the first version of this report, the divider row's copy and
+the file's docblock all said the server refuses such a request. It does not.** The screen told
+operators _"none of them can be amended or retired again"_ and the docblock called the withheld
+control _"a request the Action refuses"_. Verified against the code: `SubmitDiscountPolicyChange`
+checks school, reason, target shape and one-open-request-per-target and **never the target's
+status**; `ApproveDiscountPolicyChange` checks the change's status and maker ≠ checker and then
+updates the target unconditionally; and `finance_discount_policies_update_guard` guards every column
+**except `status`**, deliberately — its own message is _"only status may change"_. So retiring a
+retired policy is a silent no-op success, and amending a superseded one succeeds unless the new name
+collides with an active row.
+
+The **behaviour** is right and unchanged — closed rows should not offer these controls, because the
+act is meaningless. What was wrong was the reason given for it, in three places at once, and a wrong
+reason in a docblock is how the next person concludes a guard exists. Copy, comment and docblock all
+now say the true thing: this screen withholds the controls, and the server does not refuse them.
+Filed as [`discount-policy-changes-do-not-check-target-status.md`](../tickets/discount-policy-changes-do-not-check-target-status.md).
 
 **Driven, all three states, through the real approval flow** (§ 6 below): the list rendered
 `Active → Superseded → Retired` in that order with the divider between the first and the second, and
@@ -97,7 +127,7 @@ branch touches neither helper because a percentage is not money.
 Two additions of mine could have broken this and do not:
 
 - **The KPI cards count rows.** `activeCount` / `supersededCount` / `retiredCount`
-  (`:414-418`) are `policies.filter(...).length`. There is no total, no sum, no `reduce`. Beyond
+  (`:433-437`, re-derived 2026-08-16) are `policies.filter(...).length`. There is no total, no sum, no `reduce`. Beyond
   § 24's ban, a value total here would be **meaningless as well as forbidden**: an amount policy
   carries money in `value_minor` and a percent policy carries an integer in `percent`, so there is no
   quantity the two can be added into. This is stated in the file docblock so the next person adding a
@@ -261,8 +291,14 @@ unguarded. Inverting a predicate in the `.tsx` reds nothing.
 Per `.claude/skills/finance-drive/SKILL.md`. Throwaway instance, `APP_ENV=drive`, database
 `portal_drive`, port 8001, `pnpm run build` **before** seeding. Browser: system Chrome via
 `puppeteer-core`, installed **outside the repository** (in the session scratchpad), so `node_modules`
-was not mutated. Screenshots: `docs/handoff/drives/2026-08-16-discount-policies/` (23 maker/checker +
-2 isolation + 3 checker-queue = 28 files).
+was not mutated. Screenshots: `docs/handoff/drives/2026-08-16-discount-policies/`.
+
+**CORRECTED 2026-08-16 (cold review): the split was stated as "23 maker/checker + 2 isolation + 3
+checker-queue", which is both mislabelled and in the wrong order.** Re-derived —
+`ls … | sed 's/-[0-9].*//' | sort | uniq -c` — the original 28 were **23 `maker-*` + 3 `checker-*` +
+2 `isolation-*`**. The cold-review round adds **7 `fix-*`** (the counter bite-proof on two screens
+and the dark-modal measurement), for **35** in total. The arithmetic happened to come out right the
+first time, which is exactly why nobody noticed the labels were swapped.
 
 ### 6.1 The fixture count table, verbatim
 
@@ -448,10 +484,39 @@ No `pageerror`, no uncaught exception, no React warning, on any page in any seat
 Both themes captured on the list, the error state, the modal and the all-states view. Per § 26,
 **dark mode is unreachable by any user today**
 (`docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md`), so I say plainly what I did: I
-set `document.documentElement.classList.add('dark')` directly and screenshotted. Every region reads
-correctly at that setting — the three cards, the three pills (each tone has its `dark:` pair), the
-divider row, the error row and the modal. The one thing I would flag is that the divider row's
-`dark:bg-slate-900/30` is nearly indistinguishable from the card surface in dark; the uppercase
+set `document.documentElement.classList.add('dark')` directly and screenshotted.
+
+**CORRECTED 2026-08-16 (cold review). The first version of this section said "every region reads
+correctly at that setting". That is false, and my own screenshot was the evidence against it.**
+`maker-05-modal-amount-dark.png` shows the proposal modal with unreadable field labels, and I filed
+it as a pass. Measured afterwards with `getComputedStyle`, `.dark` on `<html>`
+(`fix-07-dark-modal-measured.png`):
+
+```json
+{
+    "htmlHasDark": true,
+    "modalPanelBg": "rgb(255, 255, 255)",
+    "modalTitleColor": "oklch(0.21 0.034 264.665)",
+    "fieldLabelColor": "oklch(0.95 0.01 260)",
+    "legendColor": "oklch(0.929 0.013 255.508)"
+}
+```
+
+`resources/js/components/ui/Modal.tsx` carries **zero** `dark:` variants (`grep -c` → 0; same for
+`ConfirmDialog.tsx`, `EmptyState.tsx` and `Toast.tsx`), so the panel stays `bg-white` while this
+screen's correctly-paired `dark:text-slate-200` labels flip to near-white. Near-white on white is
+about **1:1**. Every field label in that modal is invisible in dark mode. Filed as
+[`ui-chrome-components-have-no-dark-variants.md`](../tickets/ui-chrome-components-have-no-dark-variants.md).
+
+The lesson is not about the modal. **I took the screenshot, filed it, and read "I captured both
+themes" as "both themes are correct".** A dark screenshot proves nothing until someone reads the
+contrast in it, and I did not.
+
+What I can now state, having actually looked: the list regions are correct — the three cards, the
+three pills (each tone has its `dark:` pair), the divider row, the counter and the error row. The
+**modal is not**, and neither is any other flow that uses `Modal`, `ConfirmDialog`, `EmptyState` or
+`Toast`, which is most of the application. A separate and minor note that survives: the divider row's
+`dark:bg-slate-900/30` is nearly indistinguishable from the card surface; the uppercase
 `NO LONGER IN USE` label carries it, so it is legible, but the tint is doing no work there.
 
 ### 6.8 What was NOT driven
@@ -604,8 +669,10 @@ the same expiry as bank accounts and fee schedules.
 Per § 26 (_"Write the dependency into the ticket that will break you, and name every dependent"_), the
 screen is added to `docs/handoff/tickets/fee-schedule-index-unpaginated.md`, which now reads **six
 dependents across three endpoints** rather than five across two. The row cites exact lines
-(`:420-437` filter, `:439-442` ordering, `:216-217` state, `:208-214` comment, `:597`/`:601` counter,
-`:414-418` and `:531`/`:539`/`:547` cards), and the ticket's own standing warning applies to them:
+(`:439-453` filter, `:458-461` ordering, `:235-236` state, `:227-234` comment, `:626`/`:630` counter,
+`:433-437` and `:549`/`:557-558`/`:565-566` cards — **all re-derived 2026-08-16 after the cold-review
+round moved them, which is the third time this branch has had to restate its own line numbers**), and
+the ticket's own standing warning applies to them:
 those numbers rot, the symbol names do not.
 
 One thing I added to the ticket's fix section that the other two dependents do not need: a server-side
@@ -653,3 +720,156 @@ to remain all states.
 7. **`resources/js/components/ui/base-dropdown.tsx`'s six pre-existing consumers.** I exercised the
    two on this screen. The other five were not opened; nothing in this change touches the component,
    but "nothing touches it" is a claim about the diff, not a test.
+
+---
+
+## 12. The cold-review round (2026-08-16)
+
+A cold review of this branch returned seven findings. All seven were verified against the repository
+before anything was changed; all seven held. The corrections are inline above, marked
+**CORRECTED**; this section carries what is new.
+
+### 12.1 The counter was lying in the LOADING state, on three screens
+
+**The defect.** The predicate was `{!error && …}`, not `{!error && !loading && …}`. `load()` clears
+`error` and sets `loading` in the same breath, so during every fetch `error` is `false`, `loading` is
+`true` and the array is `[]` — and the page renders **"Showing 0 of 0"**. On first paint, on Refresh,
+and on the Retry click that leaves the error state. That last one is the sharpest version: the
+counter was suppressed on the error path by this very branch, and then said "0 of 0" the instant the
+operator clicked the button offered to fix it.
+
+This is § 26's **fifth** recorded manifestation of the state-confusion defect, and the third
+involving this exact counter. My § 3 enumeration is why it survived: I enumerated every number and
+sentence **on the failed path** and stopped there. The rule as § 26 stated it says to enumerate the
+other regions; it did not say to enumerate the other **states**. It does now.
+
+**Inherited, and fixed on all three anyway.** Identical predicates were live and merged on
+`bank-accounts.tsx` and `fee-schedules.tsx`. Leaving two known-false screens shipped because they
+belong to someone else's commit is how this defect reached its third occurrence, so all three are
+fixed here.
+
+**The three call sites, re-derived after the fix:**
+
+| File                                                     | Line  | Now                        |
+| -------------------------------------------------------- | ----- | -------------------------- |
+| `resources/js/pages/admin/finance/discount-policies.tsx` | `622` | `{!error && !loading && (` |
+| `resources/js/pages/admin/finance/bank-accounts.tsx`     | `363` | `{!error && !loading && (` |
+| `resources/js/pages/admin/finance/fee-schedules.tsx`     | `744` | `{!error && !loading && (` |
+
+**Bite-proved in the browser, on two of the three screens, in three states.** The catalog fetch was
+held open for 4 s so the loading state is observable, then answered normally. Raw:
+
+```
+=== discount-policies ===
+DURING LOAD : {"counterPresent":false,"counterText":null,"spinnerInTable":true,
+               "cards":["Active=Citable on an invoice raised today",
+                        "Superseded=Replaced by an amendment, still explaining old invoices",
+                        "Retired=Withdrawn from choice, never deleted"]}
+AFTER LOAD  : {"counterPresent":true,"counterText":"Showing 3 of 3","spinnerInTable":false,
+               "cards":["Active=1","Superseded=1","Retired=1"]}
+
+=== the Retry click, out of the error state ===
+ERROR STATE : {"counterPresent":false,"counterText":null,"errorRow":true,
+               "cards":["Active=—","Superseded=—","Retired=—"]}
+MID-RETRY   : {"counterPresent":false,"counterText":null,"spinnerInTable":true,"errorRow":false,
+               "cards":["Active=Citable on an invoice raised today", …]}
+AFTER RETRY : {"counterPresent":true,"counterText":"Showing 3 of 3","errorRow":false,
+               "cards":["Active=1","Superseded=1","Retired=1"]}
+
+=== bank-accounts (the inherited site) ===
+DURING LOAD : {"counterPresent":false,"counterText":null,"spinnerInTable":true,
+               "cards":["Bank accounts=Every account this school has added", …]}
+AFTER LOAD  : {"counterPresent":true,"counterText":"Showing 1 of 1","spinnerInTable":false,
+               "cards":["Bank accounts=1","Active=1","Deactivated=0"]}
+```
+
+`counterPresent: false` while the spinner is in the table, `true` with a real number after — on both
+screens, and across the error → loading → loaded transition that the Retry button drives. The cards
+show their **labels only** during load, which is the skeleton doing its job: the value `<p>` is
+replaced by the `animate-pulse` block, so there is no number to be wrong. Screenshots
+`fix-01` … `fix-06`.
+
+**The § 3 read-back, restated for the loading path** (the enumeration that was missing): `h1`,
+subtitle and both hero buttons are static; the three card **values** are `animate-pulse` skeletons
+and render no number; the counter is **absent**; the search box and status filter render their own
+constants; the Clear button appears only if filters are set; the table body is a single spanning row
+holding a centred `Spinner`; the divider row and both empty-state sentences are unrendered. Nothing
+on the loading path now states a quantity.
+
+### 12.2 Two false sentences in the file this branch wrote
+
+Both verified against the code before being changed; both are corrected in place, and the server gap
+is ticketed rather than fixed inside a UI commit. See the **CORRECTED** block in § 2.2 for the
+finding, and
+[`discount-policy-changes-do-not-check-target-status.md`](../tickets/discount-policy-changes-do-not-check-target-status.md)
+for what is and is not refused.
+
+Two further claims in the same docblock, both new on this branch and both wrong:
+
+- _"There is no fifth control anywhere on the page."_ The **rule** is four **acts**, which is true.
+  The sentence said controls, and there are ten-odd interactive elements outside the modal — a search
+  box, a dropdown trigger and its four options, a Clear button, a Retry button, an empty-state
+  button. Reworded to say acts, and to say why the distinction matters.
+- _"(an arch test says so)"_ on the single-writer claim. **The fact holds** — a repo-wide search finds
+  no other writer — **but the citation does not**: `tests/Arch/` holds four files
+  (`ArchitectureBoundaryTest`, `BoundaryLintCoverageTest`, `NotificationsArchTest`,
+  `SqlClockLintCoverageTest`) and none mentions `DiscountPolic`. The same claim appears in
+  `ApproveDiscountPolicyChange.php:21`. The docblock now states the fact and states that nothing
+  enforces it, which by this project's own rule makes it a wish rather than a rule.
+
+### 12.3 Two stale cross-file citations this branch created
+
+`new-invoice-modal.tsx` cited `discount-policies.tsx:167-172` and `:183-185`. Both were correct at
+`820d001` and both were broken by this branch's rewrite of that file — the first now points at
+`parseErrorBag`, the second at a passage that records the **opposite** outcome (that screen now
+carries the `eslint-disable` the comment cited it for not needing, because growing an error state
+made the rule start firing). Both fixed: `:248-252` and `:268-276`, re-derived, with the reason for
+the change written next to them.
+
+### 12.4 The pagination ticket, re-derived rather than adjusted
+
+Three problems, all confirmed:
+
+- **A seventh dependent was unnamed.** `new-invoice-modal.tsx:282-296` fetches the same catalog with
+  `params: { status: 'active' }` and narrows it again in the browser via `selectablePolicies`
+  (`:73-81`, `requires_approval !== true`). Paginated, the modal offers the applicable policies **on
+  page 1** and otherwise asserts the school has none. Same class as `record-payment-modal`, which the
+  ticket already listed. It was missed twice, and the cause is the same both times: the section is
+  organised by _screen_, and a modal is not a screen.
+- **The prose counts had drifted from the table** — "three screens and one modal", "a sixth
+  dependent", "either endpoint", "both table cards". Every figure re-derived from the table rather
+  than nudged: **eleven dependent sites across five files and three endpoints.**
+- **Every fee-schedules citation was stale, and had been _retyped_ while stale.** `fee-schedules.tsx`
+  is untouched by this branch, so the rot predates it; the defect is that the previous round's reflow
+  restated all four rows with the authority of a fresh edit, directly beneath that table's own warning
+  not to. All four were wrong by 17–20 lines. Every citation in the table is now re-derived, with the
+  commands that produce them.
+
+### 12.5 Three tickets
+
+- [`discount-policy-changes-do-not-check-target-status.md`](../tickets/discount-policy-changes-do-not-check-target-status.md)
+  — the server gap behind § 12.2, with what each layer does and does not check.
+- [`ui-chrome-components-have-no-dark-variants.md`](../tickets/ui-chrome-components-have-no-dark-variants.md)
+  — `Modal`, `ConfirmDialog`, `EmptyState` and `Toast` carry **zero** `dark:` variants between them,
+  with the measured contrast from § 6.7 and a cross-reference to
+  `dark-mode-is-unreachable-for-every-user.md`, which is the ticket this one is waiting behind.
+- No new malformed-200 ticket. `setPolicies(data ?? [])` on this screen validates no shape, and
+  [`a-malformed-200-renders-the-empty-state-not-the-error-state.md`](../tickets/a-malformed-200-renders-the-empty-state-not-the-error-state.md)
+  already covers it — its table listed `discount-policies.tsx:172`, which this branch moved to
+  `:256`. That ticket is updated instead of duplicated: all six unwrap sites re-derived, the two
+  modal sites added (they were missing), and a note that the redesign closed the `catch` door on this
+  screen and left this one exactly as described.
+
+### 12.6 What this round could still not verify
+
+Everything in § 11 still stands. Added:
+
+- **The `fee-schedules.tsx` counter fix is not bite-proved in a browser.** The predicate is
+  character-identical to the two that were, and the surrounding state machine is the same, but that is
+  an argument and not an observation. Driving it needs a fee-schedule fixture state and a term
+  selection this round did not set up.
+- **The dark-mode measurement covers one modal on one screen.** `ConfirmDialog`, `EmptyState` and
+  `Toast` are asserted to have zero `dark:` variants by `grep`, which is a fact about the files; what
+  that looks like rendered was not measured for those three.
+- **No new arm pins the counter fix.** There is still no JavaScript test runner. Reverting
+  `!loading` on any of the three screens reds nothing, and the next gate run is green.

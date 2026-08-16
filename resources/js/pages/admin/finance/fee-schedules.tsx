@@ -734,11 +734,14 @@ export default function FeeSchedules({
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
-                                    {/* SUPPRESSED ON A FAILED LOAD — see bank-accounts.tsx for the
-                                        argument. Both numbers come from an array left empty by a
-                                        dead fetch, so the counter would assert "0 of 0" about a
-                                        school whose schedules were never retrieved. */}
-                                    {!error && (
+                                    {/* SUPPRESSED WHILE LOADING AND ON A FAILED LOAD — see
+                                        bank-accounts.tsx for the argument. Both numbers come from
+                                        an array that is empty while the fetch is in flight and
+                                        again if it dies, so on either the counter asserts "0 of 0"
+                                        about a school whose schedules have not been retrieved. The
+                                        `!loading` half was missing until 2026-08-16 and rendered
+                                        that sentence on every first paint and every Refresh. */}
+                                    {!error && !loading && (
                                         <span className="hidden text-xs font-medium text-slate-500 sm:inline">
                                             Showing{' '}
                                             <span className="font-bold text-slate-700 dark:text-slate-200">

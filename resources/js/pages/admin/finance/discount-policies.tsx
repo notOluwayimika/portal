@@ -40,9 +40,17 @@ import { formatNaira, minorToNairaInput, nairaToMinor } from '@/lib/format';
  * THERE IS NO APPROVE AND NO REJECT HERE — that is /finance/approvals, and a second home for the ED's
  * decision is a second place for it to disagree with itself. Nothing on this page writes a policy:
  * all three proposals POST /api/v1/finance/discount-policy-changes and wait, and
- * ApproveDiscountPolicyChange is the only writer of `finance_discount_policies` (an arch test says so).
- * The hero carries exactly two buttons — Refresh, and the one primary act, Propose a policy — and the
- * table's row controls are Amend and Retire. There is no fifth control anywhere on the page.
+ * ApproveDiscountPolicyChange is the only writer of `finance_discount_policies`. That last fact holds
+ * — a repo-wide search finds no other caller of `DiscountPolicy::create` or of an update to that table
+ * outside the Action and the migrations — but NOTHING ENFORCES IT: tests/Arch/ holds four files and
+ * none of them mentions this model. The docblock of ApproveDiscountPolicyChange:21 claims an arch test
+ * too; it is the same unenforced claim, repeated. By the project's own rule a convention with no
+ * mechanism is a wish, so read this as one.
+ *
+ * The FOUR ACTS are acts, not controls, and the count is of acts. The page renders more than four
+ * interactive elements outside the modal — a search box, a status dropdown and its options, a Clear
+ * button, a Retry button on the error row, an empty-state button — none of which is an act on the
+ * catalog. What the rule forbids is a fifth thing this page can DO to a policy.
  *
  * RETIRED AND SUPERSEDED ROWS STAY ON THE LIST. A policy that priced an invoice must remain nameable
  * forever — the same argument bank accounts uses for having no delete, and the same one the table
@@ -50,6 +58,17 @@ import { formatNaira, minorToNairaInput, nairaToMinor } from '@/lib/format';
  * below the active ones, without controls: `rows` is built active-first (see `rows` below), a spanning
  * divider row introduces the closed block, and the Actions cell of a closed row renders the sentence
  * "Kept for the invoices it priced" instead of a control.
+ *
+ * WITHHOLDING THOSE CONTROLS IS THIS SCREEN'S DECISION, NOT THE SERVER'S. Amending a superseded policy
+ * or retiring a retired one is MEANINGLESS, and that is the whole reason the controls are not offered
+ * — but it is not currently REFUSED. SubmitDiscountPolicyChange checks the school, the reason, the
+ * target shape and one-open-request-per-target, and never the target's status;
+ * ApproveDiscountPolicyChange checks the change's status and maker ≠ checker and then updates the
+ * target unconditionally; and `finance_discount_policies_update_guard` guards name, basis, value_*,
+ * percent, requires_approval, school_id, uuid and supersedes_policy_id — every column except `status`.
+ * So a retirement of a retired policy is a silent no-op success, and an amendment of a superseded one
+ * succeeds unless the new name collides with an active row. Filed:
+ * docs/handoff/tickets/discount-policy-changes-do-not-check-target-status.md.
  *
  * THE FRONTEND COMPUTES NO MONEY. An amount policy's value goes in through nairaToMinor and is read
  * back through formatNaira/minorToNairaInput; a percent policy is NOT money and touches neither — it
@@ -583,14 +602,24 @@ export default function DiscountPolicies() {
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
-                                    {/* SUPPRESSED ON A FAILED LOAD, for the same reason the cards
-                                        render a dash: both numbers come from an array that is empty
-                                        because the fetch died, so "Showing 0 of 0" states a count the
-                                        page does not have. There is no honest number here — a sentence
+                                    {/* SUPPRESSED WHILE LOADING AND ON A FAILED LOAD, for the same
+                                        reason the cards render a dash: both numbers come from an
+                                        array that is empty while the fetch is in flight and again if
+                                        it dies, so on either "Showing 0 of 0" states a count the page
+                                        does not have. There is no honest number here — a sentence
                                         with no content is worse than no sentence, and "Showing — of —"
                                         would be that sentence — so the counter is not rendered at all
-                                        rather than dashed. The error row below says what happened. */}
-                                    {!error && (
+                                        rather than dashed. The spinner or the error row below says
+                                        which of the two it is.
+
+                                        `!loading` IS LOAD-BEARING AND WAS MISSING FROM THE FIRST
+                                        VERSION OF THIS SCREEN, and from both siblings, until
+                                        2026-08-16. `load()` clears `error` and sets `loading` in the
+                                        same breath, so with `{!error && …}` alone the false sentence
+                                        rendered on every first paint, every Refresh, and — worst —
+                                        on the Retry click that leaves the error state, which is the
+                                        one moment an operator is watching this region. */}
+                                    {!error && !loading && (
                                         <span className="hidden text-xs font-medium text-slate-500 sm:inline">
                                             Showing{' '}
                                             <span className="font-bold text-slate-700 dark:text-slate-200">
@@ -771,12 +800,14 @@ export default function DiscountPolicies() {
                                                                     months ago,
                                                                     so none of
                                                                     them can be
-                                                                    deleted —
-                                                                    and none of
-                                                                    them can be
-                                                                    amended or
-                                                                    retired
-                                                                    again.
+                                                                    deleted.
+                                                                    Amending or
+                                                                    retiring one
+                                                                    would mean
+                                                                    nothing, so
+                                                                    this screen
+                                                                    does not
+                                                                    offer it.
                                                                 </p>
                                                             </td>
                                                         </tr>
@@ -851,10 +882,13 @@ export default function DiscountPolicies() {
                                                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                                             {/*
                                                              * A CLOSED ROW HAS NO CONTROLS. Amend and Retire are
-                                                             * both proposals AGAINST an active policy; offering
-                                                             * either on a superseded or retired one would post a
-                                                             * request the Action refuses, so the cell states why
-                                                             * the row is here instead.
+                                                             * both proposals AGAINST an active policy, and on a
+                                                             * superseded or retired one the act is meaningless —
+                                                             * so the cell states why the row is here instead.
+                                                             * The server does NOT refuse such a request today;
+                                                             * see the docblock and the ticket it names. This is
+                                                             * a UI decision standing in for a server guard, which
+                                                             * is exactly as strong as it sounds.
                                                              */}
                                                             {policy.status ===
                                                             'active' ? (

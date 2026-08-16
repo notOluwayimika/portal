@@ -346,13 +346,21 @@ export default function FinanceBankAccounts() {
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
-                                    {/* SUPPRESSED ON A FAILED LOAD, for the same reason the cards
-                                        render a dash: both numbers come from an array that is empty
-                                        because the fetch died, so "Showing 0 of 0" states a count
-                                        the page does not have. There is no honest number to show —
-                                        the error row below says what happened — so the counter is
-                                        not rendered at all rather than dashed. */}
-                                    {!error && (
+                                    {/* SUPPRESSED WHILE LOADING AND ON A FAILED LOAD, for the same
+                                        reason the cards render a dash: both numbers come from an
+                                        array that is empty while the fetch is in flight and again
+                                        if it dies, so on either "Showing 0 of 0" states a count the
+                                        page does not have. There is no honest number to show — the
+                                        spinner or the error row below says which it is — so the
+                                        counter is not rendered at all rather than dashed.
+
+                                        THE `!loading` HALF WAS MISSING UNTIL 2026-08-16. With
+                                        `{!error && …}` alone the sentence rendered on every first
+                                        paint, every Refresh and every Retry, because `error` is
+                                        cleared at the top of `load()` while `loading` is set — so
+                                        the state the failed path is entered from and returned to
+                                        was the one still making the false statement. */}
+                                    {!error && !loading && (
                                         <span className="hidden text-xs font-medium text-slate-500 sm:inline">
                                             Showing{' '}
                                             <span className="font-bold text-slate-700 dark:text-slate-200">

@@ -6,6 +6,8 @@ interface Option {
 }
 
 interface SelectProps {
+  /** Put on the trigger button so a <Label htmlFor> can name this control (a11y). */
+  id?: string
   value?: string | number | null
   onChange?: (value: string | number | null | undefined) => void
   options: (string | number | Option)[]
@@ -42,6 +44,7 @@ const DEFAULT_DROPDOWN_CLASS =
   'border border-slate-100 dark:border-slate-700 py-1 z-[9999] overflow-hidden'
 
 export default function Select({
+  id,
   value,
   onChange,
   options = [],
@@ -126,12 +129,40 @@ export default function Select({
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
+  // The panel is portalled to <body> and positioned `fixed`, so its coordinates are only correct
+  // for the scroll position they were measured at. Without this the panel detaches from its
+  // trigger the moment anything scrolls — the page, or a scrollable modal body, which is where
+  // this control sits on the fee-schedule form. `capture: true` is what makes an ancestor's
+  // scroll reach us: scroll does not bubble, so a listener on document only sees it on the way
+  // down. Listeners exist only while the panel is open.
+  useEffect(() => {
+    if (!isOpen) return
+    const reposition = () => updateDropdownPosition()
+    document.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      document.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [isOpen, updateDropdownPosition])
+
   return (
     <div className="relative inline-block w-full" ref={triggerRef}>
       <button
+        id={id}
         type="button"
         onClick={toggleDropdown}
         disabled={disabled}
+        // aria-expanded ONLY, and deliberately no listbox ARIA. This control has no keyboard
+        // handling — no arrow keys, no Enter, no Escape, no focus management, no
+        // aria-activedescendant; handleSelect fires from onClick alone. Announcing `listbox` would
+        // promise a screen-reader user an interaction model the component cannot honour, which is
+        // worse than the plain button it honestly is. aria-expanded is valid on a disclosure
+        // button and is backed by real behaviour. See
+        // docs/handoff/tickets/base-dropdown-is-not-keyboard-operable.md.
+        aria-expanded={isOpen}
+        data-slot="base-dropdown-trigger"
+        data-value={String(value ?? '')}
         className={`${buttonClass} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <div className="flex items-center gap-2 overflow-hidden">
@@ -163,12 +194,24 @@ export default function Select({
             ref={contentRef}
             className={`origin-top-left ${dropdownClass}`}
             style={dropdownStyle}
+            data-slot="base-dropdown-panel"
           >
             <div className="max-h-60 overflow-y-auto custom-scrollbar">
               {header}
               {normalizedOptions.map(option => (
+                // `data-value` carries the option's VALUE into the DOM. A native <select> exposes
+                // it as `option.value`; this control renders buttons, so without it the only thing
+                // readable from the page is the label — and a drive checking School isolation reads
+                // values precisely because the two Schools' labels are identical strings by
+                // construction (finance-drive skill, "Isolation is checked by id, never by label").
+                // Inert: no styling and no behaviour keys on it.
+                //
+                // NO role="option" / aria-selected here, for the reason given on the trigger: an
+                // option role outside a keyboard-operable listbox describes an interaction that
+                // does not exist. These are buttons, and a button is what they are announced as.
                 <button
                   key={String(option.value)}
+                  data-value={String(option.value ?? '')}
                   onClick={() => handleSelect(option)}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 ${
                     value === option.value

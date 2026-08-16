@@ -1,0 +1,14 @@
+
+=== bank-accounts — list fetch aborted ===
+  CARD "Bank accounts" value="—" sub="Every account this school has added"
+  CARD "Active" value="—" sub="Offered as a destination for fees and payments"
+  CARD "Deactivated" value="—" sub="Withdrawn from choice, still nameable on old payments"
+  table state      : {"couldNotLoad":true,"retry":true,"emptyCopy":false,"counter":false}
+  numeric cards    : 0  (PASS — no card renders a count)
+
+=== fee-schedules — list fetch aborted ===
+  CARD "Drafts" value="—" sub="In this view — priced, not yet submitted"
+  CARD "With the ED" value="—" sub="In this view — frozen until the decision"
+  CARD "Active" value="—" sub="In this view — currently billable"
+  table state      : {"couldNotLoad":true,"retry":true,"emptyCopy":false,"counter":false}
+  numeric cards    : 0  (PASS — no card renders a count)

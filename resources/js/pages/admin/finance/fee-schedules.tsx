@@ -1,10 +1,30 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { Copy, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
+import {
+    AlertCircle,
+    CheckCircle2,
+    Clock,
+    Copy,
+    FileText,
+    Pencil,
+    Plus,
+    RefreshCw,
+    Save,
+    Search,
+    Send,
+    Tags,
+    Trash2,
+    X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { FinanceStatCard } from '@/components/finance/finance-stat-card';
+import { StatusPill } from '@/components/finance/status-pill';
+import type { StatusTone } from '@/components/finance/status-pill';
+import Select from '@/components/ui/base-dropdown';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
@@ -32,7 +52,11 @@ import type { Money } from '@/types/finance';
  * THE FRONTEND COMPUTES NO MONEY. `total` is summed by FeeScheduleResource in PHP; the amount
  * inputs go through nairaToMinor and the amounts on screen through formatNaira. There is no
  * `* 100`, no parseFloat, no toFixed and no Intl in this file — bin/ci-money-lint.php is a gate
- * step and refuses all four.
+ * step and refuses all four. The KPI cards below count ROWS, which is not money and is not summed.
+ *
+ * LAID OUT TO docs/ui-ux-design-system.md: page shell → hero card → KPI stat cards → filter/table
+ * card, with loading, error and empty as three DISTINCT spanning rows. The API contract, the
+ * permission gate and every write path are unchanged.
  */
 
 type TermOption = { id: number; label: string };
@@ -122,16 +146,24 @@ const STATUS_LABEL: Record<ScheduleStatus, string> = {
     retired: 'Retired',
 };
 
-const STATUS_CLASS: Record<ScheduleStatus, string> = {
-    draft: 'bg-muted text-muted-foreground',
-    pending_approval: 'bg-amber-100 text-amber-800',
-    active: 'bg-emerald-100 text-emerald-800',
-    superseded: 'bg-muted text-muted-foreground',
-    retired: 'bg-muted text-muted-foreground',
+// Tone is MEANING (design system § 2/§ 14): amber = waiting on someone, emerald = live and
+// billing, slate = neutral/closed. A draft is slate rather than blue because it is not yet
+// informational about anything — nothing bills off it.
+const STATUS_TONE: Record<ScheduleStatus, StatusTone> = {
+    draft: 'slate',
+    pending_approval: 'amber',
+    active: 'emerald',
+    superseded: 'slate',
+    retired: 'slate',
 };
 
-const SELECT_CLASS =
-    'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs';
+const STATUS_FILTER_OPTIONS: { label: string; value: string }[] = [
+    { label: 'Any status', value: '' },
+    ...(Object.keys(STATUS_LABEL) as ScheduleStatus[]).map((status) => ({
+        label: STATUS_LABEL[status],
+        value: status,
+    })),
+];
 
 function parseErrorBag(err: unknown): ErrorBag | null {
     if (!axios.isAxiosError(err) || err.response?.status !== 422) {
@@ -186,12 +218,21 @@ export default function FeeSchedules({
     const [schedules, setSchedules] = useState<FeeSchedule[]>([]);
     const [accounts, setAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
 
     // Filters. DEFAULT IS NO TERM — a school arriving in September has one term of schedules, and
     // hiding them behind a preselected filter is worse than a short list. Both are applied
     // SERVER-SIDE through the query params commit 1 added, never by filtering a full fetch here.
     const [termFilter, setTermFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+
+    // The search box is the ONE client-side narrowing on this screen, and it is sound only
+    // because GET /v1/finance/fee-schedules does not paginate — it returns the School's whole
+    // matching set in one response (see the controller's docblock and
+    // docs/handoff/tickets/fee-schedule-index-unpaginated.md). So "Showing X of Y" below draws
+    // both numbers from the same array and there is no server total to disagree with. The day
+    // that endpoint paginates, this moves into the query string with the other two.
+    const [search, setSearch] = useState('');
 
     const [modalOpen, setModalOpen] = useState(false);
     const [mode, setMode] = useState<Mode>('create');
@@ -228,6 +269,7 @@ export default function FeeSchedules({
 
     const load = useCallback(async () => {
         setLoading(true);
+        setError(false);
 
         const query = new URLSearchParams();
 
@@ -245,7 +287,7 @@ export default function FeeSchedules({
             );
             setSchedules(data ?? []);
         } catch {
-            toast.error('Could not load the fee schedules.');
+            setError(true);
         } finally {
             setLoading(false);
         }
@@ -263,9 +305,9 @@ export default function FeeSchedules({
     }, []);
 
     useEffect(() => {
-        // Same disable the two sibling finance pages carry (bank-accounts.tsx:74,
-        // finance/index.tsx:95): the fetch is the effect's whole purpose and its loading flag is
-        // set synchronously inside it.
+        // Same disable the two sibling finance pages carry (bank-accounts.tsx, finance/index.tsx):
+        // the fetch is the effect's whole purpose and its loading flag is set synchronously
+        // inside it.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         void load();
     }, [load]);
@@ -278,17 +320,45 @@ export default function FeeSchedules({
         void loadAccounts();
     }, [loadAccounts]);
 
+    /**
+     * WHAT REFRESH AND RETRY BOTH RUN — and it must be BOTH fetches, not just the list.
+     *
+     * The accounts fetch is a separate effect with `[]` deps, so it runs exactly once per mount.
+     * When both requests fail together — the server is down, or the session has expired, which is
+     * the ordinary way this page fails — a Retry wired only to `load()` brings the table back and
+     * leaves `accounts` at `[]` until a full page reload. The screen then looks entirely healthy
+     * while the author modal's "Paid into" select offers nothing but its placeholder, and the
+     * operator cannot save a draft on a page that is showing them no error at all.
+     *
+     * That is precisely the defect this branch filed a ticket about on /students
+     * (students-index-403s-render-two-placeholder-only-selects.md) — a control rendering empty
+     * because the data behind it never arrived, on a screen that looks fine — reproduced inside
+     * this branch's own feature. Recovery has to restore everything the mount fetched.
+     */
+    const reload = useCallback(async () => {
+        await Promise.all([load(), loadAccounts()]);
+    }, [load, loadAccounts]);
+
     // Only an ACTIVE account may be a destination — the exists rule on items.*.bank_account_id is
     // `whereNull('deactivated_at')`, so offering a deactivated one is offering a guaranteed 422.
     // A deactivated account already ON a draft still shows, because the row points at it and
     // hiding it would silently blank the operator's existing destination.
     const activeAccounts = accounts.filter((account) => account.is_active);
-    const accountOptions = (current: string) =>
-        activeAccounts.some((account) => account.id === current)
+    const accountOptions = (current: string) => {
+        const offered = activeAccounts.some((account) => account.id === current)
             ? activeAccounts
             : accounts.filter(
                   (account) => account.is_active || account.id === current,
               );
+
+        return [
+            { label: 'Choose an account…', value: '' },
+            ...offered.map((account) => ({
+                label: `${account.label} · ${account.bank_name}`,
+                value: account.id,
+            })),
+        ];
+    };
 
     const openCreate = () => {
         setMode('create');
@@ -475,234 +545,502 @@ export default function FeeSchedules({
         }
     };
 
+    const term = search.trim().toLowerCase();
+    const visible =
+        term === ''
+            ? schedules
+            : schedules.filter((schedule) =>
+                  [
+                      schedule.label,
+                      schedule.term_label ?? '',
+                      schedule.class_level_label ?? '',
+                  ]
+                      .join(' ')
+                      .toLowerCase()
+                      .includes(term),
+              );
+
+    // Row counts over the loaded set — not sums, and never money. They describe THIS VIEW, which
+    // is why the sub-text says so: with a status filter applied two of the three are 0 by
+    // construction, and a card labelled as a school-wide total would then be a lie.
+    const countOf = (status: ScheduleStatus) =>
+        visible.filter((schedule) => schedule.status === status).length;
+
+    const hasFilters = termFilter !== '' || statusFilter !== '' || term !== '';
+
+    const clearFilters = () => {
+        setTermFilter('');
+        setStatusFilter('');
+        setSearch('');
+    };
+
+    const termOptions = [
+        { label: 'All terms', value: '' },
+        ...terms.map((t) => ({ label: t.label, value: String(t.id) })),
+    ];
+
     return (
         <>
             <Head title="Fee schedules" />
 
-            <div className="space-y-4 p-4">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl font-semibold">Fee schedules</h1>
-                        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                            What a term costs, per class level. A schedule is
-                            authored as a draft and priced freely; it becomes
-                            billable only when the executive director approves
-                            it, and its lines are frozen from the moment it is
-                            sent for approval.
-                        </p>
-                    </div>
-                    <Button onClick={openCreate} disabled={terms.length === 0}>
-                        <Plus className="mr-1 h-4 w-4" />
-                        New draft
-                    </Button>
-                </div>
+            <div className="min-h-screen bg-[#f5f7fb] px-4 py-5 pb-24 sm:px-6 lg:px-8 dark:bg-background">
+                <div className="mx-auto max-w-7xl space-y-5">
+                    {/* ── Hero Card ─────────────────────────────────────────────── */}
+                    <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-indigo-50 to-violet-50 shadow-sm ring-1 ring-black/5 dark:from-indigo-950/50 dark:to-violet-950/50">
+                                    <Tags className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                                        Fee schedules
+                                    </h1>
+                                    <p className="text-xs text-slate-500">
+                                        What a term costs, per class level —
+                                        priced as a draft, billable only once
+                                        the executive director approves it.
+                                    </p>
+                                </div>
+                            </div>
 
-                {terms.length === 0 && (
-                    <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                        This school has no terms yet, so there is nothing to
-                        price. Set up an academic session and its terms first.
-                    </p>
-                )}
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void reload()}
+                                    disabled={loading}
+                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                >
+                                    <RefreshCw
+                                        className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                                    />
+                                    Refresh
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={openCreate}
+                                    disabled={terms.length === 0}
+                                    className="rounded-lg bg-indigo-600 px-4 font-semibold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-95"
+                                >
+                                    <Plus className="mr-1.5 h-4 w-4" />
+                                    New draft
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
 
-                <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                        <Label htmlFor="fs-filter-term">Term</Label>
-                        <select
-                            id="fs-filter-term"
-                            className={SELECT_CLASS}
-                            value={termFilter}
-                            onChange={(e) => setTermFilter(e.target.value)}
-                        >
-                            <option value="">All terms</option>
-                            {terms.map((term) => (
-                                <option key={term.id} value={term.id}>
-                                    {term.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <Label htmlFor="fs-filter-status">Status</Label>
-                        <select
-                            id="fs-filter-status"
-                            className={SELECT_CLASS}
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                        >
-                            <option value="">Any status</option>
-                            {(
-                                Object.keys(STATUS_LABEL) as ScheduleStatus[]
-                            ).map((status) => (
-                                <option key={status} value={status}>
-                                    {STATUS_LABEL[status]}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
+                    {/* A school with no terms cannot price anything, and the disabled New-draft
+                        button alone does not say why. Amber, because it is an attention state the
+                        operator can resolve — not an error. */}
+                    {terms.length === 0 && (
+                        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-900/40 dark:bg-amber-900/20">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <div>
+                                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                                    This school has no terms yet
+                                </p>
+                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                    There is nothing to price until one exists.
+                                    Set up an academic session and its terms
+                                    first.
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
-                {loading ? (
-                    <div className="flex justify-center p-8">
-                        <Spinner />
+                    {/* ── KPI Stat Cards ───────────────────────────────────────── */}
+                    {/* A FAILED LOAD RENDERS AN EM DASH, NEVER A NUMBER. `schedules` is [] both
+                        when the filter matched nothing and when the fetch died, so counting it on
+                        the error path states "0 drafts" about a school whose drafts were never
+                        retrieved — the empty-vs-error confusion the table's error state exists to
+                        remove, reappearing in the row above it. A dash is the repo's existing
+                        "no value" convention (this table renders `term_label ?? '—'`) and cannot be
+                        misread as a real zero; a skeleton would claim the data is still arriving
+                        while a Retry button sits below saying it is not, and suppressing the cards
+                        would remove the labels that say WHICH figures are missing. */}
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <FinanceStatCard
+                            icon={FileText}
+                            tone="slate"
+                            label="Drafts"
+                            value={error ? '—' : String(countOf('draft'))}
+                            subText="In this view — priced, not yet submitted"
+                            loading={loading && schedules.length === 0}
+                        />
+                        <FinanceStatCard
+                            icon={Clock}
+                            tone="amber"
+                            label="With the ED"
+                            value={
+                                error
+                                    ? '—'
+                                    : String(countOf('pending_approval'))
+                            }
+                            subText="In this view — frozen until the decision"
+                            loading={loading && schedules.length === 0}
+                        />
+                        <FinanceStatCard
+                            icon={CheckCircle2}
+                            tone="emerald"
+                            label="Active"
+                            value={error ? '—' : String(countOf('active'))}
+                            subText="In this view — currently billable"
+                            loading={loading && schedules.length === 0}
+                        />
                     </div>
-                ) : schedules.length === 0 ? (
-                    <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                        No fee schedules match this filter.
-                    </p>
-                ) : (
-                    <div className="overflow-x-auto rounded-md border">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50 text-left">
-                                <tr>
-                                    <th className="p-2">Schedule</th>
-                                    <th className="p-2">Term</th>
-                                    <th className="p-2">Class level</th>
-                                    <th className="p-2">Status</th>
-                                    <th className="p-2 text-right">Lines</th>
-                                    <th className="p-2 text-right">Total</th>
-                                    <th className="p-2 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {schedules.map((schedule) => (
-                                    <tr
-                                        key={schedule.id}
-                                        className="border-t align-top"
-                                        data-testid="fee-schedule-row"
-                                    >
-                                        <td className="p-2 font-medium">
-                                            {schedule.label}
-                                        </td>
-                                        <td className="p-2">
-                                            {schedule.term_label ?? '—'}
-                                        </td>
-                                        <td className="p-2">
-                                            {schedule.class_level_label ?? '—'}
-                                        </td>
-                                        <td className="p-2">
-                                            <span
-                                                className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[schedule.status]}`}
-                                            >
-                                                {STATUS_LABEL[schedule.status]}
+
+                    {/* ── Filters + Table Card ─────────────────────────────────── */}
+                    <div className="overflow-hidden rounded-xl border-none bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:bg-card">
+                        <div className="border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center">
+                                <div className="relative w-full sm:max-w-xs sm:flex-1">
+                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                    <Input
+                                        placeholder="Search by label or class level…"
+                                        aria-label="Search fee schedules"
+                                        className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
+                                        value={search}
+                                        onChange={(e) =>
+                                            setSearch(e.target.value)
+                                        }
+                                    />
+                                </div>
+
+                                <div className="w-full sm:w-44">
+                                    <Select
+                                        value={termFilter}
+                                        onChange={(val) =>
+                                            setTermFilter(
+                                                val ? String(val) : '',
+                                            )
+                                        }
+                                        placeholder="All terms"
+                                        options={termOptions}
+                                    />
+                                </div>
+
+                                <div className="w-full sm:w-44">
+                                    <Select
+                                        value={statusFilter}
+                                        onChange={(val) =>
+                                            setStatusFilter(
+                                                val ? String(val) : '',
+                                            )
+                                        }
+                                        placeholder="Any status"
+                                        options={STATUS_FILTER_OPTIONS}
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2 sm:ml-auto">
+                                    {/* SUPPRESSED ON A FAILED LOAD — see bank-accounts.tsx for the
+                                        argument. Both numbers come from an array left empty by a
+                                        dead fetch, so the counter would assert "0 of 0" about a
+                                        school whose schedules were never retrieved. */}
+                                    {!error && (
+                                        <span className="hidden text-xs font-medium text-slate-500 sm:inline">
+                                            Showing{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {visible.length}
+                                            </span>{' '}
+                                            of{' '}
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                                                {schedules.length}
                                             </span>
-                                        </td>
-                                        <td className="p-2 text-right">
-                                            {schedule.items.length}
-                                        </td>
-                                        <td className="p-2 text-right font-mono">
-                                            {/*
-                                             * DISPLAYED, NEVER COMPUTED. The resource sums the
-                                             * items in PHP; null means those items do not agree
-                                             * on a currency, which is a fact worth naming rather
-                                             * than a blank.
-                                             */}
-                                            {schedule.total === null ? (
-                                                <span className="text-destructive">
-                                                    Mixed currencies
-                                                </span>
-                                            ) : (
-                                                formatNaira(schedule.total)
-                                            )}
-                                        </td>
-                                        <td className="space-x-1 p-2 text-right whitespace-nowrap">
-                                            {/*
-                                             * BUTTONS BY STATUS. SubmitFeeScheduleChange already
-                                             * refuses the wrong ones, so this is not the control
-                                             * — it is not offering an operator a button that
-                                             * 422s. `pending_approval` deliberately offers
-                                             * nothing and says where the schedule is instead.
-                                             */}
-                                            {schedule.status === 'draft' && (
-                                                <>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            openFrom(
-                                                                schedule,
-                                                                'edit',
-                                                            )
-                                                        }
-                                                    >
-                                                        <Pencil className="mr-1 h-3.5 w-3.5" />
-                                                        Edit
-                                                    </Button>
-                                                    {canPropose && (
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                setProposal({
-                                                                    schedule,
-                                                                    kind: 'publish',
-                                                                });
-                                                                setReason('');
-                                                            }}
-                                                        >
-                                                            <Send className="mr-1 h-3.5 w-3.5" />
-                                                            Submit for approval
-                                                        </Button>
-                                                    )}
-                                                </>
-                                            )}
+                                        </span>
+                                    )}
+                                    {hasFilters && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={clearFilters}
+                                            className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                                        >
+                                            <X className="mr-1 h-3.5 w-3.5" />
+                                            Clear
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
-                                            {schedule.status ===
-                                                'pending_approval' && (
-                                                <span className="text-xs text-muted-foreground">
-                                                    With the executive director
-                                                    — the lines are frozen until
-                                                    the decision.
-                                                </span>
-                                            )}
-
-                                            {schedule.status === 'active' && (
-                                                <>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            openFrom(
-                                                                schedule,
-                                                                'supersede',
-                                                            )
-                                                        }
-                                                    >
-                                                        <Copy className="mr-1 h-3.5 w-3.5" />
-                                                        Re-price
-                                                    </Button>
-                                                    {canPropose && (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                setProposal({
-                                                                    schedule,
-                                                                    kind: 'retire',
-                                                                });
-                                                                setReason('');
-                                                            }}
-                                                        >
-                                                            <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                                            Retire
-                                                        </Button>
-                                                    )}
-                                                </>
-                                            )}
-
-                                            {(schedule.status ===
-                                                'superseded' ||
-                                                schedule.status ===
-                                                    'retired') && (
-                                                <span className="text-xs text-muted-foreground">
-                                                    Read only.
-                                                </span>
-                                            )}
-                                        </td>
+                        <div className="custom-scrollbar overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
+                                        <th className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Schedule
+                                        </th>
+                                        <th className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Term
+                                        </th>
+                                        <th className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Class level
+                                        </th>
+                                        <th className="px-4 py-2.5 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Status
+                                        </th>
+                                        <th className="px-4 py-2.5 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Lines
+                                        </th>
+                                        <th className="px-4 py-2.5 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Total
+                                        </th>
+                                        <th className="px-4 py-2.5 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Actions
+                                        </th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {loading ? (
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="py-12 text-center"
+                                            >
+                                                <Spinner className="mx-auto" />
+                                            </td>
+                                        </tr>
+                                    ) : error ? (
+                                        <tr>
+                                            <td colSpan={7} className="py-12">
+                                                <div className="flex flex-col items-center gap-3 text-center">
+                                                    <div className="flex size-12 items-center justify-center rounded-full bg-red-50 text-red-500 dark:bg-red-900/20">
+                                                        <AlertCircle className="h-6 w-6" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                            Could not load the
+                                                            fee schedules
+                                                        </p>
+                                                        <p className="text-xs text-slate-500">
+                                                            Something went wrong
+                                                            fetching the data.
+                                                        </p>
+                                                    </div>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            void reload()
+                                                        }
+                                                        className="rounded-lg"
+                                                    >
+                                                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                                                        Retry
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : visible.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="py-12">
+                                                <div className="flex flex-col items-center gap-3 text-center">
+                                                    <div className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                                                        <Tags className="h-6 w-6" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                            No fee schedules to
+                                                            show
+                                                        </p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {hasFilters
+                                                                ? 'No schedules match this view. Try clearing the filters.'
+                                                                : 'Author a draft to price a term for a class level.'}
+                                                        </p>
+                                                    </div>
+                                                    {hasFilters && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={
+                                                                clearFilters
+                                                            }
+                                                            className="rounded-lg"
+                                                        >
+                                                            <X className="mr-1.5 h-3.5 w-3.5" />
+                                                            Clear filters
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        visible.map((schedule) => (
+                                            <tr
+                                                key={schedule.id}
+                                                className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
+                                                data-testid="fee-schedule-row"
+                                            >
+                                                <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
+                                                    {schedule.label}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                                                    {schedule.term_label ?? '—'}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                                                    {schedule.class_level_label ??
+                                                        '—'}
+                                                </td>
+                                                <td className="px-4 py-2.5">
+                                                    <StatusPill
+                                                        tone={
+                                                            STATUS_TONE[
+                                                                schedule.status
+                                                            ]
+                                                        }
+                                                        label={
+                                                            STATUS_LABEL[
+                                                                schedule.status
+                                                            ]
+                                                        }
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums dark:text-slate-300">
+                                                    {schedule.items.length}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-semibold text-slate-800 tabular-nums dark:text-slate-100">
+                                                    {/*
+                                                     * DISPLAYED, NEVER COMPUTED. The resource sums the
+                                                     * items in PHP; null means those items do not agree
+                                                     * on a currency, which is a fact worth naming rather
+                                                     * than a blank. Icon AND text — colour alone is not
+                                                     * a signal (design system § 21).
+                                                     */}
+                                                    {schedule.total === null ? (
+                                                        <span className="inline-flex items-center gap-1 font-semibold text-red-600 dark:text-red-400">
+                                                            <AlertCircle className="h-3.5 w-3.5" />
+                                                            Mixed currencies
+                                                        </span>
+                                                    ) : (
+                                                        formatNaira(
+                                                            schedule.total,
+                                                        )
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                                    {/*
+                                                     * BUTTONS BY STATUS. SubmitFeeScheduleChange already
+                                                     * refuses the wrong ones, so this is not the control
+                                                     * — it is not offering an operator a button that
+                                                     * 422s. `pending_approval` deliberately offers
+                                                     * nothing and says where the schedule is instead.
+                                                     */}
+                                                    {schedule.status ===
+                                                        'draft' && (
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-7 w-7"
+                                                                title={`Edit ${schedule.label}`}
+                                                                aria-label={`Edit ${schedule.label}`}
+                                                                onClick={() =>
+                                                                    openFrom(
+                                                                        schedule,
+                                                                        'edit',
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Pencil className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            {canPropose && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+                                                                    title={`Submit ${schedule.label} for the executive director's approval`}
+                                                                    aria-label={`Submit ${schedule.label} for approval`}
+                                                                    onClick={() => {
+                                                                        setProposal(
+                                                                            {
+                                                                                schedule,
+                                                                                kind: 'publish',
+                                                                            },
+                                                                        );
+                                                                        setReason(
+                                                                            '',
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    <Send className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    {schedule.status ===
+                                                        'pending_approval' && (
+                                                        <span className="text-[11px] text-slate-400">
+                                                            With the executive
+                                                            director — lines
+                                                            frozen
+                                                        </span>
+                                                    )}
+
+                                                    {schedule.status ===
+                                                        'active' && (
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-7 w-7"
+                                                                title={`Re-price ${schedule.label} as a new draft`}
+                                                                aria-label={`Re-price ${schedule.label}`}
+                                                                onClick={() =>
+                                                                    openFrom(
+                                                                        schedule,
+                                                                        'supersede',
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Copy className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            {canPropose && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                                                                    title={`Propose retiring ${schedule.label}`}
+                                                                    aria-label={`Propose retiring ${schedule.label}`}
+                                                                    onClick={() => {
+                                                                        setProposal(
+                                                                            {
+                                                                                schedule,
+                                                                                kind: 'retire',
+                                                                            },
+                                                                        );
+                                                                        setReason(
+                                                                            '',
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    {(schedule.status ===
+                                                        'superseded' ||
+                                                        schedule.status ===
+                                                            'retired') && (
+                                                        <span className="text-[11px] text-slate-400">
+                                                            Read only
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                )}
+                </div>
             </div>
 
             <Modal
@@ -716,16 +1054,39 @@ export default function FeeSchedules({
                           : 'New fee schedule draft'
                 }
                 size="4xl"
+                footer={
+                    <div className="flex justify-end gap-3">
+                        <Button
+                            variant="outline"
+                            onClick={() => setModalOpen(false)}
+                            disabled={submitting}
+                        >
+                            Cancel
+                        </Button>
+                        <Button onClick={submit} disabled={submitting}>
+                            {submitting ? (
+                                <Spinner className="mr-2 h-4 w-4" />
+                            ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                            )}
+                            {submitting
+                                ? 'Saving…'
+                                : mode === 'edit'
+                                  ? 'Save draft'
+                                  : 'Create draft'}
+                        </Button>
+                    </div>
+                }
             >
                 <div className="space-y-4">
                     {errors.message && (
-                        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                        <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
                             {errors.message}
                         </p>
                     )}
 
                     {mode === 'supersede' && (
-                        <p className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+                        <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
                             An active schedule&rsquo;s lines are frozen, so
                             re-pricing authors a NEW draft for the same term and
                             class level. The current schedule keeps billing
@@ -738,28 +1099,28 @@ export default function FeeSchedules({
                         <div>
                             <Label htmlFor="fs-term">Term</Label>
                             {mode === 'create' ? (
-                                <select
+                                <Select
                                     id="fs-term"
-                                    className={SELECT_CLASS}
                                     value={termId}
-                                    onChange={(e) => setTermId(e.target.value)}
-                                >
-                                    {terms.map((term) => (
-                                        <option key={term.id} value={term.id}>
-                                            {term.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                    onChange={(val) =>
+                                        setTermId(val ? String(val) : '')
+                                    }
+                                    placeholder="Choose a term…"
+                                    options={terms.map((t) => ({
+                                        label: t.label,
+                                        value: String(t.id),
+                                    }))}
+                                />
                             ) : (
                                 // NOT a disabled input. The slot is a fact about the row, not a
                                 // field the operator may argue with — and a disabled input that
                                 // still posts its value is not a guard.
-                                <p className="pt-2 text-sm">
+                                <p className="pt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                                     {target?.term_label ?? '—'}
                                 </p>
                             )}
                             {errors.fields.term_id && (
-                                <p className="mt-0.5 text-xs text-destructive">
+                                <p className="mt-1 text-xs text-destructive">
                                     {errors.fields.term_id}
                                 </p>
                             )}
@@ -768,27 +1129,25 @@ export default function FeeSchedules({
                         <div>
                             <Label htmlFor="fs-class-level">Class level</Label>
                             {mode === 'create' ? (
-                                <select
+                                <Select
                                     id="fs-class-level"
-                                    className={SELECT_CLASS}
                                     value={classLevelId}
-                                    onChange={(e) =>
-                                        setClassLevelId(e.target.value)
+                                    onChange={(val) =>
+                                        setClassLevelId(val ? String(val) : '')
                                     }
-                                >
-                                    {classLevels.map((level) => (
-                                        <option key={level.id} value={level.id}>
-                                            {level.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                    placeholder="Choose a class level…"
+                                    options={classLevels.map((level) => ({
+                                        label: level.name,
+                                        value: String(level.id),
+                                    }))}
+                                />
                             ) : (
-                                <p className="pt-2 text-sm">
+                                <p className="pt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                                     {target?.class_level_label ?? '—'}
                                 </p>
                             )}
                             {errors.fields.class_level_id && (
-                                <p className="mt-0.5 text-xs text-destructive">
+                                <p className="mt-1 text-xs text-destructive">
                                     {errors.fields.class_level_id}
                                 </p>
                             )}
@@ -804,29 +1163,32 @@ export default function FeeSchedules({
                             onChange={(e) => setLabel(e.target.value)}
                         />
                         {errors.fields.label && (
-                            <p className="mt-0.5 text-xs text-destructive">
+                            <p className="mt-1 text-xs text-destructive">
                                 {errors.fields.label}
                             </p>
                         )}
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
                         <div className="flex items-center justify-between">
-                            <Label>Fee lines</Label>
+                            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                                Fee lines
+                            </h3>
                             <Button
                                 variant="outline"
                                 size="sm"
+                                className="rounded-lg font-semibold"
                                 onClick={() =>
                                     setRows((current) => [...current, newRow()])
                                 }
                             >
-                                <Plus className="mr-1 h-3.5 w-3.5" />
+                                <Plus className="mr-1.5 h-4 w-4" />
                                 Add line
                             </Button>
                         </div>
 
                         {errors.fields.items && (
-                            <p className="text-xs text-destructive">
+                            <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">
                                 {errors.fields.items}
                             </p>
                         )}
@@ -834,10 +1196,10 @@ export default function FeeSchedules({
                         {rows.map((row, index) => (
                             <div
                                 key={row.key}
-                                className="space-y-2 rounded-md border p-3"
+                                className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/30"
                                 data-testid="fee-item-row"
                             >
-                                <div className="grid gap-2 sm:grid-cols-12">
+                                <div className="grid gap-3 sm:grid-cols-12">
                                     <div className="sm:col-span-5">
                                         <Label
                                             htmlFor={`fs-desc-${row.key}`}
@@ -856,7 +1218,7 @@ export default function FeeSchedules({
                                             }
                                         />
                                         {errors.items[index]?.description && (
-                                            <p className="mt-0.5 text-xs text-destructive">
+                                            <p className="mt-1 text-xs text-destructive">
                                                 {
                                                     errors.items[index]
                                                         .description
@@ -877,6 +1239,7 @@ export default function FeeSchedules({
                                             value={row.amount}
                                             inputMode="decimal"
                                             placeholder="250000.00"
+                                            className="tabular-nums"
                                             onChange={(e) =>
                                                 patchRow(row.key, {
                                                     amount: e.target.value,
@@ -884,7 +1247,7 @@ export default function FeeSchedules({
                                             }
                                         />
                                         {errors.items[index]?.amount_minor && (
-                                            <p className="mt-0.5 text-xs text-destructive">
+                                            <p className="mt-1 text-xs text-destructive">
                                                 {
                                                     errors.items[index]
                                                         .amount_minor
@@ -900,35 +1263,24 @@ export default function FeeSchedules({
                                         >
                                             Paid into
                                         </Label>
-                                        <select
+                                        <Select
                                             id={`fs-account-${row.key}`}
-                                            className={SELECT_CLASS}
                                             value={row.bank_account_id}
-                                            onChange={(e) =>
+                                            onChange={(val) =>
                                                 patchRow(row.key, {
-                                                    bank_account_id:
-                                                        e.target.value,
+                                                    bank_account_id: val
+                                                        ? String(val)
+                                                        : '',
                                                 })
                                             }
-                                        >
-                                            <option value="">
-                                                Choose an account…
-                                            </option>
-                                            {accountOptions(
+                                            placeholder="Choose an account…"
+                                            options={accountOptions(
                                                 row.bank_account_id,
-                                            ).map((account) => (
-                                                <option
-                                                    key={account.id}
-                                                    value={account.id}
-                                                >
-                                                    {account.label} ·{' '}
-                                                    {account.bank_name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            )}
+                                        />
                                         {errors.items[index]
                                             ?.bank_account_id && (
-                                            <p className="mt-0.5 text-xs text-destructive">
+                                            <p className="mt-1 text-xs text-destructive">
                                                 {
                                                     errors.items[index]
                                                         .bank_account_id
@@ -938,38 +1290,50 @@ export default function FeeSchedules({
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-4 text-sm">
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id={`fs-mandatory-${row.key}`}
                                             checked={row.is_mandatory}
-                                            onChange={(e) =>
+                                            onCheckedChange={(checked) =>
                                                 patchRow(row.key, {
                                                     is_mandatory:
-                                                        e.target.checked,
+                                                        checked === true,
                                                 })
                                             }
                                         />
-                                        Mandatory
-                                    </label>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
+                                        <Label
+                                            htmlFor={`fs-mandatory-${row.key}`}
+                                            className="text-xs font-medium text-slate-600 dark:text-slate-300"
+                                        >
+                                            Mandatory
+                                        </Label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id={`fs-discountable-${row.key}`}
                                             checked={row.is_discountable}
-                                            onChange={(e) =>
+                                            onCheckedChange={(checked) =>
                                                 patchRow(row.key, {
                                                     is_discountable:
-                                                        e.target.checked,
+                                                        checked === true,
                                                 })
                                             }
                                         />
-                                        Discountable
-                                    </label>
+                                        <Label
+                                            htmlFor={`fs-discountable-${row.key}`}
+                                            className="text-xs font-medium text-slate-600 dark:text-slate-300"
+                                        >
+                                            Discountable
+                                        </Label>
+                                    </div>
                                     <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="ml-auto"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="ml-auto h-7 w-7 text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-900/20 dark:hover:text-red-400"
                                         disabled={rows.length === 1}
+                                        title="Remove this fee line"
+                                        aria-label="Remove this fee line"
                                         onClick={() =>
                                             setRows((current) =>
                                                 current.filter(
@@ -978,28 +1342,11 @@ export default function FeeSchedules({
                                             )
                                         }
                                     >
-                                        <X className="mr-1 h-3.5 w-3.5" />
-                                        Remove line
+                                        <X className="h-3.5 w-3.5" />
                                     </Button>
                                 </div>
                             </div>
                         ))}
-                    </div>
-
-                    <div className="flex justify-end gap-2 border-t pt-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => setModalOpen(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button onClick={submit} disabled={submitting}>
-                            {submitting
-                                ? 'Saving…'
-                                : mode === 'edit'
-                                  ? 'Save draft'
-                                  : 'Create draft'}
-                        </Button>
                     </div>
                 </div>
             </Modal>
@@ -1013,9 +1360,31 @@ export default function FeeSchedules({
                         : 'Submit for approval'
                 }
                 size="lg"
+                footer={
+                    <div className="flex justify-end gap-3">
+                        <Button
+                            variant="outline"
+                            onClick={() => setProposal(null)}
+                            disabled={proposing}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={sendProposal}
+                            disabled={proposing || reason.trim() === ''}
+                        >
+                            {proposing ? (
+                                <Spinner className="mr-2 h-4 w-4" />
+                            ) : (
+                                <Send className="mr-2 h-4 w-4" />
+                            )}
+                            {proposing ? 'Sending…' : 'Send to the ED'}
+                        </Button>
+                    </div>
+                }
             >
                 <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs text-slate-500">
                         {proposal?.kind === 'retire'
                             ? 'The executive director decides. Until they approve, this schedule keeps billing.'
                             : 'The executive director decides. The draft’s lines freeze the moment you send it, so what they approve is what you are showing them.'}
@@ -1030,21 +1399,6 @@ export default function FeeSchedules({
                             placeholder="Why this, and why now — the ED reads this."
                             onChange={(e) => setReason(e.target.value)}
                         />
-                    </div>
-
-                    <div className="flex justify-end gap-2 border-t pt-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => setProposal(null)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={sendProposal}
-                            disabled={proposing || reason.trim() === ''}
-                        >
-                            {proposing ? 'Sending…' : 'Send to the ED'}
-                        </Button>
                     </div>
                 </div>
             </Modal>

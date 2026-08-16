@@ -211,6 +211,12 @@ export type Payment = {
     method: string;
     amount: Money;
     created_at: string;
+    // Receipt eligibility, derived server-side from `origin` (U11). The row is NEVER hidden on
+    // these — the statement links every payment to its receipt page, and the flag only decides
+    // whether the row also states, in place, why no receipt will be issued. `origin` itself stays
+    // off the wire; see PaymentResource's docblock for why this is the narrower disclosure.
+    receiptable: boolean;
+    receipt_refusal_reason: string | null;
     allocations?: { id: string; invoice_id: number; amount: Money }[];
 };
 

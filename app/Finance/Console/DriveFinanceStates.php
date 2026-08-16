@@ -17,6 +17,7 @@ use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\Payment;
 use App\Models\User;
 use App\Support\Money;
 use App\Support\SchoolDay;
@@ -92,6 +93,30 @@ final class DriveFinanceStates
     public function bankAccountCount(int $schoolId): int
     {
         return BankAccount::query()->where('school_id', $schoolId)->count();
+    }
+
+    /**
+     * PAYMENTS BY PROVENANCE — the receipt screen's subject (U11), counted per `origin`.
+     *
+     * ADDED BECAUSE THE COUNT TABLE COULD NOT ANSWER THE QUESTION THE RECEIPT DRIVE ASKS. That
+     * screen has exactly one subject, a payment, and its refusal arm has exactly one subject, a
+     * MIGRATED payment — so "zero in any column means the screen cannot author anything" applies to
+     * this axis and to no column the table already carried. The split is the point: a single
+     * payments count would read as coverage while the refusal, the half of the screen that exists
+     * because of the WCBS cutover, still had nothing to render.
+     *
+     * It answers honestly and the answer is a zero. Nothing in this fixture posts an opening-balance
+     * batch, and PostOpeningBalanceBatch is the ONLY writer of `origin = 'migrated'` — so the
+     * migrated column reads 0 until a drive walks the real import path itself. That is a fact about
+     * the fixture worth printing rather than rediscovering in a browser.
+     *
+     * Same placement reasoning as bankAccountCount above: the boundary lint forbids the command
+     * naming a `finance_` table, and this reads the scoped model, so call it inside
+     * `ActiveSchool::runFor($schoolId, …)`.
+     */
+    public function paymentCount(int $schoolId, string $origin): int
+    {
+        return Payment::query()->where('school_id', $schoolId)->where('origin', $origin)->count();
     }
 
     /**

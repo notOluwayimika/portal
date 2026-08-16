@@ -600,6 +600,17 @@ why. Do not leave it unstated a third time.
 > post (G1).** Stated in `PostOpeningBalanceBatch`'s docblock as well as here, so it is not re-opened
 > as an oversight.
 
+> **DISCHARGED by U11 (`feat/finance-payment-receipt`).** The first receipt surface is the printable
+> page at `GET /finance/payments/{payment:uuid}/receipt`
+> (`app/Finance/Http/Controllers/PaymentReceiptController.php`), and it carries the refusal this
+> paragraph made a condition on it: `origin = 'migrated'` answers **403** with the reason rendered on
+> the page (`Payment::RECEIPT_REFUSAL_REASON`), server-side, never a client-side hide. The entry point
+> is NOT hidden — the statement's payments tab links every row to it, and a row that will be refused
+> also says so in place from `PaymentResource`'s `receiptable` / `receipt_refusal_reason`. The
+> paragraph below is left standing as written because it is the record of what was owed and why; read
+> it as history, not as an outstanding obligation. Still true in it: there is no PDF, no email
+> (`NotificationType::PAYMENT_RECEIVED` still has no dispatcher), no export and no archival.
+
 **THE RECEIPT REFUSAL IS OWED, NOT BUILT — there is no receipt surface to refuse from.** No receipt is
 produced for a payment anywhere in this repository today: payments are JSON-only
 (`PaymentController::store` / `storeForStudent`, `routes/endpoints/finance.php:24`, `:145`), the only

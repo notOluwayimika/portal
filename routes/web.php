@@ -6,6 +6,7 @@ use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Exports\OpeningBalanceImportTemplateExport;
+use App\Finance\Http\Controllers\PaymentReceiptController;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImpersonationController;
@@ -239,6 +240,22 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],
         ]);
     })->name('admin.finance.statement');
+
+    /*
+     * U11 — the printable payment receipt. ONE payment per page; there is no batch and no
+     * date-range form, because a receipt is a document about a single act.
+     *
+     * NO EXTRA MIDDLEWARE, deliberately: it takes the group's `finance.access`, which is what the
+     * statement page above carries and what the statement's own feed carries
+     * (routes/endpoints/finance.php:73). `finance.payment.record` is the authority to TAKE money;
+     * this is a read of money already taken. The controller's docblock carries the full argument,
+     * including why the receipt resolves its props server-side instead of behind a JSON endpoint.
+     *
+     * The migrated-payment refusal (opening-balance spec §4) lives in the controller, not here: it
+     * is a property of the row, not of the caller, so it cannot be middleware.
+     */
+    Route::get('/finance/payments/{payment:uuid}/receipt', PaymentReceiptController::class)
+        ->name('admin.finance.payment-receipt');
 
     // The checker's pending-approvals queue (Ph3 + Ph3b). VISIBILITY (who may open the queue) is
     // separated from AUTHORITY (who may approve a given ROW — the per-row can_approve): the page

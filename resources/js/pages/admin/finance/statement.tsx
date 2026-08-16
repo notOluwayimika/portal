@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { forStudent } from '@/actions/App/Finance/Http/Controllers/InvoiceController';
+// The receipt page route (U11). Wayfinder-generated from the controller, so the path lives in
+// exactly one place — routes/web.php — and a rename cannot leave a dead link here.
+import receiptUrl from '@/actions/App/Finance/Http/Controllers/PaymentReceiptController';
 import { Can } from '@/components/can';
 import { FinanceStatCard } from '@/components/finance/finance-stat-card';
 import { IssueCreditNoteModal } from '@/components/finance/issue-credit-note-modal';
@@ -707,13 +710,18 @@ export default function FinanceStatement({ student }: Props) {
                                             >
                                                 Amount
                                             </th>
+                                            <th
+                                                className={cn(TH, 'text-right')}
+                                            >
+                                                Receipt
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                         {paymentsTable.filtered.length === 0 ? (
                                             <tr>
                                                 <td
-                                                    colSpan={5}
+                                                    colSpan={6}
                                                     className="py-10 text-center text-xs text-slate-400"
                                                 >
                                                     {statement.payments
@@ -747,6 +755,48 @@ export default function FinanceStatement({ student }: Props) {
                                                             {formatNaira(
                                                                 payment.amount,
                                                             )}
+                                                        </td>
+                                                        {/*
+                                                            U11 — the receipt entry point. It is
+                                                            NEVER hidden and never disabled, not
+                                                            even for a payment the receipt route
+                                                            will refuse: "never silently hide the
+                                                            row" is the opening-balance spec's
+                                                            wording, and an operator who cannot
+                                                            find the link learns nothing. A row
+                                                            the server will refuse says so HERE
+                                                            as well, from the server's own
+                                                            `receipt_refusal_reason`, so the rule
+                                                            is readable without navigating — and
+                                                            the page states it again in full. The
+                                                            server-side branch in
+                                                            PaymentReceiptController is the
+                                                            control; this is the courtesy.
+                                                        */}
+                                                        <td className="px-4 py-2.5 text-right">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                {!payment.receiptable && (
+                                                                    <span
+                                                                        className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                                                                        title={
+                                                                            payment.receipt_refusal_reason ??
+                                                                            undefined
+                                                                        }
+                                                                    >
+                                                                        Not
+                                                                        issued
+                                                                        here
+                                                                    </span>
+                                                                )}
+                                                                <Link
+                                                                    href={receiptUrl.url(
+                                                                        payment.id,
+                                                                    )}
+                                                                    className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                                                                >
+                                                                    Receipt
+                                                                </Link>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ),

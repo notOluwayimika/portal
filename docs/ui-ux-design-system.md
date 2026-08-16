@@ -1048,14 +1048,29 @@ thing it changed.
 **The four states collapse into two, repeatedly.** §13 has specified loading,
 empty, error and success from the beginning. The recurring defect is not that
 someone forgot it — it is that two of the four end up saying the same thing, and
-the screen then makes a confident false statement. It has happened three times
-here, twice inside the fix for the previous occurrence: a failed fetch that
-rendered as "no accounts to show"; then, once that was fixed, KPI cards rendering
-a hard `0` above the words "Could not load"; then, once those were dashed, a
-counter rendering "Showing 0 of 0" over a dead fetch. Each was found in a
-screenshot, never in a diff. **When you fix a state-confusion defect, enumerate
-every other number and sentence on the screen and read what each one now says.**
-The region you edited is the region you were already thinking about.
+the screen then makes a confident false statement. It has happened **five** times
+here, three of them inside the fix for the previous occurrence: a failed fetch
+that rendered as "no accounts to show"; then, once that was fixed, KPI cards
+rendering a hard `0` above the words "Could not load"; then, once those were
+dashed, a counter rendering "Showing 0 of 0" over a dead fetch. The fourth was
+live in this file's own repository on the day this section was written and
+nobody had looked: the discount-policies screen's failed load was a toast, and
+the screen behind it rendered "No discount policies yet" — instance one again, on
+a third screen, eight months after it was first recorded. The fifth is the same
+counter as the third, in the LOADING state instead of the error state: the
+predicate was `{!error && …}` and not `{!error && !loading && …}`, on all three
+list screens at once, so "Showing 0 of 0" rendered on every first paint, every
+Refresh, and on the click of the Retry button added to fix instance three.
+
+Each was found in a screenshot, never in a diff. **When you fix a
+state-confusion defect, enumerate every other number and sentence on the screen
+and read what each one now says — and enumerate them in every state, not only the
+one you were fixing.** The region you edited is the region you were already
+thinking about; instance five is what happens when the enumeration covers the
+error path and stops there. And the count above is the evidence for the harder
+rule: when you fix an instance, go and look at the sibling screens in the same
+commit. Instance five was inherited on two of the three screens and shipped
+green because it belonged to someone else's commit.
 
 **A number whose source failed must not render as a number.** Use an em dash —
 already this codebase's no-value glyph. Not a skeleton: beside a Retry button it
@@ -1067,8 +1082,16 @@ rather than writing "Showing — of —". And prove the fix is conditional: a ca
 that dashes unconditionally passes every test you would write for the failure
 case, so show a genuine zero still rendering `0` in the same run.
 
-**Two failure modes a network-level test cannot reach.** A malformed 200 renders
-the *empty* state, because `setThings(data ?? [])` does not validate shape. And a
+**Two failure modes a network-level test cannot reach.** A malformed 200 gives
+one of **two** outcomes, and which one depends on the malformation, because
+`setThings(data ?? [])` does not validate shape. A null or absent body renders the
+*empty* state — the quiet failure, a sentence about the school made from nothing.
+A body of the wrong SHAPE (an object where an array was, e.g. a paginated
+envelope) makes `things.filter` throw during render and the screen goes blank —
+loud, and the one mercy in that shape. Both are spelled out in
+[`fee-schedule-index-unpaginated.md`](handoff/tickets/fee-schedule-index-unpaginated.md)
+§ "What goes wrong the day pagination lands". Do not read "renders the empty
+state" as the whole story. And a
 screen with two fetches needs one Retry that restores both — until this was
 fixed, a Retry restored the list and left the bank-account array empty, so a
 modal's select offered only its placeholder on a screen that looked healthy.
@@ -1090,22 +1113,40 @@ depend on it. `aria-expanded` on a disclosure button is fine. See §21, and
 restore the rest only as part of the keyboard work.
 
 **The dark-mode variants in §20 are currently unreachable by any user.** Write
-them anyway — they are the target and they are correct — but if you report having
-seen dark mode, say that you set the class directly.
+them anyway — they are the target — but do not assume the ones already written are
+right, and if you report having seen dark mode, say that you set the class
+directly. They are unverified precisely because nobody can reach them: four
+shared components — `Modal.tsx`, `ConfirmDialog.tsx`, `EmptyState.tsx` and
+`Toast.tsx` — carry **zero** `dark:` variants between them (`grep -c 'dark:'` on
+each returns 0), so every form in this application is authored inside a surface
+that never flips. That is §20's own "most common bug", shipped in the chrome
+rather than in a page. See
+[`ui-chrome-components-have-no-dark-variants.md`](handoff/tickets/ui-chrome-components-have-no-dark-variants.md).
 
 **Shared components have a blast radius, and no linter reads them.**
 `resources/js/components/ui/*` appears in both `.prettierignore` and the ESLint
 ignore list, so the lint step skips those files entirely; `tsc` and the build
 still catch a type or syntax error and nothing else. Before changing anything
-there, count the consumers and say the number. One dropdown has six. Then exercise
+there, count the consumers and say the number — a count written down here is one
+to distrust, since the shared dropdown's has already moved. Then exercise
 a consumer you did not change, and look for the structural case your own screens
 do not cover — a control inside a horizontally scrolling container, in a table
 row, or in a modal's scrollable body.
 
-**Money arithmetic is banned everywhere and enforced only in Finance.**
-`bin/ci-money-lint.php` scopes its check to `resources/js/pages/admin/finance/`
-and `resources/js/components/finance/`. A card summing money on any other screen
-passes CI in silence. §24's rule is project-wide; the guard is not.
+**Money arithmetic is banned everywhere, and the guard is weaker outside Finance
+— but not absent.** Read `bin/ci-money-lint.php` before relying on either half.
+Both rules scan **all** of `resources/js` (`:78`); what
+`resources/js/pages/admin/finance/` and `resources/js/components/finance/` buy is
+`isFinanceUi()` (`:40-44`), and it does two specific things. It makes the
+format ban **total** inside Finance — every number there is money, so any
+`Intl.NumberFormat` / `.toLocaleString(` is a finding regardless of the
+identifier, where elsewhere one of `amount_minor` / `available_credit` /
+`balance_minor` / `.amount` must be on the same line (`:95-100`). And it scopes
+the `.reduce()` heuristic to Finance alone (`:111`). Everywhere else, a money
+identifier adjacent to an operator is still caught (`:108-110`). So a card
+summing `amount_minor` outside Finance **does** fail; a card summing money held
+under any other name, or summed with `.reduce()`, does not. §24's rule is
+project-wide; the guard covers most of it and you should know which part.
 
 **Server behaviour you rely on and nobody promised.** Client-side search and a
 "Showing X of Y" counter are correct only while the endpoint returns everything —
@@ -1121,10 +1162,17 @@ screen then tells every user in words that they have nothing — silently, with 
 error and no console entry. Pin the payload's keys and their types in a server-side
 test.
 
-**What CI can see about a screen change.** It compiles, it bundles, it is
-formatted, and it does no money arithmetic in the Finance paths. Nothing more.
-It cannot see whether the screen renders, what it says, or whether a control can
-be used — so looking at the running page is the verification, not a courtesy.
+**What the gate can see about a screen change — and it is not "CI".** There is no
+CI here. GitHub Actions is billing-locked and has never executed a job in this
+repository; `bin/quality` behind the `.githooks/pre-push` hook is the enforcement
+floor, permanently and by decision (ADR 0053, `CLAUDE.md` § "The enforcement floor
+is LOCAL"). What it sees of a screen change: it compiles (tsc ratchet), it bundles
+(vite), it is formatted and linted **if the change is committed** — `lint-changed`
+diffs `BASE...HEAD` and is blind to a dirty tree — and it does no money arithmetic
+of the shapes the previous paragraph describes. Nothing more. It reads no
+markdown at all. It cannot see whether the screen renders, what it says, or
+whether a control can be used — so looking at the running page is the
+verification, not a courtesy.
 
 ### Where each of these was found
 
@@ -1139,6 +1187,9 @@ be used — so looking at the running page is the verification, not a courtesy.
 | Catalog filter with an unpinned key contract | `docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md` |
 | A `.then()` with no `.catch()` | `docs/handoff/tickets/students-index-403s-render-two-placeholder-only-selects.md` |
 | Dark mode unreachable | `docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md` |
+| A toast over an empty-state screen — instance one, third screen | `docs/handoff/reports/feat-ui-discount-policies-redesign.md` |
+| The counter again, in the LOADING state, on three screens at once | same report, cold-review round |
+| Four shared chrome components with no `dark:` variants | `docs/handoff/tickets/ui-chrome-components-have-no-dark-variants.md` |
 
 The record is Finance-heavy because Finance is what has been built and driven, not
 because the rules are Finance-specific. Rows from outside Finance are worth more

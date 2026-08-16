@@ -268,9 +268,10 @@ export function NewInvoiceModal({
     /**
      * The discount catalog the policy select is built from.
      *
-     * `?status=active` FOLLOWS discount-policies.tsx:167-172, which is the in-repo precedent for
-     * reading this endpoint and which says in its own comment that a caller wanting only the
-     * choosable ones asks for exactly this. DiscountPolicyController::index treats an absent `status`
+     * `?status=active` FOLLOWS discount-policies.tsx:248-252 (the `load()` callback's comment —
+     * re-derived 2026-08-16, having pointed at :167-172 until that file was rewritten), which is the
+     * in-repo precedent for reading this endpoint and which says in its own comment that a caller
+     * wanting only the choosable ones asks for exactly this. DiscountPolicyController::index treats an absent `status`
      * as UNFILTERED, so omitting it would hand this select every superseded and retired policy the
      * School has ever had.
      *
@@ -301,9 +302,13 @@ export function NewInvoiceModal({
             // eslint-disable-next-line react-hooks/set-state-in-effect
             void loadEnrollment();
             // NO SECOND DISABLE. The rule fires once per effect, on the first offending call, so a
-            // directive here is unused and eslint reports it as a warning — the same point
-            // discount-policies.tsx:183-185 makes about copying one across for symmetry. Measured:
-            // adding it produced "Unused eslint-disable directive"; removing it, zero warnings.
+            // directive here is unused and eslint reports it as a warning. Measured: adding it
+            // produced "Unused eslint-disable directive"; removing it, zero warnings. That
+            // measurement is the whole justification — this comment used to cite
+            // discount-policies.tsx:183-185 as making the same point, and that citation went stale
+            // twice over on 2026-08-16: the lines moved, and the passage now at :268-276 records the
+            // OPPOSITE outcome, because once that screen grew an error state the rule started firing
+            // there and it carries the disable. Re-derive a cross-file citation or do not make one.
             void loadPolicies();
         }
     }, [isOpen, loadEnrollment, loadPolicies]);

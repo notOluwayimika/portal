@@ -6,9 +6,11 @@ use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Finance\Models\Concerns\AppendOnly;
+use App\Models\Student;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -28,8 +30,11 @@ use Illuminate\Support\Carbon;
  * @property string $origin
  * @property string|null $external_reference
  * @property int|null $received_by_user_id
+ * @property int|null $bank_account_id
  * @property Carbon $created_at
  * @property-read Collection<int, PaymentAllocation> $allocations
+ * @property-read Student|null $student
+ * @property-read BankAccount|null $bankAccount
  * @property Carbon $received_at
  * @property string|null $received_at_reason
  */
@@ -58,6 +63,49 @@ class Payment extends Model
      */
     public const MIGRATED_REFERENCE_FLOOR = 900_000_000;
 
+    /**
+     * The two values `origin` may hold, named. The authority is the database: the CHECK
+     * `finance_payments_origin_shape` (2026_08_07_110000_add_provenance_to_finance_payments.php:91)
+     * admits exactly these two spellings, case-sensitively under `COLLATE utf8mb4_bin`, and
+     * `finance_payments_bank_account_origin_shape`
+     * (2026_08_10_120000_finance_bank_account_foreign_keys.php:102-104) keys the bank-account
+     * pairing off the same two. These constants are a second READER of that rule, never a second
+     * copy of it — the column is what refuses a third value, not this file.
+     */
+    public const ORIGIN_PORTAL = 'portal';
+
+    public const ORIGIN_MIGRATED = 'migrated';
+
+    /**
+     * WHY A RECEIPT IS REFUSED FOR A MIGRATED ROW, in the words the operator reads. One string,
+     * here, because two consumers state this rule and they must state the same thing: the receipt
+     * route refuses with it (PaymentReceiptController) and PaymentResource carries it onto the
+     * statement so the row can say why before anyone clicks. A second spelling of it in the UI is
+     * exactly the drift this constant exists to prevent.
+     *
+     * IT IS A FACTUAL CLAIM ABOUT WCBS, so it is reachable ONLY from `origin = 'migrated'` — see
+     * receiptRefusalReason() below, which matches rather than defaulting to it.
+     */
+    public const RECEIPT_REFUSAL_REASON = 'This payment was collected in the previous system before the cutover and '
+        .'brought across as an opening balance. Brookstone never issued a receipt for it from this system, so this '
+        .'system will not print one now. The receipt the parent holds is the one the previous system issued.';
+
+    /**
+     * The refusal for an origin this code does not recognise. It states what is actually known —
+     * that provenance could not be confirmed — and asserts NOTHING about where the money came from.
+     *
+     * Unreachable today: the `finance_payments_origin_shape` CHECK admits exactly `portal` and
+     * `migrated`, so no third value can be persisted. It exists because the two halves of this
+     * decision must not be allowed to drift apart. `isReceiptable()` is an allowlist and refuses the
+     * unknown correctly; before this constant, the EXPLANATION was a denylist — every non-portal row
+     * got the WCBS text — so the day a third origin is added by an unrelated migration, this system
+     * would have told a bursar a specific, false thing about a parent's receipt. The predicate would
+     * have been right and the sentence wrong, which is worse than either being obviously broken.
+     */
+    public const RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN = 'This system cannot confirm that it collected this payment, '
+        .'so it will not issue a receipt for it. Ask the bursar’s office to check how this payment was recorded '
+        .'before anything is issued to the payer.';
+
     protected $table = 'finance_payments';
 
     protected $guarded = ['id'];
@@ -69,8 +117,84 @@ class Payment extends Model
         'received_at' => 'date',
     ];
 
+    /**
+     * The generic is not decoration: without it Larastan reads `allocations()->get()` as a
+     * `Collection<int, Model>`, and every typed closure mapped over it (the receipt's allocation
+     * rows) is an `argument.type` error plus an undefined-method one for each Invoice call.
+     *
+     * @return HasMany<PaymentAllocation, $this>
+     */
     public function allocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);
+    }
+
+    /**
+     * The student whose ACCOUNT this payment sits on. `student_id` has been on this table since it
+     * was created; the relation is added here because the receipt is the first surface that names
+     * the student rather than only the payer, and a payer name is not a student name (a parent, an
+     * employer or a sponsor may pay).
+     *
+     * @return BelongsTo<Student, $this>
+     */
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class);
+    }
+
+    /**
+     * The account the money landed in. NULL for a migrated row and NOT NULL for a portal one — the
+     * `finance_payments_bank_account_origin_shape` CHECK enforces exactly that pairing, so a
+     * receipt (which is only ever issued for a portal payment) always has one to name.
+     *
+     * @return BelongsTo<BankAccount, $this>
+     */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /**
+     * MAY THIS SYSTEM ISSUE A RECEIPT FOR THIS PAYMENT? The predicate is `origin`, and it is an
+     * ALLOWLIST rather than `!== ORIGIN_MIGRATED` on purpose. The two are equivalent today because
+     * the CHECK admits exactly two values — but they differ in what happens on the day a third
+     * arrives, and only one of them fails in the safe direction. A denylist would issue a receipt
+     * for an origin nobody had decided about; this refuses until someone does.
+     *
+     * NOT `MIGRATED_REFERENCE_FLOOR`. The floor is a receipt-NUMBERING fact — the reserved band a
+     * migrated row draws its `reference` from so it cannot collide with a portal-issued one. Using
+     * it as a provenance test would be a heuristic standing where a CHECK-constrained column already
+     * answers the question exactly, and it would answer wrongly the moment a school's portal counter
+     * is ever seeded into the band (the failure the floor's own docblock warns about, one column
+     * away).
+     */
+    public function isReceiptable(): bool
+    {
+        return $this->origin === self::ORIGIN_PORTAL;
+    }
+
+    /**
+     * The stated reason a receipt is refused, or null when one may be issued.
+     *
+     * A MATCH ON `origin`, NOT A DEFAULT. The first version was
+     * `isReceiptable() ? null : RECEIPT_REFUSAL_REASON` — an allowlist predicate with a DENYLIST
+     * explanation, so any origin that was not `portal` was told it came from WCBS. The refusal was
+     * right; the sentence would have been a specific false claim about a parent's payment, put on
+     * the wire and shown to a bursar.
+     *
+     * The unknown branch RETURNS A NEUTRAL REASON rather than throwing, deliberately. Throwing would
+     * turn an unrecognised row into a 500 on a page an operator deliberately opened — and a 500
+     * destroys the refusal itself, so the operator learns nothing at all, which is the failure mode
+     * the whole "never silently hide the row" rule exists to prevent. A refusal that declines to
+     * explain is strictly better than no refusal. The DATABASE is what keeps a third origin from
+     * existing (the CHECK); this branch is what keeps the system honest if it ever does.
+     */
+    public function receiptRefusalReason(): ?string
+    {
+        return match (true) {
+            $this->isReceiptable() => null,
+            $this->origin === self::ORIGIN_MIGRATED => self::RECEIPT_REFUSAL_REASON,
+            default => self::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN,
+        };
     }
 }

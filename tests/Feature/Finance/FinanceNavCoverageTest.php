@@ -21,8 +21,10 @@
  * jest — so the choice is not "a nice test or an ugly one", it is this or nothing, and nothing is
  * what let three screens go unlinked.
  *
- * THE EXEMPTION IS NAMED, NOT DEFAULTED. Exactly one finance GET route is not a nav destination and
- * it has to say why in this file, where a reader looking for the missing item will find it.
+ * THE EXEMPTIONS ARE NAMED, NOT DEFAULTED. A finance GET route that is not a nav destination has to
+ * say why in this file, where a reader looking for the missing item will find it — and the thing
+ * that DOES link it is asserted, not asserted-about. There are two: the per-student statement, and
+ * (U11) the per-payment receipt.
  */
 
 use App\Models\User;
@@ -48,6 +50,14 @@ const FNC_NOT_NAV = [
     // (resources/js/pages/admin/finance/index.tsx). That is a real link, checked rather than assumed
     // by the arm below, so this exemption cannot quietly become "unreachable by a different route".
     'finance/students/{student}/statement' => 'per-student; linked from the accounts list at /finance',
+
+    // U11's receipt. Takes a PAYMENT uuid, so there is no single URL a menu could point at — the
+    // same reason as the statement above, one level further in. It is reached from the statement's
+    // payments tab, which links EVERY row (including the migrated ones the route will refuse, which
+    // is a rule of that screen, not an oversight — see PaymentReceiptController). The arm below
+    // checks that link the way the statement's own exemption is checked, so this cannot quietly
+    // become "unreachable by a different route".
+    'finance/payments/{payment}/receipt' => 'per-payment; linked from every row of the statement’s payments tab',
 ];
 
 function fncRead(string $relative): string
@@ -119,13 +129,70 @@ it('keeps the not-a-nav-destination list honest — every exemption is a live ro
     expect($stale)->toBe([], 'FNC_NOT_NAV exempts a route that is not registered: '.implode(', ', $stale));
 });
 
-it('the one exemption really is linked from the accounts list', function () {
+it('the statement exemption really is linked from the accounts list', function () {
     // The exemption's REASON, asserted rather than trusted. "It is linked from somewhere else" is
     // the only thing that makes a non-nav route acceptable, and an unchecked claim of it is how a
     // page becomes unreachable while looking accounted for.
     $accounts = fncRead('resources/js/pages/admin/finance/index.tsx');
 
     expect($accounts)->toContain('/finance/students/${row.student.uuid}/statement');
+});
+
+it('the receipt exemption really is linked from the statement, and the flag is used exactly once', function () {
+    /*
+     * The same check, one level in, for U11 — and it asserts two separate things because the second
+     * is a RULE and not a styling choice.
+     *
+     * The link exists: the statement builds it through the wayfinder action for the receipt
+     * controller, so the path lives in routes/web.php alone and a rename cannot leave a dead link.
+     *
+     * And the entry point is UNCONDITIONAL. The opening-balance spec's wording is "never silently
+     * hide the row", so a migrated payment — the one the route will refuse — must still carry the
+     * link; the row states the refusal beside it instead.
+     *
+     * ── HOW THIS IS MEASURED, AND EXACTLY WHAT IT DOES NOT COVER ──
+     *
+     * `receiptable` appears in this file EXACTLY ONCE, on the chip that states the refusal in place.
+     * That is the whole rule, so the assertion is a whole-source occurrence count rather than a
+     * window between two offsets. The first version of this arm counted only between the chip and
+     * the anchor, and a cold review broke it with two mutations in ten minutes:
+     *
+     *   • wrapping the whole `<td>` in `{payment.receiptable && …}` — chip AND link vanish — PASSED,
+     *     because the added occurrence sits BEFORE the window;
+     *   • filtering the rows upstream (`.filter((p) => p.receiptable)`) so the row never renders at
+     *     all — PASSED, for the same reason. That second one is literally the "silently hide the
+     *     row" the spec forbids, sailing through a guard whose comment claimed to stop it.
+     *
+     * The count below reds on all three shapes, including the two that used to pass, because every
+     * one of them names the flag a second time.
+     *
+     * WHAT IT STILL CANNOT SEE, stated rather than implied — this is a TEXT check on a file, not a
+     * behavioural one, and there is no JavaScript test runner in this repository (package.json
+     * carries vite, eslint, prettier and tsc; no vitest, no jest):
+     *
+     *   • a row filtered out by something OTHER than this flag — `receipt_refusal_reason !== null`,
+     *     a `method === 'migrated'` test, or a filter applied server-side in the feed. Nothing here
+     *     would notice, and nothing in this repository could;
+     *   • whether the link, once rendered, is clickable, enabled, or points anywhere useful.
+     *
+     * A false positive is possible and is by design: mentioning `receiptable` a second time even in
+     * a COMMENT reds this arm. The message says so, because a guard whose failure is unexplained is
+     * one people delete.
+     */
+    $statement = fncRead('resources/js/pages/admin/finance/statement.tsx');
+
+    expect($statement)->toContain('PaymentReceiptController')
+        ->and($statement)->toContain('receiptUrl.url(')
+        // The chip is what `receiptable` gates. The LINK is not.
+        ->and($statement)->toContain('!payment.receiptable');
+
+    expect(substr_count($statement, 'receiptable'))->toBe(1,
+        'The statement mentions `receiptable` more than once. There is exactly one legitimate use — '
+        .'the chip that states the refusal in place — and every second use found so far has been a '
+        .'HIDE: the receipt cell wrapped in it, or the payment rows filtered by it. "Never silently '
+        .'hide the row" is the opening-balance spec\'s wording and the refusal is the server\'s '
+        .'(PaymentReceiptController), not this screen\'s. If you have only NAMED the flag in a new '
+        .'comment, reword the comment — this check cannot tell the two apart.');
 });
 
 it('gates the Finance group on the permission its routes require', function () {

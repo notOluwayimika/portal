@@ -50,6 +50,7 @@ generalises from — copy their structure rather than inventing a new one.
 23. [Reusable component standards](#23-reusable-component-standards)
 24. [Do's and don'ts](#24-dos-and-donts)
 25. [Copy-paste page skeleton](#25-copy-paste-page-skeleton)
+26. [What has actually gone wrong](#26-what-has-actually-gone-wrong)
 
 ---
 
@@ -1032,6 +1033,117 @@ ExampleList.layout = {
   ],
 };
 ```
+
+---
+
+## 26. What has actually gone wrong
+
+**Purpose.** Sections 1–25 describe the target. This one records the defects this
+project has actually shipped against them, because a specification cannot warn you
+about a pothole nobody had driven into yet. Every entry below reached a rendered
+page. None was caught by a test, a type checker or a linter, and most were not
+caught by reading the diff either — in each case the diff was correct about the
+thing it changed.
+
+**The four states collapse into two, repeatedly.** §13 has specified loading,
+empty, error and success from the beginning. The recurring defect is not that
+someone forgot it — it is that two of the four end up saying the same thing, and
+the screen then makes a confident false statement. It has happened three times
+here, twice inside the fix for the previous occurrence: a failed fetch that
+rendered as "no accounts to show"; then, once that was fixed, KPI cards rendering
+a hard `0` above the words "Could not load"; then, once those were dashed, a
+counter rendering "Showing 0 of 0" over a dead fetch. Each was found in a
+screenshot, never in a diff. **When you fix a state-confusion defect, enumerate
+every other number and sentence on the screen and read what each one now says.**
+The region you edited is the region you were already thinking about.
+
+**A number whose source failed must not render as a number.** Use an em dash —
+already this codebase's no-value glyph. Not a skeleton: beside a Retry button it
+contradicts itself and makes a hung request indistinguishable from a failed one,
+which is a new instance of the defect wearing the costume of a fix. Not
+suppression: the label is the part still carrying information on an error path.
+A sentence with no content is worse than no sentence, so suppress a counter
+rather than writing "Showing — of —". And prove the fix is conditional: a card
+that dashes unconditionally passes every test you would write for the failure
+case, so show a genuine zero still rendering `0` in the same run.
+
+**Two failure modes a network-level test cannot reach.** A malformed 200 renders
+the *empty* state, because `setThings(data ?? [])` does not validate shape. And a
+screen with two fetches needs one Retry that restores both — until this was
+fixed, a Retry restored the list and left the bank-account array empty, so a
+modal's select offered only its placeholder on a screen that looked healthy.
+
+**A control that renders is not a control that works.** The most expensive class
+of defect here is a page that returns 200, renders completely, and cannot be
+used: an empty term select behind a query that bound a model where an int was
+wanted; a select with only its placeholder because the fixture seeded nothing;
+two selects fed by a fetch with a `.then()` and no `.catch()`. Read the values out
+of a select, never the labels — a select rendering one option is rendering one
+option whether that option is real or a placeholder.
+
+**Do not promise semantics you have not implemented.** A shared dropdown briefly
+announced `role="listbox"`, `role="option"` and `aria-selected` while having no
+arrow keys, no Enter, no Escape and no focus management. That is worse than the
+plain button it replaced: an honest button is operable by click, and a listbox
+that cannot be operated by keyboard is a broken promise to the users who most
+depend on it. `aria-expanded` on a disclosure button is fine. See §21, and
+restore the rest only as part of the keyboard work.
+
+**The dark-mode variants in §20 are currently unreachable by any user.** Write
+them anyway — they are the target and they are correct — but if you report having
+seen dark mode, say that you set the class directly.
+
+**Shared components have a blast radius, and no linter reads them.**
+`resources/js/components/ui/*` appears in both `.prettierignore` and the ESLint
+ignore list, so the lint step skips those files entirely; `tsc` and the build
+still catch a type or syntax error and nothing else. Before changing anything
+there, count the consumers and say the number. One dropdown has six. Then exercise
+a consumer you did not change, and look for the structural case your own screens
+do not cover — a control inside a horizontally scrolling container, in a table
+row, or in a modal's scrollable body.
+
+**Money arithmetic is banned everywhere and enforced only in Finance.**
+`bin/ci-money-lint.php` scopes its check to `resources/js/pages/admin/finance/`
+and `resources/js/components/finance/`. A card summing money on any other screen
+passes CI in silence. §24's rule is project-wide; the guard is not.
+
+**Server behaviour you rely on and nobody promised.** Client-side search and a
+"Showing X of Y" counter are correct only while the endpoint returns everything —
+§24 already forbids the mismatch, but the trap is that today's code is correct and
+tomorrow's endpoint makes it false. Commenting at your call site protects the next
+reader of your file; it does not reach the person who adds pagination. Write the
+dependency into the ticket that will break you, and name every dependent.
+
+**Key names read out of a response are unpinned.** A typed `axios.get` is a
+compile-time assertion and nothing more. A filter on `thing.status === 'active'`
+becomes `undefined === 'active'` the day the server renames that key, and the
+screen then tells every user in words that they have nothing — silently, with no
+error and no console entry. Pin the payload's keys and their types in a server-side
+test.
+
+**What CI can see about a screen change.** It compiles, it bundles, it is
+formatted, and it does no money arithmetic in the Finance paths. Nothing more.
+It cannot see whether the screen renders, what it says, or whether a control can
+be used — so looking at the running page is the verification, not a courtesy.
+
+### Where each of these was found
+
+| Defect | Recorded in |
+| --- | --- |
+| Empty select behind a model-vs-int bind | `docs/handoff/reports/feat-finance-ob-operator-screen.md` |
+| Empty selects from an unseeded fixture | `docs/handoff/reports/feat-fee-schedules-data-surface.md` |
+| Failed fetch reading as an empty school | `docs/handoff/reports/feat-ui-bank-accounts-fee-schedules-redesign.md` |
+| KPI cards, then the counter, repeating it | same report, later rounds |
+| Dropdown measuring its position once at open | same report |
+| ARIA promising a listbox with no keyboard | `docs/handoff/tickets/base-dropdown-is-not-keyboard-operable.md` |
+| Catalog filter with an unpinned key contract | `docs/handoff/reports/feat-u8-invoice-modal-discount-policy.md` |
+| A `.then()` with no `.catch()` | `docs/handoff/tickets/students-index-403s-render-two-placeholder-only-selects.md` |
+| Dark mode unreachable | `docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md` |
+
+The record is Finance-heavy because Finance is what has been built and driven, not
+because the rules are Finance-specific. Rows from outside Finance are worth more
+than rows from inside it. **When you find a new one, add a row — and an item with
+no place it was found does not belong in this section.**
 
 ---
 

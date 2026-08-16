@@ -1097,7 +1097,8 @@ seen dark mode, say that you set the class directly.
 `resources/js/components/ui/*` appears in both `.prettierignore` and the ESLint
 ignore list, so the lint step skips those files entirely; `tsc` and the build
 still catch a type or syntax error and nothing else. Before changing anything
-there, count the consumers and say the number. One dropdown has six. Then exercise
+there, count the consumers and say the number — a count written down here is one
+to distrust, since the shared dropdown's has already moved. Then exercise
 a consumer you did not change, and look for the structural case your own screens
 do not cover — a control inside a horizontally scrolling container, in a table
 row, or in a modal's scrollable body.

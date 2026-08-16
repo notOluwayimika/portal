@@ -67,11 +67,13 @@ class PaymentAllocation extends Model
         'allocation_overridden' => 'boolean',
     ];
 
+    /** @return BelongsTo<Payment, $this> */
     public function payment(): BelongsTo
     {
         return $this->belongsTo(Payment::class);
     }
 
+    /** @return BelongsTo<Invoice, $this> */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

@@ -21,8 +21,10 @@
  * jest — so the choice is not "a nice test or an ugly one", it is this or nothing, and nothing is
  * what let three screens go unlinked.
  *
- * THE EXEMPTION IS NAMED, NOT DEFAULTED. Exactly one finance GET route is not a nav destination and
- * it has to say why in this file, where a reader looking for the missing item will find it.
+ * THE EXEMPTIONS ARE NAMED, NOT DEFAULTED. A finance GET route that is not a nav destination has to
+ * say why in this file, where a reader looking for the missing item will find it — and the thing
+ * that DOES link it is asserted, not asserted-about. There are two: the per-student statement, and
+ * (U11) the per-payment receipt.
  */
 
 use App\Models\User;
@@ -48,6 +50,14 @@ const FNC_NOT_NAV = [
     // (resources/js/pages/admin/finance/index.tsx). That is a real link, checked rather than assumed
     // by the arm below, so this exemption cannot quietly become "unreachable by a different route".
     'finance/students/{student}/statement' => 'per-student; linked from the accounts list at /finance',
+
+    // U11's receipt. Takes a PAYMENT uuid, so there is no single URL a menu could point at — the
+    // same reason as the statement above, one level further in. It is reached from the statement's
+    // payments tab, which links EVERY row (including the migrated ones the route will refuse, which
+    // is a rule of that screen, not an oversight — see PaymentReceiptController). The arm below
+    // checks that link the way the statement's own exemption is checked, so this cannot quietly
+    // become "unreachable by a different route".
+    'finance/payments/{payment}/receipt' => 'per-payment; linked from every row of the statement’s payments tab',
 ];
 
 function fncRead(string $relative): string
@@ -119,13 +129,43 @@ it('keeps the not-a-nav-destination list honest — every exemption is a live ro
     expect($stale)->toBe([], 'FNC_NOT_NAV exempts a route that is not registered: '.implode(', ', $stale));
 });
 
-it('the one exemption really is linked from the accounts list', function () {
+it('the statement exemption really is linked from the accounts list', function () {
     // The exemption's REASON, asserted rather than trusted. "It is linked from somewhere else" is
     // the only thing that makes a non-nav route acceptable, and an unchecked claim of it is how a
     // page becomes unreachable while looking accounted for.
     $accounts = fncRead('resources/js/pages/admin/finance/index.tsx');
 
     expect($accounts)->toContain('/finance/students/${row.student.uuid}/statement');
+});
+
+it('the receipt exemption really is linked from the statement, on EVERY payment row', function () {
+    /*
+     * The same check, one level in, for U11 — and it asserts two separate things because the second
+     * is a RULE and not a styling choice.
+     *
+     * The link exists: the statement builds it through the wayfinder action for the receipt
+     * controller, so the path lives in routes/web.php alone and a rename cannot leave a dead link.
+     *
+     * And it is UNCONDITIONAL. The opening-balance spec's wording is "never silently hide the row",
+     * so a migrated payment — the one the route will refuse — must still carry the link; the row
+     * states the refusal beside it instead. Asserting the link is not wrapped in `receiptable` is
+     * what stops the next reasonable-looking edit ("don't offer a receipt we won't issue") from
+     * quietly turning the refusal back into a hide.
+     */
+    $statement = fncRead('resources/js/pages/admin/finance/statement.tsx');
+
+    expect($statement)->toContain('PaymentReceiptController')
+        ->and($statement)->toContain('receiptUrl.url(')
+        // The chip is what `receiptable` gates. The LINK is not.
+        ->and($statement)->toContain('!payment.receiptable');
+
+    // The link must not sit inside a `receiptable` conditional. Measured on the source between the
+    // flag's only use (the chip) and the anchor: the anchor comes AFTER the chip's closing brace, at
+    // the same level, so no `payment.receiptable &&` may appear between the chip block and the link.
+    $chipAt = strpos($statement, '!payment.receiptable');
+    $linkAt = strpos($statement, 'receiptUrl.url(');
+    expect($linkAt)->toBeGreaterThan($chipAt);
+    expect(substr_count(substr($statement, $chipAt, $linkAt - $chipAt), 'payment.receiptable'))->toBe(1);
 });
 
 it('gates the Finance group on the permission its routes require', function () {

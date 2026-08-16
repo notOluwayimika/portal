@@ -407,8 +407,11 @@ it('carries receiptable + the reason on PaymentResource, and does NOT carry orig
     $portal = collect($payments)->firstWhere('receiptable', true);
     $migrated = collect($payments)->firstWhere('receiptable', false);
 
-    expect($portal)->not->toBeNull('No payment on the feed reported receiptable = true.')
-        ->and($migrated)->not->toBeNull('No payment on the feed reported receiptable = false.')
+    // Asserted as a positive count rather than `->not->toBeNull(...)`: a custom message on a NEGATED
+    // Pest expectation is silently dropped (PestNegatedExpectationMessagesTest pins that), so the
+    // message would have been a comment nobody would ever read on a failure.
+    expect(collect($payments)->pluck('receiptable')->sort()->values()->all())->toBe([false, true],
+        'The feed did not carry exactly one receiptable and one non-receiptable payment.')
         ->and($portal['receipt_refusal_reason'])->toBeNull()
         ->and($migrated['receipt_refusal_reason'])->toBe(Payment::RECEIPT_REFUSAL_REASON);
 });

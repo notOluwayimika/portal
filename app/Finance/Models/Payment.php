@@ -98,6 +98,13 @@ class Payment extends Model
         'received_at' => 'date',
     ];
 
+    /**
+     * The generic is not decoration: without it Larastan reads `allocations()->get()` as a
+     * `Collection<int, Model>`, and every typed closure mapped over it (the receipt's allocation
+     * rows) is an `argument.type` error plus an undefined-method one for each Invoice call.
+     *
+     * @return HasMany<PaymentAllocation, $this>
+     */
     public function allocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);
@@ -108,6 +115,8 @@ class Payment extends Model
      * was created; the relation is added here because the receipt is the first surface that names
      * the student rather than only the payer, and a payer name is not a student name (a parent, an
      * employer or a sponsor may pay).
+     *
+     * @return BelongsTo<Student, $this>
      */
     public function student(): BelongsTo
     {
@@ -118,6 +127,8 @@ class Payment extends Model
      * The account the money landed in. NULL for a migrated row and NOT NULL for a portal one — the
      * `finance_payments_bank_account_origin_shape` CHECK enforces exactly that pairing, so a
      * receipt (which is only ever issued for a portal payment) always has one to name.
+     *
+     * @return BelongsTo<BankAccount, $this>
      */
     public function bankAccount(): BelongsTo
     {

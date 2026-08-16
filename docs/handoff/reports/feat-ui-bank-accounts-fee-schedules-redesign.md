@@ -104,8 +104,11 @@ Three changes, all additive:
    only while the panel is open and removed on close.
 2. **An optional `id`** on the trigger button, so `<Label htmlFor>` can name the control. Swapping a
    native `<select id>` for this component had otherwise pointed three labels at nothing.
-3. **`data-value` on the trigger and on every option**, plus `role="listbox"`/`role="option"`/
-   `aria-selected`. See § 5.
+3. **`data-value` on the trigger and on every option.** See § 5.
+   (This originally also added `aria-haspopup="listbox"`, `role="listbox"`, `role="option"` and
+   `aria-selected`. **All four were removed in round 4** — the component has no keyboard handling to
+   back them. `aria-expanded` is kept. See § 12.2 and
+   [`base-dropdown-is-not-keyboard-operable.md`](../tickets/base-dropdown-is-not-keyboard-operable.md).)
 
 ### The six consumers, and which this branch touched
 
@@ -217,7 +220,9 @@ in a React closure — nothing in the DOM. So the swap from `<select>` to the sh
 the isolation check unreadable from the page: **only labels were left, and the labels are identical
 by construction.**
 
-I added `data-value` (and `role="listbox"`/`role="option"`/`aria-selected`) to restore it. Both are
+I added `data-value` to restore it. (I also added `role="listbox"`/`role="option"`/`aria-selected`
+at the same time; **those were wrong and were removed in round 4** — § 12.2. Only the `data-*`
+attributes were ever load-bearing for the drive, and only they remain.) Both are
 inert — no styling and no behaviour keys on them.
 
 **On the "a drive observes; it does not fix" rule:** this is not a finding about the system's
@@ -407,7 +412,19 @@ empty state. Screenshots in `docs/handoff/drives/2026-08-15-error-states/`, ligh
 
 ### 6.7 Both themes
 
-Light and dark captured for every screen and modal (12 pairs). Dark renders correctly: canvas,
+**Nine** light/dark pairs, counted from the files rather than estimated — an earlier version of this
+line claimed twelve. Three fee-schedules captures are single-theme by design (the modal scroll proof,
+the search empty state, and School B's modal), so the directory holds 11 files but only 4 pairs:
+
+```
+2026-08-15-bank-accounts       light=3 dark=3  total=6   singles=0
+2026-08-15-fee-schedules       light=4 dark=4  total=11  singles=3
+2026-08-15-error-states        light=2 dark=2  total=4   singles=0
+2026-08-15-untouched-consumers light=0 dark=0  total=4   singles=4   (scroll proof, one theme)
+                                                          PAIRS = 9
+```
+
+Dark renders correctly across those nine: canvas,
 hero/stat cards, table chrome, status pills, tone tiles, form controls and the toast all pick up
 their `dark:` counterparts, with no white-on-white.
 
@@ -541,21 +558,44 @@ state, which is the least representative seat on the platform.
 
 ## 9. Gates
 
-Three runs, all green, all reported.
+> **Rewritten 2026-08-15 after cold review.** The previous version of this table listed four runs,
+> two of them against `c4c19da` and `1679072`. **Neither sha exists on this branch.** Both were
+> `git commit --amend`-ed away — confirmed in the reflog, which shows `c4c19da → 7ae1c10 (amend)`
+> and `1679072 → d7fb290 (amend)` — so they survive only in one local object store and are
+> unreachable from any ref in any clone.
+>
+> **The rule being applied: a gate run against a commit nobody else can check out is not evidence.**
+> A reader cannot re-run it, cannot diff it, and cannot tell whether the tree it passed on resembles
+> the tree they have. Such a run may be true and is still worthless as a record, so it does not
+> belong in a table headed "Gates". Runs are recorded here **only** against shas reachable from the
+> branch head.
 
-| Run | Tree                                                                           | Result                 |
-| --- | ------------------------------------------------------------------------------ | ---------------------- |
-| 1   | commit `119c820`, ticket edit uncommitted                                      | **PASS 15/15**, exit 0 |
-| 2   | + `data-value`/a11y on `base-dropdown`, + both documents, staged not committed | **PASS 15/15**, exit 0 |
-| 3   | the committed tree (`c4c19da`)                                                 | **PASS 15/15**, exit 0 |
-| 4   | the committed tree after the § 11 fix (`1679072`)                              | **PASS 15/15**, exit 0 |
+| Run | Commit                                    | Result                 |
+| --- | ----------------------------------------- | ---------------------- |
+| 1   | `119c820` — the redesign                  | **PASS 15/15**, exit 0 |
+| 2   | `d7fb290` — the KPI/counter fix + tickets | **PASS 15/15**, exit 0 |
+| 3   | **HEAD** — the cold-review round          | **PASS 15/15**, exit 0 |
 
-**No red on any run.** Runs 3 and 4 exist because of a limitation worth stating rather than glossing:
-`bin/lint-changed.sh` diffs against the merge-base and therefore **only ever sees committed work**
-(the known gap, ticketed in
+**Run 3 names `HEAD` rather than a sha, and that is deliberate rather than lazy.** A sha cannot be
+written into the commit it names: stamping it requires an amend, the amend produces a different sha,
+and the stamp is false again — the regress has no fixed point. The three ways out are all worse than
+this one (a follow-up commit whose only content is the sha; a sha in the message, which the amend
+also changes; or the stamp naming the pre-amend commit, which is exactly the unverifiable citation
+this section was rewritten to remove). `HEAD` is checkable by the reader with `git rev-parse HEAD`
+and stays true across any later amend, which is more than the shas in rows 1 and 2 can say.
+
+For the record while it is current: run 3 was performed on `3e04b0f`, and re-performed on the amended
+head after this paragraph was added. Both green. If `git rev-parse HEAD` disagrees with whatever a
+reader finds here, believe the reader's `HEAD` and re-run — the gate takes about seven minutes.
+
+**No red on any run, including the ones now struck from the record.** The runs against the
+amended-away shas were also green; they are simply not citable.
+
+Two runs were made against staged-but-uncommitted trees during the earlier rounds and are likewise
+not listed, for a related reason: `bin/lint-changed.sh` diffs against the merge-base and therefore
+**only ever sees committed work** (the known gap, ticketed in
 [`lint-changed-cannot-see-uncommitted-work.md`](../tickets/lint-changed-cannot-see-uncommitted-work.md)).
-Runs 1 and 2 linted the four `.tsx` from `119c820`; only runs 3 and 4 are gate results for a tree
-that was actually being handed over.
+A gate run over a tree the gate could not fully see is not a result for that tree.
 
 **And even run 3 does not lint the two documents.** `lint-changed.sh:46` selects Prettier's file set
 as `resources/*.{ts,tsx,js,jsx,vue,css,json}` — **`.md` is not in it**, and neither are the PNGs. So
@@ -596,14 +636,17 @@ diff `CLAUDE.md` warns about.
 
 ```
 docs/handoff/reports/feat-ui-bank-accounts-fee-schedules-redesign.md  (this file)
-docs/handoff/tickets/fee-schedule-index-unpaginated.md                (+ dependency section)
-docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md       (new — § 8.2)
-docs/handoff/tickets/students-index-403s-render-two-placeholder-only-selects.md  (new — § 8.3)
+docs/handoff/tickets/fee-schedule-index-unpaginated.md                (+ dependency section; corrected § 12.4)
+docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md       (new — § 8.2; corrected § 12.4)
+docs/handoff/tickets/students-index-403s-render-two-placeholder-only-selects.md  (new — § 8.3; corrected § 12.4)
+docs/handoff/tickets/base-dropdown-is-not-keyboard-operable.md        (new — § 12.2 / § 12.5)
+docs/handoff/tickets/base-dropdown-repositioning-is-unmeasured-and-unclamped.md  (new — § 12.5)
+docs/handoff/tickets/a-malformed-200-renders-the-empty-state-not-the-error-state.md  (new — § 12.5)
 docs/handoff/drives/2026-08-15-*/                                     (drive artefacts)
 resources/js/components/finance/status-pill.tsx                       (new)
-resources/js/components/ui/base-dropdown.tsx                          (scroll tracking, id, data-value, roles)
+resources/js/components/ui/base-dropdown.tsx                          (scroll tracking, id, data-value; ARIA removed § 12.2)
 resources/js/pages/admin/finance/bank-accounts.tsx
-resources/js/pages/admin/finance/fee-schedules.tsx
+resources/js/pages/admin/finance/fee-schedules.tsx                    (+ reload() — § 12.3)
 ```
 
 ---
@@ -726,3 +769,181 @@ images they replace are described in § 8.1). Raw log:
   scope caveat stands: one seat state observed, three plausible states unchecked.
 - **The unchanged parts of the branch were not re-driven this round.** § 6's evidence stands from the
   earlier run; only the failed-load state was re-driven, plus the healthy KPI row as its control.
+
+---
+
+## 12. Round 4 — cold review
+
+A cold reviewer read the branch and the three documents against the repository. Every finding below
+was verified against the source before acting; all were correct, and two of them corrected claims in
+documents this branch had itself written to correct other claims.
+
+### 12.1 The gate record named commits that do not exist
+
+Verified in the reflog: `c4c19da` and `1679072` were each replaced by `git commit --amend`
+(`c4c19da → 7ae1c10`, `1679072 → d7fb290`). They are reachable only from one local reflog. § 9 is
+rewritten to list runs **only against shas on the branch**, and states the rule: a gate run against a
+commit nobody else can check out cannot be re-run, diffed or trusted by a reader, so it is not
+evidence regardless of its result. `d7fb290` now has its own run.
+
+### 12.2 ARIA without keyboard support — removed
+
+The branch had added `aria-haspopup="listbox"`, `role="listbox"`, `role="option"` and
+`aria-selected` to `base-dropdown`. The component has **no** keyboard handling: no arrow keys, no
+Enter, no Escape, no focus management, no `aria-activedescendant`; `handleSelect` fires from
+`onClick` alone. Announcing a listbox promises an interaction model the component cannot honour,
+which is worse than the plain button it replaced.
+
+All four removed. **`aria-expanded` kept** — valid on a disclosure button and backed by real
+behaviour — and **every `data-*` attribute kept**, since those are what a drive script reads and are
+the reason they were added at all. The real fix is filed as
+[`base-dropdown-is-not-keyboard-operable.md`](../tickets/base-dropdown-is-not-keyboard-operable.md),
+which names all six consumers and says explicitly that the ARIA goes back only as part of the
+keyboard work, never on its own.
+
+### 12.3 Retry did not restore the fee-schedule modal — fixed and bite-proved
+
+`loadAccounts` is a separate effect with `[]` deps, so it runs once per mount. When both fetches fail
+together — server down, session expired — a Retry wired only to `load()` restored the table and left
+`accounts` at `[]` until a full page reload, leaving the "Paid into" select holding nothing but its
+placeholder on a screen that now looked healthy. **That is this branch's own `/students` ticket,
+inside this branch's own feature.**
+
+Both Refresh and Retry now call a `reload()` that runs both fetches. Refresh was included
+deliberately — leaving it as the half-refresh reproduces the identical defect one button over, which
+is the § 11.2 lesson.
+
+**Bite-proof — Retry was clicked, for the first time in any round:**
+
+```
+=== STATE 1: both fetches failed ===
+  error row visible : true
+  retry button      : true
+  MODAL "Paid into" while broken (1): ["|Choose an account…"]
+
+=== STATE 2: clicked Retry (real button click: true) ===
+  error row gone    : true
+  KPI cards         : ["Drafts=1","With the ED=0","Active=0"]
+  counter           : "Showing 1 of 1"
+  rows              : 1
+  MODAL "Paid into" after Retry (2): ["|Choose an account…","a282b8eb-ac0b-49e7-abc0-94218e41b7aa|Drive account · Drive Bank"]
+  real (non-placeholder) options: 1  (PASS — accounts restored without a page reload)
+  navigations since load: 1 (1 = never reloaded)
+```
+
+The defect is reproduced in state 1 (placeholder only) and closed in state 2 (the real account uuid
+back in the select). `navigations since load: 1` is the load-bearing line — it proves the recovery
+came from the Retry click and not from a page reload. Screenshots:
+`docs/handoff/drives/2026-08-15-retry-recovery/`.
+
+This also closes the first item of § 11.5's "did NOT verify" list.
+
+### 12.4 Three documents corrected where a reader would have acted
+
+**[`dark-mode-is-unreachable-for-every-user.md`](../tickets/dark-mode-is-unreachable-for-every-user.md)**
+— four errors, all confirmed:
+
+- "applyTheme is the only writer of the `dark` class" was **false**. There are three writers:
+  `app.blade.php:2` (`@class`, server-side), `app.blade.php:9-21` (an inline script before React),
+  and `applyTheme`.
+- The **PHP half was missing entirely**. `HandleAppearance.php:19` is
+  `View::share('appearance', 'light')` — hard-coded, cookie never read — and that is what makes both
+  Blade writers inert. `bootstrap/app.php:48` still exempts the cookie from encryption, so it remains
+  readable by the middleware that no longer reads it.
+- The ticket called it "not a stub". `git log` reaches **`83447b3` "feat: remove dark mode"**
+  (2026-05-25), which deleted the PHP cookie read and the JS predicate **in the same commit**. It is
+  the deliberate removal of a shipped feature, which makes restoring it a decision to revisit rather
+  than a defect to repair.
+- "What a fix has to cover" named no PHP change. Corrected: restoring `isDarkMode` alone leaves the
+  server-rendered **first paint** light on every load (a white flash before the runtime class lands)
+  and leaves `system` unable to resolve at first paint at all, because the inline script's guard
+  needs `$appearance === 'system'`.
+
+**[`students-index-403s-render-two-placeholder-only-selects.md`](../tickets/students-index-403s-render-two-placeholder-only-selects.md)**
+— the conclusion held, the named layer did not. `SetSchoolContext:51` is
+`if (! $isSuperAdmin && ! $activeSchoolId)`, so a super admin without a school **falls through the
+middleware**. The 403s come from `ActiveSchool::getOrFail()` → `abort_unless(…, 403)` at
+`ActiveSchool.php:70`, reached from `StudentController.php:196` and
+`NotificationFeedController.php:120`. And the notifications route group carries **no `permission:`
+middleware at all**, so nothing in that stack could have produced its 403. Still isolation, not
+permission; a controller call, not a middleware.
+
+**[`fee-schedule-index-unpaginated.md`](../tickets/fee-schedule-index-unpaginated.md)** — three
+corrections:
+
+- **Four of six line citations were stale** — both counters and both card-render sets, i.e. exactly
+  the regions § 11's fix edited after the table was written. All re-derived; cross-referenced to
+  [`stale-path-line-citations.md`](../tickets/stale-path-line-citations.md) as the third recorded
+  occurrence of the class. A note now says the symbol names are the durable part and the numbers are
+  not.
+- **It named three dependents; there are five.** Both additions write a **money destination** rather
+  than misreporting a count, which makes them worse than the counter:
+  `fee-schedules.tsx:327-345`'s preservation branch silently blanks an operator's existing
+  destination when the deactivated account it points at is not on page 1; and
+  `record-payment-modal.tsx:118-131` auto-selects when `active.length === 1`, which **a page of one**
+  satisfies — its own comment says guessing "would assert a destination nobody picked — on a row that
+  is append-only".
+- **"Nothing throws" now carries its condition.** That holds only if pagination keeps the rows at the
+  same key. An envelope shape makes `visible.filter` / `accounts.filter` throw before anything paints
+  — a crash, not a quiet lie. The fix list now recommends the envelope for exactly that reason.
+
+### 12.5 Three more tickets — recorded, none fixed
+
+- [`base-dropdown-is-not-keyboard-operable.md`](../tickets/base-dropdown-is-not-keyboard-operable.md)
+  — § 12.2's real fix, six consumers named.
+- [`base-dropdown-repositioning-is-unmeasured-and-unclamped.md`](../tickets/base-dropdown-repositioning-is-unmeasured-and-unclamped.md)
+  — three things the scroll fix was **not** measured against: a per-row select inside
+  `overflow-x-auto` (`teachers/index.tsx:382`, the one structural mounting no driven page exercises,
+  and `updateDropdownPosition` sets `left` as well as `top`, so horizontal tracking is now live);
+  no viewport clamp, so a panel now follows its trigger off the top of the screen where measure-once
+  left it in place — **a behaviour this branch introduced**; and `reposition` calling
+  `setDropdownStyle` on every scroll event, unthrottled and without `requestAnimationFrame`.
+- [`a-malformed-200-renders-the-empty-state-not-the-error-state.md`](../tickets/a-malformed-200-renders-the-empty-state-not-the-error-state.md)
+  — `data ?? []` guards only null/undefined, so a 200 with the wrong shape yields `[]` with
+  `error` false and renders the **empty** state, complete with real zeros in the KPI cards. It is the
+  empty-versus-broken confusion this branch exists to remove, on the one path an aborted-request
+  drive cannot reach: aborting makes axios reject, a malformed 200 never does. Four sites listed,
+  including `discount-policies.tsx`.
+
+### 12.6 § 6.7's pair count was wrong
+
+It claimed twelve light/dark pairs. Counted from the files: **nine**. Three fee-schedules captures
+are single-theme by design. § 6.7 now carries the per-directory counts and the arithmetic; the
+dark-mode ticket's "twelve" was corrected to nine too.
+
+### 12.7 What this round did NOT verify
+
+- **Nothing in the five tickets was fixed or driven**, by instruction — including the three ARIA
+  attributes' replacement, which is the substantive half of § 12.2.
+- **The base-dropdown ARIA removal was not re-driven.** It is an attribute deletion with no
+  behavioural surface, verified by build and lint only; no screen reader was used at any point in any
+  round, before or after.
+- **Bank-accounts' Refresh/Retry was not re-driven.** That screen has a single fetch, so the § 12.3
+  defect cannot occur there — but the assertion is by reading, not by clicking.
+- **The three unmeasured repositioning behaviours remain unmeasured**, in both directions. They are
+  the ticket's content, not its resolution.
+- Everything still open from § 7 and § 11.5 stays open: consumers 5 and 6 undriven, the fee-schedule
+  lifecycle past `draft` never exercised (so four of five status pills have never rendered against
+  real data), "Mixed currencies" unauthorable, the 422 paths untriggered, and no mobile widths.
+
+### 12.8 A near-miss worth recording: the glob sweep, third time, different tool
+
+While formatting this round's documents I ran `npx prettier --write docs/handoff/tickets/*.md`. It
+reformatted **22 pre-existing tickets this branch has nothing to do with** — reflowed prose, retabbed
+tables — and staged them. `git status` showed 36 changed files where the real change was 14.
+
+`CLAUDE.md` documents this exact class for **Pint** and says it has bitten the project three times
+(#223, 71 files on `feat/finance-bank-accounts`, and once more on this very branch from a
+substitution that expanded to nothing). The rule there is "pass explicit files and guard against an
+empty list". I applied that rule to Pint this whole branch and then walked into the identical trap
+with a different formatter, because the rule was filed in my head under _Pint_ rather than under
+_any formatter with a glob_.
+
+Caught by the instruction CLAUDE.md pairs with it — **"read `git diff --stat` against your own model
+of the change before pushing"** — which is the only reason it is a near-miss and not a fourth
+occurrence. 22 files reverted with `git restore --staged --worktree`; the staged set is now the 14
+files listed in § 10.
+
+The generalisation, since that is the reusable part: **the hazard is the glob, not the tool.** Any
+formatter invoked over a directory rewrites files you did not choose, and no gate objects — correct
+formatting is still correct. Name the files.

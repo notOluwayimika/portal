@@ -1,0 +1,13 @@
+=== STATE 1: both fetches failed ===
+  error row visible : true
+  retry button      : true
+  MODAL "Paid into" while broken (1): ["|Choose an account…"]
+
+=== STATE 2: clicked Retry (real button click: true) ===
+  error row gone    : true
+  KPI cards         : ["Drafts=1","With the ED=0","Active=0"]
+  counter           : "Showing 1 of 1"
+  rows              : 1
+  MODAL "Paid into" after Retry (2): ["|Choose an account…","a282b8eb-ac0b-49e7-abc0-94218e41b7aa|Drive account · Drive Bank"]
+  real (non-placeholder) options: 1  (PASS — accounts restored without a page reload)
+  navigations since load: 1 (1 = never reloaded)

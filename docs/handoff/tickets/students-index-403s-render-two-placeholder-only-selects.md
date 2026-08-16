@@ -37,23 +37,50 @@ Screenshot: `docs/handoff/drives/2026-08-15-untouched-consumers/students-01-open
 
 ## Why it happens — and it is NOT a permission bug
 
+> **Corrected 2026-08-15 after cold review.** The first version of this ticket blamed the `tenant`
+> middleware. That is wrong: `tenant` lets this seat straight through. The refusal happens **inside
+> the controllers**, at `ActiveSchool::getOrFail()`. The conclusion is unchanged — it is isolation,
+> not permission, and the backend is behaving correctly — but anyone acting on the old mechanism
+> would have gone looking in the wrong file.
+
 Both 403s have the same cause, and the cause is **correct behaviour**.
 
-`GET /api/students/resources` is declared in `routes/endpoints/student.php:12`, inside the group at
-`routes/api.php:47`:
+**It is not `tenant`.** `tenant` is `SetSchoolContext` (`bootstrap/app.php:82`), and its refusal
+branch is:
 
 ```php
-Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage'])->group(...)
+if (! $isSuperAdmin && ! $activeSchoolId) {   // SetSchoolContext.php:51
+    …  return response()->json(['message' => 'No active school selected.'], 403);
+}
 ```
 
-`GET /api/notifications/unread-count` (`routes/endpoints/notifications.php:28`) is inside
-`Route::middleware(['auth:sanctum', 'tenant'])` — a group whose own docblock says _"`tenant` IS
-required: the feed is per (user, school), and the active school is what the controller scopes to."_
+A `super_admin` **fails the first conjunct**, so a super admin with no school selected **falls
+through the middleware without being refused**. Nothing in the middleware stack produced these 403s.
 
-A `super_admin` **bypasses the `permission:` check and never the `tenant` one**: bypass is
-_authorization_, never _isolation_ (ADR 0036, Constitution 13). With no school selected,
-`ActiveSchool::id()` is null and `tenant` refuses. Both 403s are the isolation boundary doing its
-job on a seat that has not said which school it is acting for.
+**It is `ActiveSchool::getOrFail()`**, `app/Support/ActiveSchool.php:66-72`:
+
+```php
+$school = School::find(static::id());
+
+abort_unless((bool) $school, 403, 'No active school selected.');   // :70
+```
+
+Reached from the two controllers directly:
+
+- `app/Http/Controllers/StudentController.php:196` — `$school = ActiveSchool::getOrFail();` inside
+  `resources()`;
+- `app/Notifications/Http/Controllers/NotificationFeedController.php:120` —
+  `ActiveSchool::getOrFail()->id` in the recipient-query builder.
+
+The `permission:` middleware is a red herring on both routes, and on one of them it does not exist:
+**the notifications group carries no `permission:` middleware at all**
+(`routes/endpoints/notifications.php`, `Route::middleware(['auth:sanctum', 'tenant'])`), its own
+docblock explaining that a permission there could lock a user out of their own notifications. So
+nothing in that route's stack could have produced its 403 — only the controller could, and it did.
+
+The substance is unchanged: `ActiveSchool::id()` is null for a super admin who has selected no
+school, `getOrFail()` refuses, and that is **isolation** doing its job — bypass is _authorization_,
+never _isolation_ (ADR 0036, Constitution 13). The layer is a controller call, not a middleware.
 
 **So nothing in the backend needs fixing.** The defect is entirely that the frontend proceeds as
 though the request had succeeded.
@@ -128,8 +155,10 @@ Not checked, and each would change what the fix is:
   may well be entirely fine for them, in which case the bug is only ever visible to a contextless
   super admin;
 - the same `super_admin` **after** selecting a school through `/super-admin/schools`;
-- a seat that holds a school but **lacks** `academic_setup.manage`, where the `permission:` middleware
-  would 403 instead of `tenant` — the same silent failure, a different reason.
+- a seat that holds a school but **lacks** `academic_setup.manage`, where the `permission:`
+  middleware on `routes/api.php:47` would 403 `students/resources` before the controller is reached —
+  the same silent failure, a genuinely different layer. (Notifications would still succeed for that
+  seat, since its group has no `permission:` at all.)
 
 Establish which of those actually reach this state before deciding how much to build. If it is only
 the contextless super admin, the honest fix may be to refuse the page and send them to the school

@@ -8,44 +8,92 @@ application.
 drive across considerably more than two screens, and folding it into a UI redesign is exactly how a
 visual change acquires a functional one nobody asked it to carry.
 
+> **Corrected 2026-08-15 after cold review.** The first version of this ticket said `applyTheme` was
+> the only writer of the `dark` class and described the cause as JavaScript-only. Both were wrong:
+> there are **three** writers, two of them in Blade, and the thing that disables all of them is a
+> **PHP** line this ticket did not mention. It also called the JS a stub; it is the deliberate
+> removal of a shipped feature. What follows is the corrected account — the conclusion (no user can
+> reach dark mode) is unchanged, the mechanism and therefore the fix are not.
+
 ## What is true today
 
-`resources/js/hooks/use-appearance.tsx:40-42`:
+This was **removed on purpose, in one commit, on both sides at once.**
 
-```ts
-const isDarkMode = (appearance: Appearance): boolean => {
-    return false;
-};
+`git log -- app/Http/Middleware/HandleAppearance.php` reaches `83447b3` — _"feat: remove dark mode"_,
+2026-05-25 — which changed seven files and, in the two that matter, made exactly these edits:
+
+```diff
+--- a/app/Http/Middleware/HandleAppearance.php
+-        View::share('appearance', $request->cookie('appearance') ?? 'system');
++        View::share('appearance', 'light');
+
+--- a/resources/js/hooks/use-appearance.tsx
+-    return appearance === 'dark' || (appearance === 'system' && prefersDark());
++    return false;
 ```
 
-The function **ignores its parameter and returns a constant `false`**. It is not a stub awaiting a
-branch — it takes the one argument that would decide the answer and discards it.
+The PHP cookie read and the JS predicate were deleted **together**. This is not an unfinished stub
+and not a bug someone left behind; it is a product decision, and that changes what "fixing" it means
+— it is a decision to revisit, not a defect to repair. Whoever picks this up should find out why it
+was removed before restoring it.
 
-### Both call sites, and what each one drives
+### There are THREE writers of the `dark` class, not one
 
-There are exactly two, and both are therefore constant.
+**Writer 1 — Blade, server-side.** `resources/views/app.blade.php:2`:
 
-**Call site 1 — `:49`, inside `applyTheme()`.** This is the one that matters.
-
-```ts
-const isDark = isDarkMode(appearance); // :49  — always false
-
-document.documentElement.classList.toggle('dark', isDark); // :51
-document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'; // :52
+```blade
+<html lang="…" @class(['dark'=> ($appearance ?? 'system') == 'dark'])>
 ```
 
-`applyTheme` is the **only** writer of the `dark` class on `<html>`, and it is reached from all three
-paths that could ever change the theme:
+**Writer 2 — an inline script, before React boots.** `resources/views/app.blade.php:9-21`:
 
-- `initializeTheme()` at `:84`, on every page load;
-- `updateAppearance()` at `:110`, when the user clicks a tab in
-  `resources/js/components/appearance-tabs.tsx:31`;
-- `handleSystemThemeChange()` at `:71`, when the OS `prefers-color-scheme` media query fires
-  (subscribed at `:87`).
+```blade
+const appearance = '{{ $appearance ?? "system" }}';
+if (appearance === 'system') {
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (prefersDark) { document.documentElement.classList.add('dark'); }
+}
+```
 
-So `classList.toggle('dark', false)` runs on load, on every user selection, and on every OS theme
-change. **The `dark` class is never added, by any path.** Tailwind's variant is
-`@custom-variant dark (&:is(.dark *))`, so nothing under `dark:` can ever match.
+**Writer 3 — `applyTheme()`, at runtime.** `use-appearance.tsx:49-52`, reached from all three
+theme-changing paths: `initializeTheme()` at `:84` (called from `app.tsx:42` on boot),
+`updateAppearance()` at `:110` (the tab click in `appearance-tabs.tsx:31`), and
+`handleSystemThemeChange()` at `:71` (the OS media-query listener subscribed at `:87`).
+
+### What disables all three — and it is one PHP line
+
+`app/Http/Middleware/HandleAppearance.php:19`:
+
+```php
+View::share('appearance', 'light');
+```
+
+**Hard-coded. The cookie is never read.** So `$appearance` is `'light'` on every render, and:
+
+- Writer 1's `@class` tests `'light' == 'dark'` → false. The server never emits the class.
+- Writer 2's guard tests `'light' === 'system'` → false. The inline script's body never runs, so the
+  OS preference is never consulted at first paint either.
+- Writer 3 is disabled separately, by the JS half of `83447b3`: `isDarkMode` **ignores its parameter
+  and returns a constant `false`** (`use-appearance.tsx:40-42`), so `applyTheme` runs
+  `classList.toggle('dark', false)` on load, on every user selection, and on every OS theme change.
+
+Tailwind's variant is `@custom-variant dark (&:is(.dark *))`, so with no writer able to add the
+class, nothing under `dark:` can ever match.
+
+Note `bootstrap/app.php:48` — `$middleware->encryptCookies(except: ['appearance', 'sidebar_state'])`.
+The appearance cookie is still exempt from encryption, i.e. still **readable** by the middleware that
+no longer reads it. The plumbing for the removed feature is intact on both sides; only the two
+predicates were cut.
+
+### The second call site
+
+**`:97`, inside the `useAppearance()` hook.**
+
+```ts
+const resolvedAppearance: ResolvedAppearance = isDarkMode(appearance)
+    ? 'dark'
+    : 'light'; // :97-99
+```
 
 **Call site 2 — `:97`, inside the `useAppearance()` hook.**
 
@@ -92,7 +140,7 @@ of anyone having looked at any of it.
 ### This applies to the drive that found it
 
 The drive on `feat/ui-bank-accounts-fee-schedules-redesign` reported both redesigned screens in dark
-mode and captured twelve light/dark screenshot pairs. **Those screenshots were produced by setting
+mode and captured nine light/dark screenshot pairs. **Those screenshots were produced by setting
 `document.documentElement.classList.add('dark')` directly from the drive script** — not by using the
 application's appearance control, which was tried and does nothing.
 
@@ -103,11 +151,28 @@ future one must state which of the two it did.
 
 ## What a fix has to cover
 
-Not just the three-line function:
+**It is a PHP change AND a JS change, and the first version of this ticket named only the JS.**
+Restoring `isDarkMode` alone leaves `HandleAppearance` sharing `'light'`, so:
 
+- the **server-rendered first paint is always light**, on every page load, for every user. The class
+  is then added by `applyTheme` once React boots, so `html.dark`'s background
+  (`app.blade.php:30-32`, `background-color: oklch(0.145 0 0)`) does eventually apply — but only
+  after the light document has already painted. A dark-mode user gets a white flash on every
+  navigation, which is the single most visible symptom of getting this half-right;
+- **`system` never resolves at first paint at all.** Writer 2's guard needs `$appearance === 'system'`
+  to reach the media query, and it cannot while the middleware hard-codes `'light'`.
+
+So:
+
+- **`HandleAppearance.php:19` must read the cookie again** — `$request->cookie('appearance') ?? 'system'`
+  is what `83447b3` removed. `bootstrap/app.php:48` already leaves that cookie unencrypted, so
+  nothing else is needed to make it readable.
 - Implement `isDarkMode` for all three `Appearance` values, using `prefersDark()` for `'system'`
   (that is what it exists for), and delete it if the fix takes another route rather than leaving it
   dead.
+- Check that the cookie and `localStorage` cannot disagree. `updateAppearance` writes both
+  (`:105-108`), but Blade reads the cookie and `getStoredAppearance` reads `localStorage`; a user who
+  clears one and not the other gets a first paint that disagrees with the runtime theme.
 - `handleSystemThemeChange` (`:71`) must then actually re-resolve — it already re-calls `applyTheme`,
   so it should start working, but that needs proving rather than assuming.
 - **Then drive it.** Well beyond the two screens this ticket came from: at minimum the sidebar and

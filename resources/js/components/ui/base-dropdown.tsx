@@ -153,7 +153,13 @@ export default function Select({
         type="button"
         onClick={toggleDropdown}
         disabled={disabled}
-        aria-haspopup="listbox"
+        // aria-expanded ONLY, and deliberately no listbox ARIA. This control has no keyboard
+        // handling — no arrow keys, no Enter, no Escape, no focus management, no
+        // aria-activedescendant; handleSelect fires from onClick alone. Announcing `listbox` would
+        // promise a screen-reader user an interaction model the component cannot honour, which is
+        // worse than the plain button it honestly is. aria-expanded is valid on a disclosure
+        // button and is backed by real behaviour. See
+        // docs/handoff/tickets/base-dropdown-is-not-keyboard-operable.md.
         aria-expanded={isOpen}
         data-slot="base-dropdown-trigger"
         data-value={String(value ?? '')}
@@ -188,7 +194,6 @@ export default function Select({
             ref={contentRef}
             className={`origin-top-left ${dropdownClass}`}
             style={dropdownStyle}
-            role="listbox"
             data-slot="base-dropdown-panel"
           >
             <div className="max-h-60 overflow-y-auto custom-scrollbar">
@@ -200,10 +205,12 @@ export default function Select({
                 // values precisely because the two Schools' labels are identical strings by
                 // construction (finance-drive skill, "Isolation is checked by id, never by label").
                 // Inert: no styling and no behaviour keys on it.
+                //
+                // NO role="option" / aria-selected here, for the reason given on the trigger: an
+                // option role outside a keyboard-operable listbox describes an interaction that
+                // does not exist. These are buttons, and a button is what they are announced as.
                 <button
                   key={String(option.value)}
-                  role="option"
-                  aria-selected={value === option.value}
                   data-value={String(option.value ?? '')}
                   onClick={() => handleSelect(option)}
                   className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2 ${

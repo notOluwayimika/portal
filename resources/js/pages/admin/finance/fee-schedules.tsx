@@ -320,6 +320,25 @@ export default function FeeSchedules({
         void loadAccounts();
     }, [loadAccounts]);
 
+    /**
+     * WHAT REFRESH AND RETRY BOTH RUN — and it must be BOTH fetches, not just the list.
+     *
+     * The accounts fetch is a separate effect with `[]` deps, so it runs exactly once per mount.
+     * When both requests fail together — the server is down, or the session has expired, which is
+     * the ordinary way this page fails — a Retry wired only to `load()` brings the table back and
+     * leaves `accounts` at `[]` until a full page reload. The screen then looks entirely healthy
+     * while the author modal's "Paid into" select offers nothing but its placeholder, and the
+     * operator cannot save a draft on a page that is showing them no error at all.
+     *
+     * That is precisely the defect this branch filed a ticket about on /students
+     * (students-index-403s-render-two-placeholder-only-selects.md) — a control rendering empty
+     * because the data behind it never arrived, on a screen that looks fine — reproduced inside
+     * this branch's own feature. Recovery has to restore everything the mount fetched.
+     */
+    const reload = useCallback(async () => {
+        await Promise.all([load(), loadAccounts()]);
+    }, [load, loadAccounts]);
+
     // Only an ACTIVE account may be a destination — the exists rule on items.*.bank_account_id is
     // `whereNull('deactivated_at')`, so offering a deactivated one is offering a guaranteed 422.
     // A deactivated account already ON a draft still shows, because the row points at it and
@@ -589,7 +608,7 @@ export default function FeeSchedules({
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => void load()}
+                                    onClick={() => void reload()}
                                     disabled={loading}
                                     className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
                                 >
@@ -805,7 +824,7 @@ export default function FeeSchedules({
                                                         size="sm"
                                                         variant="outline"
                                                         onClick={() =>
-                                                            void load()
+                                                            void reload()
                                                         }
                                                         className="rounded-lg"
                                                     >

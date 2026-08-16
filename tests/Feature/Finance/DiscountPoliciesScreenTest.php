@@ -129,6 +129,12 @@ it('lists superseded and retired policies, not only the active ones', function (
 
 it('carries `status` and `requires_approval`, in the shapes the invoice modal reads', function () {
     /*
+     * EXTENDED 2026-08-16 by feat/ui-discount-policies-redesign. The second half of this arm pins the
+     * TERMS keys as well — see the block below the original expectations. It is the same arm rather
+     * than a second one because it is the same contract: one response, one key set, one place to
+     * update when the Resource changes.
+     */
+    /*
      * THE CATALOG CONTRACT, PINNED FROM THE SERVER'S SIDE ONLY (U8 commit 6).
      *
      * new-invoice-modal.tsx's selectablePolicies() decides which policies a bursar may cite on a
@@ -188,6 +194,86 @@ it('carries `status` and `requires_approval`, in the shapes the invoice modal re
     // happening to be inactive — without this the arm would pass over a Resource that hardcoded a
     // wrong-but-well-shaped status.
     expect(collect($body)->pluck('status')->sort()->values()->all())->toBe(['active', 'retired']);
+
+    /*
+     * THE TERMS KEYS, PINNED FOR THE SCREEN THE SAME WAY THE TWO ABOVE ARE PINNED FOR THE MODAL.
+     *
+     * The four expectations above cover `id`, `name`, `status` and `requires_approval` — the keys
+     * new-invoice-modal.tsx reads. discount-policies.tsx reads FIVE MORE: `basis`, `value_minor`,
+     * `value_currency`, `percent` and `description`. Nothing asserted any of them before this block,
+     * and every one of them fails the same silent way § 26 describes, because the screen's own
+     * no-value glyph absorbs the loss:
+     *
+     *   - `basis` renamed → `policy.basis === 'percent'` is false for every row, valueLabel() takes
+     *     the AMOUNT branch, `value_minor` is undefined, and every policy's Value cell renders an em
+     *     dash while the Basis column reads "Fixed amount" for a percentage. No error, no console
+     *     entry: a page that quietly stops saying what any policy does.
+     *   - `percent` / `value_minor` / `value_currency` renamed → the same em dash from the other
+     *     side, and — the expensive half — openAmend() prefills the form from those keys, so an
+     *     amendment authored from a blanked prefill re-states the policy's terms as empty and the
+     *     bursar retypes (or fails to retype) a rate the ED then approves.
+     *
+     * SHAPES, NOT JUST PRESENCE, for the same reason `requires_approval` is asserted `toBeBool()`
+     * above. `value_minor` and `percent` must be INTEGERS OR NULL: the screen hands `value_minor`
+     * straight to formatNaira/minorToNairaInput, which are integer-minor-unit helpers, and a string
+     * "2500000" arriving there is the float-money bug re-entering through the wire rather than
+     * through JavaScript. `basis` must be one of the two the client's union declares.
+     *
+     * AND THE BASIS-EXCLUSIVE RULE IS ASSERTED ON THE PAYLOAD, not just in the schema: the row that
+     * carries money carries no percent and vice versa. That is what lets valueLabel() branch on
+     * `basis` alone.
+     *
+     * WATCHED REDS: delete `'basis'` from DiscountPolicyResource::toArray(), then `'value_minor'`,
+     * then `'percent'`, then `'description'`. Each reds this block and nothing else in the file.
+     */
+    $withAmount = ActiveSchool::runFor($school->id, fn () => DiscountPolicy::create([
+        'school_id' => $school->id, 'name' => 'Staff rate', 'basis' => 'amount',
+        'value_minor' => 2500000, 'value_currency' => 'NGN', 'description' => 'Children of staff.',
+        'requires_approval' => true, 'status' => 'active',
+    ]));
+
+    $full = test()->actingAs(dpsUser($school, ['finance.access', 'finance.discount-policy.change.submit']))
+        ->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/discount-policies')
+        ->assertOk()
+        ->json();
+
+    expect($full)->toHaveCount(3);
+
+    foreach ($full as $row) {
+        expect($row)->toHaveKeys([
+            'id', 'name', 'description', 'basis', 'value_minor', 'value_currency', 'percent',
+            'requires_approval', 'status',
+        ]);
+
+        expect($row['basis'])->toBeIn(['amount', 'percent']);
+
+        // Integer-or-null on both halves. formatNaira/minorToNairaInput take integer minor units.
+        expect($row['value_minor'] === null || is_int($row['value_minor']))->toBeTrue(
+            'value_minor arrived as '.gettype($row['value_minor']).'; the screen hands it to the '
+            .'integer minor-unit helpers unchanged.');
+        expect($row['percent'] === null || is_int($row['percent']))->toBeTrue(
+            'percent arrived as '.gettype($row['percent']).'; the screen renders it as a whole number.');
+
+        // ONE SIDE OF THE BASIS IS POPULATED, NEVER BOTH — valueLabel() branches on `basis` alone.
+        if ($row['basis'] === 'amount') {
+            expect($row['value_minor'])->not->toBeNull();
+            expect($row['value_currency'])->toBeString();
+            expect($row['percent'])->toBeNull();
+        } else {
+            expect($row['percent'])->not->toBeNull();
+            expect($row['value_minor'])->toBeNull();
+            expect($row['value_currency'])->toBeNull();
+        }
+    }
+
+    // NOT VACUOUS: both bases actually occur in this payload, so the branch above ran twice. Without
+    // this the amount side could be pinned by a body containing only percent rows.
+    expect(collect($full)->pluck('basis')->unique()->sort()->values()->all())->toBe(['amount', 'percent']);
+
+    // And `description` carries its value rather than merely existing — a Resource that emitted a
+    // constant null would satisfy toHaveKeys() and blank every secondary line on the list.
+    expect(collect($full)->firstWhere('id', $withAmount->uuid)['description'])->toBe('Children of staff.');
 });
 
 it('shows School B its OWN policies, and none of School A’s', function () {

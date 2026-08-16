@@ -32,16 +32,26 @@ deleted, superseded and retired ones stay.
 ## What now DEPENDS on this endpoint staying unpaginated
 
 **Added 2026-08-15 by `feat/ui-bank-accounts-fee-schedules-redesign`.** Read this before you add
-pagination. Two screens and one modal now hold a correctness argument that rests on the whole
+pagination. Three screens and one modal now hold a correctness argument that rests on the whole
 matching set
 arriving in one response, and the day that stops being true they do not error — **they lie
 quietly**, which is the reason this section exists at all.
 
-The same argument is made twice, because the sibling bank-accounts endpoint
-(`BankAccountController::index()`) is unpaginated for the same reason and its screen depends on it
-identically. Whoever paginates either one is the audience here.
+The same argument is made three times, because the sibling bank-accounts endpoint
+(`BankAccountController::index()`) and the discount-catalog endpoint
+(`DiscountPolicyController::index()`) are unpaginated for the same reason and their screens depend on
+them identically. Whoever paginates any of the three is the audience here.
 
-### The five dependents, and the exact lines
+**Extended 2026-08-16 by `feat/ui-discount-policies-redesign`, which adds a THIRD endpoint and a
+sixth dependent.** `GET /v1/finance/discount-policies` is unpaginated for the same reason as the
+other two — `DiscountPolicyController::index()` ends in `->get()` with one optional `status` filter
+and no `page`/`per_page` (`app/Finance/Http/Controllers/DiscountPolicyController.php:41-49`,
+`->get()` at `:49`) — and the discount-policies screen now holds the same argument on it. That
+endpoint is not the one this ticket is titled after, so if you are here to paginate fee schedules or
+bank accounts, the discount row below is not yours; it is recorded here because splitting the same
+argument across three ticket files is how one of the three gets missed.
+
+### The six dependents, and the exact lines
 
 > **Line citations re-derived 2026-08-15 after cold review**, against the tree at that date. Four of
 > the six original entries had gone stale — both counters and both card-render sets, which are
@@ -51,16 +61,19 @@ identically. Whoever paginates either one is the audience here.
 > in prose rot faster than anyone expects. Re-derive before you trust these, too — the symbol names
 > in the parentheses are the durable part, the numbers are not.
 
-| Screen                                                     | What depends on it                                             | Lines                                                                    |
-| ---------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `resources/js/pages/admin/finance/fee-schedules.tsx`       | Client-side search over label / term label / class-level label | 529–542 (`const term` / `const visible`), state at 235, comment 229–234  |
-|                                                            | "Showing X of Y" — **both numbers from one array**             | 722–733 (`{visible.length}` / `{schedules.length}`)                      |
-|                                                            | The three KPI stat cards, counted over the loaded set          | 547–548 (`countOf`), rendered 648, 656–661, 668                          |
-|                                                            | **`accountOptions()` — the "Paid into" select** (see below)    | 327–345 (`activeAccounts` / `accountOptions`), fed by `loadAccounts` 296 |
-| `resources/js/pages/admin/finance/bank-accounts.tsx`       | Client-side search AND the active/deactivated status filter    | 193–211 (`const term` / `const rows`), state at 87–88, comment 81–86     |
-|                                                            | "Showing X of Y" — **both numbers from one array**             | 355–366 (`{rows.length}` / `{accounts.length}`)                          |
-|                                                            | The three KPI stat cards                                       | 190–191 (`activeCount` / `deactivatedCount`), rendered 294, 302, 310     |
-| `resources/js/components/finance/record-payment-modal.tsx` | **Auto-selection of the only active account** (see below)      | 118–131 (`active.length === 1` → `setBankAccountId`)                     |
+| Screen                                                     | What depends on it                                               | Lines                                                                                                        |
+| ---------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `resources/js/pages/admin/finance/fee-schedules.tsx`       | Client-side search over label / term label / class-level label   | 529–542 (`const term` / `const visible`), state at 235, comment 229–234                                      |
+|                                                            | "Showing X of Y" — **both numbers from one array**               | 722–733 (`{visible.length}` / `{schedules.length}`)                                                          |
+|                                                            | The three KPI stat cards, counted over the loaded set            | 547–548 (`countOf`), rendered 648, 656–661, 668                                                              |
+|                                                            | **`accountOptions()` — the "Paid into" select** (see below)      | 327–345 (`activeAccounts` / `accountOptions`), fed by `loadAccounts` 296                                     |
+| `resources/js/pages/admin/finance/bank-accounts.tsx`       | Client-side search AND the active/deactivated status filter      | 193–211 (`const term` / `const rows`), state at 87–88, comment 81–86                                         |
+|                                                            | "Showing X of Y" — **both numbers from one array**               | 355–366 (`{rows.length}` / `{accounts.length}`)                                                              |
+|                                                            | The three KPI stat cards                                         | 190–191 (`activeCount` / `deactivatedCount`), rendered 294, 302, 310                                         |
+| `resources/js/components/finance/record-payment-modal.tsx` | **Auto-selection of the only active account** (see below)        | 118–131 (`active.length === 1` → `setBankAccountId`)                                                         |
+| `resources/js/pages/admin/finance/discount-policies.tsx`   | Client-side search over name / description AND the status filter | 420–437 (`const term` / `const visible`), ordering 439–442 (`const rows`), state at 216–217, comment 208–214 |
+|                                                            | "Showing X of Y" — **both numbers from one array**               | 597 (`{rows.length}`) / 601 (`{policies.length}`)                                                            |
+|                                                            | The three KPI stat cards, counted over the loaded set            | 414–418 (`activeCount` / `supersededCount` / `retiredCount`), rendered 531, 539, 547                         |
 
 ### The two dependents the first version of this section missed
 
@@ -150,9 +163,14 @@ envelope shape is safe; it is a different failure, not a smaller one.
 
 Paginating either endpoint is not done until the same commit does this:
 
-- Move `search` into the query string on both screens and give the API a `search` parameter —
+- Move `search` into the query string on all three screens and give the API a `search` parameter —
   or drop the box. Leaving it client-side is the defect above, not a smaller version of it.
 - Move bank-accounts' `status` filter into the query string.
+- Move discount-policies' `status` filter into the query string — but **not** by adding `?status=` to
+  that screen's existing fetch. `DiscountPoliciesScreenTest`'s last arm asserts that URL stays
+  unfiltered, because a superseded or retired policy is the only thing that can explain a discount on
+  an old invoice and this screen is where it stays readable; a server-side status filter there has to
+  keep "all states" as its default view, not narrow the catalog to the active ones.
 - Read the counter's second number from the envelope's `total`, never from the row array.
 - Add `<Pagination meta={…} setPage={…} setLimit={…} />` (`@/components/pagination`) to both table
   cards — both currently omit it deliberately, precisely because there is nothing to page.

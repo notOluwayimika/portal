@@ -44,6 +44,7 @@ use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleChangeStatus;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeScheduleChange;
@@ -107,7 +108,7 @@ function scgFixture(): array
 
         $invoice = app(GenerateInvoice::class)->handle($enrollment->uuid, [
             new InvoiceLineSpec('Tuition', Money::fromKobo(500000)),
-        ]);
+        ], InvoiceKind::Scheduled);
 
         // Built through their REAL submit actions rather than by hand: a credit note carries a
         // generated `number` and both rows carry the state the maker path sets. A hand-made row is a

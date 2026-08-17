@@ -2,6 +2,7 @@
 
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\Curriculum;
 use App\Models\Role;
 use App\Models\School;
@@ -149,6 +150,7 @@ it('PROOF 2 — #94 untouched: the INVOICE-ROW lock still serialises allocations
         return app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))],
+            InvoiceKind::Scheduled,
         );
     });
 

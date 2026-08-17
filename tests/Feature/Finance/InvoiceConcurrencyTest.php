@@ -5,6 +5,7 @@ use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
 use App\Models\Role;
@@ -136,6 +137,7 @@ it('CONCURRENCY — two racing GenerateInvoice for one enrollment yield exactly 
         ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
+            InvoiceKind::Scheduled,
         ));
         expect((int) DB::table('finance_invoices')->count())->toBe(1);
 
@@ -147,21 +149,39 @@ it('CONCURRENCY — two racing GenerateInvoice for one enrollment yield exactly 
         // ── THE GUARD, holding: the UNIQUE(school_id, active_enrollment_key)
         //    check is a CURRENT read, not a snapshot read, so B's insert is
         //    rejected outright.
+        //
+        //    BOTH ROWS ARE `scheduled`, stated rather than defaulted: the key is now
+        //    IF(status = 'issued' AND kind = 'scheduled', …), so a supplementary racer
+        //    would compute a NULL key and legitimately NOT collide. This arm is about
+        //    two term bills racing, which is the case that must still be refused. And
+        //    `kind` must be present at all — the column is NOT NULL with no default, so
+        //    omitting it would throw 1364 and the assertion below would pass for the
+        //    wrong reason.
         $row = DB::table('finance_invoices')->first();
-        expect(fn () => $second->table('finance_invoices')->insert([
-            'uuid' => (string) Str::uuid(),
-            'school_id' => $row->school_id,
-            'student_id' => $row->student_id,
-            'student_curriculum_id' => $row->student_curriculum_id,
-            'number' => $row->number + 1,
-            'status' => 'issued',
-            'billed_to_name' => 'Ada Obi',
-            'academic_context' => $row->academic_context,
-            'total_minor' => 150000,
-            'total_currency' => 'NGN',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]))->toThrow(QueryException::class);
+        expect($row->kind)->toBe('scheduled');
+
+        try {
+            $second->table('finance_invoices')->insert([
+                'uuid' => (string) Str::uuid(),
+                'school_id' => $row->school_id,
+                'student_id' => $row->student_id,
+                'student_curriculum_id' => $row->student_curriculum_id,
+                'number' => $row->number + 1,
+                'status' => 'issued',
+                'kind' => 'scheduled',
+                'billed_to_name' => 'Ada Obi',
+                'academic_context' => $row->academic_context,
+                'total_minor' => 150000,
+                'total_currency' => 'NGN',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            throw new RuntimeException('The duplicate active invoice was ACCEPTED: the unique index over the generated key did not refuse it.');
+        } catch (QueryException $e) {
+            expect((int) $e->errorInfo[1])->toBe(1062)
+                ->and($e->getMessage())->toContain('finance_invoices_active_enrollment_unique');
+        }
     });
 
     // Exactly one invoice, and exactly one charge on the ledger.
@@ -178,6 +198,7 @@ it('CONCURRENCY — approving a void racing another void is REFUSED, so no secon
         $inv = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
+            InvoiceKind::Scheduled,
         );
 
         // A pending void request exists (maker submitted). Approval — the only money path —

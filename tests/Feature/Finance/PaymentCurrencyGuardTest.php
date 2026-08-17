@@ -10,6 +10,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\Curriculum;
 use App\Models\School;
 use App\Models\Student;
@@ -39,7 +40,7 @@ function pcgInvoice(School $s, Student $student): object
     return ActiveSchool::runFor($s->id, function () use ($s, $student) {
         $e = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $s->id])->id, 'status' => 'active']);
 
-        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))]);
+        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
     });
 }
 

@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Models\FeeItem;
@@ -37,15 +38,29 @@ use Illuminate\Support\Facades\DB;
  * Money::plus() also throws on a currency mismatch, which makes a mixed-currency
  * invoice impossible by construction rather than by validation.
  *
- * DUPLICATE PREVENTION — "at most one ACTIVE invoice per enrollment episode" is a
- * SET-based invariant: it constrains the set of invoices for an enrollment, which
- * no single Invoice aggregate can see. The authoritative guard is therefore the
- * DB's UNIQUE(school_id, active_enrollment_key) over the generated column; the
- * pre-check below exists only to turn the common case into a friendly 422 instead
- * of a duplicate-key error. Under concurrency the pre-check CANNOT hold (both
- * racers read a snapshot in which no invoice exists) — the unique index is what
- * actually holds, which is why the duplicate-key error is translated rather than
- * treated as an impossible case. Proven in InvoiceConcurrencyTest.
+ * DUPLICATE PREVENTION — "at most one ACTIVE SCHEDULED invoice per enrollment
+ * episode" is a SET-based invariant: it constrains the set of invoices for an
+ * enrollment, which no single Invoice aggregate can see. The authoritative guard is
+ * therefore the DB's UNIQUE(school_id, active_enrollment_key) over the generated
+ * column; the pre-check below exists only to turn the common case into a friendly
+ * 422 instead of a duplicate-key error. Under concurrency the pre-check CANNOT hold
+ * (both racers read a snapshot in which no invoice exists) — the unique index is
+ * what actually holds, which is why the duplicate-key error is translated rather
+ * than treated as an impossible case. Proven in InvoiceConcurrencyTest.
+ *
+ * KIND COMES FROM THE CALLER AND IS NEVER INFERRED. `$kind` is a REQUIRED argument,
+ * not a defaulted one, and it is deliberately not derived from "does this episode
+ * already have an invoice?" — that inference would make the second invoice of a
+ * term silently supplementary, which is the exact misclassification the NOT NULL /
+ * no-default column exists to make loud. The caller knows whether it is raising the
+ * term bill or a trip fee; it says so.
+ *
+ * BOTH DUPLICATE ARMS ARE SCOPED TO `scheduled`, and both must be, for the same
+ * reason: a supplementary invoice on an episode that already carries a scheduled one
+ * is the NORMAL case. The pre-check mirrors the index exactly — issued AND scheduled
+ * — so a prior SUPPLEMENTARY invoice never blocks the term bill either. If the two
+ * predicates ever drift, the pre-check refuses a write the DB would have accepted,
+ * or promises one it will not.
  */
 final class GenerateInvoice
 {
@@ -64,11 +79,14 @@ final class GenerateInvoice
      * @param  list<InvoiceLineSpec>  $lines
      */
     /**
+     * @param  InvoiceKind  $kind  scheduled (the term bill) or supplementary (a charge raised outside
+     *                             the schedule). REQUIRED — see the class docblock; there is no default
+     *                             and no inference, so a caller that has not decided cannot compile.
      * @param  ?int  $actorId  the user raising the invoice, recorded on every line (S1 Part 0). Passed
      *                         in from the controller edge — the Action never calls auth() (boundary lint).
      *                         Nullable so seeders/console callers with no acting user still work.
      */
-    public function handle(string $enrollmentUuid, array $lines, ?int $actorId = null): Invoice
+    public function handle(string $enrollmentUuid, array $lines, InvoiceKind $kind, ?int $actorId = null): Invoice
     {
         $enrollment = $this->enrollments->findByUuid($enrollmentUuid);
 
@@ -172,7 +190,7 @@ final class GenerateInvoice
         }
 
         try {
-            return DB::transaction(function () use ($enrollment, $lines, $total, $actorId) {
+            return DB::transaction(function () use ($enrollment, $lines, $total, $kind, $actorId) {
                 // W3 apply-forward — the FIRST statement, and a LOCKING read on purpose.
                 // A locking read does not establish InnoDB's REPEATABLE READ snapshot, so
                 // it forms at the first plain read AFTER this lock (assertNoActiveInvoice),
@@ -193,7 +211,12 @@ final class GenerateInvoice
                 // charge posts, or the charge flips the balance positive and credit reads 0.
                 $creditKobo = $account !== null ? max(0, -$account->balance->toKobo()) : 0;
 
-                $this->assertNoActiveInvoice($enrollment->schoolId, $enrollment->enrollmentId);
+                // Only the term bill is one-per-episode. A supplementary charge is raised
+                // AGAINST a live scheduled invoice by design, so pre-checking it would refuse
+                // the whole feature.
+                if ($kind->isEpisodeExclusive()) {
+                    $this->assertNoActiveInvoice($enrollment->schoolId, $enrollment->enrollmentId);
+                }
 
                 $number = Sequences::next('finance_invoice', (string) $enrollment->schoolId);
 
@@ -203,6 +226,7 @@ final class GenerateInvoice
                     'student_curriculum_id' => $enrollment->enrollmentId,
                     'number' => $number,
                     'status' => InvoiceStatus::Issued,
+                    'kind' => $kind,
                     'billed_to_name' => $enrollment->studentName,
                     'academic_context' => $enrollment->academicContext,
                     'total' => $total,
@@ -255,8 +279,13 @@ final class GenerateInvoice
                 return $invoice->load('lines');
             });
         } catch (QueryException $e) {
-            // The set-based invariant, enforced by the DB, surfacing as a domain error.
-            if ($this->isActiveEnrollmentCollision($e)) {
+            // The set-based invariant, enforced by the DB, surfacing as a domain error. SCOPED TO
+            // scheduled: a supplementary invoice computes a NULL key and cannot collide on that
+            // index, so a 1062 naming it while raising one would mean the generated expression is
+            // not what this Action believes. Rethrowing the raw QueryException there is deliberate —
+            // a 500 that names the index is diagnosable; a friendly 422 telling a bursar to void the
+            // term bill before adding a trip fee is a wrong answer stated confidently.
+            if ($kind->isEpisodeExclusive() && $this->isActiveEnrollmentCollision($e)) {
                 throw new BusinessRuleException(
                     'This enrollment already has an active invoice. Void it before billing again.'
                 );
@@ -454,6 +483,10 @@ final class GenerateInvoice
         $exists = Invoice::query()
             ->where('school_id', $schoolId)
             ->where('student_curriculum_id', $enrollmentId)
+            // MIRRORS THE INDEX, and the `kind` half is as load-bearing as the void half: without
+            // it a supplementary charge raised in week 2 would make the term bill unraisable, and
+            // the operator would be told to void an invoice that does not exist.
+            ->where('kind', InvoiceKind::Scheduled->value)
             ->excludingVoid()
             ->exists();
 

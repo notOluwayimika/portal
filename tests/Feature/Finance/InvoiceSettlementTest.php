@@ -9,6 +9,7 @@ use App\Finance\Actions\SubmitCreditNote;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\InvoiceReadModel;
 use App\Finance\Services\InvoiceSettlement;
@@ -56,6 +57,7 @@ function stlInvoice(School $school, Student $student, int $kobo): Invoice
         return app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+            InvoiceKind::Scheduled,
         );
     });
 }

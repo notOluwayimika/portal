@@ -4,6 +4,7 @@ use App\Enums\TermStatusEnum;
 use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\Curriculum;
@@ -242,7 +243,7 @@ function mc_financeContext(): array
             'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
             'status' => 'active',
         ]);
-        $invoice = app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))]);
+        $invoice = app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
 
         $session = AcademicSession::create(['school_id' => $school->id, 'name' => '2026/2027', 'slug' => 'sess-'.Str::random(8), 'is_current' => true]);
         $term = Term::create([

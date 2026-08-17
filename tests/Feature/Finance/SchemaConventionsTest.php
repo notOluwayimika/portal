@@ -3,6 +3,7 @@
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\Curriculum;
 use App\Models\School;
 use App\Models\Student;
@@ -69,6 +70,7 @@ function schemaMoneyRows(): array
         $invoice = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo(50000))],
+            InvoiceKind::Scheduled,
         );
         app(RecordPayment::class)->handle(
             $invoice, Money::fromKobo(20000), 'Payer', User::factory()->create(['school_id' => $school->id]),

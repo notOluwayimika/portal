@@ -136,20 +136,33 @@ it('SLICE-2 GUARD IS NOW STRUCTURAL — an invoice whose school disagrees with i
     // key is student_curriculum_id — so it already depended on the episode's School,
     // while deriving it from another table via a null->0 fallback. With the composite
     // FK, disagreement is a foreign-key violation instead of a silent divergence.
-    expect(fn () => DB::table('finance_invoices')->insert([
+    // `kind` is supplied because finance_invoices.kind is NOT NULL with no default
+    // (2026_08_18_100000): omitting it throws 1364, which is a QueryException too and would
+    // have left this arm green while proving nothing about the composite FK. The assertion
+    // below names 1452 for the same reason.
+    $foreign = fn () => DB::table('finance_invoices')->insert([
         'uuid' => (string) Str::uuid(),
         'school_id' => $schoolB->id,          // disagrees with the episode's school
         'student_id' => $student->id,
         'student_curriculum_id' => $episode->id,
         'number' => 1,
         'status' => 'issued',
+        'kind' => 'scheduled',
         'billed_to_name' => 'Ada Obi',
         'academic_context' => 'ctx',
         'total_minor' => 1000,
         'total_currency' => 'NGN',
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]);
+
+    expect($foreign)->toThrow(QueryException::class);
+
+    try {
+        $foreign();
+    } catch (QueryException $e) {
+        expect((int) $e->errorInfo[1])->toBe(1452);
+    }
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });

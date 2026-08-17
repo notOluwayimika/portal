@@ -6,6 +6,7 @@ use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Http\Requests\GenerateInvoiceForStudentRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
 use App\Finance\Http\Resources\CreditNoteResource;
@@ -42,6 +43,10 @@ class InvoiceController extends Controller
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
                 $request->lineSpecs(),
+                // BOTH GENERATE ROUTES RAISE THE TERM BILL, and say so explicitly rather than relying
+                // on a default. Supplementary invoicing has no route yet: this commit is domain and
+                // schema, and the wire shape that lets a bursar choose a kind lands with the modal.
+                InvoiceKind::Scheduled,
                 $request->user()?->id,
             );
         } catch (BusinessRuleException $e) {
@@ -114,7 +119,12 @@ class InvoiceController extends Controller
         $request->assertDiscountPoliciesUsable();
 
         try {
-            $invoice = $action->handle($enrollment->enrollmentUuid, $request->lineSpecs(), $request->user()?->id);
+            $invoice = $action->handle(
+                $enrollment->enrollmentUuid,
+                $request->lineSpecs(),
+                InvoiceKind::Scheduled,
+                $request->user()?->id,
+            );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

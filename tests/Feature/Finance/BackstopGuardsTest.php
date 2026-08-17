@@ -6,6 +6,7 @@
 
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\Curriculum;
 use App\Models\Guardian;
 use App\Models\School;
@@ -88,7 +89,7 @@ it('credit note in a currency other than the invoice is a 422 (guard), and inser
     $invoice = ActiveSchool::runFor($school->id, function () use ($school, $student) {
         $enr = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id, 'status' => 'active']);
 
-        return app(GenerateInvoice::class)->handle($enr->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))]);
+        return app(GenerateInvoice::class)->handle($enr->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
     });
 
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])

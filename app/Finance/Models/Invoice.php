@@ -5,6 +5,7 @@ namespace App\Finance\Models;
 use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Exceptions\LedgerImmutableException;
 use App\Support\Money;
@@ -22,10 +23,19 @@ use Illuminate\Support\Carbon;
  * transaction (F6) and thereafter immutable — the `finance_invoices_total_immutable`
  * BEFORE UPDATE trigger denies any change to the money columns at the DB.
  *
+ * `kind` says WHAT the invoice is — the term bill (`scheduled`) or a charge raised
+ * outside the schedule against an already-billed episode (`supplementary`). It is
+ * FIXED AT CREATION: `finance_invoices_kind_immutable` denies any UPDATE of it,
+ * because flipping a live scheduled invoice to supplementary would free the
+ * episode's active slot and let a second scheduled invoice be issued alongside it.
+ * There is no setter, no fillable exception and no domain path that rewrites it.
+ *
  * `active_enrollment_key` is a STORED GENERATED column (= student_curriculum_id
- * while issued, NULL once void) carrying a UNIQUE(school_id, active_enrollment_key).
- * It is the DB expression of the set-based invariant "at most one ACTIVE invoice
- * per enrollment episode" — read-only here; never write it.
+ * while issued AND scheduled, NULL otherwise) carrying a
+ * UNIQUE(school_id, active_enrollment_key). It is the DB expression of the
+ * set-based invariant "at most one ACTIVE SCHEDULED invoice per enrollment
+ * episode" — read-only here; never write it. Supplementary invoices compute a NULL
+ * key and are therefore unconstrained: any number, at any time, for one episode.
  *
  * @property int $id
  * @property string $uuid
@@ -34,6 +44,7 @@ use Illuminate\Support\Carbon;
  * @property int $student_curriculum_id
  * @property int $number
  * @property InvoiceStatus $status
+ * @property InvoiceKind $kind
  * @property string $billed_to_name
  * @property string $academic_context
  * @property Money $total
@@ -53,6 +64,7 @@ class Invoice extends Model
 
     protected $casts = [
         'status' => InvoiceStatus::class,
+        'kind' => InvoiceKind::class,
         'total' => MoneyCast::class.':total_minor,total_currency',
         'cancelled_at' => 'datetime',
     ];

@@ -1,0 +1,186 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Guardian;
+use App\Services\GuardianService;
+use App\Support\ActiveSchool;
+use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Collapse duplicate `guardians` rows into one.
+ *
+ * WHY A COMMAND AND NOT A SCREEN. The duplicates already in production were made
+ * by an operator adding the same person more than once, and the shape of each
+ * group — which row keeps which student, which link carries login, which fields
+ * are blank on the survivor — is a judgement call that has to be inspected before
+ * it is executed. A dry run that prints the whole plan and writes nothing is the
+ * inspection step; `--apply` is the same plan, executed. The admin UI is a later
+ * change and will call the same service method.
+ *
+ * DRY RUN IS THE DEFAULT, deliberately. The dangerous direction is an engineer
+ * running this against a production copy expecting a report and getting a write.
+ *
+ * IDS ONLY IN OUTPUT. This is run by engineers against a copy of production;
+ * `guardian#<id>` answers every question a name would and does not put a parent's
+ * name in a terminal scrollback or a ticket.
+ */
+class MergeGuardians extends Command
+{
+    protected $signature = 'guardians:merge
+        {--keep= : uuid of the guardian record that survives}
+        {--absorb=* : uuid of a guardian record to fold into the keeper (repeatable)}
+        {--apply : write the merge; without this the plan is printed and nothing is written}';
+
+    protected $description = 'Merge duplicate guardian records into one, moving student links and soft-deleting the rest';
+
+    public function handle(GuardianService $guardians): int
+    {
+        $keeperUuid = (string) ($this->option('keep') ?? '');
+
+        /** @var list<string> $absorbUuids */
+        $absorbUuids = array_values(array_filter((array) $this->option('absorb')));
+
+        if ($keeperUuid === '' || $absorbUuids === []) {
+            $this->error('Both --keep=<uuid> and at least one --absorb=<uuid> are required.');
+
+            return self::FAILURE;
+        }
+
+        $keeper = $this->resolve($keeperUuid);
+
+        if (! $keeper) {
+            $this->error('No live guardian record found for the --keep uuid.');
+
+            return self::FAILURE;
+        }
+
+        $absorbed = new Collection;
+
+        foreach ($absorbUuids as $uuid) {
+            $guardian = $this->resolve($uuid);
+
+            if (! $guardian) {
+                $this->error('No live guardian record found for one of the --absorb uuids.');
+
+                return self::FAILURE;
+            }
+
+            $absorbed->push($guardian);
+        }
+
+        $apply = (bool) $this->option('apply');
+
+        try {
+            // Off-request, so there is no authenticated user and no session school.
+            // Context is taken from the KEEPER'S OWN school_id — never from
+            // users.school_id and never from an actor (Constitution 13, ADR 0036/0042).
+            $plan = ActiveSchool::runFor(
+                (int) $keeper->school_id,
+                fn (): array => $guardians->merge($keeper, $absorbed, $apply),
+            );
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $messages) {
+                foreach ($messages as $message) {
+                    $this->error($message);
+                }
+            }
+
+            return self::FAILURE;
+        }
+
+        $this->render($plan);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Global scopes dropped and `deleted_at` pinned: Guardian::applySchoolScope
+     * matches `school_id = active OR user_id has access to active`, so under it a
+     * multi-school parent's rows in other schools resolve here too.
+     */
+    private function resolve(string $uuid): ?Guardian
+    {
+        return Guardian::withoutGlobalScopes()
+            ->where('uuid', $uuid)
+            ->whereNull('deleted_at')
+            ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     */
+    private function render(array $plan): void
+    {
+        $this->newLine();
+        $this->line($plan['applied'] ? 'APPLIED.' : 'DRY RUN — nothing was written. Re-run with --apply to execute.');
+        $this->line("keeper guardian#{$plan['keeper_id']} in school#{$plan['school_id']}");
+        $this->line('absorbing '.implode(', ', array_map(fn (int $id) => "guardian#{$id}", $plan['absorbed_ids'])));
+        $this->newLine();
+
+        $this->line('Student links moved to the keeper: '.count($plan['pivot_moves']));
+        if ($plan['pivot_moves'] !== []) {
+            $this->table(
+                ['student', 'from', 'relationship', 'is_primary', 'can_login'],
+                array_map(fn (array $move) => [
+                    "student#{$move['student_id']}",
+                    "guardian#{$move['from_guardian_id']}",
+                    $move['relationship'],
+                    $move['is_primary'] ? 'yes' : 'no',
+                    $move['can_login'] ? 'yes' : 'no',
+                ], $plan['pivot_moves']),
+            );
+        }
+
+        $this->line('Link collisions (both linked to the same student): '.count($plan['pivot_collisions']));
+        if ($plan['pivot_collisions'] !== []) {
+            $this->table(
+                ['student', 'from', 'is_primary', 'can_login', 'resolution'],
+                array_map(fn (array $c) => [
+                    "student#{$c['student_id']}",
+                    "guardian#{$c['from_guardian_id']}",
+                    ($c['is_primary_before'] ? 'yes' : 'no').' → '.($c['is_primary_after'] ? 'yes' : 'no'),
+                    ($c['can_login_before'] ? 'yes' : 'no').' → '.($c['can_login_after'] ? 'yes' : 'no'),
+                    $c['resolution'],
+                ], $plan['pivot_collisions']),
+            );
+        }
+
+        $this->line('Other guardians demoted from primary: '.count($plan['primary_demotions']));
+        if ($plan['primary_demotions'] !== []) {
+            $this->table(
+                ['student', 'demoted'],
+                array_map(fn (array $d) => [
+                    "student#{$d['student_id']}",
+                    implode(', ', array_map(fn (int $id) => "guardian#{$id}", $d['guardian_ids'])),
+                ], $plan['primary_demotions']),
+            );
+        }
+
+        $this->line('Blank fields back-filled onto the keeper: '.count($plan['backfilled']));
+        if ($plan['backfilled'] !== []) {
+            $this->table(
+                ['field', 'taken from'],
+                array_map(fn (array $b) => [
+                    $b['field'],
+                    "guardian#{$b['from_guardian_id']}",
+                ], $plan['backfilled']),
+            );
+        }
+
+        $this->line('Guardian records soft-deleted: '
+            .implode(', ', array_map(fn (int $id) => "guardian#{$id}", $plan['soft_deleted_ids'])));
+
+        // Reported, not acted on: guardians.user_id is NOT NULL with cascadeOnDelete,
+        // so deleting one of these users would hard-delete that person's guardian
+        // records in every other school.
+        $this->line($plan['orphaned_user_ids'] === []
+            ? 'Users left backing no live guardian: none.'
+            : 'Users left backing no live guardian anywhere (NOT touched): '
+                .implode(', ', array_map(fn (int $id) => "user#{$id}", $plan['orphaned_user_ids'])));
+
+        $this->newLine();
+    }
+}

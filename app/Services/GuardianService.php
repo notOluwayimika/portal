@@ -14,6 +14,7 @@ use App\Support\PhoneNormalizer;
 use App\Support\SchoolAccess;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -764,6 +765,406 @@ class GuardianService
             ->whereNull('deleted_at')
             ->orderBy('id')
             ->first();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Merge — the remediation half of the duplicate-guardian defect
+    |--------------------------------------------------------------------------
+    |
+    | createGuardianWithUser dedupes the USER by email and then calls
+    | Guardian::create() unconditionally, so a second `guardians` row against the
+    | same (user_id, school_id) is normal rather than exceptional — and with no
+    | email at all, `User::where('email', null)->first()` never matches under
+    | MySQL, so every email-less submission mints a fresh user AND a fresh
+    | guardian. Nothing at the schema level forbids either: `guardians` carries
+    | non-unique indexes on user_id and school_id and no unique key beyond uuid.
+    |
+    | This is the engine that collapses the rows that already exist. It does not
+    | touch the creation path and it does not add the constraint; both are
+    | separate changes, and the constraint cannot land until this has run.
+    */
+
+    /**
+     * Collapse $absorbed into $keeper. Returns the same plan shape whether or not
+     * $apply, so a dry run and an applied run print identically.
+     *
+     * NOTHING IS HARD-DELETED AND NO `users` ROW IS TOUCHED. `guardians.user_id`
+     * is NOT NULL with cascadeOnDelete, so deleting a user hard-deletes that
+     * person's guardian records in EVERY OTHER SCHOOL. Absorbed guardians are
+     * soft-deleted; a user left backing no live guardian anywhere is reported and
+     * not acted on, because "this account should go" is a decision, not a
+     * consequence of a merge.
+     *
+     * Every query here drops the global scopes and pins `school_id` and
+     * `deleted_at` explicitly. Guardian::applySchoolScope matches
+     * `school_id = active OR user_id has access to active`, so under the default
+     * scope a multi-school parent's rows from OTHER schools are visible — which
+     * for a merge would be an isolation breach, not a convenience.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @return array<string, mixed>
+     */
+    public function merge(Guardian $keeper, Collection $absorbed, bool $apply): array
+    {
+        /** @var Collection<int, Guardian> $absorbed */
+        $absorbed = $absorbed->unique('id')->values();
+
+        return DB::transaction(function () use ($keeper, $absorbed, $apply) {
+            $this->assertMergeable($keeper, $absorbed);
+
+            $plan = $this->buildMergePlan($keeper, $absorbed);
+
+            if ($apply) {
+                $this->applyMergePlan($keeper, $absorbed, $plan);
+            }
+
+            return array_merge(['applied' => $apply], $plan);
+        });
+    }
+
+    /**
+     * Refusals. All of them run before anything is written.
+     *
+     * The cross-school one is the load-bearing check: the same-school triggers
+     * `guardian_student_same_school_bi`/`_bu` SIGNAL SQLSTATE '45000' mid-write,
+     * which surfaces as a 500 with no useful message rather than a refusal.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     */
+    private function assertMergeable(Guardian $keeper, Collection $absorbed): void
+    {
+        if ($absorbed->isEmpty()) {
+            throw ValidationException::withMessages([
+                'absorb' => 'Nothing to merge: no absorbed guardians were given.',
+            ]);
+        }
+
+        if ($keeper->deleted_at !== null) {
+            throw ValidationException::withMessages([
+                'keep' => "Merge aborted: guardian#{$keeper->id} is already deleted.",
+            ]);
+        }
+
+        foreach ($absorbed as $guardian) {
+            if ((int) $guardian->id === (int) $keeper->id) {
+                throw ValidationException::withMessages([
+                    'absorb' => "Merge aborted: guardian#{$keeper->id} cannot absorb itself.",
+                ]);
+            }
+
+            if ((int) $guardian->school_id !== (int) $keeper->school_id) {
+                throw ValidationException::withMessages([
+                    'absorb' => "Merge aborted: guardian#{$guardian->id} belongs to school#{$guardian->school_id} "
+                        ."but keeper guardian#{$keeper->id} belongs to school#{$keeper->school_id}. "
+                        .'A guardian record is per-school; merging across schools is not a merge.',
+                ]);
+            }
+
+            if ($guardian->deleted_at !== null) {
+                throw ValidationException::withMessages([
+                    'absorb' => "Merge aborted: guardian#{$guardian->id} is already deleted.",
+                ]);
+            }
+        }
+    }
+
+    /**
+     * The plan, computed by simulation against the current rows — no writes.
+     *
+     * The simulation is sequential and order-dependent on purpose: when two
+     * absorbed guardians both link the same student, the first is a move (the
+     * keeper gains the row) and the second is therefore a collision. Computing
+     * both against the ORIGINAL keeper rows would classify the second as a move
+     * too, and the apply would then hit `unique(guardian_id, student_id)`.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @return array<string, mixed>
+     */
+    private function buildMergePlan(Guardian $keeper, Collection $absorbed): array
+    {
+        $absorbedIds = $absorbed->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        // Final state of the keeper's pivot per student, seeded from what it holds today.
+        $state = [];
+        foreach (DB::table('guardian_student')->where('guardian_id', $keeper->id)->get() as $row) {
+            $state[(int) $row->student_id] = [
+                'is_primary' => (bool) $row->is_primary,
+                'can_login' => (bool) $row->can_login,
+                'touched' => false,
+            ];
+        }
+
+        $moves = [];
+        $collisions = [];
+
+        foreach ($absorbed as $guardian) {
+            $rows = DB::table('guardian_student')
+                ->where('guardian_id', $guardian->id)
+                ->orderBy('student_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $studentId = (int) $row->student_id;
+                $isPrimary = (bool) $row->is_primary;
+                $canLogin = (bool) $row->can_login;
+
+                if (! isset($state[$studentId])) {
+                    // THE MOVE. No keeper row for this student, so the pivot is
+                    // re-pointed and keeps its own relationship/is_primary/can_login.
+                    if ($canLogin) {
+                        $this->assertMergedLoginIsDeliverable($keeper, $guardian, $studentId);
+                    }
+
+                    $moves[] = [
+                        'pivot_id' => (int) $row->id,
+                        'student_id' => $studentId,
+                        'from_guardian_id' => (int) $guardian->id,
+                        'relationship' => (string) $row->relationship,
+                        'is_primary' => $isPrimary,
+                        'can_login' => $canLogin,
+                    ];
+
+                    $state[$studentId] = [
+                        'is_primary' => $isPrimary,
+                        'can_login' => $canLogin,
+                        'touched' => true,
+                    ];
+
+                    continue;
+                }
+
+                // THE COLLISION. Both are linked to this student and the pivot is
+                // unique on (guardian_id, student_id), so a blind re-point raises a
+                // duplicate key. The keeper's row survives — with its own
+                // relationship — and the two booleans are OR-merged into it.
+                $before = $state[$studentId];
+                $after = [
+                    'is_primary' => $before['is_primary'] || $isPrimary,
+                    'can_login' => $before['can_login'] || $canLogin,
+                    'touched' => true,
+                ];
+
+                if ($after['can_login'] && ! $before['can_login']) {
+                    $this->assertMergedLoginIsDeliverable($keeper, $guardian, $studentId);
+                }
+
+                $collisions[] = [
+                    'pivot_id' => (int) $row->id,
+                    'student_id' => $studentId,
+                    'from_guardian_id' => (int) $guardian->id,
+                    'is_primary_before' => $before['is_primary'],
+                    'is_primary_after' => $after['is_primary'],
+                    'can_login_before' => $before['can_login'],
+                    'can_login_after' => $after['can_login'],
+                    'resolution' => "keeper row kept (relationship unchanged); absorbed pivot#{$row->id} deleted",
+                ];
+
+                $state[$studentId] = $after;
+            }
+        }
+
+        // Single-primary is enforced in code only, so a move or an OR-merge that
+        // leaves the keeper primary has to demote the student's OTHER guardians.
+        // Absorbed rows are excluded: they are the rows being moved or deleted.
+        $primaryDemotions = [];
+        foreach ($state as $studentId => $final) {
+            if (! $final['touched'] || ! $final['is_primary']) {
+                continue;
+            }
+
+            $others = DB::table('guardian_student')
+                ->where('student_id', $studentId)
+                ->where('is_primary', true)
+                ->where('guardian_id', '!=', $keeper->id)
+                ->whereNotIn('guardian_id', $absorbedIds)
+                ->pluck('guardian_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            if ($others !== []) {
+                $primaryDemotions[] = ['student_id' => $studentId, 'guardian_ids' => $others];
+            }
+        }
+
+        [$backfillValues, $backfilled] = $this->planBackfill($keeper, $absorbed);
+
+        return [
+            'keeper_id' => (int) $keeper->id,
+            'school_id' => (int) $keeper->school_id,
+            'absorbed_ids' => $absorbedIds,
+            'pivot_moves' => $moves,
+            'pivot_collisions' => $collisions,
+            'pivot_final_state' => array_map(
+                fn (array $final) => ['is_primary' => $final['is_primary'], 'can_login' => $final['can_login']],
+                array_filter($state, fn (array $final) => $final['touched']),
+            ),
+            'primary_demotions' => $primaryDemotions,
+            'backfill_values' => $backfillValues,
+            'backfilled' => $backfilled,
+            'soft_deleted_ids' => $absorbedIds,
+            'orphaned_user_ids' => $this->orphanedUserIdsAfterMerge($absorbed, $absorbedIds),
+        ];
+    }
+
+    /**
+     * `can_login = true` may not arrive on a keeper who cannot receive mail.
+     *
+     * Routed through the existing single enforcement point rather than a second
+     * copy of the predicate; the message is re-raised with the ids so an operator
+     * reading a console table knows which link caused the refusal. Aborting is
+     * deliberate: silently downgrading the flag would remove a parent's portal
+     * access as a side effect of a cleanup, and silently proceeding would mint
+     * exactly the state GuardianLoginInvariantTest pins as unreachable.
+     *
+     * It fires when the merge INTRODUCES the flag on the keeper — a moved row
+     * carrying it, or a collision raising it false→true. A keeper row that
+     * already carries `can_login` against an undeliverable address is a
+     * pre-existing violation that `guardians:audit-login-invariant` reports; it is
+     * not created here, and refusing to merge duplicates for that population would
+     * disarm this command against exactly the rows it exists to clean.
+     */
+    private function assertMergedLoginIsDeliverable(Guardian $keeper, Guardian $from, int $studentId): void
+    {
+        try {
+            $this->assertLoginRequiresDeliverableEmail($keeper, true);
+        } catch (ValidationException) {
+            throw ValidationException::withMessages([
+                'can_login' => "Merge aborted: guardian#{$from->id} has login enabled for student#{$studentId}, "
+                    ."but keeper guardian#{$keeper->id} has no deliverable email address, so that access cannot move. "
+                    .'Give the keeper a real email address first, or clear can_login on the absorbed link.',
+            ]);
+        }
+    }
+
+    /**
+     * Back-fill BLANKS ONLY — the keeper's own values always win.
+     *
+     * The field list is read off the keeper's own $fillable rather than restated
+     * here, so a column added to the model is covered without a second list to
+     * drift. school_id and user_id are identity (copying either would move the
+     * record); status is a decision an operator made about the keeper.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @return array{0: array<string, mixed>, 1: list<array{field: string, from_guardian_id: int}>}
+     */
+    private function planBackfill(Guardian $keeper, Collection $absorbed): array
+    {
+        $fields = array_diff($keeper->getFillable(), ['school_id', 'user_id', 'uuid', 'status']);
+
+        $values = [];
+        $taken = [];
+
+        foreach ($fields as $field) {
+            $current = $keeper->getAttribute($field);
+
+            if (! ($current === null || $current === '')) {
+                continue;
+            }
+
+            foreach ($absorbed as $guardian) {
+                $candidate = $guardian->getAttribute($field);
+
+                if ($candidate === null || $candidate === '') {
+                    continue;
+                }
+
+                $values[$field] = $candidate;
+                $taken[] = ['field' => $field, 'from_guardian_id' => (int) $guardian->id];
+
+                break;
+            }
+        }
+
+        return [$values, $taken];
+    }
+
+    /**
+     * Absorbed users left backing no live guardian in ANY school once the merge
+     * lands. Reported, never acted on — see the merge() docblock.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @param  list<int>  $absorbedIds
+     * @return list<int>
+     */
+    private function orphanedUserIdsAfterMerge(Collection $absorbed, array $absorbedIds): array
+    {
+        $orphans = [];
+
+        foreach ($absorbed->pluck('user_id')->unique() as $userId) {
+            $remaining = Guardian::withoutGlobalScopes()
+                ->whereNull('deleted_at')
+                ->where('user_id', $userId)
+                ->whereNotIn('id', $absorbedIds)
+                ->count();
+
+            if ($remaining === 0) {
+                $orphans[] = (int) $userId;
+            }
+        }
+
+        return $orphans;
+    }
+
+    /**
+     * @param  Collection<int, Guardian>  $absorbed
+     * @param  array<string, mixed>  $plan
+     */
+    private function applyMergePlan(Guardian $keeper, Collection $absorbed, array $plan): void
+    {
+        $now = now();
+
+        foreach ($plan['pivot_moves'] as $move) {
+            DB::table('guardian_student')
+                ->where('id', $move['pivot_id'])
+                ->update(['guardian_id' => $keeper->id, 'updated_at' => $now]);
+        }
+
+        foreach ($plan['pivot_collisions'] as $collision) {
+            DB::table('guardian_student')->where('id', $collision['pivot_id'])->delete();
+        }
+
+        // Written from the SIMULATED FINAL state rather than per-step, so a student
+        // touched by two absorbed rows lands on one value instead of the last one.
+        foreach ($plan['pivot_final_state'] as $studentId => $final) {
+            DB::table('guardian_student')
+                ->where('guardian_id', $keeper->id)
+                ->where('student_id', $studentId)
+                ->update([
+                    'is_primary' => $final['is_primary'],
+                    'can_login' => $final['can_login'],
+                    'updated_at' => $now,
+                ]);
+        }
+
+        foreach ($plan['primary_demotions'] as $demotion) {
+            DB::table('guardian_student')
+                ->where('student_id', $demotion['student_id'])
+                ->whereIn('guardian_id', $demotion['guardian_ids'])
+                ->update(['is_primary' => false, 'updated_at' => $now]);
+        }
+
+        if ($plan['backfill_values'] !== []) {
+            $keeper->fill($plan['backfill_values'])->save();
+        }
+
+        foreach ($absorbed as $guardian) {
+            $guardian->delete();
+        }
+
+        activity('guardian')
+            ->performedOn($keeper)
+            ->causedBy(auth()->user())
+            ->withProperties([
+                'absorbed_guardian_ids' => $plan['absorbed_ids'],
+                'school_id' => $plan['school_id'],
+                'pivots_moved' => count($plan['pivot_moves']),
+                'pivot_collisions' => count($plan['pivot_collisions']),
+                'backfilled_fields' => array_column($plan['backfilled'], 'field'),
+                'orphaned_user_ids' => $plan['orphaned_user_ids'],
+            ])
+            ->event('merged')
+            ->log('Guardian merged: '.count($plan['absorbed_ids']).' record(s) absorbed');
     }
 
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void

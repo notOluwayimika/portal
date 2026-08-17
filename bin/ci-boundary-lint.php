@@ -57,6 +57,17 @@
  * Like the sibling ratchets, the baseline may only shrink: CI fails on any NEW
  * occurrence; removing a baselined line is reported as progress.
  *
+ * KNOWN HOLE IN THAT SENTENCE. The baseline key is `rule \t path \t trim($line)` — the
+ * TEXT of the line, with no occurrence count. A NEW violation whose line reads
+ * byte-identically to a baselined one in the same file therefore produces a key that is
+ * already present, and is admitted with no new entry and no failure. Copy-pasting a
+ * neighbouring escape hatch is the most likely way the next one ever gets written, which
+ * is exactly the case this lets through — so the rule's whole value, that the NEXT hatch
+ * has to be argued for, is what leaks. Same shape as the alias hole described above, one
+ * level along: there, a banned behaviour under a different name; here, a banned line under
+ * an identical one. Fix and acceptance criteria:
+ * docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md
+ *
  * Usage:
  *   php bin/ci-boundary-lint.php            # check (CI): exit 1 on new findings
  *   php bin/ci-boundary-lint.php generate   # (re)write the baseline

@@ -490,7 +490,10 @@ The three lines are baselined with their justification in the lint's own comment
 went 4 → 7; nothing was removed (`diff` shows additions only, plus header comment lines the previous
 baseline predated). **A limitation worth recording rather than hiding:** the baseline keys on the
 *trimmed line text*, so a seventh call whose line reads byte-identically to a baselined one would be
-admitted silently. That is a property of this lint's design, not of this change.
+admitted silently. That is a property of this lint's design, not of this change — and copy-paste is
+the most likely way a seventh one ever appears, which is precisely the case it lets through. Ticketed
+in a follow-up commit:
+[docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md](../tickets/boundary-lint-baseline-keys-on-line-text.md).
 
 ### F10 · `bin/quality`
 
@@ -500,3 +503,73 @@ Run on this commit: **PASS 15/15** — recorded in the Gates table above rather 
 
 `isActive()` is `StudentCurriculum.php:192-195`, not `:193` — corrected. The migration's FK statement
 spans `:83-88`, not `:86` — corrected.
+
+---
+
+## Follow-up: the two by-student routes, and a hole in the lint baseline
+
+Post-review, on top of `2b6c79a`. The re-check confirmed F1 and F2 closed and established that
+`currentForStudent` is null under a foreign ambient context at both shas, by the ambient `SchoolScope`
+that `billableEpisodes()` does not strip. Two gaps followed from that.
+
+### The refusal on the two routes that reach `currentForStudent` was untested
+
+`InvoiceController::billableEnrollment` and `::generateForStudent`
+([routes/endpoints/finance.php:228-229](../../../routes/endpoints/finance.php#L228-L229)) are the two
+routes that call the port's ambient-scoped read, and both bind `{student:uuid}`. Driven with School
+A's token and a School B student uuid carrying an active enrollment, both answer **404**. Nothing in
+the tree asserted that. `tests/Feature/Finance/ByStudentRouteIsolationTest.php` now does.
+
+**Each refusal is paired with the same request succeeding for the owning School.** Without that
+control the test measures the URL, not the isolation — a misspelled path, a missing permission or an
+unregistered route all produce a 404 and the test would pass regardless. The POST arm asserts the
+invoice tables are empty after the refusal (both of them, since invoice and lines are written in one
+transaction), and asserts the control's write landed in the owning School.
+
+**The status is asserted; the message is not.** The refusal is Laravel's route-model binding, so its
+wording is framework copy the project does not own.
+
+### Planted — permissive binding, controller untouched
+
+The finding named the plant: resolve the Student without the School scope. Done with an explicit
+`Route::bind('student', …)` in the test's `beforeEach`, which overrides implicit binding for
+`{student:uuid}` and hands School B's model to the controller under School A's token. No controller
+or route file was modified.
+
+```text
+tests: 2, passed: 0, failed: 2
+
+✗ GET billable-enrollment refuses a foreign student, and serves its own
+  Expected response status code [404] but received 422.
+  Failed asserting that 422 is identical to 404.
+
+✗ POST invoices refuses a foreign student and writes nothing, and bills its own
+  Expected response status code [404] but received 422.
+  Failed asserting that 422 is identical to 404.
+```
+
+Both arms red, and the status they moved to is the useful part: **422, not 201.** With the outer
+refusal removed the request reaches the controller and the SECOND layer catches it —
+`currentForStudent()`'s ambient `SchoolScope` finds no episode for a foreign student and the
+controller returns "no active enrollment to bill". So the two routes are refused twice over, and this
+file pins the outer refusal specifically.
+
+One precision, since the plant run stopped at the status assertion: **no invoice was written under
+the plant either**, but that is read off the code path — `InvoiceController::generateForStudent`
+returns the 422 before `GenerateInvoice::handle` is reached — not measured by an assertion that ran.
+The unplanted green run does measure it.
+
+Restored: **2 passed, 10 assertions.**
+
+### The lint baseline can be walked past
+
+Ticketed rather than fixed here:
+[docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md](../tickets/boundary-lint-baseline-keys-on-line-text.md).
+`bin/ci-boundary-lint.php` keys findings on `rule \t path \t trim($line)`, so a fourth
+`withoutGlobalScope` whose line reads byte-identically to a baselined one produces a key that is
+already present and is admitted with no new entry. Copy-pasting the neighbouring closure is the most
+likely way that fourth call ever gets written — so the rule's whole value, that the next escape hatch
+must be argued for, is exactly what leaks. Every keyed rule in the file shares the hole; the two
+zero-baseline rules are unaffected in practice. The proposed fix is an occurrence count in the key,
+which keeps the "may only shrink" semantics, and explicitly not a line number, which would fail on
+every unrelated edit and train people to regenerate the baseline reflexively.

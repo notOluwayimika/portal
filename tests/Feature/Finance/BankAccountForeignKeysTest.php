@@ -13,6 +13,14 @@
  *
  * A plain NOT NULL could only express the first, and would force every imported row to name an
  * account it never touched.
+ *
+ * THE MECHANISM IS A TRIGGER SINCE `2026_08_17_100000`, AND THE DRIVER CODE BELOW IS 1644, NOT 3819.
+ * The pairing was `finance_payments_bank_account_origin_shape`, a CHECK — and production is MySQL
+ * 5.7.23, which enforces CHECK only from 8.0.16 and before that parses and discards the clause. So
+ * every arm of this file was true on this machine and false on the server the cutover writes to, at
+ * volume, through `PostOpeningBalanceBatch`. The predicate is carried over unchanged, `COLLATE
+ * utf8mb4_bin` included; only the refusal's number moved. See
+ * `docs/finance/check-constraints-on-mysql-5-7.md`.
  */
 
 use App\Enums\TermStatusEnum;
@@ -72,7 +80,7 @@ it('refuses a PORTAL payment with no bank account, at the database', function ()
         $code = bafkCode($e);
     }
 
-    expect($code)->toBe(3819,
+    expect($code)->toBe(1644,
         'A portal payment naming no bank account was accepted. It cannot be reconciled against any '
         .'statement, and finance_payments is append-only so the answer can never be supplied later.');
 });
@@ -94,7 +102,7 @@ it('refuses a MIGRATED payment that DOES name a bank account', function () {
         $code = bafkCode($e);
     }
 
-    expect($code)->toBe(3819,
+    expect($code)->toBe(1644,
         'A migrated payment was allowed to name one of our bank accounts. The money never arrived '
         .'there — WCBS collected it before cutover — so the row asserts something false.');
 });

@@ -28,8 +28,11 @@ use Illuminate\Support\Facades\DB;
  * deciding on values fetched before the transaction opened is how two checkers both win a race.
  *
  * MAKER ≠ CHECKER HOLDS TWO WAYS, deliberately, as on every other approval table: the refusal below
- * (a BusinessRuleException a caller can act on) and `finance_opening_balance_batches_maker_ne_checker`
- * (2026_08_09_100000), which refuses the row at the engine even if this method is edited away.
+ * (a BusinessRuleException a caller can act on) and the maker≠checker TRIGGER pair
+ * `finance_opening_balance_batches_maker_ne_checker_bi` / `_bu` (2026_08_17_100000), which refuses the
+ * row at the engine even if this method is edited away. That pair replaced a CHECK of the same name
+ * (2026_08_09_100000): production is MySQL 5.7.23 and enforces CHECK only from 8.0.16, so the engine
+ * half of this guarantee was real on the dev machine and absent on the server that holds the money.
  *
  * SUPER_ADMIN CANNOT REACH THIS at the ability layer: `finance.opening-balance.approve` ends in
  * `approve`, so ApprovalAbility excludes it from the Gate::before bypass (ADR 0040) and a platform

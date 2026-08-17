@@ -16,8 +16,11 @@ use App\Models\User;
  * IT IS THE THIRD LAYER, NOT THE ONLY ONE, and the other two matter because they fail
  * independently: {@see ApproveOpeningBalanceBatch} re-reads the submitter UNDER
  * LOCK and refuses (a race this Policy cannot see, since it reads a model fetched before the
- * transaction), and `finance_opening_balance_batches_maker_ne_checker` (2026_08_09_100000) refuses
- * the row at the engine for any raw write that never passes through either.
+ * transaction), and the maker≠checker trigger pair
+ * `finance_opening_balance_batches_maker_ne_checker_bi` / `_bu` (2026_08_17_100000) refuses the row
+ * at the engine for any raw write that never passes through either. That pair replaced a CHECK of
+ * the same name (2026_08_09_100000), which production — MySQL 5.7.23 — never enforced, so this
+ * third layer existed only on the dev machine until then.
  *
  * IT IS ALSO WHAT FLIPS THE QUEUE'S FLAGS ON. OpeningBalanceBatchResource has computed
  * `can_approve` / `can_reject` through the Gate since 5a and documented them as false for every

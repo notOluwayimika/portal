@@ -148,7 +148,7 @@ it('lets the permission decide alone when no maker is recorded (draft / pre-C3 r
     $head = mc_user('head_of_school');
 
     // submitted_by NULL = "unknown maker", which is not evidence of a
-    // violation. The DB constraint carries the same NULL guard.
+    // violation. The DB trigger carries the same NULL guard.
     expect(Gate::forUser($head)->allows('approve', mc_status(['submitted_by' => null])))->toBeTrue();
 });
 
@@ -169,15 +169,18 @@ it('BITE-PROOF — the DB rejects decided_by = submitted_by even on a raw write'
         'updated_at' => now(),
     ]);
 
-    // Same identity on both sides — denied by the CHECK constraint, with no
-    // application code in the path at all.
+    // Same identity on both sides — denied by the maker≠checker TRIGGER, with no
+    // application code in the path at all. It was a CHECK until 2026_08_17_100000;
+    // production is MySQL 5.7 and never enforced the CHECK at all, so the guarantee
+    // this asserts existed only on this machine until that migration.
     // Asserting the MESSAGE, not merely the exception class: any SQL mistake in
     // this fixture would throw QueryException too, and a bite-proof that passes
-    // for the wrong reason proves nothing.
+    // for the wrong reason proves nothing. The message names the TABLE, which is
+    // what distinguishes this refusal from the other BEFORE triggers on it.
     expect(fn () => $insert($actor->id, $actor->id))
-        ->toThrow(QueryException::class, 'subject_result_statuses_maker_ne_checker');
+        ->toThrow(QueryException::class, 'subject_result_statuses: the checker must not be the maker.');
 
-    // The constraint is not simply rejecting everything:
+    // The trigger is not simply rejecting everything:
     $insert($actor->id, mc_user('admin')->id);
     expect(DB::table('subject_result_statuses')->count())->toBe(1);
 });
@@ -200,21 +203,25 @@ it('BITE-PROOF — the DB also rejects an UPDATE that makes the checker the make
 
     expect(fn () => DB::table('subject_result_statuses')
         ->update(['decided_by' => $maker->id]))
-        ->toThrow(QueryException::class, 'subject_result_statuses_maker_ne_checker');
+        ->toThrow(QueryException::class, 'subject_result_statuses: the checker must not be the maker.');
 });
 
-// ── The same guarantee, per approval table, asserted by CHECK NAME ────────────
+// ── The same guarantee, per approval table, asserted by TRIGGER MESSAGE ───────
 //
 // SchemaConventionsTest's SCHEMA INVARIANT proves every table with submitted_by +
-// decided_by carries a CHECK NAMING both columns — but not that the clause says `<>`.
+// decided_by carries a guard naming both columns — but not that the rule says `<>`.
 // The two proofs above pin the DIRECTION for subject_result_statuses only. These pin
 // it for the four finance approval tables too, on a RAW write with no application code
-// in the path, asserting each table's OWN constraint name so a QueryException thrown for
+// in the path, asserting each table's OWN message so a QueryException thrown for
 // any other reason (an FK, a currency/terms CHECK, an update guard) fails the test rather
-// than passing it for the wrong reason. Deliberately NOT a loop: the four constraint
-// names are the thing under test, so they are written out. (The credit-note / fee-schedule
-// tables carry a BEFORE-INSERT/UPDATE guard; the rows below are otherwise valid, so the
-// guard passes and the maker≠checker CHECK is what bites — verified by name.)
+// than passing it for the wrong reason. Deliberately NOT a loop: the four tables are the
+// thing under test, so they are written out. (The credit-note / fee-schedule tables carry
+// their own BEFORE-INSERT/UPDATE guards; the rows below are otherwise valid, so those
+// guards pass and the maker≠checker trigger is what bites — verified by message.)
+//
+// The mechanism changed in 2026_08_17_100000: these were CHECK constraints, which MySQL
+// 5.7 parses and ignores, so on production they enforced nothing. Same predicate, same
+// NULL escape, driver code 1644 instead of 3819 — and now real on both servers.
 
 /**
  * Two distinct users plus one valid FK parent per finance approval table, so the only
@@ -252,7 +259,7 @@ function mc_financeContext(): array
     return [$school, $maker, $checker, $student, $invoice, $schedule];
 }
 
-it('BITE-PROOF — finance_credit_notes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+it('BITE-PROOF — finance_credit_notes rejects maker = checker on a raw INSERT and UPDATE, by trigger message', function () {
     [$school, $maker, $checker, $student, $invoice] = mc_financeContext();
 
     $row = fn (?int $submitted, ?int $decided, string $status) => [
@@ -262,9 +269,9 @@ it('BITE-PROOF — finance_credit_notes rejects maker = checker on a raw INSERT 
         'submitted_by' => $submitted, 'decided_by' => $decided, 'created_at' => now(), 'updated_at' => now(),
     ];
 
-    // INSERT: same identity both sides → the maker≠checker CHECK, named.
+    // INSERT: same identity both sides → the maker≠checker trigger, named by its message.
     expect(fn () => DB::table('finance_credit_notes')->insert($row($maker->id, $maker->id, 'approved')))
-        ->toThrow(QueryException::class, 'finance_credit_notes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_credit_notes: the checker must not be the maker.');
 
     // Not simply rejecting everything: distinct maker/checker inserts.
     DB::table('finance_credit_notes')->insert($row($maker->id, $checker->id, 'approved'));
@@ -275,10 +282,10 @@ it('BITE-PROOF — finance_credit_notes rejects maker = checker on a raw INSERT 
     $id = DB::table('finance_credit_notes')->where('status', 'submitted')->value('id');
     expect(fn () => DB::table('finance_credit_notes')->where('id', $id)
         ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
-        ->toThrow(QueryException::class, 'finance_credit_notes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_credit_notes: the checker must not be the maker.');
 });
 
-it('BITE-PROOF — finance_void_requests rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+it('BITE-PROOF — finance_void_requests rejects maker = checker on a raw INSERT and UPDATE, by trigger message', function () {
     [$school, $maker, $checker, $student, $invoice] = mc_financeContext();
 
     $row = fn (?int $submitted, ?int $decided, string $status) => [
@@ -287,7 +294,7 @@ it('BITE-PROOF — finance_void_requests rejects maker = checker on a raw INSERT
     ];
 
     expect(fn () => DB::table('finance_void_requests')->insert($row($maker->id, $maker->id, 'approved')))
-        ->toThrow(QueryException::class, 'finance_void_requests_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_void_requests: the checker must not be the maker.');
 
     DB::table('finance_void_requests')->insert($row($maker->id, $checker->id, 'approved'));
     expect(DB::table('finance_void_requests')->count())->toBe(1);
@@ -296,10 +303,10 @@ it('BITE-PROOF — finance_void_requests rejects maker = checker on a raw INSERT
     $id = DB::table('finance_void_requests')->where('status', 'submitted')->value('id');
     expect(fn () => DB::table('finance_void_requests')->where('id', $id)
         ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
-        ->toThrow(QueryException::class, 'finance_void_requests_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_void_requests: the checker must not be the maker.');
 });
 
-it('BITE-PROOF — finance_discount_policy_changes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+it('BITE-PROOF — finance_discount_policy_changes rejects maker = checker on a raw INSERT and UPDATE, by trigger message', function () {
     [$school, $maker, $checker] = mc_financeContext();
 
     // kind=create → target_policy_id null (target_shape) + full terms (terms_shape), so only
@@ -311,7 +318,7 @@ it('BITE-PROOF — finance_discount_policy_changes rejects maker = checker on a 
     ];
 
     expect(fn () => DB::table('finance_discount_policy_changes')->insert($row($maker->id, $maker->id, 'approved')))
-        ->toThrow(QueryException::class, 'finance_discount_policy_changes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_discount_policy_changes: the checker must not be the maker.');
 
     DB::table('finance_discount_policy_changes')->insert($row($maker->id, $checker->id, 'approved'));
     expect(DB::table('finance_discount_policy_changes')->count())->toBe(1);
@@ -320,10 +327,10 @@ it('BITE-PROOF — finance_discount_policy_changes rejects maker = checker on a 
     $id = DB::table('finance_discount_policy_changes')->where('status', 'submitted')->value('id');
     expect(fn () => DB::table('finance_discount_policy_changes')->where('id', $id)
         ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
-        ->toThrow(QueryException::class, 'finance_discount_policy_changes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_discount_policy_changes: the checker must not be the maker.');
 });
 
-it('BITE-PROOF — finance_fee_schedule_changes rejects maker = checker on a raw INSERT and UPDATE, by CHECK name', function () {
+it('BITE-PROOF — finance_fee_schedule_changes rejects maker = checker on a raw INSERT and UPDATE, by trigger message', function () {
     [$school, $maker, $checker, , , $schedule] = mc_financeContext();
 
     $row = fn (?int $submitted, ?int $decided, string $status) => [
@@ -333,7 +340,7 @@ it('BITE-PROOF — finance_fee_schedule_changes rejects maker = checker on a raw
     ];
 
     expect(fn () => DB::table('finance_fee_schedule_changes')->insert($row($maker->id, $maker->id, 'approved')))
-        ->toThrow(QueryException::class, 'finance_fee_schedule_changes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_fee_schedule_changes: the checker must not be the maker.');
 
     DB::table('finance_fee_schedule_changes')->insert($row($maker->id, $checker->id, 'approved'));
     expect(DB::table('finance_fee_schedule_changes')->count())->toBe(1);
@@ -342,7 +349,7 @@ it('BITE-PROOF — finance_fee_schedule_changes rejects maker = checker on a raw
     $id = DB::table('finance_fee_schedule_changes')->where('status', 'submitted')->value('id');
     expect(fn () => DB::table('finance_fee_schedule_changes')->where('id', $id)
         ->update(['status' => 'approved', 'decided_by' => $maker->id, 'decided_at' => now()]))
-        ->toThrow(QueryException::class, 'finance_fee_schedule_changes_maker_ne_checker');
+        ->toThrow(QueryException::class, 'finance_fee_schedule_changes: the checker must not be the maker.');
 });
 
 // ── The seeded grant map itself is SoD-disjoint (generic, convention-driven) ──
@@ -380,7 +387,7 @@ it('SoD — no seeded role holds a checker ability together with its matching ma
     expect($checkerAbilitiesSeen)->toBeGreaterThanOrEqual(4);
 });
 
-it('keeps the Policy and the DB constraint agreeing on the NULL case', function () {
+it('keeps the Policy and the DB trigger agreeing on the NULL case', function () {
     $curriculumSubject = mc_curriculumSubject();
 
     // The Policy allows an unknown maker; the DB must accept the same row,
@@ -404,7 +411,7 @@ it('keeps the Policy and the DB constraint agreeing on the NULL case', function 
 //
 // The role-level SoD test above proves no ONE role holds both sides. Nothing there stops a USER
 // from accumulating both by holding two roles (the exact dev-data finding: a user with
-// accounts_officer + the credit-note checker seat). The DB CHECK still makes self-approval impossible; what a
+// accounts_officer + the credit-note checker seat). The DB trigger still makes self-approval impossible; what a
 // both-sides user creates is a CONFIGURATION hole (approve a colleague's work in both directions),
 // which these DETECT — they never refuse a grant.
 

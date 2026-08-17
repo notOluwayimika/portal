@@ -22,8 +22,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Provenance on finance_payments (opening-balance spec §4) — the `origin` predicate, its CHECK, and the
- * seed trap that makes the reserved migrated receipt band safe.
+ * Provenance on finance_payments (opening-balance spec §4) — the `origin` predicate, its database
+ * guard, and the seed trap that makes the reserved migrated receipt band safe.
+ *
+ * THE GUARD IS A TRIGGER, NOT A CHECK, since `2026_08_17_100000`. Production is MySQL 5.7.23, which
+ * enforces CHECK only from 8.0.16 and before that "parses and ignores" the clause, so the two payment
+ * CHECKs were real on this machine and absent on the server that holds the money. They are now one
+ * `BEFORE INSERT` / `BEFORE UPDATE` trigger pair carrying the origin/bank-account pairing, which
+ * subsumes the domain rule. Driver code 1644, not 3819. See
+ * `docs/finance/check-constraints-on-mysql-5-7.md`.
  *
  * ─── CAN THE SEED TRAP BE ENFORCED? Honestly: NO, not by a mechanism. Only asserted. ───
  *
@@ -33,13 +40,14 @@ use Illuminate\Support\Str;
  *  - A DB constraint cannot see it. The database observes the VALUE that lands in `reference`; a seeded
  *    counter produces 900,000,002, which is a perfectly legal unsigned bigint under
  *    UNIQUE (school_id, reference). Nothing at the schema level distinguishes it from an intended
- *    migrated reference. A CHECK forbidding portal rows above the floor is the closest thing that
- *    exists, and it is not available here: `origin` and `reference` are both on the row, so
- *    `CHECK (origin = 'migrated' OR reference < 900000000)` IS expressible — but it converts a silent
- *    permanent corruption into a hard 3819 on every payment the school records after the import, i.e.
- *    it takes the bursar's front door down rather than preventing the mistake. It is recorded here as
- *    considered and rejected, not overlooked; if the project later decides a loud outage beats silent
- *    band corruption, that CHECK is the mechanism and this is the note to reopen.
+ *    migrated reference. A row-level rule forbidding portal rows above the floor is the closest thing
+ *    that exists, and it is not available here: `origin` and `reference` are both on the row, so
+ *    `origin = 'migrated' OR reference < 900000000` IS expressible — but it converts a silent
+ *    permanent corruption into a hard refusal on every payment the school records after the import,
+ *    i.e. it takes the bursar's front door down rather than preventing the mistake. It is recorded
+ *    here as considered and rejected, not overlooked; if the project later decides a loud outage
+ *    beats silent band corruption, that is the mechanism and this is the note to reopen — as a
+ *    TRIGGER, since a CHECK would have been a no-op on production anyway (2026_08_17_100000).
  *  - A lint cannot see it either, not honestly. `bin/ci-identifier-generation-lint.php` exists and
  *    greps for identifier-generation bypasses, so the machinery is there — but the rule would be
  *    "Sequences::next with scope 'finance_payment' must have exactly two arguments", pinned by a string
@@ -112,40 +120,49 @@ function insertPaymentRow(int $schoolId, int $studentId, int $reference, string 
     ]);
 }
 
-// ── 1. The CHECK, at the database ──────────────────────────────────────────────────────────────────
+// ── 1. The origin guard, at the database ───────────────────────────────────────────────────────────
 
-it('origin — a third value is refused 3819 at the INSERT; an UPDATE to one is refused 1644 by the append-only trigger', function () {
+it('origin — a third value is refused 1644 at the INSERT; an UPDATE to one is refused 1644 by the append-only trigger', function () {
     [$school, , $student] = provenanceSetup();
 
-    // A third value, straight into the table with no Action, no FormRequest, no model. 3819 is a CHECK
-    // violation: the refusal is the constraint, not PHP.
+    // A third value, straight into the table with no Action, no FormRequest, no model. 1644 is a
+    // SIGNAL '45000' from finance_payments_origin_pairing_bi: the refusal is the database, not PHP.
+    //
+    // MECHANISM CHANGED, RULE DID NOT (2026_08_17_100000). This was 3819 — the
+    // finance_payments_origin_shape CHECK — until production was read and found to be MySQL 5.7.23,
+    // which parses and ignores CHECK. Both payment CHECKs were replaced by ONE trigger carrying the
+    // origin/bank-account PAIRING, because an origin outside {portal, migrated} fails both arms of the
+    // pairing and is refused by it alone. So a third value is still refused here, by the pairing.
     try {
         insertPaymentRow($school->id, $student->id, 1, 'wcbs');
-        throw new RuntimeException('expected the origin CHECK to refuse a third value');
+        throw new RuntimeException('expected the origin pairing trigger to refuse a third value');
     } catch (QueryException $e) {
-        expect((int) ($e->errorInfo[1] ?? 0))->toBe(3819);
+        expect((int) ($e->errorInfo[1] ?? 0))->toBe(1644);
     }
 
     // COLLATE utf8mb4_bin: a case variant of a LEGAL value is still a third value. Under the table's
     // default utf8mb4_unicode_ci this would have inserted, and `origin = 'migrated'` filters would have
-    // matched it — a green CHECK admitting a value nobody wrote a filter for.
+    // matched it — a green guard admitting a value nobody wrote a filter for. The COLLATE clause was
+    // carried into the trigger verbatim for exactly this arm.
     try {
         insertPaymentRow($school->id, $student->id, 2, 'Migrated');
-        throw new RuntimeException('expected the origin CHECK to refuse a case variant');
+        throw new RuntimeException('expected the origin pairing trigger to refuse a case variant');
     } catch (QueryException $e) {
-        expect((int) ($e->errorInfo[1] ?? 0))->toBe(3819);
+        expect((int) ($e->errorInfo[1] ?? 0))->toBe(1644);
     }
 
-    // Negative: both legal values insert, so the CHECK is not simply refusing everything.
+    // Negative: both legal values insert, so the trigger is not simply refusing everything. Each is
+    // paired with the bank account the pairing demands (portal names one, migrated names none).
     $portalId = insertPaymentRow($school->id, $student->id, 3, 'portal');
     insertPaymentRow($school->id, $student->id, Payment::MIGRATED_REFERENCE_FLOOR + 1, 'migrated');
     expect(DB::table('finance_payments')->whereIn('origin', ['portal', 'migrated'])->count())->toBe(2);
 
-    // The UPDATE door on THIS table was already sealed harder than a CHECK: finance_payments is
-    // append-only, so `finance_payments_no_update` (BEFORE UPDATE, SIGNAL 45000 → driver 1644) fires
-    // ahead of any CHECK evaluation. Asserting 3819 here would be asserting the wrong mechanism — the
-    // refusal is real and it is at the database, it is just the trigger's. Same shape as
-    // CurrencyShapeConstraintTest's path 3.
+    // The UPDATE door on THIS table is sealed by a DIFFERENT trigger, and harder: finance_payments is
+    // append-only, so `finance_payments_no_update` (BEFORE UPDATE, ACTION_ORDER 1, SIGNAL 45000 →
+    // driver 1644) fires ahead of everything else. Both codes are now 1644, so this arm no longer
+    // distinguishes the two mechanisms by number — it is the NO_UPDATE trigger that refuses this, and
+    // `finance_payments_origin_pairing_bu` is unreachable behind it, exactly as the CHECK was.
+    // Asserted for the same reason it always was: the refusal is real and it is at the database.
     try {
         DB::table('finance_payments')->where('id', $portalId)->update(['origin' => 'wcbs']);
         throw new RuntimeException('expected the append-only trigger to refuse the UPDATE');

@@ -17,8 +17,8 @@
  * not how it works.
  *
  * The maker ≠ checker refusal is asserted TWICE, at two layers, because they fail independently:
- * the Action's BusinessRuleException (a caller can act on it) and the CHECK constraint's driver code
- * 3819 (survives the Action being edited away). Only the second distinguishes the database refusing
+ * the Action's BusinessRuleException (a caller can act on it) and the maker≠checker TRIGGER's driver
+ * code 1644 (survives the Action being edited away). Only the second distinguishes the database refusing
  * from PHP refusing.
  */
 
@@ -54,8 +54,16 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-/** A CHECK-constraint violation. 3819 in MySQL 8.0.43; no PHP guard can produce it. */
-const OBG_CHECK_VIOLATION = 3819;
+/**
+ * A house-invariant TRIGGER refusal — `SIGNAL SQLSTATE '45000'`, driver code 1644. No PHP guard can
+ * produce it.
+ *
+ * This was 3819 (a CHECK violation) until `2026_08_17_100000_maker_checker_and_payment_origin_as_triggers`.
+ * The rule is unchanged and the NULL escape is unchanged; only the mechanism moved, because production
+ * is MySQL 5.7.23 and enforces CHECK from 8.0.16 — so the constraint this proof relied on was real on
+ * this machine and absent on the server that holds the money.
+ */
+const OBG_TRIGGER_VIOLATION = 1644;
 
 /**
  * A School, a term to close out, and TWO DISTINCT users — the maker and the checker. Two users is the
@@ -185,10 +193,11 @@ it('PROOF 1 — the MAKER who submitted a batch cannot approve it: refused, and 
         ->and((int) DB::scalar('SELECT COUNT(*) FROM finance_payments'))->toBe(0);
 });
 
-it('PROOF 1b — the same refusal at the DATABASE (3819), independent of the Action', function () {
-    // The Action's `if` is one deletable line. This asserts the CHECK constraint added by
-    // 2026_08_09_100000 refuses the row itself, by DRIVER CODE — the only assertion that tells a
-    // database refusal apart from a PHP one.
+it('PROOF 1b — the same refusal at the DATABASE (1644), independent of the Action', function () {
+    // The Action's `if` is one deletable line. This asserts the DATABASE refuses the row itself, by
+    // DRIVER CODE — the only assertion that tells a database refusal apart from a PHP one. The guard
+    // is finance_opening_balance_batches_maker_ne_checker_bu (2026_08_17_100000), which replaced the
+    // CHECK added by 2026_08_09_100000 because MySQL 5.7 never enforced it.
     $ctx = obgContext();
     $student = Student::factory()->create(['school_id' => $ctx['school']->id]);
 
@@ -206,9 +215,9 @@ it('PROOF 1b — the same refusal at the DATABASE (3819), independent of the Act
         $code = obgDriverCode($e);
     }
 
-    expect($code)->toBe(OBG_CHECK_VIOLATION);
+    expect($code)->toBe(OBG_TRIGGER_VIOLATION);
 
-    // …and the SAME statement naming a different user is accepted, so the CHECK is not simply
+    // …and the SAME statement naming a different user is accepted, so the trigger is not simply
     // refusing every write to the column.
     DB::update(
         'UPDATE finance_opening_balance_batches SET decided_by_user_id = ? WHERE id = ?',

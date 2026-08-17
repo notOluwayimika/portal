@@ -29,8 +29,9 @@ use Illuminate\Support\Carbon;
  * THE APPROVAL GATE PRECEDING THAT POST IS 4c, AND IT HAS LANDED. The lifecycle is validated →
  * submitted ({@see SubmitOpeningBalanceBatch}) → posted
  * ({@see ApproveOpeningBalanceBatch}, which posts in the same transaction) or
- * rejected ({@see RejectOpeningBalanceBatch}). Maker ≠ checker is a CHECK on this
- * table (`..._maker_ne_checker`, 2026_08_09_100000), not only an Action guard.
+ * rejected ({@see RejectOpeningBalanceBatch}). Maker ≠ checker is enforced on this table itself
+ * (`..._maker_ne_checker_bi` / `_bu`, 2026_08_17_100000, replacing the CHECK of 2026_08_09_100000 —
+ * MySQL 5.7 ignores CHECK), not only by an Action guard.
  *
  * `term_id` NAMES THE TERM BEING CLOSED OUT — the last term, whose closing position the file carries.
  * It is NOT a cutover term T: R5 puts the cutover on a term boundary, so no such term exists. §9's

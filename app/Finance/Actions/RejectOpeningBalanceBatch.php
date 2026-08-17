@@ -27,8 +27,9 @@ use Illuminate\Support\Facades\DB;
  * a new batch. Un-rejecting in place would let a batch's staged rows change under a decision that had
  * already been made about them.
  *
- * MAKER ≠ CHECKER HOLDS TWO WAYS — the refusal below and
- * `finance_opening_balance_batches_maker_ne_checker` (2026_08_09_100000). Mirrors
+ * MAKER ≠ CHECKER HOLDS TWO WAYS — the refusal below and the maker≠checker TRIGGER pair
+ * `finance_opening_balance_batches_maker_ne_checker_bi` / `_bu` (2026_08_17_100000), which replaced a
+ * CHECK of the same name (2026_08_09_100000) because MySQL 5.7 parses and ignores CHECK. Mirrors
  * {@see RejectFeeScheduleChange}.
  */
 final class RejectOpeningBalanceBatch

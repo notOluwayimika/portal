@@ -57,6 +57,56 @@ interface BillableEnrollmentProvider
     public function matchingStudentIds(string $term): array;
 
     /**
+     * The COHORT: every billable enrollment in $schoolId sitting at the pricing coordinates
+     * ($termId, $classLevelId) — the input to U6's bulk invoice generation, which raises one
+     * invoice per element. The consumer is the bulk-generation job (U6 commit 2); nothing calls
+     * it before that.
+     *
+     * "BILLABLE" IS NOT A SECOND DEFINITION. It is exactly {@see currentForStudent()}'s, and the
+     * adapter shares one private base query so the two cannot drift: a student appears in
+     * listForCohort($school, $t, $c) IF AND ONLY IF currentForStudent($student) returns non-null
+     * with termId === $t and classLevelId === $c. That equivalence is the point — two definitions
+     * would mean a student billable through the single-invoice path and invisible to the bulk one
+     * (or, worse, billed twice by it).
+     *
+     * AT MOST ONE ROW PER STUDENT, for the same reason. currentForStudent() resolves a student
+     * with several ACTIVE enrollments to the latest by id; the cohort applies the same tie-break
+     * BEFORE filtering on coordinates, so a student with two active episodes is billed once, for
+     * the episode the rest of Finance calls current.
+     *
+     * ISOLATION IS EXPLICIT, NOT AMBIENT — $schoolId decides, and nothing else does. See the
+     * adapter's currentEnrollments() for the mechanism and for why the ambient SchoolScope is
+     * deliberately stripped rather than layered on top.
+     *
+     * @return list<BillableEnrollment>
+     */
+    public function listForCohort(int $schoolId, int $termId, int $classLevelId): array;
+
+    /**
+     * The billable enrollments in $schoolId that CANNOT be placed in any cohort: their termId or
+     * their classLevelId is null, so no fee schedule can be keyed to them ({@see
+     * \App\Finance\Services\FeeScheduleLookup::activeFor()} needs both) and no call to
+     * {@see listForCohort()} can ever return them.
+     *
+     * WHY IT EXISTS BEFORE ITS SCREEN. Without it a bulk run bills 47 of 50 students and reports
+     * success — the omission is invisible precisely because the omitted rows match no query anyone
+     * runs. That is the silent-partial-result defect class in docs/ui-ux-design-system.md §26. The
+     * named consumer is U6 commit 3, which surfaces the count as "N students could not be placed"
+     * beside the generation result; it is built here, with that consumer named, so it cannot be
+     * quietly dropped between commits.
+     *
+     * NO REASON FIELD. The reason is already readable off the returned DTO — termId === null,
+     * classLevelId === null, or both — so {@see BillableEnrollment} gains nothing. Adding a field
+     * no consumer needs would be the adapter inventing vocabulary.
+     *
+     * School-wide, not term-scoped: an enrollment with a null term cannot be attributed to a term,
+     * so there is no term to scope the question by.
+     *
+     * @return list<BillableEnrollment>
+     */
+    public function listUnplaceableForSchool(int $schoolId): array;
+
+    /**
      * The active School's admission-number roster — every student id paired with the admission
      * number as stored. The join key for an off-platform import, and the ONLY thing that can
      * answer §6's pre-flight ("how many NULL, how many duplicate-after-trim") and §7's other

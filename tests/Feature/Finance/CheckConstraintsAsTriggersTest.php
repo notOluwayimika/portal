@@ -174,13 +174,33 @@ it('BITE — the sixth table refuses maker = checker on an INSERT, the door a CH
     expect(DB::table('finance_opening_balance_batches')->count())->toBe(2);
 });
 
-it('BITE — a NULL origin on finance_payments is refused, which the CHECK clause did NOT do', function () {
-    // THE ONE PLACE A FAITHFUL TRANSLATION WOULD HAVE BEEN A BEHAVIOUR CHANGE, in the safe direction.
-    // A NULL origin makes both arms of the pairing NULL; `NULL OR NULL` is NULL and `NOT NULL` is
-    // NULL, which is not true — so a bare `IF NOT (…)` would let it straight through. SQL treats an
-    // unknown CHECK result as SATISFIED, arriving at the same permissive answer from the other
-    // direction. COALESCE(…, 0) in the trigger closes it. `origin` is NOT NULL today, so this asserts
-    // the belt rather than the braces: it is what survives someone relaxing the column.
+it('BITE — the origin/bank-account pairing refuses a mismatched pair and accepts a legal one', function () {
+    // WHAT THIS MEASURES, PRECISELY, AND WHAT IT DOES NOT. It measures the PAIRING: `portal` with no
+    // bank account is refused by name, `migrated` with none lands, and a NULL origin does not land.
+    // It does NOT measure the `COALESCE(…, 0)` in the trigger body, and an earlier title of this test
+    // claimed it did. That claim was corrected by this branch's cold review.
+    //
+    // WHY THE COALESCE CANNOT BE MEASURED FROM HERE. `finance_payments.origin` is `NOT NULL`, so a
+    // NULL insert is refused 1048 by the COLUMN before the trigger body ever runs. The NULL arm below
+    // asserts only that the row does not land, which is true either way and therefore tells you
+    // nothing about which guard spoke. The COALESCE is the belt behind a brace that is currently
+    // holding: it is what would survive someone relaxing the column, and it is unreachable until
+    // someone does.
+    //
+    // IT IS STILL LOAD-BEARING, AND THAT WAS ESTABLISHED — just not here. This branch's cold review
+    // ran the shipped trigger body and a no-COALESCE control side by side on a scratch table, with a
+    // nullable `origin`, and the control accepted the NULL row the shipped body refused. The reasoning
+    // it confirms: a NULL origin makes both arms of the pairing NULL, `NULL OR NULL` is NULL, and
+    // `NOT NULL` is NULL — which is not true, so a bare `IF NOT (…)` lets it straight through. (The
+    // CHECK being replaced did not need the guard because SQL treats an unknown CHECK result as
+    // SATISFIED — the same three-valued logic arriving at the same permissive answer from the other
+    // direction. It is the one place a faithful translation would have been a behaviour change.)
+    //
+    // THAT CONTROL IS DELIBERATELY NOT ADDED TO THIS SUITE. It exercises a COPY of the predicate on a
+    // scratch table, so it would pass unchanged if someone deleted the COALESCE from the real trigger
+    // — a test of a copy is not a test of the trigger, and a green that cannot see the object it names
+    // is the exact shape this whole branch exists to remove. The honest state is: reasoned, and
+    // confirmed once by hand, on a copy.
     $school = School::factory()->create();
     $student = Student::factory()->create(['school_id' => $school->id]);
 
@@ -200,9 +220,9 @@ it('BITE — a NULL origin on finance_payments is refused, which the CHECK claus
         'updated_at' => now(),
     ]);
 
-    // NOT NULL on the column answers first here (1048), and that is the honest result to record: the
-    // COALESCE is unreachable while the column stays NOT NULL. Either refusal is the database's, and
-    // the assertion is that the row does not land — not which of the two guards spoke.
+    // NOT NULL on the column answers first here (1048). Either refusal is the database's, and this
+    // asserts only that the row does not land — NOT which of the two guards spoke. See the header:
+    // this arm is a floor, not evidence about the COALESCE.
     expect(fn () => $insert(null))->toThrow(QueryException::class);
     expect(DB::table('finance_payments')->count())->toBe(0);
 

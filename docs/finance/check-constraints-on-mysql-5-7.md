@@ -6,8 +6,14 @@ taken 2026-08-17 by the project lead through phpMyAdmin and a local client; neit
 
 MySQL enforces `CHECK` constraints only from **8.0.16**. Before that the clause is, in MySQL's own
 words, "parsed and ignored" — accepted by the parser, absent from `SHOW CREATE TABLE`, never
-evaluated. This repository declares **19 `CHECK` constraint sites** across 15 migrations. **None of
-them is enforced on production.** They are enforced locally, which is why nothing ever noticed.
+evaluated. Counted as objects in the schema rather than as declarations in the source — several
+migrations loop a single declaration over a list of columns — a fully migrated database holds
+**27 `CHECK` constraints**. **None of them is enforced on production.** They are enforced locally,
+which is why nothing ever noticed.
+
+Count objects, not declaration sites. An earlier draft of this document counted sites, got the
+number wrong, and produced a total that collided with the post-migration object count. The database
+is the thing being described; count what is in it.
 
 This is not a regression. It is a belief the repository has been carrying: several migration
 docblocks and two ADR-adjacent documents describe these constraints as the independent database-level
@@ -22,7 +28,8 @@ the policy-immutability trigger are all real on production. `FOREIGN KEY`, `UNIQ
 column types and generated columns are all real. It is specifically and only `CHECK`.
 
 That matters for the remedy: a trigger is not a workaround, it is the enforcement mechanism this
-schema already uses in six places, and it behaves identically on both servers.
+schema already uses in **35** places before this migration and 49 after, and it behaves identically
+on both servers.
 
 ## The 19 sites, classified by what actually defends them on production
 
@@ -75,21 +82,25 @@ rather than printing. The allowlist decision taken in U11 pays for itself here.
 writes migrated payments in bulk through `PostOpeningBalanceBatch`. This is the one constraint in the
 19 that the import will exercise at volume, on the server where it does not exist.
 
-### Group C — the column type already carries it. Six sites, no trigger.
+### Group C — the column type already carries it. Thirteen constraints, no trigger.
 
-Six currency-shape constraints of the form
-`CHECK (col IS NULL OR col COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}$')` on `finance_fee_items`,
-`finance_student_accounts`, `finance_discount_policies`, `finance_discount_policy_changes` and the
-two opening-balance tables.
+**Thirteen** currency-shape constraints of the form
+`CHECK (col IS NULL OR col COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}$')`, on thirteen tables:
+`finance_invoice_lines`, `finance_invoices`, `finance_ledger_transactions`, `finance_payments`,
+`finance_payment_allocations`, `finance_credit_notes`, `finance_fee_items`,
+`finance_student_accounts`, `finance_discount_policies` and `finance_discount_policy_changes` (all
+ten from `2026_08_01_120000`, which loops one declaration over a ten-entry list), plus
+`ob_batches_control_total_currency_shape`, `ob_rows_balance_currency_shape` and
+`ob_rows_student_total_balance_currency_shape` on the two opening-balance tables.
 
 Every one of these columns is `CHAR(3)`, so length is enforced by the column type on 5.7 — the type
 is not a `CHECK` and does not depend on the version. What is lost is only "the three characters are
 uppercase A–Z". The platform is single-currency NGN, and `SubmitDiscountPolicyChangeRequest:40`
-already validates `regex:/^[A-Z]{3}$/` at the edge. Six triggers to buy back a case-and-alphabet rule
-on a column that can only hold three characters is not a trade worth making. **Documented, not
-triggered.**
+already validates `regex:/^[A-Z]{3}$/` at the edge. Twenty-six triggers — thirteen columns, insert
+and update — to buy back a case-and-alphabet rule on columns that can only hold three characters is
+not a trade worth making. **Documented, not triggered.**
 
-### Group D — validated at the edge, narrow blast radius. Four sites, no trigger.
+### Group D — validated at the edge, narrow blast radius. Four constraints, no trigger.
 
 - `terms` date order (`end_date > start_date`) — `TermController.php:88` validates
   `['required','date','after:start_date']`.
@@ -108,7 +119,7 @@ ever extended. It guards money semantics — a policy that is simultaneously a p
 amount is a double discount — but it is two layers deep at the edge and the table is not written by
 the cutover.
 
-### Group E — shape-by-kind on the change table. Two sites, no trigger.
+### Group E — shape-by-kind on the change table. Two constraints, no trigger.
 
 `finance_discount_policy_changes_target_shape` and `_terms_shape` encode "a create names no target,
 an amend/retire must name one" and "a create/amend carries full terms, a retire carries none". Both
@@ -118,12 +129,17 @@ Same reasoning as Group D.
 ## The recommended set
 
 **Seven rules, on seven tables**: the six Group A maker≠checker rules, and the Group B pairing on
-`finance_payments`. Twelve of the nineteen sites stay as they are, documented here.
+`finance_payments`. That replaces **8** of the 27 constraints — Group B is two constraints on one
+table, since the pairing subsumes the origin-domain rule — and leaves **19** in place: Group C's
+thirteen, Group D's four, Group E's two. Fourteen triggers, seven tables.
 
-Deliberately not "reimplement all 19". Every trigger is a new object that fires on every write to its
-table, and nineteen of them added days before cutover buys back guards the application already holds
-while adding nineteen new ways for a write to fail. The seven above are the ones with either no
-second layer (Group B) or a second layer that a raw write bypasses entirely (Group A).
+The arithmetic, so it can be checked rather than believed: 6 + 2 + 13 + 4 + 2 = 27 before;
+27 − 8 = 19 after.
+
+Deliberately not "reimplement all 27". Every trigger is a new object that fires on every write to its
+table, and fifty-four of them added days before cutover buys back guards the application already
+holds while adding fifty-four new ways for a write to fail. The seven above are the ones with either
+no second layer (Group B) or a second layer that a raw write bypasses entirely (Group A).
 
 ## A design point the implementer must measure, not assume
 

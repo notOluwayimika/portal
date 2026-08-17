@@ -6,10 +6,38 @@ approval architecture, and it rewrites a schema invariant test. Recommend a cold
 ## Headline
 
 Done, with three deviations and two corrections to the brief's premise. Seven `CHECK` constraints on
-seven tables are now fourteen `BEFORE INSERT` / `BEFORE UPDATE` triggers signalling SQLSTATE `'45000'`,
-so the rules are enforced on production (MySQL 5.7.23) and not only on the dev machine (8.0.43).
+seven tables are now fourteen `BEFORE INSERT` / `BEFORE UPDATE` triggers signalling SQLSTATE `'45000'`.
+**Measured on 8.0.43 they enforce the seven rules; that they also enforce them on production (MySQL
+5.7.23) is the INTENT and rests on documented version support, not on a reading** — no 5.7 was
+available. See **Not done** for the five specific unmeasured claims.
 
-Branch `fix/check-constraints-as-triggers-for-mysql-5-7`, off `origin/staging`. One commit.
+Branch `fix/check-constraints-as-triggers-for-mysql-5-7`, off `origin/staging`. Two commits.
+
+## Corrections made after the cold review (second commit)
+
+The cold review returned no stop — the enforcement is planted and measured. Everything it raised was
+in the writing, and all of it is fixed on top of `1046d38`:
+
+1. **The migration docblock presented 5.7 behaviour as measured fact.** This report labelled the 5.7
+   claims; the docblock did not, and the docblock is what a maintainer reads. It now carries a block
+   at the top naming the five unmeasured claims explicitly, and the "makes the two servers agree"
+   sentence states an intent rather than a result. This headline is corrected for the same reason.
+2. **A measured error in the same docblock.** It said a blind `DROP CHECK` of an absent constraint
+   `1091`s. Re-measured on 8.0.43: it is **3821** (`ER_CHECK_CONSTRAINT_NOT_FOUND`). 1091 is
+   `ER_CANT_DROP_FIELD_OR_KEY` and belongs to columns and indexes; `DROP CONSTRAINT` of an absent one
+   is a third code, 3940. All three are now recorded in the docblock with the server named.
+3. **`docs/finance/backstop-reachability.md` was half-updated, which is worse than either state** —
+   five rows said `1644 (trigger)` while still being keyed by the CHECK names this migration dropped.
+   Re-keyed to the `…_bi`/`…_bu` objects that exist, moved into the Triggers section, and the three
+   counts corrected. What that table has never covered is now named rather than silently absent.
+4. **`CheckConstraintsAsTriggersTest`'s NULL-origin test claimed more than it measured.** Renamed to
+   what it measures, with the `COALESCE` arm's unreachability recorded in its header.
+5. **Two inaccuracies in this report**, both corrected in place: deviation 2 said "five" and listed
+   six (it is six), and the diff stat appeared twice as one wrong number for two different things.
+
+The advisor's corrections to `docs/finance/check-constraints-on-mysql-5-7.md` and the new ticket
+`docs/handoff/tickets/schema-conventions-matcher-tests-a-literal-not-the-columns.md` ship in the same
+commit, as written, unedited by me.
 
 ## Deviations from the brief
 
@@ -29,7 +57,8 @@ still added rather than edited — but the brief's premise for that table was wr
 question it asked me to reason about is narrower there than stated.
 
 **2. The set of tables where ordering had to be reasoned about is larger than the two the brief
-named.** Five of the seven already carry a BEFORE UPDATE trigger, not two:
+named.** **Six** of the seven already carry a BEFORE UPDATE trigger, not two — an earlier revision of
+this report said "five" and then listed six, which the cold review caught. The six:
 `finance_credit_notes_update_guard`, `finance_void_requests_update_guard`,
 `finance_discount_policy_changes_update_guard`, `finance_fee_schedule_changes_update_guard`,
 `finance_opening_balance_batches_no_unpost`, and `finance_payments_no_update`. Only
@@ -134,7 +163,9 @@ today and the docblock says so.
 
 ## What changed
 
-15 files, +932 / −123.
+**16 files, +1394 / −123** as committed. Without this report file itself: **15 files, +938 / −123**.
+(An earlier revision of this report said "15 files, +932 / −123" in both places it appears — one
+number for two different things, and neither was right. Corrected from `git show --stat 1046d38`.)
 
 1. **`database/migrations/2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php`** (new,
    ~330 lines incl. docblock). Drops eight `CHECK` constraints (guarded by an
@@ -289,7 +320,8 @@ argument and Pint reports `"…" is not readable`. Worth knowing before someone 
 snippet into a zsh session and concludes Pint is broken.)
 
 `git diff --stat` was read against my own model of the change before committing, per CLAUDE.md: 15
-files, +932 / −123, no unrelated file swept in.
+files, +1394 / −123 as committed (+938 over 15 files excluding this report), no unrelated file
+swept in.
 
 ## The 3819 / 1644 counts, before and after
 
@@ -426,22 +458,46 @@ instead, which is a worse failure mode and is why the counts were taken.
   `PaymentProvenanceTest`'s UPDATE arm asserts 1644 and now cannot distinguish which of the two
   triggers spoke, since both signal `45000`. I recorded that in the test comment rather than
   contriving an assertion that appears to separate them. It is the same limitation the `CHECK` had.
-- **The `COALESCE(…, 0)` guard on a NULL origin is unreachable today and I say so in the test.**
-  `finance_payments.origin` is `NOT NULL`, so a NULL insert is refused 1048 by the column before the
-  trigger body runs. The `COALESCE` is the belt for a future relaxation of the column, not a live
-  guard, and `CheckConstraintsAsTriggersTest` asserts only that the row does not land — not which
-  guard spoke. Stated rather than dressed up.
+- **The `COALESCE(…, 0)` guard on a NULL origin is unreachable today, and no test in this suite
+  measures it.** `finance_payments.origin` is `NOT NULL`, so a NULL insert is refused 1048 by the
+  column before the trigger body runs. `CheckConstraintsAsTriggersTest` asserts only that the row
+  does not land — not which guard spoke — and its title said otherwise until the cold review; it is
+  renamed. The cold review did establish the `COALESCE` is load-bearing, by running the shipped body
+  and a no-COALESCE control side by side on a scratch table with a nullable `origin`; the control
+  accepted the row the shipped body refused. **That control is deliberately not in the suite**: it
+  exercises a COPY of the predicate, so it would stay green if someone deleted the `COALESCE` from
+  the real trigger, and a green that cannot see the object it names is the shape this branch exists
+  to remove. Honest state: reasoned, confirmed once by hand, on a copy.
 - **Nothing was driven in a browser.** No screen changed; this is schema and tests only.
-- **Production was not touched and no migration was run there.** The migration is written to be a
-  no-op on the `DROP` half there (guard returns 0) and to create the fourteen triggers, but that has
-  been exercised only against 8.0.43. **I have no MySQL 5.7 to run it on**, so the 5.7 behaviour of
-  `DROP TRIGGER IF EXISTS`, `SIGNAL SQLSTATE '45000'`, `COLLATE utf8mb4_bin` inside a trigger body,
-  and multiple same-timing triggers per table is asserted from documented version support (5.5, 5.5,
-  5.7, 5.7.2 respectively) and **not measured**. That is the single largest unproven claim in this
-  change and the reviewer should treat it as such.
+- **Production was not touched, no migration was run there, and NO MySQL 5.7 WAS AVAILABLE AT ALL.**
+  This is the single largest unproven claim in the change, and after the cold review it is now stated
+  in the migration docblock itself rather than only here — the docblock being what a maintainer
+  actually reads. Five specific behaviours are documented version support, **not measured**:
+
+  | claim | documented since | measured? |
+  |---|---|---|
+  | `SIGNAL SQLSTATE '45000'` in a trigger body | 5.5 | no |
+  | `COLLATE utf8mb4_bin` in a trigger body | 5.7 (utf8mb4) | no |
+  | `DROP TRIGGER IF EXISTS` | 5.5 | no |
+  | >1 trigger per table, same timing + event | 5.7.2 | no |
+  | `TABLE_CONSTRAINTS` lookup returns 0 for a never-materialised CHECK | — | no |
+
+  Everything this branch calls measured was measured on **8.0.43 and only there**. The second of the
+  five is the one whose silent failure would be quietest: a `COLLATE` clause that did not take effect
+  would leave the trigger accepting `'Migrated'` while every other arm still bit, so the guard would
+  look alive.
 
 ## Findings raised, not fixed
 
+- **The widened invariant matches a LITERAL, not the table's own columns** — found by the cold review,
+  written up by the advisor and shipping with this commit as
+  `docs/handoff/tickets/schema-conventions-matcher-tests-a-literal-not-the-columns.md`. The body check
+  looks for the strings `submitted_by` / `decided_by`, and passes on `finance_opening_balance_batches`
+  only because `submitted_by_user_id` contains one as a substring. A seventh approval table naming its
+  columns differently, guarded by a trigger that mentions some other table's columns, would satisfy it
+  while enforcing nothing. Not reachable with the six tables that exist; reachable the day a seventh
+  arrives, which is when the invariant is meant to earn its keep. Deliberately not fixed here — two
+  judgement calls in one commit is one too many. **ticket**
 - `tests/Feature/Finance/SchemaConventionsTest.php:364` (before this change) — the containment floor
   listed five approval tables and the derived set matched literal column names, so
   `finance_opening_balance_batches` was invisible to the invariant that exists to cover "approval

@@ -15,10 +15,38 @@ use Illuminate\Support\Facades\Schema;
  * audit of all of them, and the reasoning for triggering exactly these seven and documenting the
  * rest, is `docs/finance/check-constraints-on-mysql-5-7.md`, which ships with this migration.
  *
- * `TRIGGER` + `SIGNAL SQLSTATE '45000'` is MySQL 5.5-era and works on both servers. It is not a
- * workaround: it is the mechanism this schema already uses in more than twenty places
- * (`finance_ledger_transactions_no_update`, `finance_invoice_lines_reduction_guard`,
- * `guardian_student_same_school_bi`, …). This migration makes the two servers agree.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHAT WAS MEASURED, AND ON WHICH SERVER. READ THIS BEFORE TRUSTING ANY VERSION CLAIM BELOW.
+ *
+ * **NO MySQL 5.7 WAS AVAILABLE TO THE AUTHOR OF THIS MIGRATION.** Every behaviour stated below about
+ * 5.7 is taken from MySQL's documented version support and is **NOT MEASURED**. Specifically, these
+ * five are documentation, not observation:
+ *
+ *   - `SIGNAL SQLSTATE '45000'` inside a trigger body (documented 5.5+);
+ *   - `COLLATE utf8mb4_bin` inside a trigger body (documented 5.7+ for utf8mb4 generally);
+ *   - `DROP TRIGGER IF EXISTS` (documented 5.5+);
+ *   - more than one trigger per table with the same timing and event (documented 5.7.2+);
+ *   - the `information_schema.TABLE_CONSTRAINTS` lookup in `dropCheckIfPresent()` returning 0 on a
+ *     server that never materialised the constraint.
+ *
+ * **Everything in this file described as measured was measured on 8.0.43, and only there.** That is
+ * the ordering probe, the driver codes, and the idempotency and rollback legs.
+ *
+ * This distinction is not pedantry and it is not risk theatre. A claim about a server nobody ran on,
+ * written as flat fact, is the ENTIRE defect this migration exists to repair: nineteen-odd `CHECK`
+ * constraints were described in migration docblocks and two ADR-adjacent documents as the
+ * database-level backstop, on a server where MySQL had parsed and discarded every one of them. A fix
+ * that reproduces that shape one level down is not a fix. If you are about to rely on one of the five
+ * bullets above, run it on 5.7 first and record the reading here.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * `TRIGGER` + `SIGNAL SQLSTATE '45000'` is MySQL 5.5-era **by documentation** and is therefore
+ * expected to work on both servers. It is not a workaround: it is the mechanism this schema already
+ * uses in 35 places before this migration and 49 after (`finance_ledger_transactions_no_update`,
+ * `finance_invoice_lines_reduction_guard`, `guardian_student_same_school_bi`, …) — though note that
+ * those 35 have the same standing on 5.7 as these fourteen do, which is to say documented rather than
+ * observed. **The INTENT of this migration is to make the two servers agree**; that they do agree is
+ * what a 5.7 run would establish and this branch could not.
  *
  * THE SEVEN, AND WHY THESE:
  *
@@ -58,6 +86,13 @@ use Illuminate\Support\Facades\Schema;
  * the guard would read green while admitting values nobody wrote a filter for. Same reasoning as
  * `2026_08_01_120000_add_currency_shape_checks.php:24` and `2026_08_07_110000:49`.
  *
+ * The clause behaved as described when measured on 8.0.43 (`PaymentProvenanceTest`'s case-variant
+ * arm). **That a `COLLATE` clause inside a trigger body behaves the same on 5.7.23 is documented, not
+ * measured** — it is the second of the five bullets at the top of this docblock, and it is the one
+ * whose silent failure would be quietest: a collation clause that did not take effect would leave the
+ * trigger accepting `'Migrated'` while every other arm of the guard still bit, so the guard would
+ * look alive.
+ *
  * ORDERING, MEASURED ON 8.0.43 RATHER THAN ASSUMED (a scratch table with a `CHECK` and a
  * `BEFORE INSERT` trigger both violated by the same row):
  *
@@ -71,7 +106,8 @@ use Illuminate\Support\Facades\Schema;
  * `finance_discount_policy_changes_update_guard`, `finance_fee_schedule_changes_update_guard`,
  * `finance_opening_balance_batches_no_unpost`, plus `finance_payments_no_update`), and
  * `finance_credit_notes` also carries a `BEFORE INSERT` one. Multiple triggers per table with the
- * same timing and event are legal from **5.7.2**, so these are ADDED rather than folded into the
+ * same timing and event are documented legal from **5.7.2** (documented, not measured — see the block
+ * at the top), so these are ADDED rather than folded into the
  * existing bodies — a table's existing guard keeps its own name, its own message and its own tests.
  *
  * The ordering conclusion is that ADDING IS POSITIONALLY EQUIVALENT TO THE `CHECK` IT REPLACES. The
@@ -100,12 +136,26 @@ use Illuminate\Support\Facades\Schema;
  * correctly-ordered run neither guard fires; both are for the environment that is mid-catch-up,
  * which is precisely where a release breaks.
  *
- * THE DROP IS GUARDED because `DROP CHECK` is 8.0.16 syntax and the constraint does not exist on
- * 5.7: 8.0.43 rejects `DROP CHECK … IF EXISTS` (1064) and a blind drop of an absent constraint 1091s
- * and aborts. `information_schema.CHECK_CONSTRAINTS` has no `TABLE_NAME`, so the lookup goes through
+ * THE DROP IS GUARDED because `DROP CHECK` is 8.0.16 syntax and the constraint does not exist on 5.7.
+ * Measured on **8.0.43**, against a scratch table:
+ *
+ *     ALTER TABLE … DROP CHECK      <absent>   → 3821  Check constraint '…' is not found in the table.
+ *     ALTER TABLE … DROP CONSTRAINT <absent>   → 3940  Constraint '…' does not exist.
+ *     ALTER TABLE … DROP INDEX      <absent>   → 1091  Can't DROP '…'; check that column/key exists
+ *
+ * so a blind drop of an absent CHECK aborts the migration with **3821**
+ * (`ER_CHECK_CONSTRAINT_NOT_FOUND`), not 1091 — 1091 is `ER_CANT_DROP_FIELD_OR_KEY` and belongs to
+ * columns and indexes. An earlier revision of this docblock said 1091; it was wrong, and it is
+ * corrected here rather than quietly, because the number is the reason the guard exists.
+ * 8.0.43 also rejects `DROP CHECK … IF EXISTS` and `DROP CONSTRAINT … IF EXISTS` outright (1064),
+ * which is why the guard is a lookup rather than a syntax option.
+ *
+ * `information_schema.CHECK_CONSTRAINTS` has no `TABLE_NAME`, so the lookup goes through
  * `TABLE_CONSTRAINTS` — the guard shape is copied from the `down()` of
- * `2026_08_07_110000_add_provenance_to_finance_payments.php:119`. On production it returns 0 and the
- * drop is skipped; the `ALTER` is never issued and the version difference never surfaces.
+ * `2026_08_07_110000_add_provenance_to_finance_payments.php:119`. On production it is EXPECTED to
+ * return 0 and skip the drop, so the `ALTER` is never issued and the version difference never
+ * surfaces — expected, because that lookup on 5.7 is the fifth of the five unmeasured bullets at the
+ * top of this docblock.
  *
  * NO EXISTING ROW VIOLATES ANY OF THE SEVEN. All twelve violation counts (six maker≠checker, plus
  * the pairing's arms) were read on production on 2026-08-17 and every one is 0. A trigger only
@@ -346,9 +396,13 @@ return new class extends Migration
     }
 
     /**
-     * Guard shape from `2026_08_07_110000_add_provenance_to_finance_payments.php:119`. Returns 0 on
-     * 5.7 — where the constraint was parsed and discarded and there is nothing to drop — so the
-     * 8.0.16-only `DROP CHECK` is never issued there.
+     * Guard shape from `2026_08_07_110000_add_provenance_to_finance_payments.php:119`.
+     *
+     * EXPECTED to return 0 on 5.7 — where the constraint was parsed and discarded, so there is
+     * nothing for `TABLE_CONSTRAINTS` to report and nothing to drop — which is what keeps the
+     * 8.0.16-only `DROP CHECK` from ever being issued there. **Expected, not measured**: no MySQL 5.7
+     * was available (see the block at the top of this file). Measured on 8.0.43, it returns 1 for
+     * each of the eight constraints and 0 on a re-run after they are gone.
      */
     private function dropCheckIfPresent(string $table, string $check): void
     {

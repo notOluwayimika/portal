@@ -22,12 +22,62 @@ Audited route-outward (start at the route, ask what can arrive), base `origin/st
 
 Single-line grep first gave P3 = 9 — several `ADD CONSTRAINT … CHECK` span lines; the true count is 11.
 
+**These five numbers are frozen at base `6d6686a` and are counts of DECLARATIONS IN THE SOURCE.** They
+are not the schema and they have not been recomputed since. Do not reconcile them against the object
+counts under Result, which are read from `information_schema` on a migrated database — a migration
+that loops one declaration over ten columns makes the two diverge by construction, and that is exactly
+what `2026_08_01_120000` does.
+
 ## Result
 
-40 backstops (29 SIGNAL triggers + 11 CHECKs). **REACHABLE = 2** · GUARDED = 11 · UNREACHABLE = 27 ·
-UNKNOWN = 0.
+46 backstops audited here: **40 SIGNAL trigger objects in 35 rows, plus 6 CHECK constraints in 6
+rows**. Rows and objects differ for three reasons and always have — a `_bi`/`_bu` pair is one row,
+`finance_allocation_not_over_invoice_total` is one trigger written as two rows because its two arms
+classify differently, and `guardian_student_same_school_bi/bu` is one row for two objects. That last
+one is why the previous total read 40 rather than 41; it was off by one before this branch touched
+it.
 
-## Triggers (29)
+Classification is stated **by row**, because two of the three cases above cannot be classified per
+object at all (one trigger, two verdicts). 41 rows: **REACHABLE = 2** · REACHABLE→guarded = 1 ·
+GUARDED = 10 · UNREACHABLE = 28 · UNKNOWN = 0.
+
+> **This table has never been complete, and it is less complete than it looks.** A fully migrated
+> database holds **49 triggers and 19 CHECK constraints — 68 database-level backstops**, measured on
+> `portal_testing` after `2026_08_17_100000`. The 46 above are what this audit ever covered. The 22 it
+> does not are named in "What is missing from this table" below. Nothing here derives itself from
+> `information_schema`, so nothing keeps it in step with the schema; treat it as a dated reading, not
+> as an inventory.
+>
+> **Changed by `2026_08_17_100000_maker_checker_and_payment_origin_as_triggers`.** Five rules that
+> were `CHECK` constraints are now `BEFORE INSERT` / `BEFORE UPDATE` trigger pairs, because production
+> is MySQL 5.7.23 and enforces `CHECK` only from 8.0.16 — so every `CHECK` row in this table was
+> enforced on the dev machine and ignored on the server that holds the money. Those five rows have
+> **moved into the Triggers section and been re-keyed to the object names that actually exist**
+> (`…_bi` / `…_bu`); the constraint names they used to carry name nothing in the database now. Their
+> reachability and evidence are unchanged. One row per pair, following the
+> `guardian_student_same_school_bi/bu` precedent, so the row count moves by five and the object count
+> by ten. Full audit: [check-constraints-on-mysql-5-7.md](check-constraints-on-mysql-5-7.md).
+
+### What is missing from this table
+
+Named rather than added: filling these in is a fresh reachability audit of each one, which is a
+different piece of work from correcting a count.
+
+**Nine trigger objects.** Five predate this branch — `finance_bank_accounts_identity_immutable`,
+`finance_opening_balance_batches_no_unpost`, `finance_opening_balance_batches_no_delete_posted`,
+`finance_opening_balance_rows_no_update_when_posted`,
+`finance_opening_balance_rows_no_delete_when_posted` — and four arrived with it:
+`finance_opening_balance_batches_maker_ne_checker_bi` / `_bu` (the sixth approval table, whose columns
+are `submitted_by_user_id` / `decided_by_user_id`) and `finance_payments_origin_pairing_bi` / `_bu`
+(the origin/bank-account pairing, which replaced two CHECKs — `finance_payments_origin_shape` and
+`finance_payments_bank_account_origin_shape` — that were likewise never in this table).
+
+**Thirteen CHECK constraints**, all of them the currency-shape rules
+(`CHECK (col IS NULL OR col COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}$')`). They are deliberately NOT
+converted to triggers — the columns are `CHAR(3)`, so length is enforced by the column type on 5.7
+regardless of version, and only the case-and-alphabet half is lost. Reasoning in the audit's Group C.
+
+## Triggers (35 rows, 40 objects)
 
 | Name | Table | Forbids | Code | Reachability | Evidence |
 |---|---|---|---|---|---|
@@ -36,15 +86,18 @@ UNKNOWN = 0.
 | finance_credit_notes_no_delete | finance_credit_notes | DELETE credit note | 1644 | UNREACHABLE | No finance DELETE route (`routes/endpoints/finance.php`). |
 | finance_credit_notes_insert_guard | finance_credit_notes | currency≠invoice; approved-vs-void; ceiling | 1644 | **REACHABLE** | Currency branch: `currency` is user-supplied (`SubmitCreditNoteRequest.php:32`), no app check it matches the invoice; `CreditNoteController.php:37-39` builds Money from it. B-2 below = 500. (Approved-vs-void + ceiling branches unreachable: `SubmitCreditNote.php:61` inserts status=Submitted.) |
 | finance_credit_notes_update_guard | finance_credit_notes | mutate money/identity on UPDATE | 1644 | UNREACHABLE | Only `ApproveCreditNote`/`RejectCreditNote` UPDATE, status/decided_* only. |
+| finance_credit_notes_maker_ne_checker_bi/bu | finance_credit_notes | submitter == decider (INSERT and UPDATE) | 1644 | GUARDED | `ApproveCreditNote.php:41` refuses submitter==checker; Policy 403 too. Was the CHECK `finance_credit_notes_maker_ne_checker` until 2026_08_17_100000. |
 | finance_discount_policies_no_delete | finance_discount_policies | DELETE policy | 1644 | UNREACHABLE | No route DELETEs policies (edit/remove are amend/retire changes). |
 | finance_discount_policies_update_guard | finance_discount_policies | mutate policy terms | 1644 | UNREACHABLE | Only `ApproveDiscountPolicyChange` writes; status-only moves; no route edits terms. |
 | finance_discount_policy_changes_no_delete | finance_discount_policy_changes | DELETE change | 1644 | UNREACHABLE | No DELETE route. |
 | finance_discount_policy_changes_update_guard | finance_discount_policy_changes | mutate frozen change columns | 1644 | UNREACHABLE | Only Approve/Reject UPDATE, status/decided_* only. |
+| finance_discount_policy_changes_maker_ne_checker_bi/bu | finance_discount_policy_changes | submitter == decider (INSERT and UPDATE) | 1644 | GUARDED | `ApproveDiscountPolicyChange.php:31` refuses submitter==checker; Policy 403. Was a CHECK of the same stem until 2026_08_17_100000. |
 | finance_fee_items_parent_state_guard_ins | finance_fee_items | INSERT item onto non-draft schedule | 1644 | UNREACHABLE | Items inserted only into a fresh draft by `CreateFeeSchedule.php:47-63`; no route inserts onto active/pending. |
 | finance_fee_items_parent_state_guard_upd | finance_fee_items | UPDATE item on non-draft schedule | 1644 | UNREACHABLE | No route UPDATEs items. |
 | finance_fee_items_parent_state_guard_del | finance_fee_items | DELETE item on non-draft schedule | 1644 | UNREACHABLE | No route DELETEs items. |
 | finance_fee_schedule_changes_no_delete | finance_fee_schedule_changes | DELETE change | 1644 | UNREACHABLE | No DELETE route. |
 | finance_fee_schedule_changes_update_guard | finance_fee_schedule_changes | mutate frozen change columns | 1644 | UNREACHABLE | Only Approve/Reject UPDATE. |
+| finance_fee_schedule_changes_maker_ne_checker_bi/bu | finance_fee_schedule_changes | submitter == decider (INSERT and UPDATE) | 1644 | GUARDED | `ApproveFeeScheduleChange.php:30` refuses submitter==checker; Policy 403. Was a CHECK of the same stem until 2026_08_17_100000. |
 | finance_invoice_lines_no_delete | finance_invoice_lines | DELETE a line | 1644 | UNREACHABLE | No route DELETEs lines. |
 | finance_invoice_lines_no_update | finance_invoice_lines | UPDATE a line | 1644 | UNREACHABLE | No route UPDATEs lines. |
 | finance_invoice_lines_reduction_guard | finance_invoice_lines | reduction line w/o active/same-school/no-approval policy; charge w/ policy | 1644 | GUARDED | `GenerateInvoice.php:55` catches 1644 and re-throws BusinessRuleException → 422 (the one place that catches 1644). |
@@ -60,30 +113,28 @@ UNKNOWN = 0.
 | finance_payments_no_update | finance_payments | UPDATE payment | 1644 | UNREACHABLE | No route UPDATEs payments. |
 | finance_void_requests_no_delete | finance_void_requests | DELETE void request | 1644 | UNREACHABLE | No DELETE route. |
 | finance_void_requests_update_guard | finance_void_requests | mutate frozen columns | 1644 | UNREACHABLE | Only Approve/Reject UPDATE, status/decided_* only. |
+| finance_void_requests_maker_ne_checker_bi/bu | finance_void_requests | submitter == decider (INSERT and UPDATE) | 1644 | GUARDED | `ApproveVoidRequest.php:46` refuses submitter==checker; Policy 403. Was a CHECK of the same stem until 2026_08_17_100000. |
 | guardian_student_same_school_bi/bu | guardian_student | attach/re-link guardian & student of different schools | 1644 | UNREACHABLE | Attach guarded (`GuardianService` resolveExistingGuardianForAttachment creates guardian in target school on mismatch); `updatePivot` requires an EXISTING pivot (`GuardianService.php:399` — already same-school; ValidationException if absent); DELETE fires no same-school trigger. B-2 below = 404, not 500. (Routes carry `withoutScopedBindings()` — a separate cross-school-IDOR concern, but not a path to THIS trigger.) |
+| subject_result_statuses_maker_ne_checker_bi/bu | subject_result_statuses | submitter == decider (INSERT and UPDATE) | 1644 | GUARDED | `SubjectResultPolicy.php:40,45` isNotTheMaker on approve/reject. Was a CHECK of the same stem until 2026_08_17_100000. |
 
-## CHECK constraints (11)
+## CHECK constraints (6)
 
-> **Five of these are no longer CHECKs.** `2026_08_17_100000_maker_checker_and_payment_origin_as_triggers`
-> converted the six maker≠checker rules and the `finance_payments` origin/bank-account pairing into
-> triggers, because production is MySQL 5.7.23 and enforces `CHECK` only from 8.0.16 — so every row in
-> this table was enforced on the dev machine and ignored on the server that holds the money. The five
-> rows below marked `1644 (trigger)` are the converted ones; their reachability and evidence are
-> unchanged, only the mechanism and the driver code moved. Full audit:
-> [check-constraints-on-mysql-5-7.md](check-constraints-on-mysql-5-7.md).
+> **Was 11. Five moved out to the Triggers section** — see the note under Result. The six that remain
+> are still `CHECK` constraints and so are still **unenforced on production**, which runs MySQL
+> 5.7.23. Every `3819` in the Code column below is therefore a code this server produces and
+> production does not: on production these six rules are held by the application layer named in the
+> Evidence column and by nothing else. That is a deliberate decision, not an oversight — the reasoning
+> per rule is in [check-constraints-on-mysql-5-7.md](check-constraints-on-mysql-5-7.md), Groups C, D
+> and E. The thirteen currency-shape constraints that share that decision were never in this table
+> either; see "What is missing from this table" above.
 
 | Name | Table | Forbids | Code | Reachability | Evidence |
 |---|---|---|---|---|---|
-| finance_credit_notes_maker_ne_checker | finance_credit_notes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveCreditNote.php:41` refuses submitter==checker; Policy 403 too. |
 | finance_discount_policies_basis_exclusive | finance_discount_policies | amount and percent both / neither | 3819 | UNREACHABLE | Only `ApproveDiscountPolicyChange` inserts, from a change row already gated by `..._changes_terms_shape`; a bad-terms change can't exist to approve. |
-| finance_discount_policy_changes_maker_ne_checker | finance_discount_policy_changes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveDiscountPolicyChange.php:31` refuses submitter==checker; Policy 403. |
 | finance_discount_policy_changes_target_shape | finance_discount_policy_changes | create-with-target / amend|retire-without-target | 3819 | GUARDED | `SubmitDiscountPolicyChangeRequest.php:27` `required_unless:kind,create`; controller resolves `target` only when kind≠create. |
 | finance_discount_policy_changes_terms_shape | finance_discount_policy_changes | basis=amount with percent (or basis=percent with value_minor) | 3819 | **REACHABLE** | `SubmitDiscountPolicyChangeRequest.php:33,35` validate `required_if` but do NOT prohibit `percent` when amount / `value_minor` when percent; `terms()` passes both through. B-2 below = 500. |
-| finance_fee_schedule_changes_maker_ne_checker | finance_fee_schedule_changes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveFeeScheduleChange.php:30` refuses submitter==checker; Policy 403. |
-| finance_void_requests_maker_ne_checker | finance_void_requests | submitter == decider | 1644 (trigger) | GUARDED | `ApproveVoidRequest.php:46` refuses submitter==checker; Policy 403. |
 | scores_range | scores | score outside 0–100 | 3819 | UNREACHABLE | `UpsertScoreRequest` marks `score` prohibited, accepts `score_percent` 0–100, converts server-side (`CurriculumSubjectController:325-350`). |
 | student_curricula_promoted_requires_link | student_curricula | status=promoted with null promoted_to_id | 3819 | GUARDED | Status routes forbid 'promoted' (`UpdateStudentCurriculumStatusRequest.php:28` `Rule::in([active,repeated,withdrawn])`; `StudentController.php:136` `Rule::enum` excludes PROMOTED); promote action + jobs set both atomically (`StudentCurriculumController.php:202-205`). |
-| subject_result_statuses_maker_ne_checker | subject_result_statuses | submitter == decider | 1644 (trigger) | GUARDED | `SubjectResultPolicy.php:40,45` isNotTheMaker on approve/reject. |
 | terms_end_after_start_check | terms | end_date ≤ start_date | 3819 | GUARDED | `TermController.php` `validatedTerm`: `end_date => ['required','date','after:start_date']`. |
 
 ## The two REACHABLE findings — guards added (Part 2)

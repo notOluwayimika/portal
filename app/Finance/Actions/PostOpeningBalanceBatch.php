@@ -267,9 +267,12 @@ final class PostOpeningBalanceBatch
                     'received_at_reason' => null,
                     // NULL, AND THE DATABASE REQUIRES IT TO BE. This money reached WCBS before
                     // cutover; it never entered one of our bank accounts, so naming one would assert
-                    // a fact that is false. finance_payments_bank_account_origin_shape enforces the
-                    // pairing — origin 'migrated' with a non-null account is refused 3819 at INSERT,
-                    // exactly as origin 'portal' with a null one is.
+                    // a fact that is false. finance_payments_origin_pairing_bi enforces the pairing —
+                    // origin 'migrated' with a non-null account is refused 1644 at INSERT, exactly as
+                    // origin 'portal' with a null one is. It was the CHECK
+                    // finance_payments_bank_account_origin_shape until 2026_08_17_100000, and this is
+                    // the writer that made the change urgent: production is MySQL 5.7.23, which
+                    // parses and ignores CHECK, and the cutover posts migrated payments here in bulk.
                     'bank_account_id' => null,
                 ]);
 

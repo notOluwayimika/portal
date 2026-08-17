@@ -64,18 +64,26 @@ UNKNOWN = 0.
 
 ## CHECK constraints (11)
 
+> **Five of these are no longer CHECKs.** `2026_08_17_100000_maker_checker_and_payment_origin_as_triggers`
+> converted the six maker≠checker rules and the `finance_payments` origin/bank-account pairing into
+> triggers, because production is MySQL 5.7.23 and enforces `CHECK` only from 8.0.16 — so every row in
+> this table was enforced on the dev machine and ignored on the server that holds the money. The five
+> rows below marked `1644 (trigger)` are the converted ones; their reachability and evidence are
+> unchanged, only the mechanism and the driver code moved. Full audit:
+> [check-constraints-on-mysql-5-7.md](check-constraints-on-mysql-5-7.md).
+
 | Name | Table | Forbids | Code | Reachability | Evidence |
 |---|---|---|---|---|---|
-| finance_credit_notes_maker_ne_checker | finance_credit_notes | submitter == decider | 3819 | GUARDED | `ApproveCreditNote.php:41` refuses submitter==checker; Policy 403 too. |
+| finance_credit_notes_maker_ne_checker | finance_credit_notes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveCreditNote.php:41` refuses submitter==checker; Policy 403 too. |
 | finance_discount_policies_basis_exclusive | finance_discount_policies | amount and percent both / neither | 3819 | UNREACHABLE | Only `ApproveDiscountPolicyChange` inserts, from a change row already gated by `..._changes_terms_shape`; a bad-terms change can't exist to approve. |
-| finance_discount_policy_changes_maker_ne_checker | finance_discount_policy_changes | submitter == decider | 3819 | GUARDED | `ApproveDiscountPolicyChange.php:31` refuses submitter==checker; Policy 403. |
+| finance_discount_policy_changes_maker_ne_checker | finance_discount_policy_changes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveDiscountPolicyChange.php:31` refuses submitter==checker; Policy 403. |
 | finance_discount_policy_changes_target_shape | finance_discount_policy_changes | create-with-target / amend|retire-without-target | 3819 | GUARDED | `SubmitDiscountPolicyChangeRequest.php:27` `required_unless:kind,create`; controller resolves `target` only when kind≠create. |
 | finance_discount_policy_changes_terms_shape | finance_discount_policy_changes | basis=amount with percent (or basis=percent with value_minor) | 3819 | **REACHABLE** | `SubmitDiscountPolicyChangeRequest.php:33,35` validate `required_if` but do NOT prohibit `percent` when amount / `value_minor` when percent; `terms()` passes both through. B-2 below = 500. |
-| finance_fee_schedule_changes_maker_ne_checker | finance_fee_schedule_changes | submitter == decider | 3819 | GUARDED | `ApproveFeeScheduleChange.php:30` refuses submitter==checker; Policy 403. |
-| finance_void_requests_maker_ne_checker | finance_void_requests | submitter == decider | 3819 | GUARDED | `ApproveVoidRequest.php:46` refuses submitter==checker; Policy 403. |
+| finance_fee_schedule_changes_maker_ne_checker | finance_fee_schedule_changes | submitter == decider | 1644 (trigger) | GUARDED | `ApproveFeeScheduleChange.php:30` refuses submitter==checker; Policy 403. |
+| finance_void_requests_maker_ne_checker | finance_void_requests | submitter == decider | 1644 (trigger) | GUARDED | `ApproveVoidRequest.php:46` refuses submitter==checker; Policy 403. |
 | scores_range | scores | score outside 0–100 | 3819 | UNREACHABLE | `UpsertScoreRequest` marks `score` prohibited, accepts `score_percent` 0–100, converts server-side (`CurriculumSubjectController:325-350`). |
 | student_curricula_promoted_requires_link | student_curricula | status=promoted with null promoted_to_id | 3819 | GUARDED | Status routes forbid 'promoted' (`UpdateStudentCurriculumStatusRequest.php:28` `Rule::in([active,repeated,withdrawn])`; `StudentController.php:136` `Rule::enum` excludes PROMOTED); promote action + jobs set both atomically (`StudentCurriculumController.php:202-205`). |
-| subject_result_statuses_maker_ne_checker | subject_result_statuses | submitter == decider | 3819 | GUARDED | `SubjectResultPolicy.php:40,45` isNotTheMaker on approve/reject. |
+| subject_result_statuses_maker_ne_checker | subject_result_statuses | submitter == decider | 1644 (trigger) | GUARDED | `SubjectResultPolicy.php:40,45` isNotTheMaker on approve/reject. |
 | terms_end_after_start_check | terms | end_date ≤ start_date | 3819 | GUARDED | `TermController.php` `validatedTerm`: `end_date => ['required','date','after:start_date']`. |
 
 ## The two REACHABLE findings — guards added (Part 2)

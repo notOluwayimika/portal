@@ -64,12 +64,14 @@ class Payment extends Model
     public const MIGRATED_REFERENCE_FLOOR = 900_000_000;
 
     /**
-     * The two values `origin` may hold, named. The authority is the database: the CHECK
-     * `finance_payments_origin_shape` (2026_08_07_110000_add_provenance_to_finance_payments.php:91)
-     * admits exactly these two spellings, case-sensitively under `COLLATE utf8mb4_bin`, and
-     * `finance_payments_bank_account_origin_shape`
-     * (2026_08_10_120000_finance_bank_account_foreign_keys.php:102-104) keys the bank-account
-     * pairing off the same two. These constants are a second READER of that rule, never a second
+     * The two values `origin` may hold, named. The authority is the database: the trigger pair
+     * `finance_payments_origin_pairing_bi` / `_bu`
+     * (2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php) admits exactly these two
+     * spellings, case-sensitively under `COLLATE utf8mb4_bin`, and keys the bank-account pairing off
+     * the same two. It replaced TWO CHECKs — `finance_payments_origin_shape` (2026_08_07_110000:91)
+     * and `finance_payments_bank_account_origin_shape` (2026_08_10_120000:102-104) — with one
+     * predicate, because the pairing subsumes the domain rule and because production is MySQL 5.7.23,
+     * which parses and ignores CHECK entirely. These constants are a second READER of that rule, never a second
      * copy of it — the column is what refuses a third value, not this file.
      */
     public const ORIGIN_PORTAL = 'portal';
@@ -94,8 +96,9 @@ class Payment extends Model
      * The refusal for an origin this code does not recognise. It states what is actually known —
      * that provenance could not be confirmed — and asserts NOTHING about where the money came from.
      *
-     * Unreachable today: the `finance_payments_origin_shape` CHECK admits exactly `portal` and
-     * `migrated`, so no third value can be persisted. It exists because the two halves of this
+     * Unreachable today: the `finance_payments_origin_pairing_bi` trigger admits exactly `portal` and
+     * `migrated`, so no third value can be persisted — and unlike the CHECK it replaced, that is now
+     * true on production too (2026_08_17_100000). It exists because the two halves of this
      * decision must not be allowed to drift apart. `isReceiptable()` is an allowlist and refuses the
      * unknown correctly; before this constant, the EXPLANATION was a denylist — every non-portal row
      * got the WCBS text — so the day a third origin is added by an unrelated migration, this system
@@ -144,8 +147,9 @@ class Payment extends Model
 
     /**
      * The account the money landed in. NULL for a migrated row and NOT NULL for a portal one — the
-     * `finance_payments_bank_account_origin_shape` CHECK enforces exactly that pairing, so a
-     * receipt (which is only ever issued for a portal payment) always has one to name.
+     * `finance_payments_origin_pairing_bi` trigger enforces exactly that pairing (2026_08_17_100000,
+     * replacing the CHECK of the same rule), so a receipt (which is only ever issued for a portal
+     * payment) always has one to name.
      *
      * @return BelongsTo<BankAccount, $this>
      */

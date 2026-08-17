@@ -331,27 +331,42 @@ it('the test database default collation matches the canonical one (the trigger t
     );
 });
 
-it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a maker≠checker CHECK', function () {
+it('SCHEMA INVARIANT — every approval table carries a maker≠checker TRIGGER pair (not a CHECK)', function () {
     // Decision 4: the maker≠checker guarantee must be true for the THIRD approval table (refunds)
     // and every one after, by construction — not because a brief remembered to add it. A migration
-    // that ships an approval document without the CHECK leaves every layer above it looking correct
+    // that ships an approval document without the guard leaves every layer above it looking correct
     // (Policy refuses, Action refuses, tests pass) while the guarantee is silently absent. This
     // reads information_schema, so it sees the REAL schema, and it is general (finance_* AND
     // subject_result_statuses).
     //
-    // BOTH arms watched red on a scratch table before this commit (see the PR body / commit message
-    // for the pasted output): arm 1 — a table with NO check at all; arm 2 — a check naming only ONE
-    // of the two columns (the likelier real mistake, caught by requiring BOTH names in the clause).
-    // The prior comment claimed "bite-proven by a planted constraint-less table in a migration"; no
-    // such migration exists in history (git log -S found none), so that was an unverifiable claim —
-    // replaced by the watched scratch-table proof recorded with THIS commit.
+    // TWO THINGS CHANGED HERE IN 2026_08_17_100000, and both are widenings rather than relaxations.
+    //
+    // 1. IT DEMANDS A TRIGGER PAIR, NOT A CHECK, and a CHECK is no longer accepted as an alternative.
+    //    Production is MySQL 5.7.23; MySQL enforces CHECK only from 8.0.16 and before that "parses
+    //    and ignores" the clause. So the version of this invariant that accepted a CHECK was green
+    //    on every approval table while the guarantee it asserts was absent on the only server that
+    //    matters — the precise failure mode the invariant exists to prevent, one layer down. A test
+    //    that accepts a mechanism known to be inert on production is worse than no test: it is a
+    //    green that certifies nothing. BOTH timings are required, because a table guarded only
+    //    BEFORE INSERT is one UPDATE away from a self-approval.
+    //
+    // 2. IT NOW SEES THE SIXTH APPROVAL TABLE. The derived set matched the literal column names
+    //    `submitted_by` / `decided_by`, and `finance_opening_balance_batches` names the same fact
+    //    `submitted_by_user_id` / `decided_by_user_id` — so the table this invariant's own comment
+    //    anticipated ("approval table six must be covered by the loop without anyone bumping a
+    //    number") was the one table it could not see. The match is now on the PREFIX, so a seventh
+    //    table naming its columns either way is covered.
+    //
+    // BOTH original arms were watched red on a scratch table (arm 1 — a table with NO guard at all;
+    // arm 2 — a guard naming only ONE of the two columns, the likelier real mistake). The trigger
+    // form was re-bite-proven the same way with this commit; see the branch report.
     $tables = collect(DB::select(
         "SELECT DISTINCT c1.TABLE_NAME AS t
            FROM information_schema.COLUMNS c1
            JOIN information_schema.COLUMNS c2
              ON c1.TABLE_SCHEMA = c2.TABLE_SCHEMA AND c1.TABLE_NAME = c2.TABLE_NAME
           WHERE c1.TABLE_SCHEMA = DATABASE()
-            AND c1.COLUMN_NAME = 'submitted_by' AND c2.COLUMN_NAME = 'decided_by'"
+            AND c1.COLUMN_NAME LIKE 'submitted\\_by%' AND c2.COLUMN_NAME LIKE 'decided\\_by%'"
     ))->pluck('t');
 
     expect($tables)->not->toBeEmpty(); // there ARE approval tables, or this test is vacuous
@@ -359,7 +374,7 @@ it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a 
     // Containment FLOOR, not a count pin. A table that DISAPPEARS (decided_by renamed away in a
     // refactor) drops out of the derived set and the loop below would iterate fewer tables, still
     // green — ->not->toBeEmpty() only catches ALL of them vanishing. This names the specific
-    // expected table that went missing. Deliberately NO upper bound: approval table six must be
+    // expected table that went missing. Deliberately NO upper bound: approval table seven must be
     // covered by the loop without anyone bumping a number, so its arrival is not a failure here.
     $expectedFloor = [
         'finance_discount_policy_changes',
@@ -367,35 +382,41 @@ it('SCHEMA INVARIANT — every table with submitted_by AND decided_by carries a 
         'finance_fee_schedule_changes',
         'subject_result_statuses',
         'finance_credit_notes',
+        'finance_opening_balance_batches',
     ];
     $missing = array_diff($expectedFloor, $tables->all());
     expect($missing)->toBe(
         [],
-        'expected approval table(s) no longer carry submitted_by + decided_by: ['.implode(', ', $missing).
+        'expected approval table(s) no longer carry a submitted_by* + decided_by* pair: ['.implode(', ', $missing).
         '] — a rename/refactor silently dropped one out of the invariant loop.'
     );
 
     foreach ($tables as $table) {
-        $clauses = collect(DB::select(
-            'SELECT cc.CHECK_CLAUSE AS clause
-               FROM information_schema.CHECK_CONSTRAINTS cc
-               JOIN information_schema.TABLE_CONSTRAINTS tc
-                 ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
-              WHERE tc.TABLE_SCHEMA = DATABASE() AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = ?',
-            [$table, 'CHECK']
-        ))->pluck('clause');
+        // ACTION_STATEMENT is the trigger body as the server stored it, so this asserts the guard
+        // actually mentions BOTH identity columns rather than merely existing with a plausible name.
+        $triggers = collect(DB::select(
+            'SELECT TRIGGER_NAME AS name, EVENT_MANIPULATION AS event, ACTION_STATEMENT AS body
+               FROM information_schema.TRIGGERS
+              WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ? AND ACTION_TIMING = ?',
+            [$table, 'BEFORE']
+        ));
 
-        $hasMakerNeChecker = $clauses->contains(
-            fn ($clause) => str_contains((string) $clause, 'submitted_by') && str_contains((string) $clause, 'decided_by')
-        );
+        foreach (['INSERT', 'UPDATE'] as $event) {
+            $guarding = $triggers->first(fn ($t) => $t->event === $event
+                && str_contains((string) $t->body, 'submitted_by')
+                && str_contains((string) $t->body, 'decided_by'));
 
-        // Print the CHECK clauses actually found. Arm 1 (no check) shows "(none)"; arm 2 (a check
-        // naming one column) shows the clause, so the reader can tell a typo'd constraint from a
-        // different constraint entirely without re-querying information_schema by hand.
-        $found = $clauses->isEmpty() ? '(none)' : $clauses->implode(' | ');
-        expect($hasMakerNeChecker)->toBeTrue(
-            "table [{$table}] has submitted_by + decided_by but no CHECK naming BOTH — the act-level ".
-            "guarantee is silently absent there. CHECK clauses found on it: {$found}"
-        );
+            // Print what WAS found, so a typo'd or one-column body is distinguishable from a table
+            // with no guard at all without re-querying information_schema by hand.
+            $found = $triggers->where('event', $event)->pluck('name')->implode(', ') ?: '(none)';
+            // POSITIVE, not `->not->toBeNull($message)` — Pest discards a message on a negated
+            // expectation (PestNegatedExpectationMessagesTest), and the message is the whole value
+            // of this arm: it is what tells the reader WHICH table shipped without a guard.
+            expect($guarding !== null)->toBeTrue(
+                "table [{$table}] has a submitted_by*/decided_by* pair but no BEFORE {$event} trigger ".
+                'naming BOTH columns — the act-level guarantee is silently absent there on MySQL 5.7, '.
+                "where a CHECK would be parsed and ignored. BEFORE {$event} triggers found on it: {$found}"
+            );
+        }
     }
 });

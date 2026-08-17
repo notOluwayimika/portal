@@ -5,8 +5,10 @@ namespace App\Academics;
 use App\Enums\StudentStatusEnum;
 use App\Finance\Contracts\BillableEnrollment;
 use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The Academics-side adapter that fulfils Finance's ACL port. It is the ONE place
@@ -30,13 +32,22 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
 
     public function findByUuid(string $enrollmentUuid): ?BillableEnrollment
     {
-        // NOTE (corrected slice 2): StudentCurriculum is deliberately UNSCOPED —
-        // `student_curricula` has no school_id column and the model does not use
-        // BelongsToSchool (v10 §14). An earlier comment here claimed a SchoolScope
-        // gave "isolation for free"; that scope does not exist, so this lookup is
-        // NOT School-constrained. Isolation for the billing path is therefore
-        // asserted downstream, from the STUDENT's school (below) — see the
-        // cross-School regression test in tests/Feature/Finance.
+        // NOTE (re-corrected, U6 commit 1). This comment has now been wrong in BOTH
+        // directions, so state what is true TODAY and cite it. Slice 2 said a
+        // SchoolScope gave "isolation for free" and it did not; the correction said
+        // `student_curricula` has no school_id and the model carries no scope, and
+        // that has ALSO stopped being true — slice (i) added the column NOT NULL with
+        // the composite FK student_curricula_student_school_foreign (student_id,
+        // school_id) -> students (id, school_id)
+        // (2026_07_19_130000_add_school_id_to_student_curricula.php:57,:80,:85), and
+        // slice (ii) added a bare SchoolScope in StudentCurriculum::booted().
+        //
+        // So THIS lookup IS School-constrained today, by the ambient scope. It is left
+        // as-is because the downstream cross-School guard in the Action is the
+        // assertion that actually refuses (a scope that filters turns a wrong-School
+        // lookup into "not found", never into a refusal). The two cohort reads below
+        // take a School as an ARGUMENT and therefore cannot rely on ambient context at
+        // all — see currentEnrollments().
         $enrollment = StudentCurriculum::query()
             ->where('uuid', $enrollmentUuid)
             ->with(self::SNAPSHOT_RELATIONS)
@@ -50,17 +61,235 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
      * Academics concept (Student::currentCurriculum is exactly this: hasOne where status
      * ACTIVE), and it lives HERE, not in Finance, so the frontend never juggles an
      * enrollment id. Returns null when the student has no active enrollment to bill.
+     *
+     * THE DEFINITION IS NOT SPELLED OUT HERE ANY MORE, and that is the point of the change.
+     * It used to read `where(status, ACTIVE)->latest('id')` inline, while the cohort reads
+     * expressed the same rule a second time — two copies of one definition, with a docblock
+     * promising they could not drift. That promise was wallpaper: removing the tie-break from
+     * one copy left the other green. Both now go through {@see billableEpisodes()}, so the
+     * drift is prevented by the code rather than asserted by prose.
+     *
+     * ISOLATION IS UNCHANGED here, deliberately: this method is on the live single-invoice
+     * path, it takes no School argument, and it keeps the ambient SchoolScope. That is a real
+     * asymmetry with the cohort reads and it is documented on the port rather than glossed —
+     * see {@see BillableEnrollmentProvider::listForCohort()}.
      */
     public function currentForStudent(int $studentId): ?BillableEnrollment
     {
-        $enrollment = StudentCurriculum::query()
-            ->where('student_id', $studentId)
-            ->where('status', StudentStatusEnum::ACTIVE)
+        // No orderBy: billableEpisodes() already admits at most ONE row per student, so with
+        // student_id pinned the result set has at most one member and first() is determinate.
+        // Adding latest('id') back would re-introduce the second copy of the tie-break this
+        // method was just relieved of.
+        $enrollment = $this->billableEpisodes()
+            ->where('student_curricula.student_id', $studentId)
             ->with(self::SNAPSHOT_RELATIONS)
-            ->latest('id')
             ->first();
 
         return $enrollment === null ? null : $this->toBillableEnrollment($enrollment);
+    }
+
+    /**
+     * The cohort at ($termId, $classLevelId) in $schoolId. See the port for the contract; what
+     * follows is how the two coordinates are reached, because neither is a column on the episode.
+     *
+     * TERM is one hop (`curricula.term_id`) and CLASS LEVEL is two
+     * (`curricula.class_level_arm_id -> class_level_arms.class_level_id`) — the same hops
+     * {@see termId()} and {@see classLevelId()} take to build the DTO, so the filter and the
+     * reported value cannot disagree. The level, not the arm: JSS1A and JSS1B are priced
+     * identically.
+     *
+     * The coordinate filter is applied AFTER the current-episode tie-break inside
+     * {@see currentEnrollments()}, never alongside it. Alongside, a student whose current episode
+     * sits at (t2, c2) but who still has an older ACTIVE episode at (t1, c1) would be returned by
+     * the (t1, c1) cohort while currentForStudent() reported (t2, c2) — the two definitions
+     * disagreeing about one student, which is the whole failure this method is written to avoid.
+     *
+     * @return list<BillableEnrollment>
+     */
+    public function listForCohort(int $schoolId, int $termId, int $classLevelId): array
+    {
+        return $this->currentEnrollments($schoolId)
+            ->whereHas('curriculum', function ($query) use ($termId, $classLevelId) {
+                $query->withoutGlobalScope(SchoolScope::class)
+                    ->where('term_id', $termId)
+                    ->whereHas('classLevelArm', fn ($arm) => $arm
+                        ->withoutGlobalScope(SchoolScope::class)
+                        ->where('class_level_id', $classLevelId));
+            })
+            ->get()
+            ->map(fn (StudentCurriculum $enrollment) => $this->toBillableEnrollment($enrollment))
+            ->all();
+    }
+
+    /**
+     * The billable enrollments in $schoolId that no cohort can contain. See the port for why this
+     * exists and who consumes it.
+     *
+     * ONE NEGATION, NOT A LIST OF CASES. `whereDoesntHave('curriculum', <placeable>)` is NOT EXISTS
+     * over a belongsTo, so it is true when the curriculum is missing entirely, when `term_id` is
+     * null, when `class_level_arm_id` is null, and when the arm's `class_level_id` is null. Spelling
+     * those four out as an orWhere chain would be four chances to forget one; the negation of the
+     * placeable condition is exact by construction.
+     *
+     * THIS DOES NOT MAKE THE TWO METHODS A PARTITION OF THE BILLABLE SET, and an earlier version of
+     * this docblock said it did. The negation is exact only against ONE call to
+     * {@see listForCohort()}, at the coordinates that call names. Two shapes fall outside both:
+     *
+     *   - a PLACEABLE enrollment at coordinates nobody asked about. In a School with seven billable
+     *     enrollments, a caller naming one (term, level) pair sees at most four of them accounted
+     *     for; the other three are placeable elsewhere and no method here enumerates them. Only the
+     *     caller knows which coordinates it iterated, so only the caller can close that gap.
+     *   - an episode with a NULL `student_id`, which is schema-legal: the column is nullable and
+     *     MySQL's default MATCH SIMPLE skips the composite FK check when any component is NULL.
+     *     It fails the EXISTS-through-students clause and so appears in neither list.
+     *
+     * The requirement that closes this belongs to the bulk-run screen, which must be able to say how
+     * many billable students were NEITHER billed NOR flagged — otherwise it reports success over a
+     * silent omission, which is the same §26 defect one level up. Consumer and requirement are
+     * recorded in docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md; the third
+     * method is NOT built here, because commit 3 is its consumer and it is two commits away.
+     *
+     * @return list<BillableEnrollment>
+     */
+    public function listUnplaceableForSchool(int $schoolId): array
+    {
+        return $this->currentEnrollments($schoolId)
+            ->whereDoesntHave('curriculum', function ($query) {
+                $query->withoutGlobalScope(SchoolScope::class)
+                    ->whereNotNull('term_id')
+                    ->whereHas('classLevelArm', fn ($arm) => $arm
+                        ->withoutGlobalScope(SchoolScope::class)
+                        ->whereNotNull('class_level_id'));
+            })
+            ->get()
+            ->map(fn (StudentCurriculum $enrollment) => $this->toBillableEnrollment($enrollment))
+            ->all();
+    }
+
+    /**
+     * THE ONE DEFINITION OF "BILLABLE" — the single expression of it in this class, used by
+     * {@see currentForStudent()} AND by both cohort reads. It is two clauses and nothing else:
+     *
+     *   status = ACTIVE                — a student's billable episode is an active one
+     *   at most one row per student    — MAX(id) per student, the set form of latest('id')
+     *
+     * IT IS A SHARED METHOD RATHER THAN A SHARED COMMENT, and that distinction is the whole of
+     * this method's justification. The first version of this class stated the definition twice —
+     * inline in currentForStudent(), again in the cohort base — with a port docblock asserting
+     * "the adapter shares one private base query so the two cannot drift". The assertion was
+     * false and the drift was reachable: deleting the tie-break from the cohort copy left
+     * currentForStudent() green, and at one set of coordinates it made the cohort return the same
+     * student twice, which commit 2 turns into two invoices. A rule with no mechanism behind it is
+     * a wish; this method is the mechanism. Removing either clause here must turn BOTH callers red.
+     *
+     * Both clauses are load-bearing. The status filter alone returns every active episode a student
+     * holds, where currentForStudent() returns one. Deriving billability from anything else — an
+     * `ended_at` test, a term-currency test — would be a second definition again.
+     *
+     * WITHDRAWN / promoted / repeated are EXCLUDED, by the status column alone. `ended_at` is NOT
+     * consulted, and that is a known live divergence rather than an oversight — see
+     * docs/handoff/tickets/ended-at-and-status-drift.md.
+     *
+     * SOFT-DELETED STUDENTS are INCLUDED: this queries `student_curricula` and never joins
+     * `students`, so a trashed student's active episode still resolves. The EXISTS clause in
+     * {@see currentEnrollments()} is written to match (it ignores `deleted_at`) rather than
+     * quietly introducing a third rule.
+     *
+     * NO SchoolScope DECISION IS TAKEN HERE. The definition of billable is not a question about
+     * isolation, and the two callers isolate differently on purpose — currentForStudent() keeps the
+     * ambient scope, the cohort reads take a School as an argument and strip it. Whichever scope
+     * the caller leaves on the outer query applies; the subquery is a raw builder and carries none.
+     *
+     * $schoolId narrows only the SUBQUERY, and only for the cohort path. It changes no result
+     * today: the composite FK confines every episode of a student to that student's one School, so
+     * a student's global MAX(id) and their in-School MAX(id) are the same row. It is kept because
+     * a redundant guard costs nothing to keep and something to remove — see currentEnrollments()
+     * for what it is honestly worth.
+     *
+     * @return Builder<StudentCurriculum>
+     */
+    private function billableEpisodes(?int $schoolId = null): Builder
+    {
+        return StudentCurriculum::query()
+            ->where('student_curricula.status', StudentStatusEnum::ACTIVE)
+            ->whereIn('student_curricula.id', function ($query) use ($schoolId) {
+                $query->selectRaw('MAX(id)')
+                    ->from('student_curricula')
+                    ->where('status', StudentStatusEnum::ACTIVE->value)
+                    ->groupBy('student_id');
+
+                if ($schoolId !== null) {
+                    $query->where('school_id', $schoolId);
+                }
+            });
+    }
+
+    /**
+     * {@see billableEpisodes()} for one whole School — the base both cohort reads build on. This
+     * method adds ISOLATION and nothing else; the definition of billable lives one method up.
+     *
+     * $schoolId is the ONLY thing that decides which School is read, and it is stated three times.
+     * Their worth is NOT equal, and the previous version of this comment overstated two of them:
+     *
+     *   1. `student_curricula.school_id = $schoolId` — THE constraint. NOT NULL since slice (i).
+     *   2. an EXISTS through `students` on the same pair — the "through the student" reading of the
+     *      same fact. It cannot independently fail: the composite FK
+     *      student_curricula_student_school_foreign (student_id, school_id) -> students (id,
+     *      school_id) makes clauses 1 and 2 equivalent by construction, so no row exists that
+     *      satisfies one and not the other, and no test can distinguish them. It is kept as the
+     *      clause that would still hold if the FK were ever dropped — which is a hedge against a
+     *      future schema change, NOT a guard against a defect that can occur today.
+     *   3. the $schoolId passed into billableEpisodes()'s subquery. Same story, weaker: it cannot
+     *      change a result at all, for the same FK reason. The comment it replaces claimed it
+     *      stopped the subquery "picking a foreign row and leaving the student out of the cohort
+     *      entirely". That failure mode does not exist. A comment describing an impossible failure
+     *      is worse than no comment, because the next reader treats the clause as load-bearing and
+     *      preserves it for the wrong reason.
+     *
+     * Only clause 1 is falsifiable, and it is: removing it (with the others) turned all three
+     * isolation tests red — see docs/handoff/reports/feat-u6-cohort-enrollment-port.md.
+     *
+     * AND THE AMBIENT SchoolScope IS STRIPPED. A deliberate removal, not an oversight. A method
+     * whose School is an ARGUMENT must not also carry a second, ambient opinion about which School
+     * it is reading: when the two disagree the intersection is EMPTY, and an empty cohort is not an
+     * error anywhere — bulk generation would raise zero invoices and report success. Silent partial
+     * (here, total) results are the defect class this whole pair of methods exists to close
+     * (docs/ui-ux-design-system.md §26), so the argument is made authoritative and the tests prove
+     * it holds on its own. Every nested closure strips the scope for the same reason: a scoped
+     * relation subquery reintroduces the empty-intersection mode one level down.
+     *
+     * @return Builder<StudentCurriculum>
+     */
+    private function currentEnrollments(int $schoolId): Builder
+    {
+        return $this->billableEpisodes($schoolId)
+            ->withoutGlobalScope(SchoolScope::class)
+            ->where('student_curricula.school_id', $schoolId)
+            ->whereExists(fn ($query) => $query
+                ->selectRaw('1')
+                ->from('students')
+                ->whereColumn('students.id', 'student_curricula.student_id')
+                ->where('students.school_id', $schoolId))
+            ->with($this->unscopedSnapshotRelations())
+            ->orderBy('student_curricula.student_id');
+    }
+
+    /**
+     * SNAPSHOT_RELATIONS with the ambient SchoolScope stripped at every level, for the cohort reads.
+     *
+     * Not cosmetic. {@see schoolId()} derives the DTO's School from the eager-loaded student, then
+     * the curriculum, then falls back to 0. Under an ambient context that disagrees with $schoolId
+     * both relations resolve to null and every DTO in the cohort would carry schoolId 0 — which
+     * commit 2 would stamp onto an invoice. Stripping the scope keeps these reads a pure function of
+     * their argument, labels included.
+     *
+     * @return array<string, \Closure>
+     */
+    private function unscopedSnapshotRelations(): array
+    {
+        $unscoped = fn ($query) => $query->withoutGlobalScope(SchoolScope::class);
+
+        return array_fill_keys(self::SNAPSHOT_RELATIONS, $unscoped);
     }
 
     /**
@@ -155,10 +384,17 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
             enrollmentId: (int) $enrollment->getKey(),
             enrollmentUuid: (string) $enrollment->getAttribute('uuid'),
             studentId: (int) $enrollment->getAttribute('student_id'),
-            // The enrollment row carries NO school_id (see above), so the episode's School
-            // is the STUDENT's School (the account holder); the curriculum is the fallback
-            // when the student is unreadable. This keeps an invoice's School a function of
-            // the episode being billed, not of who is logged in.
+            // The episode's School is read from the STUDENT (the account holder), with the
+            // curriculum as the fallback when the student is unreadable — which keeps an
+            // invoice's School a function of the episode being billed, not of who is logged in.
+            //
+            // The old note here said "the enrollment row carries NO school_id (see above)". It
+            // does carry one, NOT NULL since slice (i), and "see above" now says exactly that —
+            // this was the second copy of the comment that misled a brief into being written on
+            // a false premise. Deriving from the student is nonetheless still correct and still
+            // deliberate: the composite FK makes the two values equal, so this reads the durable
+            // academic identity rather than the denormalised copy, and the fallback chain stays
+            // meaningful when the student row is unreadable.
             schoolId: $this->schoolId($enrollment),
             studentName: $this->studentName($enrollment),
             academicContext: $this->academicContext($enrollment),

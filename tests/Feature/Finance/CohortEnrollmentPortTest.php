@@ -244,6 +244,36 @@ test('isolation holds when the ambient School context is the WRONG one', functio
     );
 
     expect(studentIdsOf($cohort))->toBe([$mine->id]);
+
+    // AND THE SNAPSHOT RELATIONS ARE UNSCOPED — asserted HERE, not in cohortIsolation, and the
+    // location is the entire point. schoolId is derived from the eager-loaded student
+    // (BillableEnrollmentAdapter::schoolId()), falling back to the curriculum and then to 0. If
+    // currentEnrollments() eager-loads with self::SNAPSHOT_RELATIONS instead of
+    // unscopedSnapshotRelations(), both relations are filtered to the AMBIENT School, resolve to
+    // null under a foreign context, and every DTO silently carries schoolId 0 — which commit 2
+    // stamps onto an invoice, producing an invoice attributed to no School at all.
+    //
+    // cohortIsolation cannot catch that substitution: it runs with NO ambient context, where
+    // SchoolScope is a no-op and the scoped and unscoped eager loads are identical. This test is
+    // the only place in the file where re-scoping the relations changes an observable value, so
+    // the assertion belongs here or nowhere. Planted and watched red — see the branch report.
+    expect($cohort[0]->schoolId)->toBe($a['school']->id)
+        ->and($cohort[0]->studentId)->toBe($mine->id)
+        // The name is snapshot-copied onto the invoice; a scoped relation degrades it to the
+        // 'Student #<id>' fallback, so it fails on the same substitution and says why.
+        ->and($cohort[0]->studentName)->not->toBe('Student #'.$mine->id);
+
+    // Same substitution, same exposure, on the other method — it shares currentEnrollments().
+    $unplaceableSchool = cohortSchool();
+    $stranded = cohortStudent($unplaceableSchool, armId: null, termId: null);
+
+    $unplaceable = ActiveSchool::runFor(
+        $b['school']->id,
+        fn () => cohortAdapter()->listUnplaceableForSchool($unplaceableSchool['school']->id)
+    );
+
+    expect(studentIdsOf($unplaceable))->toBe([$stranded->id])
+        ->and($unplaceable[0]->schoolId)->toBe($unplaceableSchool['school']->id);
 });
 
 /* ── 2 · "Billable" is one definition, not two ─────────────────────────────────────────────── */
@@ -301,6 +331,35 @@ test('a student holding TWO active episodes is billed once, for the one currentF
 
     $current = ActiveSchool::runFor($ctx['school']->id, fn () => $adapter->currentForStudent($student->id));
     expect($current->enrollmentId)->toBe($next[0]->enrollmentId);
+});
+
+test('currentForStudent applies the SAME tie-break, and fails on its own when it is removed', function () {
+    // The test above dies on its FIRST assertion — the cohort one — when the tie-break is planted
+    // away, so it cannot show that currentForStudent is coupled to the same rule; a reader could
+    // reasonably conclude only the cohort side is covered. This test asserts the single-invoice path
+    // alone, so the plant produces TWO independent reds and the coupling is demonstrated rather than
+    // asserted. Both now route through BillableEnrollmentAdapter::billableEpisodes().
+    $ctx = cohortSchool();
+    $student = cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $later = ActiveSchool::runFor($ctx['school']->id, fn () => StudentCurriculum::create([
+        'student_id' => $student->id,
+        'school_id' => $ctx['school']->id,
+        'curriculum_id' => Curriculum::factory()->create([
+            'school_id' => $ctx['school']->id,
+            'class_level_arm_id' => $ctx['arm']->id,
+            'term_id' => $ctx['term']->id,
+        ])->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]));
+
+    $current = ActiveSchool::runFor(
+        $ctx['school']->id,
+        fn () => cohortAdapter()->currentForStudent($student->id)
+    );
+
+    expect($current)->not->toBeNull()
+        ->and($current->enrollmentId)->toBe($later->id);
 });
 
 test('the cohort is the class LEVEL, not the arm, and not the neighbouring term', function () {
@@ -372,7 +431,13 @@ test('every shape that cannot reach a fee schedule is reported unplaceable', fun
         ->and($unplaceable)->toHaveCount(5);
 });
 
-test('cohorts and the unplaceable list PARTITION the billable set — no gap, no overlap', function () {
+test('the two methods cover the billable set WHEN EVERY OCCUPIED COORDINATE IS ITERATED — and not otherwise', function () {
+    // NOT a partition, and this test used to claim it was one. listUnplaceableForSchool() is the
+    // exact complement of ONE listForCohort() call, at the coordinates that call names — so the
+    // cover holds only for a caller that iterates every occupied coordinate pair, which is what
+    // this test does and what commit 2 must do. The second half proves the qualifier is real by
+    // NOT iterating one, and showing a billable student then falls through both methods with
+    // nothing reporting it. See docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md.
     $ctx = cohortSchool();
     $second = cohortSecondLevel($ctx);
 
@@ -393,8 +458,20 @@ test('cohorts and the unplaceable list PARTITION the billable set — no gap, no
     sort($covered);
     sort($billable);
 
-    expect($covered)->toBe($billable)                        // no gap
+    expect($covered)->toBe($billable)                        // no gap, GIVEN both coordinates iterated
         ->and($covered)->toBe(array_values(array_unique($covered)));  // no overlap
+
+    // Now skip the second level, as a caller with an incomplete coordinate list would. The student
+    // enrolled there is billable, is in no cohort anyone asked for, and is NOT unplaceable — so
+    // nothing here reports them, and a screen built on these two methods alone would announce
+    // success having billed 3 of 4. That is the gap the ticket exists to close in commit 3.
+    $partial = array_merge(
+        studentIdsOf($adapter->listForCohort($ctx['school']->id, $ctx['term']->id, $ctx['level']->id)),
+        studentIdsOf($adapter->listUnplaceableForSchool($ctx['school']->id)),
+    );
+
+    expect($partial)->not->toContain($inSecond[0]->id)
+        ->and(count($partial))->toBe(count($billable) - 1);
 });
 
 test('the unplaceable DTO names its own reason through termId / classLevelId', function () {
@@ -414,7 +491,32 @@ test('the unplaceable DTO names its own reason through termId / classLevelId', f
 
 /* ── 4 · Cost — commit 2 loops this ────────────────────────────────────────────────────────── */
 
-test('the cohort read costs a constant number of queries, not one per student', function () {
+/**
+ * Queries issued by $read, and what it returned. Flushing before enabling keeps a prior test's log
+ * out of the count.
+ *
+ * @return array{0: int, 1: int} [queryCount, resultCount]
+ */
+function cohortQueryCost(Closure $read): array
+{
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $rows = $read();
+    $queries = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    return [$queries, count($rows)];
+}
+
+test('the cohort read costs EIGHT queries, at any cohort size', function () {
+    // BOTH halves matter and the first version asserted only the second. `$large === $small` passes
+    // for any constant, including a constant 40 — it pins flatness and says nothing about the level.
+    // The absolute number is asserted too, so a change that adds a whole extra round trip per call
+    // (which commit 2 pays once per class level, in a loop) fails here instead of passing quietly.
+    //
+    // EIGHT = one root query + seven eager loads, exactly the seven paths SNAPSHOT_RELATIONS
+    // declares: student, curriculum, classLevelArm, classLevel, arm, academicSession, term. If this
+    // number legitimately changes, SNAPSHOT_RELATIONS changed; update both together.
     $ctx = cohortSchool();
 
     $count = function (int $students) use ($ctx) {
@@ -422,13 +524,8 @@ test('the cohort read costs a constant number of queries, not one per student', 
             cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
         }
 
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-        $cohort = cohortAdapter()->listForCohort($ctx['school']->id, $ctx['term']->id, $ctx['level']->id);
-        $queries = count(DB::getQueryLog());
-        DB::disableQueryLog();
-
-        return [$queries, count($cohort)];
+        return cohortQueryCost(fn () => cohortAdapter()
+            ->listForCohort($ctx['school']->id, $ctx['term']->id, $ctx['level']->id));
     };
 
     [$small, $smallSize] = $count(3);
@@ -436,5 +533,56 @@ test('the cohort read costs a constant number of queries, not one per student', 
 
     expect($smallSize)->toBe(3)
         ->and($largeSize)->toBe(30)
-        ->and($large)->toBe($small);   // flat in cohort size — eager-loaded, not N+1
+        ->and($small)->toBe(8)
+        ->and($large)->toBe(8);   // flat AND eight — eager-loaded, not N+1
+});
+
+test('the unplaceable read is flat in size, and never exceeds the cohort read\'s ceiling', function () {
+    // It had no cost test at all, and it is not free: commit 3 calls it beside the run.
+    //
+    // I ASSERTED EIGHT HERE FIRST AND IT WAS WRONG — measured 4. The count is DATA-shaped, not just
+    // code-shaped: Laravel skips an eager-load query entirely when every parent key for it is null,
+    // and an unplaceable row is by definition one whose coordinate keys are null. All-null rows load
+    // student + curriculum + the hasOneThrough probe and nothing else (4). A fixture that mixes in a
+    // row with a real arm whose class_level_id is null pays 7. So a fixed number is a property of the
+    // fixture, and asserting one would pin the fixture rather than the code.
+    //
+    // The two properties that ARE the code's: flat in the number of students, and never above the
+    // structural ceiling of 1 root + count(SNAPSHOT_RELATIONS) eager loads = 8.
+    $ctx = cohortSchool();
+
+    $count = function (int $students) use ($ctx) {
+        for ($i = 0; $i < $students; $i++) {
+            cohortStudent($ctx, armId: null, termId: null);
+        }
+
+        return cohortQueryCost(fn () => cohortAdapter()->listUnplaceableForSchool($ctx['school']->id));
+    };
+
+    [$small, $smallSize] = $count(3);
+    [$large, $largeSize] = $count(27);
+
+    expect($smallSize)->toBe(3)
+        ->and($largeSize)->toBe(30)
+        ->and($large)->toBe($small)          // flat in size — the N+1 guard
+        ->and($small)->toBe(4)               // this fixture's shape, measured
+        ->and($large)->toBeLessThanOrEqual(8);
+
+    // The mixed shape, so the ceiling is exercised by something above the floor rather than only by
+    // the cheapest fixture. An arm that exists but names no class level is unplaceable AND loads the
+    // arm chain, so it costs strictly more than the all-null rows beside it.
+    $orphanArm = ActiveSchool::runFor($ctx['school']->id, fn () => ClassLevelArm::create([
+        'school_id' => $ctx['school']->id,
+        'class_level_id' => null,
+        'arm_id' => Arm::create(['school_id' => $ctx['school']->id, 'label' => strtoupper(Str::random(3))])->id,
+    ]));
+    cohortStudent($ctx, $orphanArm->id, $ctx['term']->id);
+
+    [$mixed, $mixedSize] = cohortQueryCost(
+        fn () => cohortAdapter()->listUnplaceableForSchool($ctx['school']->id)
+    );
+
+    expect($mixedSize)->toBe(31)
+        ->and($mixed)->toBeGreaterThan($large)
+        ->and($mixed)->toBeLessThanOrEqual(8);
 });

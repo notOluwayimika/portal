@@ -3,6 +3,12 @@
 Branch `feat/u6-cohort-enrollment-port`, base `eb7506f` (`origin/staging`, PR #257 merged).
 U6 commit 1 of four. No user-facing surface, no bulk generation, no job, no screen, no invoice list.
 
+> **Cold review round 1 landed on `346f662`. Ten findings; all ten addressed in the follow-up
+> commit. The response is in the *Cold review round 1* section at the end of this file,
+> and the sections above it are corrected in place where they were wrong.** Two findings were
+> ship-blocking and both were real: the snapshot-relation eager load was unproven (F1), and the
+> "one shared base query" the port promised did not exist (F2).
+
 ## The brief's isolation premise is stale, and I corrected it rather than executing it
 
 The brief says:
@@ -16,7 +22,7 @@ The brief says:
 - `student_curricula.school_id` exists and is `NOT NULL`
   ([2026_07_19_130000_add_school_id_to_student_curricula.php:57,:80](../../../database/migrations/2026_07_19_130000_add_school_id_to_student_curricula.php#L57)),
   disciplined by the composite FK `student_curricula_student_school_foreign (student_id, school_id)
-  -> students (id, school_id)` (`:86`). The engine rejects an episode whose School differs from its
+  -> students (id, school_id)` (`:83-88`). The engine rejects an episode whose School differs from its
   student's.
 - `StudentCurriculum::booted()` registers `new SchoolScope` ([StudentCurriculum.php:78](../../../app/Models/StudentCurriculum.php#L78)).
   It is the bare scope, not `BelongsToSchool`, and the model's own docblock explains why (the trait's
@@ -34,7 +40,7 @@ below turns on that. See *Isolation*.
 ## What "billable" resolves to
 
 Quoted from `currentForStudent`, the only prior definition
-([BillableEnrollmentAdapter.php:65-75](../../../app/Academics/BillableEnrollmentAdapter.php#L65-L75)):
+([as it stood at `346f662`](https://github.com/notOluwayimika/portal/blob/346f662/app/Academics/BillableEnrollmentAdapter.php#L65-L75); the method is now [:77-89](../../../app/Academics/BillableEnrollmentAdapter.php#L77-L89)):
 
 ```php
 $enrollment = StudentCurriculum::query()
@@ -51,10 +57,14 @@ warned about:
 1. **the filter** — `status = StudentStatusEnum::ACTIVE`;
 2. **the tie-break** — `latest('id')`, i.e. at most one row per student.
 
-Both are reproduced in a single shared private base query, `currentEnrollments(int $schoolId)`
-([:185](../../../app/Academics/BillableEnrollmentAdapter.php#L185)), which both new methods build on:
-`status = ACTIVE`, plus `id IN (SELECT MAX(id) ... GROUP BY student_id)`. `MAX(id)` per student is
-`latest('id')` expressed as a set.
+> **CORRECTED after review (F2).** This paragraph originally read "Both are reproduced in a single
+> shared private base query" — and *reproduced* was the whole problem. `currentForStudent` did not
+> call that base query; it was a second, independent expression of the same rule, with the port
+> docblock promising they could not drift. Both now route through **`billableEpisodes()`**, which
+> holds `status = ACTIVE` plus `id IN (SELECT MAX(id) … GROUP BY student_id)` and is called by
+> `currentForStudent()` directly and by the cohort reads through `currentEnrollments()`. `MAX(id)`
+> per student is `latest('id')` expressed as a set. Deleting either clause now turns **both** paths
+> red — measured, under *Cold review round 1 · F2*.
 
 **The coordinate filter is applied after the tie-break, never alongside it.** A student whose current
 episode is at (t2, c2) but who still holds an older ACTIVE episode at (t1, c1) would otherwise appear
@@ -65,21 +75,29 @@ cohort membership and `currentForStudent`'s answer against each other directly.
 ## Withdrawn / soft-ended enrollments: EXCLUDED, by the status column, on one line
 
 **Excluded.** The deciding line is `->where('student_curricula.status', StudentStatusEnum::ACTIVE)`
-([:195](../../../app/Academics/BillableEnrollmentAdapter.php#L195)) — the same line `currentForStudent`
+([:214](../../../app/Academics/BillableEnrollmentAdapter.php#L214), inside `billableEpisodes()`) — the same line `currentForStudent`
 uses. Withdrawal sets `status` to `WITHDRAWN`, and `PROMOTED` / `REPEATED` are excluded by the same
 line. Asserted for all three non-active statuses in *the cohort filter is exactly currentForStudent's
 definition*, which also asserts the equivalence per student against `currentForStudent`.
 
 **`ended_at` is NOT consulted, deliberately.** `StudentCurriculum::isActive()` is
-`is_null($this->ended_at)` ([StudentCurriculum.php:193](../../../app/Models/StudentCurriculum.php#L193))
+`is_null($this->ended_at)` ([StudentCurriculum.php:192-195](../../../app/Models/StudentCurriculum.php#L192-L195))
 — a *second*, independent notion of active. `currentForStudent` has never used it, so neither do
-these. **This is a residual worth naming**: a row with `status = ACTIVE` and a non-null `ended_at`
-would be billable to both code paths and "ended" to `isActive()`. Nothing in the schema forbids that
-pair (no CHECK ties them; the only CHECK on the table is
-`student_curricula_promoted_requires_link`, on `promoted`/`promoted_to_id`). I did not add a third
-rule here, because a read whose contract is "a mirror of `currentForStudent`" is the wrong place to
-invent one. **Ticket**, not a blocker for this commit: if the two columns can diverge in production,
-that is a fact about the withdraw path, not about this port.
+these. Nothing in the schema ties the two columns: no CHECK, no trigger, no test. The only CHECK on
+the table is `student_curricula_promoted_requires_link`, on `promoted` / `promoted_to_id`.
+
+> **CORRECTED after review (F7).** I called this "a residual worth naming" and hedged it as
+> *"if the two columns can diverge in production"*. They already have. Measured on
+> `portaa10_portal` on 2026-08-17: **366 rows with `status = promoted` and `ended_at IS NULL`** —
+> every promoted episode in the copy. So `isActive()` returns true for all 366 while the billable
+> definition correctly excludes them. The opposite direction (`status = active` with `ended_at`
+> set — billable AND ended, which would invoice a withdrawn student) has 0 rows today, but
+> `CurriculumEnrollmentService::softEnd()`'s own docblock records the previous `unenroll()`
+> producing exactly that shape. Ticket with both directions, both readers and a mechanism:
+> [docs/handoff/tickets/ended-at-and-status-drift.md](../tickets/ended-at-and-status-drift.md).
+
+I did not add a third rule here: a read whose contract is "a mirror of `currentForStudent`" is the
+wrong place to invent one, and patching one reader is how the drift got here.
 
 **Soft-deleted students are INCLUDED**, again matching `currentForStudent`, which queries
 `student_curricula` and never touches `students`. The `EXISTS` clause I added is written to ignore
@@ -98,8 +116,17 @@ point an invoice is actually raised.
    students.school_id = $schoolId)` — "through the student", as the brief asked by name. Redundant
    today; it is the clause that survives the FK being dropped.
 
-The `MAX(id)` subquery carries the School filter too, so it cannot pick a foreign row that the outer
-clauses then discard — which would drop that student out of the cohort silently.
+> **CORRECTED after review (F6).** The next paragraph originally read: *"The `MAX(id)` subquery
+> carries the School filter too, so it cannot pick a foreign row that the outer clauses then discard
+> — which would drop that student out of the cohort silently."* **That failure mode cannot occur.**
+> The composite FK confines every episode of a student to that student's one School, so a student's
+> global `MAX(id)` and their in-School `MAX(id)` are the same row and the subquery's school filter
+> cannot change a result. Clause 2 is unfalsifiable for the same reason — the FK makes it equivalent
+> to clause 1, so no row satisfies one and not the other and no test can separate them. **Only
+> clause 1 is falsifiable, and it is** (see the planted red below). Both redundant clauses are kept
+> — removing a redundant guard buys nothing — but the comment defending them now says what they are
+> honestly worth, because a comment describing an impossible failure teaches the next reader to
+> preserve a clause for a reason that is not true.
 
 **And `withoutGlobalScope(SchoolScope::class)` is applied, at every level including the nested
 relation closures.** That is a removal I chose, so here is the reasoning rather than the assertion:
@@ -116,7 +143,7 @@ failure modes at once: School A's cohort under School B's ambient context return
 only A's student.
 
 The snapshot relations are eager-loaded unscoped for the same reason
-([:222](../../../app/Academics/BillableEnrollmentAdapter.php#L222)): `schoolId()` derives the DTO's
+([:288](../../../app/Academics/BillableEnrollmentAdapter.php#L288)): `schoolId()` derives the DTO's
 School from the eager-loaded student, then the curriculum, then falls back to **0**. Under a
 disagreeing ambient context both relations would resolve null and every DTO would carry `schoolId 0`,
 which commit 2 would stamp onto an invoice. The `cohortIsolation` test asserts `$enrollment->schoolId`
@@ -176,8 +203,21 @@ restored, `tests: 10, passed: 10, assertions: 36`.
 `whereDoesntHave('curriculum', <placeable>)` is `NOT EXISTS` over a `belongsTo`, so it is true when
 the curriculum is missing entirely, when `term_id` is null, when `class_level_arm_id` is null, and
 when the arm's `class_level_id` is null. It is the exact complement of `listForCohort`'s filter by
-construction, rather than four `orWhere` branches that are four chances to forget one. Asserted as a
-**partition**: cohorts ∪ unplaceable = the billable set, with no gap and no overlap.
+construction, rather than four `orWhere` branches that are four chances to forget one.
+
+> **CORRECTED after review (F5).** I claimed the two methods form a **partition** of the billable
+> set — "cohorts ∪ unplaceable = the billable set, no gap, no overlap" — and the test was named
+> `PARTITION`. It is not one. The negation is exact only against **one** `listForCohort` call, at
+> the coordinates that call names. In a seven-enrollment School the two methods account for four:
+> three are placeable at coordinates nobody asked about, and no method enumerates them. A second
+> shape escapes too — an episode with a NULL `student_id`, which is schema-legal (the column is
+> nullable and MySQL's default **MATCH SIMPLE** skips the composite FK check when a component is
+> NULL), fails the EXISTS-through-`students` clause and appears in neither list. The docblock and
+> the test are corrected; the test now also proves the qualifier is real by skipping one coordinate
+> and showing a billable student fall through both methods unreported. The requirement that closes
+> it is a ticket naming commit 3 as consumer:
+> [docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md](../tickets/bulk-run-must-account-for-every-billable-student.md).
+> No third method was built — commit 3 is its consumer and it is two commits away.
 
 All four shapes are covered, plus the arm with a null `class_level_id` — the hop an `orWhere` chain
 forgets. Withdrawn students are in neither list, which matters for the screen: a withdrawn student is
@@ -230,7 +270,7 @@ notes for commit 2, neither actioned here:
 | `pest --group=arch` | **32 passed, 181 assertions** (2 pre-existing warnings, unrelated: duplicate constants in `tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php`) |
 | `bin/ci-boundary-lint.php` | OK — no new violations (4 known temporary exceptions) |
 | `bin/ci-authz-lint.php` | OK — 0 known |
-| `bin/quality` | see the branch's final run |
+| `bin/quality` | **PASS 15/15**, twice: on `346f662` and again on the review-response commit |
 
 **The arch boundary holds and was never at risk of not holding**: all academic reading stays in
 `App\Academics\BillableEnrollmentAdapter`, and no Finance file gained an import. The rule that would
@@ -267,3 +307,196 @@ draft batch; invoices are issued directly — ruling not revisited). `listUnplac
 caller yet**, which is the one place this branch knowingly front-loads a primitive ahead of its
 consumer; the brief made that call explicitly and named the consumer (commit 3's "N students could not
 be placed"), and the consumer is named in the port's own docblock so it cannot be quietly dropped.
+
+---
+
+## Cold review round 1
+
+Ten findings against `346f662`. **All ten addressed in one follow-up commit.** F1 and F2 were
+ship-blocking and both were correct: the eager load was unproven, and the "one shared base query" the
+port promised did not exist. Nothing in the review asked the methods to behave differently and nothing
+here changes what they do — except `currentForStudent`, which now reaches the same definition through
+the same code, and returns the same rows (see F2).
+
+### F1 · the snapshot relations are now proven
+
+**The finding was right and the exposure was exactly as stated.** Replacing
+`->with($this->unscopedSnapshotRelations())` with `->with(self::SNAPSHOT_RELATIONS)` left the suite
+10/10 green. `cohortIsolation` structurally cannot catch it: it runs with **no** ambient context,
+where `SchoolScope` is a no-op and the scoped and unscoped eager loads issue identical SQL.
+
+The assertion now lives in `isolation holds when the ambient School context is the WRONG one`, the one
+test in the file where re-scoping the relations changes an observable value. It asserts the DTO's
+`schoolId`, its `studentId`, and that `studentName` has **not** degraded to the `'Student #<id>'`
+fallback — three different consequences of the same substitution. The same pair is asserted for
+`listUnplaceableForSchool`, which shares `currentEnrollments()` and had no coverage at all.
+
+**Planted** — the exact substitution named in the finding:
+
+```text
+tests: 12, passed: 11, failed: 1
+✗ isolation holds when the ambient School context is the WRONG one
+  tests/Feature/Finance/CohortEnrollmentPortTest.php:260
+  Failed asserting that 0 is identical to 5.
+```
+
+`0` is the DTO's `schoolId`; `5` is `school#5`. That is the finding's predicted failure verbatim — an
+invoice attributed to no School. Restored: **12 passed, 56 assertions**.
+
+### F2 · "one shared base query" was false, and is now true
+
+**Correct, and worse than stated in one respect**: the port docblock asserted the two could not drift
+*because* they shared a base query, and the sharing did not exist. `currentForStudent` spelled the
+rule out inline; the cohort base spelled it out again.
+
+The definition now lives in **one** private method, `billableEpisodes(?int $schoolId = null)` —
+`status = ACTIVE` plus `id IN (SELECT MAX(id) … GROUP BY student_id)`. `currentForStudent()` calls it
+directly; `currentEnrollments()` calls it and adds isolation and eager loading. The two clauses exist
+exactly once in the class.
+
+**`currentForStudent`'s behaviour is unchanged, and I checked rather than assumed** — the finding said
+to stop and report if it changed. It does not, for one reason: the composite FK
+`student_curricula_student_school_foreign` confines every episode of a student to that student's one
+School, so the subquery's un-scoped `MAX(id)` and the old `latest('id')` under the ambient scope
+resolve to the same row. `latest('id')` is dropped rather than kept, because `billableEpisodes()`
+already admits at most one row per student — with `student_id` pinned the result set has at most one
+member — and re-adding it would restore the second copy of the tie-break. `OpeningBalanceImportTest`,
+which drives `currentForStudent` through the port, is green (49 passed, 277 assertions across both
+files).
+
+`currentForStudent` keeps the ambient `SchoolScope`; the cohort reads still strip it. Isolation was
+deliberately **not** unified — see F3.
+
+**Planted** — the tie-break deleted from `billableEpisodes()`, so both callers lose it at once:
+
+```text
+tests: 12, passed: 10, failed: 2
+
+✗ a student holding TWO active episodes is billed once, for the one currentForStudent returns
+  tests/Feature/Finance/CohortEnrollmentPortTest.php:328
+  Failed asserting that two arrays are identical.
+  --- Expected
+  +++ Actual
+  -Array &0 []
+  +Array &0 [
+  +    0 => 12,
+  +]
+
+✗ currentForStudent applies the SAME tie-break, and fails on its own when it is removed
+  tests/Feature/Finance/CohortEnrollmentPortTest.php:362
+  Failed asserting that 15 is identical to 16.
+```
+
+Two independent reds, one per code path. The first is the **double bill**: student#12 appears in the
+first level's cohort as well as the second, so commit 2 raises two invoices. The second is the
+**single-invoice path** returning enrollment 15 — the older episode — where 16 is current.
+
+The second test is new and exists solely so the plant produces two reds. The pre-existing test dies on
+its *first* assertion (the cohort one) and never reaches its `currentForStudent` check, so on its own
+it could not show the coupling. Restored: **12 passed, 56 assertions**.
+
+### F3 · the equivalence is conditional, and now says so
+
+F2's fix does **not** resolve it, as the finding anticipated. `currentForStudent` keeps the ambient
+scope and takes no School; the cohort reads take one and strip it. Unifying them would mean changing
+isolation on the live single-invoice path, which is out of scope for this commit.
+
+So the port states the condition instead of asserting a biconditional. The equivalence holds when the
+ambient School is `$schoolId` **or absent** — which covers every caller that exists (a `SchoolAware`
+job under `runFor`, or a request already in that School) — and the docblock names the foreign-context
+case as the seam where it breaks. The interface docblock now splits every method into **AMBIENT** and
+**ARGUMENT** isolation rather than making one blanket claim.
+
+### F4 · both stale comments fixed
+
+`BillableEnrollmentAdapter.php`'s `toBillableEnrollment()` said *"The enrollment row carries NO
+school_id (see above)"* while "see above" said the opposite — the trap left half-closed. Rewritten:
+deriving the School from the student is still correct and still deliberate (the FK makes the values
+equal, so this reads the durable identity rather than the denormalised copy), and the comment says
+that instead of a false schema claim.
+
+`BillableEnrollmentProvider.php`'s header said the `SchoolScope` "already constrains visibility, so
+cross-School lookups return null by construction" — false for the two methods that strip it by
+design, and **this is the sentence that misled the brief**. Replaced with the per-method AMBIENT /
+ARGUMENT split, including the point that a filter turns a wrong-School read into "not found" and never
+into a refusal.
+
+### F5 · the totality claim is withdrawn, ticket written
+
+Both shapes named in the finding confirmed: `student_curricula.student_id` **is** nullable
+(`information_schema`), so a NULL-`student_id` episode is schema-legal under MATCH SIMPLE and falls
+out of both lists. Docblock and test corrected as described above; no third method built.
+
+Ticket: [docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md](../tickets/bulk-run-must-account-for-every-billable-student.md)
+— names commit 3 as consumer and states the requirement as given: the bulk-run screen must be able to
+say how many billable students were neither billed nor flagged, or it reports success over a silent
+omission.
+
+### F6 · the redundant clauses are kept, the comment defending them is corrected
+
+Both clauses kept. The comment now grades all three isolation clauses honestly: clause 1 is THE
+constraint and is falsifiable; clause 2 is unfalsifiable (FK-equivalent to clause 1); clause 3 cannot
+change a result at all. The failure mode the old comment invoked — the subquery "picking a foreign row
+and leaving the student out of the cohort" — does not exist, and saying so is the point.
+
+### F7 · ticket written, and the drift is measured, not hypothesised
+
+Verified both halves of the finding. `CurriculumEnrollmentService::softEnd()`'s docblock records the
+previous `unenroll()` setting only `ended_at`, and `portaa10_portal` holds **366 `promoted` rows with
+`ended_at IS NULL`** — confirmed by query, not quoted from the review.
+
+Ticket: [docs/handoff/tickets/ended-at-and-status-drift.md](../tickets/ended-at-and-status-drift.md)
+— both directions with live counts, all three readers, and a mechanism (a named trigger signalling
+SQLSTATE 45000, since production is MySQL 5.7 and ignores CHECK) rather than a convention.
+
+### F8 · absolute counts asserted; the unplaceable number is NOT 8, and I was wrong about it
+
+The cohort test now asserts **8** as well as flatness — `$large === $small` passes for any constant,
+including a constant 40.
+
+**I asserted 8 for `listUnplaceableForSchool` too and it failed at 4.** The count is *data*-shaped,
+not only code-shaped: Laravel skips an eager-load query entirely when every parent key for it is null,
+and an unplaceable row is by definition one whose coordinate keys are null. Measured:
+
+| fixture | rows | queries |
+| --- | ---: | ---: |
+| all-null coordinates | 30 | 4 |
+| plus one row with a real arm carrying a null `class_level_id` | 31 | 7 |
+
+So a fixed number there would pin the fixture, not the code. The test asserts what belongs to the
+code: flat in the number of students, the measured 4 for the all-null shape, strictly more for the
+mixed shape, and never above the structural ceiling of `1 + count(SNAPSHOT_RELATIONS) = 8`.
+
+### F9 · lint extended to `app/Academics/`, and it caught exactly this branch
+
+`finance-escape-hatches` was gated on `str_starts_with($rel, 'app/Finance/')`, so six
+`withoutGlobalScope` calls in `app/Academics` were invisible to it — the boundary could be walked
+around by moving code one directory over. Predicate extended to cover `app/Academics/` too.
+
+**What it caught — three findings, all in the file this branch wrote, and nothing else:**
+
+```text
+boundary-lint: 3 NEW boundary violation(s):
+  ✗ finance-escape-hatches  app/Academics/BillableEnrollmentAdapter.php  $query->withoutGlobalScope(SchoolScope::class)
+  ✗ finance-escape-hatches  app/Academics/BillableEnrollmentAdapter.php  $unscoped = fn ($query) => $query->withoutGlobalScope(SchoolScope::class);
+  ✗ finance-escape-hatches  app/Academics/BillableEnrollmentAdapter.php  ->withoutGlobalScope(SchoolScope::class)
+```
+
+**No unrelated pre-existing file lit up**, so the extension stays — `app/Academics/` contains exactly
+one PHP file, the adapter. The extension is therefore not yet load-bearing over anything but this
+branch's own code; it becomes so as the Academics seam fills.
+
+The three lines are baselined with their justification in the lint's own comment. Baseline entries
+went 4 → 7; nothing was removed (`diff` shows additions only, plus header comment lines the previous
+baseline predated). **A limitation worth recording rather than hiding:** the baseline keys on the
+*trimmed line text*, so a seventh call whose line reads byte-identically to a baselined one would be
+admitted silently. That is a property of this lint's design, not of this change.
+
+### F10 · `bin/quality`
+
+Run on this commit: **PASS 15/15** — recorded in the Gates table above rather than deferred.
+
+### Trivia
+
+`isActive()` is `StudentCurriculum.php:192-195`, not `:193` — corrected. The migration's FK statement
+spans `:83-88`, not `:86` — corrected.

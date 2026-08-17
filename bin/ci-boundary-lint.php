@@ -128,11 +128,23 @@ foreach ($app as [$rel, $line]) {
         $add('finance-table-outside-finance', $rel, $line);
     }
 
-    // finance-escape-hatches — §17.1 rule 4, method calls inside app/Finance/.
+    // finance-escape-hatches — §17.1 rule 4, method calls inside app/Finance/ AND app/Academics/.
     // withTrashed/withoutTrashed/SoftDeletingScope are the SAME rule as
     // withoutGlobalScope, not a new one — see the header. They are enumerated
     // separately only because the match is on tokens, not on behaviour.
-    if (str_starts_with($rel, 'app/Finance/')
+    //
+    // WHY app/Academics/ IS IN SCOPE. The rule was written when Finance was the only module and
+    // the predicate was the module's directory. app/Academics is the OUTBOUND ADAPTER for Finance's
+    // ACL port (BillableEnrollmentAdapter) — Finance-owned behaviour that merely lives outside
+    // app/Finance so the dependency arrow points the right way. U6 commit 1 put six
+    // withoutGlobalScope calls there, every one of them invisible to this rule, which means the
+    // boundary the rule defends could be walked around entirely by moving code one directory over.
+    // A rule that stops at a directory name is not defending the behaviour; it is defending the
+    // directory. The escape hatches in app/Academics are DELIBERATE and are baselined with their
+    // justification (they make two argument-scoped reads independent of ambient context — see the
+    // adapter's currentEnrollments()); the point of covering the directory is that the SEVENTH one
+    // has to be argued for, not that these six are wrong.
+    if ((str_starts_with($rel, 'app/Finance/') || str_starts_with($rel, 'app/Academics/'))
         && preg_match('/(withoutGlobalScopes?\(|withoutSchoolScope\(|withTrashed\(|withoutTrashed\(|SoftDeletingScope|->hasRole\(|auth\(\)->setUser\(|DB::table\()/', $line)) {
         $add('finance-escape-hatches', $rel, $line);
     }

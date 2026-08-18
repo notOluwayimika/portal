@@ -160,12 +160,29 @@ class MergeGuardians extends Command
             ], $decision['donors']),
         );
 
+        // The surviving account is written to as well — consolidation clears its
+        // `disabled_at` and rotates its password — so which OTHER schools it serves
+        // is as much the operator's business as it is for the accounts being ended.
+        // A fact computed, used only to word a message and never shown, is the
+        // shape of the defect this line exists to close.
         $this->line(sprintf(
-            'Surviving account: user#%d — %s, %s.',
+            'Surviving account: user#%d — %s, %s, %s.',
             $decision['keeper_user_id'],
             $decision['keeper_deliverable'] ? 'deliverable address' : 'NO DELIVERABLE ADDRESS',
             $decision['keeper_disabled'] ? 'currently disabled' : 'enabled',
+            $decision['keeper_school_exclusive']
+                ? 'used by this school only'
+                : ($decision['keeper_other_school_ids'] === []
+                    ? 'also backs another guardian record in this school'
+                    : 'ALSO SERVES '.implode(', ', array_map(
+                        fn (int $id) => "school#{$id}",
+                        $decision['keeper_other_school_ids'],
+                    ))),
         ));
+
+        if ($decision['keeper_re_enable_blocked']) {
+            $this->line('  ⚠ that account is disabled and shared, so this merge cannot re-enable it here.');
+        }
 
         $this->line($decision['consolidating']
             ? 'The parent WILL be emailed fresh credentials for the surviving account'

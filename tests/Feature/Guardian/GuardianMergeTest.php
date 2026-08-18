@@ -391,6 +391,96 @@ it('carries the other school on the plan wherever a plan is reachable', function
         ->and($plan['login_decision']['consolidating'])->toBeFalse();
 });
 
+it('refuses to re-enable a disabled keeper account that still serves another school', function () {
+    Notification::fake();
+
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    // The MIRROR of the donor case, on the same write. One account, two schools —
+    // and school#B has disabled it deliberately. Consolidation clears disabled_at
+    // on the keeper, so a school#A cleanup would hand back access school#B took
+    // away, recorded only as a login_enabled on a school#A guardian.
+    $sharedUser = gm_user($schoolA->id, 'keeper.parent@example.test');
+    $keeper = gm_guardian($schoolA->id, $sharedUser->id);
+    $elsewhere = gm_guardian($schoolB->id, $sharedUser->id);
+    $sharedUser->forceFill(['disabled_at' => now()])->save();
+
+    $donorUser = gm_user($schoolA->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($schoolA->id, $donorUser->id);
+
+    $student = gm_student($schoolA->id);
+    gm_link($absorbed, $student);
+
+    expect(fn () => gm_merge($keeper, [$absorbed], consolidate: true))->toThrow(ValidationException::class);
+
+    expect(User::find($sharedUser->id)->disabled_at)->not->toBeNull()
+        ->and($elsewhere->fresh()->deleted_at)->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(User::find($donorUser->id)->disabled_at)->toBeNull();
+
+    Notification::assertNothingSent();
+});
+
+it('proceeds when the shared keeper account is already enabled, because there is no re-enable to gate', function () {
+    Notification::fake();
+    (new RbacSeeder)->run();
+
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    // Same shape, minus the disable. Nothing clears `disabled_at` because nothing
+    // set it, so no other school can lose anything — and refusing here would be a
+    // guard firing where no write is at stake, which is how guards get switched off.
+    $sharedUser = gm_user($schoolA->id, 'keeper.parent@example.test');
+    $keeper = gm_guardian($schoolA->id, $sharedUser->id);
+    $elsewhere = gm_guardian($schoolB->id, $sharedUser->id);
+
+    $donorUser = gm_user($schoolA->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($schoolA->id, $donorUser->id);
+
+    $student = gm_student($schoolA->id);
+    gm_link($absorbed, $student);
+
+    $plan = gm_merge($keeper, [$absorbed], consolidate: true);
+
+    expect($plan['login_decision']['keeper_re_enable_blocked'])->toBeFalse()
+        ->and($plan['login_decision']['keeper_school_exclusive'])->toBeFalse()
+        ->and($plan['login_decision']['keeper_other_school_ids'])->toBe([$schoolB->id])
+        ->and(User::find($donorUser->id)->disabled_at)->not->toBeNull()
+        ->and(User::find($sharedUser->id)->disabled_at)->toBeNull()
+        ->and($elsewhere->fresh()->deleted_at)->toBeNull();
+
+    Notification::assertSentToTimes(User::find($sharedUser->id), GuardianAccountCreatedNotification::class, 1);
+});
+
+it('re-enables a disabled keeper account that serves only this school', function () {
+    Notification::fake();
+    (new RbacSeeder)->run();
+
+    $school = al_makeSchool();
+
+    $keeperUser = gm_user($school->id, 'keeper.parent@example.test');
+    $keeper = gm_guardian($school->id, $keeperUser->id);
+    $keeperUser->forceFill(['disabled_at' => now()])->save();
+
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student);
+
+    $plan = gm_merge($keeper, [$absorbed], consolidate: true);
+
+    // Nobody else's account, so the re-enable is exactly what consolidation is for.
+    expect($plan['login_decision']['keeper_school_exclusive'])->toBeTrue()
+        ->and($plan['login_decision']['keeper_re_enable_blocked'])->toBeFalse()
+        ->and(User::find($keeperUser->id)->disabled_at)->toBeNull()
+        ->and(User::find($donorUser->id)->disabled_at)->not->toBeNull();
+
+    Notification::assertSentToTimes(User::find($keeperUser->id), GuardianAccountCreatedNotification::class, 1);
+});
+
 it('consolidates when the donor account is school-exclusive', function () {
     Notification::fake();
     (new RbacSeeder)->run();

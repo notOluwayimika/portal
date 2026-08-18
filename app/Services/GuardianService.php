@@ -1014,20 +1014,52 @@ class GuardianService
         $crossAccountLogins = array_values(array_filter($donors, fn (array $d) => $d['can_authenticate']));
         $notExclusive = array_values(array_filter($crossAccountLogins, fn (array $d) => ! $d['school_exclusive']));
 
+        $keeperDisabled = $keeperUser?->isDisabled() ?? false;
+
+        // TWO FACTS ABOUT THE KEEPER'S ACCOUNT, AND THEY ARE NOT THE SAME FACT.
+        //
+        // `keeper_school_exclusive` is the FULL sense — nothing else lives on this
+        // account anywhere, including this school. It decides whether reversing
+        // --keep and --absorb is a real remedy or an invitation to hit the same
+        // refusal from the other side, so it has to match what the donor gate asks.
+        //
+        // `keeper_other_school_ids` is the NARROW sense — live records outside the
+        // school this merge is running in. That is what the re-enable gate needs:
+        // the hazard is another school's deliberate revocation being undone, and a
+        // sibling row in THIS school is this merge's own business. Refusing on the
+        // full sense there would refuse where the write is nobody else's concern,
+        // and a guard that fires where nothing is at stake is one the next person
+        // switches off.
+        $keeperRemainingSchoolIds = $this->remainingGuardianSchoolIdsFor(
+            (int) $keeper->user_id,
+            array_merge($absorbedIds, [(int) $keeper->id]),
+        );
+
+        $keeperOtherSchoolIds = array_values(array_filter(
+            $keeperRemainingSchoolIds,
+            fn (int $schoolId) => $schoolId !== (int) $keeper->school_id,
+        ));
+
+        // GATED ON THE WRITE BEING REACHABLE, not on exclusivity alone. If the
+        // keeper account is already enabled there is no `disabled_at` to clear, so
+        // there is nothing another school could lose and nothing to refuse.
+        $reEnableBlocked = $keeperDisabled && $keeperOtherSchoolIds !== [];
+
+        $consolidating = $consolidateLogin
+            && $crossAccountLogins !== []
+            && $notExclusive === []
+            && ! $reEnableBlocked;
+
         return [
             'keeper_user_id' => (int) $keeper->user_id,
             'keeper_deliverable' => $keeperUser?->hasDeliverableEmail() ?? false,
-            'keeper_disabled' => $keeperUser?->isDisabled() ?? false,
-            // Whether the KEEPER's account is itself school-exclusive, which is what
-            // decides whether reversing --keep and --absorb is a real remedy or an
-            // invitation to hit the same refusal from the other side.
-            'keeper_school_exclusive' => $this->remainingGuardianSchoolIdsFor(
-                (int) $keeper->user_id,
-                array_merge($absorbedIds, [(int) $keeper->id]),
-            ) === [],
+            'keeper_disabled' => $keeperDisabled,
+            'keeper_school_exclusive' => $keeperRemainingSchoolIds === [],
+            'keeper_other_school_ids' => $keeperOtherSchoolIds,
+            'keeper_re_enable_blocked' => $reEnableBlocked,
             'consolidate_requested' => $consolidateLogin,
-            'consolidating' => $consolidateLogin && $crossAccountLogins !== [] && $notExclusive === [],
-            'will_notify' => $consolidateLogin && $crossAccountLogins !== [] && $notExclusive === [],
+            'consolidating' => $consolidating,
+            'will_notify' => $consolidating,
             'donors' => $donors,
             'cross_account_login_guardian_ids' => array_column($crossAccountLogins, 'guardian_id'),
             'not_school_exclusive_guardian_ids' => array_column($notExclusive, 'guardian_id'),
@@ -1087,6 +1119,20 @@ class GuardianService
      * exactly this list for the plan's own report; a donor absent from it still
      * backs a live record somewhere.
      *
+     * FOUR. THE SAME WRITE, ON THE OTHER SIDE. Consolidation does not only end the
+     * donor account — it clears `disabled_at` on the KEEPER's. That is the mirror
+     * of THREE and it went unguarded for a round, because the guard had been
+     * written against the record in front of it rather than against the reach of
+     * the write. Another school may have deliberately revoked that account; a
+     * cleanup here must not silently restore it, and the only audit entry would be
+     * a `login_enabled` on a guardian in THIS school, so the school that revoked it
+     * would have no trail at all.
+     *
+     * Gated on the write being REACHABLE. An already-enabled keeper has no
+     * `disabled_at` to clear, so there is nothing to refuse; and a sibling row in
+     * this same school is this merge's own business. Only a disabled keeper whose
+     * account still serves ANOTHER school is refused.
+     *
      * @param  array<string, mixed>  $decision
      */
     private function assertLoginDecisionAllowed(Guardian $keeper, array $decision): void
@@ -1116,6 +1162,23 @@ class GuardianService
                     ."guardian#{$keeper->id} is on user#{$decision['keeper_user_id']}, which has no deliverable "
                     .'email address — so the parent could not be sent credentials for the account that '
                     .'survives. Give the keeper a real email address first.',
+            ]);
+        }
+
+        if ($decision['keeper_re_enable_blocked']) {
+            $schools = implode(', ', array_map(
+                fn (int $id) => "school#{$id}",
+                $decision['keeper_other_school_ids'],
+            ));
+
+            throw ValidationException::withMessages([
+                'keep' => "Merge aborted: --consolidate-login would re-enable user#{$decision['keeper_user_id']}, "
+                    ."the keeper's account, which is currently disabled and still backs live guardian records in "
+                    ."{$schools}. That account may have been disabled there deliberately, and users.disabled_at is "
+                    .'a property of the account rather than of a school, so re-enabling it here would restore '
+                    ."access {$schools} never gave back — recorded only as a login_enabled on guardian#{$keeper->id} "
+                    .'in this school, which is a trail they cannot see. Confirm with the other school and re-enable '
+                    .'the account there first, or keep a guardian record whose account is not shared.',
             ]);
         }
 
@@ -1156,6 +1219,7 @@ class GuardianService
                     ."this school. {$remedy}",
             ]);
         }
+
     }
 
     /**
@@ -1201,6 +1265,15 @@ class GuardianService
 
         $plainPassword = $this->passwordGenerator->generate();
 
+        // TWO WRITES WITH DIFFERENT REACH, IN ONE UPDATE. Clearing `disabled_at`
+        // can hand back access another school deliberately revoked, so it is
+        // gated upstream (keeper_re_enable_blocked) and this line is only reached
+        // when that is safe. Rotating the password cannot restore anything to
+        // anyone — the worst it does is make a working credential stop working,
+        // for a parent who is being emailed the replacement — so it is not gated.
+        // That asymmetry is deliberate; whether the rotation should be
+        // conditional at all is a named open decision:
+        // docs/handoff/tickets/guardian-merge-rotates-the-keeper-password-unconditionally.md
         $user->update([
             'disabled_at' => null,
             'password' => $plainPassword,

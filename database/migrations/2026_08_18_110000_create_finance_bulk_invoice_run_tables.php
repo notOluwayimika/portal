@@ -165,26 +165,57 @@ return new class extends Migration
                 // a row with `outcome = failed` and its own `reason`; this column stays NULL.
                 $table->text('failure_reason')->nullable();
 
-                // THE RECONCILIATION, written when the run finishes and NULL until then. The four
-                // outcome counts are re-derived from the rows actually persisted, not from what the
-                // job believed it did, so a row that failed to insert shows up as a discrepancy
-                // rather than being papered over by an in-memory tally.
+                // ── THE RUN'S OWN ACCOUNTING. EXACT, AND THE DEFECT SIGNAL ────────────────────
+                //
+                // `cohort_count` is how many enrollments listForCohort() RETURNED, and the invariant
+                // over these four is an EQUALITY, not an estimate:
+                //
+                //     billed_count + already_billed_count + failed_count == cohort_count
+                //
+                // All four are true headcounts of the same set. When they disagree, a row the run
+                // meant to write did not get written — which is the only way the job can now lose a
+                // student, since a per-student write that throws is logged and skipped rather than
+                // taking the run down. So the inequality IS the alarm, and there is no separate flag
+                // pretending to be one.
+                //
+                // The counts are re-derived from the rows actually PERSISTED, never from an
+                // in-memory tally: a tally says what the job believes it did, and could not
+                // disagree with itself.
+                $table->unsignedInteger('cohort_count')->nullable();
                 $table->unsignedInteger('billed_count')->nullable();
                 $table->unsignedInteger('already_billed_count')->nullable();
                 $table->unsignedInteger('failed_count')->nullable();
                 $table->unsignedInteger('unplaceable_count')->nullable();
 
-                // The independently-counted billable population of the School at run time
-                // (BillableEnrollmentProvider::countBillableForSchool), and what is left of it after
-                // every row above is subtracted. THE ANSWER TO THE TICKET: "how many billable
-                // students were neither billed nor flagged".
+                // ── THE SCHOOL-WIDE FIGURE, WHICH IS A DIFFERENT KIND OF NUMBER ───────────────
+                //
+                // The billable population of the WHOLE School at run time
+                // (BillableEnrollmentProvider::countBillableForSchool), and how much of it sat
+                // outside this run's coordinates.
+                //
+                // `outside_coordinates_count` WAS CALLED `unaccounted_count`, AND THE RENAME IS THE
+                // WHOLE POINT. A run covers ONE class level, so on a seven-level school the residual
+                // is roughly six-sevenths of the roster on every SUCCESSFUL run — and a column named
+                // "unaccounted" invites a screen to render it as "N children were missed", which
+                // would be false on every healthy run and would train an operator to ignore the one
+                // number that is not. It says what it counts: billable students this run did not
+                // enumerate because they are priced somewhere else.
+                //
+                //     outside_coordinates_count = billable_count - cohort_count - unplaceable_count
+                //
+                // IT UNDER-REPORTS BY DESIGN, AND BY A KNOWN AMOUNT. billableEpisodes() takes
+                // MAX(id) GROUP BY student_id, and SQL collapses every NULL student_id into ONE
+                // group — so N student-less episodes (schema-legal: MATCH SIMPLE skips the composite
+                // FK when a component is NULL) contribute 1 between them. billable_count is
+                // therefore short by N - 1 whenever N > 1. Recorded in
+                // docs/handoff/tickets/student-less-episodes-under-report-the-billable-population.md.
                 $table->unsignedInteger('billable_count')->nullable();
 
                 // SIGNED, on purpose. The subtraction cannot go negative today — the cohort and the
                 // unplaceable list are both subsets of the population — so a negative value would
                 // mean that stopped being true. An unsigned column would wrap it into a colossal
                 // positive and hide exactly the fact worth seeing.
-                $table->integer('unaccounted_count')->nullable();
+                $table->integer('outside_coordinates_count')->nullable();
 
                 $table->timestamps();
             });
@@ -233,8 +264,15 @@ return new class extends Migration
                 $table->timestamps();
 
                 // ONE ROW PER ENROLLMENT PER RUN, at the engine. A retry inside a single run — or a
-                // cohort read that returned a student twice — is refused with 1062 rather than
-                // silently double-counted into the reconciliation.
+                // cohort read that returned a student twice — is refused with 1062, so the second
+                // write never lands and the counts cannot double-count it.
+                //
+                // WHAT THIS INDEX DOES NOT DO, said here because an earlier version of this comment
+                // implied otherwise: it does not decide what the JOB does with that 1062. Refusing
+                // the write and surviving the refusal are two different properties, and when this
+                // comment was written the job had only the first — an uncaught 1062 in the
+                // unplaceable loop killed a run that could still have billed the rest. The engine
+                // half is here; the job half is ProcessBulkInvoiceRun::attempt().
                 $table->unique(['school_id', 'run_id', 'enrollment_id'], 'finance_bulk_invoice_run_rows_school_run_enrollment_unique');
             });
         }

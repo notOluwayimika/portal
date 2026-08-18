@@ -32,18 +32,36 @@ use Illuminate\Support\Carbon;
  * THE COUNTS ARE THE REPORT; `status` IS ONLY WHETHER THE REPORT IS FINISHED. A `completed` run may
  * have billed nobody. See {@see BulkInvoiceRunStatus}.
  *
- * THE RECONCILIATION, and it is the reason this table exists rather than a log line
- * (docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md):
+ * TWO KINDS OF FIGURE, AND CONFLATING THEM IS THE MISTAKE THIS SHAPE EXISTS TO PREVENT.
  *
- *     unaccounted_count = billable_count
- *                       − (billed_count + already_billed_count + failed_count)   ← the cohort
- *                       − unplaceable_count                                      ← the flagged
+ * 1. THE RUN'S OWN ACCOUNTING — EXACT, and the defect signal:
  *
- * Non-zero means there are billable students in this School that this run neither billed nor
- * flagged — placeable at coordinates it did not name, or an episode with a NULL `student_id`, which
- * no coordinate reasoning reaches. The figure is written AT RUN TIME. A screen computing it when it
- * opens would describe a roster that has since moved, and would report a number about a School that
- * was never the one billed.
+ *        billed_count + already_billed_count + failed_count == cohort_count
+ *
+ *    Four true headcounts of one set. `cohort_count` is the size of the list the run WALKED; the
+ *    other three are counted from the rows it PERSISTED, so the two sides have independent sources
+ *    and the equality can genuinely fail. It fails in exactly one way: a per-student row that could
+ *    not be written (see ProcessBulkInvoiceRun::attempt(), which rules that such a row is a
+ *    per-student fault and lets the run carry on). There is no separate "something went wrong"
+ *    flag, because a flag the job sets is a flag the job can forget to set.
+ *
+ * 2. THE SCHOOL-WIDE FIGURE — `outside_coordinates_count`, which is NOT a defect signal:
+ *
+ *        outside_coordinates_count = billable_count − cohort_count − unplaceable_count
+ *
+ *    Billable students this run did not enumerate because they are priced at other coordinates. On
+ *    a seven-class-level school a healthy single-level run leaves roughly six-sevenths of the
+ *    roster here, EVERY TIME. It was called `unaccounted_count` and the project lead ruled the name
+ *    out: a screen rendering it as "N children were missed" would be wrong on every good run and
+ *    would teach an operator to ignore the number that matters.
+ *
+ *    AND IT UNDER-REPORTS BY A KNOWN AMOUNT: `billableEpisodes()` groups by `student_id` and SQL
+ *    collapses every NULL into ONE group, so N student-less episodes contribute 1 between them and
+ *    `billable_count` is short by N − 1 whenever N > 1
+ *    (docs/handoff/tickets/student-less-episodes-under-report-the-billable-population.md).
+ *
+ * BOTH ARE WRITTEN AT RUN TIME. A screen computing either when it opens would describe a roster
+ * that has since moved, and would report a number about a School that was never the one billed.
  *
  * NO MONEY COLUMN, deliberately — see the migration for why a `total_billed` here would be an
  * unreconciled second copy of what the invoices already say.
@@ -59,12 +77,13 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property string|null $failure_reason PER-RUN only — a student who could not be billed carries its own reason on its row
+ * @property int|null $cohort_count how many enrollments listForCohort() returned; NULL until the run finishes
  * @property int|null $billed_count NULL until the run finishes
  * @property int|null $already_billed_count
  * @property int|null $failed_count
  * @property int|null $unplaceable_count
  * @property int|null $billable_count the School's billable population, counted independently at run time
- * @property int|null $unaccounted_count SIGNED — see the migration
+ * @property int|null $outside_coordinates_count SIGNED — billable students priced at other coordinates, NOT a miss count
  */
 class BulkInvoiceRun extends Model
 {

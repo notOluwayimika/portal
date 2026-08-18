@@ -211,9 +211,17 @@ finance_bulk_invoice_run_rows  finance_bulk_invoice_run_rows_school_run_enrollme
 
 ### Migration verified by shape (ADR 0052), four paths
 
-The rollback depth was **re-derived**, not assumed: `migrate:status` showed this migration alone in
-**batch 2**, so a bare `migrate:rollback` rolls back exactly it — no `--step=N` guess, which is the
-mistake that let an audit pass while testing another stream's migration.
+The rollback depth was **re-derived**, not assumed: on the database I ran it against —
+`portal_testing`, **incrementally migrated**, where this migration was applied on its own —
+`migrate:status` showed it alone in **batch 2**, so a bare `migrate:rollback` rolled back exactly it.
+
+**That is a fact about that database, not about this migration**, and the first version of this
+report stated it as though it were the latter. On a database migrated **from zero** — which is what
+`bin/quality-clean-db` builds and what a fresh clone produces — every migration lands in batch 1, and
+a bare `migrate:rollback` would revert **all of them**, not this one. Anyone repeating this audit
+must re-derive the depth on the database in front of them, which is the whole point of the rule in
+CLAUDE.md; naming a batch number here as if it travelled would be the same class of error as trusting
+`--step=1`.
 
 | Path | Result |
 | --- | --- |
@@ -325,3 +333,185 @@ No HTTP route. No screen. No `dispatch()` outside `tests/`. No `withoutGlobalSco
 `app/Finance`. No `CHECK` constraint. No RBAC permission, no policy, no grant-map edit — the run has
 no authorization surface until it has a route, and inventing one now would be a permission with no
 gate behind it.
+
+---
+
+# Round 2 — cold review's findings, and the project lead's ruling
+
+Second commit on this branch, on top of `87b3702`. One real defect, three claims measured false, a
+naming ruling, one boundary slip, and three tickets. Everything below is what changed and what was
+measured, not what was intended.
+
+## R2.1 · FIX 1 — the defect: two `record()` call sites outside every `try`
+
+Cold review measured it: a provider whose unplaceable list repeats one member produces **1062** on
+the second insert, and the run dies in the **unplaceable loop — before the cohort loop runs at
+all.** Two billable students, zero invoices, run `failed`, every count NULL.
+
+The migration comment claimed that shape was *"refused with 1062 rather than silently
+double-counted"*. **True of the index, false of the job.** Refusing a write and surviving the refusal
+are two different properties and only one of them was built. Both the migration comment and the class
+docblock's *"every per-student call is caught"* are corrected in place, in the files that carried
+them.
+
+**The fix.** `ProcessBulkInvoiceRun::attempt()` — every per-student unit of work, the invoice **and**
+the row that records what happened to it, runs inside it. Both loops call it.
+
+**The ruling, stated in the code rather than left to be inferred:** an unrecordable row is a
+**per-student fault, not a run-level one**. The run bills everyone it still can. Same judgement
+already made for a student whose *invoice* cannot be raised, and the same reasoning — thirty-nine of
+forty is a partial result; thirty-one of forty because the ninth row hit a constraint is a defect.
+
+**And it is not silent**, which is what makes the ruling defensible. A student whose row could not be
+written is missing from the rows, so `billed + already + failed < cohort_count`, and that inequality
+is the alarm (R2.5). No extra flag column: a flag the job sets is a flag the job can forget to set.
+
+### The three planted reds — plant A: both `record()` sites back outside every `try`
+
+```
+tests 3  passed 0  failed 3
+
+FIX1a  a duplicated unplaceable episode does not stop the cohort from being billed
+  two billable students were in the cohort and neither was billed: a 1062 in the unplaceable
+  loop killed the run before the cohort loop ran
+  Failed asserting that 0 is identical to 2.
+
+FIX1b  a duplicated cohort member does not stop the other students, and the alarm fires
+  a 1062 in the already-billed branch left the rest of the cohort unbilled
+  Failed asserting that 1 is identical to 3.
+
+FIX1c  a cohort member whose row violates an unrelated constraint does not stop the others
+  a 1452 on ONE row is a per-student fault; the run must still close and report its counts
+  Failed asserting that two variables reference the same object.
+  -App\Finance\Enums\BulkInvoiceRunStatus Enum (Completed, 'completed')
+  +App\Finance\Enums\BulkInvoiceRunStatus Enum (Failed, 'failed')
+```
+
+Each test leads with **the harm**, so a red names what was lost rather than what a status field held.
+FIX1c is deliberately **not** a duplicate: the phantom's row fails the composite enrollment FK
+(**1452**), so the fix cannot have special-cased 1062. All three green after the fix
+(`tests 3, passed 3, assertions 28`).
+
+## R2.2 · FIX 2 — a killed worker no longer strands a run in `running`
+
+`handle()` sets `running` before its `try`, and there was no `failed()`, no `$backoff`, `tries = 1`,
+`timeout = 3600`. A worker timeout or fatal ran neither the `catch` nor the `finally`, so
+`BulkInvoiceRunStatus::Running`'s own docblock named a state — *"the worker died mid-cohort"* — that
+nothing wrote.
+
+Added `failed(Throwable $e)`. Its docblock says which deaths it covers (an uncaught throw out of
+`handle()`, `MaxAttemptsExceededException` after the timeout alarm, `TimeoutExceededException` — every
+death where the process is still alive) and **which it does not**: *a SIGKILL, an OOM kill or the
+machine going away still strand the row*, because nothing in this process runs afterwards. Closing
+that needs a sweeper over `started_at`, and there isn't one. Claiming otherwise would be the same
+overclaim this branch has already had to correct twice.
+
+It **establishes its own School context** (`ActiveSchool::runFor($this->schoolId, …)`): job middleware
+does not wrap `failed()`, and `BulkInvoiceRun` is not in `rbac.fail_closed_models`, so its
+`SchoolScope` would read *unscoped* rather than refuse. And it **refuses to overwrite a terminal
+state** — a late queue-level death must not rewrite the outcome of a run that finished.
+
+**Plant C** — `failed()` deleted: both FIX2 tests red (`tests 2, passed 0`).
+
+## R2.3 · FIX 3 — the shadowed `fail()`
+
+The private `fail()` shadowed `InteractsWithQueue::fail()`, silently, with Larastan seeing nothing —
+and FIX 2 adding `failed()` beside it is exactly when that becomes a trap. Renamed to `failRun()`.
+
+Pinned by reflection, and the assertion needed a second attempt: `getDeclaringClass()` reports the
+**using** class for a trait method, so it cannot tell an override from the trait. `getFileName()`
+can, and that is what the test compares.
+
+**Plant D** — renamed back to `fail()`:
+
+```
+FIX3  ProcessBulkInvoiceRun::fail() must be the trait method, not a private override
+  Failed asserting that false is true.
+```
+
+## R2.4 · FIX 4 — three claims measured false, corrected where they were written
+
+| Claim | Where | Correction |
+| --- | --- | --- |
+| `Failed` means *"No invoice was raised"* / *"all of them before any invoice is raised"* | `BulkInvoiceRunStatus` | Now lists **four** routes in, split into the two that are pre-invoice (no active schedule; a mapper refusal) and the two that are not (a throw after the cohort loop; the worker dying — each invoice was its own transaction and none is rolled back). A `failed` run must be **read**, not assumed |
+| *"Every per-student call is caught"* | `ProcessBulkInvoiceRun` class docblock | Now true, and the docblock says it was false when written, why, and that the two failure kinds are recorded differently — a bad invoice gets a `failed` row, an unwritable row gets a log line and a broken equality |
+| *"this migration alone in batch 2"* | this report, §4 | Corrected in place: true of the **incrementally migrated** `portal_testing` I ran it on; **false of a database migrated from zero**, where everything is batch 1 and a bare rollback would revert 20+ migrations. Re-derive on the database in front of you |
+
+## R2.5 · FIX 5 — the ruling: one figure became two, of two different kinds
+
+The project lead ruled `unaccounted_count` out. A run covers **one** class level, so on a
+seven-level school the residual is roughly six-sevenths of the roster on **every successful run** —
+and it mixed students at un-named coordinates (normal), student-less episodes (a schema shape) and
+unrecorded rows (a defect) into one number where only the third is a signal.
+
+**1 · The run's own accounting — exact, and the defect signal.**
+
+```
+billed_count + already_billed_count + failed_count == cohort_count
+```
+
+New column `cohort_count` = the size of the list `listForCohort()` returned. The other three are
+counted from the rows persisted. **Two independent sources**, which is the only reason asserting the
+equality is worth anything.
+
+**2 · The school-wide figure — renamed to say what it counts.**
+`unaccounted_count` → **`outside_coordinates_count`** = `billable_count − cohort_count −
+unplaceable_count`. Subtracted from the **list sizes**, never from the row counts, so an unrecordable
+row cannot drain out of the equality — where it is loud — into a residual that is large and
+unalarming on every healthy run. The student-less caveat (`billable_count` is short by N − 1 because
+`GROUP BY student_id` collapses every NULL into one group) is carried on the column, on the model and
+on the port method.
+
+`docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md` now carries a **Resolution**
+section recording that the denominator it asked for was the wrong shape, why, and what replaced it —
+including which of its own acceptance criteria are superseded rather than met.
+
+### The planted red — plant B: a failed student is not recorded
+
+```
+tests 1  passed 0  failed 1
+
+FIX5  billed + already_billed + failed equals cohort_count, on a run where all three are non-empty
+  the run walked 4 cohort members but only accounted for 3 of them — a student the run saw has
+  no row, so nothing records what happened to them
+  Failed asserting that 3 is identical to 4.
+```
+
+The equality is asserted **first** in that test, so a red names the invariant rather than a bucket
+total; the individual bucket numbers are asserted after it, so the equality cannot be satisfied by a
+wrong split. FIX1b and FIX1c assert the *other* direction — that the inequality **fires** when a row
+is genuinely lost.
+
+## R2.6 · FIX 6 — a compile-time Finance → Academics reference, added for a docblock
+
+`BillableEnrollmentProvider.php` had gained `use App\Academics\BillableEnrollmentAdapter;` solely so a
+`{@see}` would resolve — the exact direction the port exists to prevent, and arch rule 3 does not
+catch it (it forbids Academics **models**). Import dropped; the method is named in prose, with the
+reason written beside it so it does not come back.
+
+## R2.7 · Tickets raised, not fixed here
+
+- `docs/handoff/tickets/student-less-episodes-under-report-the-billable-population.md` — the two
+  readers, the `GROUP BY` collapse, the N − 1 shortfall, the query that says whether any School has
+  N > 1, and why the honest repair is upstream (`student_id NOT NULL`) rather than counting around it.
+- `docs/handoff/tickets/already-billed-wins-over-a-failure-the-run-never-reaches.md` — stated as
+  **behaviour**: the pre-check runs first, so a student who is both already-billed and would fail is
+  classified `already_billed`. What it costs (a "retry the failures" screen must not read
+  `failed_count` as the size of the problem) and what changing it would actually require.
+- `docs/handoff/tickets/fee-schedule-lookup-first-rests-on-an-index-not-on-an-order.md` — `->first()`
+  with no `orderBy` is determinate **by `finance_fee_schedules_active_unique`**, not by the query, and
+  widening `FeeScheduleStatus::billable()` silently makes it non-deterministic. The coupling is
+  written down nowhere else.
+
+## R2.8 · One thing the reviewer did not raise, corrected anyway
+
+The migration was **edited in place** rather than superseded by a rename migration. The two tables are
+new on this unmerged branch and exist in no database but a throwaway test one, so a
+`rename_column` migration would be shipping history for a column that never existed anywhere. The
+four-path audit was re-run against the edited file (§R2.9). If that reasoning is rejected, the remedy
+is a follow-up migration, not a rebase.
+
+## R2.9 · Gate
+
+`bin/quality`: **PASS 15/15**. Test file: `tests: 17, passed: 17`. Migration re-audited after the
+edit — up, rollback (0 tables, 0 triggers), re-up, and the idempotent re-run against a live schema.

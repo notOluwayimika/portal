@@ -63,6 +63,7 @@ use App\Models\Term;
 use App\Support\ActiveSchool;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -205,28 +206,38 @@ function birOutcomes(BulkInvoiceRun $run): array
 }
 
 /**
- * Bind a provider that behaves exactly like the real adapter EXCEPT that one episode has vanished
- * between the cohort read and the bill.
+ * Bind a provider that is the real adapter with ONE list bent — the two lists the run walks, and
+ * `findByUuid`, are the only things a decorator here may touch.
  *
- * THIS IS A REAL FAILURE PATH, not an invented one. `findByUuid()` is AMBIENT-scoped while the
- * cohort read is ARGUMENT-scoped (the port's own docblock splits its methods on exactly that line),
- * so an episode withdrawn, soft-deleted or re-scoped between the two resolves to null there and
- * {@see GenerateInvoice} throws its own production message, "No billable
- * enrollment found for the given reference." The decorator makes that race deterministic; it does
- * not simulate an error the code could not produce.
+ * EVERYTHING ELSE DELEGATES to a real `BillableEnrollmentAdapter` (which is `final`, hence a
+ * decorator rather than a subclass), so the cohort read, the unplaceable read and the population
+ * count under test are all the genuine ones. Only the specific shape each test needs is injected.
  *
- * IT DELEGATES EVERY OTHER METHOD to a real BillableEnrollmentAdapter — which is final, so this is a
- * decorator rather than a subclass. The cohort read, the unplaceable list and the population count
- * are all the genuine ones, so nothing about the reconciliation under test is faked.
+ * The three shapes used below are all reachable in production:
+ *
+ *   $vanishing     — an episode that resolves in the ARGUMENT-scoped cohort read and no longer
+ *                    resolves in the AMBIENT-scoped `findByUuid` (the port's docblock splits its
+ *                    methods on exactly that line). A withdrawal landing mid-run does this, and
+ *                    GenerateInvoice then throws its own sentence.
+ *   $onUnplaceable — a list containing one member twice. `currentEnrollments()` de-duplicates by
+ *                    construction today, so this stands in for any future read that stops doing so;
+ *                    the point under test is what the JOB does with the 1062, not whether the read
+ *                    can produce it.
+ *   $onCohort      — the same for the cohort, plus the phantom-member case: a well-formed DTO whose
+ *                    `enrollmentId` names no row, so the row write fails the composite FK (1452)
+ *                    rather than the unique index. A failure that is NOT a duplicate.
  */
-function birProviderLosing(string $vanishingUuid): void
+function birProviderWith(?string $vanishing = null, ?Closure $onCohort = null, ?Closure $onUnplaceable = null): void
 {
-    app()->bind(BillableEnrollmentProvider::class, fn () => new class($vanishingUuid) implements BillableEnrollmentProvider
+    app()->bind(BillableEnrollmentProvider::class, fn () => new class($vanishing, $onCohort, $onUnplaceable) implements BillableEnrollmentProvider
     {
         private BillableEnrollmentAdapter $inner;
 
-        public function __construct(private readonly string $vanishing)
-        {
+        public function __construct(
+            private readonly ?string $vanishing,
+            private readonly ?Closure $onCohort,
+            private readonly ?Closure $onUnplaceable,
+        ) {
             $this->inner = new BillableEnrollmentAdapter;
         }
 
@@ -252,12 +263,16 @@ function birProviderLosing(string $vanishingUuid): void
 
         public function listForCohort(int $schoolId, int $termId, int $classLevelId): array
         {
-            return $this->inner->listForCohort($schoolId, $termId, $classLevelId);
+            $cohort = $this->inner->listForCohort($schoolId, $termId, $classLevelId);
+
+            return $this->onCohort === null ? $cohort : ($this->onCohort)($cohort);
         }
 
         public function listUnplaceableForSchool(int $schoolId): array
         {
-            return $this->inner->listUnplaceableForSchool($schoolId);
+            $unplaceable = $this->inner->listUnplaceableForSchool($schoolId);
+
+            return $this->onUnplaceable === null ? $unplaceable : ($this->onUnplaceable)($unplaceable);
         }
 
         public function countBillableForSchool(int $schoolId): int
@@ -270,6 +285,37 @@ function birProviderLosing(string $vanishingUuid): void
             return $this->inner->admissionNumberIndex();
         }
     });
+}
+
+/** The original single-purpose helper, kept because four tests read better with the narrow name. */
+function birProviderLosing(string $vanishingUuid): void
+{
+    birProviderWith(vanishing: $vanishingUuid);
+}
+
+/** Repeat the first element of a list — the 1062 shape, for either list. */
+function birRepeatFirst(): Closure
+{
+    return fn (array $items) => $items === [] ? $items : [$items[0], ...$items];
+}
+
+/**
+ * A well-formed DTO naming an episode that does not exist, appended to the cohort. Its row write
+ * fails `finance_bulk_invoice_run_rows_enrollment_school_foreign` (1452) — an unrecordable row for a
+ * reason that is NOT a duplicate, which is the third shape FIX 1 has to survive.
+ */
+function birAppendPhantom(int $schoolId): Closure
+{
+    return fn (array $cohort) => [...$cohort, new BillableEnrollment(
+        enrollmentId: 2_000_000_000,
+        enrollmentUuid: (string) Str::uuid(),
+        studentId: 2_000_000_000,
+        schoolId: $schoolId,
+        studentName: 'Phantom',
+        academicContext: 'JSS 1',
+        termId: 1,
+        classLevelId: 1,
+    )];
 }
 
 /* ── 1 · A run over a cohort bills every student once ──────────────────────────────────────── */
@@ -403,8 +449,9 @@ test('a mapper refusal fails the run once, not once per student', function () {
 
     // The counts stay NULL: a run that aborted must not present a reconciliation it never made.
     expect($run->billed_count)->toBeNull()
+        ->and($run->cohort_count)->toBeNull()
         ->and($run->billable_count)->toBeNull()
-        ->and($run->unaccounted_count)->toBeNull();
+        ->and($run->outside_coordinates_count)->toBeNull();
 });
 
 test('a run with no active fee schedule at its coordinates fails once, before any row', function () {
@@ -460,16 +507,21 @@ test('the reconciliation adds up over a fixture where all five buckets are non-e
         ->and($run->already_billed_count)->toBe(1)
         ->and($run->failed_count)->toBe(1)
         ->and($run->unplaceable_count)->toBe(1)
-        ->and($run->unaccounted_count)->toBe(2, 'one placeable student at un-named coordinates, plus the student-less episode');
+        ->and($run->outside_coordinates_count)->toBe(2, 'one placeable student at a class level this run did not name, plus the student-less episode');
 
     // The population, counted independently of every one of them.
     expect($run->billable_count)->toBe(7);
 
-    // And the identity itself.
-    expect(
-        $run->billed_count + $run->already_billed_count + $run->failed_count
-        + $run->unplaceable_count + $run->unaccounted_count
-    )->toBe($run->billable_count);
+    // THE RUN'S OWN ACCOUNTING, which is the exact one: four true headcounts of one set.
+    expect($run->cohort_count)->toBe(4)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)
+        ->toBe($run->cohort_count);
+
+    // And the school-wide identity, which is a DIFFERENT kind of statement — a residual, not a
+    // miss count. `outside_coordinates_count` is subtracted from the LIST SIZES, never from the row
+    // counts, so an unrecordable row cannot quietly drain into it.
+    expect($run->cohort_count + $run->unplaceable_count + $run->outside_coordinates_count)
+        ->toBe($run->billable_count);
 
     // The unplaceable student is RECORDED, not merely counted — the roster moves, so the run has to
     // write down who it saw at the moment it saw them.
@@ -596,4 +648,239 @@ test('the row outcome domain is enforced by a TRIGGER — a raw insert of an unk
     // the two refusals above statements about the OUTCOME rather than about the row.
     $insert('billed');
     expect(DB::table('finance_bulk_invoice_run_rows')->where('run_id', $run->id)->count())->toBe(1);
+});
+
+/* ── 8 · A per-student WRITE that cannot land must not take the run down (FIX 1) ───────────── */
+
+/*
+ * Three shapes, one ruling. Cold review measured the defect these close: two `record()` call sites —
+ * the unplaceable loop and the already-billed branch — sat outside every `try`, so a duplicate in
+ * either list produced 1062 and killed the run BEFORE the cohort loop, leaving two billable students
+ * unbilled, zero invoices, and every count NULL. The migration comment claimed that shape was
+ * "refused rather than silently double-counted", which was true of the INDEX and false of the JOB.
+ *
+ * The ruling is that an unrecordable row is a PER-STUDENT fault: the run bills everyone it still
+ * can. It is not silent — the student is missing from the rows, so
+ * billed + already + failed no longer equals cohort_count, and that inequality is the alarm. Each
+ * test below asserts BOTH halves: the other students were billed, AND the alarm fired.
+ */
+
+test('FIX1a: a duplicated unplaceable episode does not stop the cohort from being billed', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $one = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    $two = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, null);   // the unplaceable one, which the decorator repeats
+
+    birProviderWith(onUnplaceable: birRepeatFirst());
+
+    $run = birRun($ctx);
+
+    // THE HARM, ASSERTED FIRST so a red says what was lost rather than what a status field held:
+    // the 1062 lands in the UNPLACEABLE loop, which runs BEFORE the cohort loop, so an uncaught one
+    // means these two billable students are never reached at all.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(2,
+        'two billable students were in the cohort and neither was billed: a 1062 in the unplaceable '
+        .'loop killed the run before the cohort loop ran');
+
+    expect(Invoice::withoutGlobalScopes()->where('student_id', $one->id)->count())->toBe(1)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $two->id)->count())->toBe(1)
+        ->and($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->failure_reason)->toBeNull()
+        ->and($run->billed_count)->toBe(2);
+
+    // The duplicate landed once, not twice — the index refused the second and the job survived it.
+    expect($run->unplaceable_count)->toBe(1);
+
+    // The cohort was untouched by the unplaceable list's problem, so the run's own accounting is
+    // still exact here.
+    expect($run->cohort_count)->toBe(2)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)->toBe($run->cohort_count);
+});
+
+test('FIX1b: a duplicated cohort member does not stop the other students, and the alarm fires', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $students = collect([
+        birStudent($ctx, $ctx['arm']->id, $ctx['term']->id),
+        birStudent($ctx, $ctx['arm']->id, $ctx['term']->id),
+        birStudent($ctx, $ctx['arm']->id, $ctx['term']->id),
+    ]);
+
+    birProviderWith(onCohort: birRepeatFirst());
+
+    $run = birRun($ctx);
+
+    // THE HARM, ASSERTED FIRST. The repeat is the FIRST cohort entry, so its second pass hits the
+    // already-billed branch while two students are still unbilled: an uncaught 1062 there loses
+    // both of them.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(3,
+        'a 1062 in the already-billed branch left the rest of the cohort unbilled');
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->failure_reason)->toBeNull();
+
+    // EVERY STUDENT BILLED EXACTLY ONCE, the repeated one included. Its second pass finds the
+    // invoice its first pass raised, tries to record `already_billed`, and is refused by
+    // unique(school_id, run_id, enrollment_id) — the row is lost, the invoice is not duplicated.
+    foreach ($students as $student) {
+        expect(Invoice::withoutGlobalScopes()->where('student_id', $student->id)->count())->toBe(1);
+    }
+
+    expect(BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->count())->toBe(3);
+
+    // THE ALARM. The run walked four entries and could record only three, so the equality that
+    // holds on every healthy run does not hold here — and that is the only thing that says a row
+    // was lost.
+    expect($run->cohort_count)->toBe(4)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)
+        ->toBe(3)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)
+        ->toBeLessThan($run->cohort_count);
+});
+
+test('FIX1c: a cohort member whose row violates an unrelated constraint does not stop the others', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $one = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    $two = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // NOT a duplicate: the phantom's row fails the composite enrollment FK (1452). The two failures
+    // must be handled the same way, or FIX 1 has only special-cased 1062.
+    birProviderWith(onCohort: birAppendPhantom($ctx['school']->id));
+
+    $run = birRun($ctx);
+
+    // THE HARM, ASSERTED FIRST. The phantom is appended LAST, so the two real students are billed
+    // before it — but its uncaught 1452 still discards the whole run's record and its counts.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(2,
+        'the two real students must stay billed even though the phantom row could not be written');
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed,
+        'a 1452 on ONE row is a per-student fault; the run must still close and report its counts')
+        ->and($run->failure_reason)->toBeNull()
+        ->and($run->billed_count)->toBe(2)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $one->id)->count())->toBe(1)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $two->id)->count())->toBe(1);
+
+    expect($run->cohort_count)->toBe(3)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)
+        ->toBe(2)
+        ->and($run->billed_count + $run->already_billed_count + $run->failed_count)
+        ->toBeLessThan($run->cohort_count);
+});
+
+/* ── 9 · The run's own cohort accounting is EXACT (FIX 5) ──────────────────────────────────── */
+
+test('FIX5: billed + already_billed + failed equals cohort_count, on a run where all three are non-empty', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+
+    // already_billed × 1 — billed by a first run, which is how the state actually arises.
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birRun($ctx);
+
+    // billed × 2
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // failed × 1 — the episode vanishes between the cohort read and the bill.
+    $doomed = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birProviderLosing((string) StudentCurriculum::withoutGlobalScopes()->where('student_id', $doomed->id)->value('uuid'));
+
+    // Noise the equality must ignore: an unplaceable student and one at another class level. Both
+    // move the SCHOOL-WIDE figures and neither may touch the cohort accounting.
+    birStudent($ctx, $ctx['arm']->id, null);
+    birStudent($ctx, $ctx['arm2']->id, $ctx['term']->id);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed);
+
+    // THE INVARIANT, ASSERTED FIRST so a red names the defect rather than a bucket total.
+    // `cohort_count` is the size of the list the run WALKED; the three summed here are counted from
+    // the rows it PERSISTED. Two independent sources — which is the only reason this assertion is
+    // worth writing down, and the only reason it can fail.
+    expect($run->billed_count + $run->already_billed_count + $run->failed_count)->toBe(
+        $run->cohort_count,
+        'the run walked '.$run->cohort_count.' cohort members but only accounted for '
+        .($run->billed_count + $run->already_billed_count + $run->failed_count)
+        .' of them — a student the run saw has no row, so nothing records what happened to them'
+    );
+
+    // Then the buckets individually, so the equality above cannot be satisfied by a wrong split.
+    expect($run->billed_count)->toBe(2)
+        ->and($run->already_billed_count)->toBe(1)
+        ->and($run->failed_count)->toBe(1)
+        ->and($run->cohort_count)->toBe(4);
+
+    // And the school-wide residual is a DIFFERENT statement, unaffected by any of the above: it is
+    // the unplaceable student and the one at the other class level, and it is NOT a miss count.
+    expect($run->unplaceable_count)->toBe(1)
+        ->and($run->outside_coordinates_count)->toBe(1)
+        ->and($run->billable_count)->toBe(6);
+});
+
+/* ── 10 · A dead worker no longer strands a run in `running` (FIX 2) ───────────────────────── */
+
+test('FIX2: failed() closes a run the worker died in the middle of', function () {
+    $ctx = birSchool();
+
+    // The state a killed worker leaves behind: handle() sets `running` BEFORE its try, so a fatal
+    // or a timeout runs neither the catch nor the finally and nothing else writes this row.
+    $run = ActiveSchool::runFor($ctx['school']->id, fn () => BulkInvoiceRun::create([
+        'school_id' => $ctx['school']->id, 'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id, 'status' => BulkInvoiceRunStatus::Running,
+        'started_at' => now(),
+    ]));
+
+    // The queue's own terminal hook, invoked the way the framework invokes it — outside any job
+    // middleware, so SchoolAware has NOT run and the method must establish its own School context.
+    (new ProcessBulkInvoiceRun($run->id, $ctx['school']->id))
+        ->failed(new RuntimeException('Job has timed out.'));
+
+    $run->refresh();
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Failed,
+        'a run whose worker died must not sit in `running` forever with no writer')
+        ->and($run->finished_at)->not->toBeNull()
+        ->and($run->failure_reason)->toContain('the worker died before it could report')
+        ->and($run->failure_reason)->toContain('Job has timed out.');
+});
+
+test('FIX2: failed() refuses to overwrite a run that already reached a terminal state', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $run = birRun($ctx);
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed);
+
+    // A late queue-level death must not rewrite the outcome of a run that finished its work.
+    (new ProcessBulkInvoiceRun($run->id, $ctx['school']->id))
+        ->failed(new RuntimeException('late'));
+
+    expect($run->refresh()->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->failure_reason)->toBeNull()
+        ->and($run->billed_count)->toBe(1);
+});
+
+test('FIX3: the private run-level failure helper does not shadow InteractsWithQueue::fail()', function () {
+    // `fail()` is the trait's PUBLIC method — the queue's own "mark this job failed" call. A private
+    // method of the same name on the class silently wins over it, Larastan sees nothing, and the
+    // trap springs the moment someone adds `failed()` beside it (FIX 2 did exactly that). Pinned by
+    // reflection so a future rename back is a red test, not a discovery.
+    $method = new ReflectionMethod(ProcessBulkInvoiceRun::class, 'fail');
+
+    expect($method->isPublic())->toBeTrue('ProcessBulkInvoiceRun::fail() must be the trait method, not a private override');
+
+    // getDeclaringClass() reports the USING class for a trait method, so it cannot tell the two
+    // apart. The file can: the trait's method lives in the trait's file, an override lives in the
+    // job's. This is the assertion that actually distinguishes them.
+    expect($method->getFileName())->toBe((new ReflectionClass(InteractsWithQueue::class))->getFileName());
+
+    // And the run-level helper still exists under its own name, declared in the job.
+    $ours = new ReflectionMethod(ProcessBulkInvoiceRun::class, 'failRun');
+    expect($ours->isPrivate())->toBeTrue()
+        ->and($ours->getFileName())->toBe((new ReflectionClass(ProcessBulkInvoiceRun::class))->getFileName());
 });

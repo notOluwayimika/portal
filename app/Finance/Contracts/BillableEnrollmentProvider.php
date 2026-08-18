@@ -2,8 +2,6 @@
 
 namespace App\Finance\Contracts;
 
-use App\Academics\BillableEnrollmentAdapter;
-
 /**
  * The ACL port (driven/secondary port) Finance owns to read an enrollment without
  * touching Academics' models or tables. The implementation lives OUTSIDE Finance
@@ -153,8 +151,12 @@ interface BillableEnrollmentProvider
      *                 − |listForCohort(s, t, c)|        (billed + already billed + failed)
      *                 − |listUnplaceableForSchool(s)|
      *
-     * IT REUSES {@see BillableEnrollmentAdapter::billableEpisodes()}, as the ticket
-     * requires. A count derived from a fourth expression of "billable" would reconcile a run against
+     * IT REUSES the adapter's private `billableEpisodes()` base query, as the ticket
+     * requires. NAMED IN PROSE AND NOT AS A `{@see}`: resolving that tag needs
+     * `use App\Academics\BillableEnrollmentAdapter` at the top of this file, which is a
+     * COMPILE-TIME Finance to Academics reference — the exact direction this port exists to
+     * prevent — added for a docblock. Arch rule 3 forbids Academics MODELS and does not catch it,
+     * so the import is simply not made. A count derived from a fourth expression of "billable" would reconcile a run against
      * a population defined differently from the one it billed, and the identity above would then be
      * a subtraction of two unrelated numbers that happened to be close.
      *

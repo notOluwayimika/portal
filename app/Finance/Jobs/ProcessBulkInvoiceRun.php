@@ -18,6 +18,8 @@ use App\Finance\Services\FeeScheduleLookup;
 use App\Finance\Services\InvoiceReadModel;
 use App\Jobs\Middleware\SchoolAware;
 use App\Models\User;
+use App\Support\ActiveSchool;
+use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -64,10 +66,21 @@ use Throwable;
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * A FAILURE ON ONE STUDENT DOES NOT ABORT THE RUN
  *
- * Every per-student call is caught. The reason goes on that student's row and the loop continues —
- * a cohort of forty where the ninth has a corrupt episode must bill the other thirty-nine, not
- * thirty-one. The alternative (throw, `tries = 1`, run stuck in `running`) is the shape that leaves
- * a screen polling a run that will never move.
+ * Every per-student unit of work — the invoice AND the row that records what happened to it — runs
+ * inside {@see self::attempt()}. A cohort of forty where the ninth has a corrupt episode must bill
+ * the other thirty-nine, not thirty-one.
+ *
+ * THAT SENTENCE USED TO READ "every per-student call is caught" AND IT WAS FALSE WHEN WRITTEN. Two
+ * `record()` sites — the unplaceable loop and the already-billed branch — sat outside every `try`,
+ * so a duplicate in either list produced 1062 and killed the run before the cohort loop ran. See
+ * {@see self::attempt()} for the measurement and for the ruling on what an unrecordable row means.
+ *
+ * THE TWO FAILURES ARE NOT RECORDED THE SAME WAY, because one of them cannot be:
+ *
+ *   - the INVOICE could not be raised  → a `failed` row carrying the reason;
+ *   - the ROW could not be written     → a log line, and the run's own cohort equality
+ *                                        (billed + already + failed == cohort_count) stops
+ *                                        balancing, which is the alarm.
  *
  * A RE-RUN IS SAFE AND IS THE RECOVERY PATH. `UNIQUE(school_id, active_enrollment_key)` on
  * `finance_invoices` refuses a second ACTIVE SCHEDULED invoice per episode, so re-running after a
@@ -111,6 +124,56 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         return [new SchoolAware];
     }
 
+    /**
+     * THE QUEUE'S OWN TERMINAL HOOK — the only writer for the deaths `handle()` cannot see.
+     *
+     * `handle()` sets the run to `running` BEFORE its `try`, so a death that skips PHP's unwinding
+     * skips the `catch` AND the `finally`, and leaves the row in `running` with nothing that will
+     * ever move it. {@see BulkInvoiceRunStatus::Running} names that state as "the worker died
+     * mid-cohort" and, until this method existed, nothing wrote the state that says so.
+     *
+     * WHAT IT COVERS: an uncaught throw out of `handle()` (there is none today, but `tries = 1`
+     * means one would be terminal immediately), a `MaxAttemptsExceededException` after the
+     * `timeout = 3600` alarm fires, and a `TimeoutExceededException` — every death where the worker
+     * process is still alive to run it.
+     *
+     * WHAT IT DOES NOT COVER, and this is not a caveat to be skimmed: **a SIGKILL, an OOM kill, or
+     * the machine going away still strand the row in `running`**, because nothing in this process
+     * runs afterwards. There is no way to close that from inside the job — it needs a sweeper that
+     * fails runs whose `started_at` is older than the timeout, and no such sweeper exists. Claiming
+     * this method makes the state unreachable would be exactly the shape of overclaim this branch
+     * has already had to correct twice.
+     *
+     * IT ESTABLISHES ITS OWN School CONTEXT. Job middleware does NOT wrap `failed()`, so `SchoolAware`
+     * has not run here — and `BulkInvoiceRun` is not in `rbac.fail_closed_models`, so its `SchoolScope`
+     * would read UNSCOPED rather than refuse. Resting a write on that fail-open behaviour is the
+     * thing Constitution 13 forbids, so the School the job carries is named explicitly.
+     *
+     * IT REFUSES TO OVERWRITE A TERMINAL STATE. A run that already reached `completed` or `failed`
+     * did its work; a late queue-level death must not rewrite the outcome of a run that finished.
+     */
+    public function failed(Throwable $e): void
+    {
+        ActiveSchool::runFor($this->schoolId, function () use ($e) {
+            $run = BulkInvoiceRun::find($this->runId);
+
+            if (! $run instanceof BulkInvoiceRun) {
+                return;
+            }
+
+            if ($run->status === BulkInvoiceRunStatus::Completed || $run->status === BulkInvoiceRunStatus::Failed) {
+                return;
+            }
+
+            $run->update([
+                'status' => BulkInvoiceRunStatus::Failed,
+                'finished_at' => now(),
+                'failure_reason' => 'The run did not finish: the worker died before it could report. '
+                    .'Invoices already raised have been kept, and re-running is safe. ('.$e->getMessage().')',
+            ]);
+        });
+    }
+
     public function handle(
         BillableEnrollmentProvider $enrollments,
         FeeScheduleLookup $schedules,
@@ -144,7 +207,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
                 'run_id' => $run->id, 'school_id' => $this->schoolId, 'error' => $e->getMessage(),
             ]);
 
-            $this->fail($run, 'The run did not finish. This is a fault in the portal, not in the fee schedule: '
+            $this->failRun($run, 'The run did not finish. This is a fault in the portal, not in the fee schedule: '
                 .$e->getMessage());
         } finally {
             app(CauserResolver::class)->setCauser(null);
@@ -165,7 +228,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         $schedule = $schedules->activeFor($run->term_id, $run->class_level_id);
 
         if (! $schedule instanceof FeeSchedule) {
-            $this->fail($run, 'No active fee schedule exists at these coordinates, so there is no price list to bill from.');
+            $this->failRun($run, 'No active fee schedule exists at these coordinates, so there is no price list to bill from.');
 
             return;
         }
@@ -180,7 +243,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
             // SchoolAware the two agree, which is exactly the state its second guard demands.
             $lines = $mapper->linesFor($schedule, $this->schoolId);
         } catch (BusinessRuleException $e) {
-            $this->fail($run, $e->getMessage());
+            $this->failRun($run, $e->getMessage());
 
             return;
         }
@@ -192,20 +255,68 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         $unplaceable = $enrollments->listUnplaceableForSchool($this->schoolId);
 
         foreach ($unplaceable as $enrollment) {
-            $this->record($run, $enrollment, BulkInvoiceRunOutcome::Unplaceable);
+            $this->attempt($run, $enrollment, fn () => $this->record($run, $enrollment, BulkInvoiceRunOutcome::Unplaceable));
         }
 
         $cohort = $enrollments->listForCohort($this->schoolId, $run->term_id, $run->class_level_id);
 
         foreach ($cohort as $enrollment) {
-            $this->bill($run, $enrollment, $lines, $generate, $invoices);
+            $this->attempt($run, $enrollment, fn () => $this->bill($run, $enrollment, $lines, $generate, $invoices));
         }
 
-        $this->reconcile($run, $enrollments->countBillableForSchool($this->schoolId));
+        $this->reconcile($run, count($cohort), $enrollments->countBillableForSchool($this->schoolId));
     }
 
     /**
-     * One student. Every failure mode ends in a recorded row and a `return`; none of them propagates.
+     * ONE STUDENT'S WHOLE UNIT OF WORK, INCLUDING THE ROW WRITE.
+     *
+     * THIS EXISTS BECAUSE TWO `record()` CALL SITES WERE OUTSIDE ANY `try`, and cold review measured
+     * what that cost: a provider whose unplaceable list repeated one member produced **1062** on the
+     * second insert, and the run died in the unplaceable loop — BEFORE the cohort loop ran at all.
+     * Two billable students, zero invoices raised, run `failed`, every count NULL. The migration's
+     * own comment said that shape was "refused rather than silently double-counted", which was true
+     * of the INDEX and false of the JOB. Refusing a write and surviving the refusal are two different
+     * properties and only one of them was built.
+     *
+     * THE RULING, stated rather than left to be inferred: **AN UNRECORDABLE ROW IS A PER-STUDENT
+     * FAULT, NOT A RUN-LEVEL ONE.** The run carries on and bills everyone it still can. That is the
+     * same judgement already made for a student whose INVOICE cannot be raised, and the reasoning is
+     * identical — thirty-nine of forty is a partial result, thirty-one of forty because the ninth row
+     * hit a constraint is a defect.
+     *
+     * AND IT IS NOT SILENT, which is the part that makes the ruling defensible. A student whose row
+     * could not be written is missing from `finance_bulk_invoice_run_rows`, so
+     *
+     *     billed_count + already_billed_count + failed_count  <  cohort_count
+     *
+     * and that inequality is the run's own alarm (see the migration, and {@see reconcile()}). There
+     * is deliberately no extra flag column saying "something went wrong": a flag the job sets is a
+     * flag the job can forget to set, whereas the equality is over four numbers all counted from the
+     * persisted rows and the list the run actually walked.
+     *
+     * The log line is the diagnosis, since the row that would have carried the reason is the row
+     * that could not be written.
+     */
+    private function attempt(BulkInvoiceRun $run, BillableEnrollment $enrollment, Closure $work): void
+    {
+        try {
+            $work();
+        } catch (Throwable $e) {
+            Log::error('ProcessBulkInvoiceRun: could not record an outcome for one enrollment', [
+                'run_id' => $run->id,
+                'school_id' => $this->schoolId,
+                'enrollment_id' => $enrollment->enrollmentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * One student's INVOICE. Every failure of {@see GenerateInvoice} ends in a recorded row and a
+     * `return`. A failure of the row write itself still propagates from here — deliberately, because
+     * {@see attempt()} is the one place that decides what an unrecordable row means, and having two
+     * places decide it is how the two `record()` sites outside a `try` came to exist in the first
+     * place.
      *
      * @param  list<InvoiceLineSpec>  $lines
      */
@@ -269,14 +380,14 @@ class ProcessBulkInvoiceRun implements ShouldQueue
     }
 
     /**
-     * Close the run: count what was persisted, subtract it from the School's billable population,
-     * and say what is left over.
+     * Close the run and write both kinds of figure — they are not the same kind of number and the
+     * migration says why at length.
      *
      * COUNTED FROM THE ROWS, NOT FROM A TALLY. An in-memory counter says what this job BELIEVES it
      * did; `finance_bulk_invoice_run_rows` says what is there. When they differ the difference is
      * the interesting fact, and only one of the two can show it.
      */
-    private function reconcile(BulkInvoiceRun $run, int $billable): void
+    private function reconcile(BulkInvoiceRun $run, int $cohortSize, int $billable): void
     {
         $counts = BulkInvoiceRunRow::query()
             ->where('run_id', $run->id)
@@ -286,22 +397,28 @@ class ProcessBulkInvoiceRun implements ShouldQueue
 
         $of = fn (BulkInvoiceRunOutcome $outcome): int => (int) ($counts[$outcome->value] ?? 0);
 
-        $recorded = $of(BulkInvoiceRunOutcome::Billed)
-            + $of(BulkInvoiceRunOutcome::AlreadyBilled)
-            + $of(BulkInvoiceRunOutcome::Failed)
-            + $of(BulkInvoiceRunOutcome::Unplaceable);
+        $unplaceable = $of(BulkInvoiceRunOutcome::Unplaceable);
 
         $run->update([
             'status' => BulkInvoiceRunStatus::Completed,
             'finished_at' => now(),
+
+            // THE RUN'S OWN ACCOUNTING. `cohort_count` is the size of the list the run WALKED; the
+            // three below are counted from the rows it PERSISTED. Two independent sources, so the
+            // equality between them can fail — which is the only reason asserting it is worth
+            // anything.
+            'cohort_count' => $cohortSize,
             'billed_count' => $of(BulkInvoiceRunOutcome::Billed),
             'already_billed_count' => $of(BulkInvoiceRunOutcome::AlreadyBilled),
             'failed_count' => $of(BulkInvoiceRunOutcome::Failed),
-            'unplaceable_count' => $of(BulkInvoiceRunOutcome::Unplaceable),
+            'unplaceable_count' => $unplaceable,
+
+            // THE SCHOOL-WIDE FIGURE, and it is subtracted from the LIST SIZES, not from the row
+            // counts. Using the row counts would let an unrecordable row quietly inflate this
+            // number, moving a defect from the equality above — where it is loud — into a residual
+            // that is large and unalarming on every healthy run.
             'billable_count' => $billable,
-            // Signed: it cannot go below zero while the cohort and the unplaceable list are subsets
-            // of the population, so a negative would mean that stopped being true.
-            'unaccounted_count' => $billable - $recorded,
+            'outside_coordinates_count' => $billable - $cohortSize - $unplaceable,
         ]);
     }
 
@@ -309,7 +426,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * A PER-RUN failure. `failure_reason` is the run's own; a student who could not be billed keeps
      * their reason on their row and never reaches here.
      */
-    private function fail(BulkInvoiceRun $run, string $reason): void
+    private function failRun(BulkInvoiceRun $run, string $reason): void
     {
         $run->update([
             'status' => BulkInvoiceRunStatus::Failed,

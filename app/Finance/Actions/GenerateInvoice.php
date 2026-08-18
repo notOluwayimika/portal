@@ -110,13 +110,37 @@ final class GenerateInvoice
             throw new BusinessRuleException('No billable enrollment found for the given reference.');
         }
 
-        // CROSS-SCHOOL GUARD. `student_curricula` has no school_id and
-        // StudentCurriculum is deliberately unscoped (v10 §14), so the enrollment
-        // LOOKUP is not School-constrained: an enrollment uuid belonging to another
-        // School resolves perfectly well. Isolation is therefore asserted here, by
-        // comparing the episode's own School — resolved from `students.school_id`
-        // (falling back to `curricula.school_id`) in BillableEnrollmentAdapter —
-        // against the Active School.
+        // CROSS-SCHOOL GUARD. The stated reason here was FALSE and is corrected (U6
+        // commit 2); this was the third file carrying it. `student_curricula` DOES have
+        // a school_id — NOT NULL with the composite FK
+        // student_curricula_student_school_foreign (student_id, school_id) -> students
+        // (id, school_id), added by
+        // 2026_07_19_130000_add_school_id_to_student_curricula.php:80,:85-88 — and
+        // StudentCurriculum::booted() (app/Models/StudentCurriculum.php:76-78) registers
+        // a bare SchoolScope. The guard is CORRECT; only its justification was wrong.
+        //
+        // WHAT ACTUALLY MAKES IT NECESSARY, three things, none of which the scope covers:
+        //
+        //  1. THE SCOPE IS FAIL-OPEN FOR THIS MODEL. SchoolScope filters only when
+        //     ActiveSchool::id() is truthy, and with no context it throws only for models
+        //     in `rbac.fail_closed_models` (SchoolScope.php:52-68). That allowlist is the
+        //     ten finance transactional models (config/rbac.php:158-169); StudentCurriculum
+        //     is not among them. So off-request, or on any path with no School context, the
+        //     uuid lookup runs UNFILTERED and a foreign episode resolves perfectly well.
+        //     The null-context refusal below is what closes that, not the scope.
+        //  2. A SCOPE FILTERS; IT NEVER REFUSES. Even where it does apply, a wrong-School
+        //     uuid becomes "not found" — indistinguishable from a typo. Isolation on a
+        //     financial write is asserted, so it can be reported as what it is.
+        //  3. THE LOOKUP IS BEHIND A PORT. `$this->enrollments` is
+        //     BillableEnrollmentProvider; whether its adapter keeps or strips the ambient
+        //     scope is that adapter's implementation choice, and it already differs per
+        //     method (BillableEnrollmentAdapter::findByUuid keeps it, the cohort reads
+        //     strip it deliberately). An Action that relied on the scope would be relying
+        //     on the far side of a boundary it must not see through.
+        //
+        // Isolation is therefore asserted here, by comparing the episode's own School —
+        // resolved from `students.school_id` (falling back to `curricula.school_id`) in
+        // BillableEnrollmentAdapter — against the Active School.
         //
         // VERIFIED BEHAVIOUR, which is subtler than "compare A to B": Student and
         // Curriculum are BOTH School-scoped, so under School A's context a School-B

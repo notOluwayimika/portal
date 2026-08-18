@@ -10,9 +10,11 @@ nobody has.
 
 ## The mechanism
 
-`GuardianService::merge` writes its trail through `causedBy(auth()->user())` — the `merged` entry, the
-per-link `attached` / `detached` entries via `logPivotEvent`, and the `login_enabled` /
-`login_disabled` entries a consolidation emits.
+`GuardianService::merge` writes its trail through `causedBy(auth()->user())` — the `merged` entry and
+the per-link `attached` / `detached` entries via `logPivotEvent`. (An earlier revision also emitted
+`login_enabled` / `login_disabled` from a consolidation path; that path was removed with
+`--consolidate-login` and is now `docs/handoff/briefs/feat-guardian-consolidate-login.md`, which
+inherits this ticket the moment it starts writing those entries.)
 
 `MergeGuardians::handle` runs off-request. It establishes school context through
 `ActiveSchool::runFor()` from the keeper guardian's own `school_id` and never authenticates anybody —

@@ -805,25 +805,18 @@ class GuardianService
      * @param  Collection<int, Guardian>  $absorbed
      * @return array<string, mixed>
      */
-    public function merge(Guardian $keeper, Collection $absorbed, bool $apply, bool $consolidateLogin = false): array
+    public function merge(Guardian $keeper, Collection $absorbed, bool $apply): array
     {
         /** @var Collection<int, Guardian> $absorbed */
         $absorbed = $absorbed->unique('id')->values();
 
-        // Carried OUT of the transaction so the parent is emailed only once the
-        // merge has actually committed. StudentController::store uses the same
-        // shape (a `&$deferredNotifications` array filled inside the closure and
-        // drained after it) for the same reason: a rollback must never leave an
-        // email in flight, and a password nobody can be told is worse than none.
-        $deferred = null;
-
-        $plan = DB::transaction(function () use ($keeper, $absorbed, $apply, $consolidateLogin, &$deferred) {
+        return DB::transaction(function () use ($keeper, $absorbed, $apply) {
             $this->assertMergeable($keeper, $absorbed);
 
             // ORDERED BEFORE THE PLANNER, not merely before the apply. A refusal
             // that runs after the pivots have been classified is still correct,
             // but it invites the next reader to move it one line further down.
-            $decision = $this->planLoginDecision($keeper, $absorbed, $consolidateLogin);
+            $decision = $this->planLoginDecision($keeper, $absorbed);
             $this->assertLoginDecisionAllowed($keeper, $decision);
 
             $plan = $this->buildMergePlan($keeper, $absorbed);
@@ -831,17 +824,10 @@ class GuardianService
 
             if ($apply) {
                 $this->applyMergePlan($keeper, $absorbed, $plan);
-                $deferred = $this->applyLoginConsolidation($keeper, $absorbed, $decision);
             }
 
             return array_merge(['applied' => $apply], $plan);
         });
-
-        if ($deferred !== null) {
-            $this->notifyGuardian($deferred['user'], $deferred['plain_password'], $deferred['student_names']);
-        }
-
-        return $plan;
     }
 
     /**
@@ -948,24 +934,19 @@ class GuardianService
      * Fortify actually checks — `isDisabled()` (read through the model, not by
      * inlining `disabled_at`) and a password being set — and asked of every
      * absorbed record whose user is not the keeper's. Same `user_id` on both
-     * sides is the certain duplicate: one human, one account, nothing to
-     * consolidate.
+     * sides is the certain duplicate: one human, one account, and no second
+     * account that could be left stranded.
+     *
+     * THIS REPORTS; IT DOES NOT DECIDE. The refusal that hangs off it is
+     * unconditional, so there is nothing here to weigh — see
+     * assertLoginDecisionAllowed for why there is no flag.
      *
      * @param  Collection<int, Guardian>  $absorbed
      * @return array<string, mixed>
      */
-    private function planLoginDecision(Guardian $keeper, Collection $absorbed, bool $consolidateLogin): array
+    private function planLoginDecision(Guardian $keeper, Collection $absorbed): array
     {
         $keeperUser = $keeper->user;
-        $absorbedIds = $absorbed->pluck('id')->map(fn ($id) => (int) $id)->all();
-
-        // THE SAME LIST THE PLAN REPORTS, NOT A SECOND PREDICATE. A donor user that
-        // appears here backs no live guardian anywhere once the merge lands, so
-        // ending its login ends nothing else. A donor ABSENT from it still backs a
-        // live record somewhere — and `users.disabled_at` is a property of the
-        // ACCOUNT, not of a school, so disabling it there revokes access that has
-        // nothing to do with this merge.
-        $orphanedAfterMerge = $this->orphanedUserIdsAfterMerge($absorbed, $absorbedIds);
 
         $donors = [];
 
@@ -978,21 +959,11 @@ class GuardianService
                 && ! $user->isDisabled()
                 && trim((string) $user->password) !== '';
 
-            $schoolExclusive = in_array((int) $guardian->user_id, $orphanedAfterMerge, true);
-
             $donors[] = [
                 'guardian_id' => (int) $guardian->id,
                 'user_id' => (int) $guardian->user_id,
                 'same_user_as_keeper' => $sameAccount,
                 'can_authenticate' => $canAuthenticate,
-                'deliverable' => $user?->hasDeliverableEmail() ?? false,
-                // Whether ending this account ends only what this merge is about.
-                'school_exclusive' => $schoolExclusive,
-                // Display only — the gate above is the orphan list. These are the
-                // schools whose access would be collateral, named by id.
-                'remaining_school_ids' => $schoolExclusive
-                    ? []
-                    : $this->remainingGuardianSchoolIdsFor((int) $guardian->user_id, $absorbedIds),
                 'can_login_students' => DB::table('guardian_student')
                     ->where('guardian_id', $guardian->id)
                     ->where('can_login', true)
@@ -1000,138 +971,49 @@ class GuardianService
                     ->pluck('student_id')
                     ->map(fn ($id) => (int) $id)
                     ->all(),
-                // The action the merge will take on this account, printed in the
-                // dry run. 'disable' is the only one that ends a login.
-                'action' => match (true) {
-                    ! $canAuthenticate => 'none',
-                    ! $consolidateLogin => 'refuse',
-                    ! $schoolExclusive => 'refuse (account is not school-exclusive)',
-                    default => 'disable',
-                },
             ];
         }
 
         $crossAccountLogins = array_values(array_filter($donors, fn (array $d) => $d['can_authenticate']));
-        $notExclusive = array_values(array_filter($crossAccountLogins, fn (array $d) => ! $d['school_exclusive']));
-
-        $keeperDisabled = $keeperUser?->isDisabled() ?? false;
-
-        // TWO FACTS ABOUT THE KEEPER'S ACCOUNT, AND THEY ARE NOT THE SAME FACT.
-        //
-        // `keeper_school_exclusive` is the FULL sense — nothing else lives on this
-        // account anywhere, including this school. It decides whether reversing
-        // --keep and --absorb is a real remedy or an invitation to hit the same
-        // refusal from the other side, so it has to match what the donor gate asks.
-        //
-        // `keeper_other_school_ids` is the NARROW sense — live records outside the
-        // school this merge is running in. That is what the re-enable gate needs:
-        // the hazard is another school's deliberate revocation being undone, and a
-        // sibling row in THIS school is this merge's own business. Refusing on the
-        // full sense there would refuse where the write is nobody else's concern,
-        // and a guard that fires where nothing is at stake is one the next person
-        // switches off.
-        $keeperRemainingSchoolIds = $this->remainingGuardianSchoolIdsFor(
-            (int) $keeper->user_id,
-            array_merge($absorbedIds, [(int) $keeper->id]),
-        );
-
-        $keeperOtherSchoolIds = array_values(array_filter(
-            $keeperRemainingSchoolIds,
-            fn (int $schoolId) => $schoolId !== (int) $keeper->school_id,
-        ));
-
-        // GATED ON THE WRITE BEING REACHABLE, not on exclusivity alone. If the
-        // keeper account is already enabled there is no `disabled_at` to clear, so
-        // there is nothing another school could lose and nothing to refuse.
-        $reEnableBlocked = $keeperDisabled && $keeperOtherSchoolIds !== [];
-
-        $consolidating = $consolidateLogin
-            && $crossAccountLogins !== []
-            && $notExclusive === []
-            && ! $reEnableBlocked;
 
         return [
             'keeper_user_id' => (int) $keeper->user_id,
+            // Retained because the `can_login` deliverability invariant still asks
+            // it when a pivot carrying the flag lands on the keeper. It says
+            // nothing about accounts and gates nothing here.
             'keeper_deliverable' => $keeperUser?->hasDeliverableEmail() ?? false,
-            'keeper_disabled' => $keeperDisabled,
-            'keeper_school_exclusive' => $keeperRemainingSchoolIds === [],
-            'keeper_other_school_ids' => $keeperOtherSchoolIds,
-            'keeper_re_enable_blocked' => $reEnableBlocked,
-            'consolidate_requested' => $consolidateLogin,
-            'consolidating' => $consolidating,
-            'will_notify' => $consolidating,
             'donors' => $donors,
             'cross_account_login_guardian_ids' => array_column($crossAccountLogins, 'guardian_id'),
-            'not_school_exclusive_guardian_ids' => array_column($notExclusive, 'guardian_id'),
         ];
     }
 
     /**
-     * The schools where this user still backs a LIVE guardian record once the
-     * given rows are gone. Ids only; the caller prints `school#<id>`.
+     * ONE REFUSAL, UNCONDITIONAL AND TERMINAL.
      *
-     * @param  list<int>  $goingAwayGuardianIds
-     * @return list<int>
-     */
-    private function remainingGuardianSchoolIdsFor(int $userId, array $goingAwayGuardianIds): array
-    {
-        return Guardian::withoutGlobalScopes()
-            ->whereNull('deleted_at')
-            ->where('user_id', $userId)
-            ->whereNotIn('id', $goingAwayGuardianIds)
-            ->distinct()
-            ->orderBy('school_id')
-            ->pluck('school_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-    }
-
-    /**
-     * The two refusals that hang off that decision.
+     * An absorbed record whose ACCOUNT can sign in is not absorbed. Absorbing it
+     * would not move the login — the password, the sign-in address and the reset
+     * link all live on the `users` row — so that account keeps working while
+     * backing a soft-deleted guardian record: `forUserInActiveSchool` finds
+     * nothing and GuardianController::wards answers 200 with an empty list. The
+     * parent signs in and the portal is blank.
      *
-     * ONE. A donor account that can authenticate is not migrated silently. The
-     * first design refused this outright and stopped there; keyed correctly that
-     * refuses the entire working set and the command does nothing for the
-     * population it was built for. So it is opt-in instead: `--consolidate-login`
-     * is the operator saying "yes, end that account and tell the parent". Without
-     * it the merge refuses and the message names the flag — and names ONLY the
-     * flag, because the two remedies this message used to prescribe were both
-     * wrong. "Disable it on the absorbed record" sets `users.disabled_at` and
-     * leaves the pivot flag alone, so the old check refused identically on the
-     * re-run and the parent was locked out for nothing; "enable it on the keeper"
-     * changed nothing the check read at all.
+     * THERE IS NO FLAG THAT PROCEEDS PAST THIS, and the absence is the design.
+     * An earlier revision carried `--consolidate-login`, which ended the donor
+     * account, re-enabled and re-credentialled the keeper's, and emailed the
+     * parent. It was removed. Five review rounds each found the same class of
+     * defect in it, and not once in the merge itself: a guard scoped to the
+     * record in front of it while the write reached further. `users.disabled_at`
+     * is account-global, not per-school. Authentication never reads `can_login`.
+     * And counting live guardian rows does not measure an account's reach at all,
+     * because `school_user` plus team-scoped roles are a second access path that
+     * guardian rows cannot see — so an account judged "school-exclusive" could
+     * still be a teacher's at another school. Consolidating two people's accounts
+     * is a different feature from collapsing two duplicate records of one person,
+     * and it gets its own branch, its own arms and its own review.
      *
-     * TWO. Consolidation into an account the parent cannot be told about is the
-     * original defect wearing a flag: the donor's password stops working and
-     * nobody can be sent the replacement. A disabled keeper account is fine —
-     * consolidation re-enables it — but an undeliverable one is refused, because
-     * the notification is the whole reason the consolidation is safe.
-     *
-     * THREE. `users.disabled_at` IS A PROPERTY OF THE ACCOUNT, NOT OF A SCHOOL.
-     * One human is a parent at more than one school on ONE users row (§6.2, and
-     * the reason `resolveOrCreateGuardianForUserInSchool` exists at all), so
-     * ending the donor account here revokes their access at every other school
-     * too — and the credentials email this merge sends is about the keeper record
-     * in THIS school and says nothing about the others. The consolidation is only
-     * safe when the donor account is school-exclusive: nothing else lives on it.
-     *
-     * That is not a new predicate. `orphanedUserIdsAfterMerge` already computes
-     * exactly this list for the plan's own report; a donor absent from it still
-     * backs a live record somewhere.
-     *
-     * FOUR. THE SAME WRITE, ON THE OTHER SIDE. Consolidation does not only end the
-     * donor account — it clears `disabled_at` on the KEEPER's. That is the mirror
-     * of THREE and it went unguarded for a round, because the guard had been
-     * written against the record in front of it rather than against the reach of
-     * the write. Another school may have deliberately revoked that account; a
-     * cleanup here must not silently restore it, and the only audit entry would be
-     * a `login_enabled` on a guardian in THIS school, so the school that revoked it
-     * would have no trail at all.
-     *
-     * Gated on the write being REACHABLE. An already-enabled keeper has no
-     * `disabled_at` to clear, so there is nothing to refuse; and a sibling row in
-     * this same school is this merge's own business. Only a disabled keeper whose
-     * account still serves ANOTHER school is refused.
+     * THE MESSAGE PRESCRIBES NOTHING IT CANNOT DELIVER. Twice on this branch a
+     * refusal named a remedy that did not clear the check — one of them locking a
+     * parent out on the way — so this one states the situation and stops.
      *
      * @param  array<string, mixed>  $decision
      */
@@ -1146,161 +1028,16 @@ class GuardianService
             array_values(array_filter($decision['donors'], fn (array $d) => $d['can_authenticate'])),
         ));
 
-        if (! $decision['consolidate_requested']) {
-            throw ValidationException::withMessages([
-                'absorb' => "Merge aborted: {$named} can sign in today, and the keeper is on "
-                    ."user#{$decision['keeper_user_id']}. Absorbing the record does not move the login — the "
-                    .'password, the sign-in address and the reset link all live on the users row — so that '
-                    .'account would keep working and show an empty portal. Re-run with --consolidate-login to '
-                    .'disable it and issue the parent fresh credentials for the keeper account.',
-            ]);
-        }
-
-        if (! $decision['keeper_deliverable']) {
-            throw ValidationException::withMessages([
-                'keep' => "Merge aborted: --consolidate-login would end the login on {$named}, but keeper "
-                    ."guardian#{$keeper->id} is on user#{$decision['keeper_user_id']}, which has no deliverable "
-                    .'email address — so the parent could not be sent credentials for the account that '
-                    .'survives. Give the keeper a real email address first.',
-            ]);
-        }
-
-        if ($decision['keeper_re_enable_blocked']) {
-            $schools = implode(', ', array_map(
-                fn (int $id) => "school#{$id}",
-                $decision['keeper_other_school_ids'],
-            ));
-
-            throw ValidationException::withMessages([
-                'keep' => "Merge aborted: --consolidate-login would re-enable user#{$decision['keeper_user_id']}, "
-                    ."the keeper's account, which is currently disabled and still backs live guardian records in "
-                    ."{$schools}. That account may have been disabled there deliberately, and users.disabled_at is "
-                    .'a property of the account rather than of a school, so re-enabling it here would restore '
-                    ."access {$schools} never gave back — recorded only as a login_enabled on guardian#{$keeper->id} "
-                    .'in this school, which is a trail they cannot see. Confirm with the other school and re-enable '
-                    .'the account there first, or keep a guardian record whose account is not shared.',
-            ]);
-        }
-
-        if ($decision['not_school_exclusive_guardian_ids'] === []) {
-            return;
-        }
-
-        foreach ($decision['donors'] as $donor) {
-            if (! in_array($donor['guardian_id'], $decision['not_school_exclusive_guardian_ids'], true)) {
-                continue;
-            }
-
-            $schools = implode(', ', array_map(
-                fn (int $id) => "school#{$id}",
-                $donor['remaining_school_ids'],
-            ));
-
-            // The remedy is stated only when it is real. Reversing the roles works
-            // when the KEEPER's account is the school-exclusive one — the
-            // multi-school account then survives and the disposable one is ended.
-            // When neither is exclusive there is no way to do this here, and
-            // saying so is the honest answer; the previous revision of this
-            // message prescribed two actions that did not clear the check, one of
-            // which locked a parent out on the way.
-            $remedy = $decision['keeper_school_exclusive']
-                ? "Re-run with --keep and --absorb reversed, so user#{$donor['user_id']} — the account those "
-                    .'other records depend on — is the one that survives.'
-                : 'Both accounts still back live guardian records elsewhere, so neither can be ended here — '
-                    .'and dropping --consolidate-login is not an alternative, because the donor account can '
-                    .'still sign in and is refused for that. This pair cannot be collapsed by this command. '
-                    .'Leave it and raise it.';
-
-            throw ValidationException::withMessages([
-                'absorb' => "Merge aborted: --consolidate-login would disable user#{$donor['user_id']}, but that "
-                    ."account still backs live guardian records in {$schools}. users.disabled_at is a property "
-                    .'of the account and not of a school, so disabling it would revoke that parent\'s access '
-                    ."there too — and the credentials email covers only guardian#{$keeper->id}'s record in "
-                    ."this school. {$remedy}",
-            ]);
-        }
-
-    }
-
-    /**
-     * Execute the consolidation, and hand the notification BACK to the caller
-     * rather than sending it here.
-     *
-     * The donor is ended through `disableLogin`, and the keeper is re-enabled and
-     * re-credentialled with the same `login_enabled` event every other transition
-     * uses — the trail must read like a login transition, because that is what it
-     * is. Nothing new is invented for the merge's benefit.
-     *
-     * The password IS written here, inside the transaction: it is state, and it
-     * must roll back with everything else. Only the email is deferred.
-     *
-     * @param  Collection<int, Guardian>  $absorbed
-     * @param  array<string, mixed>  $decision
-     * @return array{user: User, plain_password: string, student_names: array<int, string>}|null
-     */
-    private function applyLoginConsolidation(Guardian $keeper, Collection $absorbed, array $decision): ?array
-    {
-        if (! $decision['consolidating']) {
-            return null;
-        }
-
-        $ending = $decision['cross_account_login_guardian_ids'];
-
-        foreach ($absorbed as $guardian) {
-            if (in_array((int) $guardian->id, $ending, true)) {
-                // Writes users.disabled_at and logs `login_disabled` on the record
-                // that is going away — where an auditor asking "when did this
-                // account stop working" would look.
-                $this->disableLogin($guardian);
-            }
-        }
-
-        $user = $keeper->user;
-
-        if (! $user) {
-            throw ValidationException::withMessages([
-                'keep' => "Merge aborted: keeper guardian#{$keeper->id} has no user account to consolidate into.",
-            ]);
-        }
-
-        $plainPassword = $this->passwordGenerator->generate();
-
-        // TWO WRITES WITH DIFFERENT REACH, IN ONE UPDATE. Clearing `disabled_at`
-        // can hand back access another school deliberately revoked, so it is
-        // gated upstream (keeper_re_enable_blocked) and this line is only reached
-        // when that is safe. Rotating the password cannot restore anything to
-        // anyone — the worst it does is make a working credential stop working,
-        // for a parent who is being emailed the replacement — so it is not gated.
-        // That asymmetry is deliberate; whether the rotation should be
-        // conditional at all is a named open decision:
-        // docs/handoff/tickets/guardian-merge-rotates-the-keeper-password-unconditionally.md
-        $user->update([
-            'disabled_at' => null,
-            'password' => $plainPassword,
+        throw ValidationException::withMessages([
+            'absorb' => "Merge aborted: {$named} can sign in today, and keeper guardian#{$keeper->id} is on "
+                ."user#{$decision['keeper_user_id']}. Absorbing the record does not move the login — the "
+                .'password, the sign-in address and the reset link all live on the users row — so that account '
+                .'would keep working and show the parent an empty portal. This command collapses duplicate '
+                .'guardian RECORDS; it does not consolidate ACCOUNTS, and it will not do that as a side effect '
+                .'of a cleanup. These two records can be merged once the two accounts have been consolidated '
+                .'deliberately, with the parent told. Records whose absorbed account cannot sign in are '
+                .'unaffected and merge normally.',
         ]);
-
-        if (! $user->hasRole('guardian')) {
-            $user->assignRole('guardian');
-        }
-
-        activity('guardian')
-            ->performedOn($keeper)
-            ->causedBy(auth()->user())
-            ->withProperties([
-                'via' => 'merge',
-                'consolidated_from_user_ids' => array_values(array_map(
-                    fn (array $d) => $d['user_id'],
-                    array_filter($decision['donors'], fn (array $d) => $d['can_authenticate']),
-                )),
-            ])
-            ->event('login_enabled')
-            ->log('Login consolidated onto this guardian by merge');
-
-        return [
-            'user' => $user,
-            'plain_password' => $plainPassword,
-            'student_names' => $keeper->students()->get()->map(fn (Student $s) => $s->full_name)->all(),
-        ];
     }
 
     /**

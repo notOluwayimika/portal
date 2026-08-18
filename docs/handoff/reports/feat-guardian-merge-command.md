@@ -1,174 +1,180 @@
 # Implementation report — `feat/guardian-merge-command`
 
-**This is full-review tier** — it writes to an append-only audit trail, it moves
-rows across a `school_id` boundary, it can end and restore a parent's portal
-login, and it is the engine slice 3's data migration will run against production
-data.
+**Full-review tier** — it writes to an append-only audit trail, it moves rows
+across a `school_id` boundary, and it is the engine slice 3's data migration will
+run against production data.
 
-**Revision 5.** Four guards have been shipped on this branch and three of them
-were wrong on first writing. The sequence is in **Superseded decisions** and is
-still the most useful thing in this document.
+**Revision 6 — `--consolidate-login` has been removed from this branch entirely.**
+Account consolidation becomes its own branch. That is the headline and the rest
+of this document is downstream of it.
 
-⚠️ **THE RATCHET IS RED ON THE FINAL TREE, and not on anything this branch
-touches.** Two full-suite runs, two different subsets of
-`tests/Feature/Rbac/GrantsConvergenceLintTest.php` failing. I have a mechanism
-for it, evidence for the mechanism, and a ticket; I have **not** retried until
-green and I have **not** baselined it. Read *Full suite + ratchet* before
-anything else, because it is the reason this report cannot say the branch is
-clean.
+⚠️ **The ratchet is green on this run, after being red on the two before it, and
+I changed nothing that bears on it.** The file involved —
+`tests/Feature/Rbac/GrantsConvergenceLintTest.php` — is not touched by this
+branch and is being investigated as its own task. I did not retry for green, did
+not baseline, and did not run `git gc`. Read *Full suite + ratchet* before
+treating the green as meaningful.
 
 ---
 
 ## Headline
 
-Done. `GuardianService::merge()` with an opt-in `--consolidate-login` path and
-four login refusals, plus `guardians:merge` and `guardians:find-duplicates`, and
-36 arms in `tests/Feature/Guardian/GuardianMergeTest.php`. Branch
+Done. `GuardianService::merge()` with **one unconditional, terminal** account
+refusal, plus `guardians:merge` and `guardians:find-duplicates`, and 28 arms in
+`tests/Feature/Guardian/GuardianMergeTest.php`. Branch
 `feat/guardian-merge-command`, cut from `staging` @ `e484a46` (`staging` and
-`main` are the same commit today — re-derived). Five commits. Not pushed; no PR.
+`main` are the same commit today — re-derived). Seven commits. Not pushed; no PR.
 
-This round closed the mirror of last round's defect — consolidation could clear
-`disabled_at` on a keeper account another school had deliberately revoked — and
-ticketed three.
+## Why consolidation was removed, which is not "the lead asked"
 
-## Deviations, and one of them is mine to own
+Five review rounds. Each one found a defect. **Every one of them was in the
+account-migration code, and not one was in the merge engine.**
 
-**Commit hygiene.** Last round I ran `git add -A docs/handoff/`, which swept two
-untracked brief files into the commit, one of which I had never opened. I caught
-it on the status output, reset soft, unstaged them and re-committed. Nothing was
-published and the branch history carries no trace of it. For the rest of this
-branch I have staged explicit paths only. `docs/handoff/briefs/` remains
-untracked and unread.
+| Round | Defect | Where |
+| --- | --- | --- |
+| 1 | `can_login` re-pointed onto the keeper's pivot regardless of which `users` row it lived on | account migration |
+| 2 | The cross-account guard keyed on `can_login`, which authentication never reads — refused 1 of 14 real groups, waved 13 through | account migration |
+| 3 | `users.disabled_at` is account-global: consolidating in school A revoked access at school B | account migration |
+| 4 | The same write's **keeper** half — clearing `disabled_at` — left ungated, with the gating fact computed and used only to word a message | account migration |
+| 5 | Both gates measured an account's reach by counting live **guardian rows**, while `school_user` + team roles are a second access path guardian rows cannot see | account migration |
 
-**On the ruling: none.** All four items of finding 1 are implemented as written,
-and findings 2–4 are ticketed.
+One shape, five times: **a guard scoped to the record in front of it while the
+write reached further.** The merge engine — pivot moves and collisions, the
+OR-merge, single-primary re-assertion, back-fill, the cross-school and
+active-school refusals, the audit trail, soft-delete, the orphan report — was
+attacked in all five rounds and held in all five.
 
-**One interruption to declare.** This session was cut off mid-round by a
-server-side error, after `6713889` was committed and while the clean suite re-run
-was in flight. On resuming I re-derived the tree rather than trusting memory —
-36 arms present, the gate and both plan values present, the decision-table column
-present, zero `WATCHED RED` residue — and only then finished this report. The
-interruption changed nothing in the commit; it is recorded because a reader
-comparing timestamps would otherwise find a gap.
+That is the argument for removal rather than a sixth fix. Consolidation is a
+different feature that was wearing a flag on this one, and the flag is what kept
+putting its blast radius inside the merge's review. It needs its own branch, its
+own arms and its own review, and it now has a brief carrying all five findings as
+its specification.
 
-**One judgement inside item 2, stated because it is the difference between a
-guard and noise.** The ruling said to refuse "on the WRITE being reachable", not
-on exclusivity alone. Getting that right needed *two* facts about the keeper's
-account, not one, and they are deliberately separate values
-(`app/Services/GuardianService.php:1029-1046`):
+## What was removed
 
-- `keeper_school_exclusive` — the **full** sense: nothing else lives on this
-  account anywhere, this school included. It words the "reverse `--keep` and
-  `--absorb`" remedy, which has to match what the donor gate asks.
-- `keeper_other_school_ids` — the **narrow** sense: live records outside the
-  school this merge is running in. That is what the re-enable gate uses, because
-  the hazard is *another* school's revocation being undone; a sibling row in this
-  school is this merge's own business.
+- The `--consolidate-login` flag and every path reachable only through it: the
+  donor disable, the keeper re-enable, the credential re-issue, the parent
+  notification, and the `&$deferred` drain that existed to serve it.
+- `applyLoginConsolidation()` and `remainingGuardianSchoolIdsFor()`, deleted
+  outright.
+- `orphanedUserIdsAfterMerge()` **as a gate**. It survives as what it always
+  was — a *fact* reported in the plan (`orphaned_user_ids`) and printed by the
+  command. Removing its gate role and keeping its reporting role was the one part
+  of this removal that needed reading rather than deleting.
+- Every consolidation-shaped plan key: `school_exclusive`, `remaining_school_ids`,
+  `keeper_school_exclusive`, `keeper_other_school_ids`, `keeper_re_enable_blocked`,
+  `consolidate_requested`, `consolidating`, `will_notify`,
+  `not_school_exclusive_guardian_ids`.
+- The decision table's `only this school` and `merge will` columns, the
+  surviving-account line's disabled/exclusive clauses, and the "the parent WILL
+  be emailed" line.
+- Eight arms, and five tickets whose subject no longer exists.
 
-Refusing on the full sense would have fired where nothing was at stake. That is
-how a guard gets switched off by the next person, and it is also exactly the
-conflation the reviewer found on the donor side — see finding 4's ticket, which
-records this pair as the worked precedent for fixing it there.
+## What replaced it
 
-**Item 4 of findings 2–4: checked whether the same-school exclusion was the
-one-line change the ruling would have had me do inline. It is not.** Making the
-donor *message* right while keeping the *gate* right needs a split, not a filter:
-the gate is `orphanedUserIdsAfterMerge` and must keep counting same-school rows,
-so the fix is a new plan value carrying the sibling guardian **ids** (the remedy
-must name the rows to absorb), a narrowed `remaining_school_ids`, a third remedy
-branch, a table change and an arm per branch. Ticketed, with that shape written
-out.
+**One refusal, unconditional and terminal** (`GuardianService.php:1020`): if any
+absorbed record's account can authenticate — enabled and password set, derived
+from Fortify's own checks, never from `can_login` — and it is not the keeper's
+account, the merge aborts. There is no flag that proceeds past it.
+
+The message names the ids, says this command collapses duplicate **records** and
+does not consolidate **accounts**, says the records can be merged once the
+accounts have been consolidated deliberately with the parent told, and stops.
+**It prescribes nothing it cannot deliver** — twice on this branch a refusal
+named a remedy that did not clear the check, one of which locked a parent out on
+the way, and that is why this one describes the situation instead.
+
+`planLoginDecision` (`:947`) is now a detector, not a decision: it reports which
+donor accounts can sign in and stops. `keeper_deliverable` is retained because the
+pre-existing `can_login` deliverability invariant still reads it when a pivot
+carrying that flag lands on the keeper; it gates nothing about accounts.
+
+## The follow-up brief
+
+`docs/handoff/briefs/feat-guardian-consolidate-login.md`, written for an
+implementer with none of this context and **left untracked, as instructed** — it
+is not in any commit and `docs/handoff/briefs/` was never staged. It carries what
+consolidation must do, all five findings with their mechanisms as the
+specification, both of the reviewer's probes verbatim as arms that branch must
+pass, the two decisions nobody ever made (unconditional password rotation; no
+basis for choosing `--keep`, with the `0 of 28 activated` figure and the
+instruction to re-derive it), and a plain statement that **guardian rows are the
+wrong measure of an account's reach**, naming `school_user` + `model_has_roles`
+as the right one.
+
+## Deviations
+
+**None on the ruling.** Everything named for removal is removed; everything named
+to survive survives.
+
+**One mistake made and corrected inside this round, recorded because the tree
+briefly held it.** My first deletion pass took `buildMergePlan()` with it —
+`remainingGuardianSchoolIdsFor` and the refusal block are not contiguous, and I
+deleted a span rather than the two methods. `php -l` still passed, because the
+result was syntactically valid and semantically gutted. I restored the file from
+`HEAD` and redid the removal by locating each method and its docblock
+individually. Nothing broken was committed, and the method list was re-derived
+afterwards to confirm.
+
+**The commit-hygiene deviation from two rounds ago still stands as recorded:**
+`git add -A docs/handoff/` swept in two untracked briefs including one I had never
+opened; caught on the status output and reset before the commit stood. Every
+commit since has staged explicit paths, this one included.
 
 ## Superseded decisions
 
-**Revision 1 — the pivot flag travels with the row.** `can_login` was re-pointed
-onto the keeper regardless of which `users` row it had been on. The login lives
-on `users`; moving the flag strands the account.
+All four earlier designs are gone with the feature they guarded, and the table
+under *Why consolidation was removed* is now the record of them. The one general
+rule worth carrying forward, because it survived being right four times and
+insufficient four times:
 
-**Revision 2 — refuse any cross-account `can_login`.** Right intent, wrong key.
-Authentication reads none of the pivot (`FortifyServiceProvider.php:50-51`).
-Against the 14 duplicate groups in the production copy this refused **1** and
-waved through **13**.
+**A guard must be keyed on the signal the system it protects actually reads, and
+scoped to the full reach of the write — not to the record in front of it.**
 
-**Revision 3 — re-keyed to "can this account authenticate".** Correct as far as
-it went, and it missed that `users.disabled_at` is a property of the **account**:
-consolidating in school A revoked access at school B.
+`can_login` is not the login; `users.disabled_at` is not per-school; and a live
+guardian row is not the measure of an account's access. Each of those was learned
+by shipping the opposite.
 
-**Revision 4 — guarded the donor side of that write only.** The same function
-also clears `disabled_at` on the **keeper**, and that half went unguarded, while
-the fact needed to guard it was computed and used only to word a message.
+## What this revision changed
 
-**Current.** Four refusals, in order: a live donor account refuses unless
-`--consolidate-login`; consolidation refuses into a keeper that cannot be mailed;
-consolidation refuses when a **disabled** keeper account still serves another
-school; consolidation refuses when a donor account is not school-exclusive.
+Removal, described above, plus:
 
-The pattern, now four for four and worth stating as a rule rather than a story:
-**each wrong version was scoped to the record in front of it while the write
-reached further.** Revision 4 is the sharpest instance, because by then the rule
-was written down in this very report and still got applied to only one half of a
-two-sided write.
-
-## What this revision changed, against the ruling
-
-**1. The keeper-side re-enable is gated.** `keeper_re_enable_blocked`
-(`app/Services/GuardianService.php:1046`, in the plan at `:1059`) and the fourth
-refusal at `:1168`. It fires only when the keeper account is disabled **and**
-still backs live guardian records outside this school — so an already-enabled
-keeper is never refused, because there is no `disabled_at` to clear and nothing
-another school could lose.
-
-**2. `keeper_school_exclusive` is a gate's input, not prose.** It and
-`keeper_other_school_ids` both feed the decision; the refusal message names the
-`school#<id>`s, says the account may have been disabled there deliberately, and
-says the only trail would be a `login_enabled` on a guardian in *this* school —
-"a trail they cannot see" — then gives the two real actions: confirm with the
-other school and re-enable it there first, or keep a guardian record whose
-account is not shared.
-
-**3. Both facts print in the decision table, in both modes**
-(`app/Console/Commands/MergeGuardians.php:168-185`). The surviving-account line
-now reads `used by this school only` / `also backs another guardian record in
-this school` / `ALSO SERVES school#<id>, …`, and a `⚠` line appears when the
-re-enable is blocked. A fact computed, used to word a message and never shown was
-the shape of the defect being fixed.
-
-**4. Three arms** (`GuardianMergeTest.php:394`, `:425`, `:457`): shared **and
-disabled** keeper + `--consolidate-login` → refused with `disabled_at` unchanged
-and the other school's row untouched; shared but **already enabled** → proceeds,
-because there is no write to gate; **exclusive and disabled** → proceeds and
-re-enables.
-
-**5. Findings 2, 3 and 4 ticketed.** The rotation ticket is **amended, not
-replaced**: a new *cross-school case* section, and its "Not this ticket" section
-is rewritten to say the parked question — what the email says — is now the
-**first** thing to decide, because a password email naming one school's children
-for a credential governing two schools is a message the parent cannot act on.
-`guardian-merge-notification-takes-its-school-from-users-school-id.md` is new and
-states the legacy-versus-fresh distinction explicitly: the helper is old, but
-`merge()` is a new caller that *has* the right value in scope and does not pass
-it, which is what ADR 0042's expiries exist to stop being added to.
-`guardian-merge-non-exclusivity-refusal-counts-its-own-school.md` is new and
-records that it falsifies a property this report made load-bearing last round.
+- the docblocks on `merge()`, `planLoginDecision` and the refusal rewritten so
+  none of them describes behaviour that no longer exists — the report's own rule
+  from last round, applied to a deletion rather than an ungated write;
+- the surviving tickets cleaned of consolidation: the dry-run/apply ticket had its
+  `--consolidate-login` paragraphs replaced with a labelled note that the feature
+  is gone (**that ticket has now carried a stale sentence twice, and the note says
+  so**), and the causer ticket's mention of consolidation events rewritten to
+  point at the follow-up branch that inherits it;
+- the gc ticket amended with the cold reviewer's falsification of half my own
+  diagnosis — `gc.pruneExpire` defaults to `2.weeks.ago` so a gc cannot prune
+  seconds-old fixtures, and an identically-loaded clone ran that file 36/36
+  green. The better-fitting candidate the reviewer found (`gclCommit` discards the
+  exit status of every git call but the last) is now fix shape 0. I did not act on
+  it: that file is someone else's task this round.
 
 ## Contradictions of the premise
 
-**None.** The reviewer's finding-1 mechanism verified in the tree:
-`applyLoginConsolidation` clears `disabled_at` unconditionally on `$keeper->user`;
-`keeper_school_exclusive` existed and gated nothing; `render()` printed neither
-it nor the other-school list.
+**None.** The removal was verified against the tree rather than assumed:
+`grep -c "consolidat"` over `app/Services/GuardianService.php` and
+`app/Console/Commands/MergeGuardians.php` returns only deliberate prose (the
+docblock explaining why the flag is gone, and the refusal message), and the
+method list re-derived after the deletion shows `applyLoginConsolidation` and
+`remainingGuardianSchoolIdsFor` absent with `buildMergePlan` present.
 
 ## What changed
 
-Five commits. Re-derived at the moment of writing:
+Seven commits. Re-derived at the moment of writing:
 
 | File | Size | What |
 | --- | --- | --- |
-| `app/Services/GuardianService.php` | **+917, −0** (`git diff --numstat e484a46`) | `merge()` and fourteen private helpers. Nothing pre-existing modified. |
-| `app/Console/Commands/MergeGuardians.php` | **257** | `guardians:merge --keep= --absorb=* [--apply] [--consolidate-login]`. |
+| `app/Services/GuardianService.php` | **+664, −0** against `e484a46` (`git diff --numstat`); this round alone **+45, −308** | `merge()` and its helpers. Nothing pre-existing modified. |
+| `app/Console/Commands/MergeGuardians.php` | **221** (was 257) | `guardians:merge --keep= --absorb=* [--apply]`. |
 | `app/Console/Commands/FindDuplicateGuardians.php` | **229** | `guardians:find-duplicates [--school=]`. |
-| `tests/Feature/Guardian/GuardianMergeTest.php` | **1048** | **36** arms (`grep -c "^it("`). |
-| `docs/handoff/tickets/` | 8 files | Two corrected in place, one amended, five new across the rounds — including the git auto-gc ticket raised this round. |
+| `tests/Feature/Guardian/GuardianMergeTest.php` | **802** (was 1048) | **28** arms (`grep -c "^it("`), down from 36. |
+| `docs/handoff/tickets/` | **3 files** (was 8) | Five deleted with the feature; two cleaned of it; the gc ticket amended with its own falsification. |
+| `docs/handoff/briefs/feat-guardian-consolidate-login.md` | new, **untracked** | The follow-up. Deliberately not committed. |
 
 ## Proof
 
@@ -178,179 +184,142 @@ Raw output. This harness replaces Pest's stdout with a JSON summary line.
 
 ```
 $ DB_DATABASE=portal_testing php vendor/bin/pest tests/Feature/Guardian/GuardianMergeTest.php --colors=never
-{"tool":"pest","result":"passed","tests":36,"passed":36,"assertions":170,"duration_ms":34206}
+{"tool":"pest","result":"passed","tests":28,"passed":28,"assertions":121,"duration_ms":17276}
 ```
 
-### The guardian directory — re-run on this tree
+### The guardian directory
 
 ```
 $ DB_DATABASE=portal_testing php vendor/bin/pest tests/Feature/Guardian --colors=never
-{"tool":"pest","result":"passed","tests":55,"passed":55,"assertions":193,"duration_ms":20573}
+{"tool":"pest","result":"passed","tests":47,"passed":47,"assertions":144,"duration_ms":15055}
 ```
 
 `GuardianLoginInvariantTest` and `DeliverableEmailPredicateTest` are in it,
 unmodified, green.
 
-### Full suite + ratchet, on the final tree
-
-**RED, twice, on a file this branch does not touch.** Raw, from the clean re-run
-on the committed tree:
-
-```
-$ DB_DATABASE=portal_testing php vendor/bin/pest --log-junit junit.xml; echo "PEST_EXIT=$?"; php bin/ci-test-ratchet.php junit.xml; echo "RATCHET_EXIT=$?"
-PEST_EXIT=2
-
-ratchet: 9 NEW test failure(s) not in the baseline (regression):
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it 4a EXPLOITED — rewording an apostrophe-bearing comment in ROLES must not manufacture a new role
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it 4b — an unreadable enum or seeder at either revision is NOT LINTED, never a pass
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it 4c — a migration converging role A does NOT exempt the same permission added to role B
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it 4d — the SUPER_ADMIN_PLATFORM range is bounded at both ends
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it F10 — a fragment consumed as `'<role>' => $fragment,` is indexed too, not read as spread by nobody
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it F13 — a consumption line the two forms do not match REFUSES, and does not skip quietly
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it F5 — F4 where one spreading role is NEW in the diff: that one exempt by 2, the other flagged
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it F7 — a permission added to a fragment NO role spreads yields zero findings
-  ✗ tests/Feature/Rbac/GrantsConvergenceLintTest.php::it MARKER 1 — PROSE IS NOT A DECLARATION: naming a role it EXCLUDES must not exempt that role
-
-Fix the regression, or — if the failure is intentional — add it to tests/ratchet-baseline.txt.
-RATCHET_EXIT=1
-```
-
-Counts from that run's JUnit:
-
-```
-{'tests': '1705', 'assertions': '7085', 'failures': '10', 'errors': '6', 'skipped': '10', 'time': '3101.076584'}
-… the 7 baselined entries …
-9 × tests/Feature/Rbac/GrantsConvergenceLintTest.php
-merge cases: 36
-```
-
-**What I did and did not do about it.** I did not re-run hoping for green, and I
-did not baseline it. Both are the move CLAUDE.md names as indistinguishable from
-fixing. What I did was look for a mechanism, and there is one.
-
-The run before it was also red on the same file with **12** arms — a *different
-subset*. Four earlier full-suite runs on this branch were clean with exactly the
-seven baselined failures. The failures come in two shapes:
-
-```
-Illuminate\Process\Exceptions\ProcessTimedOutException: The process
-"'php' 'bin/ci-grants-convergence-lint.php' '3129c7c…' 'e4df044…'" exceeded the timeout of 60 seconds
-
-Failed asserting that 'grants-convergence-lint: NOT LINTED — database/seeders/RbacSeeder.php is
-unreadable at head 4af879e. Either the file moved or the revision is unreachable…'
-```
-
-Those arms build throwaway commits with `git commit-tree` against a scratch
-index. Nothing references them — they are loose objects. And the repository is
-over git's auto-gc threshold:
-
-```
-$ git count-objects -v
-warning: garbage found: .git/objects/pack/tmp_pack_rA7yBY
-count: 7286
-…
-$ git config --get gc.auto   →  unset, so the default 6700
-```
-
-7286 loose objects against 6700. Git starts `gc --auto` opportunistically, and a
-gc explains both shapes at once: it is slow enough to blow a 60 s subprocess
-timeout (`commit-tree` measures 0.03 s in isolation), and it **prunes
-unreferenced loose objects** — which is precisely what those fixture commits are,
-hence "revision is unreachable". The stray `tmp_pack_*` is the residue of one
-such gc being killed part-way.
-
-The test file is also a contributor to the condition: every run writes fresh
-unreferenced objects, so it walks the repo toward the threshold that then breaks
-it.
-
-Written up as `docs/handoff/tickets/grants-convergence-lint-test-is-self-poisoning-against-git-auto-gc.md`,
-with the fix shapes (anchor the fixtures behind a temp ref, `-c gc.auto=0`, raise
-the timeout, clean up after) and an explicit instruction **not** to baseline the
-arms.
-
-**I am not asking anyone to take this on my word.** It is a hypothesis with
-evidence, not a proof: I have not demonstrated a gc running concurrently with a
-failing arm. What is certain is that the failures are in a file this branch does
-not touch, that the failing subset is not stable between runs, and that the
-branch's own 36 arms are in both runs and green in both.
-
 ### Gates
 
-Pint through an explicit changed-file list built from the diff, with the
-empty-list guard:
-
 ```
-$ files=$(git diff --name-only e484a46...HEAD -- '*.php' | tr '\n' ' ')
+$ files=$(git diff --name-only HEAD -- '*.php' | tr '\n' ' ')
 $ echo "FILES: $files"
-FILES: app/Console/Commands/FindDuplicateGuardians.php app/Console/Commands/MergeGuardians.php app/Services/GuardianService.php tests/Feature/Guardian/GuardianMergeTest.php
-$ if [ -n "$files" ]; then eval "./vendor/bin/pint --test $files"; else echo "SKIPPED — empty list guard"; fi
-{"tool":"pint","result":"passed"}
+FILES: app/Console/Commands/MergeGuardians.php app/Services/GuardianService.php tests/Feature/Guardian/GuardianMergeTest.php 
+$ if [ -n "$files" ]; then eval "./vendor/bin/pint $files"; else echo "SKIPPED — empty list guard"; fi
+{"tool":"pint","result":"fixed","files":[{"path":"tests\/Feature\/Guardian\/GuardianMergeTest.php","fixers":["no_extra_blank_lines"]}]}
 
 $ php bin/ci-authz-lint.php
 authz-lint: OK — no new commented-out authorization checks (0 known).
-authz exit=0
 
 $ php bin/ci-boundary-lint.php
 boundary-lint: OK — no new boundary violations (4 known temporary exceptions).
-boundary exit=0
 
 $ composer analyse
 {"tool":"phpstan","result":"passed","errors":0}
 
 $ DB_DATABASE=portal_testing php vendor/bin/pest --group=arch --colors=never
-{"tool":"pest","result":"passed","tests":32,"passed":32,"assertions":181,"duration_ms":5467,"warnings":2,…ForcingMigrationsDoNotStripLaterGrantsTest…}
+{"tool":"pest","result":"passed","tests":32,"passed":32,"assertions":181,"duration_ms":5733,"warnings":2,…ForcingMigrationsDoNotStripLaterGrantsTest…}
 ```
+
+### Full suite + ratchet, on the final tree
+
+**GREEN this run — and I did nothing to make it so.** That sentence is the whole
+point of this section, so it comes before the output.
+
+```
+$ DB_DATABASE=portal_testing php vendor/bin/pest --log-junit junit.xml; echo "PEST_EXIT=$?"; php bin/ci-test-ratchet.php junit.xml; echo "RATCHET_EXIT=$?"
+PEST_EXIT=2
+
+ratchet: OK — no new failures beyond the baseline (7 known-failing).
+RATCHET_EXIT=0
+```
+
+```
+{'tests': '1697', 'assertions': '7073', 'failures': '6', 'errors': '1', 'skipped': '10', 'time': '479.042069'}
+1 tests/Feature/ActivityLog/ActivityLogApiTest.php::it blocks users without activity_log.view
+1 tests/Feature/ActivityLog/ActivityLogApiTest.php::it returns a paginated scoped feed
+1 tests/Feature/ActivityLog/ActivityLogApiTest.php::it does not leak activity across schools
+1 tests/Feature/ActivityLog/ActivityLogApiTest.php::it hides sensitive entries without view_sensitive
+1 tests/Feature/Auth/AuthenticationTest.php::users are rate limited
+1 tests/Feature/GuardianProfileTest.php::it sends a password reset notification to the guardian email
+1 tests/Feature/GuardianProfileTest.php::it returns empty activity list when no events exist
+merge cases: 28
+gcl cases: 36
+```
+
+`PEST_EXIT=2` is the seven baselined failures, which is `tests/ratchet-baseline.txt`
+exactly. All 36 `GrantsConvergenceLintTest` cases ran and passed.
+
+**Do not read that as the red being fixed.** The honest record across this branch:
+
+| Run | `GrantsConvergenceLintTest` | Wall time |
+| --- | --- | --- |
+| 1–4 | clean | ~1400–1900 s |
+| 5 | **12 arms red** | ~1745 s |
+| 6 | **9 arms red**, a different subset | ~3101 s |
+| 7 (this one) | **clean, all 36 green** | **479 s** |
+
+**I touched nothing between run 6 and run 7 that could bear on it.** No `git gc`,
+no baseline edit, no change to that file or to `bin/ci-grants-convergence-lint.php`.
+The only difference is that this round *deleted* code — from a file that test does
+not read — and that the machine was four to six times faster on this run (479 s
+against 3101 s), which is consistent with whatever load or contention was present
+before having gone away.
+
+So this green is evidence about the *machine*, not about the test. A green nobody
+can explain is worth exactly as much as a red nobody can explain, and I am not
+going to spend the one to buy confidence in the other. The ticket keeps its
+falsified-diagnosis section and its instruction not to baseline; the cause is
+still open and still someone else's task.
 
 ## The watched red
 
-**The mutation was checked for inertness before it was written up, as instructed
-— and it was inert.** Removing only the fourth refusal at `:1168` reds the arm on
-"exception not thrown" but does **not** produce the defect, because `consolidating`
-is independently gated on `! $reEnableBlocked` (`:1046-1052`). Planting the shape
-with only that half removed:
+**The point of this one is that the removal did not take the guard with it.**
+Deleting a feature is exactly the change most likely to quietly delete a check
+that was sitting inside it.
+
+Mutation — the terminal refusal, in `assertLoginDecisionAllowed`:
+
+```diff
+-        if ($decision['cross_account_login_guardian_ids'] === []) {
++        if (true) { // WATCHED RED: terminal account refusal removed
+             return;
+         }
+```
 
 ```
-BEFORE  school#2 has revoked user#2: disabled_at=SET, authenticates=false, its school#2 records still exist: [1]
+$ DB_DATABASE=portal_testing php vendor/bin/pest tests/Feature/Guardian/GuardianMergeTest.php --colors=never --filter='refuses to absorb a record whose account can still sign in'
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":1,"duration_ms":11379,"failed":1,"failures":[{"test":"…it_refuses_to_absorb_a_record_whose_account_can_still_sign_in","file":"…/GuardianMergeTest.php","line":253,"message":"Exception \"Illuminate\\Validation\\ValidationException\" not thrown."}]}
+```
+
+An assertion message is not the defect, so with the refusal still removed I
+planted the shape directly — a donor account with **no `can_login` row anywhere**,
+which is the 13-of-14 production shape — and asked what happens to it:
+
+```
+BEFORE  donor user#3 authenticates: true
 merge: COMPLETED
-AFTER   user#2 disabled_at=SET, authenticates=false
-AFTER   school#2 access RESTORED without school#2 asking: false
+AFTER   absorbed guardian#2 deleted: true
+AFTER   donor user#3 authenticates: true, its guardian record resolves to: NULL
+AFTER   that account signs in and its ward list is: []
 ```
 
-The merge ran and the revocation held. So both halves came out — the honest
-mutation, and the same shape as last round, which is now twice in a row on this
-guard family. Same fixture, both halves removed:
+The account still signs in, its guardian record is gone, and
+`forUserInActiveSchool` resolves nothing — so the parent reaches an empty portal
+with no email and no error. Restored; `grep -c "WATCHED RED"` returns `0` and the
+file is green at 28/28.
 
-```
-BEFORE  school#2 has revoked user#2: disabled_at=SET, authenticates=false, its school#2 records still exist: [1]
-merge: COMPLETED
-AFTER   user#2 disabled_at=NULL, authenticates=false
-AFTER   school#2 access RESTORED without school#2 asking: true (account enabled=true, its school#2 wards [1], parent holds the password this merge just emailed)
-```
-
-`disabled_at` transitions `SET → NULL` and school#2's access is live again — its
-guardian record and ward link were never touched, they were simply unreachable
-while the account was disabled, and a school#1 cleanup handed them back. The
-`authenticates=false` on both lines is the probe testing the *old* password,
-which the consolidation rotated; the parent holds the new one from the email this
-merge sent, which is why the last line reads on the account's enabled state and
-the ward payload rather than on a password check.
-
-Arm, with the gate removed:
-
-```
-$ DB_DATABASE=portal_testing php vendor/bin/pest tests/Feature/Guardian/GuardianMergeTest.php --colors=never --filter='still serves another school'
-{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":1,"duration_ms":23324,"failed":1,"failures":[{"test":"…it_refuses_to_re_enable_a_disabled_keeper_account_that_still_serves_another_school","file":"…/GuardianMergeTest.php","line":415,"message":"Exception \"Illuminate\\Validation\\ValidationException\" not thrown."}]}
-```
-
-Restored; `grep -c "WATCHED RED"` returns `0` and the file is green at 36/36.
+**I checked this mutation was not inert before writing it up**, because twice on
+this branch a single-half mutation left the demonstration inert while a second
+condition covered the write. Here there is only one condition left, and removing
+it does reproduce the defect.
 
 ### Reds from earlier rounds
 
-The donor-side cross-school refusal (`disabled_at=SET`, school#2 unreachable);
-the re-keyed account guard (zero `can_login` rows, donor still authenticates,
-`wards: []`); the deliverability invariant on both call sites; the collision-side
-condition both disabled and restored to its old narrowed form; and the collision
-branch (`1062` on the pivot unique index). All restored, all still green.
+They exercised code that no longer exists (the donor disable, the keeper
+re-enable, the consolidation gates) and are not carried forward as evidence for
+anything. Two that still apply to surviving code stand: the deliverability
+invariant on both its call sites, and the collision branch — `1062` on
+`guardian_student_guardian_id_student_id_unique` when a colliding pivot is forced
+to take the plain re-point.
 
 ## The drive
 
@@ -360,61 +329,69 @@ No screen changed — nothing under `resources/js` is touched. No drive.
 
 Local copy, read-only, ids and counts only. Re-confirmed: 776 live guardian rows,
 776 distinct users, **0** certain `(user_id, school_id)` groups, **14** likely
-groups (all `school#1`, size 2, two distinct users each), and **0** users backing
-live guardian rows in more than one school.
+groups (all `school#1`, size 2, **two distinct users each**).
 
-That last zero means neither cross-school refusal — donor-side or keeper-side —
-can fire on today's data. It is not an argument that they are unnecessary: the
-enrolment path produces multi-school parents by design, and slice 3 runs this
-engine unattended. It is also the argument the reviewer used against me, correctly:
-reachability cannot excuse one half of a write after being waved away for the
-other.
+**The operational consequence of the removal, and it is the line the lead needs.**
+All 14 groups are two distinct accounts, and the reviewer measured all 28 of those
+accounts as enabled with a password set. So **every one of the 14 groups is now
+refused by this command.** With consolidation gone, `guardians:merge` cannot
+collapse a single group in the current working set.
 
-Operationally unchanged: all 14 groups need `--consolidate-login`, each disables a
-parent's account and emails them new credentials. Sequence it with the school.
+That is not the command failing — it is the command declining to strand fourteen
+parents' logins — but it does mean the remediation the school is waiting on is
+blocked behind `feat/guardian-consolidate-login`, and this branch's immediate
+value is the refusal, the detector and the engine rather than throughput. If that
+is not acceptable, the lever is the follow-up branch's priority, not a flag here.
+
+What this branch *can* collapse today: any group whose absorbed account cannot
+authenticate (disabled or no password), and any certain duplicate where both
+records share one account — of which the copy currently holds **0**.
 
 ## Not done
 
 - **The decision table does not render on the refusal path.** A refusal throws
-  before a plan exists. Operators see the refusal message, which names the ids.
-- **`--consolidate-login` is not exercised end-to-end through the command in apply
-  mode.** The dry run is; the service-level consolidation is; the combination is
-  not.
-- **No arm asserts the notification's contents** — only that it was sent once, to
-  the right user, and not to the donor.
+  before a plan exists, so an operator whose merge is refused gets the message
+  naming the ids rather than the table. The table renders whenever a merge is
+  actually on offer, which an arm pins.
 - **`guardians:find-duplicates` still cannot tell an operator which groups will
-  consolidate, which will be refused, and which are inert.**
+  be refused for a live donor account.** It already loads every guardian and the
+  fact is one join away. The discovery mechanism is currently a refused merge.
+  Raised below.
 - **`--school` on `guardians:find-duplicates` is proven only in the narrow
-  direction.**
+  direction** — no arm proves two guardians in different schools sharing a phone
+  are not grouped.
 - **The dry-run/apply arm still compares only three plan keys** — ticketed.
 - **`bin/quality` has not been run end to end**, only the individual gates.
-- **I did not clear the loose-object condition** (`git gc --prune=now`) and then
-  re-run the suite. That would very likely have turned the ratchet green, and it
-  would have been retrying-until-green wearing a diagnosis. The repository's git
-  housekeeping is the project lead's call, not something to do silently inside a
-  feature branch.
-- **The gc hypothesis is not proven**, only evidenced. See the suite section.
-- **`docs/handoff/briefs/` remains untracked and unread.**
+- **I did nothing about the `GrantsConvergenceLintTest` failures** — not a retry,
+  not a baseline, not a `git gc`. This round's run happened to come back green;
+  that is not a fix and I have not treated it as one. The only thing I changed
+  there is my own ticket, amended with the cold reviewer's falsification of half
+  my diagnosis.
+- **The follow-up brief is untracked and uncommitted**, as instructed, and
+  `docs/handoff/briefs/` was never staged. `fix-guardian-create-duplicates.md` in
+  that directory remains unread.
 - **Nothing pushed. No PR. No merge to `staging`.**
 
 ## Findings raised, not fixed
 
-- **`tests/Feature/Rbac/GrantsConvergenceLintTest.php` is self-poisoning against
-  git's auto-gc** — it creates unreferenced loose objects every run, walks the
-  repository past `gc.auto`, and then fails intermittently when a gc prunes its
-  own fixtures or blocks its subprocesses. It lands on whoever holds the branch
-  when the threshold is crossed, naming a file they did not touch. **fix**, and
-  it is blocking this branch's ratchet right now. Ticketed with the mechanism and
-  four fix shapes; explicitly **not** to be baselined.
-- **`guardians:find-duplicates` reports duplicate groups but not their login
-  disposition.** It already loads every guardian; both facts are one join away.
-  Without it the 14 groups are a work list with three invisible columns and the
-  discovery mechanism is a refused merge. **ticket**, and still the one I would
-  pick up next.
-- `app/Services/GuardianService.php:275` — the creation-path defect. Slice 2. **fix**.
-- `app/Models/Guardian.php:88-94` — `applySchoolScope`'s OR branch;
-  `Guardian::withoutGlobalScopes()` now at 10 call sites across 5 files. **ticket**.
-- `app/Services/GuardianService.php:391-397` and the pivot writers — single-primary
-  enforced in code only, with no detector. **ticket**.
+- **`guardians:find-duplicates` does not report which groups the merge will
+  refuse.** With consolidation gone, every group whose absorbed account can sign
+  in is now blocked until that separate work lands — so the census that is meant
+  to be the work list silently contains rows that cannot be worked. One join.
+  **ticket**, and the first thing I would pick up.
+- **`tests/Feature/Rbac/GrantsConvergenceLintTest.php` fails nondeterministically
+  and the cause is open.** Red twice with different subsets, green on the run
+  before and the run after, with no intervention. My gc diagnosis was half
+  falsified by the cold reviewer; the surviving candidate is that `gclCommit`
+  discards the exit status of every git call but the last. Ticketed with that as
+  fix shape 0. **fix** — a gate that passes and fails on the same tree is not a
+  gate — but it is being handled as its own task.
+- `app/Services/GuardianService.php` — the creation-path defect that produces the
+  duplicates. Slice 2. **fix**.
+- `app/Models/Guardian.php:88-94` — `applySchoolScope`'s OR branch; every query in
+  this change works around it with `withoutGlobalScopes()`. **ticket**.
+- **Single-primary is enforced in code only**, at each pivot writer, and the
+  two-primary pre-state an arm plants is constructible directly through the pivot
+  with nothing to detect it. **ticket**.
 - `tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php:43,48` — two
   constants redefined, warned on every arch run. Pre-existing. **ticket**.

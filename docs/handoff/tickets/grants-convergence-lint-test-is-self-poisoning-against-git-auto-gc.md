@@ -89,10 +89,40 @@ It also makes `bin/quality`'s last step — the full suite — nondeterministic 
 already flags as the residual nobody has explained. This is at least one concrete instance of it with a
 mechanism attached.
 
+## ⚠️ HALF THIS DIAGNOSIS HAS BEEN FALSIFIED — read before acting on it
+
+A cold reviewer attacked the mechanism above and broke part of it. Recorded here rather than quietly
+rewritten, because the whole point of this ticket is not to hand the next person a confident wrong
+answer:
+
+- **The pruning half cannot be right as stated.** `git --version` → 2.50.1, and `gc.pruneExpire` is
+  unset, so the default `2.weeks.ago` applies. An auto-gc does **not** prune unreachable objects
+  created seconds earlier; on 2.50 they are retained (loose, or in a cruft pack) and stay readable. So
+  gc pruning cannot explain "revision is unreachable" for a fixture commit written by the same run.
+- **Crossing the threshold is not sufficient to reproduce.** The reviewer's `--no-hardlinks` clone
+  carried the identical condition — 7294 loose objects and the same stray `tmp_pack_*` — and ran this
+  file **36/36 green**.
+- **A better-fitting candidate was found in the test itself.** `gclCommit` discards the exit status of
+  every `read-tree` / `update-index` / `hash-object` call and reads only the final `commit-tree`
+  output. A silently failed write therefore produces a well-formed commit with missing content, which
+  fits "unreadable at head" at least as well as pruning does — and unlike gc, it is inside the code
+  this ticket can change.
+
+What survives unchallenged: the failures are subprocess timeouts and unreadable-revision assertions in
+a file the branch that surfaced them does not touch; the failing subset is not stable between runs; and
+the repository is genuinely over `gc.auto`. What does not survive: the confident causal story, and the
+report sentence claiming `git gc --prune=now` "would very likely have turned the ratchet green".
+
+**The operative instructions are unchanged and do not depend on the cause: do not baseline these arms,
+and do not retry until green.**
+
 ## The shape a fix takes
 
 Any of these; the first two are cheap and independent.
 
+0. **Check the exit status of every `$git()` call in `gclCommit`.** This one turns a silent
+   corruption into a named failure regardless of which cause is real, so it is worth doing first and
+   is the only item here that is unconditionally correct.
 1. **Anchor the fixture commits for the duration of the test.** Write a temporary ref
    (`refs/gcl-fixtures/<random>`) pointing at each fixture commit and delete it in a `finally`. A
    referenced object is not pruned, and the arms stop depending on gc's timing.

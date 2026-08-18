@@ -1,0 +1,599 @@
+<?php
+
+/*
+ * U6 commit 3 — the bulk invoice run: the job, and the record that accounts for every billable
+ * student.
+ *
+ * Every guard below was PLANTED and watched red before it was believed; the plants are named in the
+ * branch report (docs/handoff/reports/feat-u6-bulk-invoice-run.md). The claims these tests exist to
+ * break, in the order they matter:
+ *
+ *   1. THE RUN MUST NOT DOUBLE-BILL, AND MUST NOT REPORT A RE-RUN AS FAILURE. The authority is
+ *      UNIQUE(school_id, active_enrollment_key) on finance_invoices, not anything in the job — so
+ *      the job's whole contribution is CLASSIFYING that refusal as `already_billed` rather than as
+ *      an error. A re-run after a partial failure is the recovery path and forty students already
+ *      done must not read as forty failures.
+ *
+ *   2. ONE STUDENT MUST NOT TAKE THE RUN DOWN. Thirty-nine of forty is a partial result; thirty-one
+ *      of forty because the ninth had a corrupt episode is a defect.
+ *
+ *   3. A SCHEDULE-LEVEL REFUSAL MUST BE REPORTED ONCE. The mapper's five refusals are facts about
+ *      the PRICE LIST. Discovered inside the loop they print once per child and bury the one thing
+ *      an operator can act on.
+ *
+ *   4. THE RECONCILIATION MUST ADD UP OVER A FIXTURE WHERE ALL FIVE BUCKETS ARE NON-EMPTY, and the
+ *      denominator must be able to SEE the two shapes no coordinate reasoning reaches — a placeable
+ *      student at coordinates nobody asked about, and a NULL-`student_id` episode
+ *      (docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md).
+ *
+ *   5. ISOLATION. The run's School is an ARGUMENT carried on the job; the cohort read strips the
+ *      ambient scope, so that argument is the only thing between School A's run and School B's
+ *      students.
+ *
+ * THE JOB IS DISPATCHED, NEVER CALLED. Every arm goes through `ProcessBulkInvoiceRun::dispatch()` on
+ * the sync queue, which is the ONLY path that runs job middleware — so SchoolAware is under test
+ * rather than assumed. And every dispatch happens OUTSIDE any ActiveSchool::runFor: if the run only
+ * works because a test happened to leave a context open, it fails here.
+ */
+
+use App\Academics\BillableEnrollmentAdapter;
+use App\Enums\StudentStatusEnum;
+use App\Enums\TermStatusEnum;
+use App\Finance\Actions\CreateFeeSchedule;
+use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Contracts\BillableEnrollment;
+use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Finance\Enums\BulkInvoiceRunOutcome;
+use App\Finance\Enums\BulkInvoiceRunStatus;
+use App\Finance\Enums\FeeScheduleStatus;
+use App\Finance\Enums\InvoiceKind;
+use App\Finance\Jobs\ProcessBulkInvoiceRun;
+use App\Finance\Models\BulkInvoiceRun;
+use App\Finance\Models\BulkInvoiceRunRow;
+use App\Finance\Models\Invoice;
+use App\Models\AcademicSession;
+use App\Models\Arm;
+use App\Models\ClassLevel;
+use App\Models\ClassLevelArm;
+use App\Models\Curriculum;
+use App\Models\School;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
+use App\Models\Term;
+use App\Support\ActiveSchool;
+use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+uses(RefreshDatabase::class);
+
+/**
+ * A School with the pricing coordinates a run names, plus a SECOND class level so "placeable at
+ * coordinates nobody asked about" is constructible.
+ *
+ * @return array{school: School, term: Term, level: ClassLevel, arm: ClassLevelArm, level2: ClassLevel, arm2: ClassLevelArm}
+ */
+function birSchool(): array
+{
+    $school = School::factory()->create();
+
+    return ActiveSchool::runFor($school->id, function () use ($school) {
+        $session = AcademicSession::create([
+            'school_id' => $school->id, 'name' => '2026/2027-'.Str::random(4),
+            'slug' => 'sess-'.Str::random(8), 'is_current' => true,
+        ]);
+        $term = Term::create([
+            'academic_session_id' => $session->id, 'school_id' => $school->id, 'name' => 'First Term',
+            'slug' => 'term-'.Str::random(8), 'order' => 1, 'start_date' => now()->subMonth(),
+            'end_date' => now()->addMonths(2), 'status' => TermStatusEnum::ACTIVE->value,
+        ]);
+
+        $make = function (string $name, int $order) use ($school) {
+            $level = ClassLevel::create(['school_id' => $school->id, 'name' => $name, 'order' => $order]);
+            $arm = ClassLevelArm::create([
+                'school_id' => $school->id,
+                'class_level_id' => $level->id,
+                'arm_id' => Arm::create(['school_id' => $school->id, 'label' => strtoupper(Str::random(3))])->id,
+            ]);
+
+            return [$level, $arm];
+        };
+
+        [$level, $arm] = $make('JSS 1', 1);
+        [$level2, $arm2] = $make('JSS 2', 2);
+
+        return compact('school', 'term', 'level', 'arm', 'level2', 'arm2');
+    });
+}
+
+/**
+ * An ACTIVE fee schedule at $ctx's coordinates. CreateFeeSchedule always authors a DRAFT (the
+ * parent-state triggers only admit item inserts into one), so the activation is a raw status write —
+ * the way the rest of the suite moves a lifecycle it is not the subject of.
+ *
+ * @param  list<array<string, mixed>>  $items
+ */
+function birSchedule(array $ctx, ?array $items = null, ?ClassLevel $level = null): int
+{
+    $items ??= [[
+        'description' => 'Tuition', 'amount_minor' => 1000000, 'currency' => 'NGN',
+        'is_mandatory' => true, 'is_discountable' => true, 'sort_order' => 0,
+    ]];
+
+    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $items, $level) {
+        $specs = array_map(fn (array $item) => $item + ['bank_account_id' => testBankAccountUuid($ctx['school']->id)], $items);
+
+        $schedule = app(CreateFeeSchedule::class)->handle(
+            $ctx['term']->id, ($level ?? $ctx['level'])->id, 'v1-'.Str::random(4), $specs
+        );
+
+        DB::table('finance_fee_schedules')->where('id', $schedule->id)
+            ->update(['status' => FeeScheduleStatus::Active->value]);
+
+        return $schedule->id;
+    });
+}
+
+/** A student in $ctx's School with one ACTIVE enrollment at the given coordinates. */
+function birStudent(array $ctx, ?int $armId, ?int $termId): Student
+{
+    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $armId, $termId) {
+        $student = Student::factory()->create([
+            'school_id' => $ctx['school']->id,
+            'admission_number' => 'ADM-'.Str::random(8),
+        ]);
+
+        StudentCurriculum::create([
+            'student_id' => $student->id,
+            'school_id' => $ctx['school']->id,
+            'curriculum_id' => Curriculum::factory()->create([
+                'school_id' => $ctx['school']->id,
+                'class_level_arm_id' => $armId,
+                'term_id' => $termId,
+            ])->id,
+            'status' => StudentStatusEnum::ACTIVE,
+        ]);
+
+        return $student;
+    });
+}
+
+/**
+ * AN ACTIVE EPISODE WITH NO STUDENT — schema-legal, and the one shape no coordinate reasoning
+ * reaches. `student_curricula.student_id` is nullable and MySQL's default MATCH SIMPLE skips the
+ * composite FK check when a component is NULL, so `(NULL, school_id)` satisfies
+ * `student_curricula_student_school_foreign`. Inserted RAW because StudentCurriculum::create() fires
+ * an observer that fatals on a null curriculum — and raw SQL / imports are exactly how these rows
+ * arise in production (the observer's own docblock says so).
+ */
+function birStudentlessEpisode(array $ctx): void
+{
+    DB::table('student_curricula')->insert([
+        'uuid' => (string) Str::uuid(),
+        'student_id' => null,
+        'school_id' => $ctx['school']->id,
+        'curriculum_id' => null,
+        'status' => StudentStatusEnum::ACTIVE->value,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+/** Insert the run row a controller will insert in commit 4, in `pending`, and dispatch the job. */
+function birRun(array $ctx, ?ClassLevel $level = null): BulkInvoiceRun
+{
+    $run = ActiveSchool::runFor($ctx['school']->id, fn () => BulkInvoiceRun::create([
+        'school_id' => $ctx['school']->id,
+        'term_id' => $ctx['term']->id,
+        'class_level_id' => ($level ?? $ctx['level'])->id,
+        'status' => BulkInvoiceRunStatus::Pending,
+    ]));
+
+    // NO ambient context around the dispatch — SchoolAware is what must supply it.
+    ProcessBulkInvoiceRun::dispatch($run->id, $ctx['school']->id);
+
+    return $run->refresh();
+}
+
+/** @return array<string, int> outcome => count, over the rows of one run */
+function birOutcomes(BulkInvoiceRun $run): array
+{
+    return BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)
+        ->get()->groupBy(fn (BulkInvoiceRunRow $row) => $row->outcome->value)
+        ->map->count()->all();
+}
+
+/**
+ * Bind a provider that behaves exactly like the real adapter EXCEPT that one episode has vanished
+ * between the cohort read and the bill.
+ *
+ * THIS IS A REAL FAILURE PATH, not an invented one. `findByUuid()` is AMBIENT-scoped while the
+ * cohort read is ARGUMENT-scoped (the port's own docblock splits its methods on exactly that line),
+ * so an episode withdrawn, soft-deleted or re-scoped between the two resolves to null there and
+ * {@see GenerateInvoice} throws its own production message, "No billable
+ * enrollment found for the given reference." The decorator makes that race deterministic; it does
+ * not simulate an error the code could not produce.
+ *
+ * IT DELEGATES EVERY OTHER METHOD to a real BillableEnrollmentAdapter — which is final, so this is a
+ * decorator rather than a subclass. The cohort read, the unplaceable list and the population count
+ * are all the genuine ones, so nothing about the reconciliation under test is faked.
+ */
+function birProviderLosing(string $vanishingUuid): void
+{
+    app()->bind(BillableEnrollmentProvider::class, fn () => new class($vanishingUuid) implements BillableEnrollmentProvider
+    {
+        private BillableEnrollmentAdapter $inner;
+
+        public function __construct(private readonly string $vanishing)
+        {
+            $this->inner = new BillableEnrollmentAdapter;
+        }
+
+        public function findByUuid(string $enrollmentUuid): ?BillableEnrollment
+        {
+            return $enrollmentUuid === $this->vanishing ? null : $this->inner->findByUuid($enrollmentUuid);
+        }
+
+        public function currentForStudent(int $studentId): ?BillableEnrollment
+        {
+            return $this->inner->currentForStudent($studentId);
+        }
+
+        public function displayFor(array $studentIds): array
+        {
+            return $this->inner->displayFor($studentIds);
+        }
+
+        public function matchingStudentIds(string $term): array
+        {
+            return $this->inner->matchingStudentIds($term);
+        }
+
+        public function listForCohort(int $schoolId, int $termId, int $classLevelId): array
+        {
+            return $this->inner->listForCohort($schoolId, $termId, $classLevelId);
+        }
+
+        public function listUnplaceableForSchool(int $schoolId): array
+        {
+            return $this->inner->listUnplaceableForSchool($schoolId);
+        }
+
+        public function countBillableForSchool(int $schoolId): int
+        {
+            return $this->inner->countBillableForSchool($schoolId);
+        }
+
+        public function admissionNumberIndex(): array
+        {
+            return $this->inner->admissionNumberIndex();
+        }
+    });
+}
+
+/* ── 1 · A run over a cohort bills every student once ──────────────────────────────────────── */
+
+test('a run over a cohort bills every student once', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $students = collect([birStudent($ctx, $ctx['arm']->id, $ctx['term']->id), birStudent($ctx, $ctx['arm']->id, $ctx['term']->id), birStudent($ctx, $ctx['arm']->id, $ctx['term']->id)]);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->failure_reason)->toBeNull()
+        ->and($run->fee_schedule_id)->not->toBeNull()
+        ->and($run->started_at)->not->toBeNull()
+        ->and($run->finished_at)->not->toBeNull()
+        ->and($run->billed_count)->toBe(3);
+
+    // ONCE, asserted per student rather than in aggregate: three invoices could also be two for one
+    // child and one for another, which is the failure worth naming.
+    foreach ($students as $student) {
+        $invoices = Invoice::withoutGlobalScopes()->where('student_id', $student->id)->get();
+        expect($invoices)->toHaveCount(1)
+            ->and($invoices->first()->kind)->toBe(InvoiceKind::Scheduled);
+    }
+
+    $rows = BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->get();
+    expect($rows)->toHaveCount(3);
+
+    foreach ($rows as $row) {
+        expect($row->outcome)->toBe(BulkInvoiceRunOutcome::Billed)
+            ->and($row->invoice_id)->not->toBeNull()
+            ->and($row->reason)->toBeNull()
+            ->and($row->school_id)->toBe($ctx['school']->id);
+    }
+});
+
+/* ── 2 · A re-run bills nobody twice and records already-billed ────────────────────────────── */
+
+test('a re-run bills nobody twice and records already-billed, not failed', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $first = birRun($ctx);
+    $invoiceIds = Invoice::withoutGlobalScopes()->pluck('id')->sort()->values()->all();
+
+    $second = birRun($ctx);
+
+    expect($second->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($second->billed_count)->toBe(0)
+        ->and($second->already_billed_count)->toBe(2)
+        ->and($second->failed_count)->toBe(0, 'a re-run is the recovery path; already-billed must not read as failure');
+
+    // Not one new invoice anywhere — the unique index is the authority and it held.
+    expect(Invoice::withoutGlobalScopes()->pluck('id')->sort()->values()->all())->toBe($invoiceIds);
+
+    // And the rows NAME the invoice that was already there — the first run's, not a new one.
+    $rows = BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $second->id)->get();
+    expect($rows->pluck('invoice_id')->sort()->values()->all())->toBe($invoiceIds);
+
+    expect($first->refresh()->billed_count)->toBe(2);
+});
+
+/* ── 3 · One student failing does not stop the others ──────────────────────────────────────── */
+
+test('one student failing does not stop the others, and the reason is recorded', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $doomed = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $vanishing = (string) StudentCurriculum::withoutGlobalScopes()
+        ->where('student_id', $doomed->id)->value('uuid');
+    birProviderLosing($vanishing);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed,
+        'a per-student failure is not a per-run failure — the run must reach the end of the cohort')
+        ->and($run->failure_reason)->toBeNull()
+        ->and($run->billed_count)->toBe(2)
+        ->and($run->failed_count)->toBe(1);
+
+    // The other two were billed even though the failure came FIRST in the cohort (ordered by
+    // student_id, and $doomed was created first) — so this is not passing because the loop happened
+    // to reach them before it broke.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(2)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $doomed->id)->count())->toBe(0);
+
+    $failed = BulkInvoiceRunRow::withoutGlobalScopes()
+        ->where('run_id', $run->id)->where('outcome', BulkInvoiceRunOutcome::Failed->value)->sole();
+
+    expect($failed->student_id)->toBe($doomed->id)
+        ->and($failed->invoice_id)->toBeNull()
+        // The ACTUAL message, not a generic one — an operator acts on this sentence.
+        ->and($failed->reason)->toContain('No billable enrollment found');
+});
+
+/* ── 4 · A mapper refusal fails the run ONCE ───────────────────────────────────────────────── */
+
+test('a mapper refusal fails the run once, not once per student', function () {
+    $ctx = birSchool();
+
+    // A schedule of purely OPTIONAL items — authorable, active, and unable to produce a term bill.
+    // One of the mapper's five refusals, and a fact about the PRICE LIST, not about any child.
+    birSchedule($ctx, [[
+        'description' => 'Transport', 'amount_minor' => 200000, 'currency' => 'NGN',
+        'is_mandatory' => false, 'is_discountable' => true, 'sort_order' => 0,
+    ]]);
+
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Failed)
+        ->and($run->failure_reason)->toContain('no mandatory items')
+        // POSITIVE, not `->not->toBeNull($message)`: Pest discards a message on a negated
+        // expectation (PestNegatedExpectationMessagesTest pins that repo-wide), and the message is
+        // the point here — the refused schedule is the useful fact on a failed run.
+        ->and($run->fee_schedule_id !== null)->toBeTrue('a failed run must still name the price list it read');
+
+    // ONCE. Three students in the cohort and ZERO rows — the refusal was not restated per child, and
+    // the run stopped before the first invoice rather than failing three times over.
+    expect(BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->count())->toBe(0)
+        ->and(Invoice::withoutGlobalScopes()->count())->toBe(0);
+
+    // The counts stay NULL: a run that aborted must not present a reconciliation it never made.
+    expect($run->billed_count)->toBeNull()
+        ->and($run->billable_count)->toBeNull()
+        ->and($run->unaccounted_count)->toBeNull();
+});
+
+test('a run with no active fee schedule at its coordinates fails once, before any row', function () {
+    $ctx = birSchool();
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Failed)
+        ->and($run->failure_reason)->toContain('No active fee schedule')
+        ->and($run->fee_schedule_id)->toBeNull()
+        ->and(BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->count())->toBe(0);
+});
+
+/* ── 5 · The reconciliation adds up, with all five buckets non-empty ───────────────────────── */
+
+test('the reconciliation adds up over a fixture where all five buckets are non-empty', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+
+    // BUCKET 3 (already billed) — billed by a FIRST run, which is exactly how this state arises.
+    $already = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    $first = birRun($ctx);
+    expect($first->billed_count)->toBe(1);
+
+    // BUCKET 1 (billed) × 2, added after the first run so the second run bills exactly these.
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // BUCKET 2 (failed) × 1 — the episode vanishes between the cohort read and the bill.
+    $doomed = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birProviderLosing((string) StudentCurriculum::withoutGlobalScopes()->where('student_id', $doomed->id)->value('uuid'));
+
+    // BUCKET 4 (unplaceable) × 1 — a null term, so no fee schedule can ever be keyed to it.
+    birStudent($ctx, $ctx['arm']->id, null);
+
+    // BUCKET 5a (unaccounted) × 1 — PLACEABLE, at a class level this run does not name.
+    birStudent($ctx, $ctx['arm2']->id, $ctx['term']->id);
+
+    // BUCKET 5b (unaccounted) × 1 — the NULL-student_id episode. It fails the
+    // EXISTS-through-students clause in currentEnrollments(), so it is in NEITHER list; only a
+    // denominator built on billableEpisodes() WITHOUT that clause can see it. This is the shape the
+    // ticket names as the one no coordinate reasoning reaches.
+    birStudentlessEpisode($ctx);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed);
+
+    // The five buckets, each non-empty and each asserted by its OWN expected number — not by the
+    // identity, which any set of numbers summing correctly would satisfy.
+    expect($run->billed_count)->toBe(2)
+        ->and($run->already_billed_count)->toBe(1)
+        ->and($run->failed_count)->toBe(1)
+        ->and($run->unplaceable_count)->toBe(1)
+        ->and($run->unaccounted_count)->toBe(2, 'one placeable student at un-named coordinates, plus the student-less episode');
+
+    // The population, counted independently of every one of them.
+    expect($run->billable_count)->toBe(7);
+
+    // And the identity itself.
+    expect(
+        $run->billed_count + $run->already_billed_count + $run->failed_count
+        + $run->unplaceable_count + $run->unaccounted_count
+    )->toBe($run->billable_count);
+
+    // The unplaceable student is RECORDED, not merely counted — the roster moves, so the run has to
+    // write down who it saw at the moment it saw them.
+    expect(birOutcomes($run))->toBe([
+        'unplaceable' => 1, 'already_billed' => 1, 'billed' => 2, 'failed' => 1,
+    ], 'rows are written unplaceable-first, then the cohort in student_id order');
+});
+
+test('countBillableForSchool is decided by its argument, not by an ambient context', function () {
+    $a = birSchool();
+    $b = birSchool();
+
+    birStudent($a, $a['arm']->id, $a['term']->id);
+    birStudent($a, $a['arm']->id, null);
+    birStudentlessEpisode($a);
+
+    // School B's students at School A's OWN term and arm ids — nothing in the schema forbids it
+    // (curricula's term and arm FKs are single-column), so school_id is the only separator.
+    birStudent($b, $a['arm']->id, $a['term']->id);
+    birStudent($b, $a['arm']->id, $a['term']->id);
+
+    $adapter = new BillableEnrollmentAdapter;
+
+    // No ambient context at all — the argument decides, or nothing does.
+    expect($adapter->countBillableForSchool($a['school']->id))->toBe(3)
+        ->and($adapter->countBillableForSchool($b['school']->id))->toBe(2);
+
+    // And a DISAGREEING ambient context changes neither answer. A second, ambient opinion would
+    // empty the intersection, and a zero population makes every reconciliation read "nothing
+    // unaccounted for" — the silent-total-result failure, in the figure written to detect it.
+    ActiveSchool::runFor($b['school']->id, function () use ($adapter, $a) {
+        expect($adapter->countBillableForSchool($a['school']->id))->toBe(3);
+    });
+});
+
+/* ── 6 · Cross-School ──────────────────────────────────────────────────────────────────────── */
+
+test('a run for School A touches nothing of School B', function () {
+    $a = birSchool();
+    $b = birSchool();
+
+    birSchedule($a);
+    birSchedule($b);
+
+    $mine = birStudent($a, $a['arm']->id, $a['term']->id);
+    // School B students sitting at School A's OWN coordinate ids, and one unplaceable, so School B
+    // is reachable by every read the run performs if the School argument ever stops deciding.
+    $theirs = birStudent($b, $a['arm']->id, $a['term']->id);
+    $theirsUnplaceable = birStudent($b, $b['arm']->id, null);
+
+    $run = birRun($a);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->billed_count)->toBe(1)
+        ->and($run->unplaceable_count)->toBe(0, 'School B unplaceable students are not School A unplaceable students')
+        ->and($run->billable_count)->toBe(1);
+
+    // Not one invoice for School B.
+    expect(Invoice::withoutGlobalScopes()->where('school_id', $b['school']->id)->count())->toBe(0)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $theirs->id)->count())->toBe(0)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $theirsUnplaceable->id)->count())->toBe(0)
+        ->and(Invoice::withoutGlobalScopes()->where('student_id', $mine->id)->count())->toBe(1);
+
+    // And not one run row naming a School B student or School B itself.
+    $rows = BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->get();
+    expect($rows->pluck('school_id')->unique()->all())->toBe([$a['school']->id])
+        ->and($rows->pluck('student_id')->all())->toBe([$mine->id]);
+});
+
+/* ── 7 · The enum domains BITE at the engine, on MySQL 5.7 as well as 8.0 ──────────────────── */
+
+test('the run status domain is enforced by a TRIGGER — a raw write of an unknown status is refused', function () {
+    $ctx = birSchool();
+    $run = ActiveSchool::runFor($ctx['school']->id, fn () => BulkInvoiceRun::create([
+        'school_id' => $ctx['school']->id, 'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id, 'status' => BulkInvoiceRunStatus::Pending,
+    ]));
+
+    // A RAW write, never touching the model or its cast — the case a CHECK was supposed to hold and
+    // does not on the server that holds the money.
+    $update = fn (string $status) => DB::table('finance_bulk_invoice_runs')
+        ->where('id', $run->id)->update(['status' => $status]);
+
+    expect(fn () => $update('bogus'))->toThrow(QueryException::class);
+
+    // CASE VARIANCE IS REFUSED TOO, and that is the COLLATE clause being load-bearing rather than
+    // decorative: under the table's utf8mb4_unicode_ci, 'COMPLETED' would satisfy a naive IN() while
+    // every where('status','completed') read in the application missed it.
+    expect(fn () => $update('COMPLETED'))->toThrow(QueryException::class);
+
+    // And a legal value still passes, so the guard is not simply refusing everything.
+    $update('completed');
+    expect(DB::table('finance_bulk_invoice_runs')->where('id', $run->id)->value('status'))->toBe('completed');
+});
+
+test('the row outcome domain is enforced by a TRIGGER — a raw insert of an unknown outcome is refused', function () {
+    $ctx = birSchool();
+    $student = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // A `pending` run with NO rows, and no job dispatched. THE FIXTURE IS THE POINT: the first
+    // version of this test inserted against a run that had already billed this enrollment, so
+    // unique(school_id, run_id, enrollment_id) refused every insert with 1062 and the arm passed
+    // whether the trigger existed or not. Planted against a trigger-less schema it stayed GREEN —
+    // a test proving the index, wearing the trigger's name.
+    $run = ActiveSchool::runFor($ctx['school']->id, fn () => BulkInvoiceRun::create([
+        'school_id' => $ctx['school']->id, 'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id, 'status' => BulkInvoiceRunStatus::Pending,
+    ]));
+
+    $enrollmentId = (int) StudentCurriculum::withoutGlobalScopes()->where('student_id', $student->id)->value('id');
+
+    $insert = fn (string $outcome) => DB::table('finance_bulk_invoice_run_rows')->insert([
+        'uuid' => (string) Str::uuid(), 'school_id' => $ctx['school']->id, 'run_id' => $run->id,
+        'enrollment_id' => $enrollmentId, 'enrollment_uuid' => (string) Str::uuid(),
+        'student_id' => $student->id, 'outcome' => $outcome,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    expect(fn () => $insert('bogus'))->toThrow(QueryException::class)
+        // Case variance too — the COLLATE clause being load-bearing rather than decorative.
+        ->and(fn () => $insert('BILLED'))->toThrow(QueryException::class);
+
+    // A legal value still inserts, so the guard is not refusing everything — and this is what makes
+    // the two refusals above statements about the OUTCOME rather than about the row.
+    $insert('billed');
+    expect(DB::table('finance_bulk_invoice_run_rows')->where('run_id', $run->id)->count())->toBe(1);
+});

@@ -197,7 +197,25 @@ final class InvoiceReadModel
      */
     public function hasActiveScheduledInvoiceForEnrollment(int $enrollmentId, int $schoolId): bool
     {
-        return Invoice::query()
+        return $this->activeScheduledInvoiceIdForEnrollment($enrollmentId, $schoolId) !== null;
+    }
+
+    /**
+     * The same question, answered with the invoice's id instead of a boolean — WHICH invoice is
+     * already there.
+     *
+     * IT IS THE PREDICATE, AND THE BOOLEAN ABOVE NOW DELEGATES TO IT. The third consumer (U6 commit
+     * 3's bulk run, which records `already_billed` NAMING the invoice that blocked it) needed an id,
+     * and the two ways to get one were a fourth copy of this `where` chain or this. A copy is how
+     * the preview and the pre-check came to disagree in the first place; the delegation makes "same
+     * answer" a fact rather than a comment. Widening the predicate still moves all three consumers.
+     *
+     * STILL NOT THE AUTHORITY — see above. The bulk run treats a `null` here as permission to TRY,
+     * not as proof the write will succeed, and re-asks after a refusal.
+     */
+    public function activeScheduledInvoiceIdForEnrollment(int $enrollmentId, int $schoolId): ?int
+    {
+        $id = Invoice::query()
             // EXPLICIT, not left to the global SchoolScope, and this is the STRICTER of the two
             // predicates it replaced. SchoolScope applies a School filter only when
             // ActiveSchool::id() is non-null, and throws on a missing context only when
@@ -212,6 +230,8 @@ final class InvoiceReadModel
             // operator is told to void an invoice that is not the term bill and must not be voided.
             ->where('kind', InvoiceKind::Scheduled->value)
             ->excludingVoid()
-            ->exists();
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 }

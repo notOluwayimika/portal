@@ -27,6 +27,7 @@ use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
@@ -425,6 +426,7 @@ it('PROOF 5 — a posted credit is CONSUMED by the next invoice: applyCreditForw
         $invoice = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo(1200000))],
+            InvoiceKind::Scheduled,
         );
 
         $allocations = PaymentAllocation::query()->where('invoice_id', $invoice->id)->get();

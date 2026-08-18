@@ -3,6 +3,7 @@
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\PaymentAllocation;
 use App\Finance\Models\StudentAccount;
@@ -60,6 +61,7 @@ function w3Invoice(School $school, Student $student, int $kobo): Invoice
     return app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
         [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        InvoiceKind::Scheduled,
     );
 }
 

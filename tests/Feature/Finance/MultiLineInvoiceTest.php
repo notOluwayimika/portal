@@ -3,6 +3,7 @@
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
 use App\Models\Role;
@@ -175,14 +176,14 @@ it('rejects an invoice with no lines, and a non-positive line, at the ACTION lay
     // Defence-in-depth: the FormRequest is not the only guard. A non-HTTP caller
     // (the recurring-billing scheduler, the future EnrollmentCreated listener)
     // reaches the Action directly and must be refused the same way.
-    expect(fn () => $action->handle($enrollment->uuid, []))
+    expect(fn () => $action->handle($enrollment->uuid, [], InvoiceKind::Scheduled))
         ->toThrow(BusinessRuleException::class)
         ->and(fn () => $action->handle($enrollment->uuid, [
             new InvoiceLineSpec('Zero', Money::fromKobo(0)),
-        ]))->toThrow(BusinessRuleException::class)
+        ], InvoiceKind::Scheduled))->toThrow(BusinessRuleException::class)
         ->and(fn () => $action->handle($enrollment->uuid, [
             new InvoiceLineSpec('Negative', Money::fromKobo(-500)),
-        ]))->toThrow(BusinessRuleException::class);
+        ], InvoiceKind::Scheduled))->toThrow(BusinessRuleException::class);
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });
@@ -323,20 +324,36 @@ it('DUPLICATE GUARD BITE-PROOF — the DB unique index rejects it even when the 
 
     // Raw insert — the Action's pre-check never runs. Only the generated column +
     // unique index stands between this and a duplicate active invoice.
-    expect(fn () => DB::table('finance_invoices')->insert([
+    //
+    // `kind` IS SUPPLIED, AND THE ASSERTION IS NOW BY ERROR CODE RATHER THAN BY EXCEPTION
+    // CLASS. finance_invoices.kind is NOT NULL with no default, so a raw insert omitting it
+    // throws a QueryException too — 1364, for a completely different reason. This arm would
+    // have stayed green while testing nothing about duplicate invoices at all. Naming the
+    // code and the index is what keeps it a proof of the guard it claims to prove.
+    $duplicate = fn () => DB::table('finance_invoices')->insert([
         'uuid' => (string) Str::uuid(),
         'school_id' => $existing->school_id,
         'student_id' => $existing->student_id,
         'student_curriculum_id' => $existing->student_curriculum_id,
         'number' => $existing->number + 1,
         'status' => 'issued',
+        'kind' => 'scheduled',
         'billed_to_name' => 'Ada Obi',
         'academic_context' => $existing->academic_context,
         'total_minor' => 1000,
         'total_currency' => 'NGN',
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]);
+
+    expect($duplicate)->toThrow(QueryException::class);
+
+    try {
+        $duplicate();
+    } catch (QueryException $e) {
+        expect((int) $e->errorInfo[1])->toBe(1062)
+            ->and($e->getMessage())->toContain('finance_invoices_active_enrollment_unique');
+    }
 
     expect(DB::table('finance_invoices')->count())->toBe(1);
 });

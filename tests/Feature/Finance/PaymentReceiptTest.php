@@ -22,6 +22,7 @@ use App\Finance\Actions\PostOpeningBalanceBatch;
 use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\OpeningBalanceBatchStatus;
 use App\Finance\Enums\OpeningBalanceRowStatus;
 use App\Finance\Models\Invoice;
@@ -86,6 +87,7 @@ function prInvoice(School $school, Student $student, int $kobo): Invoice
     return ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         StudentCurriculum::where('student_id', $student->id)->value('uuid'),
         [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        InvoiceKind::Scheduled,
     ));
 }
 

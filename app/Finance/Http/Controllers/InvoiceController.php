@@ -6,6 +6,7 @@ use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Http\Requests\GenerateInvoiceForStudentRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
 use App\Finance\Http\Resources\CreditNoteResource;
@@ -42,6 +43,10 @@ class InvoiceController extends Controller
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
                 $request->lineSpecs(),
+                // BOTH GENERATE ROUTES RAISE THE TERM BILL, and say so explicitly rather than relying
+                // on a default. Supplementary invoicing has no route yet: this commit is domain and
+                // schema, and the wire shape that lets a bursar choose a kind lands with the modal.
+                InvoiceKind::Scheduled,
                 $request->user()?->id,
             );
         } catch (BusinessRuleException $e) {
@@ -114,7 +119,12 @@ class InvoiceController extends Controller
         $request->assertDiscountPoliciesUsable();
 
         try {
-            $invoice = $action->handle($enrollment->enrollmentUuid, $request->lineSpecs(), $request->user()?->id);
+            $invoice = $action->handle(
+                $enrollment->enrollmentUuid,
+                $request->lineSpecs(),
+                InvoiceKind::Scheduled,
+                $request->user()?->id,
+            );
         } catch (BusinessRuleException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -127,6 +137,11 @@ class InvoiceController extends Controller
      * show the bursar which episode they are about to bill (academic context) and whether
      * it is already invoiced (F7), BEFORE they enter any lines. A preview only; the
      * authoritative F7 guard fires at generation.
+     *
+     * "Already invoiced" means an active SCHEDULED invoice. A supplementary charge against this
+     * episode does not make it already-invoiced and must not raise the "void it first" warning —
+     * voiding it would be the wrong action, and the term bill it warns about would generate
+     * successfully anyway. The predicate is shared with the Action for exactly that reason.
      */
     public function billableEnrollment(
         Student $student,
@@ -141,7 +156,13 @@ class InvoiceController extends Controller
 
         return response()->json([
             'academic_context' => $enrollment->academicContext,
-            'already_invoiced' => $invoices->hasActiveInvoiceForEnrollment($enrollment->enrollmentId),
+            // The SAME method GenerateInvoice's pre-check calls, so the preview and the refusal
+            // cannot disagree. The School comes from the episode, which is where the Action takes
+            // it from too — not from ActiveSchool, so the two callers name one value from one source.
+            'already_invoiced' => $invoices->hasActiveScheduledInvoiceForEnrollment(
+                $enrollment->enrollmentId,
+                $enrollment->schoolId,
+            ),
         ]);
     }
 

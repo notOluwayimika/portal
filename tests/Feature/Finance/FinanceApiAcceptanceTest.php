@@ -1,9 +1,12 @@
 <?php
 
 use App\Finance\Actions\ApproveCreditNote;
+use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\SubmitCreditNote;
+use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\DiscountPolicy;
@@ -198,6 +201,74 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
             'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
         ])
         ->assertStatus(422);
+});
+
+it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an episode already_invoiced, and the term bill still generates', function () {
+    // THE DEFECT THIS PINS. `already_invoiced` and GenerateInvoice's 422 pre-check were two
+    // hand-maintained copies of one question, and only the Action's copy gained the `kind` filter.
+    // The modal renders this flag as "This episode already has an active term invoice. Void it
+    // first" — so on an episode carrying only a SUPPLEMENTARY charge the bursar was told to void an
+    // invoice that must not be voided, and the term bill they were warned off then generated
+    // successfully. (Both that banner and the 422 said "an active invoice" until the second cold
+    // review: with the predicate corrected the advice was right and the NOUN was not.)
+    // Preview and authority disagreed in the direction that gives a WRONG INSTRUCTION rather than a
+    // wrong refusal, which is the worse of the two.
+    //
+    // Both now call InvoiceReadModel::hasActiveScheduledInvoiceForEnrollment, so this arm and the
+    // 201 below cannot come apart: if the preview ever says true here, the POST must 422.
+    $school = School::factory()->create();
+    [, $token] = bursarWithToken($school, ['finance.access']);
+
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $enrollment = ActiveSchool::runFor($school->id, fn () => StudentCurriculum::create([
+        'student_id' => $student->id,
+        'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
+        'status' => 'active',
+    ]));
+
+    // RAISED THROUGH THE ACTION, NOT HTTP, and that is not a shortcut taken to save effort: this
+    // commit ships no route and no wire shape that can request a supplementary invoice (both
+    // generate routes hardcode InvoiceKind::Scheduled). The Action is the only way to reach the
+    // state under test until the modal lands. Everything ASSERTED below still goes over HTTP.
+    $supplementary = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
+        $enrollment->uuid,
+        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo(12345))],
+        InvoiceKind::Supplementary,
+    ));
+
+    expect($supplementary->kind)->toBe(InvoiceKind::Supplementary)
+        // It is live and it is on this episode — so a predicate that merely excluded void
+        // invoices WOULD see it. That is what makes the false below meaningful rather than vacuous.
+        ->and($supplementary->status->value)->toBe('issued')
+        ->and($supplementary->student_curriculum_id)->toBe($enrollment->id);
+
+    mcApi($token)
+        ->getJson("/api/v1/finance/students/{$student->uuid}/billable-enrollment")
+        ->assertOk()
+        ->assertJsonPath('already_invoiced', false);
+
+    // And the preview told the truth: the term bill generates.
+    mcApi($token)
+        ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 50000]],
+        ])
+        ->assertCreated();
+
+    // NOW it flips — the scheduled invoice is what the flag is about — and the second term bill
+    // is refused. This half is what fails if the shared predicate is over-scoped instead of
+    // under-scoped, so the arm cannot be satisfied by a method that always returns false.
+    mcApi($token)
+        ->getJson("/api/v1/finance/students/{$student->uuid}/billable-enrollment")
+        ->assertOk()
+        ->assertJsonPath('already_invoiced', true);
+
+    mcApi($token)
+        ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
+            'lines' => [['description' => 'Tuition', 'amount_minor' => 50000]],
+        ])
+        ->assertStatus(422);
+
+    expect(DB::table('finance_invoices')->where('student_curriculum_id', $enrollment->id)->count())->toBe(2);
 });
 
 it('NO ENROLLMENT — a student with no active enrollment cannot be billed (422 on read and write)', function () {

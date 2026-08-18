@@ -3,6 +3,7 @@
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\StudentAccount;
 use App\Models\Curriculum;
@@ -54,6 +55,7 @@ function walletSetup(): array
             'status' => 'active',
         ])->uuid,
         [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        InvoiceKind::Scheduled,
     );
 
     return [$school, $admin, $makeInvoice];

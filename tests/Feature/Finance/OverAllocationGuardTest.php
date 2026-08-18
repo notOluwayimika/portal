@@ -3,6 +3,7 @@
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\StudentAccount;
 use App\Models\Curriculum;
@@ -52,6 +53,7 @@ function overAllocSetup(int $invoiceKobo = 100000): array
     $invoice = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
         [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo))],
+        InvoiceKind::Scheduled,
     ));
 
     return [$school, $admin, $invoice];

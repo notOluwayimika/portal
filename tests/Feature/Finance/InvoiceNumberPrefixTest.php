@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Http\Resources\InvoiceResource;
 use App\Finance\Models\Invoice;
@@ -45,6 +46,9 @@ function prefixInvoice(School $school, int $number): Invoice
         'student_curriculum_id' => $enrollment->id,
         'number' => $number,
         'status' => InvoiceStatus::Issued,
+        // finance_invoices.kind is NOT NULL with no default (2026_08_18_100000): every writer names
+        // it. These are term bills, which is what makes them the right fixture for numbering.
+        'kind' => InvoiceKind::Scheduled,
         'billed_to_name' => 'Ada Obi',
         'academic_context' => '2026/2027 First Term',
         'total' => Money::fromKobo(330239),

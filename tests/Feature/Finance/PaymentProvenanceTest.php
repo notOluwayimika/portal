@@ -4,6 +4,7 @@ use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Models\Curriculum;
@@ -91,6 +92,7 @@ function provenanceSetup(): array
             'status' => 'active',
         ])->uuid,
         [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        InvoiceKind::Scheduled,
     );
 
     return [$school, $admin, $student, $makeInvoice];

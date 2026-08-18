@@ -11,6 +11,7 @@
 
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\InvoiceKind;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -62,7 +63,7 @@ function paymentGateFixture(School $school): array
             'status' => 'active',
         ]);
 
-        return app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))]);
+        return app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
     });
 
     return [$student, $invoice];

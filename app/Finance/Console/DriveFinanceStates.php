@@ -14,6 +14,7 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
@@ -257,6 +258,7 @@ final class DriveFinanceStates
         return app(GenerateInvoice::class)->handle(
             $enrollmentUuid,
             [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+            InvoiceKind::Scheduled,
         );
     }
 }

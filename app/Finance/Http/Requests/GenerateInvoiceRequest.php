@@ -74,8 +74,9 @@ class GenerateInvoiceRequest extends FormRequest
             // rule that safety argument is breakable with one curl.
             //
             // NOT restricted to ACTIVE schedules, deliberately. Two legitimate paths bill from a
-            // SUPERSEDED one: a void-and-rebill ('This enrollment already has an active invoice. Void it
-            // before billing again.') where a publish was approved in between, and the plain race of a
+            // SUPERSEDED one: a void-and-rebill ('This enrollment already has an active TERM invoice.
+            // Void it before billing the term again.') where a publish was approved in between, and
+            // the plain race of a
             // bursar whose generate form was prefilled before an approval landed —
             // ApproveFeeScheduleChange:87 moves the previous active to `superseded` under them. Refusing
             // there would 422 an operator for a change they could not see. GenerateInvoice's own

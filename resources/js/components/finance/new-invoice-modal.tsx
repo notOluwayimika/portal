@@ -410,10 +410,19 @@ export function NewInvoiceModal({
                             </span>
                             {enrollment.academic_context}
                         </div>
+                        {/* `already_invoiced` is SCHEDULED-ONLY — the API computes it from
+                            InvoiceReadModel::hasActiveScheduledInvoiceForEnrollment, the same
+                            predicate GenerateInvoice's 422 uses. So this warns about the TERM
+                            invoice and nothing else: an episode carrying only supplementary
+                            charges is not "already invoiced" and must not be told to void
+                            anything. The noun matters — voiding the wrong invoice discards its
+                            payment allocations. Keep this sentence in step with the 422 in
+                            app/Finance/Actions/GenerateInvoice.php. */}
                         {enrollment.already_invoiced && (
                             <p className="rounded-md bg-amber-100 p-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                                This episode already has an active invoice. Void
-                                it first — creating another will be rejected.
+                                This episode already has an active term invoice.
+                                Void it first — creating another term invoice
+                                will be rejected.
                             </p>
                         )}
 

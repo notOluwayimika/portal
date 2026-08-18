@@ -339,7 +339,23 @@ it('an UPDATE to a kind outside the domain is refused by the DOMAIN trigger, nam
 
     // A case variant is equally outside the domain on an UPDATE — the COLLATE utf8mb4_bin clause
     // is in the same shared body and must bite on this event too, not only on INSERT.
+    //
+    // THE MESSAGE IS ASSERTED, AND THE DRIVER CODE ALONE WOULD NOT HAVE BEEN ENOUGH. 'Scheduled'
+    // differs from the stored 'scheduled' under utf8mb4_bin, so finance_invoices_kind_immutable
+    // signals 1644 on this UPDATE whether or not the domain _bu trigger exists and whether or not
+    // it carries COLLATE. An earlier version of this arm asserted only the code, and a reviewer
+    // installed _bu with its domain check intact but WITHOUT the COLLATE clause — every arm in this
+    // file stayed green. COLLATE on the UPDATE event therefore had no watched red at all. Naming
+    // the DOMAIN message is what makes the clause load-bearing on this event, exactly as the
+    // 'sundry' arm above does for the domain rule itself.
     expect(supDriverCode(fn () => $update('Scheduled')))->toBe(1644);
+
+    try {
+        $update('Scheduled');
+    } catch (QueryException $e) {
+        expect($e->getMessage())->toContain('must be exactly scheduled or supplementary')
+            ->and($e->getMessage())->not->toContain('fixed at creation');
+    }
 
     // And the contrast that proves the ordering claim rather than merely asserting it: a VALID but
     // different kind passes the domain arm and is refused one trigger later, by immutability.
@@ -429,10 +445,21 @@ it('SHAPE — the re-keyed guard is present, UNIQUE, over a STORED generated col
         ->and($triggers->get('finance_invoices_no_delete'))->toBe('BEFORE DELETE');
 });
 
-it('ISOLATION — the guard is per-School: two Schools each hold their own live scheduled invoice', function () {
-    // The index is UNIQUE(school_id, active_enrollment_key), and the episode id is globally unique
-    // anyway — so this arm is really checking that the re-key did not drop school_id from the
-    // index, which the shape arm asserts and this one exercises.
+it('TWO SCHOOLS — the re-keyed guard admits a live scheduled invoice in each, and does not confuse them', function () {
+    // DELIBERATELY NOT CALLED "ISOLATION", because it does not bite as one. Drop school_id from the
+    // unique index entirely and this arm stays GREEN: `student_curricula.id` is globally unique, so
+    // two Schools can never collide on the episode half of the key no matter what the first column
+    // is. An earlier version of this arm was named ISOLATION, and a name like that in a test title
+    // reads as behavioural coverage of the School boundary — coverage this arm does not provide and
+    // cannot be made to provide from this direction.
+    //
+    // WHAT ACTUALLY HOLDS school_id IN THAT INDEX is the SHAPE arm above, which asserts the covered
+    // columns and their order from information_schema, and the migration's own read-back, which
+    // refuses to record itself unless the index covers exactly (school_id, active_enrollment_key).
+    // Drop the column from the index and BOTH of those go red. This arm's job is narrower and still
+    // worth having: it exercises the re-keyed guard end to end for two Schools at once, so a
+    // generated expression or a trigger that somehow depended on there being a single School in the
+    // table would fail here.
     [$schoolA, , $studentA] = supSetup();
     [$schoolB, , $studentB] = supSetup();
 

@@ -62,8 +62,27 @@ appearance of atomicity across statements and none of the substance. What the br
 "the one moment where the double-billing guard does not exist" — is closed a different way: the drop
 of the index, the change of the generated expression and the re-add of the index are **one
 `ALTER TABLE` statement** with three clauses, applied in a single table rebuild that MySQL 8.0's
-atomic DDL commits or rolls back as a unit. There is no committed state in which the table carries
-the new expression and no unique index over it. The window is not narrowed; it does not exist.
+atomic DDL commits or rolls back as a unit. **On local (8.0.43) there is therefore no committed state
+in which the table carries the new expression and no unique index over it.**
+
+**That claim outran its server, and this sentence is the correction.** An earlier version of this
+paragraph ended "The window is not narrowed; it does not exist" — stated flatly, with no server
+named. Atomic DDL is an **8.0** feature (8.0.1+, InnoDB DDL as one transaction in the data
+dictionary). **Production is MySQL 5.7.23-23 and has no atomic DDL**, no transactional data
+dictionary, and no documented all-or-nothing guarantee for a multi-clause `ALTER` that fails
+part-way.
+
+What is *expected* on 5.7, and it is an expectation, **UNMEASURED**: this `ALTER` changes a STORED
+generated column, so it runs `ALGORITHM=COPY` — 5.7 builds a complete new table carrying the new
+column and the new index, and renames it into place as the last step. A failure before the rename
+should leave the original table with the old expression and the old index, which is not the
+unguarded state either. **Nobody has run it on 5.7.** No 5.7 was available, exactly as for the
+trigger behaviours in `docs/finance/check-constraints-on-mysql-5-7.md`.
+
+So the honest statement for the server that holds the money is: the window is **one statement wide**,
+and that statement's atomicity there is **unverified**. It is not "there is no window". The migration
+docblock §2 now says the same thing, and this correction is the one the whole week has been about —
+a mechanism named, a conclusion drawn past it, and the gap between them invisible.
 
 Holding both indexes at once was considered and is impossible: the old index keys on
 `status = 'issued'` alone, so while it stands a supplementary invoice collides with the episode's
@@ -609,3 +628,102 @@ detection and no stated operator remedy. Written up, not fixed:
 - **The `ALTER` against production row counts** (an `ALGORITHM=COPY` rebuild on a live money table) —
   still unmeasured by either of us.
 - **MySQL 5.7** — still documented, not observed, by either of us.
+
+
+---
+
+# Second cold review, and the third commit
+
+An independent cold review of `9e3365e` returned seven items. None was a code defect; all were
+assertions that could not fail, claims that outran their evidence, comments that outlived the
+invariant they described, and two promised tickets that did not exist. This section records what
+changed. Everything above describes the first two commits.
+
+## FIX 1 — an arm that named a guard it could not fail
+
+`SupplementaryInvoiceTest` asserted only the driver code on the case-variant UPDATE
+(`$update('Scheduled')`). `'Scheduled'` differs from the stored `'scheduled'` under `utf8mb4_bin`, so
+`finance_invoices_kind_immutable` signals **1644 whether or not** the domain `_bu` trigger exists and
+whether or not it carries `COLLATE utf8mb4_bin`. The reviewer installed `_bu` with its domain check
+intact but **without** the `COLLATE` clause, left `_bi` untouched, and the whole file stayed green —
+11 passed, 57 assertions. **`COLLATE` on the UPDATE event had no watched red at all.**
+
+The arm now asserts the MESSAGE, as the `'sundry'` arm three lines above already did.
+
+**Planted red** — `_bu` installed with the domain check but no `COLLATE`, `_bi` left alone:
+
+```
+Failed asserting that 'SQLSTATE[45000]: 1644 finance_invoices.kind is fixed at creation:
+UPDATE of kind is denied (it would free the active-invoice slot for this episode).
+… SQL: update `finance_invoices` set `kind` = Scheduled where `id` = 19'
+contains "must be exactly scheduled or supplementary".
+```
+
+Without `COLLATE`, `'Scheduled'` matches `'scheduled'` under the table's `utf8mb4_unicode_ci`, so the
+domain arm passes it and immutability answers instead — 1644 from the wrong rule. Restored → 11
+passed, 59 assertions.
+
+**The lesson, stated because it is the second time it has been the finding.** Last round's FIX 4 was
+this same defect one arm higher up the same file. Applying a lesson to the arm that produced it and
+not sweeping its siblings is how the same hole survives a fix aimed directly at it. Both UPDATE arms
+in that test now assert the rule by name; the INSERT twin already discriminated and is untouched.
+
+## FIX 2 — the ticket §4 promised
+
+Last round's §4 called the `TriggerBodiesAreDumpSafeTest` hole ticket-severity and recommended a
+ticket. No ticket was written. It exists now, with the reviewer's bite-proof reproduced at `HEAD`:
+
+**`docs/handoff/tickets/dump-safe-trigger-oracle-passes-a-broken-body.md`**
+
+Restoring the quoted-values message the first draft shipped stores a body with twelve quotes —
+balanced, therefore green — whose `MESSAGE_TEXT` line is not valid SQL:
+
+```
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":2}
+
+quote count: 12 (even = oracle passes)
+'finance_invoices.kind must be exactly 'scheduled' or 'supplementary'.';
+```
+
+Restored immediately; no shipped trigger carries that shape.
+
+## FIX 3 — the abort ticket stated one direction, and the other is the silent one
+
+`docs/handoff/tickets/aborted-migration-leaves-schema-changed-and-unrecorded.md` now covers both, with
+a table, and says plainly which is worse. An aborted `up()` leaves the row **unwritten**, so the next
+`migrate` re-runs the file and a guarded `up()` converges — loud and recoverable. An aborted `down()`
+deletes the row **before** anything goes wrong, so the next `migrate` says *"Nothing to migrate"* and
+exits 0 against a half-reverted schema. For this migration that means `kind` still present, the key
+possibly still `kind`-aware, and **all three `kind` triggers gone** — `kind` mutable again, which is
+the exact state the immutability trigger exists to prevent. And the rollback leg is what
+`bin/quality-clean-db` runs on every release, so it is not the rarer path.
+
+## FIX 5 — an arm named ISOLATION that does not bite as one
+
+Renamed to *"TWO SCHOOLS — the re-keyed guard admits a live scheduled invoice in each, and does not
+confuse them"*. Drop `school_id` from the unique index and that arm stays green: `student_curricula.id`
+is globally unique, so two Schools cannot collide on the episode half of the key whatever the first
+column is. Not made to bite, deliberately — what holds `school_id` in that index is the SHAPE arm's
+`information_schema` read and the migration's own read-back, and both go red if it is dropped. The
+renamed arm's comment says exactly that, so the next reader does not mistake the name for behavioural
+coverage of the School boundary.
+
+## FIX 6 and FIX 7 — three comments and one string that outlived the invariant
+
+- `PostOpeningBalanceBatch.php:62` said `UNIQUE (school_id, active_enrollment_key)` "would refuse it"
+  unconditionally. Now scoped to a second **scheduled** invoice, with the conclusion unchanged and
+  the reason stated: an opening invoice is a term bill, so it would carry `kind = 'scheduled'` and
+  still occupy the slot — and raising it as supplementary to dodge the index is not a loophole to
+  take, because R4 forbids the portal originating a document WCBS already issued whatever it is
+  labelled. Last round's FIX 2 reached this reasoning in the import spec and not here.
+- The 422 in `GenerateInvoice` and the modal's amber banner both said "already has an active
+  invoice". With the predicate corrected the advice is right and the **noun** was not: what exists is
+  the TERM invoice. Both now say so. Voiding the wrong invoice discards its payment allocations, so
+  the ambiguity had a price.
+
+## Recorded, no action
+
+The immutability `MESSAGE_TEXT` is **126 of the 128-character cap** — two characters. A one-word edit
+makes it 1648 at SIGNAL time while the trigger still installs cleanly and still reads back with the
+correct shape; the only thing that catches it is the driver-code assertion on the kind-immutability
+arm. A comment now sits next to the message saying so.

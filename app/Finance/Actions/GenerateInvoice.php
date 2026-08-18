@@ -302,8 +302,15 @@ final class GenerateInvoice
             // a 500 that names the index is diagnosable; a friendly 422 telling a bursar to void the
             // term bill before adding a trip fee is a wrong answer stated confidently.
             if ($kind->isEpisodeExclusive() && $this->isActiveEnrollmentCollision($e)) {
+                // NAMES THE TERM INVOICE, not "an invoice". Both are true and only one is useful:
+                // the episode may also carry any number of supplementary charges, and a bursar who
+                // has just raised one and is now told to "void the active invoice" has to guess
+                // which. Voiding the wrong one is the expensive mistake — it discards that
+                // invoice's payment allocations. Kept in step with the modal's copy in
+                // resources/js/components/finance/new-invoice-modal.tsx, which shows the same
+                // sentence before the request is made.
                 throw new BusinessRuleException(
-                    'This enrollment already has an active invoice. Void it before billing again.'
+                    'This enrollment already has an active TERM invoice. Void it before billing the term again.'
                 );
             }
 
@@ -511,7 +518,7 @@ final class GenerateInvoice
 
         if ($exists) {
             throw new BusinessRuleException(
-                'This enrollment already has an active invoice. Void it before billing again.'
+                'This enrollment already has an active TERM invoice. Void it before billing the term again.'
             );
         }
     }

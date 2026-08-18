@@ -206,9 +206,11 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
 it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an episode already_invoiced, and the term bill still generates', function () {
     // THE DEFECT THIS PINS. `already_invoiced` and GenerateInvoice's 422 pre-check were two
     // hand-maintained copies of one question, and only the Action's copy gained the `kind` filter.
-    // The modal renders this flag as "This episode already has an active invoice. Void it first" —
-    // so on an episode carrying only a SUPPLEMENTARY charge the bursar was told to void an invoice
-    // that must not be voided, and the term bill they were warned off then generated successfully.
+    // The modal renders this flag as "This episode already has an active term invoice. Void it
+    // first" — so on an episode carrying only a SUPPLEMENTARY charge the bursar was told to void an
+    // invoice that must not be voided, and the term bill they were warned off then generated
+    // successfully. (Both that banner and the 422 said "an active invoice" until the second cold
+    // review: with the predicate corrected the advice was right and the NOUN was not.)
     // Preview and authority disagreed in the direction that gives a WRONG INSTRUCTION rather than a
     // wrong refusal, which is the worse of the two.
     //

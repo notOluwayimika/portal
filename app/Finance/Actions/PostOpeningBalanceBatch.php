@@ -59,8 +59,19 @@ use Illuminate\Support\Facades\DB;
  *
  * Step 3 — nothing else. NO INVOICE (R6, three reasons each sufficient: the import cannot choose the
  * enrollment episode; if the portal has rolled over, that episode is the one native billing must use
- * and UNIQUE (school_id, active_enrollment_key) would refuse it; and R4 forbids the portal
- * ORIGINATING a document WCBS already issued). No re-bill.
+ * and UNIQUE (school_id, active_enrollment_key) would refuse a SECOND SCHEDULED invoice on it; and
+ * R4 forbids the portal ORIGINATING a document WCBS already issued). No re-bill.
+ *
+ * THE SECOND REASON IS NARROWER THAN IT WAS, AND THE CONCLUSION IS UNCHANGED. Since
+ * 2026_08_18_100000 the generated key is
+ * `IF(status = 'issued' AND kind = 'scheduled', student_curriculum_id, NULL)`, so the index refuses
+ * a second SCHEDULED invoice and says nothing about supplementary ones. An opening invoice would be
+ * a term bill — it is the prior term's fees — so it would carry `kind = 'scheduled'` and would still
+ * occupy the slot native billing needs. Raising it as SUPPLEMENTARY to dodge the index is not a
+ * loophole to take: reasons one and three are each independently sufficient, and R4 is the one that
+ * matters most (the portal must not originate a document WCBS already issued, whatever kind it is
+ * labelled). Same reasoning, and the same conclusion, as the dated note now at the top of
+ * `docs/handoff/opening-balance-import-spec.md`.
  *
  * ── THE RESERVED BAND, AND WHY THIS IS NOT `Sequences` ──
  *

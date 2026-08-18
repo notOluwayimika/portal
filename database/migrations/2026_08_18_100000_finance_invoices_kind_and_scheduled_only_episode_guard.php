@@ -72,10 +72,28 @@ use Illuminate\Support\Facades\DB;
  *     at once — the OLD index keys on `status = 'issued'` alone, so while it stands a supplementary
  *     invoice collides with the episode's scheduled one, which is the very thing being fixed.
  *
- *     It IS closed by making the three changes ONE `ALTER TABLE` statement. MySQL applies DROP
- *     INDEX, MODIFY COLUMN and ADD UNIQUE within a single table rebuild, and MySQL 8.0's atomic DDL
- *     commits or rolls back that rebuild as a unit. There is therefore no committed state in which
- *     the table has the new expression and no unique index over it.
+ *     It IS NARROWED TO A SINGLE STATEMENT by making the three changes ONE `ALTER TABLE`: MySQL
+ *     applies DROP INDEX, MODIFY COLUMN and ADD UNIQUE within a single table rebuild.
+ *
+ *     WHETHER THAT STATEMENT IS ALL-OR-NOTHING DEPENDS ON THE SERVER, AND THE TWO SERVERS DIFFER.
+ *     An earlier version of this paragraph stated the mechanism and then stated the conclusion
+ *     flatly — "there is no committed state in which the table has the new expression and no unique
+ *     index over it". That is a claim about **MySQL 8.0 atomic DDL** (8.0.1+, InnoDB DDL as a single
+ *     transaction in the data dictionary), which is what LOCAL runs on (8.0.43, where it is the
+ *     documented guarantee). **Production is 5.7.23-23, which has NO atomic DDL** — 5.7 has no
+ *     transactional data dictionary, and a multi-clause `ALTER` that fails part-way there is not
+ *     documented to leave the table untouched.
+ *
+ *     WHAT IS EXPECTED ON 5.7, MARKED AS EXPECTATION AND **UNMEASURED**: this `ALTER` changes a
+ *     STORED generated column, so it takes `ALGORITHM=COPY` — 5.7 builds a complete new table with
+ *     the new column and the new index and renames it into place, and the rename is the last step.
+ *     A failure before the rename should therefore leave the original table with the OLD expression
+ *     and the OLD index, i.e. not the unguarded state either. **That is a reasonable expectation
+ *     about a COPY rebuild, not a guarantee, and NOBODY HAS RUN IT ON 5.7.** No MySQL 5.7 was
+ *     available to the author, exactly as for the trigger behaviours listed in
+ *     `docs/finance/check-constraints-on-mysql-5-7.md`. Do not repeat this paragraph as "there is
+ *     no window": on the server that holds the money, the honest statement is that the window is
+ *     one statement wide and its atomicity is unverified.
  *
  *     `DB::transaction()` IS NOT USED AND WOULD BE THEATRE. DDL commits implicitly on MySQL — every
  *     `ALTER TABLE` and `CREATE TRIGGER` below ends any open transaction — so wrapping this method
@@ -275,6 +293,12 @@ return new class extends Migration
         $this->installTrigger(self::DOMAIN_STEM.'_bi', 'INSERT', $domainBody);
         $this->installTrigger(self::DOMAIN_STEM.'_bu', 'UPDATE', $domainBody);
 
+        // THIS MESSAGE IS 126 CHARACTERS OF THE 128-CHARACTER MESSAGE_TEXT CAP. Two characters of
+        // headroom: a one-word edit pushes it over, and MySQL then answers 1648
+        // (ER_COND_ITEM_TOO_LONG) at SIGNAL time rather than 1644 — the trigger still installs
+        // cleanly and still reads back with the correct shape, so only a driver-code assertion
+        // catches it. SupplementaryInvoiceTest's `expect(supDriverCode(...))->toBe(1644)` on the
+        // kind-immutability arm is that assertion. If you re-word this, count first.
         $this->installTrigger(
             self::IMMUTABLE_TRIGGER,
             'UPDATE',

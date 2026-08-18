@@ -32,7 +32,8 @@ class MergeGuardians extends Command
     protected $signature = 'guardians:merge
         {--keep= : uuid of the guardian record that survives}
         {--absorb=* : uuid of a guardian record to fold into the keeper (repeatable)}
-        {--apply : write the merge; without this the plan is printed and nothing is written}';
+        {--apply : write the merge; without this the plan is printed and nothing is written}
+        {--consolidate-login : end the login on an absorbed account and issue the parent fresh credentials for the keeper}';
 
     protected $description = 'Merge duplicate guardian records into one, moving student links and soft-deleting the rest';
 
@@ -72,6 +73,7 @@ class MergeGuardians extends Command
         }
 
         $apply = (bool) $this->option('apply');
+        $consolidateLogin = (bool) $this->option('consolidate-login');
 
         try {
             // Off-request, so there is no authenticated user and no session school.
@@ -79,7 +81,7 @@ class MergeGuardians extends Command
             // users.school_id and never from an actor (Constitution 13, ADR 0036/0042).
             $plan = ActiveSchool::runFor(
                 (int) $keeper->school_id,
-                fn (): array => $guardians->merge($keeper, $absorbed, $apply),
+                fn (): array => $guardians->merge($keeper, $absorbed, $apply, $consolidateLogin),
             );
         } catch (ValidationException $e) {
             foreach ($e->errors() as $messages) {
@@ -120,25 +122,46 @@ class MergeGuardians extends Command
         $this->line('absorbing '.implode(', ', array_map(fn (int $id) => "guardian#{$id}", $plan['absorbed_ids'])));
         $this->newLine();
 
-        // PRINTED FIRST, BEFORE THE PIVOT TABLES. `can_login` is not a pivot
-        // boolean that can be re-pointed with the row it sits on — it names the
-        // account the parent signs in with — so which USER each absorbed record's
-        // login lives on is the fact an operator has to see before anything else.
-        // A merge carrying a login across accounts is refused outright and never
-        // reaches this output; this table is what makes the near-miss legible and
-        // shows the safe same-account case for what it is.
-        $this->line('Portal login on the absorbed records:');
+        // PRINTED FIRST, BEFORE THE PIVOT TABLES, because it is the only part of
+        // this plan that can end a person's access to the portal. Everything else
+        // moves rows between two records the same human owns.
+        //
+        // NOT KEYED ON `can_login`. Authentication reads users.disabled_at and the
+        // password hash and never looks at the pivot, so "carries a login" is a
+        // question about the ACCOUNT. An operator reading a `can_login` column
+        // would have concluded that thirteen of the fourteen duplicate groups in
+        // production carried no login, and every one of them does.
+        $decision = $plan['login_decision'];
+
+        $this->line('Portal accounts:');
         $this->table(
-            ['guardian', 'user', 'login for', 'same account as keeper'],
+            ['guardian', 'user', 'can sign in today', 'same account as keeper', 'merge will'],
             array_map(fn (array $row) => [
                 "guardian#{$row['guardian_id']}",
                 "user#{$row['user_id']}",
-                $row['can_login_students'] === []
-                    ? '—'
-                    : implode(', ', array_map(fn (int $id) => "student#{$id}", $row['can_login_students'])),
+                $row['can_authenticate'] ? 'YES' : 'no',
                 $row['same_user_as_keeper'] ? 'yes' : 'NO',
-            ], $plan['login_state']),
+                match ($row['action']) {
+                    'disable' => 'DISABLE this account',
+                    'refuse' => 'refuse (pass --consolidate-login to disable it)',
+                    default => 'leave it alone',
+                },
+            ], $decision['donors']),
         );
+
+        $this->line(sprintf(
+            'Surviving account: user#%d — %s, %s.',
+            $decision['keeper_user_id'],
+            $decision['keeper_deliverable'] ? 'deliverable address' : 'NO DELIVERABLE ADDRESS',
+            $decision['keeper_disabled'] ? 'currently disabled' : 'enabled',
+        ));
+
+        $this->line($decision['consolidating']
+            ? 'The parent WILL be emailed fresh credentials for the surviving account'
+                .($plan['applied'] ? '.' : ' when this is applied.')
+            : 'No login is being ended, so no credentials will be sent.');
+
+        $this->newLine();
 
         $this->line('Student links moved to the keeper: '.count($plan['pivot_moves']));
         if ($plan['pivot_moves'] !== []) {

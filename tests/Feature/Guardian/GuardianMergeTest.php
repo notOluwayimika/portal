@@ -3,11 +3,14 @@
 use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\User;
+use App\Notifications\GuardianAccountCreatedNotification;
 use App\Services\GuardianService;
 use App\Support\ActiveSchool;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -34,6 +37,25 @@ function gm_user(int $schoolId, ?string $email = null): User
         'school_id' => $schoolId,
         'email_verified_at' => now(),
     ]);
+}
+
+/**
+ * A user that CANNOT authenticate — disabled, so Fortify's `isDisabled()` check
+ * rejects it regardless of the password.
+ *
+ * The structural arms below (pivot moves, collisions, back-fill, audit) use this
+ * for the absorbed side deliberately. An absorbed record whose account can still
+ * sign in is a decision with a parent on the other end of it, and the merge now
+ * refuses it unless the operator asks for consolidation — so an arm about where a
+ * pivot row lands would otherwise be testing the login guard by accident and
+ * proving nothing about the pivot.
+ */
+function gm_dormantUser(int $schoolId): User
+{
+    $user = gm_user($schoolId);
+    $user->forceFill(['disabled_at' => now()])->save();
+
+    return $user;
 }
 
 function gm_guardian(int $schoolId, int $userId, array $overrides = []): Guardian
@@ -89,11 +111,11 @@ function gm_pivot(Guardian $guardian, Student $student): ?object
  * school_id, never from a user row and never from an actor. `$context` exists
  * only so one arm can drive it from the wrong school.
  */
-function gm_merge(Guardian $keeper, array $absorbed, bool $apply = true, ?int $context = null): array
+function gm_merge(Guardian $keeper, array $absorbed, bool $apply = true, ?int $context = null, bool $consolidate = false): array
 {
     return ActiveSchool::runFor(
         $context ?? (int) $keeper->school_id,
-        fn (): array => app(GuardianService::class)->merge($keeper, new Collection($absorbed), $apply),
+        fn (): array => app(GuardianService::class)->merge($keeper, new Collection($absorbed), $apply, $consolidate),
     );
 }
 
@@ -106,7 +128,7 @@ function gm_merge(Guardian $keeper, array $absorbed, bool $apply = true, ?int $c
 it('re-points a student link the keeper does not already hold', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
 
     $kept = gm_student($school->id);
     $moved = gm_student($school->id);
@@ -175,7 +197,7 @@ it('OR-merges a colliding link into the keeper row instead of raising a duplicat
 it('leaves exactly one primary guardian when the moved link is primary and a third already is', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
     $third = gm_guardian($school->id, gm_user($school->id)->id);
 
     $student = gm_student($school->id);
@@ -199,72 +221,180 @@ it('leaves exactly one primary guardian when the moved link is primary and a thi
 
 /*
 |--------------------------------------------------------------------------
-| 4. Login — a portal login may not be relocated between two accounts,
-|    and may not land on a keeper who cannot receive mail
+| 4. Login — the account, not the pivot flag
 |--------------------------------------------------------------------------
 |
-| These are two different guards and neither subsumes the other. The first asks
-| what happens to the account the parent ALREADY signs in with; the second asks
-| whether the destination account can be reached at all. A deliverable keeper
-| satisfies the second and tells you nothing about the first.
+| Two guards, and neither subsumes the other.
+|
+| The first asks whether the absorbed record's ACCOUNT can sign in — derived from
+| what Fortify checks (not disabled, password set), never from `can_login`, which
+| authentication does not read. Absorbing such a record does not move its login;
+| it strands it. Refused by default, consolidated on request.
+|
+| The second asks whether `can_login` can land on a keeper who cannot be mailed.
+| That is the pre-existing invariant and it is orthogonal: a deliverable keeper
+| satisfies it and tells you nothing about the first.
 */
 
-it('refuses to relocate a portal login onto a different user account', function () {
+it('refuses to absorb a record whose account can still sign in', function () {
     $school = al_makeSchool();
 
-    // Both accounts perfectly deliverable, both enabled. Nothing about
-    // deliverability is wrong here, and the merge must still refuse.
+    // The 13-of-14 shape. NO `can_login` row anywhere — the flag the first version
+    // of this guard keyed on is absent — and the account is nonetheless a working
+    // login: enabled, password set, deliverable address.
     $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
-    $absorbedUser = gm_user($school->id, 'signs.in.with.this@example.test');
-    $absorbed = gm_guardian($school->id, $absorbedUser->id);
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student, isPrimary: true, canLogin: false);
+
+    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+
+    $pivot = gm_pivot($absorbed, $student);
+
+    expect($pivot)->not->toBeNull()
+        ->and(gm_pivot($keeper, $student))->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull()
+        // The account that would have been stranded: still enabled, still able to
+        // sign in, and — had the merge run — backing nothing.
+        ->and(User::find($donorUser->id)->disabled_at)->toBeNull();
+});
+
+it('still refuses when the absorbed record carries can_login on its own account', function () {
+    $school = al_makeSchool();
+
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $donorUser = gm_user($school->id, 'works@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
 
     $student = gm_student($school->id);
     gm_link($absorbed, $student, isPrimary: true, canLogin: true);
 
     expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
 
-    // Nothing written. The link is still on the absorbed record, still on the
-    // account whose password the parent actually has.
-    $pivot = gm_pivot($absorbed, $student);
-
-    expect($pivot)->not->toBeNull()
-        ->and((bool) $pivot->can_login)->toBeTrue()
-        ->and(gm_pivot($keeper, $student))->toBeNull()
-        ->and($absorbed->fresh()->deleted_at)->toBeNull()
-        // And the donor account is untouched — this is the row that would have
-        // been left signing in to an empty portal.
-        ->and(User::find($absorbedUser->id)->disabled_at)->toBeNull();
+    expect($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(User::find($donorUser->id)->disabled_at)->toBeNull();
 });
 
-it('refuses the cross-account login even when the keeper holds the deliverable account and the absorbed link is the working one', function () {
+it('proceeds without the flag when the absorbed account cannot sign in', function () {
     $school = al_makeSchool();
 
-    // The sharper shape: the keeper is UNDELIVERABLE and already carries the flag
-    // on its own row for this student; the absorbed record holds the same student
-    // on a deliverable account. Merging would delete the working login and keep
-    // the dead one — and a guard that only asks "did this write raise the flag"
-    // sees nothing to object to, because the flag was already true.
-    $keeper = gm_guardian($school->id, gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id, 'works@example.test')->id);
+    // Disabled donor: nothing to consolidate, because nobody can sign in with it.
+    // This is what makes the guard a decision point rather than a blanket block.
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
 
     $student = gm_student($school->id);
-    gm_link($keeper, $student, canLogin: true);
-    gm_link($absorbed, $student, canLogin: true);
+    gm_link($absorbed, $student);
 
-    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+    $plan = gm_merge($keeper, [$absorbed]);
 
-    expect(gm_pivot($absorbed, $student))->not->toBeNull()
-        ->and($absorbed->fresh()->deleted_at)->toBeNull()
-        ->and(DB::table('guardian_student')->where('student_id', $student->id)->count())->toBe(2);
+    expect($absorbed->fresh()->deleted_at)->not->toBeNull()
+        ->and($plan['login_decision']['donors'][0]['can_authenticate'])->toBeFalse()
+        ->and($plan['login_decision']['consolidating'])->toBeFalse()
+        ->and($plan['login_decision']['will_notify'])->toBeFalse();
+});
+
+it('consolidates the login when asked: donor disabled, keeper enabled, parent notified once, after commit', function () {
+    Notification::fake();
+    (new RbacSeeder)->run();
+
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student, isPrimary: true);
+
+    $before = User::find($keeper->user_id)->password;
+
+    $plan = gm_merge($keeper, [$absorbed], consolidate: true);
+
+    expect($plan['login_decision']['consolidating'])->toBeTrue()
+        ->and($plan['login_decision']['donors'][0]['action'])->toBe('disable')
+        // The account that could sign in is ended; the survivor is enabled and
+        // re-credentialled, so the password the parent is being sent is real.
+        ->and(User::find($donorUser->id)->disabled_at)->not->toBeNull()
+        ->and(User::find($keeper->user_id)->disabled_at)->toBeNull()
+        ->and(User::find($keeper->user_id)->password)->not->toBe($before)
+        ->and($absorbed->fresh()->deleted_at)->not->toBeNull();
+
+    Notification::assertSentToTimes(User::find($keeper->user_id), GuardianAccountCreatedNotification::class, 1);
+    Notification::assertNotSentTo(User::find($donorUser->id), GuardianAccountCreatedNotification::class);
+
+    // Same vocabulary as every other login transition — not a merge-only event.
+    expect(DB::table('activity_log')->where('event', 'login_disabled')->where('subject_id', $absorbed->id)->count())->toBe(1)
+        ->and(DB::table('activity_log')->where('event', 'login_enabled')->where('subject_id', $keeper->id)->count())->toBe(1);
+});
+
+it('refuses to consolidate into a keeper the parent cannot be told about', function () {
+    Notification::fake();
+
+    $school = al_makeSchool();
+
+    // Consolidating into an address nobody can receive is the original defect
+    // wearing a flag: the donor's password stops working and the replacement
+    // cannot be delivered.
+    $keeper = gm_guardian($school->id, gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN)->id);
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student);
+
+    expect(fn () => gm_merge($keeper, [$absorbed], consolidate: true))->toThrow(ValidationException::class);
+
+    expect(User::find($donorUser->id)->disabled_at)->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull();
+
+    Notification::assertNothingSent();
+});
+
+it('sends no notification when the merge rolls back mid-apply', function () {
+    Notification::fake();
+    (new RbacSeeder)->run();
+
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student);
+
+    // A genuine mid-apply failure, inside the transaction, AFTER the pivot writes:
+    // the soft delete is the last state change applyMergePlan makes.
+    Guardian::deleting(function () {
+        throw new RuntimeException('planted mid-apply failure');
+    });
+
+    try {
+        expect(fn () => gm_merge($keeper, [$absorbed], consolidate: true))->toThrow(RuntimeException::class);
+
+        // Nothing committed…
+        expect($absorbed->fresh()->deleted_at)->toBeNull()
+            ->and(gm_pivot($keeper, $student))->toBeNull()
+            ->and(gm_pivot($absorbed, $student))->not->toBeNull()
+            ->and(User::find($donorUser->id)->disabled_at)->toBeNull();
+
+        // …and no email in flight for a merge that did not happen. This is why the
+        // notification is drained after the transaction returns rather than sent
+        // where the password is written.
+        Notification::assertNothingSent();
+    } finally {
+        Guardian::flushEventListeners();
+    }
 });
 
 it('aborts the whole merge rather than move login access onto an undeliverable keeper', function () {
     $school = al_makeSchool();
 
-    // ONE user, two guardian rows — the certain duplicate, and the only shape the
-    // cross-account refusal lets through. There is no relocation here: the login
-    // already belongs to the account that keeps it. What is wrong is that the
-    // account cannot receive mail, which is the second guard's question.
+    // ONE user, two guardian rows — the certain duplicate, and a shape the account
+    // guard has nothing to say about: there is no second account to strand. What
+    // is wrong is that the account cannot receive mail, which is the deliverability
+    // invariant's question.
     $user = gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN);
     $keeper = gm_guardian($school->id, $user->id);
     $absorbed = gm_guardian($school->id, $user->id);
@@ -286,11 +416,10 @@ it('aborts the whole merge rather than move login access onto an undeliverable k
 it('aborts on a collision that leaves an already-true flag on an undeliverable keeper', function () {
     $school = al_makeSchool();
 
-    // The collision side of the same guard, and the case the narrowed condition
-    // used to wave through: same account on both sides (so the cross-account
-    // refusal does not fire), undeliverable, and the keeper's own row ALREADY
-    // carries the flag — so nothing is raised and there is nothing for a
-    // transition-shaped check to catch. The write still leaves the flag true.
+    // The collision side of the deliverability guard, and the case a
+    // transition-shaped check waves through: same account on both sides,
+    // undeliverable, and the keeper's own row ALREADY carries the flag — so
+    // nothing is raised. The write still leaves the flag true.
     $user = gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN);
     $keeper = gm_guardian($school->id, $user->id);
     $absorbed = gm_guardian($school->id, $user->id);
@@ -309,8 +438,8 @@ it('aborts on a collision that leaves an already-true flag on an undeliverable k
 it('allows a same-account login to move once that account is deliverable', function () {
     $school = al_makeSchool();
 
-    // The case that proceeds: one human, one account, two guardian rows, a real
-    // address. The flag does not change accounts, so nobody is stranded.
+    // One human, one account, two guardian rows, a real address. The flag does not
+    // change accounts, so nobody is stranded and no consolidation is needed.
     $user = gm_user($school->id, 'real.parent@example.test');
     $keeper = gm_guardian($school->id, $user->id);
     $absorbed = gm_guardian($school->id, $user->id);
@@ -321,8 +450,9 @@ it('allows a same-account login to move once that account is deliverable', funct
     $plan = gm_merge($keeper, [$absorbed]);
 
     expect((bool) gm_pivot($keeper, $student)->can_login)->toBeTrue()
-        ->and($plan['login_state'][0]['same_user_as_keeper'])->toBeTrue()
-        ->and($plan['login_state'][0]['can_login_students'])->toBe([$student->id]);
+        ->and($plan['login_decision']['donors'][0]['same_user_as_keeper'])->toBeTrue()
+        ->and($plan['login_decision']['donors'][0]['can_authenticate'])->toBeFalse()
+        ->and($plan['login_decision']['consolidating'])->toBeFalse();
 });
 
 /*
@@ -337,7 +467,7 @@ it('back-fills a blank field from the absorbed row and never overwrites a filled
         'occupation' => null,
         'employer_name' => 'Keeper Ltd',
     ]);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id, [
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id, [
         'occupation' => 'Nurse',
         'employer_name' => 'Absorbed Ltd',
     ]);
@@ -353,7 +483,7 @@ it('back-fills a blank field from the absorbed row and never overwrites a filled
 it('never copies identity or status off an absorbed row', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id, ['status' => 'active']);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id, ['status' => 'blocked']);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id, ['status' => 'blocked']);
 
     $plan = gm_merge($keeper, [$absorbed]);
 
@@ -398,7 +528,7 @@ it('refuses when the keeper is not in the active school, even though both rows m
     // has context for, which is the shape applySchoolScope's `OR user_id has
     // access` branch hands a request-side caller.
     $keeper = gm_guardian($schoolB->id, gm_user($schoolB->id)->id);
-    $absorbed = gm_guardian($schoolB->id, gm_user($schoolB->id)->id);
+    $absorbed = gm_guardian($schoolB->id, gm_dormantUser($schoolB->id)->id);
     $student = gm_student($schoolB->id);
     gm_link($absorbed, $student);
 
@@ -412,8 +542,8 @@ it('refuses when the keeper is not in the active school, even though both rows m
 it('sequences two absorbed records so the second one collides with what the first moved', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => null]);
-    $first = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => 'Nurse']);
-    $second = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => 'Doctor']);
+    $first = gm_guardian($school->id, gm_dormantUser($school->id)->id, ['occupation' => 'Nurse']);
+    $second = gm_guardian($school->id, gm_dormantUser($school->id)->id, ['occupation' => 'Doctor']);
 
     // Neither absorbed record is linked to a student the KEEPER holds, so against
     // the keeper's original rows both look like moves. They are not: the first
@@ -456,7 +586,10 @@ it('leaves users alone and leaves the same person\'s guardian row in another sch
     $keeper = gm_guardian($schoolA->id, gm_user($schoolA->id)->id);
 
     // One human, two schools (§6.2): the same User backs a guardian record in each.
-    $sharedUser = gm_user($schoolA->id);
+    // Dormant, because the arm is about what the merge does to `users` rows and
+    // their other schools — a live donor account is the login guard's question and
+    // is refused before any of this is reached.
+    $sharedUser = gm_dormantUser($schoolA->id);
     $absorbed = gm_guardian($schoolA->id, $sharedUser->id);
     $elsewhere = gm_guardian($schoolB->id, $sharedUser->id);
 
@@ -490,14 +623,33 @@ it('collapses the same-user-same-school duplicate without orphaning that user', 
         ->and(gm_pivot($keeper, $student))->not->toBeNull();
 });
 
-it('reports an absorbed user left backing no live guardian without acting on it', function () {
+it('refuses rather than orphan a user that can still sign in', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
     $orphanUser = gm_user($school->id);
     $absorbed = gm_guardian($school->id, $orphanUser->id);
 
+    // THIS ARM USED TO ASSERT THE DEFECT AS CORRECT BEHAVIOUR. It reported the
+    // orphan and let the merge stand — but an orphaned user that is enabled with a
+    // password IS a working login, and after the merge it backs nothing, so the
+    // parent signs in to an empty portal. "Report it, do not act on it" is the
+    // right rule for the row; it is the wrong rule for the account.
+    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+
+    expect($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(User::find($orphanUser->id)->disabled_at)->toBeNull();
+});
+
+it('reports a dormant absorbed user left backing no live guardian without acting on it', function () {
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id)->id);
+    $orphanUser = gm_dormantUser($school->id);
+    $absorbed = gm_guardian($school->id, $orphanUser->id);
+
     $plan = gm_merge($keeper, [$absorbed]);
 
+    // Nobody can sign in with it, so nothing is stranded — but "this account
+    // should go" is still a decision, not a consequence of a merge.
     expect($plan['orphaned_user_ids'])->toContain($orphanUser->id)
         ->and(User::find($orphanUser->id))->not->toBeNull()
         ->and(User::find($orphanUser->id)->deleted_at ?? null)->toBeNull();
@@ -512,7 +664,7 @@ it('reports an absorbed user left backing no live guardian without acting on it'
 it('records one merged activity entry on the keeper naming the absorbed ids', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
     $student = gm_student($school->id);
     gm_link($absorbed, $student);
 
@@ -542,7 +694,7 @@ it('records one merged activity entry on the keeper naming the absorbed ids', fu
 it('emits the same per-link events every other pivot writer emits', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
 
     $moved = gm_student($school->id);
     $shared = gm_student($school->id);
@@ -592,7 +744,7 @@ it('emits the same per-link events every other pivot writer emits', function () 
 it('writes nothing on a dry run and returns the same plan the apply executes', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => null]);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => 'Nurse']);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id, ['occupation' => 'Nurse']);
     $student = gm_student($school->id);
     gm_link($absorbed, $student, isPrimary: true);
 
@@ -614,7 +766,7 @@ it('writes nothing on a dry run and returns the same plan the apply executes', f
 it('merges through the console command and refuses without --apply', function () {
     $school = al_makeSchool();
     $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_dormantUser($school->id)->id);
     $student = gm_student($school->id);
     gm_link($absorbed, $student);
 
@@ -628,6 +780,37 @@ it('merges through the console command and refuses without --apply', function ()
 
     expect($absorbed->fresh()->deleted_at)->not->toBeNull()
         ->and(gm_pivot($keeper, $student))->not->toBeNull();
+});
+
+it('prints the account decision in the dry run, before anything can be applied', function () {
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $donorUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $donorUser->id);
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student);
+
+    // Refused without the flag. The refusal throws before a plan exists, so what
+    // the operator gets here is the message naming the accounts rather than the
+    // table — the table is on the path where a merge is actually on offer.
+    $this->artisan('guardians:merge', ['--keep' => $keeper->uuid, '--absorb' => [$absorbed->uuid]])
+        ->expectsOutputToContain('can sign in today')
+        ->assertFailed();
+
+    // With the flag, the plan renders and names the account it will disable.
+    $this->artisan('guardians:merge', [
+        '--keep' => $keeper->uuid,
+        '--absorb' => [$absorbed->uuid],
+        '--consolidate-login' => true,
+    ])
+        ->expectsOutputToContain('Portal accounts:')
+        ->expectsOutputToContain('DISABLE this account')
+        ->expectsOutputToContain('The parent WILL be emailed fresh credentials')
+        ->assertSuccessful();
+
+    // Still a dry run: nothing written, nobody disabled.
+    expect($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(User::find($donorUser->id)->disabled_at)->toBeNull();
 });
 
 it('exits non-zero from the merge command on a cross-school absorb', function () {

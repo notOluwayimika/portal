@@ -30,10 +30,22 @@ mechanised.
 An operator dry-runs a merge group. Between that and `--apply`, an admin attaches a student to the
 absorbed guardian through the normal UI. The apply moves a link nobody reviewed.
 
-The blast radius is bounded — a moved pivot is re-pointed, not deleted, and the cross-account login
-pre-flight re-runs on the apply, so the worst case is not a stranded login. But "an operator reviewed
-this" is the entire control on a command that soft-deletes records and hard-deletes pivot rows, and it
-is currently a control over a plan that no longer exists.
+A worse version of the same gap: `--consolidate-login` is an operator saying yes to **the accounts the
+dry run showed them**. Between the two invocations an admin can enable login on an account that was
+dormant when the plan was reviewed; the apply re-derives the decision, sees a live account, and — the
+flag having already been given — disables it and re-credentials the parent. The consent was real and
+it was consent to a different set.
+
+**An earlier revision of this ticket claimed the pre-flight "re-runs on the apply, so the worst case is
+not a stranded login". That sentence was written when the guard was keyed on `guardian_student.can_login`,
+which authentication never reads — so the guard it was reassuring the reader about did not cover the
+case it named.** The guard is now keyed on whether the account can authenticate, and it does re-run on
+the apply; what does not carry across the two invocations is the operator's review of *which* accounts.
+Recorded rather than quietly corrected, because a reassurance in prose is exactly the kind of second
+copy of a defect this ticket exists to warn about.
+
+"An operator reviewed this" is the entire control on a command that soft-deletes records, hard-deletes
+pivot rows and can end a portal login, and it is currently a control over a plan that no longer exists.
 
 ## The test that would have caught the drift does not
 

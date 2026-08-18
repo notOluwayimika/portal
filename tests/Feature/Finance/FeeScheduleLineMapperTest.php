@@ -7,6 +7,7 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Services\FeeScheduleLineMapper;
+use App\Finance\Services\FeeScheduleLookup;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\School;
@@ -65,10 +66,25 @@ function fslmSchedule(array $items, FeeScheduleStatus $status = FeeScheduleStatu
     return [$school, $schedule];
 }
 
-/** Run the mapper in $school's context, the way a cohort run would. */
+/**
+ * Run the mapper for $school, the way a cohort run would: the School is an ARGUMENT, and the ambient
+ * context is set to the same School because that is what a real batch does.
+ */
 function fslmLines(School $school, FeeSchedule $schedule): array
 {
-    return ActiveSchool::runFor($school->id, fn () => app(FeeScheduleLineMapper::class)->linesFor($schedule));
+    return ActiveSchool::runFor($school->id, fn () => app(FeeScheduleLineMapper::class)->linesFor($schedule, $school->id));
+}
+
+/**
+ * The same call with the ambient context and the declared School decoupled, for the isolation arms.
+ * $ambient === null runs with NO context at all — the state in which FeeItem's SchoolScope is
+ * fail-open and the pre-review mapper handed out another School's lines.
+ */
+function fslmLinesAs(?int $ambient, int $schoolId, FeeSchedule $schedule): array
+{
+    $call = fn () => app(FeeScheduleLineMapper::class)->linesFor($schedule, $schoolId);
+
+    return $ambient === null ? $call() : ActiveSchool::runFor($ambient, $call);
 }
 
 it('maps ONLY the mandatory items, in sort_order then id, as charge lines citing their item', function () {
@@ -176,8 +192,9 @@ it('bills from an ACTIVE schedule and refuses every other lifecycle state', func
         "Fee schedule [{$schedule->uuid}] is {$status->value}; only an active schedule may be billed from.",
     );
 })->with([
-    // ADMITTED. The one approved, current price list. Same single filter FeeScheduleLookup::activeFor()
-    // applies, so "billable" is one rule rather than two that can drift.
+    // ADMITTED. The one approved, current price list. The RULING and its reasons now live on
+    // FeeScheduleStatus::billable(), which FeeScheduleLookup::activeFor() reads too — the datasets
+    // below repeat the reasons only because this is where a reader meets them.
     'active' => [FeeScheduleStatus::Active],
     // REFUSED — never approved. A draft is a proposal; billing one lets a Head price a term without
     // the ED ever seeing it, which is the failure the S1 approval path exists to prevent.
@@ -190,5 +207,127 @@ it('bills from an ACTIVE schedule and refuses every other lifecycle state', func
     'superseded' => [FeeScheduleStatus::Superseded],
     // REFUSED — approved once, since withdrawn. Same shape as superseded, and withdrawal is the
     // school saying explicitly that this list is not to be charged.
+    'retired' => [FeeScheduleStatus::Retired],
+]);
+
+/**
+ * FIX 1 — the mapper names its School, and is correct in every ambient state.
+ *
+ * Cold review probed the ambient-only version both ways and both were wrong. Under School A's context
+ * a School-B schedule had its item read EMPTIED by FeeItem's SchoolScope and came back as "has no
+ * mandatory items" — a message that sends an operator hunting a price list that is fine. With NO
+ * ambient context the same read returned another School's lines outright, because FeeItem is absent
+ * from `rbac.fail_closed_models` and the scope is fail-open.
+ *
+ * BOTH AMBIENT STATES ARE DATASETS, not one arm with a comment: the two failures had different shapes
+ * (wrong message vs. cross-School leak) and a single-state test would have proved only one of them
+ * closed. The assertion is on the MESSAGE, so a refusal that arrives for the wrong reason — the
+ * pre-review behaviour — fails this test rather than passing it.
+ */
+it('refuses a schedule belonging to another School, whatever the ambient context', function (?string $ambient) {
+    [$owner, $schedule] = fslmSchedule([
+        ['description' => 'Tuition', 'amount_minor' => 1000000, 'currency' => 'NGN', 'is_mandatory' => true],
+    ]);
+
+    // The batch declares School A. The schedule is School B's, and it is perfectly well-formed —
+    // active, one mandatory item, one currency — so every other refusal in this file is ruled out and
+    // only the isolation guard can produce a throw.
+    $runner = School::factory()->create();
+
+    expect(fn () => fslmLinesAs($ambient === 'none' ? null : $runner->id, $runner->id, $schedule))->toThrow(
+        BusinessRuleException::class,
+        "Fee schedule [{$schedule->uuid}] belongs to another School; it cannot be billed for school#{$runner->id}.",
+    );
+
+    // And the owner can still bill it — so the guard refuses the foreign case, not every case.
+    expect(fslmLines($owner, $schedule))->toHaveCount(1);
+})->with([
+    'with the runner’s own ambient context set' => ['runner'],
+    'with NO ambient context at all' => ['none'],
+]);
+
+it('refuses to bill for one School from another School’s ambient context', function () {
+    // The residual the School argument alone does NOT close, and the reason this second guard exists.
+    // The schedule IS the declared School's, so the isolation guard passes — but the item read still
+    // carries FeeItem's SchoolScope, and under a disagreeing context it would come back empty and be
+    // reported as "has no mandatory items": the same wrong-reason failure, one layer down.
+    //
+    // app/Finance MAY NOT strip the scope the way the ACL port does — `withoutGlobalScope(` is a hard
+    // boundary-lint failure inside this directory — so the disagreement is refused rather than routed
+    // around, which leaves the read only two states: unscoped, or scoped to exactly the declared School.
+    [$owner, $schedule] = fslmSchedule([
+        ['description' => 'Tuition', 'amount_minor' => 1000000, 'currency' => 'NGN', 'is_mandatory' => true],
+    ]);
+
+    $other = School::factory()->create();
+
+    expect(fn () => fslmLinesAs($other->id, $owner->id, $schedule))->toThrow(
+        BusinessRuleException::class,
+        "Fee schedule [{$schedule->uuid}] cannot be billed for school#{$owner->id} from another School's context.",
+    );
+});
+
+it('maps a schedule with NO ambient context at all, when the School is named correctly', function () {
+    // The positive half of FIX 1: named School, no ambient context, correct lines. Without this, a
+    // guard that simply refused everything context-less would pass both arms above.
+    [$owner, $schedule] = fslmSchedule([
+        ['description' => 'Tuition', 'amount_minor' => 1000000, 'currency' => 'NGN', 'is_mandatory' => true],
+    ]);
+
+    expect(ActiveSchool::id())->toBeNull();
+
+    $lines = fslmLinesAs(null, $owner->id, $schedule);
+
+    expect(array_map(fn ($line) => $line->description, $lines))->toBe(['Tuition']);
+});
+
+/**
+ * FIX 2 — the billable set has ONE home, and both deciding sites read it.
+ *
+ * The shipped commit tested `!== FeeScheduleStatus::Active` in PHP here while FeeScheduleLookup tested
+ * `where('status', 'active')` in SQL, with a docblock on each claiming they were "one rule, not two".
+ * They were two rules that happened to agree. The set now lives on the enum; these two arms are what
+ * notices if it stops being read.
+ */
+it('pins the contents of the billable set', function () {
+    expect(FeeScheduleStatus::billable())->toBe([FeeScheduleStatus::Active])
+        ->and(FeeScheduleStatus::billableValues())->toBe(['active']);
+
+    // Every other case is NOT billable — stated case by case rather than as a count, so adding a sixth
+    // case to the enum without deciding its billability leaves this arm unchanged and the next one red.
+    foreach (FeeScheduleStatus::cases() as $case) {
+        expect($case->isBillable())->toBe($case === FeeScheduleStatus::Active, "isBillable() for {$case->value}");
+    }
+});
+
+it('has the mapper and the prefill lookup agree, per status, because both read the same set', function (FeeScheduleStatus $status) {
+    [$school, $schedule] = fslmSchedule([
+        ['description' => 'Tuition', 'amount_minor' => 1000000, 'currency' => 'NGN', 'is_mandatory' => true],
+    ], $status);
+
+    // THE LOOKUP. Its predicate is a whereIn over FeeScheduleStatus::billableValues(); this asserts it
+    // resolves the schedule exactly when the set says it is billable.
+    $found = ActiveSchool::runFor($school->id, fn () => app(FeeScheduleLookup::class)
+        ->activeFor((int) $schedule->term_id, (int) $schedule->class_level_id));
+
+    expect($found?->id)->toBe($status->isBillable() ? $schedule->id : null,
+        "FeeScheduleLookup::activeFor() disagreed with FeeScheduleStatus::billable() for {$status->value}.");
+
+    // THE MAPPER. Same set, other layer. Widening billable() must move BOTH of these, which is the
+    // whole property the shared symbol exists to give — and is exactly what the pair of literals it
+    // replaced could not do.
+    if ($status->isBillable()) {
+        expect(fslmLines($school, $schedule))->toHaveCount(1);
+
+        return;
+    }
+
+    expect(fn () => fslmLines($school, $schedule))->toThrow(BusinessRuleException::class,
+        "Fee schedule [{$schedule->uuid}] is {$status->value}");
+})->with([
+    'active' => [FeeScheduleStatus::Active],
+    'draft' => [FeeScheduleStatus::Draft],
+    'pending_approval' => [FeeScheduleStatus::PendingApproval],
+    'superseded' => [FeeScheduleStatus::Superseded],
     'retired' => [FeeScheduleStatus::Retired],
 ]);

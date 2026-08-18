@@ -122,12 +122,23 @@ final class GenerateInvoice
         // WHAT ACTUALLY MAKES IT NECESSARY, three things, none of which the scope covers:
         //
         //  1. THE SCOPE IS FAIL-OPEN FOR THIS MODEL. SchoolScope filters only when
-        //     ActiveSchool::id() is truthy, and with no context it throws only for models
-        //     in `rbac.fail_closed_models` (SchoolScope.php:52-68). That allowlist is the
-        //     ten finance transactional models (config/rbac.php:158-169); StudentCurriculum
-        //     is not among them. So off-request, or on any path with no School context, the
-        //     uuid lookup runs UNFILTERED and a foreign episode resolves perfectly well.
-        //     The null-context refusal below is what closes that, not the scope.
+        //     ActiveSchool::id() is TRUTHY — `$schoolId = ActiveSchool::id()` then
+        //     `if ($schoolId)`, SchoolScope.php:48-50, which is where that half of the
+        //     behaviour actually lives; the earlier citation of :52-68 named only the
+        //     fail-closed branch and omitted it. With no context the scope throws only for
+        //     models in `rbac.fail_closed_models` (SchoolScope.php:59-64, resolved at
+        //     :93-102), and StudentCurriculum is not one of them. So off-request, or on any
+        //     path with no School context, the uuid lookup runs UNFILTERED and a foreign
+        //     episode resolves perfectly well. The null-context refusal below is what closes
+        //     that, not the scope.
+        //
+        //     AND THAT LIST IS NOT A RUNTIME GUARANTEE. `rbac.fail_closed_models` is
+        //     `env('RBAC_FAIL_CLOSED_MODELS', …)` over a versioned default
+        //     (config/rbac.php:156-170): the ten finance transactional models are what the
+        //     DEFAULT holds, and an environment setting that variable replaces the whole
+        //     list — which is its documented purpose, a per-environment retreat. So the
+        //     right reading is "not in the default, and membership is not guaranteed
+        //     anywhere", which is a second reason not to rest a financial guard on it.
         //  2. A SCOPE FILTERS; IT NEVER REFUSES. Even where it does apply, a wrong-School
         //     uuid becomes "not found" — indistinguishable from a typo. Isolation on a
         //     financial write is asserted, so it can be reported as what it is.

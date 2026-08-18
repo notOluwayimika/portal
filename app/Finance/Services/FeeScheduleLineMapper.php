@@ -8,16 +8,24 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Models\FeeSchedule;
+use App\Support\ActiveSchool;
 
 /**
- * A fee schedule in, the lines of one term bill out (U6 commit 2). This is the first thing in the
- * application that can say WHAT A TERM BILL CONTAINS: {@see InvoiceLineSpec} was constructed in exactly
- * one place before this file — GenerateInvoiceRequest::lineSpecs(), from a body a human typed into the
- * bursar's modal — and {@see FeeScheduleLookup::activeFor()} returned a schedule that nothing turned
- * into lines. The bulk-generation job (commits 3 and 4) is not writable until this exists.
+ * A fee schedule in, the lines of one term bill out (U6 commit 2). This is the first NON-HUMAN source
+ * of {@see InvoiceLineSpec} on a production path: before it, the only production construction sites
+ * were GenerateInvoiceRequest::lineSpecs() (a body a human typed into the bursar's modal) and
+ * DriveFinanceStates::__invoke (the local drive-fixture console command), with 27 more under tests/.
+ * The docblock here originally said "exactly one place in the application", and the commit message and
+ * report said the same; cold review counted. Corrected — the claim that matters is narrower and still
+ * load-bearing: nothing could turn a fee SCHEDULE into lines, so a bulk run had nothing to bill from.
  *
  * PURE. No HTTP, no queue, no write, and no Money arithmetic of its own — each line carries the item's
  * own Money value unchanged, and the total is still DERIVED inside GenerateInvoice's transaction (F6).
+ *
+ * IT NAMES ITS SCHOOL. `linesFor()` takes the School as an ARGUMENT and refuses a schedule that is not
+ * that School's, so it is correct with ambient context, without it, and under a context that disagrees
+ * — see the two guards on the method. Cold review probed all three; the argument-scoped shape is what
+ * app/Academics' ACL port adopted for exactly this reason (BillableEnrollmentAdapter::currentEnrollments).
  *
  * MANDATORY ITEMS ONLY, and this is a RULING, not an oversight to be tidied up later. Nothing in the
  * schema records which student takes the bus or eats lunch — `finance_fee_items.is_mandatory` is a
@@ -38,11 +46,16 @@ use App\Finance\Models\FeeSchedule;
  * and the bug would only ever show up in something that read these specs without the Action.
  *
  * DETERMINISTIC. Ordered by `sort_order` then `id`. `sort_order` alone is not a total order — the
- * column carries no uniqueness constraint and CreateFeeSchedule defaults it to the array index, so two
- * items can share one — and MySQL is free to return equal-key rows in any order. Two runs over the same
- * schedule must produce byte-identical lines in identical order, because a bulk run that is re-driven
- * after a partial failure must not produce a differently-ordered bill for the students it reaches
- * twice.
+ * column carries no uniqueness constraint and CreateFeeSchedule defaults it to the array index
+ * (CreateFeeSchedule.php:70), so two items can share one — and MySQL guarantees nothing about the order
+ * of equal-key rows. That is not theoretical: with 16,384 tied mandatory items at stock
+ * sort_buffer_size, dropping the tiebreak produced 2 inversions on MySQL 8.0.43 (threshold ~8k stock,
+ * ~1k at sort_buffer_size=32768). Two runs over one schedule must produce identical lines in identical
+ * order, because a bulk run re-driven after a partial failure must not bill a differently-ordered
+ * invoice to the students it reaches twice.
+ *
+ * TIE DETERMINISM IS LOCAL TO THIS MAPPER, and four other sites still order items by `sort_order`
+ * alone — see docs/handoff/tickets/fee-item-tie-order-differs-across-read-paths.md.
  *
  * IT TAKES A FeeSchedule, NOT (term, class level). The caller pins ONE version for the whole batch.
  * Resolving the schedule in here would re-read it per student, so an approval or a supersession landing
@@ -51,22 +64,57 @@ use App\Finance\Models\FeeSchedule;
 final class FeeScheduleLineMapper
 {
     /**
+     * @param  int  $schoolId  the School the batch is running for. NOT derived from ambient context and
+     *                         not taken from the schedule — it is the caller's declaration of which
+     *                         School is being billed, which is the only thing the guards below can
+     *                         check the schedule against.
      * @return list<InvoiceLineSpec>
      *
      * @throws BusinessRuleException when the schedule cannot produce a bill — refused ONCE for the
      *                               batch, naming the schedule, rather than N times naming students.
      */
-    public function linesFor(FeeSchedule $schedule): array
+    public function linesFor(FeeSchedule $schedule, int $schoolId): array
     {
-        // (c) NEVER-APPROVED, OR NO-LONGER-CURRENT. `active` is the only case a bill may be raised
-        // from, and it is the same single filter FeeScheduleLookup::activeFor() applies — one rule, not
-        // two. `draft` and `pending_approval` were never approved by the ED, so billing from either
-        // would let a Head price a term unilaterally, which is the failure the S1 approval path exists
-        // to prevent (a rejected publish returns the schedule to `draft`, so `pending_approval` is not
-        // "nearly active" — it is undecided). `superseded` and `retired` WERE approved once, but the
-        // school has since replaced or withdrawn them: raising a cohort's bills from one prices a whole
-        // year group off a list the school has retired, and does it silently, N invoices wide.
-        if ($schedule->status !== FeeScheduleStatus::Active) {
+        // ISOLATION, ASSERTED AGAINST THE ARGUMENT. Constitution rule 1: no cross-School financial
+        // operation, ever. Cold review probed the ambient-only version both ways and both were wrong:
+        // under School A's context a School-B schedule had its item read EMPTIED by FeeItem's
+        // SchoolScope and was refused as "has no mandatory items" — a message that sends an operator
+        // hunting a price list that is fine — and with NO ambient context the same read returned
+        // another School's lines outright, because FeeItem is absent from `rbac.fail_closed_models`
+        // and the scope is therefore fail-open (SchoolScope.php:48-50, :59-64).
+        if ((int) $schedule->school_id !== $schoolId) {
+            throw new BusinessRuleException(
+                "Fee schedule [{$schedule->uuid}] belongs to another School; it cannot be billed for school#{$schoolId}."
+            );
+        }
+
+        // AND THE AMBIENT CONTEXT, IF ANY, MUST AGREE. The guard above alone does NOT make this method
+        // independent of ambient context, and saying so would repeat the mistake it fixes: the item
+        // read below still carries FeeItem's SchoolScope, so a batch declared for School A running
+        // under a stale School-B context would pass the guard, read zero items, and be refused as
+        // "has no mandatory items" — the exact wrong-reason failure, one layer down.
+        //
+        // The ACL port closes this by stripping the scope and filtering explicitly. THIS FILE MAY NOT:
+        // `withoutGlobalScope(` inside app/Finance is a HARD boundary-lint failure (§17.1 rule 4,
+        // bin/ci-boundary-lint.php:159), and the port's six calls are baselined exceptions in
+        // app/Academics, not a pattern Finance may copy. So the disagreement is REFUSED instead of
+        // routed around, which leaves exactly two states the read below can be in: unscoped (no
+        // context) or scoped to precisely $schoolId. Both give the same answer.
+        $ambientSchoolId = ActiveSchool::id();
+
+        if ($ambientSchoolId !== null && (int) $ambientSchoolId !== $schoolId) {
+            throw new BusinessRuleException(
+                "Fee schedule [{$schedule->uuid}] cannot be billed for school#{$schoolId} from another School's context."
+            );
+        }
+
+        // (c) NOT BILLABLE. The set of states a bill may be raised from lives on the enum
+        // ({@see FeeScheduleStatus::billable()}) and is read here AND by FeeScheduleLookup::activeFor().
+        // ONE SYMBOL, NOT ONE COMMENT: this file previously tested `!== self::Active` in PHP while the
+        // lookup tested `where('status', 'active')` in SQL, with a docblock on each asserting they were
+        // "one rule, not two". They were two rules that happened to agree — cold review called it, and
+        // the enum now carries the ruling and its reasons. Widening the set moves both sites.
+        if (! $schedule->status->isBillable()) {
             throw new BusinessRuleException(
                 "Fee schedule [{$schedule->uuid}] is {$schedule->status->value}; only an active schedule may be billed from."
             );
@@ -83,7 +131,9 @@ final class FeeScheduleLineMapper
         // (a) NOTHING MANDATORY. A schedule of purely optional items is a real, authorable thing, and it
         // yields zero lines — which GenerateInvoice would refuse per student with "An invoice must have
         // at least one line", once for every child in the cohort. Refusing here reports the schedule
-        // once and names the schedule, which is what an operator can actually act on.
+        // once and names the schedule, which is what an operator can actually act on. The two guards at
+        // the top of this method exist so that this message means what it says: an empty read can no
+        // longer be an isolation failure wearing a pricing failure's message.
         if ($items->isEmpty()) {
             throw new BusinessRuleException(
                 "Fee schedule [{$schedule->uuid}] has no mandatory items, so it cannot produce a term bill."

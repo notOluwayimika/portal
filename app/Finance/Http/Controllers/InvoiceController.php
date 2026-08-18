@@ -137,6 +137,11 @@ class InvoiceController extends Controller
      * show the bursar which episode they are about to bill (academic context) and whether
      * it is already invoiced (F7), BEFORE they enter any lines. A preview only; the
      * authoritative F7 guard fires at generation.
+     *
+     * "Already invoiced" means an active SCHEDULED invoice. A supplementary charge against this
+     * episode does not make it already-invoiced and must not raise the "void it first" warning —
+     * voiding it would be the wrong action, and the term bill it warns about would generate
+     * successfully anyway. The predicate is shared with the Action for exactly that reason.
      */
     public function billableEnrollment(
         Student $student,
@@ -151,7 +156,13 @@ class InvoiceController extends Controller
 
         return response()->json([
             'academic_context' => $enrollment->academicContext,
-            'already_invoiced' => $invoices->hasActiveInvoiceForEnrollment($enrollment->enrollmentId),
+            // The SAME method GenerateInvoice's pre-check calls, so the preview and the refusal
+            // cannot disagree. The School comes from the episode, which is where the Action takes
+            // it from too — not from ActiveSchool, so the two callers name one value from one source.
+            'already_invoiced' => $invoices->hasActiveScheduledInvoiceForEnrollment(
+                $enrollment->enrollmentId,
+                $enrollment->schoolId,
+            ),
         ]);
     }
 

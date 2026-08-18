@@ -305,6 +305,54 @@ it('an INSERT with a kind outside the domain is REFUSED by the domain trigger (1
     expect(DB::table('finance_invoices')->where('kind', 'supplementary')->count())->toBe(1);
 });
 
+it('an UPDATE to a kind outside the domain is refused by the DOMAIN trigger, naming the domain rule', function () {
+    // THE `_bu` ARM, which shipped without a watched red. Its INSERT twin is proven above; plant C
+    // mutated the SHARED body and the red it produced fired on the INSERT arm, so nothing had ever
+    // observed `finance_invoices_kind_domain_bu` refuse anything. A trigger with no bite-proof is a
+    // claim, and a `_bu` installed with an empty body would have passed every assertion this file
+    // previously made about it (it asserts only that a trigger of that name exists BEFORE UPDATE).
+    //
+    // IT ALSO PINS THE FIRING ORDER the migration docblock says decides which message an operator
+    // sees. Among BEFORE UPDATE triggers with no FOLLOWS/PRECEDES, MySQL fires in CREATION order:
+    // total_immutable (1), kind_domain_bu (2), kind_immutable (3). A future migration recreating
+    // either of the last two reorders them silently, and the message for a bad `kind` UPDATE flips
+    // from the domain rule to the immutability rule with the suite green. Asserting the MESSAGE, not
+    // just the 1644, is what makes that visible.
+    [$school, , $student] = supSetup();
+    $enrollment = supEnrollment($school, $student);
+
+    $invoice = supRaise($school, $enrollment, InvoiceKind::Scheduled, 150000);
+
+    $update = fn (string $kind) => DB::table('finance_invoices')
+        ->where('id', $invoice->id)
+        ->update(['kind' => $kind]);
+
+    expect(supDriverCode(fn () => $update('sundry')))->toBe(1644);
+
+    try {
+        $update('sundry');
+    } catch (QueryException $e) {
+        // The DOMAIN rule answers first, because it is ACTION_ORDER 2 and immutability is 3.
+        expect($e->getMessage())->toContain('must be exactly scheduled or supplementary')
+            ->and($e->getMessage())->not->toContain('fixed at creation');
+    }
+
+    // A case variant is equally outside the domain on an UPDATE — the COLLATE utf8mb4_bin clause
+    // is in the same shared body and must bite on this event too, not only on INSERT.
+    expect(supDriverCode(fn () => $update('Scheduled')))->toBe(1644);
+
+    // And the contrast that proves the ordering claim rather than merely asserting it: a VALID but
+    // different kind passes the domain arm and is refused one trigger later, by immutability.
+    try {
+        $update('supplementary');
+    } catch (QueryException $e) {
+        expect($e->getMessage())->toContain('fixed at creation')
+            ->and($e->getMessage())->not->toContain('must be exactly scheduled or supplementary');
+    }
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->value('kind'))->toBe('scheduled');
+});
+
 it('kind is NOT NULL with NO DEFAULT: an INSERT omitting it fails loudly with 1364', function () {
     [$school, , $student] = supSetup();
     $enrollment = supEnrollment($school, $student);

@@ -5,6 +5,15 @@
 it.
 **Author** advisor · **Status** specification, agreed inputs, not yet built
 **Consumes** §4.1 S9 / S11, §4.2 V11, §4.3 U12b of `docs/handoff/finance-mvp-cut-brief.md`
+> **2026-08-18 — the expression quoted in Rev 2 below is HISTORICAL and no longer describes the
+> database.** `active_enrollment_key` was re-keyed to
+> `IF(status = 'issued' AND kind = 'scheduled', student_curriculum_id, NULL)` by
+> `2026_08_18_100000_finance_invoices_kind_and_scheduled_only_episode_guard.php`; the current
+> statement of the invariant is F7 in `docs/roadmap.md`. This document is left as written because
+> Rev 2's reasoning is the record of why §3 posts arrears as a ledger charge, and that decision is
+> unchanged — an opening invoice would now be `kind = 'scheduled'` and would still occupy the
+> cutover episode's slot. Nothing below is being corrected; it is being dated.
+
 **Rev 2** — 2026-08-06. Rev 1 posted prior arrears as an opening *invoice*. That is unbuildable:
 `finance_invoices` carries `UNIQUE (school_id, active_enrollment_key)` where
 `active_enrollment_key = IF(status='issued', student_curriculum_id, NULL)`

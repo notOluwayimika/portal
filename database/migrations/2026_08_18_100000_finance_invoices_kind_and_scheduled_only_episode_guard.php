@@ -81,7 +81,22 @@ use Illuminate\Support\Facades\DB;
  *     `ALTER TABLE` and `CREATE TRIGGER` below ends any open transaction — so wrapping this method
  *     would produce the APPEARANCE of atomicity across statements while providing none. One
  *     statement is the only real atomicity available here, which is why the re-key is one statement.
- *     The migration's remaining steps are individually idempotent and are re-assertable by re-running.
+ *
+ *     EVERY STEP OF `up()` IS INDIVIDUALLY RE-RUNNABLE, which is the most that can be had without a
+ *     transaction. The re-key is one idempotent `ALTER`; each `CREATE TRIGGER` is preceded by
+ *     `DROP TRIGGER IF EXISTS`; and the `ADD COLUMN` is guarded on `information_schema.COLUMNS`.
+ *     That last guard is NOT decoration: Laravel records a migration only after `up()` RETURNS, so
+ *     an abort in any later step (the stray-row check, or any arm of `assertReKeyShape`) leaves the
+ *     column committed and the migration unrecorded, and an unguarded retry would die on
+ *     `1060 Duplicate column name` naming nothing about the real cause.
+ *
+ *     WHAT THAT STILL DOES NOT BUY, stated because a partial claim here is how the last one went
+ *     wrong: re-runnability is not atomicity. An abort still leaves the schema PARTLY CHANGED and
+ *     the migration unrecorded — `kind` present, the key possibly re-keyed, some triggers
+ *     installed — and nothing detects or announces that state. That is a standing condition of
+ *     non-transactional MySQL migrations in this repository rather than anything this change
+ *     introduced, and it is written up as a ticket:
+ *     `docs/handoff/tickets/aborted-migration-leaves-schema-changed-and-unrecorded.md`.
  *
  *     COLLATION, STATED RATHER THAN LEFT TO BE REDISCOVERED. `kind = 'scheduled'` in the generated
  *     expression is evaluated under the table's `utf8mb4_unicode_ci`, so it would also match
@@ -197,9 +212,25 @@ return new class extends Migration
     {
         // ── 1. The column. DEFAULT 'scheduled' only for the instant it takes to populate the
         //    existing rows correctly; dropped immediately below so an omission is a loud 1364.
-        DB::statement(
-            'ALTER TABLE '.self::TABLE." ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'scheduled' AFTER status"
-        );
+        //
+        //    GUARDED, so this statement is re-runnable like every other one in this method. DDL
+        //    commits implicitly, so if any step BELOW aborts — the stray-row check, or any arm of
+        //    assertReKeyShape — the column is already committed while Laravel has not recorded the
+        //    migration. Unguarded, the operator's retry then dies at THIS line with
+        //    `1060 Duplicate column name 'kind'`, an error that names nothing about the real cause
+        //    and requires a manual DROP COLUMN before `migrate` can be run again.
+        if (! $this->columnExists('kind')) {
+            DB::statement(
+                'ALTER TABLE '.self::TABLE." ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'scheduled' AFTER status"
+            );
+        } else {
+            // A retry after a partial run. The column may still carry the transient DEFAULT or may
+            // already have had it dropped; re-asserting it is harmless and puts the retry back on
+            // the same footing as a first run.
+            DB::statement(
+                'ALTER TABLE '.self::TABLE." ALTER COLUMN kind SET DEFAULT 'scheduled'"
+            );
+        }
 
         // Expected to affect 0 rows — the ADD already populated them. Kept because the intent
         // ("every invoice that exists today is a term bill") should be legible in the migration and
@@ -232,7 +263,7 @@ return new class extends Migration
                 ADD UNIQUE '.self::INDEX.' (school_id, '.self::KEY_COLUMN.')'
         );
 
-        $this->assertReKeyShape(self::KEY_EXPRESSION_AFTER, 'kind');
+        $this->assertReKeyShape(self::KEY_EXPRESSION_AFTER, mustMentionKind: true);
 
         // ── 3 & 4. The domain arms first, then immutability — see the docblock's ordering note.
         $domainBody =
@@ -270,7 +301,7 @@ return new class extends Migration
                 ADD UNIQUE '.self::INDEX.' (school_id, '.self::KEY_COLUMN.')'
         );
 
-        $this->assertReKeyShape(self::KEY_EXPRESSION_BEFORE, 'status');
+        $this->assertReKeyShape(self::KEY_EXPRESSION_BEFORE, mustMentionKind: false);
 
         DB::statement('ALTER TABLE '.self::TABLE.' DROP COLUMN kind');
     }
@@ -284,10 +315,23 @@ return new class extends Migration
      * ORDER — a two-column unique index with the columns swapped constrains the same set, but one
      * with an extra or missing column does not, and `SHOW INDEX` reports either just as happily.
      *
-     * @param  string  $mustName  a token the generation expression must contain, so the read-back
-     *                            fails if the MODIFY silently kept the old expression
+     * THE DISCRIMINATOR IS A DIRECTION, NOT A SHARED TOKEN, and the first version of this got it
+     * wrong in a way worth recording. It took a token the expression "must contain": `'kind'` in
+     * `up()`, which is absent from the before-expression and therefore discriminating, and
+     * `'status'` in `down()` — which appears in BOTH expressions. A rollback whose `MODIFY` reported
+     * success without changing anything would have passed that assertion and been recorded as
+     * shape-verified. (The abort was still loud, one statement later, when `DROP COLUMN kind` hit
+     * the generated-column dependency — but at the wrong statement, with an error saying nothing
+     * about the vacuous check above it.) `student_curriculum_id` is in both too, so there is no
+     * positive token that discriminates in both directions: the honest test is the PRESENCE of
+     * `kind` after `up()` and its ABSENCE after `down()`.
+     *
+     * @param  bool  $mustMentionKind  whether the generation expression must name `kind` (true after
+     *                                 up(), false after down()). Asserted in BOTH directions, so a
+     *                                 MODIFY that silently kept the other expression fails here
+     *                                 rather than one statement later.
      */
-    private function assertReKeyShape(string $expression, string $mustName): void
+    private function assertReKeyShape(string $expression, bool $mustMentionKind): void
     {
         $column = DB::selectOne(
             'SELECT EXTRA, GENERATION_EXPRESSION FROM information_schema.COLUMNS
@@ -303,12 +347,13 @@ return new class extends Migration
             );
         }
 
-        if (! str_contains((string) $column->GENERATION_EXPRESSION, $mustName)) {
+        if (str_contains((string) $column->GENERATION_EXPRESSION, 'kind') !== $mustMentionKind) {
             throw new RuntimeException(
-                self::TABLE.'.'.self::KEY_COLUMN.' generation expression does not mention ['.$mustName
-                .']: got ['.(string) $column->GENERATION_EXPRESSION.'], expected the sense of ['
+                self::TABLE.'.'.self::KEY_COLUMN.' generation expression '
+                .($mustMentionKind ? 'does NOT mention [kind] and must' : 'STILL mentions [kind] and must not')
+                .': got ['.(string) $column->GENERATION_EXPRESSION.'], expected the sense of ['
                 .$expression.']. The MODIFY reported success without changing the expression, so the '
-                .'unique index below would still constrain the wrong set of rows.'
+                .'unique index constrains the wrong set of rows.'
             );
         }
 
@@ -341,6 +386,20 @@ return new class extends Migration
                 .'[school_id, '.self::KEY_COLUMN.'] in that order.'
             );
         }
+    }
+
+    /**
+     * Does a column already exist on this table? Used to make `ADD COLUMN` re-runnable after a
+     * partial run — see the idempotency note in the class docblock. Guard shape from
+     * `2026_08_07_110000_add_provenance_to_finance_payments.php`.
+     */
+    private function columnExists(string $column): bool
+    {
+        return DB::selectOne(
+            'SELECT 1 AS present FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [self::TABLE, $column],
+        ) !== null;
     }
 
     /**

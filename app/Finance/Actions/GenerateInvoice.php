@@ -13,6 +13,7 @@ use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Finance\Models\PaymentAllocation;
 use App\Finance\Models\StudentAccount;
+use App\Finance\Services\InvoiceReadModel;
 use App\Finance\Services\SubledgerPoster;
 use App\Support\ActiveSchool;
 use App\Support\Money;
@@ -55,12 +56,26 @@ use Illuminate\Support\Facades\DB;
  * no-default column exists to make loud. The caller knows whether it is raising the
  * term bill or a trip fee; it says so.
  *
- * BOTH DUPLICATE ARMS ARE SCOPED TO `scheduled`, and both must be, for the same
- * reason: a supplementary invoice on an episode that already carries a scheduled one
- * is the NORMAL case. The pre-check mirrors the index exactly — issued AND scheduled
- * — so a prior SUPPLEMENTARY invoice never blocks the term bill either. If the two
- * predicates ever drift, the pre-check refuses a write the DB would have accepted,
- * or promises one it will not.
+ * THE TWO DUPLICATE ARMS HERE ARE SCOPED TO `scheduled`, and both must be, for the
+ * same reason: a supplementary invoice on an episode that already carries a scheduled
+ * one is the NORMAL case. The pre-check mirrors the index exactly — School, episode,
+ * issued, scheduled — so a prior SUPPLEMENTARY invoice never blocks the term bill.
+ *
+ * AND THERE ARE ONLY TWO ARMS BECAUSE THERE IS ONLY ONE PREDICATE. An earlier version
+ * of this docblock said "both arms are scoped" and was FALSE WHEN WRITTEN: a third
+ * copy of the same question lived in InvoiceReadModel, feeding the modal's
+ * `already_invoiced` preview, and it was never re-scoped. The preview therefore told a
+ * bursar to void the episode's invoice before billing — for a SUPPLEMENTARY invoice
+ * that must not be voided — and the write it warned about then succeeded, so the
+ * preview and the authority disagreed in the direction that gives a wrong instruction
+ * rather than a wrong refusal.
+ *
+ * The repair is structural, not another patched copy: `assertNoActiveInvoice` below
+ * DELEGATES to {@see InvoiceReadModel::hasActiveScheduledInvoiceForEnrollment()}, which
+ * is now the single PHP expression of "this episode already has an active scheduled
+ * invoice". A coupling asserted in prose is a wish; a coupling that is one method is a
+ * fact. What remains genuinely duplicated is the ARM COUNT — the pre-check and the
+ * duplicate-key translation — not the predicate.
  */
 final class GenerateInvoice
 {
@@ -73,6 +88,7 @@ final class GenerateInvoice
     public function __construct(
         private readonly BillableEnrollmentProvider $enrollments,
         private readonly SubledgerPoster $ledger,
+        private readonly InvoiceReadModel $invoices,
     ) {}
 
     /**
@@ -480,15 +496,18 @@ final class GenerateInvoice
 
     private function assertNoActiveInvoice(int $schoolId, int $enrollmentId): void
     {
-        $exists = Invoice::query()
-            ->where('school_id', $schoolId)
-            ->where('student_curriculum_id', $enrollmentId)
-            // MIRRORS THE INDEX, and the `kind` half is as load-bearing as the void half: without
-            // it a supplementary charge raised in week 2 would make the term bill unraisable, and
-            // the operator would be told to void an invoice that does not exist.
-            ->where('kind', InvoiceKind::Scheduled->value)
-            ->excludingVoid()
-            ->exists();
+        // DELEGATES rather than restating the predicate. This is the same call the modal's
+        // `already_invoiced` preview makes, which is the point: the warning a bursar sees and the
+        // refusal they get must be the same question asked once.
+        //
+        // EQUIVALENT TO THE QUERY IT REPLACED, checked rather than assumed. It is the same builder
+        // on the same connection, so it is still the first PLAIN read after the account
+        // lockForUpdate above — the statement this transaction's REPEATABLE READ snapshot forms
+        // at, exactly as before (see the comment on that lock). The School is still named
+        // EXPLICITLY and still comes from the episode, so isolation does not fall back to the
+        // global SchoolScope, which applies no filter at all when there is no context and no
+        // authenticated principal.
+        $exists = $this->invoices->hasActiveScheduledInvoiceForEnrollment($enrollmentId, $schoolId);
 
         if ($exists) {
             throw new BusinessRuleException(

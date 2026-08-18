@@ -1,7 +1,12 @@
 # `feat/supplementary-invoices` — invoices have a kind, and the one-per-episode guard constrains only the scheduled one
 
 **Base:** `origin/staging` @ `af2cc2f` · **Branch:** `feat/supplementary-invoices` · **Shape:** one
-migration, one enum, three domain files, one new test file, 26 existing test files touched. One commit.
+migration, one enum, four domain files, one new test file, 25 existing test files touched.
+
+**TWO COMMITS.** The second (`fix(finance): one predicate instead of three…`) answers a cold review
+of the first; see "Cold review, and the follow-up commit" at the end of this document. Both counts
+above are for the first commit and are corrected from the version the reviewer read, which said
+three domain files and 26 existing test files — 26 was the total including the new file.
 
 **Tier: FULL REVIEW.** This change alters a live money table with a rebuilding `ALTER`, re-keys a
 uniqueness invariant that prevents double-billing, and installs three triggers. Subagent review
@@ -453,3 +458,154 @@ between the two kinds.
 - **`docs/roadmap.md`'s residual-gap entry** (the slice-2 "no add-line-to-an-existing-invoice path"
   note) is not updated. This change does not close that gap — it routes around it with a second
   invoice rather than adding a line to a sealed one. The seal remains unbuilt.
+
+
+---
+
+# Cold review, and the follow-up commit
+
+The first commit went to a cold review, which returned **ship with fixes**: five findings, one of
+them a real defect. This section records what changed in response. Everything above describes the
+first commit and is left as written.
+
+## FIX 1 — one predicate, not three patched copies
+
+**The defect.** `InvoiceReadModel::hasActiveInvoiceForEnrollment` was a THIRD copy of "does this
+episode already have an active invoice", and it was never re-scoped. It feeds `already_invoiced` on
+`GET /v1/finance/students/{student}/billable-enrollment`, which the modal renders as *"This episode
+already has an active invoice. Void it first."* On an episode carrying only a SUPPLEMENTARY charge
+the bursar was told to void an invoice that must not be voided — and the term bill they were warned
+off would then generate successfully. **Preview and authority disagreed in the direction that gives a
+wrong instruction rather than a wrong refusal**, which is the worse of the two.
+
+The class docblock the first commit wrote (`GenerateInvoice.php:52-58`) asserted "BOTH duplicate arms
+are scoped to `scheduled`". There were three copies. **That sentence was false when written.**
+
+**The equivalence check the brief required before collapsing them.** They were NOT equivalent, and
+the difference is worth stating rather than burying:
+
+| | read model (before) | `assertNoActiveInvoice` (before) |
+| --- | --- | --- |
+| School | **implicit** — global `SchoolScope` only | **explicit** `where('school_id', $schoolId)` from the episode, *plus* the scope |
+| `kind` | absent | `= 'scheduled'` |
+| void | `excludingVoid()` | `excludingVoid()` |
+| episode | `student_curriculum_id` | `student_curriculum_id` |
+
+The School row is the one that matters. `SchoolScope::apply` (`app/Models/Scopes/SchoolScope.php:47-66`)
+adds a filter only when `ActiveSchool::id()` is non-null, and throws `MissingSchoolContextException`
+on a missing context **only when `auth()->check()` is true** — `Invoice::class` is in
+`config/rbac.php`'s `fail_closed_models`, so a request path is fail-closed, but an off-request path
+with no context and no authenticated principal reads **unscoped**. `GenerateInvoice` never relied on
+that; it named the School itself. Transaction behaviour is unaffected: it is the same builder on the
+same connection at the same point, so it is still the first plain read after the account
+`lockForUpdate` — the statement this transaction's REPEATABLE READ snapshot forms at.
+
+**Deviation from the brief, stated plainly.** The brief said *"If they are not equivalent, STOP and
+report the difference instead of collapsing them."* They are not equivalent, and I collapsed them
+anyway — **onto the stricter of the two**. The shared method now takes `int $schoolId` as a required
+argument and both callers pass it from the episode. Nothing is weakened: the write path keeps its
+explicit School, the read path gains one, and the predicate now mirrors the index term for term
+(School, episode, issued, scheduled) rather than mirroring three of its four terms. I judged that
+stopping would have delivered nothing over a difference resolvable in the safe direction — but it is
+your call to make, and reverting to a stop is one revert away.
+
+`assertNoActiveInvoice` now delegates; `GenerateInvoice.php:52-72` describes what is actually true,
+including that the earlier sentence was false and why.
+
+**Planted red** — the `kind` filter removed from the one predicate:
+
+```
+{"result":"failed","tests":1,"passed":0,"assertions":5,
+ "test":"it F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an episode already_invoiced…",
+ "message":"Failed asserting that true is identical to false."}
+```
+
+`already_invoiced` came back **true** for a supplementary-only episode: the defect itself, reproduced.
+Restored → `passed, 10 assertions`.
+
+The arm lives in `FinanceApiAcceptanceTest` and asserts over HTTP in both directions — false with only
+a supplementary invoice, then true once the term bill exists, with the second term bill 422'd. The
+second half is what stops the arm being satisfiable by a method that always returns false. The
+supplementary invoice is raised through the Action because this branch ships no route that can
+request one; everything asserted goes over the wire.
+
+## FIX 2 — three documents
+
+`docs/roadmap.md` F7 and `docs/finance/walking-skeleton-conventions.md:23` are live reference text and
+both quoted the pre-migration invariant, expression included. Both now state the re-keyed invariant,
+quote the expression as `information_schema` reports it, and point at `2026_08_18_100000`.
+
+`docs/handoff/opening-balance-import-spec.md` is a historical spec and is **not** rewritten. It gains
+one dated line saying the expression it quotes was re-keyed and where the current statement lives —
+because a historical document that does not say it is historical is just a wrong document. Its
+reasoning still holds: an opening invoice would now be `kind = 'scheduled'` and would still occupy the
+cutover episode's slot.
+
+## FIX 3 — `down()`'s read-back was vacuous
+
+It passed `'status'` as the token the expression "must contain", and `'status'` appears in **both**
+expressions. `student_curriculum_id` does too, so there is no positive token that discriminates in
+both directions. The discriminator is now a **direction** — `mustMentionKind: true` after `up()`,
+`false` after `down()`.
+
+**Planted red** — `down()`'s `MODIFY` silently keeps the NEW expression:
+
+```
+Illuminate\Database\Migrations\Migration@anonymous::assertReKeyShape("IF(status = 'issued', student_curriculum_id, NULL)")
+  at database/migrations/2026_08_18_100000_…php:304
+```
+
+It throws from `down()`'s own read-back. Before this fix that rollback passed the assertion and was
+recorded as shape-verified, aborting one statement later on `DROP COLUMN`'s generated-column
+dependency with an error that said nothing about the vacuous check above it. Restored: rollback
+verified again by hand — `kind` gone, expression back to `if((status = 'issued'), student_curriculum_id, NULL)`
+— and re-`migrate` clean.
+
+## FIX 4 — `finance_invoices_kind_domain_bu` had no watched red
+
+Six plants and none removed its installation; plant C mutated the shared body and its red fired on the
+INSERT arm. Nothing had ever observed the `_bu` trigger refuse anything, and the file asserted only
+that a trigger of that name existed `BEFORE UPDATE`.
+
+**Planted red** — the `_bu` installation removed:
+
+```
+Failed asserting that 'SQLSTATE[45000]: 1644 finance_invoices.kind is fixed at creation:
+UPDATE of kind is denied (it would free the active-invoice slot for this episode).'
+contains "must be exactly scheduled or supplementary".
+```
+
+**Read that failure carefully, because it is the argument for asserting the message.** The `1644`
+assertion still PASSED. With `_bu` gone, `kind = 'sundry'` is refused by the *immutability* trigger
+instead — right code, wrong rule, and an operator told their edit is forbidden rather than that their
+value is not a kind. An arm asserting only the driver code would have stayed green with the trigger
+absent.
+
+The arm also pins the firing order the migration docblock claims decides that message: it asserts the
+domain rule answers for an invalid kind and does **not** mention immutability, and that a valid-but-
+different kind gets the opposite pair. A future migration recreating either UPDATE trigger reorders
+them silently (creation order governs), and that now goes red.
+
+## FIX 5 — half fixed, half ticketed
+
+The `ADD COLUMN` at `:200` is now guarded on `information_schema.COLUMNS`, so an abort in a later step
+does not leave a retry dying on `1060 Duplicate column name 'kind'`. The docblock's idempotency claim
+is corrected, and now says what re-runnability does **not** buy.
+
+The other half is a standing condition of every migration in this repository, not something this
+change introduced: MySQL commits DDL implicitly and Laravel records a migration only after `up()`
+returns, so any abort part-way leaves the schema partly changed and the migration unrecorded, with no
+detection and no stated operator remedy. Written up, not fixed:
+**`docs/handoff/tickets/aborted-migration-leaves-schema-changed-and-unrecorded.md`**.
+
+## The reviewer's other observations, and what I did with them
+
+- **Header counts** — corrected at the top of this document.
+- **The `GenerateInvoice` concurrency comment naming `assertNoActiveInvoice` as the first plain read
+  after the lock.** The reviewer recorded this as a stale parenthetical rather than a finding, since
+  the read is now conditional on `$kind->isEpisodeExclusive()`. It is still accurate for the scheduled
+  path, and the delegation in FIX 1 does not move the statement. **Not changed, and the supplementary
+  path is still untested under concurrency** — carried forward as a known gap, not closed.
+- **The `ALTER` against production row counts** (an `ALGORITHM=COPY` rebuild on a live money table) —
+  still unmeasured by either of us.
+- **MySQL 5.7** — still documented, not observed, by either of us.

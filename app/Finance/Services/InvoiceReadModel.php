@@ -3,6 +3,7 @@
 namespace App\Finance\Services;
 
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
@@ -176,15 +177,40 @@ final class InvoiceReadModel
     }
 
     /**
-     * Does this enrollment episode already have an ACTIVE (issued, non-void) invoice? The
-     * F7 "one active invoice per episode" preview — the modal reads it to warn "void first"
-     * BEFORE the bursar enters lines. It is only a preview: the authoritative guard is the
-     * DB unique index + assertNoActiveInvoice at generation time (surfaced as the 422).
+     * Does this enrollment episode already have an ACTIVE (issued, non-void) SCHEDULED invoice?
+     *
+     * THE ONE PHP EXPRESSION OF THAT QUESTION, and the only one. It has two consumers with
+     * different jobs and necessarily the same answer:
+     *
+     *   - InvoiceController::billableEnrollment — the modal's `already_invoiced` preview, read
+     *     BEFORE the bursar enters lines so they are warned rather than refused;
+     *   - GenerateInvoice::assertNoActiveInvoice — the friendly-422 pre-check at generation time.
+     *
+     * NEITHER IS THE AUTHORITY. That is UNIQUE(school_id, active_enrollment_key) over the generated
+     * column (2026_08_18_100000); under concurrency this read cannot hold, because both racers see
+     * a snapshot in which no invoice exists. This method exists so the two friendly paths cannot
+     * DISAGREE — which is what happened when they were two hand-maintained copies and only one
+     * gained the `kind` filter: the preview told a bursar to void an invoice, and the write it
+     * warned about then succeeded.
+     *
+     * The predicate mirrors the index term for term: School, episode, issued, scheduled.
      */
-    public function hasActiveInvoiceForEnrollment(int $enrollmentId): bool
+    public function hasActiveScheduledInvoiceForEnrollment(int $enrollmentId, int $schoolId): bool
     {
         return Invoice::query()
+            // EXPLICIT, not left to the global SchoolScope, and this is the STRICTER of the two
+            // predicates it replaced. SchoolScope applies a School filter only when
+            // ActiveSchool::id() is non-null, and throws on a missing context only when
+            // auth()->check() is true (SchoolScope:60) — so an off-request path with no context and
+            // no authenticated principal reads UNSCOPED. GenerateInvoice never relied on that; it
+            // named the School itself. Requiring the caller to name it keeps that property on the
+            // write path and adds it to the read path, so collapsing the two copies loses nothing.
+            ->where('school_id', $schoolId)
             ->where('student_curriculum_id', $enrollmentId)
+            // The `kind` half is exactly as load-bearing as the void half. Without it a
+            // supplementary charge raised in week 2 makes the term bill unraisable, and the
+            // operator is told to void an invoice that is not the term bill and must not be voided.
+            ->where('kind', InvoiceKind::Scheduled->value)
             ->excludingVoid()
             ->exists();
     }

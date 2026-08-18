@@ -230,18 +230,41 @@ school_id)` means an invoice's School is now structurally tied to its episode's,
   domain actually has. Building it now would front-load a shape with no consumer —
   the mistake recorded in v10 §28.4.
 
-- **F7. At most one ACTIVE invoice per enrollment episode.** ✅ real (slice 2).
+- **F7. At most one ACTIVE SCHEDULED invoice per enrollment episode.** ✅ real
+  (slice 2; **RE-KEYED** by
+  `2026_08_18_100000_finance_invoices_kind_and_scheduled_only_episode_guard.php`).
   A _set_-based invariant no single Invoice aggregate can see, so it is enforced at
-  the DB: a STORED generated column
-  `active_enrollment_key = IF(status='issued', student_curriculum_id, NULL)` with
-  `UNIQUE(school_id, active_enrollment_key)`. Issued ⇒ the slot is taken; void ⇒ it
-  recomputes to NULL and NULLs do not collide, so the policy's "repeat = billed
-  fresh" re-bill after a void still works (a naive
-  `UNIQUE(school_id, student_curriculum_id)` would forbid it, since voided invoices
-  are append-only and never leave). Generated rather than app-maintained, so no code
-  path can forget to set or clear it. The Action's pre-check is only the friendly-422
-  path; **bite-proven** that the index is the real guarantee — with the index removed
-  the raw-insert and concurrency tests go red while the pre-check test still passes.
+  the DB: a STORED generated column with
+  `UNIQUE(school_id, active_enrollment_key)`. As `information_schema` reports the
+  expression today:
+
+  ```
+  if(((`status` = _utf8mb4'issued') and (`kind` = _utf8mb4'scheduled')),`student_curriculum_id`,NULL)
+  ```
+
+  **The `kind` arm is the re-key and it is why this heading says SCHEDULED.** Slice 2
+  keyed on `status` alone, which made the invariant true of every invoice and left a
+  School unable to bill anything outside the term's scheduled fees — a damaged
+  appliance, a trip, a lost book or a late fee could only be raised by voiding the
+  term invoice and re-issuing it, discarding every payment allocation already made
+  against it. Supplementary invoices now compute a NULL key and are **unconstrained**:
+  any number, at any time, against one episode. See `App\Finance\Enums\InvoiceKind`.
+
+  Issued **and scheduled** ⇒ the slot is taken; void ⇒ it recomputes to NULL and NULLs
+  do not collide, so the policy's "repeat = billed fresh" re-bill after a void still
+  works (a naive `UNIQUE(school_id, student_curriculum_id)` would forbid it, since
+  voided invoices are append-only and never leave). A supplementary invoice reaches
+  NULL by the second arm, by the same mechanism. Generated rather than app-maintained,
+  so no code path can forget to set or clear it, and `kind` is itself immutable
+  (`finance_invoices_kind_immutable`) — otherwise flipping a live scheduled invoice to
+  supplementary would free the slot while it is still collecting payments.
+
+  The friendly-422 pre-check and the modal's `already_invoiced` preview are **one**
+  PHP expression — `InvoiceReadModel::hasActiveScheduledInvoiceForEnrollment()` —
+  precisely so they cannot drift from this index or from each other; neither is the
+  authority. **Bite-proven** that the index is the real guarantee — with the index
+  removed the raw-insert and concurrency tests go red while the pre-check test still
+  passes.
 
 ## Reconciled deviations (Execution Plan — Validation Review §A)
 

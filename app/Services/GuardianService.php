@@ -813,6 +813,11 @@ class GuardianService
         return DB::transaction(function () use ($keeper, $absorbed, $apply) {
             $this->assertMergeable($keeper, $absorbed);
 
+            // ORDERED BEFORE THE PLANNER, not merely before the apply. A refusal
+            // that runs after the pivots have been classified is still correct,
+            // but it invites the next reader to move it one line further down.
+            $this->assertNoCrossAccountLogin($keeper, $absorbed);
+
             $plan = $this->buildMergePlan($keeper, $absorbed);
 
             if ($apply) {
@@ -846,6 +851,41 @@ class GuardianService
             ]);
         }
 
+        // THE KEEPER MUST BE IN THE ACTIVE SCHOOL, not merely in the same school
+        // as the rows it absorbs. Those are different claims and only the second
+        // one was being made: two guardians could match each other perfectly and
+        // both belong to a school the caller has no context for.
+        //
+        // It is not hypothetical. Guardian::applySchoolScope matches
+        // `school_id = active OR user_id has access to active`, so a route-model
+        // -bound Guardian from ANOTHER school resolves inside a request scoped to
+        // this one — which is precisely the defect every query in this method
+        // drops the global scopes to avoid. The console command takes its context
+        // FROM the keeper, so this is a tautology there and a real boundary for
+        // the next caller. A docblock promising the admin UI will behave is a
+        // wish; this is the mechanism.
+        //
+        // Read through ActiveSchool::id() rather than getOrFail(): getOrFail
+        // raises an HTTP 403 abort, which is a sensible response on a request and
+        // a useless one in a console. Absent context is refused here explicitly,
+        // with the same shape as every other refusal here, so the command exits
+        // non-zero with a message a human can act on.
+        $activeSchoolId = (int) ActiveSchool::id();
+
+        if ($activeSchoolId === 0) {
+            throw ValidationException::withMessages([
+                'keep' => 'Merge aborted: no active school context. Off-request callers must wrap the '
+                    .'merge in ActiveSchool::runFor() using the keeper guardian\'s own school_id.',
+            ]);
+        }
+
+        if ((int) $keeper->school_id !== $activeSchoolId) {
+            throw ValidationException::withMessages([
+                'keep' => "Merge aborted: keeper guardian#{$keeper->id} belongs to school#{$keeper->school_id} "
+                    ."but the active context is school#{$activeSchoolId}.",
+            ]);
+        }
+
         foreach ($absorbed as $guardian) {
             if ((int) $guardian->id === (int) $keeper->id) {
                 throw ValidationException::withMessages([
@@ -866,6 +906,71 @@ class GuardianService
                     'absorb' => "Merge aborted: guardian#{$guardian->id} is already deleted.",
                 ]);
             }
+        }
+    }
+
+    /**
+     * REFUSE TO RELOCATE A PORTAL LOGIN BETWEEN TWO `users` ROWS.
+     *
+     * `can_login` is a column on `guardian_student`, which makes it look like a
+     * boolean that can be re-pointed with the row it sits on. It is not. It means
+     * "this parent signs in with THIS account's password": login is email-only
+     * (FortifyServiceProvider authenticates with `User::where('email', …)`), the
+     * password lives on `users`, and `Password::sendResetLink` resolves the human
+     * BY that row. Moving the flag to a different account does not move the
+     * login — it strands it.
+     *
+     * WHAT THAT LOOKS LIKE WHEN IT HAPPENS. The absorbed guardian's user keeps its
+     * password, its enabled state and its school access, and now backs a
+     * soft-deleted guardian row: forUserInActiveSchool returns null, so the parent
+     * signs in successfully and GuardianController::wards answers 200 with an
+     * empty list. The keeper's user owns the access and has been sent nothing. The
+     * portal goes blank and no email explains it.
+     *
+     * ⚠️ UNCONDITIONAL ON DELIVERABILITY. A deliverable keeper does not make this
+     * safe, and believing it did was the hole: the deliverability invariant asks
+     * whether the DESTINATION account can receive mail, never what becomes of the
+     * SOURCE account. Both can be perfectly deliverable and the parent still ends
+     * up locked out of the record they can see. Same `user_id` on both sides — the
+     * certain duplicate, one human with two guardian rows — is the only case that
+     * proceeds, and it is the case that needs no relocation at all.
+     *
+     * REFUSE RATHER THAN MIGRATE. Re-issuing credentials would silently email a
+     * parent a new password during what an operator ran as a cleanup, and
+     * disabling the donor account would revoke access the operator never asked to
+     * revoke. Consolidating a login is a decision with a person on the other end
+     * of it; the existing enableLogin/disableLogin flows are where it is made.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     */
+    private function assertNoCrossAccountLogin(Guardian $keeper, Collection $absorbed): void
+    {
+        foreach ($absorbed as $guardian) {
+            if ((int) $guardian->user_id === (int) $keeper->user_id) {
+                continue;
+            }
+
+            $loginStudentIds = DB::table('guardian_student')
+                ->where('guardian_id', $guardian->id)
+                ->where('can_login', true)
+                ->orderBy('student_id')
+                ->pluck('student_id')
+                ->map(fn ($id) => 'student#'.$id)
+                ->all();
+
+            if ($loginStudentIds === []) {
+                continue;
+            }
+
+            throw ValidationException::withMessages([
+                'absorb' => "Merge aborted: guardian#{$guardian->id} carries portal login on user#{$guardian->user_id} "
+                    .'for '.implode(', ', $loginStudentIds).", but keeper guardian#{$keeper->id} is on "
+                    ."user#{$keeper->user_id}. A login cannot be moved between accounts: the password, the "
+                    .'reset link and the sign-in address all live on the users row, so re-pointing the flag '
+                    ."would leave the parent signing in to user#{$guardian->user_id} and seeing nothing. "
+                    .'Consolidate the login first — disable it on the absorbed record, or enable it on the '
+                    .'keeper — then re-run this merge.',
+            ]);
         }
     }
 
@@ -945,7 +1050,15 @@ class GuardianService
                     'touched' => true,
                 ];
 
-                if ($after['can_login'] && ! $before['can_login']) {
+                // ON EVERY WRITE THAT LEAVES THE FLAG TRUE, not only on the
+                // false→true raise. The narrower condition skipped the case where
+                // the keeper is undeliverable, its own row already carries the
+                // flag, and the absorbed side holds the login that actually works
+                // — the merge would then keep the dead flag and delete the live
+                // one. The cross-account pre-flight now refuses that case before
+                // this line is reached, which is the point: the narrow condition
+                // must not be the thing relied on.
+                if ($after['can_login']) {
                     $this->assertMergedLoginIsDeliverable($keeper, $guardian, $studentId);
                 }
 
@@ -957,6 +1070,13 @@ class GuardianService
                     'is_primary_after' => $after['is_primary'],
                     'can_login_before' => $before['can_login'],
                     'can_login_after' => $after['can_login'],
+                    // The ABSORBED row's own values, which the *_before pair does
+                    // not carry — that pair is the keeper's state. These are what
+                    // the deleted row held, and once it is gone this entry is the
+                    // only record of it.
+                    'absorbed_is_primary' => $isPrimary,
+                    'absorbed_can_login' => $canLogin,
+                    'absorbed_relationship' => (string) $row->relationship,
                     'resolution' => "keeper row kept (relationship unchanged); absorbed pivot#{$row->id} deleted",
                 ];
 
@@ -991,8 +1111,10 @@ class GuardianService
 
         return [
             'keeper_id' => (int) $keeper->id,
+            'keeper_user_id' => (int) $keeper->user_id,
             'school_id' => (int) $keeper->school_id,
             'absorbed_ids' => $absorbedIds,
+            'login_state' => $this->planLoginState($keeper, $absorbed),
             'pivot_moves' => $moves,
             'pivot_collisions' => $collisions,
             'pivot_final_state' => array_map(
@@ -1008,6 +1130,42 @@ class GuardianService
     }
 
     /**
+     * The login picture the operator has to see BEFORE deciding, in both the dry
+     * run and the applied run: per absorbed record, whether it carries a portal
+     * login, on which account, and whether that account is the keeper's.
+     *
+     * It is in the plan rather than computed by the command because a dry run an
+     * operator cannot inspect for this is not a dry run — the refusal above is the
+     * hard stop, and this is what makes the near-miss legible when it does not
+     * fire (an absorbed record with login on the SAME account still moves a
+     * `can_login` row; that is safe, and the operator should still see it).
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @return list<array{guardian_id: int, user_id: int, can_login_students: list<int>, same_user_as_keeper: bool}>
+     */
+    private function planLoginState(Guardian $keeper, Collection $absorbed): array
+    {
+        $rows = [];
+
+        foreach ($absorbed as $guardian) {
+            $rows[] = [
+                'guardian_id' => (int) $guardian->id,
+                'user_id' => (int) $guardian->user_id,
+                'can_login_students' => DB::table('guardian_student')
+                    ->where('guardian_id', $guardian->id)
+                    ->where('can_login', true)
+                    ->orderBy('student_id')
+                    ->pluck('student_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all(),
+                'same_user_as_keeper' => (int) $guardian->user_id === (int) $keeper->user_id,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * `can_login = true` may not arrive on a keeper who cannot receive mail.
      *
      * Routed through the existing single enforcement point rather than a second
@@ -1017,12 +1175,13 @@ class GuardianService
      * access as a side effect of a cleanup, and silently proceeding would mint
      * exactly the state GuardianLoginInvariantTest pins as unreachable.
      *
-     * It fires when the merge INTRODUCES the flag on the keeper — a moved row
-     * carrying it, or a collision raising it false→true. A keeper row that
-     * already carries `can_login` against an undeliverable address is a
-     * pre-existing violation that `guardians:audit-login-invariant` reports; it is
-     * not created here, and refusing to merge duplicates for that population would
-     * disarm this command against exactly the rows it exists to clean.
+     * IT FIRES ON EVERY WRITE THAT LEAVES THE FLAG TRUE, not only on the ones
+     * that raise it. Firing only on the raise looked equivalent and was not: it
+     * skipped the collision where the keeper is undeliverable, its own row
+     * already carries the flag, and the absorbed row holds the login that
+     * actually works — the merge kept the dead flag and deleted the live one. The
+     * lesson is not about that one condition. A guard scoped to "did this change
+     * make it worse" cannot see a change that makes a bad state permanent.
      */
     private function assertMergedLoginIsDeliverable(Guardian $keeper, Guardian $from, int $studentId): void
     {
@@ -1152,6 +1311,8 @@ class GuardianService
             $guardian->delete();
         }
 
+        $this->logMergedLinks($keeper, $absorbed, $plan);
+
         activity('guardian')
             ->performedOn($keeper)
             ->causedBy(auth()->user())
@@ -1160,11 +1321,84 @@ class GuardianService
                 'school_id' => $plan['school_id'],
                 'pivots_moved' => count($plan['pivot_moves']),
                 'pivot_collisions' => count($plan['pivot_collisions']),
+                // THE IDS, NOT ONLY THE COUNTS. A colliding pivot row is HARD
+                // deleted and is not recoverable afterwards, so a count is the
+                // point at which "which child did this adult stop being able to
+                // see, and when" stops having an answer.
+                'moved_student_ids' => array_column($plan['pivot_moves'], 'student_id'),
+                'collision_student_ids' => array_column($plan['pivot_collisions'], 'student_id'),
                 'backfilled_fields' => array_column($plan['backfilled'], 'field'),
                 'orphaned_user_ids' => $plan['orphaned_user_ids'],
             ])
             ->event('merged')
             ->log('Guardian merged: '.count($plan['absorbed_ids']).' record(s) absorbed');
+    }
+
+    /**
+     * Per-LINK audit entries, in the same vocabulary every other pivot writer
+     * uses.
+     *
+     * attachToStudent's own comment records why this is not optional: the attach
+     * side was the one unlogged pivot transition, so "who gave this adult access
+     * to this child, and when" had no answer while "who took it away" did. A merge
+     * that emitted one summary entry on the keeper would reopen exactly that hole
+     * — worse, in fact, because the colliding rows it deletes are gone and cannot
+     * be re-derived from anything.
+     *
+     * `attached` is performed on the KEEPER (it gained the link); `detached` on the
+     * ABSORBED record (it lost it), which is where an auditor looking at that
+     * guardian's trail would go.
+     *
+     * @param  Collection<int, Guardian>  $absorbed
+     * @param  array<string, mixed>  $plan
+     */
+    private function logMergedLinks(Guardian $keeper, Collection $absorbed, array $plan): void
+    {
+        $absorbedById = $absorbed->keyBy('id');
+
+        $studentIds = array_unique(array_merge(
+            array_column($plan['pivot_moves'], 'student_id'),
+            array_column($plan['pivot_collisions'], 'student_id'),
+        ));
+
+        if ($studentIds === []) {
+            return;
+        }
+
+        $students = Student::withoutGlobalScopes()->whereIn('id', $studentIds)->get()->keyBy('id');
+
+        foreach ($plan['pivot_moves'] as $move) {
+            $student = $students->get($move['student_id']);
+
+            if (! $student) {
+                continue;
+            }
+
+            $this->logPivotEvent($keeper, $student, 'attached', [
+                'relationship' => $move['relationship'],
+                'is_primary' => $move['is_primary'],
+                'can_login' => $move['can_login'],
+                'via' => 'merge',
+                'from_guardian_id' => $move['from_guardian_id'],
+            ]);
+        }
+
+        foreach ($plan['pivot_collisions'] as $collision) {
+            $student = $students->get($collision['student_id']);
+            $from = $absorbedById->get($collision['from_guardian_id']);
+
+            if (! $student || ! $from) {
+                continue;
+            }
+
+            $this->logPivotEvent($from, $student, 'detached', [
+                'via' => 'merge',
+                'merged_into_guardian_id' => (int) $keeper->id,
+                'relationship' => $collision['absorbed_relationship'],
+                'is_primary' => $collision['absorbed_is_primary'],
+                'can_login' => $collision['absorbed_can_login'],
+            ]);
+        }
     }
 
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void

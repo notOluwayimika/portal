@@ -4,6 +4,7 @@ use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\GuardianService;
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -82,9 +83,18 @@ function gm_pivot(Guardian $guardian, Student $student): ?object
         ->first();
 }
 
-function gm_merge(Guardian $keeper, array $absorbed, bool $apply = true): array
+/**
+ * merge() is off-request and refuses without a school context, so every call
+ * establishes one the way the console command does — from the KEEPER's own
+ * school_id, never from a user row and never from an actor. `$context` exists
+ * only so one arm can drive it from the wrong school.
+ */
+function gm_merge(Guardian $keeper, array $absorbed, bool $apply = true, ?int $context = null): array
 {
-    return app(GuardianService::class)->merge($keeper, new Collection($absorbed), $apply);
+    return ActiveSchool::runFor(
+        $context ?? (int) $keeper->school_id,
+        fn (): array => app(GuardianService::class)->merge($keeper, new Collection($absorbed), $apply),
+    );
 }
 
 /*
@@ -125,8 +135,14 @@ it('re-points a student link the keeper does not already hold', function () {
 
 it('OR-merges a colliding link into the keeper row instead of raising a duplicate key', function () {
     $school = al_makeSchool();
-    $keeper = gm_guardian($school->id, gm_user($school->id)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+
+    // ONE account behind both rows, deliverable — the certain duplicate. Both
+    // booleans are then free to OR-merge: a `can_login` that changes rows without
+    // changing ACCOUNTS strands nobody, which is the only reason this arm can
+    // exercise the flag at all.
+    $user = gm_user($school->id, 'shared.parent@example.test');
+    $keeper = gm_guardian($school->id, $user->id);
+    $absorbed = gm_guardian($school->id, $user->id);
 
     $shared = gm_student($school->id);
     gm_link($keeper, $shared, isPrimary: false, canLogin: false, relationship: 'mother');
@@ -183,14 +199,75 @@ it('leaves exactly one primary guardian when the moved link is primary and a thi
 
 /*
 |--------------------------------------------------------------------------
-| 4. The invariant — can_login may not land on a keeper who cannot receive mail
+| 4. Login — a portal login may not be relocated between two accounts,
+|    and may not land on a keeper who cannot receive mail
 |--------------------------------------------------------------------------
+|
+| These are two different guards and neither subsumes the other. The first asks
+| what happens to the account the parent ALREADY signs in with; the second asks
+| whether the destination account can be reached at all. A deliverable keeper
+| satisfies the second and tells you nothing about the first.
 */
+
+it('refuses to relocate a portal login onto a different user account', function () {
+    $school = al_makeSchool();
+
+    // Both accounts perfectly deliverable, both enabled. Nothing about
+    // deliverability is wrong here, and the merge must still refuse.
+    $keeper = gm_guardian($school->id, gm_user($school->id, 'keeper.parent@example.test')->id);
+    $absorbedUser = gm_user($school->id, 'signs.in.with.this@example.test');
+    $absorbed = gm_guardian($school->id, $absorbedUser->id);
+
+    $student = gm_student($school->id);
+    gm_link($absorbed, $student, isPrimary: true, canLogin: true);
+
+    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+
+    // Nothing written. The link is still on the absorbed record, still on the
+    // account whose password the parent actually has.
+    $pivot = gm_pivot($absorbed, $student);
+
+    expect($pivot)->not->toBeNull()
+        ->and((bool) $pivot->can_login)->toBeTrue()
+        ->and(gm_pivot($keeper, $student))->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull()
+        // And the donor account is untouched — this is the row that would have
+        // been left signing in to an empty portal.
+        ->and(User::find($absorbedUser->id)->disabled_at)->toBeNull();
+});
+
+it('refuses the cross-account login even when the keeper holds the deliverable account and the absorbed link is the working one', function () {
+    $school = al_makeSchool();
+
+    // The sharper shape: the keeper is UNDELIVERABLE and already carries the flag
+    // on its own row for this student; the absorbed record holds the same student
+    // on a deliverable account. Merging would delete the working login and keep
+    // the dead one — and a guard that only asks "did this write raise the flag"
+    // sees nothing to object to, because the flag was already true.
+    $keeper = gm_guardian($school->id, gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN)->id);
+    $absorbed = gm_guardian($school->id, gm_user($school->id, 'works@example.test')->id);
+
+    $student = gm_student($school->id);
+    gm_link($keeper, $student, canLogin: true);
+    gm_link($absorbed, $student, canLogin: true);
+
+    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+
+    expect(gm_pivot($absorbed, $student))->not->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(DB::table('guardian_student')->where('student_id', $student->id)->count())->toBe(2);
+});
 
 it('aborts the whole merge rather than move login access onto an undeliverable keeper', function () {
     $school = al_makeSchool();
-    $keeper = gm_guardian($school->id, gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN)->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+
+    // ONE user, two guardian rows — the certain duplicate, and the only shape the
+    // cross-account refusal lets through. There is no relocation here: the login
+    // already belongs to the account that keeps it. What is wrong is that the
+    // account cannot receive mail, which is the second guard's question.
+    $user = gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN);
+    $keeper = gm_guardian($school->id, $user->id);
+    $absorbed = gm_guardian($school->id, $user->id);
 
     $student = gm_student($school->id);
     gm_link($absorbed, $student, isPrimary: true, canLogin: true);
@@ -206,17 +283,46 @@ it('aborts the whole merge rather than move login access onto an undeliverable k
         ->and($absorbed->fresh()->deleted_at)->toBeNull();
 });
 
-it('allows the same merge once the keeper has a deliverable address', function () {
+it('aborts on a collision that leaves an already-true flag on an undeliverable keeper', function () {
     $school = al_makeSchool();
-    $keeper = gm_guardian($school->id, gm_user($school->id, 'real.parent@example.test')->id);
-    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+
+    // The collision side of the same guard, and the case the narrowed condition
+    // used to wave through: same account on both sides (so the cross-account
+    // refusal does not fire), undeliverable, and the keeper's own row ALREADY
+    // carries the flag — so nothing is raised and there is nothing for a
+    // transition-shaped check to catch. The write still leaves the flag true.
+    $user = gm_user($school->id, '08031234567'.User::SYNTHETIC_EMAIL_DOMAIN);
+    $keeper = gm_guardian($school->id, $user->id);
+    $absorbed = gm_guardian($school->id, $user->id);
+
+    $student = gm_student($school->id);
+    gm_link($keeper, $student, canLogin: true);
+    gm_link($absorbed, $student, canLogin: false);
+
+    expect(fn () => gm_merge($keeper, [$absorbed]))->toThrow(ValidationException::class);
+
+    expect(gm_pivot($absorbed, $student))->not->toBeNull()
+        ->and($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(DB::table('guardian_student')->where('student_id', $student->id)->count())->toBe(2);
+});
+
+it('allows a same-account login to move once that account is deliverable', function () {
+    $school = al_makeSchool();
+
+    // The case that proceeds: one human, one account, two guardian rows, a real
+    // address. The flag does not change accounts, so nobody is stranded.
+    $user = gm_user($school->id, 'real.parent@example.test');
+    $keeper = gm_guardian($school->id, $user->id);
+    $absorbed = gm_guardian($school->id, $user->id);
 
     $student = gm_student($school->id);
     gm_link($absorbed, $student, isPrimary: true, canLogin: true);
 
-    gm_merge($keeper, [$absorbed]);
+    $plan = gm_merge($keeper, [$absorbed]);
 
-    expect((bool) gm_pivot($keeper, $student)->can_login)->toBeTrue();
+    expect((bool) gm_pivot($keeper, $student)->can_login)->toBeTrue()
+        ->and($plan['login_state'][0]['same_user_as_keeper'])->toBeTrue()
+        ->and($plan['login_state'][0]['can_login_students'])->toBe([$student->id]);
 });
 
 /*
@@ -281,6 +387,60 @@ it('refuses a cross-school absorb before writing anything', function () {
     expect($foreign->fresh()->deleted_at)->toBeNull()
         ->and(gm_pivot($foreign, $student))->not->toBeNull()
         ->and(DB::table('guardian_student')->where('guardian_id', $keeper->id)->count())->toBe(0);
+});
+
+it('refuses when the keeper is not in the active school, even though both rows match each other', function () {
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    // Two guardians that agree with each other perfectly — the cross-school check
+    // has nothing to say about them. They are simply not in the school the caller
+    // has context for, which is the shape applySchoolScope's `OR user_id has
+    // access` branch hands a request-side caller.
+    $keeper = gm_guardian($schoolB->id, gm_user($schoolB->id)->id);
+    $absorbed = gm_guardian($schoolB->id, gm_user($schoolB->id)->id);
+    $student = gm_student($schoolB->id);
+    gm_link($absorbed, $student);
+
+    expect(fn () => gm_merge($keeper, [$absorbed], context: $schoolA->id))
+        ->toThrow(ValidationException::class);
+
+    expect($absorbed->fresh()->deleted_at)->toBeNull()
+        ->and(gm_pivot($absorbed, $student))->not->toBeNull();
+});
+
+it('sequences two absorbed records so the second one collides with what the first moved', function () {
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => null]);
+    $first = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => 'Nurse']);
+    $second = gm_guardian($school->id, gm_user($school->id)->id, ['occupation' => 'Doctor']);
+
+    // Neither absorbed record is linked to a student the KEEPER holds, so against
+    // the keeper's original rows both look like moves. They are not: the first
+    // move gives the keeper this student, which makes the second a collision.
+    // Classifying both as moves is a duplicate-key error, not a wrong answer.
+    $shared = gm_student($school->id);
+    gm_link($first, $shared, isPrimary: false, relationship: 'mother');
+    gm_link($second, $shared, isPrimary: true, relationship: 'father');
+
+    $plan = gm_merge($keeper, [$first, $second]);
+
+    expect($plan['pivot_moves'])->toHaveCount(1)
+        ->and($plan['pivot_collisions'])->toHaveCount(1)
+        ->and(DB::table('guardian_student')->where('student_id', $shared->id)->count())->toBe(1);
+
+    $pivot = gm_pivot($keeper, $shared);
+
+    expect((int) $pivot->guardian_id)->toBe($keeper->id)
+        // The surviving row is the one the FIRST move brought over, so its
+        // relationship is the first's; the second's is_primary is OR-merged in.
+        ->and($pivot->relationship)->toBe('mother')
+        ->and((bool) $pivot->is_primary)->toBeTrue()
+        // Back-fill takes the first non-blank in absorb order, and both records
+        // are soft-deleted.
+        ->and($keeper->fresh()->occupation)->toBe('Nurse')
+        ->and($first->fresh()->deleted_at)->not->toBeNull()
+        ->and($second->fresh()->deleted_at)->not->toBeNull();
 });
 
 /*
@@ -372,7 +532,55 @@ it('records one merged activity entry on the keeper naming the absorbed ids', fu
     expect($properties['absorbed_guardian_ids'])->toBe([$absorbed->id])
         ->and($properties['pivots_moved'])->toBe(1)
         ->and($properties['pivot_collisions'])->toBe(0)
-        ->and($properties['school_id'])->toBe($school->id);
+        ->and($properties['school_id'])->toBe($school->id)
+        // The ids, not just the count: a colliding pivot row is hard-deleted, so
+        // a count is the point at which "which child" stops having an answer.
+        ->and($properties['moved_student_ids'])->toBe([$student->id])
+        ->and($properties['collision_student_ids'])->toBe([]);
+});
+
+it('emits the same per-link events every other pivot writer emits', function () {
+    $school = al_makeSchool();
+    $keeper = gm_guardian($school->id, gm_user($school->id)->id);
+    $absorbed = gm_guardian($school->id, gm_user($school->id)->id);
+
+    $moved = gm_student($school->id);
+    $shared = gm_student($school->id);
+    gm_link($keeper, $shared);
+    gm_link($absorbed, $moved, relationship: 'guardian');
+    gm_link($absorbed, $shared, isPrimary: true, relationship: 'father');
+
+    gm_merge($keeper, [$absorbed]);
+
+    // The keeper GAINED a link — the transition attachToStudent was changed to
+    // log because "who gave this adult access to this child, and when" had no
+    // answer otherwise.
+    $attached = DB::table('activity_log')
+        ->where('event', 'attached')
+        ->where('subject_id', $keeper->id)
+        ->where('subject_type', Guardian::class)
+        ->get();
+
+    expect($attached)->toHaveCount(1)
+        ->and(json_decode((string) $attached->first()->properties, true)['student_id'])->toBe($moved->id)
+        ->and(json_decode((string) $attached->first()->properties, true)['via'])->toBe('merge');
+
+    // The absorbed record LOST one, and the row itself is hard-deleted — this
+    // entry is the only surviving record of what it held.
+    $detached = DB::table('activity_log')
+        ->where('event', 'detached')
+        ->where('subject_id', $absorbed->id)
+        ->where('subject_type', Guardian::class)
+        ->get();
+
+    expect($detached)->toHaveCount(1);
+
+    $properties = json_decode((string) $detached->first()->properties, true);
+
+    expect($properties['student_id'])->toBe($shared->id)
+        ->and($properties['relationship'])->toBe('father')
+        ->and($properties['is_primary'])->toBeTrue()
+        ->and($properties['merged_into_guardian_id'])->toBe($keeper->id);
 });
 
 /*

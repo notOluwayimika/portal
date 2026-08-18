@@ -116,9 +116,29 @@ class MergeGuardians extends Command
     {
         $this->newLine();
         $this->line($plan['applied'] ? 'APPLIED.' : 'DRY RUN — nothing was written. Re-run with --apply to execute.');
-        $this->line("keeper guardian#{$plan['keeper_id']} in school#{$plan['school_id']}");
+        $this->line("keeper guardian#{$plan['keeper_id']} on user#{$plan['keeper_user_id']} in school#{$plan['school_id']}");
         $this->line('absorbing '.implode(', ', array_map(fn (int $id) => "guardian#{$id}", $plan['absorbed_ids'])));
         $this->newLine();
+
+        // PRINTED FIRST, BEFORE THE PIVOT TABLES. `can_login` is not a pivot
+        // boolean that can be re-pointed with the row it sits on — it names the
+        // account the parent signs in with — so which USER each absorbed record's
+        // login lives on is the fact an operator has to see before anything else.
+        // A merge carrying a login across accounts is refused outright and never
+        // reaches this output; this table is what makes the near-miss legible and
+        // shows the safe same-account case for what it is.
+        $this->line('Portal login on the absorbed records:');
+        $this->table(
+            ['guardian', 'user', 'login for', 'same account as keeper'],
+            array_map(fn (array $row) => [
+                "guardian#{$row['guardian_id']}",
+                "user#{$row['user_id']}",
+                $row['can_login_students'] === []
+                    ? '—'
+                    : implode(', ', array_map(fn (int $id) => "student#{$id}", $row['can_login_students'])),
+                $row['same_user_as_keeper'] ? 'yes' : 'NO',
+            ], $plan['login_state']),
+        );
 
         $this->line('Student links moved to the keeper: '.count($plan['pivot_moves']));
         if ($plan['pivot_moves'] !== []) {

@@ -58,7 +58,7 @@ expect(array_keys($dry))->toBe(array_keys($applied))
     ->and($dry['backfilled'])->toBe($applied['backfilled']);
 ```
 
-`pivot_collisions`, `primary_demotions`, `pivot_final_state`, `login_state` and `orphaned_user_ids` are
+`pivot_collisions`, `primary_demotions`, `pivot_final_state`, `login_decision` and `orphaned_user_ids` are
 not compared. The arm proves the two calls agree about the two easiest keys under conditions where
 nothing could have made them disagree.
 
@@ -67,7 +67,7 @@ nothing could have made them disagree.
 Either of these, not both:
 
 1. **Bind the plans.** Print a fingerprint of the plan on the dry run (a hash over the ordered
-   `pivot_moves` / `pivot_collisions` / `login_state` / `backfilled` entries), require `--apply` to
+   `pivot_moves` / `pivot_collisions` / `login_decision` / `backfilled` entries), require `--apply` to
    carry it, and refuse when the recomputed plan hashes differently. That makes the review a real
    precondition and turns the drift into a refusal with a clear message.
 2. **Drop the claim.** State in the class docblock that the two invocations are two plans, and that a

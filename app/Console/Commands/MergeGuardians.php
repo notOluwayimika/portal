@@ -135,15 +135,26 @@ class MergeGuardians extends Command
 
         $this->line('Portal accounts:');
         $this->table(
-            ['guardian', 'user', 'can sign in today', 'same account as keeper', 'merge will'],
+            ['guardian', 'user', 'can sign in today', 'same account as keeper', 'only this school', 'merge will'],
             array_map(fn (array $row) => [
                 "guardian#{$row['guardian_id']}",
                 "user#{$row['user_id']}",
                 $row['can_authenticate'] ? 'YES' : 'no',
                 $row['same_user_as_keeper'] ? 'yes' : 'NO',
+                // users.disabled_at is a property of the ACCOUNT. An account that
+                // still backs live records elsewhere cannot be ended here without
+                // taking another school's access with it, so the operator sees
+                // where before, not after.
+                $row['school_exclusive']
+                    ? 'yes'
+                    : 'NO — also '.implode(', ', array_map(
+                        fn (int $id) => "school#{$id}",
+                        $row['remaining_school_ids'],
+                    )),
                 match ($row['action']) {
                     'disable' => 'DISABLE this account',
                     'refuse' => 'refuse (pass --consolidate-login to disable it)',
+                    'refuse (account is not school-exclusive)' => 'REFUSE — cannot be disabled here',
                     default => 'leave it alone',
                 },
             ], $decision['donors']),

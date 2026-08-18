@@ -1,6 +1,42 @@
-# TICKET — `GrantsConvergenceLintTest` manufactures loose git objects and is not robust to git's own auto-gc, so it goes intermittently red for reasons unrelated to the code under test
+# ~~TICKET~~ — SUPERSEDED — `GrantsConvergenceLintTest` manufactures loose git objects and is not robust to git's own auto-gc
 
-**Status:** open, not implemented. Raised from `feat/guardian-merge-command`, where the ratchet went
+> ## ⛔ SUPERSEDED — THE TITLE OF THIS TICKET NAMES A MECHANISM THAT HAS BEEN FALSIFIED
+>
+> **Read [`grants-convergence-lint-nondeterminism.md`](grants-convergence-lint-nondeterminism.md)
+> instead.** A dedicated investigation ran **86 executions of the file (3,096 arm-executions)** across
+> this branch, solo runs and `staging` in a separate clone, and recorded **zero** failures.
+>
+> **The auto-gc pruning story in this file is dead outright, not merely doubted**, and it is killed by
+> the text of the message the real failure produced. A pruned commit yields `could not resolve base
+> '…' to a commit`. The recorded failure said `RbacSeeder.php is unreadable at head 4af879e` — naming
+> a sha that **resolved**. So the fixture commit existed and its tree was empty. A pruned object
+> cannot produce that message; the evidence I offered for pruning is evidence against it.
+>
+> The loose-object threshold is also ruled out as a cause: 86 green runs at 7,294 → 7,594 loose
+> objects, with the same stray `tmp_pack_*` present throughout.
+>
+> **What was right here, and survives:** the swallowed exit statuses. `gclBlob:93` and
+> `gclCommit:112-135` discard the status of every git call and read only `->output()`. The
+> investigation **bite-proved** it — poisoning `hash-object` at 1-in-12 in an isolated clone reproduces
+> the exact failure text *and* the random-subset-per-run property (12 arms, then a different 9). That
+> is now fix item 1, and it is the thing that hid the cause rather than a tidiness suggestion.
+>
+> **What is still unknown:** the trigger. The strongest lead is machine contention — the two failing
+> runs took 1745 s and 3101 s against a 524–623 s norm, and one failure shape is a 60 s
+> `ProcessTimedOutException` on a subprocess that normally costs 0.3 s, i.e. a ~200× slowdown. Stated
+> as correlation. Not proven.
+>
+> **Kept rather than deleted, and not rewritten as though it had always said this.** Committed tickets
+> and the branch report reference this path, and this branch has twice shipped a document carrying a
+> false statement about the code. The fix for that is superseding with the history visible, not
+> overwriting the record. Everything below is the original text, wrong mechanism and all.
+>
+> **The operative instructions were right and are unchanged: do not baseline these arms, and do not
+> retry until green.**
+
+---
+
+**Status:** SUPERSEDED as to cause; operative instructions stand. Raised from `feat/guardian-merge-command`, where the ratchet went
 **red twice in a row on a branch that touches nothing in RBAC**, with a **different subset of arms
 failing each time**. Recorded rather than retried away: CLAUDE.md is explicit that a red cannot be told
 from a flake by looking at it, and retrying until green is indistinguishable from fixing. This ticket

@@ -4,16 +4,16 @@
 across a `school_id` boundary, and it is the engine slice 3's data migration will
 run against production data.
 
-**Revision 6 — `--consolidate-login` has been removed from this branch entirely.**
-Account consolidation becomes its own branch. That is the headline and the rest
-of this document is downstream of it.
+**Revision 7 — documentation only.** Revision 6 removed `--consolidate-login`
+from this branch entirely; account consolidation becomes its own branch. This
+revision commits the follow-up brief, supersedes a ticket whose mechanism has
+since been falsified, and corrects what this report says about the ratchet. **No
+code changed.**
 
-⚠️ **The ratchet is green on this run, after being red on the two before it, and
-I changed nothing that bears on it.** The file involved —
-`tests/Feature/Rbac/GrantsConvergenceLintTest.php` — is not touched by this
-branch and is being investigated as its own task. I did not retry for green, did
-not baseline, and did not run `git gc`. Read *Full suite + ratchet* before
-treating the green as meaningful.
+⚠️ **The ratchet was green on the final run after being red on the two before
+it, and I changed nothing that bears on it.** A dedicated investigation has since
+reported: **86 executions of the file, 3,096 arm-executions, zero failures**, and
+my own gc explanation falsified outright. Read *Full suite + ratchet*.
 
 ---
 
@@ -23,7 +23,8 @@ Done. `GuardianService::merge()` with **one unconditional, terminal** account
 refusal, plus `guardians:merge` and `guardians:find-duplicates`, and 28 arms in
 `tests/Feature/Guardian/GuardianMergeTest.php`. Branch
 `feat/guardian-merge-command`, cut from `staging` @ `e484a46` (`staging` and
-`main` are the same commit today — re-derived). Seven commits. Not pushed; no PR.
+`main` are the same commit today — re-derived). Eight commits, the last of them
+documentation only. Not pushed; no PR.
 
 ## Why consolidation was removed, which is not "the lead asked"
 
@@ -47,8 +48,9 @@ attacked in all five rounds and held in all five.
 That is the argument for removal rather than a sixth fix. Consolidation is a
 different feature that was wearing a flag on this one, and the flag is what kept
 putting its blast radius inside the merge's review. It needs its own branch, its
-own arms and its own review, and it now has a brief carrying all five findings as
-its specification.
+own arms and its own review, and it now has a committed brief carrying those
+findings — plus a sixth the review added after the removal — as its
+specification.
 
 ## What was removed
 
@@ -89,18 +91,43 @@ donor accounts can sign in and stops. `keeper_deliverable` is retained because t
 pre-existing `can_login` deliverability invariant still reads it when a pivot
 carrying that flag lands on the keeper; it gates nothing about accounts.
 
-## The follow-up brief
+## The follow-up brief — now committed
 
-`docs/handoff/briefs/feat-guardian-consolidate-login.md`, written for an
-implementer with none of this context and **left untracked, as instructed** — it
-is not in any commit and `docs/handoff/briefs/` was never staged. It carries what
-consolidation must do, all five findings with their mechanisms as the
-specification, both of the reviewer's probes verbatim as arms that branch must
+`docs/handoff/briefs/feat-guardian-consolidate-login.md`. Revision 6 left it
+untracked on instruction; the cold review then pointed out that two committed
+tickets and this report all dereference to a path that exists in no commit, so it
+is committed now and the references resolve on any clone.
+
+It carries what consolidation must do, **six** findings with their mechanisms as
+the specification, both of the reviewer's probes verbatim as arms that branch must
 pass, the two decisions nobody ever made (unconditional password rotation; no
 basis for choosing `--keep`, with the `0 of 28 activated` figure and the
 instruction to re-derive it), and a plain statement that **guardian rows are the
 wrong measure of an account's reach**, naming `school_user` + `model_has_roles`
 as the right one.
+
+The sixth finding was added this revision: **"can this account authenticate" is a
+snapshot of two account-global facts, and both can be cleared from outside this
+school** — another school's `enableLogin` clears `disabled_at` globally, and an
+empty password is not a lock because the reset broker resolves by email as an
+identity key. It is the branch's own rule applied to *time* rather than to rows,
+and it is a genuine fork (accept the snapshot as the contract, or widen the
+predicate to "could be made to authenticate"). It belongs to the consolidation
+branch as a specification point, not to this one as a loose end.
+
+### A convention I am introducing, said plainly rather than left ambiguous
+
+Existing briefs in this repository live at `docs/handoff/<name>-brief.md` —
+`c6-brief.md`, `slice-2-brief.md`. **This file does not follow that convention;
+it sits in a new `docs/handoff/briefs/` subdirectory**, which was created by the
+brief-writing side rather than by me, and which already holds a second slice's
+brief. I kept it there rather than renaming: moving this one file would split the
+set across two conventions, which is worse than either convention consistently.
+Somebody should pick one and migrate the rest — this note exists so that decision
+is made deliberately instead of inherited.
+
+`docs/handoff/briefs/fix-guardian-create-duplicates.md` belongs to a different
+slice. It is **not** in this commit and I have never opened it.
 
 ## Deviations
 
@@ -135,24 +162,30 @@ scoped to the full reach of the write — not to the record in front of it.**
 guardian row is not the measure of an account's access. Each of those was learned
 by shipping the opposite.
 
-## What this revision changed
+## What this revision changed (revision 7 — documentation only)
 
-Removal, described above, plus:
+- **The follow-up brief is committed**, with a sixth finding added to it.
+- **`grants-convergence-lint-test-is-self-poisoning-against-git-auto-gc.md` is
+  superseded in place** — kept at its path so committed references resolve,
+  banner-marked, pointing at the investigation, with the surviving parts
+  preserved and the original text left visible underneath rather than rewritten.
+- **`grants-convergence-lint-nondeterminism.md` is committed** — the
+  investigation's own report.
+- **This report's ratchet section is corrected** against that investigation, and
+  records that one of the contaminating conditions it observed was my own tree
+  edits during revision 6.
+- **The `docs/handoff/briefs/` convention is named** rather than left ambiguous.
+
+### And, from revision 6
 
 - the docblocks on `merge()`, `planLoginDecision` and the refusal rewritten so
   none of them describes behaviour that no longer exists — the report's own rule
-  from last round, applied to a deletion rather than an ungated write;
+  from an earlier round, applied to a deletion rather than an ungated write;
 - the surviving tickets cleaned of consolidation: the dry-run/apply ticket had its
   `--consolidate-login` paragraphs replaced with a labelled note that the feature
   is gone (**that ticket has now carried a stale sentence twice, and the note says
   so**), and the causer ticket's mention of consolidation events rewritten to
-  point at the follow-up branch that inherits it;
-- the gc ticket amended with the cold reviewer's falsification of half my own
-  diagnosis — `gc.pruneExpire` defaults to `2.weeks.ago` so a gc cannot prune
-  seconds-old fixtures, and an identically-loaded clone ran that file 36/36
-  green. The better-fitting candidate the reviewer found (`gclCommit` discards the
-  exit status of every git call but the last) is now fix shape 0. I did not act on
-  it: that file is someone else's task this round.
+  point at the follow-up branch that inherits it.
 
 ## Contradictions of the premise
 
@@ -165,7 +198,7 @@ method list re-derived after the deletion shows `applyLoginConsolidation` and
 
 ## What changed
 
-Seven commits. Re-derived at the moment of writing:
+Eight commits, the last documentation only. Re-derived at the moment of writing:
 
 | File | Size | What |
 | --- | --- | --- |
@@ -173,8 +206,8 @@ Seven commits. Re-derived at the moment of writing:
 | `app/Console/Commands/MergeGuardians.php` | **221** (was 257) | `guardians:merge --keep= --absorb=* [--apply]`. |
 | `app/Console/Commands/FindDuplicateGuardians.php` | **229** | `guardians:find-duplicates [--school=]`. |
 | `tests/Feature/Guardian/GuardianMergeTest.php` | **802** (was 1048) | **28** arms (`grep -c "^it("`), down from 36. |
-| `docs/handoff/tickets/` | **3 files** (was 8) | Five deleted with the feature; two cleaned of it; the gc ticket amended with its own falsification. |
-| `docs/handoff/briefs/feat-guardian-consolidate-login.md` | new, **untracked** | The follow-up. Deliberately not committed. |
+| `docs/handoff/tickets/` | **4 files** (was 8) | Five deleted with the feature; two cleaned of it; the gc ticket superseded in place; the nondeterminism investigation added. |
+| `docs/handoff/briefs/feat-guardian-consolidate-login.md` | new, **committed** | The follow-up, with six findings as its specification. |
 
 ## Proof
 
@@ -257,18 +290,54 @@ exactly. All 36 `GrantsConvergenceLintTest` cases ran and passed.
 | 6 | **9 arms red**, a different subset | ~3101 s |
 | 7 (this one) | **clean, all 36 green** | **479 s** |
 
-**I touched nothing between run 6 and run 7 that could bear on it.** No `git gc`,
-no baseline edit, no change to that file or to `bin/ci-grants-convergence-lint.php`.
-The only difference is that this round *deleted* code — from a file that test does
-not read — and that the machine was four to six times faster on this run (479 s
-against 3101 s), which is consistent with whatever load or contention was present
-before having gone away.
+I touched nothing between runs 6 and 7 that could bear on it — no `git gc`, no
+baseline edit, no change to that file or to `bin/ci-grants-convergence-lint.php`.
 
-So this green is evidence about the *machine*, not about the test. A green nobody
-can explain is worth exactly as much as a red nobody can explain, and I am not
-going to spend the one to buy confidence in the other. The ticket keeps its
-falsified-diagnosis section and its instruction not to baseline; the cause is
-still open and still someone else's task.
+### What a dedicated investigation has since established
+
+Reported in `docs/handoff/tickets/grants-convergence-lint-nondeterminism.md`,
+committed with this revision. It is worth reading in full; the parts that change
+what this report may claim:
+
+- **86 executions of that file — 3,096 arm-executions — across this branch, solo
+  runs, and `staging` in a separate clone: zero failures.** Against 2 red in 6
+  consecutive runs on 2026-08-17. The failure depends on a condition that was
+  present that day and is not present now.
+- **My gc-pruning mechanism is falsified outright**, and by the evidence I myself
+  cited. A pruned commit produces `could not resolve base '…' to a commit`; the
+  real failure said `RbacSeeder.php is unreadable at head 4af879e` — a sha that
+  **resolved**. The commit existed and its tree was empty. Pruning cannot produce
+  that message.
+- **The loose-object threshold is not the cause either**: 86 green runs at 7,294 →
+  7,594 loose objects with the same stray `tmp_pack_*` present throughout.
+- **The cold reviewer's alternative is correct and bite-proved.** `gclBlob:93` and
+  `gclCommit:112-135` discard the exit status of every git call; poisoning
+  `hash-object` at 1-in-12 in an isolated clone reproduces the exact failure text
+  *and* the random-subset-per-run property. That is what *hid* the cause.
+- **The strongest remaining lead is machine contention, stated as correlation.**
+  The two failing runs took 1745 s and 3101 s against a 524–623 s norm, and one
+  failure shape is a 60 s `ProcessTimedOutException` on a subprocess that normally
+  costs 0.3 s — a ~200× slowdown, which is thrash rather than CPU contention. Not
+  proven; 86 runs at load 10–15 with swap 93 % full stayed green.
+
+**And one of the contaminating conditions it observed was me.** Its runs 1–3 saw
+the suite's test count change mid-run (1705 → 1697) and `GuardianMergeTest`
+failing on `--consolidate-login option does not exist` and `Undefined array key
+"consolidating"`. Those are exactly the states this working tree passed through
+while I was performing revision 6's removal. It could not have caused *their*
+red — the four load-bearing files were untouched — but a shared working tree does
+make "two runs, different failure subsets" an expected outcome, and I was the
+other writer.
+
+So the green in run 7 remains evidence about the machine, not about the test, and
+I claim nothing from it. What has changed since revision 6 is that the *cause* is
+better bounded, not that it is known. My own ticket is superseded in place rather
+than deleted or quietly rewritten: the file keeps its path so the committed
+references still resolve, carries a ⛔ banner pointing at the investigation, and
+retains what survived — the swallowed exit statuses, and the instruction not to
+baseline and not to retry for green. **This branch has twice shipped a document
+carrying a false statement about the code; superseding with the history visible is
+the correction that does not repeat the error.**
 
 ## The watched red
 
@@ -363,13 +432,18 @@ records share one account — of which the copy currently holds **0**.
 - **The dry-run/apply arm still compares only three plan keys** — ticketed.
 - **`bin/quality` has not been run end to end**, only the individual gates.
 - **I did nothing about the `GrantsConvergenceLintTest` failures** — not a retry,
-  not a baseline, not a `git gc`. This round's run happened to come back green;
-  that is not a fix and I have not treated it as one. The only thing I changed
-  there is my own ticket, amended with the cold reviewer's falsification of half
-  my diagnosis.
-- **The follow-up brief is untracked and uncommitted**, as instructed, and
-  `docs/handoff/briefs/` was never staged. `fix-guardian-create-duplicates.md` in
-  that directory remains unread.
+  not a baseline, not a `git gc`, and no change to the test file or its exit-status
+  handling, which is a separate `fix/` branch. The final run came back green; that
+  is not a fix and I have not treated it as one. What I did do is supersede my own
+  ticket in place, visibly, once its mechanism was falsified.
+- **The follow-up brief is now committed**, one explicit path, staged and
+  verified before the commit rather than after.
+  `docs/handoff/briefs/fix-guardian-create-duplicates.md` belongs to another slice,
+  is not in any commit of mine, and remains unread.
+- **Review findings 1, 2 and 3 are left as tickets, not built** — the silent
+  `is_primary` demotion trail, the `can_authenticate` snapshot (moved into the
+  consolidation brief where it is a specification point), and the class-scoped
+  `can_login` cardinality pin whose docblock count is now false in the tree.
 - **Nothing pushed. No PR. No merge to `staging`.**
 
 ## Findings raised, not fixed
@@ -380,12 +454,12 @@ records share one account — of which the copy currently holds **0**.
   to be the work list silently contains rows that cannot be worked. One join.
   **ticket**, and the first thing I would pick up.
 - **`tests/Feature/Rbac/GrantsConvergenceLintTest.php` fails nondeterministically
-  and the cause is open.** Red twice with different subsets, green on the run
-  before and the run after, with no intervention. My gc diagnosis was half
-  falsified by the cold reviewer; the surviving candidate is that `gclCommit`
-  discards the exit status of every git call but the last. Ticketed with that as
-  fix shape 0. **fix** — a gate that passes and fails on the same tree is not a
-  gate — but it is being handled as its own task.
+  and the trigger is still unknown**, though the field is now much narrower: gc
+  pruning and the loose-object threshold are both ruled out, and the swallowed
+  exit statuses in `gclBlob`/`gclCommit` are bite-proved as the mechanism that
+  converts any transient git failure into this exact red. **fix** — a gate that
+  passes and fails on the same tree is not a gate — and it is somebody else's
+  branch. Do not baseline the arms.
 - `app/Services/GuardianService.php` — the creation-path defect that produces the
   duplicates. Slice 2. **fix**.
 - `app/Models/Guardian.php:88-94` — `applySchoolScope`'s OR branch; every query in

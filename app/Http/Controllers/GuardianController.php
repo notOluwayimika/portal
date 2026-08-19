@@ -157,7 +157,12 @@ class GuardianController extends Controller
         // raises there, which is right for a write and wrong for a warning.
         $candidates = $matcher->candidatesInSchool($email, $phone, $whatsapp, $schoolId);
 
-        $guardians = collect([$candidates['by_email'], $candidates['by_phone']])
+        // by_phone is a COLLECTION now, and every candidate is listed. When a number
+        // is shared by several guardians the write refuses rather than picking, so
+        // this banner is the only place the operator can see who the refusal is
+        // between — listing one of them would make the refusal unactionable.
+        $guardians = collect([$candidates['by_email']])
+            ->merge($candidates['by_phone'])
             ->filter()
             ->unique('id')
             ->values()
@@ -334,8 +339,10 @@ class GuardianController extends Controller
                     ]);
                 }
 
-                // AN ALREADY-LINKED CHILD IS LEFT ALONE, and this is the guard the
-                // reuse backstop needed and did not get.
+                // AN ALREADY-LINKED CHILD IS LEFT ALONE. The guard itself now lives in
+                // GuardianService::attachUnlessAlreadyLinked, because `attach` below
+                // needs the identical rule and carried the defect for a round while
+                // this copy sat inline here.
                 //
                 // Before reuse existed, `store` always minted a fresh Guardian, so a
                 // pre-existing pivot on this path was STRUCTURALLY UNREACHABLE and
@@ -354,18 +361,7 @@ class GuardianController extends Controller
                 // change a record the operator was never shown, and there is a
                 // permissioned, audited path (updatePivot) that exists for exactly
                 // this. A downgrade nobody asked for is worse than a refusal.
-                $linkExists = DB::table('guardian_student')
-                    ->where('guardian_id', $result['guardian']->id)
-                    ->where('student_id', $student->id)
-                    ->exists();
-
-                if ($linkExists) {
-                    $alreadyLinked[] = $link['admission_number'];
-
-                    continue;
-                }
-
-                $this->guardianService->attachToStudent(
+                $attached = $this->guardianService->attachUnlessAlreadyLinked(
                     guardian: $result['guardian'],
                     student: $student,
                     // No `?? 'other'` fallback: relationship is a required, enum-checked
@@ -375,6 +371,10 @@ class GuardianController extends Controller
                     isPrimary: (bool) ($link['is_primary'] ?? false),
                     canLogin: $canLogin,
                 );
+
+                if (! $attached) {
+                    $alreadyLinked[] = $link['admission_number'];
+                }
             }
 
             return $result;
@@ -491,7 +491,20 @@ class GuardianController extends Controller
             }
         }
 
-        $this->guardianService->attachToStudent(
+        // THE SAME RULE AS `store`, AND IT WAS MISSING HERE FOR A ROUND. This screen
+        // reuses a guardian exactly as `store` does — `createGuardianWithUser` returns
+        // an existing row on mode=new, and `resolveExistingGuardianForAttachment`
+        // returns one by definition on mode=existing — and then rewrote an existing
+        // link from this form's defaults: portal login unticked meant a silent
+        // revocation, ticked meant a password rotation and an email. The banner this
+        // very modal renders (`guardian-duplicate-banner.tsx`, via `GuardianRow`)
+        // promises "any child already linked to them is left exactly as it is", so the
+        // operator was proceeding on a false statement.
+        //
+        // Applied to BOTH modes deliberately. mode=existing means "attach this person
+        // to this child", not "edit the link you already have with this child"; POST
+        // adds, and `updatePivot` (PUT) is where a link is changed.
+        $attached = $this->guardianService->attachUnlessAlreadyLinked(
             guardian: $guardian,
             student: $student,
             relationship: $data['relationship'],
@@ -499,7 +512,12 @@ class GuardianController extends Controller
             canLogin: (bool) $data['can_login'],
         );
 
-        return Response::created('Guardian attached to student successfully.');
+        return Response::created([
+            'message' => $attached
+                ? 'Guardian attached to student successfully.'
+                : 'This guardian is already linked to this student. Nothing was changed — open their record to edit the link.',
+            'already_linked' => ! $attached,
+        ]);
     }
 
     /**

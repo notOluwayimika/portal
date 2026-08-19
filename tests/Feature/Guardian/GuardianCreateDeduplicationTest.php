@@ -559,6 +559,182 @@ it('writes an activity record when a pivot update does change something', functi
 });
 
 // ---------------------------------------------------------------------------
+// Arm 5h — THE SAME RULE ON THE OTHER SCREEN. `attach`, not `store`.
+//
+// The already-linked guard shipped in `store` and not in `attach`, so the per-child
+// Add Guardian modal kept the whole defect for a round — on the screen whose own
+// banner promises it cannot happen. The guard is now one method
+// (GuardianService::attachUnlessAlreadyLinked) and both call sites use it; these arms
+// are what stops the two drifting apart again.
+// ---------------------------------------------------------------------------
+
+it('leaves an already-linked student untouched when the SAME link is re-submitted through attach', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'attach.parent@example.test']);
+    $guardian = Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $user->id,
+        'first_name' => 'Attach', 'last_name' => 'Parent', 'phone' => '+2348055550001', 'status' => 'active',
+    ]);
+    $student->guardians()->attach($guardian->id, [
+        'relationship' => 'father', 'is_primary' => true, 'can_login' => true,
+    ]);
+    $passwordBefore = $user->fresh()->password;
+
+    Notification::fake();
+
+    // Same person, same child, through the per-child modal, with every default that
+    // would downgrade the link: login unticked, a different relationship, not primary.
+    $this->actingAs($admin)
+        ->postJson("/api/students/{$student->uuid}/guardians", [
+            'mode' => 'new',
+            'relationship' => 'other',
+            'is_primary' => false,
+            'can_login' => false,
+            'first_name' => 'Attach',
+            'last_name' => 'Parent',
+            'phone' => '08055550001',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('already_linked', true);
+
+    $after = DB::table('guardian_student')
+        ->where('guardian_id', $guardian->id)->where('student_id', $student->id)->first();
+
+    expect((bool) $after->can_login)->toBeTrue()
+        ->and($after->relationship)->toBe('father')
+        ->and((bool) $after->is_primary)->toBeTrue()
+        ->and($user->fresh()->password)->toBe($passwordBefore)
+        ->and(DB::table('guardian_student')->count())->toBe(1);
+
+    Notification::assertNothingSent();
+});
+
+it('still attaches through attach when the link does not yet exist', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $sibling = Student::factory()->create(['school_id' => $school->id]);
+
+    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'attach.new@example.test']);
+    $guardian = Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $user->id,
+        'first_name' => 'Attach', 'last_name' => 'New', 'phone' => '+2348055550002', 'status' => 'active',
+    ]);
+    $student->guardians()->attach($guardian->id, ['relationship' => 'mother', 'is_primary' => true, 'can_login' => false]);
+
+    // The SIBLING is a link that does not exist yet — the guard must not block it.
+    $this->actingAs($admin)
+        ->postJson("/api/students/{$sibling->uuid}/guardians", [
+            'mode' => 'new',
+            'relationship' => 'mother',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'Attach',
+            'last_name' => 'New',
+            'phone' => '08055550002',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('already_linked', false);
+
+    expect(DB::table('guardian_student')->where('guardian_id', $guardian->id)->count())->toBe(2)
+        ->and(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// Arm 5i/5j — AN AMBIGUOUS PHONE IS REFUSED, A SINGLE ONE IS REUSED.
+//
+// `email` is required only when portal login is on, so a phone-only submission is the
+// ORDINARY one. The phone branch used to be an unordered `->first()`, so when several
+// guardians in a school shared a number the reuse picked an arbitrary row and then
+// discarded the typed name — 14 (school, phone) groups on the production copy already
+// hold more than one row. A create form does not resolve ambiguity on the operator's
+// behalf; it refuses and shows them the candidates.
+// ---------------------------------------------------------------------------
+
+it('refuses to guess when several guardians in the school share the submitted phone', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    foreach (['Chidi' => 'chidi@example.test', 'Ngozi' => 'ngozi@example.test'] as $first => $email) {
+        $u = User::factory()->create(['school_id' => $school->id, 'email' => $email]);
+        Guardian::withoutGlobalScopes()->create([
+            'school_id' => $school->id, 'user_id' => $u->id,
+            'first_name' => $first, 'last_name' => 'Household', 'phone' => '+2348066660001', 'status' => 'active',
+        ]);
+    }
+
+    $before = Guardian::withoutGlobalScopes()->count();
+
+    // A third person, no email (the ordinary submission), same household number.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Amaka', 'last_name' => 'Household', 'phone' => '08066660001',
+        ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['phone']);
+
+    // Refused, not resolved: no arbitrary reuse and no new row either.
+    expect(Guardian::withoutGlobalScopes()->count())->toBe($before);
+
+    // …and the banner CAN name the candidates, which is what makes the refusal
+    // actionable rather than a dead end.
+    $candidates = $this->actingAs($admin)
+        ->getJson('/api/guardians/duplicate-check?phone=08066660001')
+        ->assertOk()
+        ->json('data.guardians');
+
+    expect($candidates)->toHaveCount(2);
+});
+
+it('reuses without ceremony when exactly one guardian in the school has the phone', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    $this->actingAs($admin)->postJson('/api/guardians', dedupePayload(['phone' => '08066660009']))->assertCreated();
+
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'phone' => '08066660009',
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'mother', 'is_primary' => true],
+            ],
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('reused_existing_guardian', true);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(1);
+});
+
+it('lets a submitted email disambiguate a shared phone instead of refusing', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    foreach (['Chidi' => 'chidi.d@example.test', 'Ngozi' => 'ngozi.d@example.test'] as $first => $email) {
+        $u = User::factory()->create(['school_id' => $school->id, 'email' => $email]);
+        Guardian::withoutGlobalScopes()->create([
+            'school_id' => $school->id, 'user_id' => $u->id,
+            'first_name' => $first, 'last_name' => 'Shared', 'phone' => '+2348066660002', 'status' => 'active',
+        ]);
+    }
+
+    // The email names one of the two candidates — the operator supplied the evidence
+    // that singles a row out, so refusing would be refusing to read what they typed.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Ngozi', 'last_name' => 'Shared',
+            'phone' => '08066660002', 'email' => 'ngozi.d@example.test',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('reused_existing_guardian', true);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(2);
+});
+
+// ---------------------------------------------------------------------------
 // Arm 6 — duplicate-check, including isolation asserted BY ID.
 // ---------------------------------------------------------------------------
 

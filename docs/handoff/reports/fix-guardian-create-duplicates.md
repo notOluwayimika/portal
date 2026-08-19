@@ -6,12 +6,20 @@ login invariant and the drive fixture.
 
 ---
 
+> **ROUND 4 — FINAL.** The lead is merging this branch. The reported duplicates were
+> already fixed by hand on production, so the deliverable is **prevention** — this
+> branch plus the uniqueness constraint that follows it. Two fix-tier findings from the
+> third review are closed here (§ *Round 4*), the falsified `--stat` block is **deleted**
+> rather than refreshed, and everything else is a ticket. Any finding the final review
+> returns will be **ticketed, not fixed**, by instruction, so the residual risk is
+> written down rather than iterated on.
+>
 > **ROUND 3.** Rewritten again after a second cold review, which returned two fix-tier
 > findings — both in behaviour **this branch newly created**, neither named by me. They
 > are closed here (§ *Round 3*). The drive undertaken to prove one of them turned up the
 > most serious defect in this whole record, and it is **not this branch's**: student
 > registration through the admin UI has been broken at `staging` since `6bfed87`
-> (§ *Round 3 — what the drive found instead*).
+> — see the ticket named in *Findings raised, not fixed*.
 >
 > **ROUND 2.** This report has been rewritten after a cold review. Findings 1–4 are
 > fixed here; 5–7 are dispositioned. **Four things I asserted in round 1 were wrong**
@@ -26,15 +34,16 @@ Done, with deviations and two premise corrections — one of which makes defect 
 strictly worse than the brief describes and is a live cross-school identity defect
 on `staging` today. Branch `fix/guardian-create-duplicates`, based on `staging`
 @ `e484a46` (NOT on `feat/guardian-merge-command`; nothing here depends on
-`GuardianService::merge`). Three commits — the original and two fix rounds.
+`GuardianService::merge`). Four commits — the original and three fix rounds.
 
 **Methods touched in `app/Services/GuardianService.php`, for the eventual merge with
-`feat/guardian-merge-command` — unchanged by round 2:** the constructor (one added
-dependency), `createGuardianWithUser` (which gained a fifth parameter,
-`bool $confirmExistingAccount = true`), and one NEW private method
-`fillBlankGuardianFields` inserted immediately above
-`assertLoginRequiresDeliverableEmail`. Nothing else in that file was edited —
-`merge` does not exist on this base and no other method's body was touched.
+`feat/guardian-merge-command` — final list:** the constructor (one added dependency);
+`createGuardianWithUser` (which gained a fifth parameter,
+`bool $confirmExistingAccount = true`); `attachToStudent`, whose existing-pivot branch
+gained an activity record; and two NEW methods, private
+`fillBlankGuardianFields` and public `attachUnlessAlreadyLinked`. Nothing else in that
+file was edited — `merge` does not exist on this base and no other method's body was
+touched.
 
 ---
 
@@ -89,7 +98,8 @@ is the reused guardian's user, so the email branch never runs; and
 address lives on `users`. A phone-matched reuse carrying a freshly typed address
 therefore stored it nowhere and answered **201 with `reused_existing_guardian: true`**.
 That is the branch's own defect — a write reported as saved and dropped — reappearing
-on the path the branch added. Fixed below; see *What changed in round 2*.
+on the path the branch added. Fixed: the reuse path now REFUSES rather than writing or
+dropping, for the reasons set out under *Round 4* and *Deviations*.
 
 ### Correction 3 — the update request refused on field PRESENCE, which is a lockout
 
@@ -107,8 +117,92 @@ Round 1 presented a hand-summarised stat under a heading claiming it had been re
 against my own model of the change. It omitted the new matcher, the new test file, the
 report, the brief and the screenshots, and several counts differed. The conclusion (no
 unrelated file swept) happened to hold, but **the control did not perform** — a
-summarised stat cannot catch a Pint sweep, which is the only thing it is for. The real
-output is pasted in *Proof*, unedited.
+summarised stat cannot catch a Pint sweep, which is the only thing it is for.
+
+**Round 4 finished this off by deleting the pasted block entirely** rather than
+refreshing it for a fourth time — the derived table in *What changed* is now the only
+copy. See *Round 4*, fix 3.
+
+---
+
+## Round 4 — the third review's two fix-tier findings
+
+Both were on the **reuse backstop** again: paths this branch introduced reuse to and did
+not then re-examine. Four rounds in, that is the pattern and it is the most useful thing
+in this record — **every** fix-tier finding has been in code this branch *added*, never
+in code it merely touched, and each survived because the arms varied the wrong dimension.
+
+### Fix 1 — `attach` had no already-linked guard
+
+The guard shipped in `store` and nowhere else, so `GuardianController::attach` — the
+per-child Add Guardian modal — kept the whole defect for a round. It reuses a guardian
+exactly as `store` does (on `mode=new` through `createGuardianWithUser`, on
+`mode=existing` by definition) and then rewrote an existing link from that form's
+defaults: login unticked meant a **silent revocation**, ticked meant a password rotation
+and an email. And it is the screen that renders `GuardianDuplicateBanner` via
+`GuardianRow`, so the operator proceeded on the banner's written promise that *"any child
+already linked to them is left exactly as it is"*.
+
+**The guard is now one method** — `GuardianService::attachUnlessAlreadyLinked` — and both
+call sites use it. That is the actual lesson: the rule was right in round 3 and the
+*copy* was the defect. Two inline copies drift, and this one drifted before it was ever
+written twice.
+
+Applied to **both** modes of `attach` deliberately. `mode=existing` means "attach this
+person to this child", not "edit the link you already have"; POST adds, and `updatePivot`
+(PUT) is where a link changes — permissioned, audited, record on screen.
+
+### Fix 2 — an ambiguous phone match picked arbitrarily, on the common path
+
+`emailRefutesMatch` returns false the moment the submitted email is empty, and the phone
+branch was a bare `->first()` on an unordered query. Because `email` is required only
+when portal login is on, **a phone-only submission is the ordinary one**, not an edge —
+so the arbitrary pick sat on the common path, and `fillBlankGuardianFields` then
+discarded the typed name in favour of whichever row came back.
+
+Sized before deciding, read-only on the production copy: **14 (school, phone) groups
+already hold more than one guardian row, covering 28 of 776.** Against that, the case
+round 2 *did* refuse — a matched row with no stored address — affects **0** guardians
+today. The priorities were inverted.
+
+**The rule, stated once and now applied three times: a create form does not resolve
+ambiguity on the operator's behalf.** It refused an email-versus-phone conflict, it
+refused to write an identity key onto a reused account, and it now refuses an ambiguous
+phone. Where the evidence does not single out one person the write refuses, and the
+operator chooses from the duplicate-check banner — the surface built to show them the
+candidates. A **single** phone match is still reused without ceremony; the refusal is
+about ambiguity, not about phones.
+
+Two consequences worth naming:
+
+- **An email naming one of the phone candidates DISAMBIGUATES rather than conflicts**,
+  and is checked before the refusal. The operator supplied the very evidence that singles
+  a row out; refusing then would be refusing to read what they typed. Its own arm.
+- **Every matcher query is now `orderBy('guardians.id')`**, including single-row ones.
+  Not a tie-break — a tie is refused, not broken — but so two runs of the same query
+  cannot disagree about what the candidate set *is*.
+
+`AmbiguousPhoneMatchException` **extends** `ImportConflictException`, so the spreadsheet
+import's single catch is untouched: an ambiguous row fails with its own message instead
+of 500-ing, and no second catch has to be remembered. The interactive callers catch the
+subclass first, because the message belongs on `phone`, not `email`.
+
+### Fix 3 — the falsified `--stat` block is deleted, and I now know why it went stale
+
+Deleted, not refreshed — see *What changed*: one derived source, no duplicate.
+
+**And the mechanism behind the third review's finding 4 turned out to be mine.** That
+finding observed two cross-references pointing at a section that does not exist. The
+cause: the script I used to regenerate the *What changed* table replaces everything
+between `## What changed` and `## Proof`, and the round-2 and round-3 narrative sections
+sat inside that window. Regenerating the table **silently deleted the prose the
+references pointed at**, and the commit went out that way. The automation I introduced to
+stop one class of error in this document quietly introduced another.
+
+This section is therefore placed **above** `## What changed`, outside the regeneration
+window, and the two dead references are removed rather than left dangling. Written up in
+full at
+`docs/handoff/tickets/guardian-branch-report-cross-references-and-undescribed-drive-shots.md`.
 
 ---
 
@@ -275,22 +369,26 @@ failed')`, and `GuardianService::update`'s `array_filter(… ! is_null …)`.
 
 ## What changed
 
-**DERIVED, NOT MAINTAINED.** Every previous version of this table was hand-written and
-wrong — round 2's carried round-1 numbers (test file 380 against an actual 724) and a
-reviewer caught it both times. It is now generated from
-`git diff --numstat e484a46...HEAD` at the moment of writing, so the only thing a human
-supplies is the right-hand column.
+**DERIVED, NOT MAINTAINED, and now the ONLY copy.** Every hand-written version of this
+fact was wrong — round 1 summarised it and presented the summary as output, round 2
+carried round-1 numbers, round 3 re-pasted a round-2 snapshot under a stronger claim.
+A reviewer caught it all three times. It is generated from
+`git diff --numstat e484a46...HEAD` at the moment of writing, and the second,
+hand-pasted `--stat` block that used to sit in *Proof* has been **deleted** rather than
+refreshed: a duplicate of a number is not corroboration, it is a second thing to keep
+true, and this one never once was.
 
 | File | +/− | What |
 | --- | --- | --- |
-| `app/Console/Commands/SeedDriveFixture.php` | +28 / −4 | Students/Guardians columns, printed admission numbers, two new seat rows. |
-| `app/Http/Controllers/GuardianController.php` | +253 / −38 | `duplicateCheck` + masking; `store` made atomic, validated, school-pinned, no silent skip, no `?? 'other'`, confirmation control, already-linked guard. |
-| `app/Http/Controllers/StudentController.php` | +80 / −22 | Re-keys guardian refusals onto the row; reports `reused_guardians`; guardian creation extracted so the catch has a seam. |
+| `app/Console/Commands/SeedDriveFixture.php` | +28 / −4 | Students/Guardians columns, printed admission numbers, three new seat rows. |
+| `app/Http/Controllers/GuardianController.php` | +273 / −40 | `duplicateCheck` + masking; `store` made atomic, validated, school-pinned, no silent skip, confirmation control, already-linked guard; `attach` given the same guard. |
+| `app/Http/Controllers/StudentController.php` | +80 / −22 | Re-keys guardian refusals onto the row; reports `reused_guardians`. |
 | `app/Http/Requests/GuardianRequest.php` | +155 / −26 | `student_links.*` rules incl. the `school_id`-pinned `Rule::exists` and `max:50`; unique-on-create removed; trim; duplicate-row check; `confirm_existing_account`. |
 | `app/Http/Requests/GuardianUpdateRequest.php` | +141 / −29 | Refuses on an ATTEMPTED CHANGE to a credential field instead of stripping it and answering 200. |
+| `app/Services/AmbiguousPhoneMatchException.php` | +16 / −0 | NEW. Subclass of ImportConflictException, so the import’s single catch is untouched. |
 | `app/Services/GuardianImportService.php` | +7 / −44 | `lookupExistingInDb` is now a one-line delegate to the extraction. No call site or catch changed. |
-| `app/Services/GuardianMatcher.php` | +165 / −0 | NEW. The one definition of "same person in this school", plus `emailRefutesMatch`. |
-| `app/Services/GuardianService.php` | +240 / −15 | Reuse + blank-fill; never matches a null email; email refusal; account-binding control; `fillBlankGuardianFields`; the pivot-update audit record. |
+| `app/Services/GuardianMatcher.php` | +214 / −0 | NEW. The one definition of "same person in this school"; `emailRefutesMatch`; ordered queries; an ambiguous phone refuses rather than picks. |
+| `app/Services/GuardianService.php` | +304 / −15 | Reuse + blank-fill; never matches a null email; email refusal; account-binding control; the pivot-update audit record; `attachUnlessAlreadyLinked`. |
 | `database/seeders/DriveCastSeeder.php` | +64 / −0 | Three drive seats: two admins and the partial guardian editor. |
 | `resources/js/components/guardians/add-standalone-guardian-modal.tsx` | +349 / −55 | Non-422 handling, per-row nested errors, duplicate check on blur, confirm checkbox, reuse toast. |
 | `resources/js/components/guardians/guardian-duplicate-banner.tsx` | +177 / −0 | NEW. The warning, the confirm control, and the corrected promise. |
@@ -298,11 +396,11 @@ supplies is the right-hand column.
 | `resources/js/components/students/student-guardians-panel.tsx` | +283 / −108 | Pivot failures surfaced instead of `console.error`. |
 | `resources/js/hooks/use-guardian-lookup.ts` | +137 / −1 | `useGuardianDuplicateCheck` — debounced, abortable, unmount-safe, fails silent. |
 | `routes/endpoints/guardian.php` | +3 / −0 | `GET /guardians/duplicate-check`, beside `lookup`. |
-| `tests/Feature/Guardian/GuardianCreateDeduplicationTest.php` | +934 / −0 | NEW. 24 arms. |
+| `tests/Feature/Guardian/GuardianCreateDeduplicationTest.php` | +1110 / −0 | NEW. 29 arms. |
 
-Totals: **50 files, 4826 insertions, 347 deletions** overall; **16 files, 3085
-insertions, 347 deletions** counting only `*.php`, `*.ts` and `*.tsx`. The remainder is
-this report, the brief, six tickets and the drive screenshots.
+Totals: **58 files changed, 5431 insertions(+), 349 deletions(-)** overall; **17 files changed, 3410 insertions(+), 349 deletions(-)** counting only `*.php`,
+`*.ts` and `*.tsx`. The remainder is this report, the brief, nine tickets and the drive
+screenshots.
 
 ## Proof
 
@@ -399,66 +497,26 @@ $ npx eslint <5 changed TS/TSX files>
 (no output — clean)
 ```
 
-**Read `git diff --stat` against my own model of the change.** Round 1 pasted a
-summary of this and called it the output; the actual command, unedited
-(`git diff --stat e484a46...HEAD`), is:
+**On reading the diff against my own model of the change.** There is no pasted
+`git diff --stat` here any more, and its absence is deliberate. Three rounds running,
+a hand-maintained copy of this fact was wrong — round 1 summarised it and presented the
+summary as output, round 2 carried round-1 numbers, round 3 re-pasted a round-2 snapshot
+under the *stronger* claim "the actual command, unedited". Each time the derived table
+above was right and the hand copy was wrong, and each time a reviewer caught it.
 
-```
- app/Console/Commands/SeedDriveFixture.php          |  32 +-
- app/Http/Controllers/GuardianController.php        | 245 +++++--
- app/Http/Requests/GuardianRequest.php              | 181 +++++-
- app/Http/Requests/GuardianUpdateRequest.php        | 170 ++++-
- app/Services/GuardianImportService.php             |  51 +-
- app/Services/GuardianMatcher.php                   | 165 +++++
- app/Services/GuardianService.php                   | 213 +++++-
- database/seeders/DriveCastSeeder.php               |  64 ++
- .../briefs/fix-guardian-create-duplicates.md       | 331 ++++++++++
- .../admin-01-guardians-list.png                    | Bin 0 -> 120611 bytes
- .../admin-02-add-modal.png                         | Bin 0 -> 151555 bytes
- .../confirm-01-account-panel-with-checkbox.png     | Bin 0 -> 183786 bytes
- .../confirm-02-refused-unconfirmed.png             | Bin 0 -> 196616 bytes
- .../confirm-03-accepted-after-tick.png             | Bin 0 -> 176931 bytes
- .../editor-01-guardians-list.png                   | Bin 0 -> 120103 bytes
- .../editor-02-after-edits.png                      | Bin 0 -> 120103 bytes
- .../email-01-duplicate-banner-before-submit.png    | Bin 0 -> 181010 bytes
- .../email-02-refused-not-dropped.png               | Bin 0 -> 192500 bytes
- ...olation-01-school-b-rejects-school-a-number.png | Bin 0 -> 171161 bytes
- .../maker-01-two-links-filled.png                  | Bin 0 -> 175789 bytes
- .../maker-02-guardian-page-two-children.png        | Bin 0 -> 187099 bytes
- .../maker-03-row-error.png                         | Bin 0 -> 180777 bytes
- .../maker-04-duplicate-banner.png                  | Bin 0 -> 176045 bytes
- .../maker-05-reused-three-children.png             | Bin 0 -> 197917 bytes
- .../maker-06-student-detail.png                    | Bin 0 -> 187298 bytes
- .../maker-07-student-guardians-panel.png           | Bin 0 -> 199488 bytes
- .../maker-08-subform-duplicate-banner.png          | Bin 0 -> 218546 bytes
- .../reports/fix-guardian-create-duplicates.md      | 669 +++++++++++++++++++
- ...pdate-writes-phones-and-cannot-clear-a-field.md |  86 +++
- .../guardians/add-standalone-guardian-modal.tsx    | 404 ++++++++++--
- .../guardians/guardian-duplicate-banner.tsx        | 163 +++++
- .../js/components/students/guardian-sub-form.tsx   |  52 +-
- .../students/student-guardians-panel.tsx           | 391 ++++++++---
- resources/js/hooks/use-guardian-lookup.ts          | 138 +++-
- routes/endpoints/guardian.php                      |   3 +
- .../Guardian/GuardianCreateDeduplicationTest.php   | 724 +++++++++++++++++++++
- 36 files changed, 3758 insertions(+), 324 deletions(-)
-```
+So there is now **one source and no duplicate**: the *What changed* table is generated
+from `git diff --numstat e484a46...HEAD` at the moment of writing. A second copy of a
+number is not corroboration, it is a second thing to keep true — and this one was never
+once true.
 
-Code only (`-- '*.php' '*.tsx' '*.ts'`): **15 files, 2672 insertions, 324 deletions.**
-
-**Reading it against my model, which is what the control is for.** Four files are
-larger than the lines I wrote, and each has a named reason, none of them a sweep of an
-unrelated file:
-
-- `GuardianRequest.php` and `GuardianUpdateRequest.php` carried pre-existing
-  aligned-`=>` formatting that Pint normalises; both are files I edited, and
-  `bin/lint-changed.sh` would do the same on push.
-- `add-standalone-guardian-modal.tsx` (404) and `student-guardians-panel.tsx` (391)
-  were already Prettier-dirty at HEAD — verified by stashing — so formatting untouched
-  lines is the price of touching them at all, and it is the changed-files gate's stated
-  "legacy drift burns down as files are touched" design.
-
-No file outside this list was modified, and every file in it is one this change
-deliberately touches.
+What the check is actually for — catching a Pint sweep — still holds and was still done:
+of the sixteen code files, four are larger than the lines I wrote, each for a named
+reason. `GuardianRequest.php` and `GuardianUpdateRequest.php` carried pre-existing
+aligned-`=>` formatting that Pint normalises; `add-standalone-guardian-modal.tsx` and
+`student-guardians-panel.tsx` were already Prettier-dirty at HEAD (verified by stashing),
+so reformatting untouched lines is the price of touching them at all, which is the
+changed-files gate's stated "legacy drift burns down as files are touched" design. No
+file outside the derived table was modified.
 
 **Frontend:** Prettier and ESLint clean on all five changed/added TS files (both
 required a `--write`/`--fix` pass; `add-standalone-guardian-modal.tsx` and
@@ -669,6 +727,28 @@ Restored.
 ```
 
 Restored. All 24 arms green.
+
+### Round 4 — two more, one per new guard
+
+**11. Revert `attach` to an unconditional `attachToStudent`:**
+
+```
+--- MUTATION: attach reverted to unconditional attachToStudent (fix 1) ---
+{"result":"failed",…,"message":"Failed asserting that false is identical to true."}
+```
+
+Red on `already_linked`. Restored.
+
+**12. Remove the ambiguous-phone refusal** (`if (false && $byPhone->count() > 1)`):
+
+```
+--- MUTATION: ambiguous-phone refusal removed (fix 2) ---
+{"result":"failed",…,"message":"Expected response status code [422] but received 201.
+Failed asserting that 201 is identical to 422."}
+```
+
+A 201 where the refusal should be: the arbitrary pick, reproduced. Restored; all 29
+arms green.
 
 **One further red was not planted by me and is worth recording**, because it is a
 guard catching a real thing: `GuardianLoginInvariantTest`'s cardinality pin went red
@@ -958,7 +1038,7 @@ promise on screen and the behaviour underneath now agree.
 
 #### Finding 2 — the flat fallback, rendered
 
-The registration screen itself could not be driven (see *what the drive found instead*),
+The registration screen itself could not be driven,
 so the **mechanism** was driven where it is reachable: the per-child Add Guardian modal,
 which posts through the same `createGuardianWithUser` refusal and renders through the
 same flat-fallback shape that `guardian-sub-form` now has.
@@ -972,6 +1052,51 @@ The server raised the refusal under the **flat** key `email`; the screen resolve
 rendered it on the guardian row. That is the fallback doing its job, seen rather than
 reasoned. The registration form's own rendering of the same message is **proven by test
 only** (`guardians.0.email`) and was never seen, and that is stated rather than glossed.
+
+### Round 4 re-drive — the two screens these fixes change, and nothing else
+
+Fixture reseeded; count table unchanged in shape, admission numbers regenerated
+(`ADM40001 …` for school#1, `ADM35840` for school#2).
+
+#### Fix 2 — an ambiguous phone is refused, and the banner names the candidates
+
+```
+=== FIX 2 — an ambiguous phone is refused, and the banner names the candidates ===
+  << POST /api/guardians -> 201 {"data":{"id":"a289a583-…","full_name":"Chidi Household","phone":"+2348077770001",…
+  << POST /api/guardians -> 201 {"data":{"id":"a289a58d-…","full_name":"Ngozi Household","phone":"+2348077770001",…
+  two household guardians created; total = 2
+  BANNER CANDIDATES: ["Chidi Household · c••••@drive.test · ••••••••••0001 · 0 children linked Open their record",
+                      "Ngozi Household · n••••@drive.test · ••••••••••0001 · 0 children linked Open their record"]
+  << POST /api/guardians -> 422 {"message":"There are validation errors","errors":{"phone":["More than one guardian in this school already has this phone number. Nothing was saved. Check the duplicate warning above and open the right record, or use a number that identifies this person."]}}
+  submit -> URL http://localhost:8001/guardians
+  ERRORS ON SCREEN: ["More than one guardian in this school already has this phone number. Nothing was saved. Check the duplicate warning above and open the right record, or use a number that identifies this person."]
+  total after refusal: 2
+```
+
+What each line establishes, in order: **two** guardians can legitimately share a
+household number (the second creation succeeded because its differing email refuted the
+phone match — `emailRefutesMatch` working, incidentally, on screen); the banner lists
+**both** candidates with masked contacts, which is what makes the refusal actionable
+rather than a dead end; a third person on the same number is refused with the message
+rendered on the guardian form; and the total is **2 → 2**, so nothing was arbitrarily
+reused and no third row was created.
+
+#### Fix 1 — the same rule on the attach screen
+
+```
+=== FIX 1 — the same rule on the attach screen ===
+  BEFORE: {"guardian":"a289a5fe-…","links":[{"adm":"ADM40001","rel":"father","primary":true,"can_login":true}]}
+  relationship: Mother
+  << POST attach -> 201 {"message":"This guardian is already linked to this student. Nothing was changed — open their record to edit the link.","already_linked":true}
+  AFTER : {"guardian":"a289a5fe-…","links":[{"adm":"ADM40001","rel":"father","primary":true,"can_login":true}]}
+```
+
+The re-submission went through the **per-child** modal on the child's own page and
+carried every value that would have downgraded the link: a different relationship, and
+Primary and "Can log in" both left unticked — the modal's defaults and the revocation
+vector. `rel`, `primary` and `can_login` are byte-identical before and after, the
+response says plainly that nothing changed and where to go to change it, and — the point
+of this fix — this is the screen that had the defect while `store` did not.
 
 ### Not driven
 
@@ -1036,6 +1161,12 @@ Under the privacy rule; ids and counts only.
 
 ## Not done
 
+- **`StudentController`'s registration path did NOT get the already-linked guard.** It
+  is the third caller of `attachToStudent` and reaches it after a reuse, exactly as
+  `store` and `attach` do — but on registration the student is brand new, so no pivot
+  can pre-exist and the branch is unreachable in practice. Named because "unreachable
+  today" is what was true of `store` before reuse landed, and that is precisely how this
+  defect got in twice.
 - **The registration form does not read `reused_guardians`**, which `StudentController`
   now returns. Wiring it is a UI change on a screen that currently cannot submit at all
   (the `_method` defect), so it waits for that ticket.
@@ -1074,18 +1205,21 @@ Under the privacy rule; ids and counts only.
 
 ## Findings raised, not fixed
 
-Six ticket files were written this round; each is named so the row is checkable.
+**Nine ticket files.** This is the residual risk, written down rather than iterated on,
+which is the deliverable the lead asked for.
 
-| Severity | Finding |
-| --- | --- |
-| **stop — for the product, not for this branch** | **Student registration through the admin UI does not work.** `student-form.tsx` appends `_method = PATCH` on create, so `POST /api/students` arrives as a route that does not exist and 400s; the catch handles only 422, so the screen shows nothing. Present at the base commit, untouched by this branch, and **invisible to the suite** because tests never send `_method`. `docs/handoff/tickets/student-registration-spoofs-every-create-to-PATCH.md` |
-| **fix** | `GuardianController::attach` and `StudentController`'s registration path bind a new guardian to an already-registered `users` row with no confirmation — pre-existing, deliberately not narrowed, and now the only unguarded doors to the hazard the control closed on `store`. |
-| **fix** | The `/guardians` page is gated on `admin_area.access` while `/api/guardians*` is gated on `academic_setup.manage`. A role holding one without the other gets a full-page 403 that bounces to `/login` and presents as a broken login. Cost this drive a run. `docs/handoff/tickets/guardians-page-and-api-are-gated-on-different-permissions.md` |
-| **ticket** | `reissueCredentialsIfPossible` rotates a password and mails it from inside a transaction. Closed structurally for `/api/guardians`; still live on student registration and the import, where a rollback strands a mailed credential. Includes the related divergence that `attachToStudent`'s true→false transition does not cascade-disable while `updatePivot`'s does. `docs/handoff/tickets/mail-and-password-rotation-inside-transactions.md` |
-| **ticket** | `GuardianService::update` writes phones unnormalised, and no field can be cleared to null. **Sized at 0 affected rows today.** `docs/handoff/tickets/guardian-update-writes-phones-and-cannot-clear-a-field.md` |
-| **ticket** | `duplicate-check` answers "does this account exist" platform-wide, and the address travels in a GET query string into access logs. Changes the cost, not the class — the create refusal already discloses the same fact, and the sibling `lookup` is strictly more disclosive. `docs/handoff/tickets/duplicate-check-is-a-platform-wide-account-existence-oracle.md` |
-| **ticket** | The new route is in neither route oracle, legitimately — but a future middleware or permission change on it is therefore uncaught. Carries the `rbac:sync` destructive-diff warning for whoever regenerates. `docs/handoff/tickets/duplicate-check-route-is-in-neither-route-oracle.md` |
-| **ticket** | `tests/Feature/GuardianManagementTest.php:240-266` asserts the 2026-07-21 credential ruling but 403s from route middleware, never reaching `GuardianUpdateRequest`. Vacuous; left untouched, covered by new arms. |
-| **ticket** | The same-school pivot trigger raises driver code **1644**, unmapped in `bootstrap/app.php`, so it surfaces as a 500. |
-| **ticket** | `student-guardians-panel.tsx`'s `fetchGuardians` still swallows load failures into `console.error`. |
-| **ticket** | `app/Services/GuardianImportService.php` imports `App\Models\User` unused (pre-existing); `ImportConflictException` is now thrown from a non-import caller and the name is wrong. |
+| Severity | Finding | Ticket |
+| --- | --- | --- |
+| **stop — for the product, not for this branch** | Student registration through the admin UI does not work: `student-form.tsx` appends `_method = PATCH` on create, so `POST /api/students` becomes a route that does not exist and 400s, and the catch handles only 422 so nothing renders. Present at the base commit, untouched here, and **invisible to the suite** because tests never send `_method`. | `student-registration-spoofs-every-create-to-PATCH.md` |
+| **fix** | `StudentController`'s registration path binds a new guardian to an already-registered `users` row with no confirmation — `store` and `attach` are guarded, this one is not. | *(covered in Not done; no separate file)* |
+| **fix** | The `/guardians` page is gated on `admin_area.access` while `/api/guardians*` is gated on `academic_setup.manage`; a role holding one without the other gets a full-page 403 that bounces to `/login` and reads as a broken login. | `guardians-page-and-api-are-gated-on-different-permissions.md` |
+| **ticket** | `reissueCredentialsIfPossible` rotates a password and mails it from inside a transaction. Closed structurally for `/api/guardians` and now for `attach` too; still live on student registration and the import. Carries the related divergence that `attachToStudent`'s true→false transition does not cascade-disable while `updatePivot`'s does. | `mail-and-password-rotation-inside-transactions.md` |
+| **ticket** | `GuardianService::update` writes phones unnormalised, and no field can be cleared to null. **Sized at 0 affected rows today.** | `guardian-update-writes-phones-and-cannot-clear-a-field.md` |
+| **ticket** | `duplicate-check` answers "does this account exist" platform-wide, with the address in a GET query string. Changes the cost, not the class. | `duplicate-check-is-a-platform-wide-account-existence-oracle.md` |
+| **ticket** | The new route is in neither route oracle — legitimately, but a future middleware change on it is therefore uncaught. | `duplicate-check-route-is-in-neither-route-oracle.md` |
+| **ticket** | This report had two dead cross-references and three undescribed screenshots — **caused by my own table-regeneration script**, which deletes everything between two headings. Mechanism now recorded. | `guardian-branch-report-cross-references-and-undescribed-drive-shots.md` |
+| **ticket** | `GuardianRequest`'s `$isUpdate` branch is dead; `GuardianMatcher` still uses `?->user` where `GuardianService` was changed to `->user` for the same NOT NULL column. | `guardian-matcher-and-request-tidy-ups.md` |
+| **ticket** | `GuardianManagementTest:240-266` asserts the 2026-07-21 credential ruling but 403s from route middleware, never reaching the class under test. Vacuous; left untouched, covered by new arms. | *(no file)* |
+| **ticket** | The same-school pivot trigger raises driver code **1644**, unmapped in `bootstrap/app.php`, so it surfaces as a 500. | *(no file)* |
+| **ticket** | `student-guardians-panel.tsx`'s `fetchGuardians` still swallows load failures into `console.error`. | *(no file)* |
+| **ticket** | `ImportConflictException` is now thrown from non-import callers and the name is wrong; `GuardianImportService` imports `App\Models\User` unused. | *(no file)* |

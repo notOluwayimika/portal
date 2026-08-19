@@ -285,6 +285,17 @@ class GuardianService
                     $attributes['whatsapp_number'] ?? null,
                     $schoolId,
                 );
+            } catch (AmbiguousPhoneMatchException $e) {
+                // Keyed on `phone`, not `email`, because the phone is the ambiguous
+                // field and the operator has to change or check THAT. The message is
+                // deliberately generic: the duplicate-check banner is the surface
+                // built to name the candidates, and a validation string is not the
+                // place to enumerate people.
+                throw ValidationException::withMessages([
+                    'phone' => 'More than one guardian in this school already has this phone number. '
+                        .'Nothing was saved. Check the duplicate warning above and open the right record, '
+                        .'or use a number that identifies this person.',
+                ]);
             } catch (ImportConflictException $e) {
                 throw ValidationException::withMessages([
                     'email' => 'This email and phone number belong to two different existing guardians in this school. '
@@ -619,6 +630,59 @@ class GuardianService
                 ->where('guardian_id', '!=', $guardian->id)
                 ->update(['is_primary' => false]);
         }
+    }
+
+    /**
+     * Attach a guardian to a student ONLY if that link does not already exist.
+     *
+     * @return bool true when a new link was created; false when one already existed
+     *              and was deliberately left untouched
+     *
+     * THE ONE IMPLEMENTATION OF "a create form may not rewrite an existing link".
+     * It lived inline in GuardianController::store for exactly one round, during which
+     * GuardianController::attach — a different screen, the same rule — kept the defect.
+     * Two copies of a guard drift; this is the copy.
+     *
+     * WHAT IT PREVENTS, restated because the mechanism is not obvious from the call
+     * site: `attachToStudent` is idempotent on (guardian_id, student_id) but NOT inert.
+     * On an existing pivot it rewrites `relationship`, `is_primary` and `can_login`
+     * from whatever the caller passed — and a create form passes its DEFAULTS, with
+     * the portal-login checkbox unticked. So re-entering a person and a child they are
+     * already linked to silently REVOKED that child's login; ticked, it rotated the
+     * account's password and mailed it. Before the dedupe backstop existed this branch
+     * was unreachable from a create path, because a create always minted a fresh
+     * guardian. Reuse made it live.
+     *
+     * A create says "add". Changing an existing link is `updatePivot`'s job: it is
+     * permissioned, it is audited, and the operator is looking at the record while
+     * they do it. Reporting the untouched link back is the honest answer to what they
+     * actually asked.
+     */
+    public function attachUnlessAlreadyLinked(
+        Guardian $guardian,
+        Student $student,
+        string $relationship,
+        bool $isPrimary,
+        bool $canLogin,
+    ): bool {
+        $exists = DB::table('guardian_student')
+            ->where('guardian_id', $guardian->id)
+            ->where('student_id', $student->id)
+            ->exists();
+
+        if ($exists) {
+            return false;
+        }
+
+        $this->attachToStudent(
+            guardian: $guardian,
+            student: $student,
+            relationship: $relationship,
+            isPrimary: $isPrimary,
+            canLogin: $canLogin,
+        );
+
+        return true;
     }
 
     /**

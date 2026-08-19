@@ -564,6 +564,48 @@ class GuardianService
                 'can_login' => $canLogin,
             ]);
 
+            // THIS BRANCH WROTE NO AUDIT RECORD AT ALL, and it is the only pivot
+            // mutator that did not. `updatePivot` logs every transition —
+            // `login_enabled`, `login_disabled`, `pivot_updated` (`:669-676`) — and the
+            // attach half above logs `attached`. So "who took this adult's portal
+            // access to this child away, and when" had an answer through one path and
+            // no answer through this one, which is the same gap the guardian-merge
+            // branch spent a review round on: a pivot transition with no trail.
+            //
+            // Spatie's activity log records MODEL attributes and cannot see a pivot
+            // write, so this has to be an explicit call — there is no configuration
+            // that would have covered it.
+            //
+            // Logged ONLY on an actual change: this method is idempotent by design and
+            // is re-entered by the import on every repeated row, so logging
+            // unconditionally would bury the real transitions in no-op noise. The
+            // event vocabulary matches `updatePivot`'s deliberately, so a reader of
+            // the audit trail cannot tell which writer produced a row — and does not
+            // need to.
+            $before = [
+                'relationship' => $existingPivot->relationship,
+                'is_primary' => (bool) $existingPivot->is_primary,
+                'can_login' => (bool) $existingPivot->can_login,
+            ];
+            $after = [
+                'relationship' => $relationship,
+                'is_primary' => $isPrimary,
+                'can_login' => $canLogin,
+            ];
+
+            if ($before !== $after) {
+                $event = match (true) {
+                    ! $before['can_login'] && $after['can_login'] => 'login_enabled',
+                    $before['can_login'] && ! $after['can_login'] => 'login_disabled',
+                    default => 'pivot_updated',
+                };
+
+                $this->logPivotEvent($guardian, $student, $event, [
+                    'before' => $before,
+                    'after' => $after,
+                ]);
+            }
+
             // can_login was upgraded from false → true for an existing link — re-issue creds.
             if (! $existingPivot->can_login && $canLogin) {
                 $this->reissueCredentialsIfPossible($guardian, $student);

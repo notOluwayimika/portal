@@ -22,6 +22,7 @@ use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\StudentResult;
+use App\Models\User;
 use App\Repositories\ClassLevelArmRepository;
 use App\Services\FileUploadService;
 use App\Services\GuardianService;
@@ -31,6 +32,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 
 class StudentController extends Controller
@@ -75,12 +77,14 @@ class StudentController extends Controller
         // If any guardian processing fails, the student is rolled back too — no orphans.
         $deferredNotifications = [];
 
-        $student = DB::transaction(function () use ($studentDto, $guardianEntries, &$deferredNotifications) {
+        $reusedGuardians = [];
+
+        $student = DB::transaction(function () use ($studentDto, $guardianEntries, &$deferredNotifications, &$reusedGuardians) {
             $student = $this->studentService->store($studentDto->toArray());
             $schoolId = (int) ActiveSchool::id();
 
-            foreach ($guardianEntries as $entry) {
-                $this->processGuardianEntry($student, $entry, $schoolId, $deferredNotifications);
+            foreach ($guardianEntries as $index => $entry) {
+                $this->processGuardianEntry($student, $entry, $schoolId, $deferredNotifications, (int) $index, $reusedGuardians);
             }
 
             return $student;
@@ -96,7 +100,16 @@ class StudentController extends Controller
         }
 
         if ($request->wantsJson()) {
-            return Response::created('Student created successfully.');
+            // WHICH GUARDIAN ROWS WERE REUSED RATHER THAN CREATED. The service has
+            // reported this since the dedupe backstop landed and this caller threw it
+            // away, so a registration that silently reused an existing record — and
+            // therefore kept the STORED name over the one just typed, per
+            // fillBlankGuardianFields — gave the operator no signal at all. Indexed by
+            // the guardian entry's position so the form can say which row it means.
+            return Response::created([
+                'message' => 'Student created successfully.',
+                'reused_guardians' => $reusedGuardians,
+            ]);
         }
 
         return redirect()->route('students.index');
@@ -223,9 +236,19 @@ class StudentController extends Controller
 
     /**
      * Process a single guardian entry from the student registration form.
+     *
+     * $index and $reusedGuardians exist for the FORM, not for this method: the
+     * registration screen renders errors per guardian row, so a refusal raised deep
+     * inside GuardianService has to arrive keyed to the row that caused it.
      */
-    private function processGuardianEntry(Student $student, array $entry, int $schoolId, array &$deferredNotifications): void
-    {
+    private function processGuardianEntry(
+        Student $student,
+        array $entry,
+        int $schoolId,
+        array &$deferredNotifications,
+        int $index = 0,
+        array &$reusedGuardians = [],
+    ): void {
         if (($entry['mode'] ?? null) === 'existing') {
             $guardian = $this->guardianService->resolveExistingGuardianForAttachment($entry, $schoolId);
             $existingPivot = DB::table('guardian_student')
@@ -255,7 +278,57 @@ class StudentController extends Controller
         }
 
         // mode === 'new'
-        $result = $this->guardianService->createGuardianWithUser(
+        //
+        // RE-KEYED ONTO THE ROW. GuardianService's refusals are raised on the flat
+        // field name — `email` — because the service has no idea which caller it is
+        // serving or what that caller's payload looks like. This form addresses its
+        // guardians as `guardians.{index}.{field}`, so without this the message lands
+        // on a key the screen does not read and the operator sees a rolled-back
+        // registration with no explanation.
+        //
+        // THIS IS PRECISION, NOT THE SAFETY NET. The net is the flat fallback in
+        // guardian-sub-form.tsx — because a re-key here regresses silently the next
+        // time a validator is added and nobody remembers this catch, whereas the
+        // fallback catches every future flat key without anyone remembering. If this
+        // block ever falls out of date the error is shown on the wrong row, which is
+        // recoverable; the failure mode it exists to prevent — shown nowhere — is not.
+        try {
+            $result = $this->createGuardianForEntry($entry, $schoolId);
+        } catch (ValidationException $e) {
+            $rekeyed = [];
+            foreach ($e->errors() as $field => $messages) {
+                $rekeyed[str_contains($field, '.') ? $field : "guardians.{$index}.{$field}"] = $messages;
+            }
+
+            throw ValidationException::withMessages($rekeyed);
+        }
+
+        if ($result['reused']) {
+            $reusedGuardians[] = $index;
+        }
+
+        $this->guardianService->attachToStudent(
+            guardian: $result['guardian'],
+            student: $student,
+            relationship: $entry['relationship'],
+            isPrimary: (bool) $entry['is_primary'],
+            canLogin: (bool) $entry['can_login'],
+        );
+
+        if ($result['plain_password']) {
+            $deferredNotifications[] = [
+                'user' => $result['user'],
+                'plain_password' => $result['plain_password'],
+            ];
+        }
+    }
+
+    /**
+     * @return array{guardian: Guardian, user: User, plain_password: ?string, reused: bool}
+     */
+    private function createGuardianForEntry(array $entry, int $schoolId): array
+    {
+        return $this->guardianService->createGuardianWithUser(
             attributes: [
                 'first_name' => $entry['first_name'],
                 'middle_name' => $entry['middle_name'] ?? null,
@@ -279,21 +352,6 @@ class StudentController extends Controller
             canLogin: (bool) $entry['can_login'],
             email: $entry['email'] ?? null,
         );
-
-        $this->guardianService->attachToStudent(
-            guardian: $result['guardian'],
-            student: $student,
-            relationship: $entry['relationship'],
-            isPrimary: (bool) $entry['is_primary'],
-            canLogin: (bool) $entry['can_login'],
-        );
-
-        if ($result['plain_password']) {
-            $deferredNotifications[] = [
-                'user' => $result['user'],
-                'plain_password' => $result['plain_password'],
-            ];
-        }
     }
 
     /**

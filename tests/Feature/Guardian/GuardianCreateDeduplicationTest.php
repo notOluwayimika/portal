@@ -1,11 +1,13 @@
 <?php
 
+use App\Models\Curriculum;
 use App\Models\Guardian;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\GuardianService;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -406,6 +408,157 @@ it('rejects more student_links than the bounded maximum', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Arm 5f/5g — THE SAME STUDENT TWICE. The branch the reuse backstop made live.
+//
+// WHY THIS SURVIVED TWO ROUNDS: both reuse arms above submit the same person against
+// two DIFFERENT students, so `attachToStudent`'s existing-pivot branch is never
+// entered by either. Before this branch `store` always minted a fresh Guardian, so
+// that branch was structurally unreachable from this path — reuse made it live and
+// nothing was re-examined. An arm that varies the person but never the child cannot
+// see it.
+// ---------------------------------------------------------------------------
+
+it('leaves an already-linked student untouched instead of rewriting the link from create-form defaults', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    // First submission: father, primary, portal login ON (a deliverable address, so
+    // the login invariant is satisfied).
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'linked.parent@example.test',
+            'can_login' => true,
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'father', 'is_primary' => true],
+            ],
+        ]))
+        ->assertCreated();
+
+    $guardian = Guardian::withoutGlobalScopes()->where('school_id', $school->id)->sole();
+    $before = DB::table('guardian_student')
+        ->where('guardian_id', $guardian->id)->where('student_id', $student->id)->first();
+    $passwordBefore = $guardian->user->fresh()->password;
+
+    expect((bool) $before->can_login)->toBeTrue()
+        ->and($before->relationship)->toBe('father')
+        ->and((bool) $before->is_primary)->toBeTrue();
+
+    // Second submission: SAME person, SAME child, and every create-form default that
+    // would downgrade the link — can_login unticked (the modal's default), a
+    // different relationship, is_primary off.
+    $response = $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'linked.parent@example.test',
+            'can_login' => false,
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'other', 'is_primary' => false],
+            ],
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('reused_existing_guardian', true);
+
+    $after = DB::table('guardian_student')
+        ->where('guardian_id', $guardian->id)->where('student_id', $student->id)->first();
+
+    // THE PIVOT STATE IS ASSERTED FIRST, deliberately: it is the defect, and
+    // `already_linked` below is only the reporting of it. Ordered the other way the
+    // arm goes red on the missing report and never reaches the damage, which is the
+    // less useful failure message of the two.
+    //
+    // can_login matters most: a create submission whose checkbox merely defaulted
+    // unticked must never REVOKE an existing portal login, and that revocation is
+    // silent and — before this round — unlogged.
+    expect((bool) $after->can_login)->toBeTrue()
+        ->and($after->relationship)->toBe('father')
+        ->and((bool) $after->is_primary)->toBeTrue()
+        ->and(DB::table('guardian_student')->count())->toBe(1);
+
+    // REPORTED, NOT REWRITTEN.
+    expect($response->json('already_linked'))->toBe([$student->admission_number]);
+});
+
+it('does not rotate an existing account password when a create submission re-enters a linked student', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    // First: linked with portal login OFF.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'rotate.me@example.test',
+            'can_login' => false,
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'mother', 'is_primary' => true],
+            ],
+        ]))
+        ->assertCreated();
+
+    $guardian = Guardian::withoutGlobalScopes()->where('school_id', $school->id)->sole();
+    $passwordBefore = $guardian->user->fresh()->password;
+
+    Notification::fake();
+
+    // Second: same person, same child, login now TICKED. This is the false→true
+    // direction, which reaches reissueCredentialsIfPossible — a password rotation and
+    // an email, triggered from a form the operator opened to ADD somebody.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'rotate.me@example.test',
+            'can_login' => true,
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'mother', 'is_primary' => true],
+            ],
+        ]))
+        ->assertCreated();
+
+    expect($guardian->user->fresh()->password)->toBe($passwordBefore);
+    Notification::assertNothingSent();
+
+    // …and the pivot is still exactly as it was: the link was reported, not edited.
+    $after = DB::table('guardian_student')
+        ->where('guardian_id', $guardian->id)->where('student_id', $student->id)->first();
+    expect((bool) $after->can_login)->toBeFalse();
+});
+
+it('writes an activity record when a pivot update does change something', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    $user = User::factory()->create(['school_id' => $school->id, 'email' => 'audited@example.test']);
+    $guardian = Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $user->id,
+        'first_name' => 'Audited', 'last_name' => 'Pivot', 'phone' => '+2348031112222', 'status' => 'active',
+    ]);
+    $student->guardians()->attach($guardian->id, ['relationship' => 'father', 'is_primary' => true, 'can_login' => false]);
+
+    $before = DB::table('activity_log')->where('subject_type', Guardian::class)->where('subject_id', $guardian->id)->count();
+
+    // attachToStudent's UPDATE branch — the only pivot mutator that wrote no trail.
+    app(GuardianService::class)->attachToStudent(
+        guardian: $guardian, student: $student,
+        relationship: 'mother', isPrimary: true, canLogin: false,
+    );
+
+    $rows = DB::table('activity_log')
+        ->where('subject_type', Guardian::class)->where('subject_id', $guardian->id)
+        ->orderByDesc('id')->get();
+
+    expect($rows->count())->toBe($before + 1)
+        ->and($rows->first()->event)->toBe('pivot_updated');
+
+    // …and an idempotent re-attach with NOTHING changed writes no noise.
+    app(GuardianService::class)->attachToStudent(
+        guardian: $guardian, student: $student,
+        relationship: 'mother', isPrimary: true, canLogin: false,
+    );
+
+    expect(DB::table('activity_log')->where('subject_type', Guardian::class)->where('subject_id', $guardian->id)->count())
+        ->toBe($before + 1);
+});
+
+// ---------------------------------------------------------------------------
 // Arm 6 — duplicate-check, including isolation asserted BY ID.
 // ---------------------------------------------------------------------------
 
@@ -596,6 +749,63 @@ it('trims whitespace around a pasted admission number', function () {
         ->assertCreated();
 
     expect(DB::table('guardian_student')->where('student_id', $student->id)->count())->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// Arm 10 — THE REPORTED DEFECT, REINTRODUCED BY ITS OWN FIX.
+//
+// The two refusals this branch added to createGuardianWithUser key on the flat field
+// `email`, and they fire for ALL FOUR callers of that method. The student
+// registration form resolves errors NESTED ONLY (`guardians.N.field`) — its sibling
+// modal has a flat fallback and it did not — so registering a student whose parent is
+// an already-known email-less guardian returned 422, rolled the student back
+// correctly, and displayed NOTHING. A silent block on the highest-traffic write on
+// the platform, shipped inside the change commissioned to delete silent blocks.
+//
+// ASSERTED ON THE RESOLVED KEY, NOT THE STATUS. A 422 is exactly what the broken
+// version returned; the status is what made this invisible. What matters is that the
+// error arrives under a key the form actually reads.
+// ---------------------------------------------------------------------------
+
+it('surfaces a guardian refusal on the student-registration form under a key that form renders', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $curriculum = Curriculum::factory()->create(['school_id' => $school->id]);
+
+    // An existing guardian in this school with NO stored address.
+    $existingUser = User::factory()->create(['school_id' => $school->id, 'email' => null]);
+    Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $existingUser->id,
+        'first_name' => 'Known', 'last_name' => 'NoAddress', 'phone' => '+2348044440001', 'status' => 'active',
+    ]);
+
+    $studentsBefore = Student::withoutGlobalScopes()->count();
+
+    $response = $this->actingAs($admin)->postJson('/api/students', [
+        'first_name' => 'New',
+        'last_name' => 'Registrant',
+        'gender' => 'male',
+        'curriculum_id' => $curriculum->id,
+        'guardians' => [[
+            'mode' => 'new',
+            'relationship' => 'mother',
+            'is_primary' => true,
+            'can_login' => false,
+            'first_name' => 'Known',
+            'last_name' => 'NoAddress',
+            // Same phone — so the matcher reuses — and an address now typed in.
+            'phone' => '08044440001',
+            'email' => 'known.now.has.one@example.test',
+        ]],
+    ])->assertStatus(422);
+
+    // THE KEY THE FORM READS. guardian-sub-form.tsx resolves
+    // `guardians.{index}.{field}` first; StudentController re-keys the service's flat
+    // `email` onto the row that caused it.
+    $response->assertJsonValidationErrors(['guardians.0.email']);
+
+    // …and the whole registration rolled back: no orphan student.
+    expect(Student::withoutGlobalScopes()->count())->toBe($studentsBefore);
 });
 
 // ---------------------------------------------------------------------------

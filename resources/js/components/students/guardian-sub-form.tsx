@@ -148,8 +148,28 @@ export function GuardianSubForm({
         ]);
     };
 
+    // NESTED FIRST, THEN FLAT — the fallback its sibling has always had
+    // (`add-guardian-modal.tsx:212`) and this form did not.
+    //
+    // THIS IS THE REPORTED DEFECT REINTRODUCED BY ITS OWN FIX, and it is worth
+    // naming rather than softening. The bug this branch exists to remove was a write
+    // that failed while the screen said nothing. Then the fix added two server-side
+    // refusals in `createGuardianWithUser`, keyed on the flat field `email`, which
+    // fire for ALL FOUR callers of that method — and this form resolved nested keys
+    // only. So registering a student whose parent is an already-known email-less
+    // guardian returned 422, rolled the student back correctly, and displayed
+    // NOTHING. A silent block, on the highest-traffic write on the platform, shipped
+    // inside the change that was commissioned to delete silent blocks.
+    //
+    // THE FALLBACK IS THE LOAD-BEARING HALF, chosen over re-keying every throw site
+    // per caller for one reason: a consumer-side fallback catches EVERY future flat
+    // key without anyone remembering, whereas per-caller keying regresses silently
+    // the next time a validator is added and nobody thinks about this form. The
+    // callers do re-key for precision (StudentController::processGuardianEntry), so
+    // an error normally lands on its own row — but if a future one forgets, it
+    // degrades to "shown on every row" and never to "shown nowhere".
     const fieldError = (index: number, field: string): string | undefined =>
-        errors[`guardians.${index}.${field}`];
+        errors[`guardians.${index}.${field}`] ?? errors[field];
 
     return (
         <div className="space-y-4">

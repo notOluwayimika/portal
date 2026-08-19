@@ -102,9 +102,23 @@ export function GuardianDuplicateBanner({
                         ))}
                     </ul>
                     <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300">
-                        If you continue, the existing record is reused and only
-                        its empty fields are filled — nothing already recorded
-                        is overwritten.
+                        {/*
+                            CORRECTED — this used to promise "nothing already
+                            recorded is overwritten", which was true of the
+                            guardian row and FALSE of the student links: the
+                            reuse path re-ran the pivot writer, so re-entering a
+                            child who was already linked overwrote their
+                            relationship, primary flag and portal-login flag from
+                            this form's defaults. The server now leaves an
+                            existing link alone; this sentence says so, because a
+                            banner that describes behaviour the code does not have
+                            is worse than no banner.
+                        */}
+                        If you continue, the existing record is reused: only its
+                        empty fields are filled, and any child already linked to
+                        them is left exactly as it is — including who is primary
+                        and whether they can log in. To change an existing link,
+                        open their record.
                     </p>
                 </div>
             )}

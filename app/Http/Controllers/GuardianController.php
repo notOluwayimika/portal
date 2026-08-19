@@ -267,14 +267,25 @@ class GuardianController extends Controller
         // arm that asserts the CONFIRMED path is what caught it.
         $confirmExistingAccount = (bool) ($validated['confirm_existing_account'] ?? false);
 
+        // A CREATE FORM MAY NOT EDIT AN EXISTING LINK. Filled inside the transaction,
+        // reported back afterwards. See the guard at the foot of the loop.
+        $alreadyLinked = [];
+
         // ONE TRANSACTION over the guardian AND every attachment. There was none:
         // the guardian was committed by its own inner transaction and the links then
         // failed (or were silently dropped) outside it, leaving a guardian with zero
         // children and a 201 that said it had worked. Nesting inside
         // createGuardianWithUser's own transaction is a savepoint, which is fine.
-        // The notification is deliberately OUTSIDE — StudentController::store:78-96
-        // is the same shape — so a rollback can never strand an email in flight.
-        $result = DB::transaction(function () use ($request, $schoolId, $canLogin, $links, $confirmExistingAccount) {
+        //
+        // THE NOTIFICATION IS OUTSIDE, and that sentence used to claim more than it
+        // could deliver. `notifyGuardian` below is genuinely outside — but
+        // `attachToStudent` reaches `reissueCredentialsIfPossible`, which rotates a
+        // password AND mails it from INSIDE, so "a rollback can never strand an email
+        // in flight" was false for this transaction the moment reuse made that branch
+        // reachable. It is true again only because the guard below stops this path
+        // entering that branch at all; the general "mail inside a transaction" audit
+        // across the other callers is a ticket, not a claim made here.
+        $result = DB::transaction(function () use ($request, $schoolId, $canLogin, $links, $confirmExistingAccount, &$alreadyLinked) {
             $result = $this->guardianService->createGuardianWithUser(
                 attributes: $request->safe()->only([
                     'first_name',
@@ -323,6 +334,37 @@ class GuardianController extends Controller
                     ]);
                 }
 
+                // AN ALREADY-LINKED CHILD IS LEFT ALONE, and this is the guard the
+                // reuse backstop needed and did not get.
+                //
+                // Before reuse existed, `store` always minted a fresh Guardian, so a
+                // pre-existing pivot on this path was STRUCTURALLY UNREACHABLE and
+                // attachToStudent's update branch never ran here. Reuse made it live
+                // and nothing was re-examined. Re-entering an existing person plus a
+                // child they are already linked to then overwrote `relationship`,
+                // `is_primary` and `can_login` from CREATE-FORM DEFAULTS — and the
+                // create modal's login checkbox defaults UNTICKED, so a resubmission
+                // REVOKED that child's portal login. The false→true direction was
+                // worse: it rotated the account's password and emailed it, from a
+                // form the operator opened to add somebody.
+                //
+                // The rule, stated: on the reuse path an existing link is reported,
+                // never rewritten. It is the same argument that refused the email
+                // write in createGuardianWithUser — a create form is not the place to
+                // change a record the operator was never shown, and there is a
+                // permissioned, audited path (updatePivot) that exists for exactly
+                // this. A downgrade nobody asked for is worse than a refusal.
+                $linkExists = DB::table('guardian_student')
+                    ->where('guardian_id', $result['guardian']->id)
+                    ->where('student_id', $student->id)
+                    ->exists();
+
+                if ($linkExists) {
+                    $alreadyLinked[] = $link['admission_number'];
+
+                    continue;
+                }
+
                 $this->guardianService->attachToStudent(
                     guardian: $result['guardian'],
                     student: $student,
@@ -353,6 +395,10 @@ class GuardianController extends Controller
             // guardian here and the row was reused rather than duplicated. Told, not
             // hidden — silent reuse leaves them unsure which record they just edited.
             'reused_existing_guardian' => $result['reused'],
+            // …and which children were left exactly as they were. Reported rather
+            // than silently rewritten; the operator asked to add links, so the ones
+            // that already existed are the answer to a question they did ask.
+            'already_linked' => $alreadyLinked,
             'redirect' => "/guardians/{$guardian->uuid}",
         ]);
     }

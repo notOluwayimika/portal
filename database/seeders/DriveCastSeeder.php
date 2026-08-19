@@ -54,6 +54,11 @@ class DriveCastSeeder extends Seeder
     /** @var array<string, string> enrollment UUIDs keyed by state name */
     public array $enrollments = [];
 
+    /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
+    public ?User $adminA = null;
+
+    public ?User $adminB = null;
+
     public function run(): void
     {
         $schoolA = School::create(['name' => 'Drive School A', 'slug' => (string) Str::uuid()]);
@@ -164,6 +169,24 @@ class DriveCastSeeder extends Seeder
         $super->flushSchoolAccessCache();
 
         $this->schoolBMaker = $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
+
+        // TWO GUARDIAN-CAPABLE SEATS, ADDED FOR THE GUARDIAN-CREATE DRIVE.
+        //
+        // Every seat above is a FINANCE seat, and not one of them can open /guardians:
+        // that route group is gated on `academic_setup.manage`, and creating a guardian
+        // additionally needs `guardian.create` — neither is held by accounts_officer,
+        // executive_director or the void-only role, and super_admin's Gate::before
+        // bypass is authorization, never a substitute for a real operator seat. The
+        // canonical `admin` role holds both (RbacSeeder's $guardianFull plus
+        // ACADEMIC_SETUP_MANAGE), so the seat is the seeded role rather than a
+        // fixture-local invention that could drift from what a school actually grants.
+        //
+        // A SECOND SCHOOL'S admin is the isolation seat, and it has to be its own
+        // account rather than school-b@drive.test: that seat holds accounts_officer and
+        // would 403 on /guardians before it could demonstrate anything about admission
+        // numbers not resolving across schools.
+        $this->adminA = $this->driveUser('admin@drive.test', $schoolA, 'admin');
+        $this->adminB = $this->driveUser('admin-b@drive.test', $schoolB, 'admin');
     }
 
     /** A drive user: fixed password, verified email, NO 2FA secret, optionally school-scoped to $role. */

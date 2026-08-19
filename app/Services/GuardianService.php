@@ -25,6 +25,7 @@ class GuardianService
         private FileUploadService $fileUploadService,
         private PasswordGeneratorService $passwordGenerator,
         private GuardianRepository $guardianRepository,
+        private GuardianMatcher $guardianMatcher,
     ) {}
 
     public function paginate(Request $request): LengthAwarePaginator
@@ -216,11 +217,21 @@ class GuardianService
     }
 
     /**
-     * Case A: create a brand-new User + Guardian + assign `guardian` role.
-     * Wrapped in a DB::transaction. The notification is queued AFTER the transaction
-     * commits so that a rollback never leaves a stranded email in flight.
+     * Case A: create (or REUSE) the User + Guardian for this person in this School,
+     * and assign the `guardian` role. Wrapped in a DB::transaction. The notification
+     * is queued AFTER the transaction commits so that a rollback never leaves a
+     * stranded email in flight.
      *
-     * @return array{guardian: Guardian, user: User, plain_password: ?string}
+     * THE REUSE HALF IS A BACKSTOP, NOT THE UX. The primary answer to "this person
+     * already exists" is the duplicate-check warning the operator sees before they
+     * submit (GuardianController::duplicateCheck). This is what catches a caller that
+     * proceeded anyway — a stale tab, a script, a second click — so that proceeding
+     * costs a filled-in blank rather than a second guardians row. It deliberately
+     * never OVERWRITES: a non-empty stored value always wins over form input here,
+     * because the operator who typed it has not been shown what they would be
+     * replacing. Editing an existing guardian is the update path's job.
+     *
+     * @return array{guardian: Guardian, user: User, plain_password: ?string, reused: bool}
      */
     public function createGuardianWithUser(array $attributes, int $schoolId, bool $canLogin, ?string $email): array
     {
@@ -251,10 +262,54 @@ class GuardianService
             // Password::sendResetLink resolves the user BY that column.
             $userEmail = $email ?: null;
 
+            // Is this person ALREADY a guardian in THIS School? One rule, shared with
+            // the spreadsheet import (GuardianMatcher). Before this, the import
+            // deduped and both interactive forms did not — the asymmetry that put
+            // three rows for one mother into production.
+            //
+            // A conflict (email points at one guardian, phone at another) is a
+            // 422 here and not the 500 an uncaught RuntimeException would be. The
+            // spreadsheet import cannot reach this catch: it resolves the same
+            // matcher itself before deciding to create (GuardianImportService:76-85)
+            // and only calls this method when the match was null, so its own
+            // ImportConflictException handling is untouched.
+            try {
+                $existingGuardian = $this->guardianMatcher->findInSchool(
+                    $userEmail,
+                    $attributes['phone'] ?? null,
+                    $attributes['whatsapp_number'] ?? null,
+                    $schoolId,
+                );
+            } catch (ImportConflictException $e) {
+                throw ValidationException::withMessages([
+                    'email' => 'This email and phone number belong to two different existing guardians in this school. '
+                        .'Check the records and edit the right one instead of creating a new guardian.',
+                ]);
+            }
+
             // One human = one User (§6.2). Reuse the existing account when the same
             // email is already registered (e.g. this guardian exists at another
             // School); create a fresh User only for a genuinely new person.
-            $user = User::where('email', $userEmail)->first();
+            //
+            // THE `$userEmail ?` GUARD IS LOAD-BEARING AND ITS ABSENCE WAS A LIVE
+            // ISOLATION DEFECT. `users.email` became NULLABLE on 2026-08-04 when the
+            // synthetic-address mint was retired, and Laravel's query builder turns
+            // `where('email', null)` into `WHERE email IS NULL`
+            // (Query\Builder::where, the `is_null($value)` short-cut) — NOT into a
+            // never-matching `email = NULL`. `User` is also explicitly exempt from
+            // SchoolScope (`app/Models/Scopes/SchoolScope.php:35-37`, "users are
+            // identities, not tenant data"), so the lookup ran unscoped across every
+            // school. Every email-less guardian creation therefore bound itself to
+            // whichever email-less account the database returned first — a DIFFERENT
+            // PERSON, possibly in another school — and then handed that account
+            // access to this school via grantSchoolAccess below. A null email is not
+            // an identity and must never be matched on.
+            $user = $existingGuardian?->user;
+
+            if (! $user) {
+                $user = $userEmail ? User::where('email', $userEmail)->first() : null;
+            }
+
             $isNewUser = $user === null;
 
             if ($isNewUser) {
@@ -269,21 +324,74 @@ class GuardianService
 
             $user->grantSchoolAccess(School::findOrFail($schoolId), 'guardian');
 
-            // Create the Guardian directly (not via the hasOne relation): one User
-            // may back one Guardian per School.
-            $guardian = Guardian::create(array_merge($attributes, [
-                'school_id' => $schoolId,
-                'user_id' => $user->id,
-                'status' => $attributes['status'] ?? 'active',
-            ]));
+            if ($existingGuardian) {
+                $guardian = $this->fillBlankGuardianFields($existingGuardian, $attributes);
+            } else {
+                // Create the Guardian directly (not via the hasOne relation): one User
+                // may back one Guardian per School.
+                $guardian = Guardian::create(array_merge($attributes, [
+                    'school_id' => $schoolId,
+                    'user_id' => $user->id,
+                    'status' => $attributes['status'] ?? 'active',
+                ]));
+            }
 
             return [
                 'guardian' => $guardian->fresh(['user', 'photoFile']),
                 'user' => $user,
                 // Surface a password only for a newly created, login-enabled account.
                 'plain_password' => $isNewUser && $canLogin && $email ? $plainPassword : null,
+                'reused' => $existingGuardian !== null,
             ];
         });
+    }
+
+    /**
+     * Fill only the blanks on a guardian row being REUSED by the create path.
+     *
+     * The rule is one-directional and deliberately so: a stored value that is
+     * already non-empty is NEVER replaced by form input on a create. The operator
+     * submitting this form believes they are adding a person, not editing one — they
+     * have not been shown the record they would be overwriting, so silently taking
+     * their "Mother" over the stored "Mrs A. Mother" would destroy data they never
+     * saw. Blanks are the safe direction: filling one adds information and removes
+     * none.
+     *
+     * `user_id`, `school_id` and `uuid` are not fillable through this path by
+     * construction — they are not in $attributes, which is the controller's explicit
+     * profile-field allowlist.
+     */
+    private function fillBlankGuardianFields(Guardian $guardian, array $attributes): Guardian
+    {
+        $fill = [];
+
+        foreach ($guardian->getFillable() as $field) {
+            if (in_array($field, ['school_id', 'user_id'], true)) {
+                continue;
+            }
+
+            if (! array_key_exists($field, $attributes)) {
+                continue;
+            }
+
+            $incoming = $attributes[$field];
+            if ($incoming === null || $incoming === '') {
+                continue;
+            }
+
+            $stored = $guardian->getAttribute($field);
+            if ($stored !== null && $stored !== '') {
+                continue;
+            }
+
+            $fill[$field] = $incoming;
+        }
+
+        if ($fill !== []) {
+            $guardian->update($fill);
+        }
+
+        return $guardian;
     }
 
     /**

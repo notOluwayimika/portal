@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Plus, Search, Trash2, UserCheck, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { GuardianDuplicateBanner } from '@/components/guardians/guardian-duplicate-banner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -13,7 +14,10 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { useGuardianLookup } from '@/hooks/use-guardian-lookup';
+import {
+    useGuardianDuplicateCheck,
+    useGuardianLookup,
+} from '@/hooks/use-guardian-lookup';
 import type { GuardianLookupResult } from '@/hooks/use-guardian-lookup';
 
 export interface GuardianFormEntry {
@@ -313,10 +317,20 @@ export function GuardianRow({
                     htmlFor={`guardian-${index}-new`}
                     className="cursor-pointer text-sm font-normal"
                 >
-                    I don't have any other child in this school
+                    {/*
+                        NOT INVERTED — checked really does mean mode='new'
+                        (toggleMode above), and "no other child here" really does
+                        imply "not yet a guardian here". What was wrong is that it
+                        is written in the GUARDIAN's first person while an
+                        administrator is the one reading it, so "I" is the one
+                        person who is definitely not filling the form in. Reworded
+                        to say what the checkbox does, in the voice of whoever is
+                        looking at it; the meaning and the polarity are unchanged.
+                    */}
+                    This guardian is new to this school
                     <span className="ml-1 text-xs text-muted-foreground">
-                        (check this for a brand-new guardian; uncheck to look up
-                        an existing one)
+                        (check this to create a new guardian record; uncheck if
+                        they already have a child here, to look them up)
                     </span>
                 </Label>
             </div>
@@ -364,6 +378,13 @@ export function GuardianRow({
                     resources={resources}
                     onChange={onChange}
                     getError={getError}
+                    onSwitchToExisting={(uuid) =>
+                        onChange({
+                            mode: 'existing',
+                            guardian_id: uuid,
+                            looked_up: null,
+                        })
+                    }
                 />
             )}
         </div>
@@ -484,6 +505,8 @@ interface NewBodyProps {
     resources: GuardianResources;
     onChange: (patch: Partial<GuardianFormEntry>) => void;
     getError: (field: string) => string | undefined;
+    /** Hands the operator straight into the existing-guardian flow, pre-selected. */
+    onSwitchToExisting: (uuid: string) => void;
 }
 
 function NewGuardianBody({
@@ -491,12 +514,30 @@ function NewGuardianBody({
     resources,
     onChange,
     getError,
+    onSwitchToExisting,
 }: NewBodyProps) {
+    const duplicates = useGuardianDuplicateCheck();
+
+    // Debounced on blur of phone/whatsapp/email. This component is shared by the
+    // student-registration form AND the per-child "add guardian" modal, so wiring
+    // the warning here covers both without a second copy of it.
+    const checkDuplicates = () =>
+        duplicates.check({
+            email: entry.email,
+            phone: entry.phone,
+            whatsapp_number: entry.whatsapp_number,
+        });
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <UserPlus className="h-3.5 w-3.5" /> Creating a new guardian
             </div>
+
+            <GuardianDuplicateBanner
+                result={duplicates.result}
+                onUseExisting={onSwitchToExisting}
+            />
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Field
@@ -551,6 +592,7 @@ function NewGuardianBody({
                     <Input
                         value={entry.phone ?? ''}
                         onChange={(e) => onChange({ phone: e.target.value })}
+                        onBlur={checkDuplicates}
                         required
                     />
                 </Field>
@@ -560,6 +602,7 @@ function NewGuardianBody({
                         onChange={(e) =>
                             onChange({ whatsapp_number: e.target.value })
                         }
+                        onBlur={checkDuplicates}
                     />
                 </Field>
 
@@ -571,6 +614,7 @@ function NewGuardianBody({
                             onChange={(e) =>
                                 onChange({ email: e.target.value })
                             }
+                            onBlur={checkDuplicates}
                             required
                         />
                     </Field>

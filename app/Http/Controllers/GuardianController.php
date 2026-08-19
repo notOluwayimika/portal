@@ -19,6 +19,7 @@ use App\Models\Activity;
 use App\Models\Guardian;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\GuardianMatcher;
 use App\Services\GuardianService;
 use App\Support\ActiveSchool;
 use App\Support\Authz;
@@ -27,7 +28,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 
 class GuardianController extends Controller
@@ -112,6 +115,115 @@ class GuardianController extends Controller
         ]]);
     }
 
+    /**
+     * GET /api/guardians/duplicate-check?email=&phone=&whatsapp_number=
+     *
+     * WARN, DO NOT DECIDE. This is the primary answer to "this person already
+     * exists": the operator sees the match BEFORE they submit and chooses between
+     * linking the existing record and creating a new one. The server-side dedupe in
+     * GuardianService::createGuardianWithUser is only the backstop for a caller that
+     * proceeds anyway. The reason it is a warning and not a 422 is the defect that
+     * produced this endpoint: `Rule::unique('users','email')` on the create path was
+     * a hard block with no way forward, so the school worked around it per-child and
+     * manufactured the duplicates.
+     *
+     * GATED EXACTLY AS `lookup` IS, and by nothing else — same file, same route
+     * group, therefore the same `permission:academic_setup.manage` middleware. No
+     * in-method Authz call was added: `lookup` carries none, and adding one here
+     * would make this endpoint STRICTER than the sibling it was specified to match,
+     * which is a change to the access surface that belongs in its own reviewed
+     * commit rather than riding along in a defect fix.
+     */
+    public function duplicateCheck(Request $request, GuardianMatcher $matcher)
+    {
+        $data = $request->validate([
+            'email' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'whatsapp_number' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $schoolId = (int) ActiveSchool::id();
+
+        $email = $data['email'] ?? null;
+        $phone = $data['phone'] ?? null;
+        $whatsapp = $data['whatsapp_number'] ?? null;
+
+        if (! $email && ! $phone && ! $whatsapp) {
+            return response()->json(['data' => ['guardians' => [], 'account' => null]]);
+        }
+
+        // candidatesInSchool, not findInSchool: a READ surface should show the
+        // operator BOTH candidates when email and phone disagree. findInSchool
+        // raises there, which is right for a write and wrong for a warning.
+        $candidates = $matcher->candidatesInSchool($email, $phone, $whatsapp, $schoolId);
+
+        $guardians = collect([$candidates['by_email'], $candidates['by_phone']])
+            ->filter()
+            ->unique('id')
+            ->values()
+            ->map(fn (Guardian $guardian) => [
+                'uuid' => $guardian->uuid,
+                'full_name' => $guardian->full_name,
+                // MASKED. The operator needs enough to recognise the person they
+                // just typed; they do not need the stored address handed back, and
+                // this endpoint answers to anyone holding academic_setup.manage.
+                'masked_email' => $this->maskEmail($guardian->user?->email),
+                'masked_phone' => $this->maskPhone($guardian->phone),
+                'student_count' => $guardian->students()
+                    ->where('students.school_id', $schoolId)
+                    ->count(),
+            ]);
+
+        // The email belongs to a real account that is NOT a guardian in this school
+        // — staff, or a parent at another school. That is NOT a duplicate guardian,
+        // and answering as though it were is how a member of staff silently acquires
+        // a guardian role: createGuardianWithUser reuses the users row and
+        // grantSchoolAccess then writes a school_user pivot AND a team role for it.
+        // Surfaced as its own case so the UI must confirm rather than assume.
+        $account = null;
+
+        if ($email && $guardians->isEmpty()) {
+            $existingUser = User::whereRaw('LOWER(email) = ?', [Str::lower(trim($email))])->first();
+
+            if ($existingUser) {
+                $account = [
+                    'exists' => true,
+                    'masked_email' => $this->maskEmail($existingUser->email),
+                    // Whether that account already reaches THIS school at all. A
+                    // false here means proceeding grants it access it does not have.
+                    'has_access_to_school' => $existingUser->accessibleSchoolIds()->contains($schoolId),
+                ];
+            }
+        }
+
+        return response()->json(['data' => [
+            'guardians' => $guardians,
+            'account' => $account,
+        ]]);
+    }
+
+    private function maskEmail(?string $email): ?string
+    {
+        if (! $email || ! str_contains($email, '@')) {
+            return null;
+        }
+
+        [$local, $domain] = explode('@', $email, 2);
+
+        return mb_substr($local, 0, 1).str_repeat('•', max(mb_strlen($local) - 1, 1)).'@'.$domain;
+    }
+
+    private function maskPhone(?string $phone): ?string
+    {
+        if (! $phone) {
+            return null;
+        }
+
+        return mb_strlen($phone) <= 4
+            ? str_repeat('•', mb_strlen($phone))
+            : str_repeat('•', mb_strlen($phone) - 4).mb_substr($phone, -4);
+    }
+
     public function resources()
     {
         return Response::success([
@@ -134,30 +246,83 @@ class GuardianController extends Controller
 
         $schoolId = (int) ActiveSchool::id();
 
-        $result = $this->guardianService->createGuardianWithUser(
-            attributes: $request->only([
-                'first_name',
-                'middle_name',
-                'last_name',
-                'gender',
-                'phone',
-                'whatsapp_number',
-                'city',
-                'state',
-                'country',
-                'postal_code',
-                'occupation',
-                'employer_name',
-                'marital_status',
-                'emergency_contact',
-                'id_type',
-                'id_number',
-                'id_expiry_date',
-            ]),
-            schoolId: $schoolId,
-            canLogin: (bool) $request->input('can_login', false),
-            email: $request->input('email'),
-        );
+        $validated = $request->validated();
+        // READ FROM validated(), NOT input(). The old code read `student_links` off
+        // input() while the key appeared in no rule at all, so nothing about it was
+        // ever checked; reading the validated bag is what makes the rules in
+        // GuardianRequest load-bearing rather than decorative.
+        $links = $validated['student_links'] ?? [];
+        $canLogin = (bool) ($validated['can_login'] ?? false);
+
+        // ONE TRANSACTION over the guardian AND every attachment. There was none:
+        // the guardian was committed by its own inner transaction and the links then
+        // failed (or were silently dropped) outside it, leaving a guardian with zero
+        // children and a 201 that said it had worked. Nesting inside
+        // createGuardianWithUser's own transaction is a savepoint, which is fine.
+        // The notification is deliberately OUTSIDE — StudentController::store:78-96
+        // is the same shape — so a rollback can never strand an email in flight.
+        $result = DB::transaction(function () use ($request, $schoolId, $canLogin, $links) {
+            $result = $this->guardianService->createGuardianWithUser(
+                attributes: $request->safe()->only([
+                    'first_name',
+                    'middle_name',
+                    'last_name',
+                    'gender',
+                    'phone',
+                    'whatsapp_number',
+                    'city',
+                    'state',
+                    'country',
+                    'postal_code',
+                    'occupation',
+                    'employer_name',
+                    'marital_status',
+                    'emergency_contact',
+                    'id_type',
+                    'id_number',
+                    'id_expiry_date',
+                ]),
+                schoolId: $schoolId,
+                canLogin: $canLogin,
+                email: $request->validated('email'),
+            );
+
+            foreach ($links as $i => $link) {
+                // The school_id predicate is pinned here TOO, not left to Student's
+                // global scope. The validation rule is the isolation guarantee and
+                // this is defence in depth behind it; between them there is no
+                // arrangement of scope state in which another school's child can be
+                // attached.
+                $student = Student::withoutGlobalScopes()
+                    ->whereNull('deleted_at')
+                    ->where('school_id', $schoolId)
+                    ->where('admission_number', $link['admission_number'])
+                    ->first();
+
+                // Not a silent skip. Validation already proved this row resolves, so
+                // reaching here means the student was removed between validation and
+                // write — rare, and the one thing it must not do is what the old
+                // code did, which was drop the link and answer 201.
+                if (! $student) {
+                    throw ValidationException::withMessages([
+                        "student_links.{$i}.admission_number" => "Student {$link['admission_number']} could not be found in this school. Nothing was saved.",
+                    ]);
+                }
+
+                $this->guardianService->attachToStudent(
+                    guardian: $result['guardian'],
+                    student: $student,
+                    // No `?? 'other'` fallback: relationship is a required, enum-checked
+                    // field now, so the fallback is dead and a dead fallback reads as
+                    // the designed behaviour for a case that cannot happen.
+                    relationship: $link['relationship'],
+                    isPrimary: (bool) ($link['is_primary'] ?? false),
+                    canLogin: $canLogin,
+                );
+            }
+
+            return $result;
+        });
 
         $guardian = $result['guardian'];
 
@@ -168,22 +333,12 @@ class GuardianController extends Controller
             );
         }
 
-        foreach ($request->input('student_links', []) as $link) {
-            // Student is tenant-scoped (SchoolScope) — no explicit filter needed.
-            $student = Student::where('admission_number', $link['admission_number'])->first();
-            if ($student) {
-                $this->guardianService->attachToStudent(
-                    guardian: $guardian,
-                    student: $student,
-                    relationship: $link['relationship'] ?? 'other',
-                    isPrimary: (bool) ($link['is_primary'] ?? false),
-                    canLogin: (bool) $request->input('can_login', false),
-                );
-            }
-        }
-
         return Response::created([
             'data' => GuardianResource::make($guardian),
+            // The backstop fired: the operator submitted a person who was already a
+            // guardian here and the row was reused rather than duplicated. Told, not
+            // hidden — silent reuse leaves them unsure which record they just edited.
+            'reused_existing_guardian' => $result['reused'],
             'redirect' => "/guardians/{$guardian->uuid}",
         ]);
     }

@@ -165,12 +165,14 @@ class ProcessBulkInvoiceRun implements ShouldQueue
                 return;
             }
 
-            $run->update([
-                'status' => BulkInvoiceRunStatus::Failed,
-                'finished_at' => now(),
-                'failure_reason' => 'The run did not finish: the worker died before it could report. '
-                    .'Invoices already raised have been kept, and re-running is safe. ('.$e->getMessage().')',
-            ]);
+            // The same three-column writer as failRun(). The model here is freshly loaded and carries
+            // no dirty state, so this is consistency rather than necessity — but two ways to fail a
+            // run is how one of them ends up being the one nobody audited.
+            $this->writeFailure(
+                $run->id,
+                'The run did not finish: the worker died before it could report. '
+                .'Invoices already raised have been kept, and re-running is safe. ('.$e->getMessage().')'
+            );
         });
     }
 
@@ -264,7 +266,12 @@ class ProcessBulkInvoiceRun implements ShouldQueue
             $this->attempt($run, $enrollment, fn () => $this->bill($run, $enrollment, $lines, $generate, $invoices));
         }
 
-        $this->reconcile($run, count($cohort), $enrollments->countBillableForSchool($this->schoolId));
+        $this->reconcile(
+            $run,
+            cohortSize: count($cohort),
+            unplaceableSize: count($unplaceable),
+            billable: $enrollments->countBillableForSchool($this->schoolId),
+        );
     }
 
     /**
@@ -386,8 +393,39 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * COUNTED FROM THE ROWS, NOT FROM A TALLY. An in-memory counter says what this job BELIEVES it
      * did; `finance_bulk_invoice_run_rows` says what is there. When they differ the difference is
      * the interesting fact, and only one of the two can show it.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────────────────
+     * THE NOBODY-BILLED RULE, AND IT IS A HEURISTIC RATHER THAN A DIAGNOSIS
+     *
+     * A run over a NON-EMPTY cohort that billed nobody — `billed + already_billed == 0` and
+     * `failed == cohort_count` — is recorded as `failed`, not `completed`.
+     *
+     * WHY, measured: a connection error injected at the first read inside GenerateInvoice produced
+     * three `failed` rows, `status = completed`, `failure_reason` NULL and a cohort equality that
+     * balanced perfectly. A screen would have said "Completed — 0 billed, 3 failed", which is a
+     * green word over a total outage. Every per-student catch this job needs in order to survive one
+     * bad episode is also what lets an environmental fault wear the costume of N ordinary
+     * per-student failures.
+     *
+     * IT IS A GUESS ABOUT SHAPE, NOT A CAUSE, and the run has no way to do better. It CANNOT tell an
+     * environmental fault from a genuine domain case where every student legitimately fails — the
+     * two produce byte-identical rows — and it deliberately does not try. Both are reported the same
+     * way, because in both cases the honest thing to tell an operator is "nothing was billed, go
+     * and read the reasons". The row-level reasons are the diagnosis; this is only the word on the
+     * run.
+     *
+     * WHAT IT DOES NOT CATCH, stated so nobody mistakes it for a health check:
+     *
+     *   - A PARTIAL OUTAGE. Half the cohort failing still reports `completed`, and that is the
+     *     realistic shape of a flaky connection. The rule fires only on total failure.
+     *   - An outage that lands AFTER the cohort loop. That throws, and is a run-level failure by
+     *     the ordinary path.
+     *   - An outage during the UNPLACEABLE loop. Those rows are not in this rule at all — their
+     *     alarm is the unplaceable equality above.
+     *   - An empty cohort. `cohort_count == 0` is excluded: a class level with nobody in it is a
+     *     normal, successful run that billed nobody, and firing on it would cry wolf every term.
      */
-    private function reconcile(BulkInvoiceRun $run, int $cohortSize, int $billable): void
+    private function reconcile(BulkInvoiceRun $run, int $cohortSize, int $unplaceableSize, int $billable): void
     {
         $counts = BulkInvoiceRunRow::query()
             ->where('run_id', $run->id)
@@ -397,39 +435,92 @@ class ProcessBulkInvoiceRun implements ShouldQueue
 
         $of = fn (BulkInvoiceRunOutcome $outcome): int => (int) ($counts[$outcome->value] ?? 0);
 
-        $unplaceable = $of(BulkInvoiceRunOutcome::Unplaceable);
+        $billed = $of(BulkInvoiceRunOutcome::Billed);
+        $already = $of(BulkInvoiceRunOutcome::AlreadyBilled);
+        $failed = $of(BulkInvoiceRunOutcome::Failed);
+
+        // THE NOBODY-BILLED RULE. A run that walked a non-empty cohort and raised nothing, where
+        // every single member failed, did not complete — see the docblock for why this is a
+        // heuristic and what it does not catch.
+        $nobodyBilled = $cohortSize > 0 && $billed === 0 && $already === 0 && $failed === $cohortSize;
 
         $run->update([
-            'status' => BulkInvoiceRunStatus::Completed,
+            'status' => $nobodyBilled ? BulkInvoiceRunStatus::Failed : BulkInvoiceRunStatus::Completed,
             'finished_at' => now(),
+            'failure_reason' => $nobodyBilled
+                ? 'Every one of the '.$cohortSize.' students in this cohort failed and none was billed. '
+                    .'That is far more likely to be a fault in the portal than a fault in '.$cohortSize
+                    .' separate enrollments — check the rows for the repeated reason before re-running. '
+                    .'Re-running is safe: anything that was billed comes back as already billed.'
+                : null,
 
-            // THE RUN'S OWN ACCOUNTING. `cohort_count` is the size of the list the run WALKED; the
-            // three below are counted from the rows it PERSISTED. Two independent sources, so the
-            // equality between them can fail — which is the only reason asserting it is worth
-            // anything.
+            // THE RUN'S OWN ACCOUNTING — two lists, two equalities. `cohort_count` and
+            // `unplaceable_listed_count` are the sizes of the lists the run WALKED; the four counts
+            // beside them are counted from the rows it PERSISTED. Two independent sources per line.
             'cohort_count' => $cohortSize,
-            'billed_count' => $of(BulkInvoiceRunOutcome::Billed),
-            'already_billed_count' => $of(BulkInvoiceRunOutcome::AlreadyBilled),
-            'failed_count' => $of(BulkInvoiceRunOutcome::Failed),
-            'unplaceable_count' => $unplaceable,
+            'billed_count' => $billed,
+            'already_billed_count' => $already,
+            'failed_count' => $failed,
+            'unplaceable_listed_count' => $unplaceableSize,
+            'unplaceable_count' => $of(BulkInvoiceRunOutcome::Unplaceable),
 
-            // THE SCHOOL-WIDE FIGURE, and it is subtracted from the LIST SIZES, not from the row
-            // counts. Using the row counts would let an unrecordable row quietly inflate this
-            // number, moving a defect from the equality above — where it is loud — into a residual
-            // that is large and unalarming on every healthy run.
+            // THE SCHOOL-WIDE FIGURE. BOTH SUBTRAHENDS ARE LIST SIZES — the earlier version used the
+            // unplaceable ROW count here while this comment claimed otherwise, so a lost unplaceable
+            // row moved out of an alarm and into a residual that is large and unalarming on every
+            // healthy run. That movement is the exact thing this line exists to prevent.
             'billable_count' => $billable,
-            'outside_coordinates_count' => $billable - $cohortSize - $unplaceable,
+            'outside_coordinates_count' => $billable - $cohortSize - $unplaceableSize,
         ]);
     }
 
     /**
      * A PER-RUN failure. `failure_reason` is the run's own; a student who could not be billed keeps
      * their reason on their row and never reaches here.
+     *
+     * IT WRITES THREE COLUMNS AND CANNOT WRITE A FOURTH, and that is the whole of this method's
+     * shape. `Model::update()` is `fill()` then `save()`: when the `save()` throws, the ATTRIBUTES
+     * STAY FILLED. So every earlier refused write left its payload sitting dirty on `$run`, and this
+     * method — which used to be another `$run->update()` — flushed it to the database on the way
+     * out. Cold review measured both states, and both are the same bug:
+     *
+     *   the run-transition refused → `status = failed` carrying a `started_at` that never persisted,
+     *                                on a run the database still believed was `pending`;
+     *   the closing write refused  → `status = failed` carrying `finished_at` AND ALL TEN COUNTS,
+     *                                correct and complete, on a run whose status says it did not
+     *                                finish. A screen would render a full, accurate report under the
+     *                                word "failed" — the worst of the two, because it is credible.
+     *
+     * {@see writeFailure()} bypasses the model's attribute bag entirely, so there is no dirty state
+     * to inherit — not "we remembered to refresh", but "there is nothing to refresh FROM".
      */
     private function failRun(BulkInvoiceRun $run, string $reason): void
     {
-        $run->update([
-            'status' => BulkInvoiceRunStatus::Failed,
+        $this->writeFailure($run->id, $reason);
+
+        // Bring the in-memory model back in step with the row, discarding whatever the refused write
+        // left on it. Callers and tests holding this instance must see what is actually stored.
+        $run->refresh();
+    }
+
+    /**
+     * Mark ONE run failed, writing EXACTLY `status`, `finished_at` and `failure_reason`.
+     *
+     * A QUERY-BUILDER UPDATE, DELIBERATELY, AND NOT A MODEL SAVE. A model save writes whatever is
+     * dirty, and the callers of this method are precisely the paths where something already went
+     * wrong and left the model dirty — see {@see failRun()} for the two measured states. Naming the
+     * columns makes inheriting a figure UNREPRESENTABLE rather than merely unlikely; a `refresh()`
+     * before a `save()` would have fixed the same two cases and would still write whatever the next
+     * caller happened to have pending.
+     *
+     * The status column's BEFORE UPDATE trigger fires on this write exactly as it does on a model
+     * save — the guard is on the table, not on the ORM — so the enum domain is still enforced.
+     *
+     * `status` is passed as its backed VALUE: an Eloquent mass update does not run casts.
+     */
+    private function writeFailure(int $runId, string $reason): void
+    {
+        BulkInvoiceRun::query()->whereKey($runId)->update([
+            'status' => BulkInvoiceRunStatus::Failed->value,
             'finished_at' => now(),
             'failure_reason' => $reason,
         ]);

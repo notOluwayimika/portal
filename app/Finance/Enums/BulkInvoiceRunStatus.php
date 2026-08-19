@@ -35,8 +35,12 @@ use App\Finance\Services\FeeScheduleLineMapper;
  * the next student.
  *
  * `Failed` DOES NOT MEAN NO INVOICE WAS RAISED, and this docblock said the opposite until cold
- * review measured it. Two of the four routes in are pre-invoice; two are not:
+ * review measured it. Two of the five routes in are pre-invoice; three are not:
  *
+ *   AFTER the cohort — the NOBODY-BILLED RULE: a non-empty cohort in which every member failed and
+ *                      nothing was billed is recorded `failed`, because a green word over a total
+ *                      outage is worse than a red one over a real domain failure. A heuristic, and
+ *                      {@see ProcessBulkInvoiceRun::reconcile()} says what it does not catch.
  *   BEFORE any invoice — no active fee schedule at the run's coordinates; a schedule the mapper
  *                        refuses ({@see FeeScheduleLineMapper::linesFor()}, five refusals). Both are
  *                        settled before the first row is written, so a run failed this way has zero

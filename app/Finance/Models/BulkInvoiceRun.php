@@ -34,20 +34,31 @@ use Illuminate\Support\Carbon;
  *
  * TWO KINDS OF FIGURE, AND CONFLATING THEM IS THE MISTAKE THIS SHAPE EXISTS TO PREVENT.
  *
- * 1. THE RUN'S OWN ACCOUNTING — EXACT, and the defect signal:
+ * 1. THE RUN'S OWN ACCOUNTING — EXACT, and the defect signal. TWO LISTS ARE WALKED, SO THERE ARE
+ *    TWO EQUALITIES:
  *
  *        billed_count + already_billed_count + failed_count == cohort_count
+ *        unplaceable_count                                  == unplaceable_listed_count
  *
- *    Four true headcounts of one set. `cohort_count` is the size of the list the run WALKED; the
- *    other three are counted from the rows it PERSISTED, so the two sides have independent sources
- *    and the equality can genuinely fail. It fails in exactly one way: a per-student row that could
- *    not be written (see ProcessBulkInvoiceRun::attempt(), which rules that such a row is a
- *    per-student fault and lets the run carry on). There is no separate "something went wrong"
- *    flag, because a flag the job sets is a flag the job can forget to set.
+ *    On each line the right-hand side is the size of a list the run WALKED and the left is counted
+ *    from the rows it PERSISTED, so the two sides have independent sources and either equality can
+ *    genuinely fail. Both fail in exactly one way: a per-student row that could not be written (see
+ *    ProcessBulkInvoiceRun::attempt(), which rules that such a row is a per-student fault and lets
+ *    the run carry on). There is no separate "something went wrong" flag, because a flag the job
+ *    sets is a flag the job can forget to set.
+ *
+ *    THE SECOND EQUALITY WAS MISSING until cold review measured its absence: one list had an alarm
+ *    and the other did not, so a blocked unplaceable row left everything green and quietly moved
+ *    into the residual below.
  *
  * 2. THE SCHOOL-WIDE FIGURE — `outside_coordinates_count`, which is NOT a defect signal:
  *
- *        outside_coordinates_count = billable_count − cohort_count − unplaceable_count
+ *        outside_coordinates_count = billable_count − cohort_count − unplaceable_listed_count
+ *
+ *    BOTH SUBTRAHENDS ARE LIST SIZES. The first version subtracted the unplaceable ROW count, so a
+ *    lost unplaceable row inflated this figure by one — a defect moving out of an alarm and into a
+ *    residual that is large and unalarming by design, which is the exact movement this figure is
+ *    shaped to prevent.
  *
  *    Billable students this run did not enumerate because they are priced at other coordinates. On
  *    a seven-class-level school a healthy single-level run leaves roughly six-sevenths of the
@@ -81,6 +92,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $billed_count NULL until the run finishes
  * @property int|null $already_billed_count
  * @property int|null $failed_count
+ * @property int|null $unplaceable_listed_count how many enrollments listUnplaceableForSchool() returned
  * @property int|null $unplaceable_count
  * @property int|null $billable_count the School's billable population, counted independently at run time
  * @property int|null $outside_coordinates_count SIGNED — billable students priced at other coordinates, NOT a miss count

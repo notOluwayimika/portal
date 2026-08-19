@@ -515,3 +515,218 @@ is a follow-up migration, not a rebase.
 
 `bin/quality`: **PASS 15/15**. Test file: `tests: 17, passed: 17`. Migration re-audited after the
 edit — up, rollback (0 tables, 0 triggers), re-up, and the idempotent re-run against a live schema.
+
+---
+
+# Round 3 — the re-check's three findings
+
+Third commit on this branch, on top of `cf1f9c9`. Two of the three are defects I introduced in
+round 2 while fixing round 1; the third was there from the start and round 2's own commit message
+made a claim that was false about it. All three are stated below as measured, not as intended.
+
+## R3.1 · FIX A — the residual mixed a list size with a row count
+
+`reconcile()` computed
+
+```php
+'outside_coordinates_count' => $billable - $cohortSize - $unplaceable,   // $unplaceable = a ROW count
+```
+
+`count($unplaceable)` — the list size, read three lines above the loop — was never passed in.
+**Round 2's commit message said "subtracted from the LIST SIZES, never the row counts", and the
+comment on the line said the same. The line did not.** So a lost unplaceable row did precisely the
+thing that sentence exists to forbid: it drained out of an alarm and into a residual that is large
+and unalarming on every healthy run.
+
+Measured by the reviewer, and reproduced here: block one unplaceable row → the cohort equality stays
+green, `unplaceable_count` reads 1 where the truth is 2, and the residual reads 1 where the truth
+is 0.
+
+**And the unplaceable list had no alarm at all.** The cohort had one and the unplaceable list did
+not, which is why the loss was silent in both directions. There are now **two lists and two
+equalities**:
+
+```
+billed_count + already_billed_count + failed_count == cohort_count
+unplaceable_count                                  == unplaceable_listed_count
+```
+
+New column `unplaceable_listed_count` (the list size), and the residual now subtracts
+`cohort_count` and `unplaceable_listed_count` — both list sizes, as the comment always claimed.
+
+### Planted reds
+
+**A1 — the code plant: subtract the row count again.**
+
+```
+tests 2  passed 1  failed 1
+
+FIXA  a blocked unplaceable row fires the unplaceable alarm and does NOT move the residual
+  the residual must be computed from the unplaceable LIST size, so a lost row stays in the
+  unplaceable alarm instead of draining into a number nobody reads as a problem
+  Failed asserting that 2 is identical to 1.
+```
+
+**A2 — the fixture plant: block one unplaceable row inside the healthy test.**
+
+```
+tests 1  passed 0  failed 1
+
+FIXA  both equalities hold and the residual subtracts the LIST sizes on a whole run
+  the run listed 2 unplaceable enrollments and recorded 1 — an unplaceable student the run saw
+  has no row
+  Failed asserting that 1 is identical to 2.
+```
+
+The block is a `BulkInvoiceRunRow::creating` listener naming one enrollment id — a **block closure,
+not an arrow fn**, because `creating` is a halting event and an arrow fn returning a value cancels
+the rest of the chain silently (the `halting-event-arrow-fn` failure mode). A decorated provider
+would have been the wrong tool: the list must stay exactly what the real adapter returned, since the
+whole question is what happens when the list and the rows disagree.
+
+## R3.2 · FIX B — a refused `update()` left its payload dirty and `failRun()` persisted it
+
+`Model::update()` is `fill()` then `save()`. When the `save()` throws, **the attributes stay
+filled** — and `failRun()` was another `$run->update()`, so it flushed the refused payload on the
+way out. Two measured states, both the same bug:
+
+| Refused write | What the row said afterwards |
+| --- | --- |
+| the run transition (`pending → running`) | `status = failed` carrying a `started_at` the database never held |
+| the closing write (`reconcile()`) | `status = failed` carrying `finished_at` **and all ten counts, correct and complete**, on a run whose status says it did not finish |
+
+The second is the one a screen would render, and it is the worse of the two precisely because it is
+**credible**: a full, accurate report under the word "failed".
+
+**The fix is `writeFailure()`** — a query-builder update naming exactly `status`, `finished_at` and
+`failure_reason`. Not "we remembered to refresh", but *there is nothing to refresh from*: the
+model's attribute bag is not consulted at all, so inheriting a figure is unrepresentable rather than
+unlikely. A `refresh()` before a `save()` would have fixed these two cases and would still write
+whatever the next caller happened to have pending. `failRun()` calls it and then `refresh()`es the
+in-memory model so callers see the row; `failed()` (the queue hook) routes through the same writer —
+two ways to fail a run is how one of them ends up being the one nobody audited.
+
+The status trigger fires on this write exactly as on a model save (the guard is on the table, not
+the ORM), and `status` is passed as its backed value because an Eloquent mass update does not run
+casts.
+
+### Planted red — `failRun()` back to a model update
+
+```
+tests 2  passed 0  failed 2
+
+FIXB  a refused run-transition leaves a failed run with no started_at it never persisted
+  the transition was refused, so the database never held a started_at — a failed run must not
+  report one
+  Failed asserting that '2026-08-19 17:53:30' is null.
+
+FIXB  a refused closing write leaves a failed run with NONE of the figures it never stored
+  [cohort_count] was written by an update that was REFUSED — a failing run must not inherit the
+  figures of a run that did not close
+  Failed asserting that 2 is null.
+```
+
+Both tests read the row through `DB::table(...)`, past the model, so nothing in memory can dress it
+up, and assert **column by column**. The eight figure columns are asserted one at a time by name
+(`birExpectNoFigures()`) rather than in a chain, because a chained `->and(...)->toBeNull()` reports
+only *"2 is null"* and leaves the reader to work out which of ten columns that was.
+
+The second test also pins that the two invoices the run DID raise are untouched — the run failed,
+the money it made did not un-happen, and re-running returns them as already billed.
+
+## R3.3 · FIX C — an environmental fault read as N ordinary per-student failures
+
+Injected at the first read inside `GenerateInvoice`, a connection error produced three `failed`
+rows, `status = completed`, `failure_reason` NULL, and a cohort equality that balanced perfectly. A
+screen would have said **"Completed — 0 billed, 3 failed"** — a green word over a total outage.
+
+This is the cost of FIX 1's own medicine: every per-student catch the run needs in order to survive
+one bad episode is also what lets an outage wear the costume of N ordinary failures.
+
+**The rule:** a run over a **non-empty** cohort where `billed + already_billed == 0` and
+`failed == cohort_count` is recorded `failed`, with a reason saying so.
+
+**It is a heuristic about SHAPE, not a diagnosis**, and the docblock says so in those words. It
+**cannot** tell an environmental fault from a genuine domain case where every student legitimately
+fails — the two produce byte-identical rows — and it deliberately does not try. Both are reported
+the same way, because in both cases the honest thing to tell an operator is *"nothing was billed, go
+and read the reasons"*. The row-level reasons are the diagnosis; this is only the word on the run.
+
+**What it does not catch**, written into the docblock and pinned by a test rather than left to be
+discovered:
+
+- **A partial outage.** Half the cohort failing still reports `completed`, and that is the realistic
+  shape of a flaky connection. The rule fires only on total failure.
+- An outage landing after the cohort loop (that throws, and is a run-level failure the ordinary way).
+- An outage during the unplaceable loop (those rows are not in this rule; their alarm is R3.1's).
+- An empty cohort, excluded on purpose: a class level with nobody in it bills nobody, and firing on
+  that would cry wolf every term.
+
+### Planted red — the rule removed
+
+```
+tests 4  passed 2  failed 2
+
+FIXC  an environmental fault that fails every student leaves the run FAILED, not completed
+  three students, three failures, nothing billed: "Completed — 0 billed, 3 failed" is a green
+  word over a total outage
+  -BulkInvoiceRunStatus Enum (Failed, 'failed')
+  +BulkInvoiceRunStatus Enum (Completed, 'completed')
+
+FIXC  a genuine all-students-fail domain case is reported IDENTICALLY, because the run cannot
+      tell them apart
+  -BulkInvoiceRunStatus Enum (Failed, 'failed')
+  +BulkInvoiceRunStatus Enum (Completed, 'completed')
+```
+
+Two of the four FIXC tests stay green under the plant, and that is the point: they are the ones
+asserting the rule does **not** fire — the partial outage and the empty cohort.
+
+## R3.4 · A note with no code: a database that ran the earlier migration is stranded
+
+The migration file has been edited in place twice on this branch (see R2.8 for why: the tables are
+new, unmerged, and exist in no database but throwaway ones). **A database that already applied
+`87b3702`'s version keeps `unaccounted_count` and never receives `cohort_count`,
+`unplaceable_listed_count` or `outside_coordinates_count` — `migrate` reports "Nothing to
+migrate."** The migration is recorded, so nothing will ever re-run it.
+
+Only throwaway databases are affected. But if **`portal_testing` or `portal_drive`** ever ran the
+earlier version, they need:
+
+```bash
+DB_DATABASE=portal_testing php artisan migrate:fresh
+```
+
+`portal_testing` self-heals in practice — `RefreshDatabase` runs `migrate:fresh` once per test
+process — so this bites a database someone migrated by hand and then queried directly. The
+production copy `portaa10_portal` and `brookstone_portal_db` have never had this migration and are
+unaffected.
+
+## R3.5 · Gate and migration audit
+
+`bin/quality`: **PASS 15/15**. Test file: `tests: 25, passed: 25, assertions: 196`.
+
+Four-path audit re-run against the edited migration, with the rollback depth **re-derived on the
+database in front of me** (a from-zero `portal_testing`: batch 1, **0 migrations sitting after
+mine**, so `--step=1` is mine — the reasoning R2.4 corrected, applied):
+
+| Path | Result |
+| --- | --- |
+| `migrate:fresh` | `DONE` |
+| `migrate:rollback --step=1` | `finance_bulk%` tables **0**, triggers **0** |
+| `migrate` | `DONE` |
+| idempotent re-run (migrations row deleted, live schema) | `DONE` in 46.4 ms — no 1050/1061/1826/1359 |
+
+Columns read back from `information_schema` afterwards:
+
+```
+cohort_count               int unsigned
+billed_count               int unsigned
+already_billed_count       int unsigned
+failed_count               int unsigned
+unplaceable_listed_count   int unsigned
+unplaceable_count          int unsigned
+billable_count             int unsigned
+outside_coordinates_count  int            (signed, deliberately)
+triggers: 4
+```

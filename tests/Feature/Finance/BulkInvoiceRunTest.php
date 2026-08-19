@@ -227,9 +227,9 @@ function birOutcomes(BulkInvoiceRun $run): array
  *                    `enrollmentId` names no row, so the row write fails the composite FK (1452)
  *                    rather than the unique index. A failure that is NOT a duplicate.
  */
-function birProviderWith(?string $vanishing = null, ?Closure $onCohort = null, ?Closure $onUnplaceable = null): void
+function birProviderWith(?string $vanishing = null, ?Closure $onCohort = null, ?Closure $onUnplaceable = null, ?Closure $onFind = null): void
 {
-    app()->bind(BillableEnrollmentProvider::class, fn () => new class($vanishing, $onCohort, $onUnplaceable) implements BillableEnrollmentProvider
+    app()->bind(BillableEnrollmentProvider::class, fn () => new class($vanishing, $onCohort, $onUnplaceable, $onFind) implements BillableEnrollmentProvider
     {
         private BillableEnrollmentAdapter $inner;
 
@@ -237,12 +237,17 @@ function birProviderWith(?string $vanishing = null, ?Closure $onCohort = null, ?
             private readonly ?string $vanishing,
             private readonly ?Closure $onCohort,
             private readonly ?Closure $onUnplaceable,
+            private readonly ?Closure $onFind,
         ) {
             $this->inner = new BillableEnrollmentAdapter;
         }
 
         public function findByUuid(string $enrollmentUuid): ?BillableEnrollment
         {
+            if ($this->onFind !== null) {
+                return ($this->onFind)($enrollmentUuid);
+            }
+
             return $enrollmentUuid === $this->vanishing ? null : $this->inner->findByUuid($enrollmentUuid);
         }
 
@@ -520,8 +525,11 @@ test('the reconciliation adds up over a fixture where all five buckets are non-e
     // And the school-wide identity, which is a DIFFERENT kind of statement — a residual, not a
     // miss count. `outside_coordinates_count` is subtracted from the LIST SIZES, never from the row
     // counts, so an unrecordable row cannot quietly drain into it.
-    expect($run->cohort_count + $run->unplaceable_count + $run->outside_coordinates_count)
+    expect($run->cohort_count + $run->unplaceable_listed_count + $run->outside_coordinates_count)
         ->toBe($run->billable_count);
+
+    // Both lists were walked whole, so both equalities hold here.
+    expect($run->unplaceable_count)->toBe($run->unplaceable_listed_count);
 
     // The unplaceable student is RECORDED, not merely counted — the roster moves, so the run has to
     // write down who it saw at the moment it saw them.
@@ -883,4 +891,285 @@ test('FIX3: the private run-level failure helper does not shadow InteractsWithQu
     $ours = new ReflectionMethod(ProcessBulkInvoiceRun::class, 'failRun');
     expect($ours->isPrivate())->toBeTrue()
         ->and($ours->getFileName())->toBe((new ReflectionClass(ProcessBulkInvoiceRun::class))->getFileName());
+});
+
+/* ── 11 · Both subtrahends are LIST sizes, and both lists have an alarm (FIX A) ────────────── */
+
+/**
+ * Block the row write for ONE named enrollment, and nothing else.
+ *
+ * A model `creating` listener rather than a decorated provider, because the list must stay exactly
+ * what the real adapter returned — the whole question is what happens when the LIST and the ROWS
+ * disagree, and a decorator that changed the list would be changing the wrong side of it.
+ *
+ * A BLOCK CLOSURE, NOT AN ARROW FN. `creating` is a HALTING event (dispatched via `until()`), so an
+ * arrow fn returning a value silently cancels the rest of the chain — the AddUuid/BelongsToSchool
+ * failure mode the boundary lint's `halting-event-arrow-fn` rule exists for.
+ */
+function birBlockRowFor(int $enrollmentId): void
+{
+    BulkInvoiceRunRow::creating(function (BulkInvoiceRunRow $row) use ($enrollmentId): void {
+        if ((int) $row->enrollment_id === $enrollmentId) {
+            throw new RuntimeException('planted: this row cannot be written');
+        }
+    });
+}
+
+test('FIXA: both equalities hold and the residual subtracts the LIST sizes on a whole run', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);          // billed
+    birStudent($ctx, $ctx['arm']->id, null);                      // unplaceable
+    birStudent($ctx, $ctx['arm']->id, null);                      // unplaceable
+    birStudent($ctx, $ctx['arm2']->id, $ctx['term']->id);         // outside these coordinates
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed);
+
+    // THE SECOND EQUALITY, which did not exist before this fix: the unplaceable list had no alarm
+    // at all, so a row lost out of it was invisible.
+    expect($run->unplaceable_count)->toBe(
+        $run->unplaceable_listed_count,
+        'the run listed '.$run->unplaceable_listed_count.' unplaceable enrollments and recorded '
+        .$run->unplaceable_count.' — an unplaceable student the run saw has no row'
+    );
+
+    expect($run->cohort_count)->toBe(1)
+        ->and($run->unplaceable_listed_count)->toBe(2)
+        ->and($run->unplaceable_count)->toBe(2)
+        ->and($run->billable_count)->toBe(4)
+        ->and($run->outside_coordinates_count)->toBe(1);
+});
+
+test('FIXA: a blocked unplaceable row fires the unplaceable alarm and does NOT move the residual', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);          // billed
+    $blocked = birStudent($ctx, $ctx['arm']->id, null);           // unplaceable, row blocked below
+    birStudent($ctx, $ctx['arm']->id, null);                      // unplaceable, records fine
+    birStudent($ctx, $ctx['arm2']->id, $ctx['term']->id);         // outside these coordinates
+
+    birBlockRowFor((int) StudentCurriculum::withoutGlobalScopes()->where('student_id', $blocked->id)->value('id'));
+
+    $run = birRun($ctx);
+
+    // The run survives it — an unrecordable row is a per-student fault (FIX 1).
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->billed_count)->toBe(1);
+
+    // THE ALARM FIRES. Two listed, one recorded.
+    expect($run->unplaceable_listed_count)->toBe(2)
+        ->and($run->unplaceable_count)->toBe(1)
+        ->and($run->unplaceable_count)->toBeLessThan($run->unplaceable_listed_count);
+
+    // AND THE RESIDUAL DOES NOT ABSORB THE LOST ROW. This is the assertion FIX A exists for:
+    // subtracting the unplaceable ROW count would read 2 here, quietly turning one lost row into
+    // "one more student is priced elsewhere" — a defect moving out of an alarm and into a figure
+    // that is large and unalarming on every healthy run.
+    expect($run->outside_coordinates_count)->toBe(
+        1,
+        'the residual must be computed from the unplaceable LIST size, so a lost row stays in the '
+        .'unplaceable alarm instead of draining into a number nobody reads as a problem'
+    );
+});
+
+/* ── 12 · A refused write must not leave its payload for failRun() to persist (FIX B) ──────── */
+
+/**
+ * Refuse exactly ONE `BulkInvoiceRun` update — the first whose dirty payload matches — then disarm.
+ *
+ * It has to disarm: the point of the plant is what the NEXT write does, so a listener that kept
+ * throwing would block the very thing under test.
+ */
+function birRefuseRunUpdateOnce(Closure $matches): void
+{
+    $state = new stdClass;
+    $state->fired = false;
+
+    BulkInvoiceRun::updating(function (BulkInvoiceRun $run) use ($matches, $state): void {
+        if (! $state->fired && $matches($run->getDirty())) {
+            $state->fired = true;
+
+            throw new RuntimeException('planted: this update is refused');
+        }
+    });
+}
+
+/**
+ * Every figure `reconcile()` writes must be absent, NAMED ONE AT A TIME so a red says WHICH column a
+ * failed run inherited. A chained `->and(...)->toBeNull()` reports only "2 is null" and leaves the
+ * reader to work out which of ten columns that was.
+ */
+function birExpectNoFigures(object $stored): void
+{
+    $figures = [
+        'cohort_count', 'billed_count', 'already_billed_count', 'failed_count',
+        'unplaceable_listed_count', 'unplaceable_count', 'billable_count', 'outside_coordinates_count',
+    ];
+
+    foreach ($figures as $column) {
+        expect($stored->{$column})->toBeNull(
+            "[{$column}] was written by an update that was REFUSED — a failing run must not inherit "
+            .'the figures of a run that did not close'
+        );
+    }
+}
+
+/** The stored row, read past the model, so nothing in memory can dress it up. */
+function birStoredRun(BulkInvoiceRun $run): object
+{
+    return DB::table('finance_bulk_invoice_runs')->where('id', $run->id)->first();
+}
+
+test('FIXB: a refused run-transition leaves a failed run with no started_at it never persisted', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // The very first write process() makes: pending -> running, with started_at.
+    birRefuseRunUpdateOnce(fn (array $dirty) => ($dirty['status'] ?? null) === BulkInvoiceRunStatus::Running->value);
+
+    $run = birRun($ctx);
+    $stored = birStoredRun($run);
+
+    // Column by column, against the row.
+    expect($stored->status)->toBe('failed')
+        ->and($stored->started_at)->toBeNull('the transition was refused, so the database never held a started_at — a failed run must not report one')
+        ->and($stored->finished_at)->not->toBeNull()
+        ->and($stored->failure_reason)->not->toBeNull()
+        ->and($stored->fee_schedule_id)->toBeNull();
+
+    birExpectNoFigures($stored);
+});
+
+test('FIXB: a refused closing write leaves a failed run with NONE of the figures it never stored', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, null);
+
+    // reconcile()'s single update — the one carrying every count.
+    birRefuseRunUpdateOnce(fn (array $dirty) => array_key_exists('billed_count', $dirty));
+
+    $run = birRun($ctx);
+    $stored = birStoredRun($run);
+
+    // THIS IS THE ONE A SCREEN WOULD RENDER: before the fix the row said `failed` while carrying a
+    // complete and CORRECT set of counts — 2 billed, 1 unplaceable, a balanced cohort equality —
+    // because failRun() flushed the payload the refused update had left dirty on the model. A
+    // credible full report under the word "failed" is worse than an obviously empty one.
+    expect($stored->status)->toBe('failed')
+        ->and($stored->failure_reason)->not->toBeNull()
+        ->and($stored->finished_at)->not->toBeNull()
+        // The transition DID persist here, so this one is legitimately set.
+        ->and($stored->started_at)->not->toBeNull()
+        ->and($stored->fee_schedule_id)->not->toBeNull();
+
+    // And not one figure from the write that was refused.
+    birExpectNoFigures($stored);
+
+    // The invoices the run DID raise are untouched — the run failed, the money it made did not
+    // un-happen, and re-running returns them as already billed.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(2);
+
+    // And the in-memory model agrees with the row rather than with the payload that was refused.
+    expect($run->refresh()->billed_count)->toBeNull();
+});
+
+/* ── 13 · Nobody billed is not "completed" (FIX C) ─────────────────────────────────────────── */
+
+test('FIXC: an environmental fault that fails every student leaves the run FAILED, not completed', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // The shape a lost connection takes on this path: the first read inside GenerateInvoice blows up
+    // for every student, and each blow-up is caught per student — which is exactly what lets an
+    // outage wear the costume of N ordinary failures.
+    birProviderWith(onFind: function (string $uuid) {
+        throw new RuntimeException('SQLSTATE[HY000] [2006] MySQL server has gone away');
+    });
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(
+        BulkInvoiceRunStatus::Failed,
+        'three students, three failures, nothing billed: "Completed — 0 billed, 3 failed" is a green '
+        .'word over a total outage'
+    )
+        ->and($run->failure_reason)->toContain('Every one of the 3 students in this cohort failed')
+        // The rows are still there and still carry the real reason — the heuristic changes the word
+        // on the RUN, it does not replace the diagnosis.
+        ->and($run->failed_count)->toBe(3)
+        ->and($run->cohort_count)->toBe(3)
+        ->and($run->billed_count)->toBe(0);
+
+    $reasons = BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->pluck('reason');
+    expect($reasons)->toHaveCount(3);
+    foreach ($reasons as $reason) {
+        expect($reason)->toContain('MySQL server has gone away');
+    }
+});
+
+test('FIXC: a genuine all-students-fail domain case is reported IDENTICALLY, because the run cannot tell them apart', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    // No infrastructure fault anywhere: every episode legitimately fails to resolve at billing time,
+    // which is the domain refusal GenerateInvoice raises by name. The rows differ from the test
+    // above — the run row does not.
+    birProviderWith(onFind: fn (string $uuid) => null);
+
+    $run = birRun($ctx);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Failed)
+        ->and($run->failure_reason)->toContain('Every one of the 2 students in this cohort failed')
+        ->and($run->failed_count)->toBe(2);
+
+    expect(BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->first()->reason)
+        ->toContain('No billable enrollment found');
+
+    // SAID OUT LOUD: the two runs above are byte-identical at the run level and the rule does not
+    // try to separate them. It is a statement about SHAPE — nothing was billed — not about cause.
+    // The row reasons are the diagnosis.
+});
+
+test('FIXC: the rule does NOT fire on a partial outage — a pinned limitation, not an oversight', function () {
+    $ctx = birSchool();
+    birSchedule($ctx);
+    $doomed = birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    birProviderLosing((string) StudentCurriculum::withoutGlobalScopes()->where('student_id', $doomed->id)->value('uuid'));
+
+    // HALF THE COHORT FAILING STILL REPORTS COMPLETED. This is the realistic shape of a flaky
+    // connection and the heuristic misses it — stated here as a pinned limitation rather than left
+    // for someone to discover as a surprise.
+    $partial = birRun($ctx);
+    expect($partial->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($partial->billed_count)->toBe(1)
+        ->and($partial->failed_count)->toBe(1);
+
+});
+
+test('FIXC: an empty cohort is a normal successful run, not a nobody-billed failure', function () {
+    $ctx = birSchool();
+    // A schedule at the SECOND class level, where no student is enrolled.
+    birSchedule($ctx, level: $ctx['level2']);
+    birStudent($ctx, $ctx['arm']->id, $ctx['term']->id);   // enrolled at the FIRST level
+
+    $run = birRun($ctx, $ctx['level2']);
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Completed)
+        ->and($run->cohort_count)->toBe(0)
+        ->and($run->billed_count)->toBe(0)
+        ->and($run->failure_reason)->toBeNull('a class level with nobody in it bills nobody, and that is not a failure');
 });

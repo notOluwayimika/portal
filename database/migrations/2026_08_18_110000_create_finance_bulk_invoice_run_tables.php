@@ -167,16 +167,22 @@ return new class extends Migration
 
                 // ── THE RUN'S OWN ACCOUNTING. EXACT, AND THE DEFECT SIGNAL ────────────────────
                 //
-                // `cohort_count` is how many enrollments listForCohort() RETURNED, and the invariant
-                // over these four is an EQUALITY, not an estimate:
+                // TWO LISTS ARE WALKED AND TWO EQUALITIES HOLD OVER THEM, not one:
                 //
                 //     billed_count + already_billed_count + failed_count == cohort_count
+                //     unplaceable_count                                  == unplaceable_listed_count
                 //
-                // All four are true headcounts of the same set. When they disagree, a row the run
-                // meant to write did not get written — which is the only way the job can now lose a
-                // student, since a per-student write that throws is logged and skipped rather than
-                // taking the run down. So the inequality IS the alarm, and there is no separate flag
-                // pretending to be one.
+                // On each line the right-hand side is the size of a LIST the run walked and the left
+                // is counted from the rows it PERSISTED — two independent sources, which is the only
+                // reason either equality can fail and therefore the only reason asserting them is
+                // worth anything. They fail in exactly one way: a per-student row that could not be
+                // written. So the inequality IS the alarm, and there is no separate flag pretending
+                // to be one.
+                //
+                // THE UNPLACEABLE EQUALITY WAS MISSING and its absence was measured: blocking one
+                // unplaceable row left the cohort equality green, `unplaceable_count` reading 1 where
+                // the truth was 2, and the residual below over-reporting by exactly that lost row.
+                // One list had an alarm and the other did not.
                 //
                 // The counts are re-derived from the rows actually PERSISTED, never from an
                 // in-memory tally: a tally says what the job believes it did, and could not
@@ -185,6 +191,7 @@ return new class extends Migration
                 $table->unsignedInteger('billed_count')->nullable();
                 $table->unsignedInteger('already_billed_count')->nullable();
                 $table->unsignedInteger('failed_count')->nullable();
+                $table->unsignedInteger('unplaceable_listed_count')->nullable();
                 $table->unsignedInteger('unplaceable_count')->nullable();
 
                 // ── THE SCHOOL-WIDE FIGURE, WHICH IS A DIFFERENT KIND OF NUMBER ───────────────
@@ -201,7 +208,16 @@ return new class extends Migration
                 // number that is not. It says what it counts: billable students this run did not
                 // enumerate because they are priced somewhere else.
                 //
-                //     outside_coordinates_count = billable_count - cohort_count - unplaceable_count
+                //     outside_coordinates_count = billable_count
+                //                               - cohort_count
+                //                               - unplaceable_listed_count
+                //
+                // BOTH SUBTRAHENDS ARE LIST SIZES, and that took two goes to get right. The first
+                // version subtracted `unplaceable_count` — a ROW count — while its own comment said
+                // it subtracted list sizes, so a lost unplaceable row drained out of the (then
+                // absent) unplaceable alarm and into this residual, which is large and unalarming on
+                // every healthy run. That is precisely the movement the residual is shaped to
+                // prevent, committed by the line that claimed to prevent it.
                 //
                 // IT UNDER-REPORTS BY DESIGN, AND BY A KNOWN AMOUNT. billableEpisodes() takes
                 // MAX(id) GROUP BY student_id, and SQL collapses every NULL student_id into ONE

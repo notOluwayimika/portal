@@ -593,15 +593,16 @@ way out. Two measured states, both the same bug:
 | Refused write | What the row said afterwards |
 | --- | --- |
 | the run transition (`pending → running`) | `status = failed` carrying a `started_at` the database never held |
-| the closing write (`reconcile()`) | `status = failed` carrying `finished_at` **and all ten counts, correct and complete**, on a run whose status says it did not finish |
+| the closing write (`reconcile()`) | `status = failed` carrying `finished_at` **and every one of the eight counts, correct and complete**, on a run whose status says it did not finish |
 
 The second is the one a screen would render, and it is the worse of the two precisely because it is
 **credible**: a full, accurate report under the word "failed".
 
-**The fix is `writeFailure()`** — a query-builder update naming exactly `status`, `finished_at` and
+**The fix is `writeFailure()`** — a query-builder update carrying `status`, `finished_at` and
 `failure_reason`. Not "we remembered to refresh", but *there is nothing to refresh from*: the
 model's attribute bag is not consulted at all, so inheriting a figure is unrepresentable rather than
-unlikely. A `refresh()` before a `save()` would have fixed these two cases and would still write
+unlikely. (**This paragraph said "naming exactly `status`, `finished_at` and `failure_reason`" and
+was overstated by one column — corrected in R4.1 below.**) A `refresh()` before a `save()` would have fixed these two cases and would still write
 whatever the next caller happened to have pending. `failRun()` calls it and then `refresh()`es the
 in-memory model so callers see the row; `failed()` (the queue hook) routes through the same writer —
 two ways to fail a run is how one of them ends up being the one nobody audited.
@@ -730,3 +731,63 @@ billable_count             int unsigned
 outside_coordinates_count  int            (signed, deliberately)
 triggers: 4
 ```
+
+---
+
+# Round 4 — wording only, no behaviour
+
+Fourth commit on this branch, on top of `7a37f2a`. The re-check **proved the property** FIX B was
+built for and found the claim about it overstated by one column. Nothing executable changed.
+
+## R4.1 · The failure write names FOUR columns, and only three come from the caller
+
+`writeFailure()`'s docblock — and `7a37f2a`'s commit message — said it wrote *"EXACTLY `status`,
+`finished_at` and `failure_reason`"*. The measured `SET` clause is **four** columns: Eloquent's
+builder appends `updated_at` itself via `Builder::addUpdatedAtColumn()`.
+
+Re-measured here on 8.0.43 with `DB::pretend()` rather than taken on report — six bindings, four in
+the `SET` and two in the `WHERE`:
+
+```sql
+update `finance_bulk_invoice_runs`
+   set `status` = ?, `finished_at` = ?, `failure_reason` = ?,
+       `finance_bulk_invoice_runs`.`updated_at` = ?
+ where `finance_bulk_invoice_runs`.`id` = ? and `finance_bulk_invoice_runs`.`school_id` = ?
+```
+
+**The fourth column is not an exception to the property; "exactly three" was describing the wrong
+thing.** What FIX B needs is not a COUNT of columns but a SOURCE: nothing in this statement is read
+from the model's attribute bag. `updated_at` is stamped from the framework's clock at statement-build
+time, on a **fresh builder** that consults no model instance, so a figure left dirty by a refused
+write has no route in. The re-check confirmed it from the other end — a sentinel `updated_at` set on
+the model does not land.
+
+`7a37f2a`'s commit message stands as written; this is the correction, recorded here rather than
+rewritten there.
+
+## R4.2 · `reconcile()`'s payload is eleven keys, not ten
+
+`status`, `finished_at`, `failure_reason` and the **eight** counts. Ten reach the wire on a healthy
+run because `failure_reason` goes NULL to NULL and is therefore not dirty.
+
+The failRun docblock said *"all ten counts"*, conflating the payload's size with the number of
+figures in it. There are eight figures: `cohort_count`, `billed_count`, `already_billed_count`,
+`failed_count`, `unplaceable_listed_count`, `unplaceable_count`, `billable_count`,
+`outside_coordinates_count`. Corrected in the job docblock and in R3.2's table above; the
+`birExpectNoFigures()` helper already asserted exactly those eight, so no test changed.
+
+## R4.3 · The `WHERE` clause carries `school_id`, not just the key
+
+`BulkInvoiceRun` uses `BelongsToSchool`, so `SchoolScope` adds `school_id = <active school>` beside
+`whereKey()` — visible in the SQL above, and worth a line because a reader counting six bindings for
+a three-column update will meet it.
+
+Harmless, and mildly welcome: under `SchoolAware` the active School is the job's own, and in
+`failed()` it is the one that method sets for itself before reading the run, so the extra predicate
+can only ever match the row already named by its primary key. It is not load-bearing isolation — the
+primary key is — but it is not a surprise either once it is written down.
+
+## R4.4 · Gate
+
+`bin/quality`: **PASS 15/15**. No behaviour changed, so the planted reds of rounds 1–3 stand as
+recorded.

@@ -477,7 +477,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * A PER-RUN failure. `failure_reason` is the run's own; a student who could not be billed keeps
      * their reason on their row and never reaches here.
      *
-     * IT WRITES THREE COLUMNS AND CANNOT WRITE A FOURTH, and that is the whole of this method's
+     * NOTHING IT WRITES COMES FROM THE MODEL'S ATTRIBUTE BAG, and that is the whole of this method's
      * shape. `Model::update()` is `fill()` then `save()`: when the `save()` throws, the ATTRIBUTES
      * STAY FILLED. So every earlier refused write left its payload sitting dirty on `$run`, and this
      * method — which used to be another `$run->update()` — flushed it to the database on the way
@@ -485,13 +485,20 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      *
      *   the run-transition refused → `status = failed` carrying a `started_at` that never persisted,
      *                                on a run the database still believed was `pending`;
-     *   the closing write refused  → `status = failed` carrying `finished_at` AND ALL TEN COUNTS,
-     *                                correct and complete, on a run whose status says it did not
-     *                                finish. A screen would render a full, accurate report under the
-     *                                word "failed" — the worst of the two, because it is credible.
+     *   the closing write refused  → `status = failed` carrying `finished_at` AND EVERY ONE OF THE
+     *                                EIGHT COUNTS, correct and complete, on a run whose status says
+     *                                it did not finish. A screen would render a full, accurate
+     *                                report under the word "failed" — the worst of the two, because
+     *                                it is credible.
      *
-     * {@see writeFailure()} bypasses the model's attribute bag entirely, so there is no dirty state
-     * to inherit — not "we remembered to refresh", but "there is nothing to refresh FROM".
+     * (`reconcile()`'s payload is ELEVEN keys — `status`, `finished_at`, `failure_reason` and the
+     * eight counts — of which TEN reach the wire on a healthy run: `failure_reason` goes NULL to
+     * NULL and is therefore not dirty. The counts are the eight that matter here, and an earlier
+     * version of this comment said "all ten counts", conflating the payload's size with the number
+     * of figures in it.)
+     *
+     * {@see writeFailure()} bypasses the attribute bag entirely, so there is no dirty state to
+     * inherit — not "we remembered to refresh", but "there is nothing to refresh FROM".
      */
     private function failRun(BulkInvoiceRun $run, string $reason): void
     {
@@ -503,7 +510,25 @@ class ProcessBulkInvoiceRun implements ShouldQueue
     }
 
     /**
-     * Mark ONE run failed, writing EXACTLY `status`, `finished_at` and `failure_reason`.
+     * Mark ONE run failed. The `SET` clause carries FOUR columns: `status`, `finished_at` and
+     * `failure_reason` from the caller, plus `updated_at`, which Eloquent's builder appends itself
+     * (`Builder::addUpdatedAtColumn()`).
+     *
+     * THE FOURTH ONE IS NOT AN EXCEPTION TO THE PROPERTY, and saying "exactly three" — as this
+     * docblock and 7a37f2a's commit message both did — described the wrong thing. The property that
+     * matters is not the COUNT of columns, it is the SOURCE: **nothing in this statement is read
+     * from the model's attribute bag.** `updated_at` is stamped from the framework's clock at
+     * statement-build time and the statement is built on a FRESH builder, so no model instance is
+     * consulted and a figure left dirty by a refused write has no route in. The re-check confirmed
+     * it from the other end: a sentinel `updated_at` set on the model does NOT land.
+     *
+     * Measured on 8.0.43 with `DB::pretend()`, which is also where the `where` note below comes
+     * from — six bindings, four in the `SET` and two in the `WHERE`:
+     *
+     *     update `finance_bulk_invoice_runs`
+     *        set `status` = ?, `finished_at` = ?, `failure_reason` = ?,
+     *            `finance_bulk_invoice_runs`.`updated_at` = ?
+     *      where `finance_bulk_invoice_runs`.`id` = ? and `finance_bulk_invoice_runs`.`school_id` = ?
      *
      * A QUERY-BUILDER UPDATE, DELIBERATELY, AND NOT A MODEL SAVE. A model save writes whatever is
      * dirty, and the callers of this method are precisely the paths where something already went
@@ -511,6 +536,12 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * columns makes inheriting a figure UNREPRESENTABLE rather than merely unlikely; a `refresh()`
      * before a `save()` would have fixed the same two cases and would still write whatever the next
      * caller happened to have pending.
+     *
+     * THE `WHERE` CLAUSE IS NOT JUST THE KEY. `BulkInvoiceRun` carries `BelongsToSchool`, so
+     * `SchoolScope` adds `school_id = <active school>` beside `whereKey()` — a reader counting the
+     * bindings will meet it. Harmless and mildly welcome here: under `SchoolAware` the active School
+     * is the job's own, and in {@see failed()} it is the one that method sets for itself, so the
+     * extra predicate can only ever match the row already named by its primary key.
      *
      * The status column's BEFORE UPDATE trigger fires on this write exactly as it does on a model
      * save — the guard is on the table, not on the ORM — so the enum domain is still enforced.

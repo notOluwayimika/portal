@@ -398,9 +398,12 @@ true, and this one never once was.
 | `routes/endpoints/guardian.php` | +3 / −0 | `GET /guardians/duplicate-check`, beside `lookup`. |
 | `tests/Feature/Guardian/GuardianCreateDeduplicationTest.php` | +1110 / −0 | NEW. 29 arms. |
 
-Totals: **58 files changed, 5431 insertions(+), 349 deletions(-)** overall; **17 files changed, 3410 insertions(+), 349 deletions(-)** counting only `*.php`,
-`*.ts` and `*.tsx`. The remainder is this report, the brief, nine tickets and the drive
-screenshots.
+**No totals line.** The fourth review found the hand-carried summary beneath this table
+stale for the fourth round running — 5431 insertions against an actual 5605 — while every
+one of the 17 derived rows was exact. It has been deleted rather than corrected, for the
+same reason the `--stat` block was: the table is the source, and a summary of it is one
+more thing to keep true. `git diff --shortstat e484a46...HEAD` answers it in one command,
+freshly, whenever a reader wants it.
 
 ## Proof
 
@@ -1203,9 +1206,31 @@ Under the privacy rule; ids and counts only.
 - **`ImportConflictException` still has the wrong name** now that a non-import caller
   throws it. A behaviour-neutral rename for its own commit.
 
+## The final review's findings — ticketed, not fixed
+
+**By instruction.** The lead closed the branch to further rounds and asked that anything
+the last review returned be written up with its mechanism and evidence so it can be
+triaged, rather than iterated on. It returned **two fix-level findings**, and both are in
+behaviour this branch newly created — which is the pattern this report identifies at
+§ *Round 4* and then, on its own last change, did not close.
+
+| Severity | Finding | Ticket |
+| --- | --- | --- |
+| **fix** | `already_linked` is returned by both create paths and read by **nothing** — `grep -rn already_linked resources/js/` is empty. The operator re-submits an existing link, the server correctly declines to rewrite it, answers 201, and the modal closes on a success message. The branch's own defect class — an action reported as done and silently not applied — reintroduced by the guard that removes it. Sharpest detail: `add-standalone-guardian-modal.tsx` reads `reused_existing_guardian` from the *same response* and toasts it, under a comment about signals nobody reads, and ignores `already_linked` beside it. | `already-linked-is-returned-by-the-server-and-read-by-nothing.md` |
+| **fix** | An ambiguous phone refuses **even when the submitted email refutes every candidate**. The disambiguation branch requires the email to name a guardian already in the school, so a brand-new address falls through to the throw and `emailRefutesMatch` is never consulted. A distinct email is decisive at n=1 and ignored at n≥2, and the message tells the operator to "use a number that identifies this person" — for a shared household line, a dead end. Same shape as the `Rule::unique` this branch removed, which is what caused the reported duplicates. | `ambiguous-phone-refuses-even-when-the-email-refutes-every-candidate.md` |
+| **ticket** | `GuardianImportService`'s wrapper docblock says the extraction was "behaviour unchanged"; it is not — an ambiguous phone now throws where the old body picked one, and the matcher normalises on entry. The import suite cannot see it: no fixture has two guardians on one number. | folded into `guardian-matcher-and-request-tidy-ups.md` |
+| **ticket** | `maskEmail` masks the local part only and returns the domain in full; `full_name` is unmasked. Small, in-school, and worth deciding with the oracle question rather than alone. | folded into `duplicate-check-is-a-platform-wide-account-existence-oracle.md` |
+| **fixed in place** | The totals line under *What changed* was stale for the fourth round running (5431 vs an actual 5605) while all 17 derived rows were exact. **Deleted**, not corrected — same reasoning as the `--stat` block. | — |
+
+**The honest reading of the first of those two:** four rounds of review have now found a
+fix-tier defect in code this branch added, every single time, and three of the four were
+the branch recreating the very shape it was closing. The guard is right; the consumer for
+its signal was not written. That is the residual risk, and it is one small frontend edit
+away from closed.
+
 ## Findings raised, not fixed
 
-**Nine ticket files.** This is the residual risk, written down rather than iterated on,
+**Eleven ticket files.** This is the residual risk, written down rather than iterated on,
 which is the deliverable the lead asked for.
 
 | Severity | Finding | Ticket |

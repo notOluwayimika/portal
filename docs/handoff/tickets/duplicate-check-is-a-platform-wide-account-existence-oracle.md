@@ -50,3 +50,20 @@ Decide it as one question across both endpoints, not this one alone:
    `GET`-shaped route — so it stops being logged.
 4. Whatever is decided, it needs an arm. There is currently no test asserting either
    endpoint's specific ability, only that the route carries auth middleware.
+
+
+## Addendum — the mask is thinner than it reads (fourth review)
+
+Two details worth folding in when this is decided, both small and both in-school:
+
+- **`GuardianController::maskEmail` masks the local part only** and returns the domain in
+  full. `j••••@stjohns.edu.ng` discloses the organisation, which for a staff address is
+  most of the identification.
+- **`full_name` is returned unmasked** for every candidate, to any holder of
+  `academic_setup.manage` in that school.
+
+Neither is a leak across the school boundary, and the banner genuinely needs a name for
+the operator to recognise the person — which is the argument for leaving both as they
+are. But the mask is presented in the code as *the* privacy control on this endpoint, and
+the domain and the name are the two parts of a stored record the operator did not supply.
+Decide them with the rest rather than assuming the mask covers more than it does.

@@ -36,6 +36,26 @@ Larastan did not flag it there.
 Two spellings of the same fact about the same column, one of them annotated as
 impossible and the other left as if it were possible.
 
+## 3. `GuardianImportService`'s docblock claims a behaviour-preserving extraction, and it is not one
+
+Raised by the fourth review. `app/Services/GuardianImportService.php`'s
+`lookupExistingInDb` wrapper says the body *"MOVED to App\Services\GuardianMatcher,
+**behaviour unchanged**."* Two changes now reach the import through that delegate:
+
+1. An **ambiguous phone throws** where the old body did a bare unordered `->first()` and
+   picked one. `AmbiguousPhoneMatchException`'s own docblock says so directly, so the
+   file contradicts itself two hops apart.
+2. The matcher **normalises** email/phone/whatsapp on entry where the old body took them
+   as given. Harmless — the import normalises upstream and `PhoneNormalizer` is
+   idempotent — but it is still not "unchanged".
+
+The green import suite proves nothing here: **no import fixture has two guardians sharing
+a number**, so the new throw is unexercised through that path. A false sentence in a file
+is what the next reader will believe.
+
+Closing it: reword the docblock to state what changed, and add one import arm on an
+ambiguous row.
+
 ## What closing it looks like
 
 1. Delete `$isUpdate` and inline `'nullable'` on `status`; move the unique-rule comment's

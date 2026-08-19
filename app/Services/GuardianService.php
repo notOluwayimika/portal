@@ -233,8 +233,13 @@ class GuardianService
      *
      * @return array{guardian: Guardian, user: User, plain_password: ?string, reused: bool}
      */
-    public function createGuardianWithUser(array $attributes, int $schoolId, bool $canLogin, ?string $email): array
-    {
+    public function createGuardianWithUser(
+        array $attributes,
+        int $schoolId,
+        bool $canLogin,
+        ?string $email,
+        bool $confirmExistingAccount = true,
+    ): array {
         $plainPassword = $this->passwordGenerator->generate();
 
         // Normalize at the storage boundary so import/lookup/registration all share one canonical form.
@@ -249,7 +254,7 @@ class GuardianService
         }
         $email = $email ? Str::lower($email) : null;
 
-        return DB::transaction(function () use ($attributes, $schoolId, $canLogin, $email, $plainPassword) {
+        return DB::transaction(function () use ($attributes, $schoolId, $canLogin, $email, $plainPassword, $confirmExistingAccount) {
             // THE SYNTHETIC MINT IS RETIRED. `users.email` is nullable for accounts
             // that cannot log in, so a guardian on record with no address simply has
             // none — rather than a `{phone}@no-email.local` placeholder that is
@@ -304,10 +309,80 @@ class GuardianService
             // PERSON, possibly in another school — and then handed that account
             // access to this school via grantSchoolAccess below. A null email is not
             // an identity and must never be matched on.
+            // THE EMAIL CAN REFUTE A PHONE MATCH, and must be allowed to. A household
+            // shares one number, so a phone-only match plus a DIFFERENT address is
+            // evidence of two people, not one — see GuardianMatcher::emailRefutesMatch.
+            // Reusing there would have attached this child to the other parent's record.
+            if ($existingGuardian && $this->guardianMatcher->emailRefutesMatch($existingGuardian, $userEmail)) {
+                $existingGuardian = null;
+            }
+
+            // …and when the match SURVIVES but the account behind it has no address at
+            // all, the submitted one is REFUSED, never written and never dropped.
+            //
+            // Dropping it is what the first cut of this change did, and it was the
+            // branch's own defect reappearing on the branch's own new path: 201,
+            // `reused_existing_guardian: true`, and the address the operator just
+            // typed stored nowhere. fillBlankGuardianFields cannot reach it either —
+            // it walks Guardian's fillable, and `email` is not there; the address
+            // lives on `users`.
+            //
+            // WRITING IT WAS THE OTHER OPTION AND IT WAS REJECTED, because the write
+            // reaches further than the record in front of the operator. `users.email`
+            // is the sole authentication key (FortifyServiceProvider resolves the
+            // account by it) and the identity key `Password::sendResetLink` resolves,
+            // one `users` row backs a guardian in EVERY school that person has a child
+            // in (§6.2), and the evidence here is a phone match on a create form.
+            // Filling it would let an operator who can see one school set the
+            // reset-link address for an account reaching schools they cannot see,
+            // from a form that never showed them the account. There is already a
+            // correct path — the update endpoint, gated on
+            // `guardian.update_credentials`, with the record on screen and the change
+            // audited — and the duplicate banner links straight to it, so this refusal
+            // is a redirection and not the dead end the create-path unique rule was.
+            // `->user` and not `?->user`: `guardians.user_id` is NOT NULL (derived from
+            // information_schema, not assumed), so Larastan is right that the nullsafe
+            // is dead here. `email` IS nullable, which is what the `?? ''` covers.
+            if ($existingGuardian && $userEmail && ($existingGuardian->user->email ?? '') === '') {
+                throw ValidationException::withMessages([
+                    'email' => 'This person is already a guardian in this school and has no email address on record. '
+                        .'Nothing was saved. Open their record and add the address there, so the change is made against '
+                        .'the account it affects.',
+                ]);
+            }
+
             $user = $existingGuardian?->user;
 
             if (! $user) {
                 $user = $userEmail ? User::where('email', $userEmail)->first() : null;
+            }
+
+            // BINDING A NEW GUARDIAN TO AN ALREADY-REGISTERED ACCOUNT NEEDS AN EXPLICIT
+            // ANSWER, not a banner asking for one.
+            //
+            // `Rule::unique('users','email')` used to block this on create, and this
+            // change removed it because it also blocked the legitimate multi-school
+            // parent. Removing it without putting anything back left the widest case
+            // ungoverned: the address may belong to a member of staff, and the next
+            // line hands that account the `guardian` role and a `school_user` pivot —
+            // after which `disableLogin` sets `users.disabled_at`, which is
+            // ACCOUNT-GLOBAL, and winding down a guardian link locks a colleague out
+            // of the platform. The banner told the operator to confirm; nothing made
+            // them, and a rule with no mechanism is a wish.
+            //
+            // `$confirmExistingAccount` DEFAULTS TO TRUE deliberately. Two other
+            // callers reach this method — GuardianController::attach and
+            // StudentController's registration path — and both bind to an existing
+            // account unguarded TODAY, at HEAD, exactly as they did before this
+            // branch. Defaulting to refusal would silently narrow two paths this
+            // change never examined and never drove; defaulting to permit changes
+            // neither. The gap is real and is filed, not hidden.
+            if (! $existingGuardian && $user && ! $confirmExistingAccount) {
+                throw ValidationException::withMessages([
+                    'email' => 'This email address already belongs to an account that is not a guardian in this school. '
+                        .'Nothing was saved. Confirm that it is the same person — continuing links this guardian to that '
+                        .'account and gives it access to this school.',
+                ]);
             }
 
             $isNewUser = $user === null;

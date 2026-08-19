@@ -98,7 +98,15 @@ class GuardianRequest extends FormRequest
             // straight off `input()`. An admission number that did not resolve was
             // discarded with no error, no log and a 201 — "the information was not
             // saving", reported as a bug and indistinguishable from success.
-            'student_links' => ['nullable', 'array'],
+            // The operator's explicit answer to "this address already belongs to an
+            // account that is not a guardian here". Create-path only: on update there
+            // is no account to bind, and the unique rule above governs collisions.
+            'confirm_existing_account' => ['nullable', 'boolean'],
+
+            // Bounded. An unbounded array on a public write path costs one `exists`
+            // query per row and one pivot write per row, inside one transaction; 50 is
+            // far above any real sibling count and far below anything that hurts.
+            'student_links' => ['nullable', 'array', 'max:50'],
             'student_links.*' => ['array'],
             'student_links.*.admission_number' => [
                 'required', 'string', 'max:255',

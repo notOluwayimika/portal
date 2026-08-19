@@ -284,6 +284,128 @@ it('never binds an email-less guardian to an unrelated email-less account in ano
 });
 
 // ---------------------------------------------------------------------------
+// Arm 5c — a submitted email is NEVER silently dropped on the reuse path.
+//
+// The reuse branch takes its user from the matched guardian, and
+// fillBlankGuardianFields walks Guardian's fillable — which has no `email`, because
+// the address lives on `users`. So a phone-matched reuse carrying a freshly typed
+// address stored it nowhere and answered 201: the branch's own defect, on the
+// branch's own new path. It is now REFUSED rather than written, because users.email
+// is the authentication key and one users row backs a guardian in every school that
+// person has a child in — an operator who can see one school must not set the
+// reset-link address for an account reaching schools they cannot see.
+// ---------------------------------------------------------------------------
+
+it('refuses rather than silently drops an email submitted against a phone-matched guardian with no address', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+
+    // The first submission creates the guardian with no email at all.
+    $this->actingAs($admin)->postJson('/api/guardians', dedupePayload())->assertCreated();
+    $guardian = Guardian::withoutGlobalScopes()->where('school_id', $school->id)->sole();
+    expect($guardian->user->email)->toBeNull();
+
+    // The second names the same phone and carries an address.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'ada.parent@example.test',
+            'student_links' => [
+                ['admission_number' => $student->admission_number, 'relationship' => 'mother', 'is_primary' => true],
+            ],
+        ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+
+    // Refused whole: no address written, and no half-done attachment either.
+    expect($guardian->user->fresh()->email)->toBeNull()
+        ->and(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(1)
+        ->and(DB::table('guardian_student')->count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// Arm 5d — a DIFFERENT email refutes a phone-only match. The shared-landline case.
+// ---------------------------------------------------------------------------
+
+it('creates a second guardian when the phone matches but the email says it is someone else', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    // Father, on the household line, with his own address.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Chidi', 'email' => 'chidi@example.test',
+            'confirm_existing_account' => false,
+        ]))
+        ->assertCreated();
+
+    // Mother, SAME household line, HER address. Reusing here would have attached her
+    // child to his record.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Ngozi', 'email' => 'ngozi@example.test',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('reused_existing_guardian', false);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(2)
+        ->and(User::whereIn('email', ['chidi@example.test', 'ngozi@example.test'])->count())->toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// Arm 5e — the email-vs-phone conflict raises a 422, not the 500 an uncaught
+// RuntimeException would be. This was introduced by this change and left unproven in
+// the first cut; it is the one arm the report named as an unproven arm of its own.
+// ---------------------------------------------------------------------------
+
+it('answers 422 when the submitted email and phone belong to two different existing guardians', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    $userA = User::factory()->create(['school_id' => $school->id, 'email' => 'first@example.test']);
+    Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $userA->id,
+        'first_name' => 'First', 'last_name' => 'Match', 'phone' => '+2348039990001', 'status' => 'active',
+    ]);
+
+    $userB = User::factory()->create(['school_id' => $school->id, 'email' => 'second@example.test']);
+    Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $userB->id,
+        'first_name' => 'Second', 'last_name' => 'Match', 'phone' => '+2348039990002', 'status' => 'active',
+    ]);
+
+    $before = Guardian::withoutGlobalScopes()->count();
+
+    // Email points at guardian A, phone points at guardian B.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'first@example.test',
+            'phone' => '08039990002',
+        ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+
+    expect(Guardian::withoutGlobalScopes()->count())->toBe($before);
+});
+
+it('rejects more student_links than the bounded maximum', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    $links = [];
+    for ($i = 0; $i < 51; $i++) {
+        $links[] = ['admission_number' => "ADM-BULK-{$i}", 'relationship' => 'mother', 'is_primary' => false];
+    }
+
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload(['student_links' => $links]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['student_links']);
+
+    expect(Guardian::withoutGlobalScopes()->count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
 // Arm 6 — duplicate-check, including isolation asserted BY ID.
 // ---------------------------------------------------------------------------
 
@@ -353,19 +475,56 @@ it('duplicate-check reports an existing NON-guardian account as its own case, no
 });
 
 // ---------------------------------------------------------------------------
-// Arm 7 — the closed door. Create no longer 422s on a registered email; update does.
+// Arm 7 — the closed door, and the CONTROL that replaced it.
+//
+// THIS ARM ASSERTED THE WRONG THING IN THE FIRST CUT. It pinned "create binds to
+// the existing account" as intended behaviour, which is exactly what the cold review
+// objected to: removing Rule::unique('users','email') from the create path took away
+// the only thing standing between an operator typing a colleague's address and that
+// colleague's account acquiring the `guardian` role, a `school_user` pivot, and — the
+// moment the guardian link is later wound down — an account-global `disabled_at`.
+// The banner asked the operator to confirm; nothing made them, and a rule with no
+// mechanism is a wish. The arm now asserts the control in BOTH directions.
 // ---------------------------------------------------------------------------
 
-it('allows creating a guardian for an email that already has a user, while update still rejects a collision', function () {
+it('refuses to bind a new guardian to an existing non-guardian account without an explicit confirmation', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    // The account belongs to ANOTHER school on purpose. A colleague at this school
+    // already reaches it, so "did the refused write widen anything" would be
+    // unanswerable there — accessibleSchoolIds includes a user's own school_id.
+    $other = School::factory()->create();
+    $staff = User::factory()->create(['school_id' => $other->id, 'email' => 'taken@example.test']);
+    $before = Guardian::withoutGlobalScopes()->count();
+
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload(['email' => 'taken@example.test']))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+
+    // Nothing was written, and — the part a guardian count cannot see — the account
+    // did not acquire access to this school. grantSchoolAccess writes a school_user
+    // pivot AND a team role, so the reach of the refused write is wider than the
+    // table the operator was looking at, and counting guardians alone would miss it.
+    expect(Guardian::withoutGlobalScopes()->count())->toBe($before)
+        ->and($staff->fresh()->accessibleSchoolIds()->contains($school->id))->toBeFalse()
+        ->and(DB::table('school_user')->where('user_id', $staff->id)->where('school_id', $school->id)->exists())->toBeFalse();
+});
+
+it('allows creating a guardian for an email that already has a user WHEN confirmed, while update still rejects a collision', function () {
     $school = School::factory()->create();
     $admin = dedupeAdmin($school);
 
     $existing = User::factory()->create(['school_id' => $school->id, 'email' => 'taken@example.test']);
 
-    // CREATE: no longer blocked. The service is written to reuse the users row
-    // ("One human = one User §6.2") and the rule that used to fight it is gone.
+    // CREATE with the operator's explicit answer: the multi-school parent this
+    // reuse exists for ("One human = one User §6.2") still gets through.
     $this->actingAs($admin)
-        ->postJson('/api/guardians', dedupePayload(['email' => 'taken@example.test']))
+        ->postJson('/api/guardians', dedupePayload([
+            'email' => 'taken@example.test',
+            'confirm_existing_account' => true,
+        ]))
         ->assertCreated();
 
     $guardian = Guardian::withoutGlobalScopes()->where('school_id', $school->id)->sole();
@@ -484,4 +643,82 @@ it('refuses a credential edit by an actor who reaches the route but lacks update
         ->assertForbidden();
 
     expect($guardianUser->fresh()->email)->toBe('login.parent@example.test');
+});
+
+// ---------------------------------------------------------------------------
+// Arm 9b — the refusal is on an ATTEMPTED CHANGE, not on field presence.
+//
+// THE FIRST CUT REFUSED ON PRESENCE AND THAT WAS A LOCKOUT, not a stricter rule.
+// `edit-guardian-modal.tsx` prefills from the record and posts every non-empty key,
+// and `phone` is required and therefore ALWAYS present — so this actor could not
+// save ANYTHING, and the 403 told them to remove a field the modal gives them no way
+// to omit. Item 20's intent was to replace a false success with an honest refusal,
+// not with an unconditional one. This arm is what makes the difference visible: it
+// submits exactly what that modal submits.
+// ---------------------------------------------------------------------------
+
+it('lets an actor without update_credentials save an ordinary edit that round-trips the unchanged credential fields', function () {
+    $school = School::factory()->create();
+
+    foreach (['guardian.view', 'guardian.update', 'academic_setup.manage'] as $name) {
+        Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+    }
+    $role = Role::firstOrCreate(['name' => 'guardian_editor_no_creds_b', 'guard_name' => 'web']);
+    $role->givePermissionTo(['guardian.view', 'guardian.update', 'academic_setup.manage']);
+
+    $actor = User::factory()->create(['school_id' => $school->id]);
+    setPermissionsTeamId($school->id);
+    $actor->assignRole($role);
+
+    $guardianUser = User::factory()->create(['school_id' => $school->id, 'email' => 'roundtrip@example.test']);
+    $guardian = Guardian::withoutGlobalScopes()->create([
+        'school_id' => $school->id, 'user_id' => $guardianUser->id,
+        'first_name' => 'Round', 'last_name' => 'Trip', 'phone' => '+2348030000005',
+        'occupation' => 'Teacher', 'status' => 'active',
+    ]);
+
+    // EXACTLY what edit-guardian-modal.tsx sends: every non-empty key, prefilled from
+    // the record, with only `occupation` actually altered.
+    $this->actingAs($actor)
+        ->putJson("/api/guardians/{$guardian->uuid}", [
+            'first_name' => 'Round',
+            'last_name' => 'Trip',
+            'phone' => '+2348030000005',
+            'email' => 'roundtrip@example.test',
+            'occupation' => 'Nurse',
+        ])
+        ->assertOk();
+
+    expect($guardian->fresh()->occupation)->toBe('Nurse')
+        ->and($guardianUser->fresh()->email)->toBe('roundtrip@example.test');
+
+    // A phone the operator retyped in LOCAL format is the same number, not a change:
+    // the stored value is E.164 and comparing the raw strings would 403 on formatting.
+    $this->actingAs($actor)
+        ->putJson("/api/guardians/{$guardian->uuid}", [
+            'phone' => '08030000005',
+            'email' => 'roundtrip@example.test',
+            'occupation' => 'Doctor',
+        ])
+        ->assertOk();
+
+    expect($guardian->fresh()->occupation)->toBe('Doctor');
+
+    // CHARACTERISING A KNOWN DEFECT, not endorsing it. That save also REWROTE the
+    // stored number in local format, because GuardianService::update writes phones
+    // with no PhoneNormalizer pass — filed at
+    // docs/handoff/tickets/guardian-update-writes-phones-and-cannot-clear-a-field.md
+    // and measured at zero affected rows today. Asserted here so that closing the
+    // ticket turns this line red rather than leaving the regression invisible.
+    expect($guardian->fresh()->phone)->toBe('08030000005');
+
+    // …and a real phone change is still refused.
+    $this->actingAs($actor)
+        ->putJson("/api/guardians/{$guardian->uuid}", [
+            'phone' => '08030009999',
+            'email' => 'roundtrip@example.test',
+        ])
+        ->assertForbidden();
+
+    expect($guardian->fresh()->phone)->toBe('08030000005');
 });

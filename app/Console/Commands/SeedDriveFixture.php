@@ -125,6 +125,7 @@ class SeedDriveFixture extends Command
                 ['School B bursar (isolation)', 'school-b@drive.test'],
                 ['Admin (guardians screen)', 'admin@drive.test'],
                 ['School B admin (guardian isolation)', 'admin-b@drive.test'],
+                ['Guardian editor, NO update_credentials', 'guardian-editor@drive.test'],
             ],
         );
         $this->newLine();

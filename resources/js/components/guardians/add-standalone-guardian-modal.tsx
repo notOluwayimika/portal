@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import axios from 'axios';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { GuardianDuplicateBanner } from '@/components/guardians/guardian-duplicate-banner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -71,6 +72,7 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
     });
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [submitting, setSubmitting] = useState(false);
+    const [confirmedAccount, setConfirmedAccount] = useState(false);
     const duplicates = useGuardianDuplicateCheck();
 
     useEffect(() => {
@@ -126,11 +128,25 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
             const res = await axios.post('/api/guardians', {
                 ...form,
                 student_links: studentLinks.filter((l) => l.admission_number),
+                confirm_existing_account: confirmedAccount,
             });
             const redirect = res.data?.data?.redirect ?? res.data?.redirect;
+
+            // TOLD, NOT HIDDEN — and now actually told. The server has always
+            // returned `reused_existing_guardian`, and for one commit NOTHING read
+            // it while a comment beside it claimed the operator was informed. Silent
+            // reuse leaves them unsure which record they just edited, so the reuse
+            // is stated before the redirect lands on it.
+            if (res.data?.reused_existing_guardian) {
+                toast.info(
+                    'This person was already a guardian here — their existing record was reused and only its empty fields were filled.',
+                );
+            }
+
             onClose();
             setForm(EMPTY_FORM);
             setStudentLinks([]);
+            setConfirmedAccount(false);
             duplicates.reset();
 
             if (redirect) {
@@ -227,7 +243,11 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
                     </p>
                 )}
 
-                <GuardianDuplicateBanner result={duplicates.result} />
+                <GuardianDuplicateBanner
+                    result={duplicates.result}
+                    confirmedAccount={confirmedAccount}
+                    onConfirmAccountChange={setConfirmedAccount}
+                />
 
                 {/* Personal */}
                 <section>

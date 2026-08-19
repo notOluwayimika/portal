@@ -6,7 +6,11 @@ use App\Enums\GenderTypeEnum;
 use App\Enums\GuardianIdTypeEnum;
 use App\Enums\GuardianStatusEnum;
 use App\Enums\MaritalStatusEnum;
+use App\Models\Guardian;
+use App\Models\User;
+use App\Support\PhoneNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -75,12 +79,25 @@ class GuardianUpdateRequest extends FormRequest
             return;
         }
 
-        // Only fields the caller actually SUBMITTED. An edit that never touches a
-        // credential field is unaffected — refusing those would block an ordinary
-        // occupation change for want of a permission it does not need.
+        // AN ATTEMPTED CHANGE, NOT MERE PRESENCE. This refused on `has($field)` in the
+        // first cut of this change and that was a regression, not a stricter rule:
+        // `edit-guardian-modal.tsx` prefills the form from the record (`:60-79`) and
+        // posts every non-empty key (`:138-141`), and `phone` is required and therefore
+        // ALWAYS present. So an actor holding `guardian.update` without
+        // `guardian.update_credentials` got a hard 403 on every save — including an
+        // occupation-only edit — with a message telling them to remove a field the
+        // modal gives them no way to omit. Item 20's intent was to replace a FALSE
+        // SUCCESS with an honest refusal, not to replace it with an unconditional one.
+        //
+        // Only reachable today through a runtime matrix edit (the seeded map bundles
+        // GUARDIAN_UPDATE with GUARDIAN_UPDATE_CREDENTIALS — RbacSeeder.php:153-156 —
+        // and `registrar`, which holds one without the other, reaches no route at all:
+        // RbacSeeder.php:299-306). A per-school matrix edit is a supported operation,
+        // so this is a lockout waiting for a permission change rather than a
+        // hypothetical.
         $blocked = array_values(array_filter(
             ['email', 'phone'],
-            fn (string $field) => $this->request->has($field),
+            fn (string $field) => $this->attemptsToChange($field, $user, $guardian),
         ));
 
         if ($blocked === []) {
@@ -93,6 +110,48 @@ class GuardianUpdateRequest extends FormRequest
             implode(' and ', $blocked),
             count($blocked) === 1 ? 'it' : 'them',
         ));
+    }
+
+    /**
+     * Does the payload actually try to MOVE this credential field off its stored value?
+     *
+     * Absent ⇒ no. Equal to what is stored ⇒ no, and that is the whole point: a client
+     * that round-trips the record is not asking for a change.
+     *
+     * The two fields compare differently and that asymmetry is deliberate:
+     *
+     *  - `email` lives on `users`, is the sole authentication key
+     *    (FortifyServiceProvider looks the account up by it) and is stored lowered by
+     *    every writer here — so it is compared case-insensitively and trimmed, with
+     *    null and '' treated as the same absence.
+     *  - `phone` lives on `guardians` and is stored E.164-normalised by
+     *    GuardianService::createGuardianWithUser but NOT by
+     *    GuardianService::update — see the ticket on that — so `08031110001` and
+     *    `+2348031110001` can both legitimately name the same stored number.
+     *    Compared through PhoneNormalizer, which is the only comparison that does
+     *    not turn a formatting difference into a 403.
+     */
+    private function attemptsToChange(string $field, ?User $user, Guardian $guardian): bool
+    {
+        if (! $this->request->has($field)) {
+            return false;
+        }
+
+        $submitted = $this->input($field);
+
+        if ($field === 'email') {
+            $stored = $user?->email;
+
+            return Str::lower(trim((string) $submitted)) !== Str::lower(trim((string) $stored));
+        }
+
+        $stored = $guardian->phone;
+
+        if (PhoneNormalizer::equals((string) $submitted, (string) $stored)) {
+            return false;
+        }
+
+        return trim((string) $submitted) !== trim((string) $stored);
     }
 
     public function rules(): array

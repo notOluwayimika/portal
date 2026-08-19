@@ -253,6 +253,19 @@ class GuardianController extends Controller
         // GuardianRequest load-bearing rather than decorative.
         $links = $validated['student_links'] ?? [];
         $canLogin = (bool) ($validated['can_login'] ?? false);
+        // The operator's explicit answer to "this address already belongs to an
+        // account that is not a guardian here", carried from the banner's confirm
+        // control. Absent means NOT confirmed, so a client that never renders the
+        // banner — a stale tab, a script — fails closed rather than binding a
+        // guardian to a stranger's account by omission.
+        //
+        // Read OUT here and passed in, not read inside the closure below: `$validated`
+        // is not in that closure's `use` list, so `$validated[...] ?? false` there
+        // silently evaluated to false for every caller and the confirmation could
+        // never be given. It answered 422 forever, which looks like a working control
+        // right up until someone tries to proceed — a green with no way through. The
+        // arm that asserts the CONFIRMED path is what caught it.
+        $confirmExistingAccount = (bool) ($validated['confirm_existing_account'] ?? false);
 
         // ONE TRANSACTION over the guardian AND every attachment. There was none:
         // the guardian was committed by its own inner transaction and the links then
@@ -261,7 +274,7 @@ class GuardianController extends Controller
         // createGuardianWithUser's own transaction is a savepoint, which is fine.
         // The notification is deliberately OUTSIDE — StudentController::store:78-96
         // is the same shape — so a rollback can never strand an email in flight.
-        $result = DB::transaction(function () use ($request, $schoolId, $canLogin, $links) {
+        $result = DB::transaction(function () use ($request, $schoolId, $canLogin, $links, $confirmExistingAccount) {
             $result = $this->guardianService->createGuardianWithUser(
                 attributes: $request->safe()->only([
                     'first_name',
@@ -285,6 +298,7 @@ class GuardianController extends Controller
                 schoolId: $schoolId,
                 canLogin: $canLogin,
                 email: $request->validated('email'),
+                confirmExistingAccount: $confirmExistingAccount,
             );
 
             foreach ($links as $i => $link) {

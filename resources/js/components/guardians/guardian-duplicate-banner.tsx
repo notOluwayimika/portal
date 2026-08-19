@@ -10,6 +10,13 @@ interface Props {
      * nothing and the banner is warning-only.
      */
     onUseExisting?: (uuid: string) => void;
+    /**
+     * The `confirm_existing_account` answer. Owned by the form, not by this
+     * component, because it is submitted with the payload and the server refuses
+     * without it.
+     */
+    confirmedAccount?: boolean;
+    onConfirmAccountChange?: (value: boolean) => void;
 }
 
 /**
@@ -25,7 +32,12 @@ interface Props {
  * Contacts arrive already masked from the server; nothing here unmasks or
  * reconstructs them.
  */
-export function GuardianDuplicateBanner({ result, onUseExisting }: Props) {
+export function GuardianDuplicateBanner({
+    result,
+    onUseExisting,
+    confirmedAccount,
+    onConfirmAccountChange,
+}: Props) {
     if (!result) {
         return null;
     }
@@ -108,8 +120,16 @@ export function GuardianDuplicateBanner({ result, onUseExisting }: Props) {
                         than folded into one above. The address may belong to a
                         member of staff or a parent at another school; continuing
                         attaches this guardian to THAT account and grants it access
-                        to this school, so the operator confirms it rather than
-                        having it assumed for them.
+                        to this school.
+
+                        THE CHECKBOX IS THE CONTROL AND THE SERVER IS THE GATE. This
+                        panel used to say "check it is the same person before you
+                        save" and offer nothing to check it with: the sentence was
+                        the whole mechanism, and the server bound the account either
+                        way. The server now refuses without confirm_existing_account,
+                        so this control is how the operator supplies it — and a
+                        client that never renders this panel fails closed rather than
+                        binding by omission.
                     */}
                     <p className="mt-1 text-[11px] text-sky-900 dark:text-sky-100">
                         {account.masked_email} is already registered, but is not
@@ -118,9 +138,24 @@ export function GuardianDuplicateBanner({ result, onUseExisting }: Props) {
                             ? '.'
                             : ' and has no access to it yet.'}{' '}
                         Continuing will attach this guardian to that account and
-                        give it access to this school. Check it is the same
-                        person before you save.
+                        give it access to this school. If it belongs to someone
+                        else — a colleague, say — disabling this guardian's
+                        login later will lock that person out everywhere.
                     </p>
+                    {onConfirmAccountChange && (
+                        <label className="mt-2 flex items-start gap-2 text-[11px] text-sky-900 dark:text-sky-100">
+                            <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={confirmedAccount ?? false}
+                                onChange={(e) =>
+                                    onConfirmAccountChange(e.target.checked)
+                                }
+                            />
+                            Yes — this is the same person. Link this guardian to
+                            that account.
+                        </label>
+                    )}
                 </div>
             )}
         </div>

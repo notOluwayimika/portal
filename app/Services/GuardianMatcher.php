@@ -118,6 +118,42 @@ class GuardianMatcher
     }
 
     /**
+     * Does a submitted email REFUTE a match that was made on the phone number?
+     *
+     * A phone match is weaker evidence of identity than the first cut of this change
+     * assumed. A household shares one landline: `phone` matches the father's guardian
+     * row while the operator is entering the mother, with her own address. Reusing
+     * there is not a near-miss — it is the wrong person, and the reuse would then
+     * attach her child to his record.
+     *
+     * An email that differs from the matched account's stored address settles it, and
+     * treating it as decisive is the same principle findInSchool already applies when
+     * email and phone point at two different guardians: identity evidence that
+     * disagrees is not adjudicated by preference. Here it resolves in the safe
+     * direction — do not reuse, create a new guardian.
+     *
+     * Returns FALSE when the match has no stored address. That is a different case and
+     * not this method's to decide: nothing contradicts, so the caller must choose
+     * between writing an identity key it was not asked to write and refusing.
+     */
+    public function emailRefutesMatch(Guardian $match, ?string $email): bool
+    {
+        $email = $email !== null ? Str::lower(trim($email)) : null;
+
+        if ($email === null || $email === '') {
+            return false;
+        }
+
+        $stored = $match->user?->email;
+
+        if ($stored === null || trim($stored) === '') {
+            return false;
+        }
+
+        return Str::lower(trim($stored)) !== $email;
+    }
+
+    /**
      * @return Builder<Guardian>
      */
     private function baseQuery(int $schoolId)

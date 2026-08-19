@@ -291,10 +291,17 @@ class GuardianService
                 // deliberately generic: the duplicate-check banner is the surface
                 // built to name the candidates, and a validation string is not the
                 // place to enumerate people.
+                // NEVER "use a number that identifies this person". For a genuine
+                // shared household line the only way to satisfy that instruction is to
+                // type a number that is not theirs, which is a dead end dressed as
+                // advice — and a dead end is what produced the duplicates this branch
+                // exists to prevent. Both exits offered here are real ones.
                 throw ValidationException::withMessages([
-                    'phone' => 'More than one guardian in this school already has this phone number. '
-                        .'Nothing was saved. Check the duplicate warning above and open the right record, '
-                        .'or use a number that identifies this person.',
+                    'phone' => 'More than one guardian in this school already has this phone number, '
+                        .'and nothing in this form tells them apart. Nothing was saved. '
+                        .'Open the right record from the duplicate warning above and add the child there — '
+                        .'or, if this is a different person sharing the number, give them their own email address '
+                        .'and submit again.',
                 ]);
             } catch (ImportConflictException $e) {
                 throw ValidationException::withMessages([

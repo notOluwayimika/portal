@@ -36,6 +36,44 @@ The report is the artifact the merge is judged on. A reader following either
 cross-reference lands nowhere, and committed evidence that nobody describes reads as
 evidence somebody chose not to explain.
 
+## The reusable part — a generator whose replacement window is defined by document structure
+
+**This is worth more than the finding it explains, and it is not specific to this
+report.** The cause was automation I introduced to fix a *different* staleness problem.
+
+The table under `## What changed` had been wrong by hand three rounds running, so I
+generated it instead — with a script that replaces everything between two headings:
+
+```python
+start = s.index('## What changed\n')
+end   = s.index('## Proof')
+s = s[:start] + generated_table + s[end:]
+```
+
+The narrative sections written in the intervening rounds sat **inside that window**. So
+regenerating the table silently deleted the prose the cross-references pointed at, the
+commit went out that way, and a reviewer found the dangling references without being
+able to see why they dangled.
+
+**The general shape: a generator whose replacement window is defined by document
+structure will eventually eat something a human put there.** The window is implicit —
+"everything up to the next heading" — and nothing in the script knows the difference
+between the region it owns and a region a person added later. It fails silently, because
+deleting prose produces a document that still parses and still reads plausibly. And the
+failure arrives at exactly the moment someone is trusting the tool most, having adopted
+it specifically because the manual version kept going wrong.
+
+Three ways out, in ascending order of robustness:
+
+1. **Explicit delimiters the generator owns** — `<!-- generated:start -->` /
+   `<!-- generated:end -->` — so the window is declared rather than inferred.
+2. **Generate into its own file** and include or link it, so there is no window at all.
+3. **Assert the invariant**: have the generator diff its own output region and fail if it
+   is about to remove a line it did not write.
+
+Any of them would have caught this. None of them was in place because the script was
+written to solve staleness and its own blast radius was never considered.
+
 ## What closing it looks like
 
 Either write the section both references point at, or drop both references and let the

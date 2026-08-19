@@ -143,6 +143,24 @@ export function AddStandaloneGuardianModal({ isOpen, onClose }: Props) {
                 );
             }
 
+            // …AND THE FIELD SITTING BESIDE IT, which for one commit nothing read
+            // while the comment above argued that a returned signal nobody reads is a
+            // false claim of having informed the operator. The server refuses to
+            // rewrite a link that already exists, so without this the operator submits
+            // a changed relationship or an unticked Primary, gets a success, and is
+            // never told that the part they came here to change is the one part that
+            // did not happen. That is the defect this whole change exists to delete —
+            // an action reported as done and silently not applied.
+            const untouched: string[] = res.data?.already_linked ?? [];
+
+            if (untouched.length > 0) {
+                toast.info(
+                    untouched.length === 1
+                        ? `${untouched[0]} was already linked to this guardian — that link was left exactly as it was. Open the guardian's record to change it.`
+                        : `${untouched.join(', ')} were already linked to this guardian — those links were left exactly as they were. Open the guardian's record to change them.`,
+                );
+            }
+
             onClose();
             setForm(EMPTY_FORM);
             setStudentLinks([]);

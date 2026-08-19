@@ -145,9 +145,37 @@ class GuardianMatcher
         }
 
         if ($byPhone->count() > 1) {
+            // A SUBMITTED EMAIL THAT REFUTES EVERY CANDIDATE RESOLVES THE AMBIGUITY,
+            // and the first cut of this refusal ignored it — which was backwards.
+            //
+            // The branch above lets an email DISAMBIGUATE when it names one of the
+            // candidates. But it requires that email to belong to a guardian already
+            // in this school, so a brand-new address made `$byEmail` null and fell
+            // straight through to the throw: a distinct email was decisive evidence of
+            // a second person at ONE candidate and ignored at two. If one differing
+            // address proves "not that person", two differing addresses prove "not
+            // either of them" at least as strongly.
+            //
+            // AND THE COST OF GETTING IT WRONG IS THE ORIGINAL DEFECT. The refusal's
+            // only way forward for a genuine shared household line was to type a phone
+            // number that is not the person's — a hard block with no honest exit, which
+            // is exactly the shape of the `Rule::unique('users','email')` this branch
+            // removed, and exactly what made a school invent the per-child workaround
+            // that produced three rows for one mother. A dead end does not prevent bad
+            // data; it relocates it.
+            //
+            // `every` is the right quantifier and its edge is deliberate:
+            // emailRefutesMatch returns FALSE for a candidate with no stored address,
+            // because an email-less row cannot contradict anything and might well be
+            // the same person. So one silent candidate is enough to keep the refusal.
+            if ($byPhone->every(fn (Guardian $g) => $this->emailRefutesMatch($g, $email))) {
+                return null;
+            }
+
             throw new AmbiguousPhoneMatchException(sprintf(
                 'This phone number belongs to %d different guardians in this school (%s). '
-                    .'Pick the right record instead of creating a new guardian.',
+                    .'Open the right record from the duplicate warning and add this child there, '
+                    .'or give this person their own email address so they can be told apart.',
                 $byPhone->count(),
                 $byPhone->map(fn (Guardian $g) => $g->full_name)->implode(', '),
             ));

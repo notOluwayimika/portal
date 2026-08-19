@@ -735,6 +735,167 @@ it('lets a submitted email disambiguate a shared phone instead of refusing', fun
 });
 
 // ---------------------------------------------------------------------------
+// Arm 5k — A REFUTING EMAIL RESOLVES AN AMBIGUOUS PHONE. All three directions.
+//
+// The refusal ignored a brand-new address, so a distinct email was decisive evidence
+// of a second person at ONE candidate and ignored at two. And its only way forward for
+// a genuine shared household line was to type a number that is not the person's — a
+// dead end, which is the shape that produced the duplicates in the first place.
+// ---------------------------------------------------------------------------
+
+function seedTwoOnOneNumber(School $school, string $phone = '+2348066660001'): void
+{
+    foreach (['Chidi' => 'chidi@example.test', 'Ngozi' => 'ngozi@example.test'] as $first => $email) {
+        $u = User::factory()->create(['school_id' => $school->id, 'email' => $email]);
+        Guardian::withoutGlobalScopes()->create([
+            'school_id' => $school->id, 'user_id' => $u->id,
+            'first_name' => $first, 'last_name' => 'Household', 'phone' => $phone, 'status' => 'active',
+        ]);
+    }
+}
+
+it('creates a new guardian when the submitted email refutes every candidate on a shared phone', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    seedTwoOnOneNumber($school);
+
+    // A third person on the household line, with an address that matches neither.
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Amaka', 'last_name' => 'Household',
+            'phone' => '08066660001', 'email' => 'amaka@example.test',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('reused_existing_guardian', false);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(3);
+});
+
+it('still refuses a shared phone when no email is submitted to tell the candidates apart', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    seedTwoOnOneNumber($school);
+
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Amaka', 'last_name' => 'Household', 'phone' => '08066660001',
+        ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['phone']);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(2);
+});
+
+it('still refuses when one candidate on the shared phone has no address to be refuted', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+
+    // One with an address, one WITHOUT. An email-less row cannot contradict anything
+    // and might be the same person, so `every` must not treat it as refuted — one
+    // silent candidate is enough to keep the refusal.
+    $withEmail = User::factory()->create(['school_id' => $school->id, 'email' => 'known@example.test']);
+    $without = User::factory()->create(['school_id' => $school->id, 'email' => null]);
+    foreach ([$withEmail, $without] as $i => $u) {
+        Guardian::withoutGlobalScopes()->create([
+            'school_id' => $school->id, 'user_id' => $u->id,
+            'first_name' => "Person{$i}", 'last_name' => 'Household', 'phone' => '+2348066660003', 'status' => 'active',
+        ]);
+    }
+
+    $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Third', 'last_name' => 'Household',
+            'phone' => '08066660003', 'email' => 'brand.new@example.test',
+        ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['phone']);
+
+    expect(Guardian::withoutGlobalScopes()->where('school_id', $school->id)->count())->toBe(2);
+});
+
+it('never tells the operator to enter a phone number that is not the person\'s', function () {
+    $school = School::factory()->create();
+    $admin = dedupeAdmin($school);
+    seedTwoOnOneNumber($school, '+2348066660004');
+
+    $message = $this->actingAs($admin)
+        ->postJson('/api/guardians', dedupePayload([
+            'first_name' => 'Amaka', 'last_name' => 'Household', 'phone' => '08066660004',
+        ]))
+        ->assertStatus(422)
+        ->json('errors.phone.0');
+
+    // The refusal must offer a real exit. Both of the ones it offers are real: open
+    // the existing record, or supply an email that distinguishes this person.
+    expect($message)->not->toContain('use a number')
+        ->and($message)->toContain('email address');
+});
+
+// ---------------------------------------------------------------------------
+// Arm 5l — EVERY CONSUMER OF `already_linked` ACTUALLY READS IT.
+//
+// A RESPONSE-SHAPE ASSERTION IS WHAT LET THIS THROUGH. Both create paths returned
+// `already_linked`, arms asserted it was returned, and NOTHING on the frontend read it
+// — so the server correctly refused to rewrite an existing link, answered 201, and the
+// modal closed on a success message. The operator was told a change had happened that
+// had not. Asserting the payload proved the server's half and said nothing about the
+// half the operator sees.
+//
+// So this pins the CONSUMERS, not the payload. It is the same shape as
+// GuardianLoginInvariantTest's cardinality pin — enumeration that does not decay: a
+// third screen posting to either endpoint fails here the moment it lands, rather than
+// silently dropping the signal the way the second one did.
+//
+// WHAT IT DOES NOT PROVE, stated because the watched red found the limit rather than
+// assumed it: this is a token grep, so it catches a consumer that never mentions the
+// field and NOT one that mentions it and does nothing useful with it. Commenting the
+// handler out or wrapping it in `if (false && …)` leaves the string in the file and
+// this stays green — verified. The rendering itself is proven by the drive, on screen;
+// this arm's job is narrower and is the one the drive cannot do, which is to fail when
+// a NEW screen appears.
+// ---------------------------------------------------------------------------
+
+it('renders already_linked in every frontend consumer of the two create endpoints', function () {
+    $root = dirname(__DIR__, 3).'/resources/js';
+
+    $posters = [];
+
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($files as $file) {
+        if (! in_array($file->getExtension(), ['ts', 'tsx'], true)) {
+            continue;
+        }
+
+        $source = (string) file_get_contents($file->getPathname());
+
+        // A POST to either endpoint that CREATES a guardian. Both can answer with an
+        // untouched link; every other guardian endpoint cannot.
+        $createsGuardian = preg_match("#axios\.post\(\s*'/api/guardians'#", $source) === 1
+            || preg_match('#axios\.post\(\s*`/api/students/\$\{[^}]+\}/guardians`#', $source) === 1;
+
+        if ($createsGuardian) {
+            $posters[basename($file->getPathname())] = str_contains($source, 'already_linked');
+        }
+    }
+
+    // The enumeration itself is asserted, so this cannot pass by finding nothing.
+    expect(array_keys($posters))->toEqualCanonicalizing([
+        'add-standalone-guardian-modal.tsx',
+        'add-guardian-modal.tsx',
+    ]);
+
+    $silent = array_keys(array_filter($posters, fn (bool $reads) => ! $reads));
+
+    expect($silent)->toBeEmpty(
+        'These screens create a guardian and never read `already_linked`, so an operator '
+            .'whose submission changed nothing is shown success: '.implode(', ', $silent)
+    );
+});
+
+// ---------------------------------------------------------------------------
 // Arm 6 — duplicate-check, including isolation asserted BY ID.
 // ---------------------------------------------------------------------------
 

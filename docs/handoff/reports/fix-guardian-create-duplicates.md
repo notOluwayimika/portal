@@ -6,7 +6,15 @@ login invariant and the drive fixture.
 
 ---
 
-> **ROUND 4 — FINAL.** The lead is merging this branch. The reported duplicates were
+> **ROUND 5 — FINAL.** The lead reversed the "ticket, do not fix" instruction for the
+> final review's two findings, on the grounds that they are not adjacent quality work:
+> they are **this branch's own thesis failing on its own paths** — an action reported as
+> done and silently not applied, and a dead end that pushes the operator into a
+> workaround. Shipping them would have handed the school the same complaint from a
+> different screen. Both are fixed (§ *Round 5*). No further review: two scoped fixes to
+> already-reviewed code.
+>
+> **ROUND 4.** The lead is merging this branch. The reported duplicates were
 > already fixed by hand on production, so the deliverable is **prevention** — this
 > branch plus the uniqueness constraint that follows it. Two fix-tier findings from the
 > third review are closed here (§ *Round 4*), the falsified `--stat` block is **deleted**
@@ -35,6 +43,8 @@ strictly worse than the brief describes and is a live cross-school identity defe
 on `staging` today. Branch `fix/guardian-create-duplicates`, based on `staging`
 @ `e484a46` (NOT on `feat/guardian-merge-command`; nothing here depends on
 `GuardianService::merge`). Four commits — the original and three fix rounds.
+The next slice's brief, which a `git add -A` had swept in, has been removed from this
+branch's history and is untracked again where the lead left it.
 
 **Methods touched in `app/Services/GuardianService.php`, for the eventual merge with
 `feat/guardian-merge-command` — final list:** the constructor (one added dependency);
@@ -122,6 +132,89 @@ summarised stat cannot catch a Pint sweep, which is the only thing it is for.
 **Round 4 finished this off by deleting the pasted block entirely** rather than
 refreshing it for a fourth time — the derived table in *What changed* is now the only
 copy. See *Round 4*, fix 3.
+
+---
+
+## Round 5 — the last two, fixed rather than ticketed
+
+The instruction to ticket these was reversed, and the reasoning is the part worth
+keeping: **they were not adjacent quality work, they were the branch's own thesis
+failing on the branch's own paths.** Shipping them would have produced the same
+complaint from a different screen — which is the only outcome this work exists to
+prevent.
+
+### Fix A — `already_linked` was returned by both create paths and read by nothing
+
+`grep -rn already_linked resources/js/` was empty. So the guard worked perfectly and the
+operator never learned it had: they re-submitted a link with a changed relationship or an
+unticked Primary, the server correctly declined to rewrite it, answered **201**, and the
+modal closed on success. **An action reported as done and silently not applied — the
+exact defect this branch exists to delete, reintroduced by the guard that deletes it.**
+
+The sharpest detail, and the reason it is embarrassing rather than merely wrong:
+`add-standalone-guardian-modal.tsx` already read `reused_existing_guardian` **from the
+same response** and toasted it, under a comment arguing that a returned signal nobody
+reads is a false claim of having informed the operator — and ignored `already_linked`
+sitting beside it.
+
+**Both consumers now surface it**, and there are exactly two — enumerated, not assumed:
+
+```
+$ grep -rn "axios.post" resources/js | grep -i guardian     # → only these two create
+resources/js/components/students/add-guardian-modal.tsx:129        (attach)
+resources/js/components/guardians/add-standalone-guardian-modal.tsx:128  (store)
+```
+
+Checking *all* consumers rather than the one in front of me was the explicit lesson of
+round 4, where the guard shipped to `store` and not `attach`. The same shape twice would
+have been unforgivable.
+
+### Fix B — a refuting email now resolves an ambiguous phone
+
+The disambiguation branch required the submitted email to name a guardian **already in
+this school**, so a brand-new address made `$byEmail` null and fell straight through to
+the throw: a distinct email was decisive evidence of a second person at **one** candidate
+and ignored at **two**. Backwards — if one differing address proves "not that person",
+two differing addresses prove "not either of them" at least as strongly.
+
+**The rule now: if the submitted email refutes every candidate, it is a new person, and
+creation proceeds. Refuse only when the phone is ambiguous AND the email cannot
+discriminate — absent, or matching more than one.** `every` is the right quantifier and
+its edge is deliberate: `emailRefutesMatch` returns false for a candidate with no stored
+address, because an email-less row cannot contradict anything and might be the same
+person, so **one silent candidate keeps the refusal**. Its own arm.
+
+**And the message was the worse half.** It told the operator to *"use a number that
+identifies this person"* — for a genuine shared household line, the only way to comply is
+to type a number that is not theirs. That is a dead end dressed as advice, and **a dead
+end is precisely what made a school invent the per-child workaround that produced three
+rows for one mother**. Both exits the message now offers are real ones, and an arm
+asserts it never says "use a number".
+
+### What the drive proved that no arm could
+
+The refusal message is now **followed** in the drive rather than merely read:
+
+```
+  no-email submission ERRORS: ["More than one guardian in this school already has this phone number,
+    and nothing in this form tells them apart. … or, if this is a different person sharing the number,
+    give them their own email address and submit again."]
+  << POST /api/guardians -> 201 …"first_name":"Amaka"…
+  total after supplying an email: 4 (was 3 )
+```
+
+The drive did what the message said, and it worked. That is the difference between a
+refusal and a dead end, and it is not something a status code can show.
+
+### One thing the watched red taught me about my own arm
+
+The consumer pin (arm 5l) **did not go red** on my first mutation, because I disabled the
+handler with `if (false && res.data?.already_linked)` and the token stayed in the file. A
+token grep proves a consumer *mentions* the field, not that it *uses* it. I re-mutated by
+deleting the block, got the red, and **wrote the limitation into the test** rather than
+leaving the arm looking stronger than it is. The rendering itself is proven by the drive;
+the arm's narrower job — failing when a *new* screen appears — is the one the drive
+cannot do.
 
 ---
 
@@ -381,22 +474,23 @@ true, and this one never once was.
 | File | +/− | What |
 | --- | --- | --- |
 | `app/Console/Commands/SeedDriveFixture.php` | +28 / −4 | Students/Guardians columns, printed admission numbers, three new seat rows. |
-| `app/Http/Controllers/GuardianController.php` | +273 / −40 | `duplicateCheck` + masking; `store` made atomic, validated, school-pinned, no silent skip, confirmation control, already-linked guard; `attach` given the same guard. |
+| `app/Http/Controllers/GuardianController.php` | +273 / −40 | `duplicateCheck` + masking; `store` atomic, validated, school-pinned, confirmation control, already-linked guard; `attach` given the same guard and an honest response. |
 | `app/Http/Controllers/StudentController.php` | +80 / −22 | Re-keys guardian refusals onto the row; reports `reused_guardians`. |
 | `app/Http/Requests/GuardianRequest.php` | +155 / −26 | `student_links.*` rules incl. the `school_id`-pinned `Rule::exists` and `max:50`; unique-on-create removed; trim; duplicate-row check; `confirm_existing_account`. |
 | `app/Http/Requests/GuardianUpdateRequest.php` | +141 / −29 | Refuses on an ATTEMPTED CHANGE to a credential field instead of stripping it and answering 200. |
 | `app/Services/AmbiguousPhoneMatchException.php` | +16 / −0 | NEW. Subclass of ImportConflictException, so the import’s single catch is untouched. |
-| `app/Services/GuardianImportService.php` | +7 / −44 | `lookupExistingInDb` is now a one-line delegate to the extraction. No call site or catch changed. |
-| `app/Services/GuardianMatcher.php` | +214 / −0 | NEW. The one definition of "same person in this school"; `emailRefutesMatch`; ordered queries; an ambiguous phone refuses rather than picks. |
-| `app/Services/GuardianService.php` | +304 / −15 | Reuse + blank-fill; never matches a null email; email refusal; account-binding control; the pivot-update audit record; `attachUnlessAlreadyLinked`. |
+| `app/Services/GuardianImportService.php` | +7 / −44 | `lookupExistingInDb` is now a one-line delegate to the extraction. |
+| `app/Services/GuardianMatcher.php` | +242 / −0 | NEW. The one definition of "same person in this school"; `emailRefutesMatch`; ordered queries; an ambiguous phone refuses unless a submitted email refutes every candidate. |
+| `app/Services/GuardianService.php` | +311 / −15 | Reuse + blank-fill; never matches a null email; email refusal; account-binding control; pivot-update audit record; `attachUnlessAlreadyLinked`. |
 | `database/seeders/DriveCastSeeder.php` | +64 / −0 | Three drive seats: two admins and the partial guardian editor. |
-| `resources/js/components/guardians/add-standalone-guardian-modal.tsx` | +349 / −55 | Non-422 handling, per-row nested errors, duplicate check on blur, confirm checkbox, reuse toast. |
+| `resources/js/components/guardians/add-standalone-guardian-modal.tsx` | +367 / −55 | Non-422 handling, per-row errors, duplicate check on blur, confirm checkbox, reuse toast, already-linked toast. |
 | `resources/js/components/guardians/guardian-duplicate-banner.tsx` | +177 / −0 | NEW. The warning, the confirm control, and the corrected promise. |
+| `resources/js/components/students/add-guardian-modal.tsx` | +28 / −1 | Surfaces `already_linked` instead of closing on a false success. |
 | `resources/js/components/students/guardian-sub-form.tsx` | +69 / −5 | Flat error fallback (the safety net), duplicate banner, reworded label. |
 | `resources/js/components/students/student-guardians-panel.tsx` | +283 / −108 | Pivot failures surfaced instead of `console.error`. |
 | `resources/js/hooks/use-guardian-lookup.ts` | +137 / −1 | `useGuardianDuplicateCheck` — debounced, abortable, unmount-safe, fails silent. |
 | `routes/endpoints/guardian.php` | +3 / −0 | `GET /guardians/duplicate-check`, beside `lookup`. |
-| `tests/Feature/Guardian/GuardianCreateDeduplicationTest.php` | +1110 / −0 | NEW. 29 arms. |
+| `tests/Feature/Guardian/GuardianCreateDeduplicationTest.php` | +1271 / −0 | NEW. 34 arms. |
 
 **No totals line.** The fourth review found the hand-carried summary beneath this table
 stale for the fourth round running — 5431 insertions against an actual 5605 — while every
@@ -753,6 +847,33 @@ Failed asserting that 201 is identical to 422."}
 A 201 where the refusal should be: the arbitrary pick, reproduced. Restored; all 29
 arms green.
 
+### Round 5 — two more, and one that taught me about my own arm
+
+**13. Remove the refuting-email resolution** (`if (false && $byPhone->every(…))`):
+
+```
+--- MUTATION: refuting-email resolution removed (fix B) ---
+Expected response status code [201] but received 422.
+{"errors":{"phone":["More than one guardian in this school already has this phone number,
+  and nothing in this form tells them apart. …"]}}
+```
+
+The dead end, reproduced. Restored.
+
+**14. Stop the attach modal reading `already_linked`.** First attempt —
+`if (false && res.data?.already_linked)` — **stayed green**, because the consumer pin is
+a token grep and the string was still in the file. Re-mutated by deleting the block:
+
+```
+--- MUTATION: attach modal's already_linked handling DELETED (fix A) ---
+These screens create a guardian and never read `already_linked`, so an operator whose
+submission changed nothing is shown success: add-guardian-modal.tsx
+```
+
+Red, naming the file. Restored. **The limitation is now written into the arm** rather
+than left implicit: it catches a consumer that never mentions the field, not one that
+mentions it and does nothing with it.
+
 **One further red was not planted by me and is worth recording**, because it is a
 guard catching a real thing: `GuardianLoginInvariantTest`'s cardinality pin went red
 on my first full Guardian run, reporting `GuardianRequest.php` as a third pivot
@@ -1101,6 +1222,46 @@ vector. `rel`, `primary` and `can_login` are byte-identical before and after, th
 response says plainly that nothing changed and where to go to change it, and — the point
 of this fix — this is the screen that had the defect while `store` did not.
 
+### Round 5 re-drive — both fixes, on both screens
+
+#### Fix A — the signal is shown, not merely returned
+
+```
+=== FIX A — `already_linked` is now SHOWN, both screens ===
+  << POST /api/guardians -> 201 …"full_name":"Shown Link"…
+  first create -> http://localhost:8001/guardians/a289bc36-…
+  << POST /api/guardians -> 201 …
+  TOASTS ON SCREEN (standalone): ["ADM09465 was already linked to this guardian — that link was left exactly as it was. Open the guardian's record to change it.",
+                                  "This person was already a guardian here — their existing record was reused and only its empty fields were filled."]
+  relationship: Mother
+  << POST /api/students/a289bbcc-…/guardians -> 201 {"message":"This guardian is already linked to this student. Nothing was changed — open their record to edit the link.","already_linked":true}
+  TOASTS ON SCREEN (attach): ["This guardian is already linked to this student. Nothing was changed — open their record to edit the link."]
+```
+
+`TOASTS ON SCREEN` is read out of the DOM, not off the wire — which is the whole point,
+since the round-4 drive pasted the wire for this same behaviour and the wire was already
+correct then. Both screens now say it. The standalone one raises **both** signals, and
+the admission number in the message is the specific child that was left alone.
+
+#### Fix B — the refusal is a refusal, not a dead end
+
+```
+=== FIX B — a refuting email resolves the ambiguity instead of dead-ending ===
+  two on the household line; total = 3
+  no-email submission ERRORS: ["More than one guardian in this school already has this phone number,
+    and nothing in this form tells them apart. Nothing was saved. Open the right record from the
+    duplicate warning above and add the child there — or, if this is a different person sharing the
+    number, give them their own email address and submit again."]
+  << POST /api/guardians -> 201 …"first_name":"Amaka"…
+  total after supplying an email: 4 (was 3 )
+```
+
+In order: two guardians legitimately share a household line; a third with no email is
+refused and the message renders; **the drive then does what the message says** — supplies
+that person's own address — and it works, 3 → 4. A refusal that names a real exit, and the
+exit taken in the same session. Nothing about that is visible in a status code, which is
+what made the original defect survive.
+
 ### Not driven
 
 - **The student-registration screen's rendering of a guardian refusal.** Blocked by the
@@ -1206,31 +1367,22 @@ Under the privacy rule; ids and counts only.
 - **`ImportConflictException` still has the wrong name** now that a non-import caller
   throws it. A behaviour-neutral rename for its own commit.
 
-## The final review's findings — ticketed, not fixed
+## The final review's findings — the two fix-tier ones are FIXED
 
-**By instruction.** The lead closed the branch to further rounds and asked that anything
-the last review returned be written up with its mechanism and evidence so it can be
-triaged, rather than iterated on. It returned **two fix-level findings**, and both are in
-behaviour this branch newly created — which is the pattern this report identifies at
-§ *Round 4* and then, on its own last change, did not close.
+The instruction to ticket them was reversed. Both are closed in § *Round 5*; the two
+smaller ones stay folded into existing tickets.
 
-| Severity | Finding | Ticket |
+| Severity | Finding | Disposition |
 | --- | --- | --- |
-| **fix** | `already_linked` is returned by both create paths and read by **nothing** — `grep -rn already_linked resources/js/` is empty. The operator re-submits an existing link, the server correctly declines to rewrite it, answers 201, and the modal closes on a success message. The branch's own defect class — an action reported as done and silently not applied — reintroduced by the guard that removes it. Sharpest detail: `add-standalone-guardian-modal.tsx` reads `reused_existing_guardian` from the *same response* and toasts it, under a comment about signals nobody reads, and ignores `already_linked` beside it. | `already-linked-is-returned-by-the-server-and-read-by-nothing.md` |
-| **fix** | An ambiguous phone refuses **even when the submitted email refutes every candidate**. The disambiguation branch requires the email to name a guardian already in the school, so a brand-new address falls through to the throw and `emailRefutesMatch` is never consulted. A distinct email is decisive at n=1 and ignored at n≥2, and the message tells the operator to "use a number that identifies this person" — for a shared household line, a dead end. Same shape as the `Rule::unique` this branch removed, which is what caused the reported duplicates. | `ambiguous-phone-refuses-even-when-the-email-refutes-every-candidate.md` |
-| **ticket** | `GuardianImportService`'s wrapper docblock says the extraction was "behaviour unchanged"; it is not — an ambiguous phone now throws where the old body picked one, and the matcher normalises on entry. The import suite cannot see it: no fixture has two guardians on one number. | folded into `guardian-matcher-and-request-tidy-ups.md` |
-| **ticket** | `maskEmail` masks the local part only and returns the domain in full; `full_name` is unmasked. Small, in-school, and worth deciding with the oracle question rather than alone. | folded into `duplicate-check-is-a-platform-wide-account-existence-oracle.md` |
-| **fixed in place** | The totals line under *What changed* was stale for the fourth round running (5431 vs an actual 5605) while all 17 derived rows were exact. **Deleted**, not corrected — same reasoning as the `--stat` block. | — |
-
-**The honest reading of the first of those two:** four rounds of review have now found a
-fix-tier defect in code this branch added, every single time, and three of the four were
-the branch recreating the very shape it was closing. The guard is right; the consumer for
-its signal was not written. That is the residual risk, and it is one small frontend edit
-away from closed.
+| **fix** | `already_linked` returned by both create paths and read by nothing — the guard's refusal invisible, the operator shown success for a change that did not happen. | **Fixed.** Both consumers surface it; a consumer pin stops a third screen dropping it; driven on both screens with `TOASTS ON SCREEN` read from the DOM. |
+| **fix** | An ambiguous phone refused even when the submitted email refuted every candidate, and the message told the operator to enter a number that is not the person's. | **Fixed.** A refuting email now creates; refusal only when the email cannot discriminate; the message offers two real exits and the drive takes one of them. |
+| **ticket** | `GuardianImportService`'s wrapper docblock claims a behaviour-preserving extraction; it is not one, and the import suite cannot see the difference. | folded into `guardian-matcher-and-request-tidy-ups.md` |
+| **ticket** | `maskEmail` masks the local part only; `full_name` is unmasked. | folded into `duplicate-check-is-a-platform-wide-account-existence-oracle.md` |
+| **fixed in place** | The totals line under *What changed* was stale for the fourth round running. Deleted, not corrected. | — |
 
 ## Findings raised, not fixed
 
-**Eleven ticket files.** This is the residual risk, written down rather than iterated on,
+**Eleven ticket files.** Two of the entries below were closed in round 5 and are struck from this list; what remains is the residual risk the lead asked to have written down. This is the residual risk, written down rather than iterated on,
 which is the deliverable the lead asked for.
 
 | Severity | Finding | Ticket |

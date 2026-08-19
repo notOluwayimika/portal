@@ -123,6 +123,9 @@ class SeedDriveFixture extends Command
                 ['Void-only checker (no credit-note.approve)', 'void-checker@drive.test'],
                 ['Super admin', 'super@drive.test'],
                 ['School B bursar (isolation)', 'school-b@drive.test'],
+                ['Admin (guardians screen)', 'admin@drive.test'],
+                ['School B admin (guardian isolation)', 'admin-b@drive.test'],
+                ['Guardian editor, NO update_credentials', 'guardian-editor@drive.test'],
             ],
         );
         $this->newLine();
@@ -159,14 +162,35 @@ class SeedDriveFixture extends Command
             $schoolId, fn () => $states->paymentCount($schoolId, $origin),
         );
 
-        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one:');
+        // STUDENTS AND GUARDIANS, added for the guardian-create drive and counted for the
+        // same reason as every column beside them. That screen links a new guardian to
+        // children BY ADMISSION NUMBER, so a zero in the Students column means the drive
+        // cannot author a single link and is worthless before it opens a browser — the
+        // exact failure the academic three were added to prevent. Guardians is expected to
+        // be ZERO on a fresh fixture and is printed anyway: it is the denominator the
+        // duplicate-warning and the reuse backstop are measured against, so a drive that
+        // reports "one guardian row after two submissions" can be checked against where it
+        // started rather than asserted.
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Students', 'Guardians'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated')],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated')],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId)],
             ],
         );
+
+        // The admission numbers the guardians screen needs, printed because they are
+        // GENERATED (HasAdmissionNumber + the Sequences counter) and therefore unknowable
+        // from the seeder source. Both schools are printed side by side so the isolation
+        // check is done by comparing two disjoint sets rather than by trusting a label —
+        // every other string in this fixture is identical across the two schools by
+        // construction.
+        foreach ([['A', $cast->schoolAId], ['B', $cast->schoolBId]] as [$label, $schoolId]) {
+            $numbers = DB::table('students')->where('school_id', $schoolId)->whereNull('deleted_at')
+                ->orderBy('id')->pluck('admission_number')->all();
+            $this->line("  School {$label} (school#{$schoolId}) admission numbers: ".implode(', ', $numbers));
+        }
 
         $this->info('Statements: open /finance and click a student; the queue is /finance/approvals.');
     }

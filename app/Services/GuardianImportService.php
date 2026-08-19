@@ -30,6 +30,7 @@ class GuardianImportService
     public function __construct(
         private GuardianImportRowValidator $validator,
         private GuardianService $guardianService,
+        private GuardianMatcher $guardianMatcher,
     ) {}
 
     /**
@@ -233,53 +234,15 @@ class GuardianImportService
 
     /**
      * @throws ImportConflictException when email and phone match different guardians.
+     *
+     * The body MOVED to App\Services\GuardianMatcher, behaviour unchanged, because
+     * the two interactive create paths needed the same rule and were writing without
+     * one. This wrapper stays so the import's call sites and its ImportConflictException
+     * catch are untouched by the extraction.
      */
     private function lookupExistingInDb(?string $email, ?string $phone, ?string $whatsapp, int $schoolId): ?Guardian
     {
-        $byEmail = null;
-        $byPhone = null;
-
-        // Scoped to the target School: a Guardian is a per-School record (§6.2),
-        // so a match in another School must NOT be reused here — it becomes a new
-        // Guardian row sharing the same User (see createAndAttach).
-        if ($email) {
-            $byEmail = Guardian::withoutGlobalScopes()
-                ->whereNull('guardians.deleted_at')
-                ->where('guardians.school_id', $schoolId)
-                ->whereHas('user', fn ($q) => $q->whereRaw('LOWER(email) = ?', [strtolower($email)]))
-                ->first();
-        }
-
-        if ($phone) {
-            $byPhone = Guardian::withoutGlobalScopes()
-                ->whereNull('guardians.deleted_at')
-                ->where('guardians.school_id', $schoolId)
-                ->where(function ($q) use ($phone) {
-                    $q->where('phone', $phone)->orWhere('whatsapp_number', $phone);
-                })
-                ->first();
-        }
-
-        // Whatsapp fallback only if phone didn't match anything.
-        if (! $byPhone && $whatsapp) {
-            $byPhone = Guardian::withoutGlobalScopes()
-                ->whereNull('guardians.deleted_at')
-                ->where('guardians.school_id', $schoolId)
-                ->where(function ($q) use ($whatsapp) {
-                    $q->where('phone', $whatsapp)->orWhere('whatsapp_number', $whatsapp);
-                })
-                ->first();
-        }
-
-        if ($byEmail && $byPhone && $byEmail->id !== $byPhone->id) {
-            throw new ImportConflictException(sprintf(
-                'Conflicting match: email belongs to %s, phone belongs to %s. Resolve manually.',
-                $byEmail->full_name,
-                $byPhone->full_name,
-            ));
-        }
-
-        return $byEmail ?: $byPhone;
+        return $this->guardianMatcher->findInSchool($email, $phone, $whatsapp, $schoolId);
     }
 
     private function ensureSchoolAccess(Guardian $guardian, int $schoolId): void

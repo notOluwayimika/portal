@@ -14,6 +14,7 @@ use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -53,6 +54,14 @@ class DriveCastSeeder extends Seeder
 
     /** @var array<string, string> enrollment UUIDs keyed by state name */
     public array $enrollments = [];
+
+    /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
+    public ?User $adminA = null;
+
+    public ?User $adminB = null;
+
+    /** Holds guardian.update WITHOUT guardian.update_credentials — the partial editor. */
+    public ?User $guardianEditor = null;
 
     public function run(): void
     {
@@ -164,6 +173,61 @@ class DriveCastSeeder extends Seeder
         $super->flushSchoolAccessCache();
 
         $this->schoolBMaker = $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
+
+        // TWO GUARDIAN-CAPABLE SEATS, ADDED FOR THE GUARDIAN-CREATE DRIVE.
+        //
+        // Every seat above is a FINANCE seat, and not one of them can open /guardians:
+        // that route group is gated on `academic_setup.manage`, and creating a guardian
+        // additionally needs `guardian.create` — neither is held by accounts_officer,
+        // executive_director or the void-only role, and super_admin's Gate::before
+        // bypass is authorization, never a substitute for a real operator seat. The
+        // canonical `admin` role holds both (RbacSeeder's $guardianFull plus
+        // ACADEMIC_SETUP_MANAGE), so the seat is the seeded role rather than a
+        // fixture-local invention that could drift from what a school actually grants.
+        //
+        // A SECOND SCHOOL'S admin is the isolation seat, and it has to be its own
+        // account rather than school-b@drive.test: that seat holds accounts_officer and
+        // would 403 on /guardians before it could demonstrate anything about admission
+        // numbers not resolving across schools.
+        $this->adminA = $this->driveUser('admin@drive.test', $schoolA, 'admin');
+        $this->adminB = $this->driveUser('admin-b@drive.test', $schoolB, 'admin');
+
+        // THE PARTIAL GUARDIAN EDITOR — the exact seat GuardianUpdateRequest's
+        // credential refusal is written for, and one no canonical role produces:
+        // RbacSeeder bundles GUARDIAN_UPDATE with GUARDIAN_UPDATE_CREDENTIALS in
+        // $guardianFull (`:153-164`), and `registrar`, which holds the first without
+        // the second, reaches no route at all (`:299-306`). So the refusal is only
+        // reachable through a per-school runtime matrix edit — a supported operation —
+        // and without a seat for it the behaviour can be asserted but never SEEN.
+        //
+        // Same shape and same justification as `void-checker@drive.test` above: a
+        // dedicated fixture-local role holding a deliberately PARTIAL set, existing
+        // because a partial holder is the case that breaks. That seat was added after
+        // a drive found a full-page 403 for a void-only checker; this one is added
+        // after a review found the opposite failure — a hard 403 on EVERY save,
+        // including edits that touch no credential field at all.
+        //
+        // givePermissionTo, not syncPermissions: the role is new, so there is nothing
+        // to detach, and Spatie's sync is non-atomic with post-write events
+        // (CLAUDE.md). Wrapped anyway, because the rule is the rule.
+        setPermissionsTeamId($schoolA->id);
+        DB::transaction(function () {
+            $editor = Role::firstOrCreate(['name' => 'drive_guardian_editor', 'guard_name' => 'web']);
+            // BOTH gates, because the screen and its API are gated DIFFERENTLY: the
+            // `/guardians` page sits behind `permission:admin_area.access`
+            // (routes/web.php:353) while `/api/guardians*` sits behind
+            // `permission:academic_setup.manage` (routes/api.php:47). A seat holding
+            // only the API one signs in, reaches the page, and gets a full-page 403 —
+            // which is exactly what the first run of this drive produced, and it looked
+            // like a broken login rather than a missing grant.
+            foreach (['guardian.view', 'guardian.update', 'academic_setup.manage', 'admin_area.access'] as $p) {
+                Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
+            }
+            // NOT guardian.update_credentials. That absence is the entire seat.
+            $editor->givePermissionTo(['guardian.view', 'guardian.update', 'academic_setup.manage', 'admin_area.access']);
+        });
+        setPermissionsTeamId(null);
+        $this->guardianEditor = $this->driveUser('guardian-editor@drive.test', $schoolA, 'drive_guardian_editor');
     }
 
     /** A drive user: fixed password, verified email, NO 2FA secret, optionally school-scoped to $role. */

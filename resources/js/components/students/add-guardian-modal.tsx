@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import {
     emptyGuardianEntry,
     GuardianRow,
@@ -51,6 +52,14 @@ export function AddGuardianModal({
             return;
         }
 
+        // PRE-EXISTING at HEAD (verified by stashing), not introduced here — but
+        // bin/lint-changed.sh has no ratchet, so touching this file makes it
+        // ship-blocking. Resetting form state when a modal opens is the one shape this
+        // rule cannot distinguish from a cascading render, and deferring it would flash
+        // the previous guardian's details for a frame. Suppressed with a reason, which
+        // is this codebase's own convention for this exact rule — 36 files use
+        // eslint-disable and several name this rule specifically.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setEntry(emptyGuardianEntry({ is_primary: forcePrimary }));
         setErrors({});
         axios
@@ -126,7 +135,25 @@ export function AddGuardianModal({
         }
 
         try {
-            await axios.post(`/api/students/${studentUuid}/guardians`, payload);
+            const res = await axios.post(
+                `/api/students/${studentUuid}/guardians`,
+                payload,
+            );
+
+            // THE SERVER MAY HAVE DECLINED TO CHANGE ANYTHING, and this screen used to
+            // discard the body and close on a success message regardless. The create
+            // path refuses to rewrite a link that already exists — deliberately, because
+            // a create form is not where an existing link is edited — so an operator who
+            // re-submits with a changed relationship, or with Primary or portal login
+            // unticked, gets a 201 for a change that did not happen. Reported, not
+            // hidden; the sibling modal makes the same promise about `reused_existing_guardian`.
+            if (res.data?.already_linked) {
+                toast.info(
+                    res.data?.message ??
+                        'This guardian is already linked to this student. Nothing was changed — open their record to edit the link.',
+                );
+            }
+
             onAdded();
         } catch (err: unknown) {
             const resp = (

@@ -42,6 +42,7 @@ use App\Models\Term;
 use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
+use App\Support\CurrentTerm;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -234,6 +235,88 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     Route::get('/finance/discount-policies', fn () => Inertia::render('admin/finance/discount-policies'))
         ->middleware('permission:finance.discount-policy.change.submit')
         ->name('admin.finance.discount-policies');
+
+    /*
+     * BULK INVOICE RUNS (U6 commit 4) — the operator screen for billing a whole cohort, and the
+     * per-run report that says who was and was not billed.
+     *
+     * Gated on `finance.invoice.generate` IN ADDITION to the group's finance.access, and it coins
+     * NOTHING: the ability is the one the single-student generate POST already carries
+     * (routes/endpoints/finance.php), because bulk raises the same document under the same rule. The
+     * four API routes the page fetches carry the same ability, so a visible control can never 403 on
+     * click and the page cannot be reached by a seat its data would refuse.
+     *
+     * TERMS AND CLASS LEVELS ARE PROPS, NOT A FETCH — the third screen to make this decision, for the
+     * reason fee-schedules and the opening-balance operator screen both record: the only API listing
+     * terms is gated on `academic_data.view`, an ability the finance seat does not hold. Widening
+     * that seat or coining a finance-side terms endpoint are each a bigger change than the screen.
+     *
+     * THE TERM IS DEFAULTED HERE AND ASKED FOR NOWHERE. The operator picks a CLASS LEVEL; the term
+     * arrives pre-filled from `App\Support\CurrentTerm` — the school's current session, its active
+     * term, falling back to the last term by `order` — which is the expression `SetupController`
+     * carried and now reads from the same place. `default_term_id` is NULL when the school has no
+     * current session, and the screen then asks rather than pretending.
+     *
+     * IT IS A DEFAULT AND NOT A CONSTRAINT, and the term stays changeable on the screen. Billing a
+     * PAST term is a real act — a child who enrols late is billed for the term they enrolled in — so
+     * pinning "current" would make that case unreachable. The wire still names the term explicitly on
+     * both the preview and the start, so an override is representable rather than being second-guessed
+     * server-side.
+     *
+     * IT IS NOT DERIVED FROM THE CLASS LEVEL, and it cannot be: the live `curricula_unique_key` is
+     * `(school_id, class_level_arm_id, term_id, exam_type_id, is_ccm)`, so one class-level arm holds a
+     * curriculum row PER TERM. The mapping is one-to-many and there is nothing to derive.
+     *
+     * `->id`, NOT THE MODEL. `ActiveSchool::getOrFail()` returns a School and binding it into a
+     * `where` on `school_id` matches nothing — which renders the form with an EMPTY term select, a
+     * page that looks fine and cannot be submitted, with every test still passing. That has happened
+     * twice on this feature (the fee-schedules route above and the opening-balance route below both
+     * carry the scar); it is not being reopened a third time.
+     */
+    Route::get('/finance/bulk-invoice-runs', function () {
+        $schoolId = ActiveSchool::getOrFail()->id;
+
+        return Inertia::render('admin/finance/bulk-invoice-runs/index', [
+            'terms' => Term::query()
+                ->where('school_id', $schoolId)
+                ->with('academicSession')
+                ->orderByDesc('id')
+                ->get()
+                // Term::displayLabel() — the METHOD, so this screen names a term exactly as the
+                // fee-schedules list, the approvals queue and the opening-balance form name it. Two
+                // screens naming one term differently is how an operator bills the wrong one.
+                ->map(fn (Term $term) => ['id' => $term->id, 'label' => $term->displayLabel()])
+                ->values(),
+            'class_levels' => ClassLevel::query()
+                ->where('school_id', $schoolId)
+                ->orderBy('order')
+                ->get()
+                ->map(fn (ClassLevel $level) => ['id' => $level->id, 'name' => $level->name])
+                ->values(),
+            // `terms.id`, the row — never an ordinal. NULL is a legitimate answer (a school with no
+            // current session) and the screen states it rather than picking something.
+            'default_term_id' => CurrentTerm::forSchool($schoolId)?->id,
+        ]);
+    })
+        ->middleware('permission:finance.invoice.generate')
+        ->name('admin.finance.bulk-invoice-runs');
+
+    /*
+     * ONE RUN'S REPORT. Takes a run uuid, so there is no single URL a menu could point at — it is
+     * reached from the list above, which links every row (FinanceNavCoverageTest asserts that link
+     * rather than trusting it).
+     *
+     * THE UUID IS PASSED AS A PROP, NOT BOUND TO THE MODEL. There is nothing for the shell to render
+     * from the row itself — the page's whole content is the poll of GET
+     * /api/v1/finance/bulk-invoice-runs/{run}, which is where isolation and the 404 are decided —
+     * and binding here would put a second School check on a second path, with the page shell and its
+     * feed able to disagree about whether a run exists.
+     */
+    Route::get('/finance/bulk-invoice-runs/{run}', fn (string $run) => Inertia::render('admin/finance/bulk-invoice-runs/show', [
+        'runUuid' => $run,
+    ]))
+        ->middleware('permission:finance.invoice.generate')
+        ->name('admin.finance.bulk-invoice-run');
 
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [

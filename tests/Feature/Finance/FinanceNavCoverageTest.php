@@ -23,8 +23,8 @@
  *
  * THE EXEMPTIONS ARE NAMED, NOT DEFAULTED. A finance GET route that is not a nav destination has to
  * say why in this file, where a reader looking for the missing item will find it — and the thing
- * that DOES link it is asserted, not asserted-about. There are two: the per-student statement, and
- * (U11) the per-payment receipt.
+ * that DOES link it is asserted, not asserted-about. There are three: the per-student statement,
+ * (U11) the per-payment receipt, and (U6) the per-run bulk-invoice-run report.
  */
 
 use App\Models\User;
@@ -58,6 +58,13 @@ const FNC_NOT_NAV = [
     // checks that link the way the statement's own exemption is checked, so this cannot quietly
     // become "unreachable by a different route".
     'finance/payments/{payment}/receipt' => 'per-payment; linked from every row of the statement’s payments tab',
+
+    // U6 commit 4's per-run report. Takes a RUN uuid, so there is no single URL a menu could point
+    // at — the same reason as the two above. It is reached from the runs list at
+    // /finance/bulk-invoice-runs, which is itself a nav item and which links EVERY row, including a
+    // failed one: a failed run's report is the only place its reason is readable, so hiding the link
+    // there would hide the diagnosis. The arm below checks that link rather than trusting it.
+    'finance/bulk-invoice-runs/{run}' => 'per-run; linked from every row of the runs list at /finance/bulk-invoice-runs',
 ];
 
 function fncRead(string $relative): string
@@ -193,6 +200,41 @@ it('the receipt exemption really is linked from the statement, and the flag is u
         .'hide the row" is the opening-balance spec\'s wording and the refusal is the server\'s '
         .'(PaymentReceiptController), not this screen\'s. If you have only NAMED the flag in a new '
         .'comment, reword the comment — this check cannot tell the two apart.');
+});
+
+it('the bulk-invoice-run exemption really is linked from the runs list, unconditionally', function () {
+    /*
+     * The same check as the two above, for U6 commit 4 — and it asserts the link is UNCONDITIONAL,
+     * which is a rule and not a styling choice.
+     *
+     * The link exists: the list builds it through the service module's `pageUrl`, which reads the
+     * wayfinder route helper, so the path lives in routes/web.php alone and a rename breaks the build
+     * rather than the screen.
+     *
+     * And EVERY row carries it, including a FAILED one. A failed run's report is the only place its
+     * `failure_reason` and its rows are readable — hiding the link on the rows that failed would hide
+     * the one thing an operator can act on, which is the silent-omission shape this whole feature was
+     * built to end. The measurement is the same whole-source occurrence count the receipt arm settled
+     * on, after a windowed version there passed two mutations that hid the row entirely: `run.status`
+     * appears in the list ONLY where the status is displayed, so wrapping the link in a status test,
+     * or filtering the rows by status upstream, both name it again and both red this arm.
+     *
+     * WHAT IT STILL CANNOT SEE, stated rather than implied — this is a TEXT check on a file, and
+     * there is no JavaScript test runner in this repository: a row filtered out by something OTHER
+     * than the status, or whether the link, once rendered, points anywhere useful.
+     */
+    $list = fncRead('resources/js/pages/admin/finance/bulk-invoice-runs/index.tsx');
+
+    expect($list)->toContain('bulkInvoiceRuns.pageUrl(')
+        ->and($list)->toContain('data-testid="bulk-invoice-run-row"');
+
+    expect(substr_count($list, 'run.status'))->toBe(4,
+        'The runs list reads `run.status` a different number of times than the four that are legitimate '
+        .'(the in-flight poll predicate, the tone map, the label map and the icon). Every additional use found so far in this '
+        .'codebase has been a HIDE — a row wrapped in a status test, or rows filtered by status — and '
+        .'a failed run whose report cannot be opened hides the only place its reason is readable. If '
+        .'you have only NAMED the status in a new comment, reword the comment: this check cannot tell '
+        .'the two apart.');
 });
 
 it('gates the Finance group on the permission its routes require', function () {

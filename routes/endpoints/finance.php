@@ -1,6 +1,7 @@
 <?php
 
 use App\Finance\Http\Controllers\BankAccountController;
+use App\Finance\Http\Controllers\BulkInvoiceRunController;
 use App\Finance\Http\Controllers\CreditNoteController;
 use App\Finance\Http\Controllers\DiscountPolicyChangeController;
 use App\Finance\Http\Controllers\DiscountPolicyController;
@@ -262,3 +263,40 @@ Route::post('/v1/finance/bank-accounts/{bankAccount:uuid}/deactivate', [BankAcco
     ->middleware('permission:finance.bank-account.manage');
 Route::post('/v1/finance/bank-accounts/{bankAccount:uuid}/reactivate', [BankAccountController::class, 'reactivate'])
     ->middleware('permission:finance.bank-account.manage');
+
+/*
+ * BULK INVOICE RUNS (U6 commit 4) — bill a whole cohort, and read back exactly who was and was not
+ * billed. The domain is commit 3's: the run row, the queued job, the four outcomes and the
+ * reconciliation. These four routes are its operator surface.
+ *
+ * ALL FOUR CARRY `finance.invoice.generate`, AND NOTHING NEW IS COINED. A bulk run raises the same
+ * document, through the same GenerateInvoice, under the same rule as the single-student POST above —
+ * so the authority to raise one invoice is the authority to raise forty. A `…generate-bulk` minted
+ * here would be granted to precisely the roles that already hold `generate`, deciding nothing, while
+ * adding a second case that can drift out of step with the first. The reads carry the same ability as
+ * the write for the reason the opening-balance maker's five routes do: the person who starts a run is
+ * the person who reads it back.
+ *
+ * ORDER IS LOAD-BEARING. `preview` is declared BEFORE `{run:uuid}` because Laravel matches in
+ * declaration order and would otherwise bind the literal string "preview" as a run uuid — the same
+ * trap the opening-balance block above records, and the same fix.
+ *
+ * `preview` IS A GET AND WRITES NOTHING. No run row, no dispatch. It exists because starting a run is
+ * irreversible in practice: undoing one is a maker-checker void request per child, so the operator
+ * gets the cohort size, the schedule that would be pinned and the refusal — if there is one — before
+ * they commit rather than after.
+ *
+ * THERE IS NO DELETE AND NO CANCEL, and there must not be one. A run is a record of what happened,
+ * and `finance_bulk_invoice_runs` is the only thing that accounts for the students a run did NOT
+ * bill. Re-running is the recovery path and it is safe by construction: the per-episode unique index
+ * on `finance_invoices` refuses a second scheduled invoice, so a re-run records those students as
+ * `already_billed` rather than billing them twice.
+ */
+Route::get('/v1/finance/bulk-invoice-runs/preview', [BulkInvoiceRunController::class, 'preview'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'index'])
+    ->middleware('permission:finance.invoice.generate');
+Route::post('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'store'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/bulk-invoice-runs/{run:uuid}', [BulkInvoiceRunController::class, 'show'])
+    ->middleware('permission:finance.invoice.generate');

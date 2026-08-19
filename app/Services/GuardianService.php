@@ -1038,13 +1038,14 @@ class GuardianService
      * returns first. Both predicates are pinned explicitly here instead, and the
      * global scopes dropped, so the row is the active School's or there is none.
      *
-     * `orderBy('id')` because nothing at the schema level enforces one Guardian
-     * row per (user, school): `guardians` has only non-unique indexes on
-     * `user_id` and `school_id`. resolveOrCreateGuardianForUserInSchool is the
-     * one creation path that guards it, in code. Narrowing the candidate set
-     * would silently inherit the same nondeterminism this method exists to
-     * remove if a second row ever appeared, so the choice is stated, not left to
-     * the database.
+     * `orderBy('id')` is now defence in depth rather than the only defence.
+     * 2026_08_19_100000_add_guardian_live_identity_uniqueness added the
+     * `guardians_live_identity_unique` index over a generated `live_identity`
+     * column, so the schema itself guarantees at most ONE LIVE Guardian row per
+     * (user, school); soft-deleted rows are exempt by design and may be many.
+     * The ordering stays because it costs nothing and this method exists to
+     * remove nondeterminism: if the constraint were ever dropped, narrowing the
+     * candidate set here would silently reintroduce it.
      */
     public function forUserInActiveSchool(User $user): ?Guardian
     {

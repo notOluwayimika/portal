@@ -167,6 +167,52 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
     }
 
     /**
+     * The size of the billable population of $schoolId. See the port for the contract and for why it
+     * is a count rather than a list; what follows is why the query differs from the two above.
+     *
+     * IT BUILDS ON {@see billableEpisodes()} AND NOT ON {@see currentEnrollments()}, and the one
+     * clause that separates them is the whole content of this method. currentEnrollments() adds an
+     * EXISTS through `students` on (student_id, school_id); an episode with a NULL `student_id`
+     * fails it and vanishes from both list methods. This is the DENOMINATOR those lists are
+     * subtracted from, so it must be able to see what they cannot — otherwise the reconciliation
+     * balances to zero over a population that had already lost the rows it exists to find, and the
+     * bulk run reports full coverage of a School it did not fully cover.
+     *
+     * ISOLATION HERE IS STATED TWICE AND NEITHER STATEMENT IS INDIVIDUALLY LOAD-BEARING — MEASURED,
+     * not assumed, because the first version of this comment asserted the opposite ("removing this
+     * `where` must turn the isolation proof red") and the plant that was supposed to prove it came
+     * back GREEN. What was actually measured on 8.0.43, against the two isolation arms in
+     * BulkInvoiceRunTest:
+     *
+     *     drop the outer `where` only                      → GREEN
+     *     drop only the $schoolId passed to billableEpisodes() → GREEN
+     *     drop BOTH                                        → RED (both arms)
+     *
+     * They are redundant with each other because the subquery already restricts MAX(id) to this
+     * School's rows, so the outer query's `whereIn(id, …)` can only select rows that were already
+     * in it. Each alone is therefore sufficient and neither alone is necessary. That is a DIFFERENT
+     * relationship from the one currentEnrollments() documents, where the subquery narrowing cannot
+     * change a result at all — because THAT method's outer query also carries an EXISTS through
+     * `students`, and this one deliberately does not.
+     *
+     * Both are kept, and the honest reason is that a redundant guard costs nothing to keep and
+     * something to remove: with either one deleted the isolation of this method rests on a single
+     * clause that no test can any longer distinguish from its twin.
+     *
+     * The ambient SchoolScope is stripped for the same reason as the two list methods: a method whose
+     * School is an ARGUMENT must not also carry an ambient opinion, because when the two disagree the
+     * intersection is empty and a zero population is an error nowhere — it would make every
+     * reconciliation read "nothing unaccounted for".
+     */
+    public function countBillableForSchool(int $schoolId): int
+    {
+        return $this->billableEpisodes($schoolId)
+            ->withoutGlobalScope(SchoolScope::class)
+            ->where('student_curricula.school_id', $schoolId)
+            ->count();
+    }
+
+    /**
      * THE ONE DEFINITION OF "BILLABLE" — the single expression of it in this class, used by
      * {@see currentForStudent()} AND by both cohort reads. It is two clauses and nothing else:
      *

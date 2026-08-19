@@ -137,6 +137,51 @@ interface BillableEnrollmentProvider
     public function listUnplaceableForSchool(int $schoolId): array;
 
     /**
+     * HOW MANY billable enrollments $schoolId has, at all — the denominator the bulk run reconciles
+     * against (U6 commit 3, closing
+     * docs/handoff/tickets/bulk-run-must-account-for-every-billable-student.md).
+     *
+     * WHY A COUNT AND NOT A LIST. The ticket offered two shapes and this is the cheaper one: the
+     * requirement it has to meet is that the run can state "N billable students were neither billed
+     * nor flagged", and a number states it. An enumeration (`listBillableNotIn(school, pairs)`) would
+     * let a screen NAME those students, which nothing asks for yet — and building the richer
+     * primitive ahead of a consumer produces an abstraction shaped by imagination. The run subtracts:
+     *
+     *     unaccounted = countBillableForSchool(s)
+     *                 − |listForCohort(s, t, c)|        (billed + already billed + failed)
+     *                 − |listUnplaceableForSchool(s)|
+     *
+     * IT REUSES the adapter's private `billableEpisodes()` base query, as the ticket
+     * requires. NAMED IN PROSE AND NOT AS A `{@see}`: resolving that tag needs
+     * `use App\Academics\BillableEnrollmentAdapter` at the top of this file, which is a
+     * COMPILE-TIME Finance to Academics reference — the exact direction this port exists to
+     * prevent — added for a docblock. Arch rule 3 forbids Academics MODELS and does not catch it,
+     * so the import is simply not made. A count derived from a fourth expression of "billable" would reconcile a run against
+     * a population defined differently from the one it billed, and the identity above would then be
+     * a subtraction of two unrelated numbers that happened to be close.
+     *
+     * IT IS DELIBERATELY WIDER THAN THE TWO LIST METHODS, AND THAT IS THE WHOLE POINT. Those two go
+     * through `currentEnrollments()`, which adds an EXISTS-through-`students` clause; this method
+     * does not. The difference is exactly the episodes with a NULL `student_id` — schema-legal, since
+     * the column is nullable and MySQL MATCH SIMPLE skips a composite FK check when a component is
+     * NULL — which fail that EXISTS and appear in NEITHER list. Inheriting the same blindness in the
+     * denominator would make the reconciliation balance to zero over a population that had already
+     * dropped them, which is the silent-omission defect (docs/ui-ux-design-system.md §26) reproduced
+     * one level up, in the very figure written to detect it. So: those episodes are counted here,
+     * they match no row the run writes, and they surface as `unaccounted_count`.
+     *
+     * A CONSEQUENCE WORTH STATING PLAINLY: this is a count of billable EPISODES, and it is exactly a
+     * count of billable STUDENTS only where every episode has a student. `billableEpisodes()` takes
+     * MAX(id) GROUP BY student_id, and SQL groups all NULLs into ONE group — so any number of
+     * student-less episodes contribute 1 between them, not one each. The reconciliation therefore
+     * detects that such episodes exist; it does not count how many.
+     *
+     * ISOLATION IS THE ARGUMENT, with the ambient scope stripped — the same decision, for the same
+     * reason, as the two list methods above (see the adapter's `currentEnrollments()`).
+     */
+    public function countBillableForSchool(int $schoolId): int;
+
+    /**
      * The active School's admission-number roster — every student id paired with the admission
      * number as stored. The join key for an off-platform import, and the ONLY thing that can
      * answer §6's pre-flight ("how many NULL, how many duplicate-after-trim") and §7's other

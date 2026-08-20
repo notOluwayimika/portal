@@ -24,9 +24,21 @@ $ grep -n "pest" bin/quality
 ```
 
 `bin/quality:266` is the full suite — step 15, per the `# 15.` header comment at `bin/quality:243`.
-`bin/quality:238` is the `--group=arch` run, under `step "architecture tests (§17.1)"` at `:237`;
-it sits between the `# 12.` header at `:224` and the `# 15.` at `:243` and carries no numbered
-header comment of its own, so no step number is asserted for it here.
+`bin/quality:238` is the `--group=arch` run, under `step "architecture tests (§17.1)"` at `:237`.
+
+**It is step 13, and that number is derived rather than read off a label.** `bin/quality` numbers
+only *some* steps in header comments: `# 12.` at `:224`, `# 15.` at `:243`, and nothing between.
+The number comes from counting the `step "..."` calls in that gap:
+
+```
+$ awk 'NR>224 && NR<243 && /^step "/ {printf "%d\t%s\n", NR, $0}' bin/quality
+234	step "sql-clock lint (no MySQL clock functions in raw SQL — two frames, one table)"   ← 12
+237	step "architecture tests (§17.1)"                                                      ← 13
+240	step "static analysis (Larastan level 5 vs baseline)"                                  ← 14
+```
+
+The hook's runtime output prints `[13/15] architecture tests (§17.1)`, which corroborates the count
+independently — but the count is the derivation, and a step number quoted without one is a guess.
 
 **There is no paratest.** The only `--parallel` tokens in `composer.json` belong to Pint:
 
@@ -208,8 +220,17 @@ The 553s attributed to step 15 is **one run, on one machine, at sha 87b3702**
 (`feat(finance): a bulk invoice run, and a record that accounts for every billable student`). It is not
 a benchmark. It must be re-derived before it prices anything.
 
-For scale only, here is what the run artefacts already on disk say. `bin/quality:259` keeps the last 20
-runs, and each junit's root `<testsuite>` carries the wall time PHPUnit measured. **These are different
+For scale only, here is what the run artefacts already on disk say. `bin/quality:259` names the
+artefact directory (`${TMPDIR:-/tmp}/quality-runs`), and `bin/quality:275-276` prunes it to the last
+20 runs — **two lines, one per artefact kind**, and citing either alone describes half the
+mechanism:
+
+```
+275	ls -1t "$QUALITY_ARTEFACTS"/junit-*.xml 2>/dev/null | tail -n +21 | xargs -r rm -f
+276	ls -1t "$QUALITY_ARTEFACTS"/pest-*.log  2>/dev/null | tail -n +21 | xargs -r rm -f
+```
+
+Each junit's root `<testsuite>` carries the wall time PHPUnit measured. **These are different
 shas — the test count moves from 1736 to 1811 — so this is not a controlled variance measurement.** It
 establishes a band, nothing more:
 

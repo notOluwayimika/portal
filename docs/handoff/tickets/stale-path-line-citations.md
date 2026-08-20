@@ -9,10 +9,11 @@ This is a gate proposal, not a complaint about tidiness. The house rule is that 
 mechanism behind it is wallpaper, and "cite accurately" has been exactly that for three branches
 running.
 
-## The recurring failure, four instances
+## The recurring failure, five instances
 
-Instances 1-3 are below; **instance 4 is filed after the tiers**, because it is a measured test of
-tier 2 rather than another entry in this list.
+Instances 1-3 are below. **Instances 4 and 5 are filed after the tiers** — 4 because it is a measured
+test of tier 2 rather than another entry in this list, 5 because it is this ticket's own amending
+branch committing the defect while documenting it.
 
 **1. `chore/finance-drive-skill`.** Three citations pointing into a file the same commit shifted.
 That report's own sweep section is the sharpest statement of why the obvious check does not work:
@@ -398,7 +399,11 @@ resolving anything, and does not need the resolver question settled first.
 ### The self-reference cost, updated
 
 This section adds **17** new distinct `path:LINE` tokens under this ticket's own regex — none of
-which appeared in it before — taking the ticket from 14 distinct tokens to 31. Counted the same way it
+which appeared in it before — taking the ticket from 14 distinct tokens to 31. **Instance 5, added below,
+adds none** — measured, not assumed: every path it names is either `bin/quality`, which carries no
+extension and is invisible to this regex, or a bare `:LINE` with no path attached. The file stays at
+31. That the regex cannot see the citations instance 5 is *about* is itself a note for whoever builds
+tier 1: extensionless executables under `bin/` are cited throughout this repository and match nothing. Counted the same way it
 counts everything else:
 
 ```
@@ -417,6 +422,17 @@ The 17: `DriveFinanceStates.php:65`, `:66`, `app/Finance/Console/DriveFinanceSta
 Every one of them is a quotation of `git` output about citations, not a citation. The ticket remains
 the largest single source of violations under the check it proposes, and this amendment makes it
 larger — which is the argument against tier 1 restated in fresh numbers, not a new one.
+
+## Instance 5 — this branch, wrong when written, caught by a hand read
+
+Two citations in this branch's own `docs/handoff/tickets/the-suite-runs-serial-and-nothing-makes-it-parallel.md`
+were wrong at the moment they were written — `bin/quality:259` for a prune that is at `:275-276`, and a
+hedge on a step number that is determinable. The brief this branch worked from supplied `bin/quality:266`
+and `bin/quality:238`, both measured; the citations that shipped were neither. **This is NOT drift.** It
+is the wrong-when-written sub-class this ticket already distinguishes at instances 3.3 and 3.4, and
+tier 2 passes it: the citing line was in the diff, because the commit created it. Caught by a hand read
+before merge. Nothing automatic was involved, in the branch whose purpose is to argue that nothing
+automatic exists.
 
 ## Not proposed here
 

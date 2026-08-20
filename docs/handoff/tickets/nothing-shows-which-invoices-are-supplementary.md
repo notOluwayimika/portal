@@ -59,8 +59,12 @@ reads before doing it now names a number that no longer implies which document i
 `app/Finance/Http/Controllers/PaymentReceiptController.php`.** The allocation rows are
 built at `:156-157` from `$a->invoice?->displayNumber()` and
 `$a->invoice?->academic_context`. A payment settled across an episode's term bill and its
-supplementary charge produces two allocation lines carrying the **same
-`academic_context`** and two different numbers, with nothing saying why there are two.
+supplementary charge produces two allocation lines carrying two **different invoice
+numbers** and the **same `academic_context`**. The two lines are therefore distinguishable
+— the numbers differ, and a reader can tell one row from the other. What is missing is the
+**kind**: nothing on the receipt says which of them is the term bill and which is the
+one-off charge, so the reader can separate the rows without being able to identify either.
+That is the whole claim here, and it is the same claim as §3 — not a stronger one.
 `PaymentResource`'s own `allocations` block (`:68-72`) is thinner still — `invoice_id` and
 `amount`.
 

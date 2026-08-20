@@ -226,10 +226,24 @@ it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an ep
         'status' => 'active',
     ]));
 
-    // RAISED THROUGH THE ACTION, NOT HTTP, and that is not a shortcut taken to save effort: this
-    // commit ships no route and no wire shape that can request a supplementary invoice (both
-    // generate routes hardcode InvoiceKind::Scheduled). The Action is the only way to reach the
-    // state under test until the modal lands. Everything ASSERTED below still goes over HTTP.
+    // RAISED THROUGH THE ACTION, NOT HTTP — and as of U7 that is a CHOICE, where it used to be the
+    // only option. This comment said "both generate routes hardcode InvoiceKind::Scheduled … the
+    // Action is the only way to reach the state under test until the modal lands", which was true
+    // when #259 wrote it and is false now: the modal landed, and both generate routes take the kind
+    // from a validated `kind` on the wire (GenerateInvoiceRequest's rule, read by
+    // InvoiceController::generate and ::generateForStudent). The state under test is reachable over
+    // HTTP today.
+    //
+    // THE ACTION CALL STAYS ANYWAY, and the reason is what this arm is for. What is being proved
+    // below is a property of the READ side — that `already_invoiced` is scheduled-only, so a live
+    // supplementary invoice does not make an episode "already invoiced" and does not send a bursar
+    // to void something. That property must hold for a supplementary invoice however it was raised,
+    // including by a job, a console command or a seeder that never touches the wire. Reaching the
+    // state through the Action keeps this arm independent of the request layer, so it still fails if
+    // the predicate regresses even in a release that changed the routes. The WIRE is proved
+    // separately and over HTTP, by tests/Feature/Finance/SupplementaryInvoiceWireTest.php.
+    //
+    // Everything ASSERTED below still goes over HTTP.
     $supplementary = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
         [new InvoiceLineSpec('Damaged locker door', Money::fromKobo(12345))],

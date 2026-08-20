@@ -160,3 +160,103 @@ recorded here rather than made from a branch the floor is verifying.
 Both of the residuals `CLAUDE.md` already records for the local floor — "Clean-room OS/env" and
 "Determinism" — are about a red that cannot be told from a flake by looking at it. This is a third,
 concrete instance of that class, and unlike the ADR 0053 non-determinism its cause is known.
+
+## Third instance: ONE tree, and the second process is not another gate — it is the cold review
+
+Recorded 2026-08-20 from `feat/u7-supplementary-invoice-wire`. Measurements and raw output in
+`docs/handoff/reports/feat-u7-supplementary-invoice-wire.md` § 10.
+
+The ticket's title says "two working trees". This instance had **one tree, one checkout, one
+person**, and no second `bin/quality` anywhere. What contended for `portal_testing` was the
+**gated push and the cold-review subagent, launched in the same breath** — the two halves of
+this project's own method, which `finance-execute` requires to happen for every non-trivial
+change. Resource #1 above is the whole cause; #2 and #3 are not involved.
+
+That makes it a **recurring structural collision, not an accident**. Every branch that follows
+the method ends the same way: write the report, spawn the reviewer, push. The reviewer reads
+the repository and runs tests; the push runs the full suite under the hook. Both use the one
+hard-coded database at `bin/quality:238` and `:266`, and `RefreshDatabase` means the loser of
+the race is mid-assertion against a schema the winner is dropping. Nothing in either output
+mentions the other.
+
+### The symptom, so it is recognisable in one line
+
+**Both sides of this collision produced a red, and neither red resembled the other** — which
+is the point, and the reason to write down more than one signature. The subsystem named is
+whatever happened to be executing when the tables went; the *shape* is a DDL-under-a-live-suite
+error, never an assertion failure about the diff.
+
+**The cold review's run** (six-test file, spoiled by the push's suite; PID 33834 observed):
+
+```
+SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '46-11' for key 'role_has_permissions.PRIMARY'
+SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction
+        (update roles set name = accounts_supervisor where name = finance_director)   ×3
+```
+
+**The gated push's run** (full suite, spoiled by the review; blocked at step 15/15):
+
+```
+SQLSTATE[42S02]: Base table or view not found: 1146 Table 'portal_testing.schools' doesn't exist
+SQLSTATE[42S02]: Base table or view not found: 1146 Table 'portal_testing.activity_log' doesn't exist
+SQLSTATE[HY000]: General error: 1412 Table definition has changed, please retry transaction
+SQLSTATE[42S22]: Column not found: 1054 Unknown column 'roles.id' in 'on clause'
+```
+
+**The one-line recognition rule: if a suite-wide red is dominated by `1146` / `1412` / `1054` /
+`1213` / a `1062` on an RBAC seeder pivot — rather than by assertions about your own change —
+you are looking at a second process on `portal_testing`, not a regression.** Check
+`ps -eo pid,command | grep vendor/bin/pest` before believing anything else. A phantom of this
+kind cost roughly one full gate cycle here, on top of the review's own lost run.
+
+### It is worse to read than the 23-red instance above, for two reasons
+
+**The ratchet's print understates it by an order of magnitude.** The push above was refused
+with **23** regressions printed. The run underneath that print was **15 failed and 321 errors
+out of 1833 tests** — the ratchet reports only what regressed against
+`tests/ratchet-baseline.txt`, so a catastrophically corrupted run and an ordinary 23-test
+regression present with the same headline. Anyone deciding what to do from the printed list is
+deciding from about 7% of the evidence. Read the stamped log, not the step's summary.
+
+**One of the casualties is a test built to refuse exactly this.** The only Finance entry in
+the entire corrupted run was `tests/Feature/Finance/TriggerBodiesAreDumpSafeTest.php`:
+
+```
+no triggers found — this test would pass vacuously and prove nothing
+```
+
+That is the anti-vacuous guard doing its job on a database whose triggers had been dropped
+underneath it — a correct refusal, appearing in a list of 23 "regressions" a reader is being
+invited to baseline. Baselining it would permanently disable the guard.
+
+### What separates this from ADR 0053's non-determinism
+
+`CLAUDE.md` records byte-identical code producing both PASS 14/14 and FAIL 23, cause unfound.
+This is **not** that, and the two must not be conflated or the known cause gets filed as the
+unknown one:
+
+| | ADR 0053 flake | This contention |
+| --- | --- | --- |
+| Signature | `FAIL 23`, tables all present | missing tables, `1412`, `1054`, deadlocks |
+| Cause | unknown, investigated | known and observable with `ps` |
+| Re-run | indistinguishable from fixing | legitimate once the other process is confirmed gone |
+
+The re-run here was made after `ps` confirmed no live `pest`, on a byte-identical tree, and
+passed **15/15**. That is the discrimination the capture-before-you-re-run rule exists to make
+possible, and it only worked because the artefacts were copied out first.
+
+### What this adds to the options above
+
+The four narrowings and the fifth "declare it out of scope" all still apply, but this instance
+changes which is cheapest. **The lock file is now the strongest candidate**, and its cost is
+lower than the section above assumed: the contending processes are not two humans waiting on
+each other, they are a push and a subagent on one machine, so a queued wait is a wait for
+yourself. "Declare concurrent runs out of scope" is *not* an adequate answer any more —
+concurrent runs are not a mistake here, they are what the documented method produces.
+
+Cheapest useful thing short of a lock, and independent of it: `bin/quality` printing the
+recognition rule above when it fails, so the phantom is named at the moment it is seen.
+
+Until something changes in the script, the operational rule is a sequencing one and belongs
+wherever the method is written down: **spawn the cold reviewer, wait for it, then push.** Never
+in the same message.

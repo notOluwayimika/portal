@@ -76,20 +76,24 @@ function rpcPost($test, School $school, User $admin, StudentCurriculum $enrollme
  * The OTHER route, and the one that matters most — POST /v1/finance/students/{student:uuid}/invoices,
  * InvoiceController::generateForStudent.
  *
- * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. `new-invoice-modal.tsx:349` posts
- * `generateForStudent.url(student.uuid)`, and it is the sole hand-written import of an
- * invoice-generation action under resources/js — `statement.tsx:13` imports only `forStudent`, a read.
+ * IT IS THE ONLY INVOICE-GENERATION ROUTE THE RUNNING UI USES. new-invoice-modal.tsx's `submit()`
+ * posts `generateForStudent.url(student.uuid)`, and it is the sole hand-written import of an
+ * invoice-generation action under resources/js — `statement.tsx` imports only `forStudent`, a read.
  * routes/endpoints/finance.php:222-227 says the same from the other side: the student POST is "the
  * bursar UI's path" and the enrollment-id POST "stays for the harness".
  *
  * Every arm below therefore exists because the pre-check landed on this route with NO test on it. The
  * four `FinanceApiAcceptanceTest` posts to it all carry payloads the pre-check accepts, so deleting
- * InvoiceController.php:114 left the whole suite green.
+ * the `$request->assertDiscountPoliciesUsable()` call in `InvoiceController::generateForStudent`
+ * left the whole suite green.
  *
- * THE THREE NUMBERS ABOVE WERE ALL WRONG BEFORE U8 COMMIT 5, AND TWO OF THEM WERE WRONG WHEN THIS
- * DOCBLOCK WAS WRITTEN — the modal post was cited at `:133` and the pre-check call site at `:83`,
- * neither of which this branch moved. Re-derived by reading each file, not by applying an offset.
- * The recurring failure is written up in docs/handoff/tickets/stale-path-line-citations.md.
+ * THE LINE NUMBERS THAT USED TO BE HERE ARE GONE, AND THAT IS THE FIX. This docblock cited the modal
+ * post at `:133`, then at `:349`, and the pre-check call site at `:83`, then at `:114` — each
+ * correction going stale again the next time an unrelated commit inserted a line above the target.
+ * `feat/u7-supplementary-invoice-wire` broke both a third time by adding an invoice-kind select and
+ * its helper near the top of the modal. Naming the SYMBOL instead of the line ends the cycle: a
+ * function name does not move when something is inserted above it. The recurring failure is written
+ * up in docs/handoff/tickets/stale-path-line-citations.md.
  */
 function rpcPostForStudent($test, School $school, User $admin, StudentCurriculum $enrollment, array $lines)
 {
@@ -318,9 +322,15 @@ it('arm 4 — a super_admin with NO School context: a RETIRED policy is answered
 
 // ── The SAME arms over the route the running UI actually posts to ────────────
 //
-// Not a copy for symmetry. InvoiceController has TWO call sites of the pre-check (:39 and :83) and
-// they are independent lines: everything above exercises :39 only, so :83 could be deleted with the
-// whole suite staying green. These arms are what makes the watched red attributable per call site.
+// Not a copy for symmetry. InvoiceController has TWO call sites of the pre-check —
+// `assertDiscountPoliciesUsable()` is called once in `generate()` and once in `generateForStudent()`
+// — and they are independent lines: everything above exercises the `generate()` one only, so the
+// `generateForStudent()` one could be deleted with the whole suite staying green. These arms are
+// what makes the watched red attributable per call site.
+//
+// CITED BY SYMBOL, NOT BY LINE. This read "(:39 and :83)", and `:83` was already wrong before
+// U7 — at de48818 it was a docblock line, not a call site. Re-derived: the calls are the two
+// `$request->assertDiscountPoliciesUsable();` statements, one per public generate method.
 
 it('student route — arm 1: a reduction with NO policy is a field error on that line', function () {
     // THIS WAS THE CASE THE LIVE UI PRODUCED, AND AS OF U8 COMMIT 4 IT IS NOT. Written when

@@ -22,7 +22,7 @@ grep -rn '?? \[\]' resources/js/pages/admin/finance resources/js/components/fina
 | `resources/js/pages/admin/finance/fee-schedules.tsx`       | `299` | `setAccounts(data.bank_accounts ?? []);`       |
 | `resources/js/pages/admin/finance/bank-accounts.tsx`       | `102` | `setAccounts(data.bank_accounts ?? []);`       |
 | `resources/js/pages/admin/finance/discount-policies.tsx`   | `256` | `setPolicies(data ?? []);`                     |
-| `resources/js/components/finance/new-invoice-modal.tsx`    | `291` | `setPolicies(selectablePolicies(data ?? []));` |
+| `resources/js/components/finance/new-invoice-modal.tsx`    | `334` | `setPolicies(selectablePolicies(data ?? []));` |
 | `resources/js/components/finance/record-payment-modal.tsx` | `121` | `(data.bank_accounts ?? []).filter(…)`         |
 
 The last two are **modals, not list screens**, and they are worse for it: a malformed 200 there does

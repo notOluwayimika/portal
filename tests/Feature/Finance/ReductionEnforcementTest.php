@@ -245,7 +245,8 @@ it('proof 12b (DB) — a RAW reduction-line insert with a NULL policy trips the 
     // here rather than deleted, because the correction is the useful part. This comment used to read
     // "new-invoice-modal.tsx:135-138 sends description/amount_minor/kind and no discount_policy_id
     // whatsoever, so every reduction that screen can currently produce is this case." Both halves are
-    // false as of U8 commit 4: `wireLine()` (new-invoice-modal.tsx:113-128) puts `discount_policy_id`
+    // false as of U8 commit 4: `wireLine()` (new-invoice-modal.tsx:147-162 — it sat at :113-128 until
+    // U7 added the invoice-kind select and its helper above it) puts `discount_policy_id`
     // on every non-charge line, so an unpicked policy reaches the server as `""` rather than as an
     // absent key — which lands on this same arm only because ConvertEmptyStringsToNull rewrites it to
     // null first. A UI reduction is therefore still refused, by a longer route than this said.

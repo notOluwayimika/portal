@@ -19,12 +19,27 @@
 #
 # Usage:  bin/is-docs-only-push <base-sha> <head-sha>
 #
-# THE RULE, deliberately narrow — skip only when EVERY path in
-# `git diff --name-only <base>..<head>` begins with `docs/`. Nothing else is in this cut.
-# `.claude/**` and root-level *.md are the tempting next two and are NOT here: widening a
-# skip rule is how a gate stops gating, and each addition needs its own proof that nothing
-# reads the file. (Measured for THIS cut: no test and no lint in this repository reads a
-# file under docs/ — every one of the 28 mentions is a prose citation in a comment.)
+# THE RULE — skip only when EVERY path in `git diff --name-only <base>..<head>` is under
+# `docs/` AND ends in an allowlisted documentation extension. Location alone is NOT enough:
+# data under docs/ gets read by code. `docs/runbooks/authz-observation-classifications.json`
+# is read by App\Console\Commands\AuthzObservations::classifications() through a class
+# constant, and the edit docs/runbooks/authz-observation-review.md prescribes takes
+# tests/Feature/Rbac/AuthzObservationsCommandTest.php from 5/5 to 3 passed 2 failed — under a
+# location-only rule that push skipped the gate. `.txt` drive logs and `.pdf` captures are
+# excluded not because anything reads them but because an allowlist is the safe direction: a
+# format nobody thought about falls to the full gate rather than past it.
+#
+# The extension test also settles two shapes that a location rule cannot: `docs/tools/run.php`
+# is PHP, and a submodule gitlink at `docs/vendored` has no extension at all. Both run the
+# full gate.
+#
+# THE INVARIANT IS A TEST, NOT A CLAIM ABOUT TODAY'S TREE:
+# tests/Feature/Quality/NothingReadsDocumentationTest.php resolves every base_path / realpath
+# / __DIR__ / Storage:: / File::get / file_get_contents / fopen argument — class constants
+# included — and fails if one lands on a docs/ path this rule would skip.
+#
+# `.claude/**` and root-level *.md are the tempting next two and are NOT here: widening a skip
+# rule is how a gate stops gating, and each addition needs its own proof.
 #
 # `docs*` WOULD BE WRONG, and that is the point of the prefix being `docs/` with the slash.
 # A file named `docsomething.php` at the repository root is a prefix match on `docs` and is
@@ -54,8 +69,15 @@
 #
 # STDOUT IS THE FILE LIST IT JUDGED — one path per line, so the caller prints the same paths
 # the decision was made from rather than re-deriving them and risking a printed list that
-# disagrees with the verdict. Diagnostics go to stderr. (A path containing a newline would
-# display as two lines; the decision itself is made on NUL-separated data and is unaffected.)
+# disagrees with the verdict. Diagnostics go to stderr.
+#
+# EACH PATH IS PRINTED ESCAPED. A filename may legally contain a newline, and a raw one splits
+# into two printed lines under the SKIP banner — the second of which can read like a source
+# file the reader believes was checked. The verdict was never wrong; the display was. Backslash
+# is escaped first so an escape is distinguishable from a literal backslash sequence already in
+# the name, and only control characters are touched, so ordinary non-ASCII documentation
+# filenames stay readable (printf '%q' renders an em dash differently under LC_ALL=C and
+# en_US.UTF-8 — a machine-dependent output this file should not have).
 #
 # It operates on the repository containing the CURRENT DIRECTORY, like bin/landed and unlike
 # bin/quality: a script hard-wired to one checkout cannot be tested against planted
@@ -64,15 +86,23 @@ set -uo pipefail
 
 z40=0000000000000000000000000000000000000000
 
+# THE ALLOWLIST, on one line and parsed by tests/Feature/Quality/DocsOnlyPushCoverageTest.php
+# and tests/Feature/Quality/NothingReadsDocumentationTest.php, so the three cannot drift.
+# Space-separated, lowercase; the comparison lowercases the path's extension before matching.
+DOC_EXTENSIONS="md png jpg jpeg gif svg"
+
 usage() {
     cat <<'USAGE'
 bin/is-docs-only-push — is every file in this push range documentation?
 
   Usage:  bin/is-docs-only-push <base-sha> <head-sha>
 
-Exits 0 when every path in `git diff --name-only <base>..<head>` is under `docs/`,
-1 when any path is not (and when there is no base, or nothing changed), 2 when the
-range could not be computed at all.
+Exits 0 when every path in `git diff --name-only <base>..<head>` is under `docs/` AND
+ends in an allowlisted documentation extension (md png jpg jpeg gif svg), 1 when any
+path is not (and when there is no base, or nothing changed), 2 when the range could
+not be computed at all.
+
+Location is not enough: data under docs/ gets read by code.
 
 Prints the paths it judged on stdout. Callers must treat EVERY non-zero exit the same:
 run the full gate. This never decides that a push is safe on a question it could not answer.
@@ -134,7 +164,23 @@ work="$(mktemp -t is-docs-only-push.XXXXXX)" || {
 }
 trap 'rm -f "$work" "$work.err"' EXIT
 
-if ! git diff -z --name-only --no-renames "$BASE..$HEAD_SHA" >"$work" 2>"$work.err"; then
+# THE DIFF RUNS FROM THE TOP LEVEL, WITH RELATIVE PATHS FORCED OFF. `git push` is invoked
+# from whatever directory the developer happens to be in, and the hook passes that cwd
+# straight through. With `diff.relative=true` in their config — a real setting people set —
+# `git diff --name-only` emits paths relative to the CWD and drops everything outside it: run
+# from a directory that itself contains a nested `docs/`, a range holding `app/T.php` reports
+# only the docs-relative remainder and the push is judged docs-only. `public/assets/docs/` is
+# tracked here, so the shape is reachable in this repository rather than hypothetical.
+# `-C "$top"` fixes the directory; `-c diff.relative=false` overrides the config from the
+# command line, where it outranks every config file.
+top="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$top" ]; then
+    printf 'is-docs-only-push: could not resolve the repository top level\n' >&2
+    exit 2
+fi
+
+if ! git -C "$top" -c diff.relative=false diff -z --name-only --no-renames \
+    "$BASE..$HEAD_SHA" >"$work" 2>"$work.err"; then
     printf 'is-docs-only-push: could not diff %s..%s\n' "$BASE" "$HEAD_SHA" >&2
     [ -s "$work.err" ] && cat "$work.err" >&2
     exit 2
@@ -152,14 +198,53 @@ if [ "${#files[@]}" -eq 0 ]; then
     exit 1
 fi
 
-printf '%s\n' "${files[@]}"
+# Escape before anything is printed — see the header. Backslash first, so an escape cannot be
+# confused with a literal backslash sequence already in the name; then the three bytes that can
+# forge a line. Everything else, UTF-8 included, is left exactly as it is.
+escape_path() {
+    local e="$1"
+    e="${e//\\/\\\\}"
+    e="${e//$'\n'/\\n}"
+    e="${e//$'\r'/\\r}"
+    e="${e//$'\t'/\\t}"
+    printf '%s\n' "$e"
+}
+
+for f in "${files[@]}"; do
+    escape_path "$f"
+done
 
 verdict=0
 for f in "${files[@]}"; do
+    # UNDER docs/ — `?*` requires at least one character after the slash, so a file literally
+    # named `docs` is not a directory match and `docsomething.php` is not a prefix match.
     case "$f" in
         docs/?*) ;;
-        *) printf 'is-docs-only-push: not documentation: %s\n' "$f" >&2; verdict=1 ;;
+        *)
+            printf 'is-docs-only-push: not documentation (not under docs/): %s\n' \
+                "$(escape_path "$f")" >&2
+            verdict=1
+            continue ;;
     esac
+
+    # AND an allowlisted documentation FORMAT. A basename with no dot has no extension and is
+    # refused — that is the submodule-gitlink shape, which git reports as a bare directory name.
+    base="${f##*/}"
+    case "$base" in
+        *.*) ext="$(printf '%s' "${base##*.}" | tr 'A-Z' 'a-z')" ;;
+        *) ext="" ;;
+    esac
+
+    matched=0
+    for allowed in $DOC_EXTENSIONS; do
+        [ "$ext" = "$allowed" ] && { matched=1; break; }
+    done
+
+    if [ "$matched" != "1" ]; then
+        printf 'is-docs-only-push: not documentation (extension "%s" is not one of: %s): %s\n' \
+            "$ext" "$DOC_EXTENSIONS" "$(escape_path "$f")" >&2
+        verdict=1
+    fi
 done
 
 exit "$verdict"

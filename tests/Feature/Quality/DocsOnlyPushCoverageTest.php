@@ -16,7 +16,7 @@
  * and for "nothing changed", and an arm that checked only the code would pass while the script
  * refused for the wrong reason.
  *
- * THE HOOK ITSELF IS EXERCISED, not just the script — arms (k) through (o). A correct decision
+ * THE HOOK ITSELF IS EXERCISED, not just the script — arms (k) through (q). A correct decision
  * that is wired in wrongly is worth nothing, and the case that matters most (a docs-only push
  * to main must still hit the release gate) lives entirely in the wiring. Those arms run the
  * real .githooks/pre-push against a planted stdin, with a STUB bin/quality that announces
@@ -33,6 +33,13 @@
  * those outrank every config file, including the two redirected above, and are the one channel
  * the redirection does not close. A developer's signing key, commit template or core.hooksPath
  * cannot reach in and change what these assert.
+ *
+ * ARMS (r) THROUGH (y) WERE ADDED BY THE COLD REVIEW, and (r) is the one that matters most:
+ * the rule shipped by LOCATION and had to be narrowed to FORMAT. `docs/runbooks/authz-observation-classifications.json`
+ * is read by code through a class constant, and the edit its runbook prescribes took
+ * tests/Feature/Rbac/AuthzObservationsCommandTest.php from 5/5 to 3 passed 2 failed while the
+ * hook skipped the gate. The invariant that no such reader exists is no longer a claim: it is
+ * tests/Feature/Quality/NothingReadsDocumentationTest.php.
  *
  * BITE-PROVED. Every arm below was verified to go RED against a stated mutation of
  * bin/is-docs-only-push or of the hook; each mutation and its raw red is recorded in
@@ -52,7 +59,9 @@ function docsOnlyFixture(string $setup): array
 {
     return docsOnlyRun($setup, <<<'BASH'
 set +e
-cd "$TMP/work"
+# RUN_IN lets an arm invoke the checker from a SUBDIRECTORY of the work repo — the cwd a
+# developer's `git push` actually carries. Defaults to the top level.
+cd "$TMP/work/${RUN_IN:-.}"
 "$ROOT/bin/is-docs-only-push" "${BASE:-}" "${HEAD:-}" 2>&1
 echo "___EXIT:$?"
 BASH);
@@ -215,7 +224,7 @@ HEAD=$(git rev-parse HEAD)
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('not documentation: app/Support/Thing.php');
+        ->and($output)->toContain('not documentation (not under docs/): app/Support/Thing.php');
 });
 
 it('(c) refuses when the range touches only PHP', function () {
@@ -229,7 +238,7 @@ HEAD=$(git rev-parse HEAD)
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('not documentation: app/Support/Thing.php');
+        ->and($output)->toContain('not documentation (not under docs/): app/Support/Thing.php');
 });
 
 it('(d) refuses a multi-commit range whose middle commit is code', function () {
@@ -256,7 +265,7 @@ HEAD=$(git rev-parse HEAD)
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('not documentation: app/Support/Thing.php')
+        ->and($output)->toContain('not documentation (not under docs/): app/Support/Thing.php')
         // …and the two prose files are still reported as judged, so the list a reader sees is
         // the list the verdict was taken over.
         ->and($output)->toContain('docs/one.md')
@@ -278,7 +287,7 @@ HEAD=$(git rev-parse HEAD)
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('not documentation: docsomething.php');
+        ->and($output)->toContain('not documentation (not under docs/): docsomething.php');
 });
 
 it('(f) refuses a file renamed out of docs/', function () {
@@ -301,7 +310,7 @@ HEAD=$(git rev-parse HEAD)
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('not documentation: moved.md')
+        ->and($output)->toContain('not documentation (not under docs/): moved.md')
         // Both ends present: the delete under docs/ and the add outside it.
         ->and($output)->toContain('docs/moved.md');
 });
@@ -524,4 +533,186 @@ BASH);
     expect($exit)->toBe(0)
         ->and($output)->toContain('___QUALITY_RAN')
         ->and($output)->not->toContain('DOCS-ONLY PUSH');
+});
+
+it('(r) refuses a .json under docs/ that code reads through a class constant', function () {
+    // THE STOP THE COLD REVIEW RAISED, in miniature. `docs/runbooks/authz-observation-classifications.json`
+    // is read by App\Console\Commands\AuthzObservations::classifications() —
+    // app/Console/Commands/AuthzObservations.php:22 holds the path as a class constant, :149
+    // resolves it through base_path() and :155 reads it. Making exactly the edit
+    // docs/runbooks/authz-observation-review.md step 3 prescribes takes
+    // tests/Feature/Rbac/AuthzObservationsCommandTest.php from 5/5 to 3 passed 2 failed, and
+    // under a location-only rule that push skipped the gate. Location is not the property that
+    // makes a file safe to skip; FORMAT is.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+BASE=$(git rev-parse HEAD)
+mkdir -p docs/runbooks
+echo '{"classes": []}' > docs/runbooks/classifications.json
+git add docs
+git commit -qm "docs(runbooks): classify a denial class"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('extension "json" is not one of')
+        ->and($output)->toContain('docs/runbooks/classifications.json');
+});
+
+it('(s) refuses a .php under docs/ and an extensionless path under docs/', function () {
+    // `docs/tools/run.php` is a PHP file that a location rule calls documentation. A submodule
+    // gitlink — `docs/vendored` — is reported by git as a bare directory name with no extension
+    // at all, and a rule that only asks "does it end in something bad?" has nothing to test.
+    // The allowlist answers both: an extension that is not on it, and no extension, both refuse.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+BASE=$(git rev-parse HEAD)
+mkdir -p docs/tools
+echo "<?php" > docs/tools/run.php
+echo "no extension" > docs/vendored
+git add docs
+git commit -qm "docs: a script and an extensionless path"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('extension "php" is not one of')
+        ->and($output)->toContain('docs/tools/run.php')
+        // The extensionless one reports an EMPTY extension rather than falling through silently.
+        ->and($output)->toContain('extension "" is not one of')
+        ->and($output)->toContain('docs/vendored');
+});
+
+it('(t) refuses .txt and .pdf under docs/, which nothing reads', function () {
+    // These are excluded not because anything reads them but because an allowlist is the safe
+    // direction: a format nobody thought about falls to the full gate rather than past it.
+    // Both shapes are real — docs/handoff/drives/ holds three .txt drive logs and three .pdf
+    // print captures.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+BASE=$(git rev-parse HEAD)
+mkdir -p docs/handoff/drives
+echo "log" > docs/handoff/drives/drive-log.txt
+printf '%%PDF-1.4\n' > docs/handoff/drives/receipt.pdf
+git add docs
+git commit -qm "docs(drives): the log and the capture"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('extension "txt" is not one of')
+        ->and($output)->toContain('extension "pdf" is not one of');
+});
+
+it('(u) accepts every allowlisted extension, and accepts them case-insensitively', function () {
+    // The complement of (r)-(t), and the non-vacuity check on the allowlist: a rule that
+    // refused everything would pass all three of those arms. Uppercase is included because
+    // a screenshot arriving as .PNG from a capture tool is not a different kind of file.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+BASE=$(git rev-parse HEAD)
+mkdir -p docs/handoff
+echo "prose"  > docs/handoff/a.md
+echo "png"    > docs/handoff/b.png
+echo "jpg"    > docs/handoff/c.jpg
+echo "jpeg"   > docs/handoff/d.jpeg
+echo "gif"    > docs/handoff/e.gif
+echo "svg"    > docs/handoff/f.svg
+echo "shouty" > docs/handoff/g.PNG
+git add docs
+git commit -qm "docs: one of each allowlisted format"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('docs/handoff/g.PNG')
+        ->and($output)->not->toContain('not documentation');
+});
+
+it('(v) the allowlist in the script is the one this test asserts against', function () {
+    // SINGLE-SOURCED, so the two cannot drift. The script carries the list on one line and this
+    // reads it back; an extension added there without a thought about what reads it will show up
+    // here as an unreviewed member rather than silently widening the skip.
+    $script = file_get_contents(dirname(__DIR__, 3).'/bin/is-docs-only-push');
+
+    expect(preg_match('/^DOC_EXTENSIONS="([^"]*)"$/m', $script, $m))->toBe(1);
+
+    expect(explode(' ', $m[1]))->toBe(['md', 'png', 'jpg', 'jpeg', 'gif', 'svg']);
+});
+
+it('(w) refuses a force-push range that drops a file which left the remote tip', function () {
+    // TWO-DOT IS THE CONTRACT, AND IT WAS UNPINNED. Changing `$BASE..$HEAD_SHA` to `...`
+    // leaves every other arm in this file green, because for a fast-forward range the two forms
+    // are identical. They diverge exactly here: the remote tip carries `app/T.php`, the pushed
+    // ref does not, and three-dot diffs from the merge base instead — so the mutant sees only
+    // the prose and skips the gate over a range that removes a PHP file from the remote.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+FORK=$(git rev-parse HEAD)
+
+# what origin currently has
+mkdir -p app/Support
+echo "<?php" > app/Support/Thing.php
+git add app
+git commit -qm "the code on the remote tip"
+BASE=$(git rev-parse HEAD)
+
+# what is being pushed over it, cut from before that commit
+git checkout -q -b rewritten "$FORK"
+mkdir -p docs
+echo "the report" > docs/report.md
+git add docs
+git commit -qm "docs: the report"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('app/Support/Thing.php');
+});
+
+it('(x) is not fooled by diff.relative and the caller cwd', function () {
+    // `git push` runs from whatever directory the developer is in, and the hook passes that cwd
+    // straight through. With `diff.relative=true` — a real setting, set locally here — a diff run
+    // from a subdirectory emits paths relative to it and DROPS everything outside it. Run from
+    // `sub/`, a range holding `app/Support/Thing.php` would report only `docs/x.md` and be judged
+    // documentation. `public/assets/docs/` is tracked in this repository, so the nested-docs shape
+    // is reachable rather than hypothetical.
+    //
+    // THIS ARM CANNOT BE WRITTEN AGAINST THE HOOK. The hook fixture always cds to the work
+    // repository's top level and carries no local config, so neither half of the defect is
+    // present there. The checker is the only place it can be planted.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+git config diff.relative true
+
+BASE=$(git rev-parse HEAD)
+mkdir -p app/Support sub/docs
+echo "<?php" > app/Support/Thing.php
+echo "prose" > sub/docs/x.md
+git add app sub
+git commit -qm "feat: the thing, and prose in a nested docs directory"
+HEAD=$(git rev-parse HEAD)
+
+RUN_IN=sub
+BASH);
+
+    expect($exit)->toBe(1)
+        // Both paths are seen, at their repository-root names.
+        ->and($output)->toContain('app/Support/Thing.php')
+        ->and($output)->toContain('sub/docs/x.md');
+});
+
+it('(y) prints a path containing a newline as one escaped line', function () {
+    // THE VERDICT WAS NEVER WRONG HERE; THE DISPLAY WAS. A filename may legally contain a
+    // newline, and printed raw it splits into two lines under the SKIP banner — the second of
+    // which can read like a source file the reader believes was checked. Escaped, it is one line
+    // and one path.
+    [$exit, $output] = docsOnlyFixture(<<<'BASH'
+BASE=$(git rev-parse HEAD)
+mkdir -p docs
+printf 'prose\n' > "$(printf 'docs/a\nb.md')"
+git add docs
+git commit -qm "docs: a filename containing a newline"
+HEAD=$(git rev-parse HEAD)
+BASH);
+
+    expect($exit)->toBe(0)
+        // One line, with the newline rendered as two characters.
+        ->and($output)->toContain('docs/a\nb.md')
+        // …and NOT split, which is what a raw print produced: a bare `b.md` on its own line.
+        ->and($output)->not->toContain("\nb.md\n");
 });

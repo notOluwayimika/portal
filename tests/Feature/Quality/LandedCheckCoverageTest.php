@@ -153,10 +153,19 @@ BASH);
         ->and($output)->toContain('says nothing about whether the merge was correct');
 });
 
-it('(b) fails when the merge took an earlier sha and commits landed on the branch afterwards', function () {
+it('(b) reports instance A through check 1, and offers the merge-message hint without claiming it', function () {
     // INSTANCE A, reproduced in miniature. PR #265's merge commit 9849689 has second parent
     // 37500c8 — the conflict-resolution merge — while two further commits (c7ec9a6, 6e770ae)
     // were pushed to the branch after the merge and have never reached origin/staging.
+    //
+    // CHECK 4 DOES NOT DETECT THIS AND MUST NOT CLAIM TO. It once did, and arm (i) is the
+    // measurement that killed that claim: this topology — a merge on the target whose second
+    // parent is an ancestor of the branch and is not the branch head — is indistinguishable
+    // from a branch that never merged and was merely cut from a commit that later became a
+    // merge parent. Check 1 is the detector here, and it is sufficient: it names both commits.
+    //
+    // The useful SENTENCE survives as a hint, read from the merge commit's message rather than
+    // from the graph, and contributing nothing to the failure count.
     [$exit, $output, $vars] = landedFixture(<<<'BASH'
 git checkout -q -b feat/x
 echo one >> f.txt
@@ -180,19 +189,29 @@ BASH);
 
     expect($exit)->toBe(1);
 
-    // Check 4 — named in the terms the ticket uses, and naming BOTH shas. Asserting only the
-    // exit code here would not distinguish this from arm (e), which also exits 1.
-    expect($output)->toContain('PR merged '.$vars['reviewed'])
-        ->and($output)->toContain('branch head is '.$vars['head'])
-        ->and($output)->toContain('2 commit(s) between them')
-        ->and($output)->toContain('the fix that never landed');
-
-    // Check 1 — the same gap stated from the other side. Both must fire; a mutation that pins
-    // either one green is caught here and not by the exit code.
+    // CHECK 1 IS THE DETECTOR, and the ONLY failure. The count is the assertion: if check 4 is
+    // ever re-promoted to a verdict this goes to 2 and this arm goes red.
     expect($output)->toContain('origin/feat/x has 2 commit(s) that origin/staging does not have')
+        ->and($output)->toContain('the fix that never landed')
+        ->and($output)->toContain('and its documentation')
         ->and($output)->toContain('✗ NOT landed')
-        // Exactly two: checks 1 and 4. Not three — the local staging here is in sync.
-        ->and($output)->toContain('(2 check(s) failed)');
+        ->and($output)->toContain('(1 check(s) failed)');
+
+    // Check 4 declines, out loud. Silence would leave a reader wondering whether it ran.
+    expect($output)->toContain('origin/feat/x is not contained in origin/staging')
+        ->and($output)->toContain('no merge-head claim is made')
+        ->and($output)->not->toContain('PR merged')
+        ->and($output)->not->toContain('commit(s) between them');
+
+    // THE HINT. The sentence the ticket wanted — which sha the merge took, and how far the
+    // branch has run past it — read from the merge MESSAGE, labelled as such, and costing
+    // nothing: the exit code and the count above are asserted with the hint present, so a
+    // hint that started contributing to the failure count would turn this arm red.
+    expect($output)->toContain('READ FROM A MERGE MESSAGE')
+        ->and($output)->toContain('took '.$vars['reviewed'])
+        ->and($output)->toContain('origin/feat/x is now '.$vars['head'])
+        ->and($output)->toContain('2 commit(s) beyond that')
+        ->and($output)->toContain('A hint, not a verdict');
 });
 
 it('(c) fails when the local target is ahead of origin — a merge nobody else can see', function () {
@@ -262,8 +281,15 @@ it('(e) fails distinctly when the branch was never merged at all, past an unrela
     // AFTER `other/y` merged, so `other/y`'s head is in `feat/x`'s ancestry — and a check 4 that
     // looked for "the newest merge whose second parent is an ancestor of the branch" would find
     // `other/y`'s merge and report it as `feat/x`'s, printing a stale-head mismatch for a branch
-    // that simply never merged. Matching on the MERGE-BASE instead is what refuses it. Widening
-    // the awk match to the newest merge was tried and this is the arm that goes red.
+    // that simply never merged.
+    //
+    // NECESSARY AND INSUFFICIENT, and worth stating exactly. This arm killed the loose
+    // ancestor-based match; it did NOT kill the merge-base match that replaced it, and could
+    // not, because HERE THE UNRELATED MERGE COMMIT *IS* THE MERGE-BASE — nothing's second
+    // parent equals it, so the merge-base form correctly found nothing. In arm (i) the
+    // unrelated merge's SECOND PARENT is the merge-base, which is the shape this fixture cannot
+    // reach and which the merge-base form got wrong on the real repository. One fixture, one
+    // shape; that is why check 4 now gates on containment instead of on any matcher at all.
     [$exit, $output] = landedFixture(<<<'BASH'
 git checkout -q -b other/y
 echo unrelated > g.txt
@@ -281,16 +307,19 @@ git checkout -q staging
 BASH);
 
     expect($exit)->toBe(1)
-        ->and($output)->toContain('no merge of feat/x found on origin/staging')
-        // The mismatch wording must NOT appear — that is the outcome this one is distinct from.
+        ->and($output)->toContain('origin/feat/x has 1 commit(s) that origin/staging does not have')
+        ->and($output)->toContain('never merged')
+        ->and($output)->toContain('origin/feat/x is not contained in origin/staging')
+        ->and($output)->toContain('no merge-head claim is made')
+        // No verdict wording of any kind — that is the outcome this arm exists to refuse.
         ->and($output)->not->toContain('branch head is')
+        ->and($output)->not->toContain('PR merged')
         ->and($output)->toContain('✗ NOT landed')
-        // THE COUNT IS THE ONLY THING THAT PROVES no-merge IS ITSELF A FAILURE, and it is here
-        // because the obvious assertion does not work. An unmerged branch ALWAYS has commits the
-        // target lacks, so check 1 fails in this arm too and holds the exit at 1 on its own: with
-        // check 4's failure tally removed the arm stayed green, which was measured, not assumed.
-        // Two is check 1 plus check 4; one would mean check 4 stopped counting.
-        ->and($output)->toContain('(2 check(s) failed)');
+        // One failure: check 1. Check 4 contributes nothing.
+        ->and($output)->toContain('(1 check(s) failed)')
+        // And no hint either: `other/y`'s merge subject names `other/y`, not `feat/x`, so the
+        // message scan correctly declines to offer a lead about a different branch.
+        ->and($output)->not->toContain('READ FROM A MERGE MESSAGE');
 });
 
 it('(f) exits 2, not 0 and not 1, when origin cannot be reached', function () {
@@ -377,6 +406,69 @@ BASH, 'feat/x');
         ->and($output)->toContain('cannot determine whether it landed')
         ->and($output)->not->toContain('✗ NOT landed')
         ->and($output)->not->toContain('✓ landed');
+});
+
+it('(i) makes no merge-head claim for a branch cut from a commit that later became a merge parent', function () {
+    // THE RUN-3 SHAPE, and the reason check 4 was demoted from detector to explainer. Found by
+    // pointing the tool at this repository on 2026-08-20; fifteen mutations against fixtures had
+    // not found it. Raw output in docs/handoff/reports/feat-landed-check.md §7.
+    //
+    // The topology: `feat/x` is cut from commit X on the target. The target then diverges and is
+    // reconciled with a `git pull` merge — whose SECOND parent is X, because that is what pull
+    // puts there. `feat/x` never merges. Now merge-base(target, branch) == X == that merge's
+    // second parent, so any check that identifies "the merge of this branch" by second-parent
+    // equality with the merge-base matches a merge that has nothing to do with the branch, and
+    // reports the branch's own fork point as "the head the PR merged".
+    //
+    // THIS IS THE SAME TOPOLOGY AS INSTANCE A. In both, a merge on the target has as its second
+    // parent a commit that is an ancestor of the branch and not the branch head. Git records no
+    // branch identity in the DAG, so no ancestry test separates "merged, then advanced" from
+    // "never merged, and the fork point happens to be a merge parent". Check 4 therefore claims
+    // nothing unless the branch is CONTAINED — which is a fact about the graph, not a guess about
+    // intent.
+    //
+    // An unmerged branch is check 1's business, and check 1 already names the outstanding commits.
+    // So: exit 1, exactly ONE failed check, and no mismatch wording anywhere in the output.
+    [$exit, $output] = landedFixture(<<<'BASH'
+# X — pushed to origin/staging from a side branch, so the local staging never contains it.
+git checkout -q -b tmp-x
+echo x >> f.txt
+git commit -qam "commit X, the fork point"
+git push -q origin tmp-x:staging
+git checkout -q staging
+git branch -q -D tmp-x
+
+# feat/x is cut from X, and never merges.
+git checkout -q -b feat/x origin/staging
+echo b >> f.txt
+git commit -qam "branch work that never merged"
+git push -q origin feat/x
+
+# Local staging diverges onto its own line…
+git checkout -q staging
+echo l > local.txt
+git add local.txt
+git commit -qm "a local commit on staging"
+
+# …and is reconciled the way `git pull` reconciles: HEAD first, the fetched head SECOND.
+git merge -q --no-ff -m "Merge branch 'staging' of example.test:o/portal into staging" origin/staging
+git push -q origin staging
+BASH);
+
+    expect($exit)->toBe(1)
+        // Check 1 is the signal, and it is the ONLY failure. The count is the assertion that a
+        // re-promoted check 4 cannot slip back in unnoticed.
+        ->and($output)->toContain('origin/feat/x has 1 commit(s) that origin/staging does not have')
+        ->and($output)->toContain('branch work that never merged')
+        ->and($output)->toContain('(1 check(s) failed)')
+        // Check 4 says so explicitly rather than staying silent, so a reader is not left to wonder
+        // whether it ran.
+        ->and($output)->toContain('is not contained in origin/staging')
+        ->and($output)->toContain('no merge-head claim is made')
+        // AND NOT ONE WORD OF A VERDICT. These three are the shape of the false positive.
+        ->and($output)->not->toContain('PR merged')
+        ->and($output)->not->toContain('branch head is')
+        ->and($output)->not->toContain('commit(s) between them');
 });
 
 it('never writes anything but remote-tracking refs — no push, no merge, no checkout, no reset', function () {

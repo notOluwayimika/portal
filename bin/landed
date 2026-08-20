@@ -35,14 +35,24 @@
 # exists to close. In particular a failed fetch NEVER exits 0 — a green meaning "I could not
 # look" would be the same bug wearing this script's face.
 #
+# WHICH CHECK DETECTS WHAT. Check 1 detects instance A — a branch holding commits the target
+# does not have, whatever the reason. Check 2 detects instance B — a merge that exists only on
+# one machine. CHECK 4 DETECTS NOTHING; it explains, and only when origin/<branch> is
+# contained in origin/<target>. Do not read a quiet check 4 as evidence of anything: on an
+# unmerged branch it deliberately makes no claim, and says so in the output.
+#
 # THE HONEST LIMIT, in the register of bin/quality's step-15 comment and .githooks/pre-push's
 # header. A green here proves exactly two things: that origin/<target> contains every commit
-# on origin/<branch>, and that the merge on origin/<target> took the branch head that
-# origin/<branch> now points at. It proves NOTHING about whether the merge was correct,
-# whether the reviewer read the right diff, whether the merged tree passes bin/quality, or
-# whether the branch should have been merged at all. It answers one question and no others.
-# It also cannot see a squash or rebase merge as a merge — see check 4's contained-anyway
-# branch, which reports that case rather than passing or failing it.
+# on origin/<branch>, and — when a merge commit took that head — that it did. It proves
+# NOTHING about whether the merge was correct, whether the reviewer read the right diff,
+# whether the merged tree passes bin/quality, or whether the branch should have been merged at
+# all. It answers one question and no others.
+#
+# TWO THINGS IT CANNOT SEE. A squash or rebase merge is not a merge to this script — it leaves
+# neither a merge commit nor ancestry, so a squash-merged branch reports as not contained,
+# exactly like one that never merged. And the merge-message hint printed for an uncontained
+# branch is defeated by a rename, an edited merge message or a squash; it is a lead, never a
+# verdict, and is labelled as read from the message wherever it appears.
 #
 # NOT WIRED INTO bin/quality, deliberately. That gate is offline and self-contained
 # (.githooks/pre-push:3-20), and the failure this catches happens AFTER a merge — a moment
@@ -64,15 +74,21 @@ and then answers, from refs alone:
   1. does origin/<target> contain every commit on origin/<branch>?
   2. is your local <target> ahead of origin — i.e. is a merge sitting unpushed?
   3. is your local <target> behind origin?                       (information, not a failure)
-  4. did the merge on origin/<target> take the head origin/<branch> now points at?
+  4. WHEN the branch is contained: did a merge take the head origin/<branch> now points at?
+
+Checks 1 and 2 are the detectors. CHECK 4 IS AN EXPLAINER: it makes no claim about a branch
+that is not contained in the target, because git records no branch identity in the DAG and a
+merged-then-advanced branch is topologically identical to one whose fork point happens to be
+a merge parent. For an uncontained branch it may print a hint read from a merge MESSAGE; that
+never affects the exit code.
 
 It never pushes, merges, checks out, resets or writes a branch ref, and it never calls `gh`.
 
 Exit codes:  0 all checks pass · 1 a check failed · 2 could not determine.
 A failed fetch exits 2, never 0 — a green that means "I could not look" is the bug itself.
 
-A green proves origin/<target> contains origin/<branch> and that the merge took the reviewed
-head. It proves nothing about whether the merge was correct or the merged tree is green.
+A green proves origin/<target> contains origin/<branch>, and where a merge commit took that
+head, that it did. Nothing about whether the merge was correct or the merged tree is green.
 USAGE
 }
 
@@ -171,60 +187,81 @@ else
     printf '%sℹ no local %s branch — the ahead/behind checks do not apply%s\n' "$YELLOW" "$TARGET" "$OFF"
 fi
 
-# --- 4. the merge must have taken the head the branch now points at ----------
-# What makes instance A DETECTABLE rather than merely visible in hindsight. The merge that
-# took this branch is the one whose SECOND parent is the merge-base of the two refs: with a
-# healthy merge that merge-base IS the branch head, and with a stale one it is the older
-# commit the merge actually took. Matching on the merge-base rather than on "any second
-# parent that is an ancestor of the branch" is what stops an UNRELATED branch's merge from
-# being reported as this branch's: a branch cut from the target after some other merge has
-# that merge's second parent in its ancestry too, and would otherwise match it.
-MB="$(git merge-base "$TG_REF" "$BR_REF" 2>/dev/null || true)"
-if [ -z "$MB" ]; then
-    FAILED=$((FAILED + 1))
-    printf '%s✗ origin/%s and origin/%s have no common ancestor%s\n' "$RED" "$BRANCH" "$TARGET" "$OFF"
-else
-    # `git rev-list --merges --parents` prints "<merge> <parent1> <parent2> …", newest first;
-    # field 3 is the second parent. One pass, one process, no cap.
-    MERGE="$(git rev-list --merges --parents "$TG_REF" | awk -v mb="$MB" '$3 == mb { print $1; exit }')"
+# --- 4. WHAT THE MERGE TOOK — an explainer, not a detector -------------------
+# THIS CHECK CANNOT DETECT A STALE MERGE HEAD, and its first version claimed to. Instance A
+# (a branch merged at an earlier sha, then advanced) and a branch cut from a commit that
+# later became the second parent of a reconciliation merge are THE SAME TOPOLOGY: in both, a
+# merge on the target has as its second parent a commit that is an ancestor of the branch and
+# is not the branch head. Git records no branch identity in the DAG, so no ancestry test
+# separates them — a matcher sharpened until it passed one would fail the other.
+#
+# That is measured, not reasoned about. The first version matched the merge whose second
+# parent equalled merge-base(target, branch); pointed at this repository it reported
+# `feat/landed-check` — never merged — as having been "merged" at its own fork point, because
+# a `git pull` reconciliation merge on staging had that fork point as its second parent.
+# Fifteen mutations against fixtures had not found it; one run against a real repository did.
+# Raw output and derivation: docs/handoff/reports/feat-landed-check.md § 7.
+#
+# So the topological claim is made ONLY when origin/<branch> is CONTAINED in origin/<target> —
+# a fact about the graph, not a guess about intent. When it is not contained, check 4 asserts
+# nothing and adds nothing to the failure count. An unmerged branch is check 1's business, and
+# check 1 has already named the outstanding commits.
+if git merge-base --is-ancestor "$BR_REF" "$TG_REF" 2>/dev/null; then
+    # Contained. The merge that took this branch, if there is one, is the merge on the target
+    # whose SECOND PARENT IS THE BRANCH HEAD. Containment plus that equality is reliable in a
+    # way the merge-base form was not: the branch head is inside the target AND is what a
+    # merge took, so there is nothing else the merge could have taken instead.
+    MERGE="$(git rev-list --merges --parents "$TG_REF" | awk -v h="$BR_SHA" '$3 == h { print $1; exit }')"
 
     if [ -n "$MERGE" ]; then
         # The PR number, when there is one, is READ FROM THE MERGE COMMIT'S OWN MESSAGE and
         # labelled as such. `gh` is deliberately not consulted: it can be absent,
         # unauthenticated or rate-limited, and every fact here is answerable from refs.
         SUBJECT="$(git log -1 --format=%s "$MERGE")"
-        if [ "$MB" = "$BR_SHA" ]; then
-            printf '%s✓%s the merge on origin/%s took the head origin/%s points at (%s)\n' \
-                "$GREEN" "$OFF" "$TARGET" "$BRANCH" "${BR_SHA:0:8}"
-            printf '%s  merge %s — "%s" (subject read from the merge commit)%s\n' \
-                "$DIM" "${MERGE:0:8}" "$SUBJECT" "$OFF"
-        else
-            FAILED=$((FAILED + 1))
-            GAP="$(git rev-list --count "$MB..$BR_REF")"
-            printf '%s✗ PR merged %s, branch head is %s, %s commit(s) between them%s\n' \
-                "$RED" "${MB:0:8}" "${BR_SHA:0:8}" "$GAP" "$OFF"
-            printf '%s  merge %s — "%s" (subject read from the merge commit)%s\n' \
-                "$DIM" "${MERGE:0:8}" "$SUBJECT" "$OFF"
-            git log --oneline "$MB..$BR_REF" | sed 's/^/    /'
-        fi
-    elif git merge-base --is-ancestor "$BR_REF" "$TG_REF"; then
-        # No merge commit, yet the branch is contained. A fast-forward merge, or the branch
-        # merged the target back into itself after its own PR closed. Neither is the defect
-        # and neither is a clean pass of check 4, so it is reported as its own outcome.
+        printf '%s✓%s the merge on origin/%s took the head origin/%s points at (%s)\n' \
+            "$GREEN" "$OFF" "$TARGET" "$BRANCH" "${BR_SHA:0:8}"
+        printf '%s  merge %s — "%s" (subject read from the merge commit)%s\n' \
+            "$DIM" "${MERGE:0:8}" "$SUBJECT" "$OFF"
+    else
+        # Contained with no merge commit: a fast-forward, or the branch merged the target back
+        # into itself after its own PR closed. Neither is the defect and neither is a
+        # second-parent match, so it is reported as its own outcome.
         CONTAINED_NO_MERGE=1
         printf '%sℹ no merge commit of %s found on origin/%s, but origin/%s is contained in origin/%s%s\n' \
             "$YELLOW" "$BRANCH" "$TARGET" "$BRANCH" "$TARGET" "$OFF"
         printf '%s  fast-forward, or the branch merged %s back in after its own merge. Check 1 is the signal here.%s\n' \
             "$DIM" "$TARGET" "$OFF"
-    else
-        # A DISTINCT OUTCOME from a mismatch, and it must not be reported as one: nothing on
-        # origin/<target> merged this branch, so there is no "reviewed head" to disagree
-        # with. A squash or rebase merge also lands here, because it leaves no merge commit
-        # and no ancestry — this script cannot tell it from a branch that never merged.
-        FAILED=$((FAILED + 1))
-        printf '%s✗ no merge of %s found on origin/%s%s\n' "$RED" "$BRANCH" "$TARGET" "$OFF"
-        printf '%s  (a squash or rebase merge leaves neither a merge commit nor ancestry, and is%s\n' "$DIM" "$OFF"
-        printf '%s   indistinguishable here from a branch that never merged at all)%s\n' "$DIM" "$OFF"
+    fi
+else
+    printf '%sℹ origin/%s is not contained in origin/%s — no merge-head claim is made. Check 1 above is the signal.%s\n' \
+        "$YELLOW" "$BRANCH" "$TARGET" "$OFF"
+
+    # THE DIAGNOSIS, DEMOTED TO A HINT. "PR merged X, branch head is Y" is the useful sentence
+    # for instance A, and it is NOT derivable from topology — only from what a merge commit
+    # SAYS about itself. So it is read from the message, printed as a hint, labelled as read
+    # from the message, and it never touches the failure count. Same treatment and same reason
+    # as the PR number above.
+    #
+    # A renamed branch, an edited merge message, or a squash defeats it entirely. It is a lead
+    # for a human, never a verdict.
+    HINT=""
+    while IFS=' ' read -r msha msubject; do
+        case "$msubject" in
+            "Merge pull request #"*" from "*"/$BRANCH") HINT="$msha"; break ;;
+            "Merge branch '$BRANCH'"|"Merge branch '$BRANCH' "*) HINT="$msha"; break ;;
+        esac
+    done < <(git log --merges --format='%H %s' "$TG_REF")
+
+    if [ -n "$HINT" ]; then
+        HINT_P2="$(git rev-parse --verify --quiet "$HINT^2" || true)"
+        if [ -n "$HINT_P2" ]; then
+            HINT_GAP="$(git rev-list --count "$HINT_P2..$BR_REF" 2>/dev/null || echo '?')"
+            printf '%s  hint, READ FROM A MERGE MESSAGE and not from the graph: merge %s says it\n' "$DIM" "${HINT:0:8}"
+            printf '  merged this branch and took %s; origin/%s is now %s, %s commit(s) beyond that.%s\n' \
+                "${HINT_P2:0:8}" "$BRANCH" "${BR_SHA:0:8}" "$HINT_GAP" "$OFF"
+            printf '%s  merge %s — "%s"%s\n' "$DIM" "${HINT:0:8}" "$(git log -1 --format=%s "$HINT")" "$OFF"
+            printf '%s  A hint, not a verdict: a rename, an edited message or a squash defeats it.%s\n' "$DIM" "$OFF"
+        fi
     fi
 fi
 

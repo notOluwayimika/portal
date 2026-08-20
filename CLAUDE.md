@@ -83,8 +83,11 @@ dark.
 **A merged pull request is not evidence that the branch merged.** After any merge, run
 `bin/landed <branch>` — target defaults to `staging`. It fetches origin (its only
 mutation) and answers, from refs alone, whether `origin/<target>` contains every
-commit on `origin/<branch>` and whether the merge took the head `origin/<branch>` now
-points at. Nothing else answers that: PR #265 reported merged while two commits — the
+commit on `origin/<branch>`, and — where the branch is contained — which merge took
+it. **Containment is the detector**; the merge-head line explains, and makes no claim
+about a branch that is not contained (git records no branch identity in the DAG, so
+"merged then advanced" and "never merged" are the same graph shape — measured, see
+`docs/handoff/reports/feat-landed-check.md` §§ 7-8). PR #265 reported merged while two commits — the
 only behavioural change on the branch among them — stayed outside `staging`, and the
 local merge that closed the gap then sat unpushed while `git status` announced it to
 nobody. Exit 0 landed · 1 a check failed · 2 could not determine, and a failed fetch

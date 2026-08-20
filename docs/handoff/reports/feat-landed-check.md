@@ -99,6 +99,10 @@ is the same instance B seen from a different branch.
 
 ## 2. What each check does
 
+> **§8 SUPERSEDES CHECK 4 IN THIS SECTION.** Check 4 was demoted from detector to explainer
+> after §7. What follows describes the first version; the "How check 4 finds the merge"
+> subsection in particular no longer describes the script. Checks 0–3 are unchanged.
+
 `bin/landed <branch> [target]`, target defaults to `staging`. Bash, alongside `bin/quality` and
 `bin/quality-promote`; the PHP convention in `bin/` is for tree lints and this is a question about
 refs.
@@ -178,6 +182,10 @@ reads refs; refs carry no timeline. It detects the outcome, not the cause.
 ---
 
 ## 4. The coverage test
+
+> **§8 SUPERSEDES THE ARM TABLE AND THE RAW OUTPUT BELOW FOR ARMS (b) AND (e).** Both were
+> rewritten for the redesigned check 4, and arm (i) was added. Arms (a), (c), (d), (f), (g),
+> (h) and the source-shape test are unchanged.
 
 `tests/Feature/Quality/LandedCheckCoverageTest.php`, `uses()->group('arch')`, shaped after
 `tests/Arch/SqlClockLintCoverageTest.php`.
@@ -331,6 +339,9 @@ EXIT=2
 ---
 
 ## 5. The mutations, and which arm caught each
+
+> **§8 CARRIES THE MUTATION MATRIX FOR THE REDESIGNED CHECK 4.** M5, M6, M9, M10 and M12 below
+> target code that no longer exists. M1–M4, M7, M8, M11, M13–M15 still hold.
 
 `bin/landed` was broken one line at a time and the whole file re-run. An arm that passes with its
 check removed is testing the fixture, not the script.
@@ -545,3 +556,223 @@ reproduced: a branch merged at one sha with two commits pushed to it afterwards,
 and "2 commit(s) between them". §5's M5 records that pinning check 4's mismatch branch to pass turns
 that arm red, so the arm is load-bearing rather than decorative — but it is a fixture, not the
 repository.
+
+---
+
+## 8. Check 4 demoted from detector to explainer
+
+§7 stands exactly as published. It is the evidence for this section: pointing the tool at a real
+repository found in one run what fifteen mutations against fixtures did not.
+
+### No matcher can do the job
+
+Instance A and §7's run-3 false positive are **the same topology**. In both, a merge commit on
+`origin/<target>` has as its second parent a commit that is an ancestor of `origin/<branch>` and is
+not the branch head:
+
+| | the merge | its second parent | the branch |
+| --- | --- | --- | --- |
+| Instance A | `9849689` (PR #265) | `37500c8` — merged, then the branch advanced | `6e770ae` |
+| Run 3 | `ca12d926` (a `git pull` reconciliation) | `7894c393` — the branch's own fork point | `0b26cef2` |
+
+**Git records no branch identity in the DAG.** A commit does not know which branch it was on; a
+merge's second parent is a commit, not a branch. So there is no ancestry test that answers "was this
+merge a merge *of this branch*" — the two rows above are the same graph shape, and a matcher
+sharpened until it passed one would fail the other. The merge-base form was already the sharpened
+version: it was chosen over the looser ancestor form specifically to stop this class, and arm (e)
+plants a fixture for it. It still got run 3 wrong.
+
+### What check 4 does now
+
+It makes a topological claim **only when `origin/<branch>` is contained in `origin/<target>`** —
+which is a fact about the graph rather than a guess about intent.
+
+| State | Check 4 |
+| ----- | ------- |
+| contained, via a merge whose **second parent is the branch head** | ✓ "the merge on origin/`<target>` took the head origin/`<branch>` points at", merge named |
+| contained, no such merge (fast-forward, or branch merged the target back in) | ℹ as before — wording unchanged, it was right |
+| **not contained** | ℹ "origin/`<branch>` is not contained in origin/`<target>` — no merge-head claim is made. Check 1 above is the signal." **Asserts nothing. Adds nothing to the failure count.** |
+
+That last row is the fix. An unmerged branch is check 1's business, and check 1 already names the
+outstanding commits.
+
+Inside the containment gate the second-parent match and the old merge-base match are the **same
+expression** — if `origin/<branch>` is an ancestor of `origin/<target>` then
+`merge-base(target, branch)` *is* the branch head. Verified on both live merged branches. The gate
+is the fix; the matcher never was.
+
+### What the tool now detects
+
+- **Check 1 detects instance A** — a branch holding commits the target does not have, whatever the
+  reason. It named both commits in every arm and in the live run.
+- **Check 2 detects instance B** — a merge that exists only on one machine.
+- **Check 4 detects nothing. It explains.** A quiet check 4 is not evidence of anything, and on an
+  uncontained branch it says so in the output rather than staying silent.
+
+This is written into the docblock under "WHICH CHECK DETECTS WHAT" and into `--help`.
+
+### The diagnosis, demoted to a hint
+
+"PR merged `37500c8`, branch head is `6e770ae`" is still the useful sentence for instance A. It is
+not derivable from topology — only from what a merge commit **says about itself**. So for an
+uncontained branch the script scans merge subjects on `origin/<target>` for
+`Merge pull request #N from <owner>/<branch>` or `Merge branch '<branch>'`, and prints that merge's
+second parent as a hint, labelled as read from the message, contributing nothing to the failure
+count. Same treatment and same reason as the PR number, which was already labelled that way.
+
+A rename, an edited merge message or a squash defeats it entirely. The docblock says so next to the
+existing squash/rebase limit.
+
+### Arm (e) was necessary and insufficient — precisely which shape it misses
+
+Arm (e) killed the loose ancestor-based match and stays. It could not have killed the merge-base
+match, and the difference is one edge:
+
+- **In arm (e)** the unrelated merge commit **is** the merge-base. Nothing's second parent equals it,
+  so the merge-base form correctly found nothing.
+- **In arm (i)** the unrelated merge's **second parent** is the merge-base. The merge-base form
+  matched, and reported the branch's fork point as the head a PR merged.
+
+One fixture, one shape. That is why check 4 now gates on containment instead of on any matcher.
+
+### Arm (i), red against the pre-redesign script
+
+Written and run **before** `bin/landed` was changed, as the measurement rather than a regression
+test written after the fact:
+
+```text
+✗ origin/feat/x has 1 commit(s) that origin/staging does not have
+    0f81507 branch work that never merged
+✓ your local staging is not ahead of origin
+✗ PR merged 63eca1dc, branch head is 0f81507b, 1 commit(s) between them
+  merge 2dc732f7 — "Merge branch 'staging' of example.test:o/portal into staging" (subject read from the merge commit)
+    0f81507 branch work that never merged
+
+✗ NOT landed (2 check(s) failed) — do not report feat/x as merged.
+___EXIT:1
+
+Failed asserting that '…' contains "(1 check(s) failed)".
+```
+
+`feat/x` never merged, and the pre-redesign script reported its fork point `63eca1dc` as a head a PR
+had merged — run 3, reproduced in a fixture.
+
+### Raw output of the changed and new arms, after the redesign
+
+**Arm (b) — instance A. Check 1 detects; check 4 declines; the hint carries the diagnosis.**
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin (--prune)
+  origin/feat/x = 1768bf02 · origin/staging = 039cab39
+
+✗ origin/feat/x has 2 commit(s) that origin/staging does not have
+    1768bf0 and its documentation
+    608e3d8 the fix that never landed
+✓ your local staging is not ahead of origin
+ℹ origin/feat/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+  hint, READ FROM A MERGE MESSAGE and not from the graph: merge 039cab39 says it
+  merged this branch and took 4cd78e8c; origin/feat/x is now 1768bf02, 2 commit(s) beyond that.
+  merge 039cab39 — "Merge pull request #2 from o/feat/x"
+  A hint, not a verdict: a rename, an edited message or a squash defeats it.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/x as merged.
+EXIT=1
+```
+
+**Arm (e) — never merged, past an unrelated merge.**
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin (--prune)
+  origin/feat/x = 6a48c42a · origin/staging = 9a1302bc
+
+✗ origin/feat/x has 1 commit(s) that origin/staging does not have
+    6a48c42 never merged
+✓ your local staging is not ahead of origin
+ℹ origin/feat/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/x as merged.
+EXIT=1
+```
+
+**Arm (i) — the run-3 shape.**
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin (--prune)
+  origin/feat/x = 36f99dd7 · origin/staging = de25024b
+
+✗ origin/feat/x has 1 commit(s) that origin/staging does not have
+    36f99dd branch work that never merged
+✓ your local staging is not ahead of origin
+ℹ origin/feat/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/x as merged.
+EXIT=1
+```
+
+**Arms (e) and (i) now produce identical output**, modulo shas and commit subjects. That is not a
+weakness of the fixtures — it is the finding, made visible: the two are the same graph shape, and
+the tool no longer pretends to tell them apart.
+
+### Mutation matrix for the redesigned check 4
+
+Every existing arm was re-run. All ten pass.
+
+| Mutation | Arms that went RED |
+| -------- | ------------------ |
+| N1 · the containment gate removed (`if true`) | (b) (e) (i), source-shape |
+| N2 · second-parent match reverted to merge-base | **inert — see below** |
+| N3 · the "not contained" line removed | (b) (e) (i) |
+| N4 · the merge-message hint removed | (b) |
+| N5 · the hint increments the failure count | (b) |
+| N6 · containment test reversed (`--is-ancestor` args swapped) | (a) (c) (e) |
+| N7 · hint pattern loosened to match any pull-request merge | (e) |
+| N8 · the contained-no-merge branch stops setting its flag | (g) |
+
+N1 also reddens the source-shape test, which asserts `bin/landed` still contains `git merge-base` —
+the non-vacuity guard catching a mutation that deleted the only call.
+
+**N2 is an equivalent mutant, not a survivor**, and is recorded as such rather than left looking like
+a gap. Inside the containment gate `merge-base(target, branch)` *is* the branch head, so the two
+matchers are the same expression:
+
+```
+$ git merge-base --is-ancestor origin/feat/u6-bulk-run-screen origin/staging && echo contained
+contained
+$ git merge-base origin/staging origin/feat/u6-bulk-run-screen
+6e770aea9e86278d6eda2062ba0ed1259df56299
+$ git rev-parse origin/feat/u6-bulk-run-screen
+6e770aea9e86278d6eda2062ba0ed1259df56299
+```
+
+Same for `docs/test-infrastructure-tickets`. No arm can distinguish them because there is nothing to
+distinguish — which is itself the argument that the gate, not the matcher, is what changed.
+
+### Arm letters
+
+The brief named the two new arms `h` and `i`. `(h)` was already taken by the branch-deleted-from-origin
+arm from the first commit, so the run-3 arm shipped as **(i)** and the re-planted instance A is
+**arm (b)**, which already plants exactly that fixture and was rewritten in place rather than
+duplicated.
+
+### Live, after the redesign
+
+```
+$ ./bin/landed feat/landed-check staging
+✗ origin/feat/landed-check has 2 commit(s) that origin/staging does not have
+    6f2ffa9 docs(quality): bin/landed against the live repository, …
+    0b26cef feat(quality): a command that answers whether the remote contains what was reviewed
+✓ your local staging is not ahead of origin
+ℹ origin/feat/landed-check is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/landed-check as merged.
+EXIT=1
+```
+
+`feat/u6-bulk-run-screen` and `docs/test-infrastructure-tickets` still exit 0 with check 4 naming
+`5a3f212` and `7894c39`, unchanged from §7.

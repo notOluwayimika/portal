@@ -1,6 +1,6 @@
 ---
 name: finance-drive
-description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its count table, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
+description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its two count tables, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
 ---
 
 # Driving a screen
@@ -36,7 +36,7 @@ it. It paid on the first run.
 
 **U1's fee-schedules screen hit the same class one layer out — in the fixture.**
 `DriveCastSeeder` seeded no academic session, no term and no class level
-(`DriveCastSeeder.php:127-131` records this), and `SeedDriveFixture` gave School B
+(`DriveCastSeeder.php:135-139` records this), and `SeedDriveFixture` gave School B
 only a `plainInvoice`, which records no payment, so School B had **no bank
 account** while `school-b@drive.test` holds the ability to open the author screen
 (`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`). A drive would
@@ -134,23 +134,45 @@ by construction.
 
 ## Check the fixture before you drive anything
 
-The seed command prints a **count table** of the authoring slot per school
-(`SeedDriveFixture.php:195-202`) — **eleven columns**: academic sessions, terms,
-class levels, bank accounts, discount policies, payments split by `origin`, and, as
-of U6 commit 4, active fee schedules, the cohort at the fixture's pricing slot and
-the unplaceable count. It is counted from the database through `DB::table`, through
-the Finance side's own scoped counters and — for the last two — through the ACL
-PORT, deliberately **not** from the seeder's own variables, which would only ever
-report what the seeder intended (`SeedDriveFixture.php:147-192`).
+The seed command prints **TWO count tables**, not one, and a reader who takes the
+first one for the whole thing will look for a column that is in the other.
 
-**THE COLUMN LIST GROWS, AND THAT IS THIS FILE'S OWN RULE BEING OBEYED.** It was
-eight columns until a bulk-run drive needed to know whether a cohort and a price
-list existed at all; that drive found the fixture placed EVERY episode at null
-coordinates and seeded no schedule, so a run would have billed nobody on a fixture
-that looked full. The columns landed in the same commit as the fixture change.
-**When your screen depends on something the table does not count, add the column
-before you open a browser** — and update the enumeration in this paragraph with it,
-which is the step U6 commit 4 missed and a cold review caught.
+**Table 1 — the bulk-run slot** (`SeedDriveFixture.php:198-205`), eleven columns:
+academic sessions, terms, class levels, bank accounts, discount policies, payments
+split by `origin`, then **active fee schedules, cohort at slot, unplaceable**.
+
+**Table 2 — the guardians slot** (`SeedDriveFixture.php:217-224`), ten columns: the
+same first eight, then **students, guardians**.
+
+**THE FIRST EIGHT COLUMNS ARE DUPLICATED, VALUE FOR VALUE.** Both tables are built
+from the same four closures over the same two schools, so those eight are the same
+numbers printed twice; only the tail of each row is new. That is worth knowing for
+two reasons. Reading them as one wide table double-counts nothing but wastes the
+check, and — more usefully — **if the shared eight ever DISAGREE between the two
+tables, something is wrong with the counting rather than with the fixture**, because
+nothing writes between the two `$this->table()` calls.
+
+Between and after them the command prints two more things a drive uses: a line
+naming the bulk-run screen and its slot, and, after table 2, the **generated
+admission numbers per school**, side by side — those are minted by
+`HasAdmissionNumber` and are therefore unknowable from the seeder source, which is
+why they are printed rather than described.
+
+Everything is counted from the database through `DB::table`, through the Finance
+side's own scoped counters and — for `cohort at slot` and `unplaceable` — through
+the ACL PORT, deliberately **not** from the seeder's own variables, which would only
+ever report what the seeder intended (`SeedDriveFixture.php:150-196`).
+
+**THE COLUMN LIST GROWS, AND THAT IS THIS FILE'S OWN RULE BEING OBEYED — TWICE
+NOW.** It was eight columns until a bulk-run drive needed to know whether a cohort
+and a price list existed at all; that drive found the fixture placed EVERY episode at
+null coordinates and seeded no schedule, so a run would have billed nobody on a
+fixture that looked full. A guardians drive then needed students and guardians, and
+added a second table rather than widening the first. **When your screen depends on
+something the tables do not count, add the column before you open a browser** — and
+update the enumeration in this paragraph with it. That last step has now been missed
+twice and caught twice, which is the argument for reading the command's ACTUAL output
+against this paragraph rather than trusting it.
 
 **Nothing in this repository can execute that table.** `SeedDriveFixture` refuses
 outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the suite to
@@ -160,7 +182,7 @@ for it verbatim rather than summarised.
 
 Read it first, every time. The rule the table was built to serve, in the source's
 own words: **"Zero in any column means the screen cannot author anything"**
-(`SeedDriveFixture.php:150-152`). What follows from that is mine and not the
+(`SeedDriveFixture.php:155-157`). What follows from that is mine and not the
 source's: **the drive is then worthless before it starts**, so this is a check you
 run and act on, not one you record.
 
@@ -188,19 +210,40 @@ needs a browser — and that is a change to the fixture, in your commit, argued.
 Paste the table into your report verbatim. It is the fixture's own claim about
 itself, and it is the cheapest evidence in the whole drive.
 
-As of U6 commit 4 it prints eleven columns and looks like this on a fresh seed:
+Both, verbatim from a fresh seed:
 
 ```
+Authoring slot per school — … the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable:
 +--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
 | School       | Academic sessions | Terms | Class levels | Bank accounts | Discount policies | Payments (portal) | Payments (migrated) | Active schedules | Cohort at slot | Unplaceable |
 +--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
 | A (school#1) | 2                 | 2     | 2            | 1             | 1                 | 3                 | 0                   | 1                | 2              | 7           |
 | B (school#2) | 2                 | 2     | 2            | 1             | 1                 | 0                 | 0                   | 1                | 2              | 1           |
 +--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
+Bulk invoice runs: /finance/bulk-invoice-runs — the cohort above sits at (term, JSS 1); JSS 2 has an empty one on purpose.
+
+Authoring slot per school — … the guardians screen links a new guardian to students by admission number:
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+----------+-----------+
+| School       | Academic sessions | Terms | Class levels | Bank accounts | Discount policies | Payments (portal) | Payments (migrated) | Students | Guardians |
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+----------+-----------+
+| A (school#1) | 2                 | 2     | 2            | 1             | 1                 | 3                 | 0                   | 10       | 0         |
+| B (school#2) | 2                 | 2     | 2            | 1             | 1                 | 0                 | 0                   | 3        | 0         |
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+----------+-----------+
+  School A (school#1) admission numbers: ADM79316, ADM56821, ADM89506, ADM55893, ADM42404, ADM74170, ADM97492, ADM14708, ADM53858, ADM68787
+  School B (school#2) admission numbers: ADM95186, ADM38125, ADM66309
 ```
 
-Read the three right-hand columns together, because they only mean something as a
-set. **`Cohort at slot`** is the fixture's placed, unbilled students at (current
+The first eight columns of the second table repeat the first table's, value for
+value.
+
+`Guardians` is **zero on a fresh fixture and printed anyway** — a second exempt
+column, alongside `Payments (migrated)`, and for a different reason: it is the
+denominator a guardians drive measures its duplicate-warning and reuse backstop
+against, so "one guardian row after two submissions" can be checked against where it
+started. Do not read that zero as an abort.
+
+Read table 1's three right-hand columns together, because they only mean something as
+a set. **`Cohort at slot`** is the fixture's placed, unbilled students at (current
 term, JSS 1) — the only coordinates anything is enrolled at — so a run has somebody
 to bill. **`Active schedules`** is filtered to `active`, the only status a run may
 bill from, so a catalog of drafts cannot read as a usable price list.
@@ -212,9 +255,15 @@ student holds two, and the ACL port takes at most one episode per student.
 
 ## The seats, and what each one proves
 
-Read `DriveCastSeeder::seedCast()` (`DriveCastSeeder.php:232-258`) for the current
-list — it changes, and it has changed. The password is the constant
-`DriveCastSeeder::PASSWORD` (`DriveCastSeeder.php:37`); read it there rather than
+Read `DriveCastSeeder::seedCast()` (`DriveCastSeeder.php:240-321`) for the current
+list — it changes, and it has changed. **The table below is the five FINANCE seats and
+is no longer the whole cast**: a fresh seed now prints **eight**, the three extra being
+`admin@drive.test`, `admin-b@drive.test` and `guardian-editor@drive.test`, added with
+the guardians fixture (`DriveCastSeeder.php:282-283`, `:320`). What each of those
+proves is documented where they were added; they are named here only so a reader
+comparing this table against the command's output does not read the difference as
+drift. The password is the constant
+`DriveCastSeeder::PASSWORD` (`DriveCastSeeder.php:38`); read it there rather than
 from a brief, since a brief that pastes it goes stale silently.
 
 | Seat | Holds | What it proves |
@@ -226,7 +275,7 @@ from a brief, since a brief that pastes it goes stale silently.
 | `school-b@drive.test` | `accounts_officer`, School B | Isolation. See the next section; this is the seat that section is about. |
 
 `checker@drive.test` held `accounts_supervisor` until 2026-08-04 and now holds
-`executive_director` (`DriveCastSeeder.php:235-237`). If a brief you are working
+`executive_director` (`DriveCastSeeder.php:243-245`). If a brief you are working
 names a role for a seat, check the seeder rather than the brief.
 
 **The maker and the checker are two accounts and cannot be one.** Grant-time
@@ -240,7 +289,7 @@ browser profile or a private window keeps both sessions live.
 ## Isolation is checked by id, never by label
 
 `seedAcademicSlot()` runs identically for both schools
-(`DriveCastSeeder.php:146-230`): each gets a **current** session named `2026/2027`
+(`DriveCastSeeder.php:154-238`): each gets a **current** session named `2026/2027`
 holding a term named `First Term`, a **non-current** session named `2025/2026`
 holding a term named `Third Term`, class levels `JSS 1` and `JSS 2`, and an arm on
 `JSS 1` only. **Every one of those labels is an identical string across the two
@@ -347,7 +396,8 @@ what each one shows without opening it — `maker-03-inline-amount-error.png`,
 `isolation-01-school-b-list.png`. The drive section of your implementation report
 carries:
 
-1. **The fixture count table**, pasted from the command.
+1. **BOTH fixture count tables**, pasted from the command — see "Check the fixture"
+   for why there are two and what their shared first eight columns mean.
 2. **What the selects actually contained — by count and by value.** Not "the page
    loaded", not "the select was populated". The raw lines your script read out of
    the DOM, uncut, exactly as U1 and U2 pasted them. A summary of what a select
@@ -369,7 +419,7 @@ carries:
    `discountPolicyCount`, `paymentCount`, `activeFeeScheduleCount`) are the count
    table's readers rather than state at all; `SeedDriveFixture` and `DriveCastSeeder`
    between them mention opening balances once, in a comment
-   (`DriveCastSeeder.php:130`). So there
+   (`DriveCastSeeder.php:138`). So there
    is nothing on this fixture to approve, and the "database we are willing to
    spend" condition is not what is stopping you — that condition was written about
    a production copy and does not transfer to a database that is thrown away.
@@ -401,7 +451,7 @@ is a precondition of the drive, not a finding from it. U1 commit 1 is the
 precedent — it added the academic slot and the per-school bank account to the
 seeder so that commit 2's drive would not open onto empty selects
 (`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`,
-`DriveCastSeeder.php:127-131`). And a **drive-environment config** change — the
+`DriveCastSeeder.php:135-139`). And a **drive-environment config** change — the
 `:8001` Sanctum entry, added to `.env.drive.example` by the drive that hit it
 (`docs/handoff/drives/2026-07-25/README.md:77-83`) — is config, not the feature.
 Everything else, including the obvious one-line fix sitting in front of you, is

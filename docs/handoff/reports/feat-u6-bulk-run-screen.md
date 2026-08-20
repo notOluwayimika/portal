@@ -575,15 +575,37 @@ that school's runs by uuid and gets a **404** on the other's — the same answer
 the omission visible in the first place: the list appears literally exactly once, so it cannot get
 shorter without something going red.
 
-**One thing this round found in the test harness itself, worth knowing before writing another arm
-here.** `withSession(['school_id' => …])` on an `/api/*` route is **silently inert** in this suite.
-`statefulApi()` runs the session middleware only for a request that looks like it came from the SPA
-(Referer/Origin on a stateful domain), so `$request->hasSession()` is false and `ActiveSchool::id()`
-skips the session branch entirely. Every other arm in the file gets away with it because its actor is
-an ordinary user whose `users.school_id` is set and the resolver falls back to that. A super admin has
-no `school_id` and is deliberately excluded from that fallback, so the session is the only route in —
-hence `birsAsSuperIn()`, which sends a `Referer`. Without it the "has selected a school" arm measured a
-409 and would have been read as the fix over-reaching.
+**The `Referer` mechanism — re-derived here, and ALREADY WRITTEN DOWN THREE TIMES BEFORE THIS
+BRANCH.** An earlier version of this paragraph called it "one thing this round found in the test
+harness itself". It found nothing; it rediscovered something, at the cost of a wrong measurement, and
+the correction matters more than the mechanism.
+
+The mechanism: `withSession(['school_id' => …])` on an `/api/*` route is **silently inert** in this
+suite. `statefulApi()` runs the session middleware only for a request Sanctum judges to come from the
+frontend — `Referer`/`Origin` against `sanctum.stateful` — and `getJson()` sends neither, so
+`$request->hasSession()` is false and `ActiveSchool::id()` never reaches the session branch. Every
+other arm in this file gets away with it because its actor is an ordinary user whose `users.school_id`
+is set and the resolver falls back to that (`ActiveSchool.php:54`). A super admin is **explicitly
+denied** that fallback by the same line, so the session is the only route in — hence
+`birsAsSuperIn()`, which sends the header the SPA sends.
+
+Where it was already recorded, all three predating this branch:
+
+| Where | What it says |
+| --- | --- |
+| `tests/Feature/Notifications/NotificationFeedTest.php:94-105` | Twelve lines, from 2026-08-02, opening *"THE `Referer` IS LOAD-BEARING, and worth knowing about"* — and naming the exact consequence this branch then walked into: *"The test would then read school A twice and pass for entirely the wrong reason."* |
+| `tests/Feature/Notifications/ResultReadyFeedRowTest.php:118-122` | The same note, shorter, immediately above its own `->withHeader('Referer', config('app.url'))`. |
+| `docs/handoff/reports/feat-rbac-fail-closed-finance.md:158-162` | The same point on the SAME SEAT — *"a super_admin is explicitly denied the own-school fallback (`ActiveSchool.php:54`)"* — reached while building a helper for exactly this shape of arm. |
+
+**Twice in tests and once in a report, and it still cost this branch a wrong measurement.** That is
+the finding worth keeping. It was not written down badly — the first citation is twelve lines long,
+sits directly above the helper it explains, and predicts the failure mode in a sentence. It simply
+lives in `tests/Feature/Notifications/`, and nothing points at it from `tests/Feature/Finance/` or
+from the two skills a finance change loads. A note that is correct, prominent and in the wrong
+directory is invisible, and this branch's own §5 rule applies to it: a convention with no mechanism
+behind it is a wish. The mechanism here would be a shared helper — one `statefulJson()` in
+`tests/Pest.php` that every `/api/*` arm goes through — so the header is not something each author
+has to already know.
 
 **FIX 2 — §6g of this report was false**, and is corrected in place above rather than quietly edited:
 it claimed the super-admin seat got "the same answer the two checker seats gave". The checkers got 403;
@@ -622,3 +644,41 @@ fix it in opposite directions and the paragraph is corrected above.
 documents. The config change is proven by test in both directions, including the pre-fix 200; the two
 screen strings are copy. Nothing here was re-driven in a browser, and that is stated rather than
 implied.
+
+---
+
+### Round three — the skill went stale again, in the time it took to review it
+
+Between rounds, `staging` was merged into this branch (`37500c8`, fourteen commits, touching none of
+this branch's files). It brought a guardians fixture with it, and **`SeedDriveFixture` now prints TWO
+count tables**: the U6 one at `:198-205` (eleven columns) and a guardians one at `:217-224` (ten). The
+skill corrected in round two describes one.
+
+Re-read against the command's actual output, and what a reader now sees:
+
+- **Two tables whose first eight columns are duplicated value for value** — both are built from the
+  same four closures over the same two schools, so only each row's tail is new. Stated in the skill,
+  with the corollary that is actually useful: nothing writes between the two `$this->table()` calls,
+  so if the shared eight ever disagree, the counting is wrong rather than the fixture.
+- **A second exempt zero.** `Guardians` is 0 on a fresh fixture and printed deliberately — it is the
+  denominator a guardians drive measures its duplicate-warning against. Named beside
+  `Payments (migrated)` so it is not read as an abort.
+- **Two more output blocks**: the bulk-run slot line, and the per-school **generated admission
+  numbers**, which are minted by `HasAdmissionNumber` and so cannot be known from the seeder source.
+- **The seat table is no longer the whole cast** — eight seats print, not five;
+  `admin@drive.test`, `admin-b@drive.test` and `guardian-editor@drive.test` came with the guardians
+  fixture. The skill now says so and points at `seedCast()` rather than pretending to enumerate.
+
+Both tables are pasted verbatim into the skill. **Every citation was re-derived a second time** — the
+staging merge moved all of them again: `SeedDriveFixture.php` `:195-202`→`:198-205`,
+`:147-192`→`:150-196`, `:150-152`→`:155-157`; `DriveCastSeeder.php` `:127-131`→`:135-139`,
+`:232-258`→`:240-321`, `:37`→`:38`, `:235-237`→`:243-245`, `:146-230`→`:154-238`, `:130`→`:138`. Each
+verified by reading the target line.
+
+**Twice in two rounds, and the second time was a merge rather than an author.** A citation by line
+number is correct only until someone edits above it, and nothing in the repository checks these. That
+is the same class as the unenforced-convention rule this report leans on elsewhere; it is not fixed
+here and it is worth someone's ticket.
+
+§6a's table above is left as it was — it is what the fixture printed when the drive ran, and
+rewriting drive evidence to match a later merge would make it evidence of nothing.

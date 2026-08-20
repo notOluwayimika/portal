@@ -1,7 +1,7 @@
 # feat/u7-supplementary-invoice-wire — the wire and the control for supplementary invoicing
 
 **Base:** `origin/staging` @ `de48818`. **Branch:** `feat/u7-supplementary-invoice-wire`.
-**Shape:** four source files + one new test file, one new ticket, this report.
+**Shape:** three source files + one new test file, one new ticket, this report.
 **Implementation commit:** `8167282`.
 
 ---
@@ -29,6 +29,18 @@ The brief's account of the tree is correct in every particular. Confirmed by rea
   the state under test until the modal lands."*
 
 Nothing in the brief needed correcting. No deviations from it were taken.
+
+**One thing this section got wrong by omission, corrected in the fifth commit.** The
+`FinanceApiAcceptanceTest.php:230-232` passage quoted above as evidence that the gap was real
+is **falsified by this same commit** — it says both generate routes hardcode the kind and that
+the Action is the only way to reach the state *"until the modal lands"*, and the modal landed
+here. Quoting a comment as premise evidence while ending the condition it names, and leaving it
+standing, is how the next reader concludes there is still no wire. The comment has been
+rewritten (fifth commit) to say what is true now and why the arm still reaches the state through
+the Action rather than over HTTP: it is proving a READ-side property that must hold for a
+supplementary invoice raised by any writer, including a job or a seeder, so keeping it
+independent of the request layer is deliberate. Two further comments this branch falsified are
+listed in §11.
 
 ---
 
@@ -65,6 +77,17 @@ charge. Proof (e) and mutation M5 are about exactly that.
 | `POST /v1/finance/students/{student:uuid}/invoices` | `InvoiceController::generateForStudent` | **Yes** | The modal's route (`routes/endpoints/finance.php:230`). This is what the branch exists for. |
 | `POST /v1/finance/invoices` | `InvoiceController::generate` | **Yes** | Registered, permission-gated and reachable by any client holding `finance.invoice.generate`. It uses `GenerateInvoiceForStudentRequest`'s parent class, so it carries the rule *by construction* — excluding it would have required actively `unset`ting the rule in the subclass, which is the opposite of construction and would put the two routes' contracts out of step. |
 | `POST /v1/finance/bulk-invoice-runs` → `ProcessBulkInvoiceRun:346` | — | **No, deliberately** | Left as the `InvoiceKind::Scheduled` literal. A bulk run bills a *cohort's term fees*; there is no such thing as "the same supplementary charge for forty students". More concretely, the run's reconciliation depends on the per-episode unique index refusing a second scheduled invoice so a re-run records `already_billed` instead of double-billing (`routes/endpoints/finance.php`, the bulk-run block). Supplementary invoices never collide, so a supplementary bulk run would bill the whole cohort again on every re-run. |
+
+**The same property that justifies that exclusion removes a backstop from the two routes this
+branch DOES open, and this table did not say so.** "Supplementary invoices never collide" is
+used above as a reason to keep bulk runs scheduled-only; read in the other direction it means
+every invoice-creation path a client could reach before this branch was refused on a repeat by
+`UNIQUE(school_id, active_enrollment_key)`, and on the supplementary path nothing is. A retried
+POST after a client timeout creates a second identical supplementary invoice, each posting its
+own `LedgerEntryType::Charge`. That is the intended semantics — there is no correct uniqueness
+key for a charge type that is unbounded by nature — but it is an exposure this branch introduces
+and §9 did not list it. Written up, with two priced options and no recommendation, in
+`docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md`.
 | `App\Finance\Console\DriveFinanceStates:361` | — | **No** | Drive-fixture staging, not a client. |
 
 ### Existing callers, by construction rather than by luck
@@ -115,7 +138,17 @@ becomes `required` or the default is removed.
 
 **The default never follows the data.** `already_invoiced` reaches `termBillLabel` and the
 banner only. The selected value on open is `'scheduled'` whether or not the episode is already
-invoiced — driven and captured in §5, both ways.
+invoiced — **driven and captured in §6.3**, both ways. (This line cited §5 until the fifth
+commit; §5 is the Pest arms and the mutation table, which contain nothing about the modal. The
+UI captures have always been §6.)
+
+**What §6.3 settles, and what it does not.** It settles that the default does not follow the
+DATA: the same select reads `"Term bill (will be rejected — void first)"` on an already-invoiced
+episode and `"Term bill"` on one that is not, and `'scheduled'` is the selection in both. It does
+**not** settle CARRY-OVER between two students in one browser session, because the report does
+not record whether that second open followed the supplementary submit in the same session — it
+was a fresh page load. The reset property is re-derived from source in §9 and listed there as
+unobserved.
 
 ### 3 — No new permission
 
@@ -467,6 +500,22 @@ Run locally on the changed files only:
   guard; the rendering consequences are the filed ticket.
 - **`already_invoiced` remaining `false` after a supplementary invoice** is covered by
   `FinanceApiAcceptanceTest` from #259 and was not re-proved here.
+- **The modal's invoice-kind reset between two students, in one browser session.** Re-derived
+  from source and it holds — the effect at
+  `resources/js/components/finance/new-invoice-modal.tsx:339-353` depends on
+  `[isOpen, loadEnrollment, loadPolicies]`; `loadEnrollment` is a `useCallback` over
+  `[student.uuid]` (`:305`), so changing student re-creates it and re-fires the effect; it calls
+  `setEnrollment(null)` (`:284`) and `setInvoiceKind('scheduled')` (`:287`) synchronously before
+  its first `await` (`:290`); and the select renders only inside `{enrollment && (` (`:449`), so
+  it is unmounted for the whole window. **Re-derived, not observed.** §6.3's second-student
+  capture was a fresh page load, so it does not exercise carry-over, and no instrument on this
+  platform can red this property — there is no JavaScript test runner
+  (`docs/handoff/tickets/no-javascript-test-runner.md`, which now names this exact property).
+  It matters more than an ordinary unproven frontend property: a carried-over `supplementary`
+  produces a **201 and a success toast** for a student who needed the term bill, because a
+  supplementary invoice cannot collide with anything. The cheap partial — open the dialog for a
+  second student in the same session right after a supplementary submit, and read the trigger —
+  was not done and is recorded in that ticket.
 
 ---
 
@@ -523,3 +572,103 @@ concurrently on this project — they share `portal_testing`, and the resulting 
 presents as a broad, alarming and entirely fictitious regression in whatever unrelated
 subsystem happens to be running when the tables vanish. `lsof`/`ps` for a live `pest` before
 believing a suite-wide red.
+
+---
+
+## 11 — The review, its findings, and what it is not
+
+### 11.0 — What this review was, stated first because it changes what it counts as
+
+**This was a subagent of the same chat that did the work, not an independent cold review.** Its
+own opening line records the frame: the spawning context supplied the report path and the branch
+name and nothing else. That is the maximum isolation available inside one session, and it is
+genuinely worth something — it read the repository rather than my reasoning, it re-derived scope
+instead of accepting mine, and it produced findings I had not thought of. Two of its findings
+were afterwards verified against the tree by the project lead.
+
+**It is not what `finance-method` means by the separation, and this report must not be read as
+though it were.** The method's claim is that a context which did not do the work finds what the
+context that did cannot; a subagent I spawned shares my process, and I controlled its frame by
+choosing what to pass it. The findings below stand on their own evidence — each cites files and
+lines, and they are checkable without trusting either of us. The *absence* of findings does not.
+
+**The branch has not had an independent review.** Per `finance-method`, this change is
+full-review tier — it touches money and a database invariant — and a cold session started fresh
+from this file is still owed before merge.
+
+### 11.1 — Its own stated limits, in its words
+
+- It ran **"against the working directory, not a fresh clone"**, and said why that mattered:
+  while it ran the new test file, a second `pest` (PID 33834) was executing against
+  `portal_testing` from this same tree and reddened its first run. **"Isolation was observed, not
+  engineered."** That is the collision written up in §10, hit independently from the other side.
+- **`bin/quality` had not run on this branch at review time** — it noted that **"not one of its
+  steps has executed on this branch"** and that this report's "the pre-push hook is the gate" was
+  **"a forward-looking claim, not evidence"**. §10 is the answer to that and postdates it.
+- It **did not reproduce the drive** (no browser, no `portal_drive`) and took §6's captures **"as
+  told"**, including the two friction findings. It **did not open the eleven PNGs**.
+- It **did not reproduce the 996-test finance + RBAC run**, and flagged that given the concurrent
+  `pest` it **"cannot say whether the report's run was clean of the same interference"**, noting
+  `duration_ms 484730` sits above this project's ~350-440 s band. That caveat is live: §1's
+  regression figure was not re-verified after §10's collision was understood.
+- It read **none** of the ignored files it found by pattern (`.env*`, a `junit.xml`, `plan_docs/`,
+  `.claude/settings.local.json`), and named the live `pest` from this tree as **"the argument for
+  the fresh-clone rule, and I did not use it"**.
+
+### 11.2 — The findings, at the severities set by the project lead
+
+Severities below are the lead's, carried as given. I have not ranked them.
+
+| # | Finding | Severity | What changed |
+| --- | --- | --- | --- |
+| 1 | Two comments this branch falsifies, neither updated — one of them the passage §0 quotes as its own premise evidence | ticket | **Fixed**, and a third found |
+| 2 | §2's cross-reference points at §5; the UI captures are §6, and the carry-over half was never settled | ticket | **Fixed**; claim moved to §9; property named in the JS-runner ticket |
+| 3 | First client-reachable paths with no duplicate backstop | ticket | **Filed**; §1 corrected |
+| 4 | Report says "four source files"; the diff has three | ticket | **Fixed** |
+
+**Finding 1 — and it was three, not two.** Re-derived by grep rather than taken from the review:
+
+- `tests/Feature/Finance/FinanceApiAcceptanceTest.php:229-232` — rewritten. It now says the state
+  *is* reachable over HTTP as of U7, and states why the arm still reaches it through the Action
+  anyway: it proves a read-side property (`already_invoiced` is scheduled-only) that must hold for
+  a supplementary invoice raised by **any** writer — a job, a console command, a seeder — so
+  keeping the arm independent of the request layer is the point, not a leftover. It now points at
+  `SupplementaryInvoiceWireTest` as where the wire is proved.
+- `resources/js/components/finance/new-invoice-modal.tsx:249` — "THREE FUNCTIONS ARE EXPORTED WITH
+  NO IMPORTER" is now "FOUR FUNCTIONS AND ONE TYPE", listing `selectablePolicies`,
+  `termBillLabel`, `patchForKind`, `wireLine` and `InvoiceKindChoice`. Re-derived with
+  `grep -n '^export '` on the file minus `NewInvoiceModal`, which `statement.tsx:20` does import,
+  and each of the five confirmed to have no reference outside this file.
+- **`tests/Feature/Finance/ReductionEnforcementTest.php:248` — found while fixing the other two,
+  and not in the review's list.** It cites `wireLine()` at `new-invoice-modal.tsx:113-128`. This
+  branch added the invoice-kind type and `termBillLabel` above it, moving `wireLine` from `:114`
+  (confirmed against `git show de48818:…`) to `:147`. Same defect, same commit, and it is the
+  exact failure `docs/handoff/tickets/stale-path-line-citations.md` exists for. Corrected to
+  `:147-162`, with the move recorded inline so the next reader knows why it changed.
+
+**Finding 2.** §2's reference now reads §6.3, and §2 states what that capture settles (the default
+does not follow the data) and what it does not (carry-over between two students in one session).
+The carry-over claim is in §9's not-verified list, worded as re-derived from source and not
+observed. **The component was not changed.** I verified the property first, since the brief made a
+failure there a stop: the effect at `:339-353` re-fires on a student change through
+`loadEnrollment`'s `[student.uuid]` dep (`:305`), `setInvoiceKind('scheduled')` runs at `:287`
+before the first `await` at `:290`, and the select is unmounted while `enrollment` is null
+(`:449`). It holds. `docs/handoff/tickets/no-javascript-test-runner.md` now names this property as
+a concrete thing no step of the gate can red, with the reason it is worse than an ordinary
+unproven frontend property and the cheap partial that was not done.
+
+**Finding 3.** `docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md`, derived
+from the code and citing arm (c) by name and line as its positive evidence. Two options priced —
+accept, or an idempotency key — with what the key would need (origin, storage inside the Action's
+transaction, window, behaviour on a hit, and what it still would not solve). **No recommendation
+is made and neither was built.** §1's route table now carries the sentence it was missing.
+
+**Finding 4.** One word: three source files, not four.
+
+### 11.3 — One imprecision the review found in the filed ticket
+
+Below its own finding threshold, and corrected in the fourth commit: the supplementary-invoice
+read-path ticket's §6 said "nothing saying why there are two" allocation lines, while its §3 had
+it right. The two lines carry different invoice numbers and **are** distinguishable; what is
+missing is the **kind**. §6 now says that, and says it is the same claim as §3 rather than a
+stronger one.

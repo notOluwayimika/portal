@@ -246,7 +246,11 @@ function errorLinesFrom(data: unknown): string[] {
  * REFUSES ANYTHING — the refusals are GenerateInvoiceRequest::assertDiscountPoliciesUsable() and
  * finance_invoice_lines_reduction_guard, both named in selectablePolicies' docblock above.
  *
- * THREE FUNCTIONS ARE EXPORTED WITH NO IMPORTER — selectablePolicies, patchForKind and wireLine.
+ * FOUR FUNCTIONS AND ONE TYPE ARE EXPORTED WITH NO IMPORTER — selectablePolicies, termBillLabel,
+ * patchForKind and wireLine, plus the InvoiceKindChoice type. (`termBillLabel` and
+ * `InvoiceKindChoice` arrived with U7's invoice-kind select; the count read THREE until then, and
+ * is re-derived here rather than incremented — `grep -n '^export ' ` on this file, minus
+ * NewInvoiceModal, which statement.tsx:20 does import.)
  * That is deliberate and it is a cost paid on purpose. This module's only importer is statement.tsx,
  * which takes `NewInvoiceModal` alone, so nothing in the bundle reaches them and neither tsc nor
  * eslint will tell you if one becomes dead. They are exported because they are the only pure,

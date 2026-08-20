@@ -141,6 +141,62 @@ This is worth writing down because the gate is loud and thorough and green, and 
 watched fifteen steps pass has every reason to believe the change was checked. For PHP that belief is
 mostly warranted. For TypeScript it is not warranted at all, and nothing in the output says so.
 
+## A concrete property nothing here can red, named because it was reached for and could not be had
+
+Added by `feat/u7-supplementary-invoice-wire` (2026-08-20). The change put an invoice-kind select on
+the New invoice modal — `scheduled` (the term bill) or `supplementary` (a one-off charge). The
+property is:
+
+> **When the dialog is opened for a second student, the invoice-kind select is back on `scheduled`
+> and has not carried over the choice made for the first.**
+
+`resources/js/components/finance/new-invoice-modal.tsx:283-305`,
+`:287` (`setInvoiceKind('scheduled')`), `:339-353` (the effect).
+
+**Why this one is worth naming rather than being one more unproven frontend property.** Its failure
+is silent and creates the wrong financial document. If the reset does not fire, a bursar who raises a
+supplementary charge for student A and then opens the dialog for student B posts
+`kind: "supplementary"` for a student who needs the term bill. That request **succeeds** — 201, no
+refusal, the ordinary "Invoice created." toast — because a supplementary invoice is by design not
+constrained by the one-per-episode unique index and cannot collide with anything. There is no error
+state anywhere in the flow, and `InvoiceResource` does not serialise `kind`
+(`docs/handoff/tickets/nothing-shows-which-invoices-are-supplementary.md`), so no screen shows what
+was created either. The only signal is a database column nobody is looking at.
+
+Compare the failure it would replace: the defect that branch FIXED was a bursar being *refused* with
+a clear sentence. This one is strictly worse — a wrong document, created quietly.
+
+**What the gate can say about it: nothing.** Not a subset of the fifteen steps — none of them. Pint,
+Prettier and ESLint see formatting and lint rules; `tsc` sees types, and both branches of the bug are
+well-typed; the build sees that it compiles; the money lint sees which functions are called; the Pest
+suite never reaches `resources/js` at all. The property is about *when a React effect fires relative
+to a prop change*, which is exactly the class this ticket exists to record.
+
+**What the branch did instead**, so the substitute is on the record with its limits:
+
+1. **Re-derivation from source.** The effect at `:339-353` depends on `[isOpen, loadEnrollment,
+   loadPolicies]`; `loadEnrollment` is a `useCallback` over `[student.uuid]` (`:305`), so changing
+   student re-creates it and re-fires the effect. `loadEnrollment` sets `setEnrollment(null)`
+   (`:284`) and `setInvoiceKind('scheduled')` (`:287`) synchronously, before its first `await`
+   (`:290`). The select renders only inside `{enrollment && (` (`:449`), so it is unmounted for the
+   whole window. The property holds by reading. **That is an argument, not a measurement** — the
+   same argument would have been just as convincing about a version that was wrong.
+2. **A drive that did not cover it.** The drive opened the modal on a second student, but on a
+   *fresh page load*, and the report does not record a same-session open following the supplementary
+   submit. So the capture settles that the default does not follow `already_invoiced`, and settles
+   nothing about carry-over.
+
+**The cheap partial, available today and not done:** the drive script can open the dialog for a
+second student in the same browser session immediately after a supplementary submit and read the
+trigger's text. That is a real measurement and costs one step. It is not a *test* — it does not run
+on push, nobody re-runs it, and it reds for whoever next drives the screen and only then. Recording
+it as the substitute rather than the fix.
+
+`tests/Feature/Finance/ReductionPreCheckTest.php:383-389` already states this limitation for the
+sibling property (`patchForKind` clearing a stale policy id), pinning the *server's* acceptance of a
+payload shape and saying outright that it "does not change when JavaScript changes". Same shape of
+gap, one layer over: there the server refuses the bad payload, here it accepts it.
+
 ## Not proposed here
 
 Which runner, whether it becomes step 16, whether it is ratcheted, and what the first tests would be

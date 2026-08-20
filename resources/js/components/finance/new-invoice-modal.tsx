@@ -80,6 +80,39 @@ export function selectablePolicies(
 }
 
 /**
+ * WHAT THE INVOICE IS — the wire's `kind`, which is NOT the per-line `kind` a few functions down.
+ * The two words are unrelated and both are on this screen: a LINE is a charge/waiver/discount, an
+ * INVOICE is a term bill or a supplementary charge. Kept as its own named type so a future edit
+ * cannot pass one where the other belongs.
+ */
+export type InvoiceKindChoice = 'scheduled' | 'supplementary';
+
+/**
+ * The label on the "Term bill" option.
+ *
+ * THE TRAP IS MADE VISIBLE BEFORE SUBMIT, NOT AFTER. An episode that already carries an active term
+ * invoice will have a second one REFUSED — GenerateInvoice answers 422 "This enrollment already has
+ * an active TERM invoice. Void it before billing the term again." Until this branch that refusal was
+ * the only thing the modal could produce for a bursar trying to bill damages, because the term bill
+ * was the only invoice it could ask for. Now that there is a second option, the option that will be
+ * rejected says so in its own label rather than leaving the amber banner to be read.
+ *
+ * IT IS A LABEL, NOT A DISABLE, and that is deliberate. Disabling the option would hide the refusal
+ * instead of explaining it, and voiding-then-rebilling the term is a legitimate thing a bursar does
+ * — the server, not this select, is the authority on whether it is allowed right now.
+ *
+ * THE DEFAULT NEVER MOVES. `already_invoiced` changes this LABEL and nothing else: the selected
+ * value is 'scheduled' on every open regardless of the episode's state. A default that follows the
+ * data would mean the same clicks create a different document depending on what was billed earlier,
+ * which is how someone raises a supplementary charge believing they raised the term bill.
+ */
+export function termBillLabel(alreadyInvoiced: boolean): string {
+    return alreadyInvoiced
+        ? 'Term bill (will be rejected — void first)'
+        : 'Term bill';
+}
+
+/**
  * The patch to apply when a line's KIND changes.
  *
  * THE CLEAR IS THE POINT. Flipping a line back to `charge` must DISCARD the policy the operator
@@ -232,6 +265,11 @@ export function NewInvoiceModal({
         null,
     );
     const [blocked, setBlocked] = useState<string | null>(null); // no active enrollment
+    // WHAT is being raised. 'scheduled' on every open — see termBillLabel for why this does not
+    // follow `already_invoiced`. Reset alongside the lines in loadEnrollment, so reopening the
+    // dialog for a different student cannot inherit a supplementary choice made for the last one.
+    const [invoiceKind, setInvoiceKind] =
+        useState<InvoiceKindChoice>('scheduled');
     const [lines, setLines] = useState<DraftLine[]>([{ ...EMPTY_LINE }]);
     const [formErrors, setFormErrors] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -246,6 +284,7 @@ export function NewInvoiceModal({
         setEnrollment(null);
         setBlocked(null);
         setFormErrors([]);
+        setInvoiceKind('scheduled');
         setLines([{ ...EMPTY_LINE }]);
 
         try {
@@ -363,6 +402,11 @@ export function NewInvoiceModal({
 
         try {
             await axios.post(generateForStudent.url(student.uuid), {
+                // SENT ON EVERY SUBMIT, including the default. The server treats an absent `kind`
+                // as scheduled, so omitting it when the bursar left the select alone would work —
+                // and would make the payload's meaning depend on a default declared in a different
+                // file. What this screen asked for is stated in what it posts.
+                kind: invoiceKind,
                 // `allValid` above has already established that every signedMinors entry is a number,
                 // which is what makes the cast honest rather than hopeful. Same cast, same reason and
                 // same guard as `sumMinor(signedMinors as number[])` on the preview line.
@@ -410,6 +454,42 @@ export function NewInvoiceModal({
                             </span>
                             {enrollment.academic_context}
                         </div>
+                        {/*
+                         * WHAT IS BEING RAISED — the term bill, or a charge outside the schedule.
+                         *
+                         * ABOVE THE LINES ON PURPOSE. It changes what the whole document means, not
+                         * one row of it, so it is read before any amount is typed rather than found
+                         * beside the submit button afterwards.
+                         *
+                         * NOT DISABLED AND NOT DEFAULTED FROM DATA. Both options are always
+                         * selectable and 'scheduled' is always the selection on open —
+                         * `already_invoiced` reaches the LABEL only. termBillLabel carries the
+                         * reasoning.
+                         */}
+                        <div>
+                            <Label htmlFor="ni-invoice-kind">Invoice</Label>
+                            <Select
+                                value={invoiceKind}
+                                onValueChange={(v) =>
+                                    setInvoiceKind(v as InvoiceKindChoice)
+                                }
+                            >
+                                <SelectTrigger id="ni-invoice-kind">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="scheduled">
+                                        {termBillLabel(
+                                            enrollment.already_invoiced,
+                                        )}
+                                    </SelectItem>
+                                    <SelectItem value="supplementary">
+                                        Supplementary charge
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
                         {/* `already_invoiced` is SCHEDULED-ONLY — the API computes it from
                             InvoiceReadModel::hasActiveScheduledInvoiceForEnrollment, the same
                             predicate GenerateInvoice's 422 uses. So this warns about the TERM
@@ -417,12 +497,24 @@ export function NewInvoiceModal({
                             charges is not "already invoiced" and must not be told to void
                             anything. The noun matters — voiding the wrong invoice discards its
                             payment allocations. Keep this sentence in step with the 422 in
-                            app/Finance/Actions/GenerateInvoice.php. */}
+                            app/Finance/Actions/GenerateInvoice.php.
+
+                            THE SECOND SENTENCE EXISTS BECAUSE THE FIRST ONE USED TO BE THE ONLY
+                            ROAD OUT. Before U7's wire this banner's only actionable advice was
+                            "void it first", which is the WRONG action for a bursar billing damages
+                            — it discards the term invoice's payment allocations to add a charge
+                            that never needed it. Now that Supplementary is reachable from the
+                            select above, the banner names it. Both sentences stay in step with the
+                            422: voiding is still what the TERM bill needs, and is still the only
+                            thing that refusal is about. */}
                         {enrollment.already_invoiced && (
                             <p className="rounded-md bg-amber-100 p-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                                 This episode already has an active term invoice.
                                 Void it first — creating another term invoice
-                                will be rejected.
+                                will be rejected. To bill something outside the
+                                term’s fees — damages, a trip, a lost book —
+                                choose Supplementary charge above instead, which
+                                needs nothing voided.
                             </p>
                         )}
 

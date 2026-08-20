@@ -5,6 +5,7 @@ namespace App\Finance\Http\Requests;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleStatus;
+use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeItem;
@@ -47,6 +48,24 @@ class GenerateInvoiceRequest extends FormRequest
     {
         return [
             'enrollment_id' => ['required', 'string'],
+            // WHAT THE INVOICE IS — the term bill, or a charge raised outside the schedule (U7).
+            // ABSENT MEANS SCHEDULED, and that is a wire-compatibility decision rather than a
+            // convenience: every caller written before this rule existed sends no `kind` and must
+            // keep raising the term bill unchanged. `sometimes` is what makes that true by
+            // construction — an absent key runs no rule at all, so nothing that already works can
+            // start failing here.
+            //
+            // A PRESENT-BUT-WRONG VALUE IS A FIELD ERROR, NOT A FALLBACK. The two are easy to
+            // conflate and they are opposite: `nullable` would let `{"kind": "supplemenatry"}`
+            // through to invoiceKind()'s default and silently raise a TERM bill for a request that
+            // asked for a supplementary charge — a typo billing the wrong document. Rule::enum
+            // refuses it as `errors.kind`, which the modal already renders (errorLinesFrom).
+            //
+            // NO NEW PERMISSION. Supplementary reuses `finance.invoice.generate`, on the bulk-run
+            // ruling (routes/endpoints/finance.php): the authority to raise the document is the
+            // authority to raise it for either reason, and an ability minted here would be granted
+            // to exactly the roles that already hold generate, deciding nothing.
+            'kind' => ['sometimes', Rule::enum(InvoiceKind::class)],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.description' => ['required', 'string', 'max:255'],
             // A line carries EITHER a concrete amount_minor OR a percent (reductions
@@ -324,6 +343,28 @@ class GenerateInvoiceRequest extends FormRequest
      *
      * @return list<InvoiceLineSpec>
      */
+    /**
+     * WHICH INVOICE THE CALLER IS ASKING FOR — the wire's `kind`, become domain vocabulary here so
+     * neither controller spells the default a second time.
+     *
+     * READS `validated()`, NOT `input()`, AND THE DIFFERENCE IS THE WHOLE GUARANTEE. `validated()`
+     * carries only keys a rule passed, so an invalid value can never arrive here: rules() has
+     * already turned it into a 422 keyed on `kind`. `input()` would hand this method the raw string
+     * and leave `from()` to throw a ValueError — a 500 — or, with `tryFrom()`, to fall back to
+     * Scheduled and bill the wrong document silently. The two failure modes are why this is not a
+     * one-liner over `input()`.
+     *
+     * ABSENT IS SCHEDULED, stated once, in one place. Both generate routes and every existing
+     * caller — the harness POST, the bulk run's job, the seeder, forty-odd tests — send no `kind`
+     * and reach exactly the value they reached before this branch.
+     */
+    public function invoiceKind(): InvoiceKind
+    {
+        $kind = $this->validated('kind');
+
+        return $kind === null ? InvoiceKind::Scheduled : InvoiceKind::from((string) $kind);
+    }
+
     /**
      * Does this request carry any REDUCTION line (waiver/discount)? Drives the
      * `finance.invoice.reduction.apply` guard (S1 Part 0). A reduction is any line whose kind is not

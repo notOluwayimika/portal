@@ -6,7 +6,6 @@ use App\Enums\Permission;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Contracts\BillableEnrollmentProvider;
-use App\Finance\Enums\InvoiceKind;
 use App\Finance\Http\Requests\GenerateInvoiceForStudentRequest;
 use App\Finance\Http\Requests\GenerateInvoiceRequest;
 use App\Finance\Http\Resources\CreditNoteResource;
@@ -43,10 +42,13 @@ class InvoiceController extends Controller
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
                 $request->lineSpecs(),
-                // BOTH GENERATE ROUTES RAISE THE TERM BILL, and say so explicitly rather than relying
-                // on a default. Supplementary invoicing has no route yet: this commit is domain and
-                // schema, and the wire shape that lets a bursar choose a kind lands with the modal.
-                InvoiceKind::Scheduled,
+                // BOTH GENERATE ROUTES NOW CARRY THE CHOICE (U7). It is taken from the request rather
+                // than named here because the two routes share one FormRequest, so the rule, the
+                // absent-means-scheduled default and the invalid-value refusal exist once and neither
+                // route can drift from the other. What is NOT on the wire anywhere is a THIRD kind of
+                // caller deciding for itself: ProcessBulkInvoiceRun still names InvoiceKind::Scheduled
+                // as a literal, and must — see routes/endpoints/finance.php's bulk-run block.
+                $request->invoiceKind(),
                 $request->user()?->id,
             );
         } catch (BusinessRuleException $e) {
@@ -122,7 +124,9 @@ class InvoiceController extends Controller
             $invoice = $action->handle(
                 $enrollment->enrollmentUuid,
                 $request->lineSpecs(),
-                InvoiceKind::Scheduled,
+                // The modal's route, and the one the choice was built for: the "New invoice" dialog
+                // posts `kind` on every submit, `scheduled` unless the bursar picked otherwise.
+                $request->invoiceKind(),
                 $request->user()?->id,
             );
         } catch (BusinessRuleException $e) {

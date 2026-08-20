@@ -447,4 +447,26 @@ Its result is recorded in §10.
 This report is committed on its own, so the second push of this branch changes nothing but a
 file under `docs/`. Recorded here after the fact:
 
-Filled in by the follow-up commit, which is itself a third docs-only push.
+```
+$ git push
+pre-push: DOCS-ONLY PUSH — bin/quality was NOT RUN.
+Every file changed in this push is under docs/:
+    docs/handoff/reports/feat-docs-only-gate.md
+  range(s) examined:
+    15540a18..49cef879  refs/heads/feat/docs-only-gate
+  Nothing was verified. No test, lint, type-check, arch rule or Larastan run
+  measured this push — this is a SKIP, not a quality result. The next push that
+  touches any file outside docs/ runs the full gate over everything since the base.
+To github.com:notOluwayimika/portal.git
+   15540a1..49cef87  feat/docs-only-gate -> feat/docs-only-gate
+
+ELAPSED=4s
+```
+
+4 s wall for the whole `git push`, of which the gate decision is the 0.07 s measured in §7;
+the rest is the network round trip, which a full gate also pays on top of its 630 s. The same
+push under the previous hook would have run the fifteen steps over a range whose only file is
+this report.
+
+The commit that adds this section is a fourth push, docs-only for the same reason, and is not
+separately transcribed.

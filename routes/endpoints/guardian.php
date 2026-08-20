@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('guardians')->group(function () {
     Route::get('/lookup', [GuardianController::class, 'lookup']);
+    // Deliberately alongside `lookup` and inside the same group, so it inherits the
+    // identical middleware stack rather than acquiring a second, drifting gate.
+    Route::get('/duplicate-check', [GuardianController::class, 'duplicateCheck']);
     Route::get('/resources', [GuardianController::class, 'resources']);
     Route::get('/export', [GuardianController::class, 'export']);
     Route::post('/bulk-message', [GuardianController::class, 'bulkMessage']);

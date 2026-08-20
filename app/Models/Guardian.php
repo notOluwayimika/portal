@@ -82,6 +82,31 @@ class Guardian extends Model
     }
 
     /**
+     * `live_identity` is a MySQL GENERATED column (2026_08_19_100000_add_guardian_live_identity_uniqueness)
+     * and MySQL refuses any INSERT that names it — error 3105, "the value specified for generated
+     * column ... is not allowed".
+     *
+     * `replicate()` copies `$this->getAttributes()` verbatim, and a hydrated Guardian carries
+     * `live_identity` like any other selected column, so the clone's INSERT names it and dies. That is
+     * not theoretical: GuardianService::resolveOrCreateGuardianForUserInSchool clones a Guardian into a
+     * second School (§6.2, the multi-school parent) with `$template->replicate(['uuid'])`, and adding
+     * the index without this override breaks that path outright. Verified by trying it.
+     *
+     * Excluded HERE rather than at the call site because the column belongs to this model, and there is
+     * more than one caller — the parked guardian-merge work replicates too. A per-call `$except` entry
+     * would have to be remembered by every future one.
+     *
+     * Passing a non-empty `$except` is safe: Model::replicate() merges the key and timestamp defaults
+     * into whatever it is given, so nothing that would normally be dropped is retained.
+     *
+     * @param  array<int, string>|null  $except
+     */
+    public function replicate(?array $except = null): static
+    {
+        return parent::replicate(array_merge($except ?? [], ['live_identity']));
+    }
+
+    /**
      * A guardian profile is owned by its original school, but the linked
      * user may be granted access to additional schools through school_user.
      */

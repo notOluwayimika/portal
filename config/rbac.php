@@ -1,5 +1,7 @@
 <?php
 
+use App\Finance\Models\BulkInvoiceRun;
+use App\Finance\Models\BulkInvoiceRunRow;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\InvoiceLine;
@@ -166,6 +168,20 @@ return [
             OpeningBalanceBatch::class,
             OpeningBalanceRow::class,
             VoidRequest::class,
+            // U6's bulk invoice run and its per-enrollment rows. NOT catalog: a run is the record
+            // of a billing ACT — which cohort was billed, on which price list, by whom — and its
+            // rows name a student, an enrollment and the invoice that was raised for them. Read
+            // with no School context they were a cross-School list of who owes what.
+            //
+            // MEASURED BEFORE THEY WERE ADDED, not inferred: a cold review signed in as a super
+            // admin with no school selected and GET /api/v1/finance/bulk-invoice-runs answered 200
+            // with EIGHT runs spanning both drive schools, and the per-run endpoint opened either
+            // school's run. `super_admin` bypasses AUTHORIZATION (finance.invoice.generate is not a
+            // checker ability, so Gate::before answers it) and never ISOLATION (ADR 0036) — but
+            // isolation here is SchoolScope, and SchoolScope without this allowlist entry falls to
+            // the silent-unscoped branch rather than to a refusal.
+            BulkInvoiceRun::class,
+            BulkInvoiceRunRow::class,
         ])),
     ))),
 ];

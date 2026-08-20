@@ -212,11 +212,16 @@ message the suite actually printed.
 | 14 | `default_term_id` = newest term by id | `defaults the term to the school's CURRENT one` — *Failed asserting that 2 is identical to 1* |
 | 15 | `default_term_id` = any `active` term, highest `order` | same arm, same red |
 | 16 | `store` re-resolves the term server-side, ignoring the caller's | `lets an explicit term OVERRIDE the default` — *Failed asserting that 2 is identical to 1* |
+| 17 | remove `BulkInvoiceRun::class` + `BulkInvoiceRunRow::class` from `rbac.fail_closed_models` | `REFUSES a super admin with no school selected` — *Expected 409 but received **200***, and `FinanceFailClosedBatchTest`'s provenance arm goes red beside it (18/19) |
 
 Plants 14 and 15 needed a second attempt to be honest: the first version of the default arm seeded the
-current term as the **newest**, so a "newest by id" plant passed. The fixture now seeds the decoy as an
-**older** session whose term is also `active` and carries a **higher** `order`, so the arm reds on
-newest-by-id, highest-order, first-in-the-props-list and any-active-term alike.
+current term as the **newest**, so a "newest by id" plant passed. **The two fixtures fix it in opposite
+directions, and an earlier version of this paragraph described the wrong one here.** In the SUITE the
+decoy is a NEWER session (`'2027/2028-…'`, and the arm asserts `$decoy->id` is greater than the current
+term's) while the current term is the older row; in the DRIVE fixture the decoy is an OLDER session
+(`2025/2026`) created after the current one, so it carries the higher id. Both arrange the same thing —
+the current-session term is not the one "newest", "highest `order`", "first in the props list" or "any
+active term" would pick — and both make the arm red on all four wrong resolutions.
 
 Plant 6's first attempt also passed vacuously — `withoutGlobalScope('App\Scopes\SchoolScope')` names a
 class that does not exist (it is `App\Models\Scopes\SchoolScope`), so nothing was removed. Recorded
@@ -458,8 +463,32 @@ itself — only an actual change of coordinates does.
   failures, which the fixture cannot produce without injecting a fault. Covered by
   `BulkInvoiceRunTest` and, for the payload, by the `nobody-billed` arm here.
 - **A truncated bucket.** Needs >200 rows of one outcome.
-- **`super@drive.test`.** No finance grant, so it holds no `finance.invoice.generate` — the same
-  answer the two checker seats gave, established there.
+- **`super@drive.test` — and this line was WRONG in the first version of this report.** It said the
+  super admin got "the same answer the two checker seats gave" and that the seat was therefore covered
+  by them. It was not driven at all; that sentence was an inference from "no finance grant", and the
+  inference is false. `finance.invoice.generate` is a MAKER ability, so ADR 0040's checker exclusion
+  does not apply to it and `Gate::before` answers it — a super admin passes the route where the two
+  checkers are refused.
+
+  **What a cold review actually measured**, signed in as `super@drive.test` with no school selected:
+
+  ```
+  GET /api/v1/finance/bulk-invoice-runs          → 200, EIGHT runs spanning BOTH drive schools
+  GET /api/v1/finance/bulk-invoice-runs/{uuid}   → 200 for either school's run
+  ```
+
+  The checkers got **403**; the super admin got **200 with both schools' data**. Not the same answer.
+
+  **What FIX 1 changes about it.** `BulkInvoiceRun` and `BulkInvoiceRunRow` are now on
+  `config/rbac.php`'s `fail_closed_models`, so the contextless read is refused rather than answered:
+  the same request now returns **409 `{"message":"No active school selected."}`**, which is
+  `MissingSchoolContextException`'s own render and the answer the other ten finance transactional
+  models already give. A super admin who HAS selected a school still reads that school's runs and
+  gets a 404 on the other's. Both directions are pinned by test, and the pre-fix 200 was reproduced
+  by planting the two entries away.
+
+  ADR 0036 is what makes this a defect rather than a policy: the bypass answers *may you*, SchoolScope
+  answers *whose data*, and only the second was failing.
 
 ---
 
@@ -484,9 +513,19 @@ no admission number.
 4. **A `failed` row's student in the invoice context.** Their statement opens, but there is no invoice
    to look at — the failure is the reason there isn't one, and that reason is on the run row.
 
-This is stated on the screen too, under the buckets, rather than only here.
+All four are stated on the screen too, under the buckets, rather than only here — and that sentence
+was only two-thirds true when this report was first written. Items 1 and 2 were on the screen; items 3
+and 4 were not, and the claim covered all four. The caveat now names all four.
 
 ---
+
+## 7a. Tickets raised, not fixed
+
+| Ticket | Subject |
+| --- | --- |
+| [`fail-closed-allowlist-is-opt-in.md`](../tickets/fail-closed-allowlist-is-opt-in.md) | `rbac.fail_closed_models` is an allowlist, so every new School-owned finance model ships fail-OPEN. Names the three sibling endpoints a cold review measured answering 200 with every School's rows for a contextless super admin — `bank-accounts`, `fee-schedules`, `discount-policies` — with their models and abilities, and argues for inverting the default over adding four more names. Pre-existing; not touched here. |
+| [`bulk-run-buckets-have-no-page-past-200.md`](../tickets/bulk-run-buckets-have-no-page-past-200.md) | `ROWS_PER_BUCKET = 200` with `limit(201)` and a `truncated` flag, and no `page`, `offset` or `cursor` on `GET /api/v1/finance/bulk-invoice-runs/{run:uuid}` or in `bulk-invoice-runs.ts`. Row 201 is unreachable from the screen AND the API, and the screen announces the cut while offering nothing. Worst on `unplaceable`, which is School-wide and is the actionable list. |
+| [`current-term-resolution-is-unordered.md`](../tickets/current-term-resolution-is-unordered.md) | `CurrentTerm::forSchoolModel()`'s active-term query has no `ORDER BY`, so a session with two `active` terms resolves arbitrarily. **Pre-existing and preserved deliberately** — it is the expression `SetupController` carried, moved unchanged so the relocation stayed reviewable. What the move changed is the blast radius: the second consumer defaults the term a bulk run bills. |
 
 ## 8. Residual risk
 
@@ -508,3 +547,78 @@ This is stated on the screen too, under the buckets, rather than only here.
   files this commit touched. It is a file this commit genuinely changes and `lint-changed` would
   demand the same formatting on push, so it is kept rather than reverted — but the diff is larger than
   the change, and that is worth seeing before reading it.
+
+## 9. The remediation round — what a cold review found, and what changed
+
+**FIX 1 — the two run models were not fail-closed.** `SchoolScope::apply()` has three branches and the
+third one is silent and unscoped; which branch a model takes is decided by an ALLOWLIST,
+`config/rbac.php`'s `fail_closed_models`. `BulkInvoiceRun` and `BulkInvoiceRunRow` were not on it, so a
+principal with no active School context read every School's runs instead of being refused.
+
+Measured, both directions, by planting the entries away:
+
+```
+without the entries → 200  {"data":[{"uuid":"a28bc463-…","status":"completed","term_id":2,…}]}   (both Schools)
+with the entries    → 409  {"message":"No active school selected."}
+```
+
+The seat is a super admin with no school selected. ADR 0036's split is what makes this a defect:
+`super_admin` bypasses AUTHORIZATION — and `finance.invoice.generate` is a MAKER ability, so ADR 0040's
+checker exclusion does not cover it and `Gate::before` lets the seat past the route — but it never
+bypasses ISOLATION, and isolation here is `SchoolScope`, which without an allowlist entry does not
+refuse, it simply adds no predicate.
+
+Both models are now on the list, which is twelve entries. Two arms pin it: the contextless seat is
+refused on `index` and on both schools' `show`, and a super admin who HAS selected a school still reads
+that school's runs by uuid and gets a **404** on the other's — the same answer School A's bursar gets.
+`FinanceFailClosedBatchTest`'s provenance arm was updated to twelve, which is the mechanism that made
+the omission visible in the first place: the list appears literally exactly once, so it cannot get
+shorter without something going red.
+
+**One thing this round found in the test harness itself, worth knowing before writing another arm
+here.** `withSession(['school_id' => …])` on an `/api/*` route is **silently inert** in this suite.
+`statefulApi()` runs the session middleware only for a request that looks like it came from the SPA
+(Referer/Origin on a stateful domain), so `$request->hasSession()` is false and `ActiveSchool::id()`
+skips the session branch entirely. Every other arm in the file gets away with it because its actor is
+an ordinary user whose `users.school_id` is set and the resolver falls back to that. A super admin has
+no `school_id` and is deliberately excluded from that fallback, so the session is the only route in —
+hence `birsAsSuperIn()`, which sends a `Referer`. Without it the "has selected a school" arm measured a
+409 and would have been read as the fix over-reaching.
+
+**FIX 2 — §6g of this report was false**, and is corrected in place above rather than quietly edited:
+it claimed the super-admin seat got "the same answer the two checker seats gave". The checkers got 403;
+the super admin got 200 with both schools' runs. The sentence was an inference from "no finance grant",
+never a measurement, and it is exactly the shape of claim this project's method says not to make.
+
+**FIX 3 — the drive skill was not updated with the fixture.** `.claude/skills/finance-drive/SKILL.md`
+states the rule *"the table needs a column before your drive needs a browser — and that is a change to
+the fixture, in your commit, argued"*, and U6 commit 4 changed the fixture and not the file carrying
+the rule. Its prose enumerated eight columns where the command now prints eleven, and two citations had
+drifted. Fixed: the enumeration, the new count table pasted verbatim, what the three new columns mean
+together, and the isolation section — which described one session and one term per school when the
+fixture now seeds two of each plus an arm on JSS 1 only. **Every citation in the file was re-derived,
+not only the two named**, and four were wrong: `SeedDriveFixture.php:162-169` → `:195-202`,
+`:130-160` → `:147-192`, `:135-137` → `:150-152`, and `DriveCastSeeder.php:91-97` → `:127-131`, plus
+`:141-167` → `:232-258`, `:35` → `:37`, `:144-146` → `:235-237`, `:111-139` → `:146-230`, and
+`DriveFinanceStates.php:66-250` → `:76-351` with its method count corrected from fourteen to sixteen.
+
+**FIX 4 — two claims that were half-true on the screen.**
+
+- §7's four unreachable-without-an-invoice-index items: items 1 and 2 were on the screen, items 3 and 4
+  were not, and the report claimed all four were. The on-screen caveat now names all four.
+- The unplaceable bucket's blurb said *"give them coordinates, then re-run"* while the only control on
+  those rows is Statement — an instruction to nowhere. It now says who has to do it and where:
+  *"someone with academic access has to give each of these students a term and a class level on their
+  academic record"*. **It is NOT linked, deliberately.** The per-student academic record is
+  `setup/student-curricula/{student:uuid}`, gated on `student_curriculum.view` — an ability the finance
+  seat does not hold — and it is a READ-ONLY view besides (`routes/web.php`, the group's own comment),
+  so it is not where a term or class level is set either. A link that 403s a bursar is worse than a
+  sentence that tells them who to ask.
+
+**FIX 5 — §5's sentence about the corrected term-default fixture described the wrong fixture.** The two
+fix it in opposite directions and the paragraph is corrected above.
+
+**Not driven again.** This round changes one config entry, one blurb, one caveat paragraph and three
+documents. The config change is proven by test in both directions, including the pre-fix 200; the two
+screen strings are copy. Nothing here was re-driven in a browser, and that is stated rather than
+implied.

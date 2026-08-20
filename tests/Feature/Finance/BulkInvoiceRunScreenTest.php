@@ -782,6 +782,141 @@ it('shows School A no run of School B, and answers 404 rather than 403 for a for
     expect(BulkInvoiceRun::withoutGlobalScopes()->count())->toBe(2);
 });
 
+/* ── 7 · Fail-closed: a read with no School context is refused, never answered unscoped ────── */
+
+/**
+ * A platform super admin with NO school selected — the exact seat a cold review used to read both
+ * Schools' runs out of this endpoint.
+ *
+ * `auth.gate_before_superadmin` is switched ON because that bypass is what gets this seat PAST the
+ * route's `permission:finance.invoice.generate`: it is a maker ability, not a checker one, so ADR
+ * 0040's exclusion does not apply to it. With the bypass off the arm would be measuring a 403 from
+ * the permission middleware and would never reach the scope at all — green, and about nothing.
+ */
+function birsSuperAdminWithoutSchool(): User
+{
+    config(['auth.gate_before_superadmin' => true]);
+
+    $super = User::factory()->create(['school_id' => null]);
+    setPermissionsTeamId(null);
+    $super->assignRole('super_admin');
+    $super->flushSchoolAccessCache();
+
+    return $super;
+}
+
+/**
+ * A super admin acting INSIDE a chosen School — and the `Referer` is load-bearing, not decoration.
+ *
+ * `/api/*` carries Sanctum's `statefulApi()`, so the session middleware runs ONLY when the request
+ * looks like it came from the SPA (Referer/Origin on a stateful domain). Without the header
+ * `$request->hasSession()` is false, `ActiveSchool::id()` skips the session branch entirely, and a
+ * `withSession(['school_id' => …])` in a test is silently inert.
+ *
+ * Every other arm in this file gets away with that because its actor is an ordinary user whose
+ * `users.school_id` is set, and `ActiveSchool::id()` falls back to it. A super admin has no
+ * `school_id` and is EXCLUDED from that fallback by design — "without an explicit selection they act
+ * globally" (ActiveSchool.php:25-26) — so the session is the only route in, and this is what makes it
+ * actually arrive.
+ */
+function birsAsSuperIn(User $super, School $school)
+{
+    return test()->actingAs($super)
+        ->withHeader('Referer', config('app.url'))
+        ->withSession(['school_id' => $school->id]);
+}
+
+it('REFUSES a super admin with no school selected, instead of answering with every School\'s runs', function () {
+    /*
+     * ADR 0036: super_admin bypasses AUTHORIZATION, never ISOLATION. The bypass is what lets this
+     * seat past the route's ability — and isolation here is SchoolScope, which without an entry in
+     * `rbac.fail_closed_models` falls to its SILENT-UNSCOPED branch rather than to a refusal.
+     *
+     * MEASURED IN BOTH DIRECTIONS, by planting the two entries away:
+     *
+     *   without them → 200, `{"data":[{"uuid":"a28bc463-…","term_id":2,…}` — both Schools' runs;
+     *   with them    → 409, `{"message":"No active school selected."}`.
+     *
+     * The 409 is MissingSchoolContextException's own render (MissingSchoolContextException.php:31),
+     * the same answer the other ten finance transactional models already give.
+     */
+    $a = birsSchool();
+    $b = birsSchool();
+    birsSchedule($a);
+    birsSchedule($b);
+    birsStudent($a, $a['arm']->id, $a['term']->id);
+    birsStudent($b, $b['arm']->id, $b['term']->id);
+
+    $actorA = birsUser($a['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+    $actorB = birsUser($b['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+
+    $runA = birsAs($actorA, $a['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $a['term']->id, 'class_level_id' => $a['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $runB = birsAs($actorB, $b['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $b['term']->id, 'class_level_id' => $b['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $super = birsSuperAdminWithoutSchool();
+
+    // THE LIST, and the two run tables are separate models so both are asserted: `index` reads
+    // BulkInvoiceRun, `show` reads BulkInvoiceRunRow as well.
+    test()->actingAs($super)->getJson('/api/v1/finance/bulk-invoice-runs')
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'No active school selected.');
+
+    test()->actingAs($super)->getJson('/api/v1/finance/bulk-invoice-runs/'.$runA)
+        ->assertStatus(409);
+    test()->actingAs($super)->getJson('/api/v1/finance/bulk-invoice-runs/'.$runB)
+        ->assertStatus(409);
+
+    // NOT VACUOUS. Both runs exist and are readable by a seat that has a School — the arm below is
+    // the other half of that, and this line keeps the refusal above from being an empty database.
+    expect(BulkInvoiceRun::withoutGlobalScopes()->count())->toBe(2);
+});
+
+it('still answers a super admin who HAS selected a school, with that school\'s runs and no other', function () {
+    /*
+     * The other half, and the one that keeps the fix from reading as "we broke the endpoint to close
+     * an edge case". Fail-closed replaces the silent-unscoped branch ONLY; the scoped branch is
+     * untouched, and a platform admin who has picked a school is an ordinary scoped reader.
+     */
+    $a = birsSchool();
+    $b = birsSchool();
+    birsSchedule($a);
+    birsSchedule($b);
+    birsStudent($a, $a['arm']->id, $a['term']->id);
+    birsStudent($b, $b['arm']->id, $b['term']->id);
+
+    $actorA = birsUser($a['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+    $actorB = birsUser($b['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+
+    $runA = birsAs($actorA, $a['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $a['term']->id, 'class_level_id' => $a['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $runB = birsAs($actorB, $b['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $b['term']->id, 'class_level_id' => $b['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $super = birsSuperAdminWithoutSchool();
+
+    $list = birsAsSuperIn($super, $a['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs')->assertOk();
+
+    // BY UUID, not by count: both Schools name their term "First Term" and their level "JSS 1".
+    expect(array_column($list->json('data'), 'uuid'))->toBe([$runA]);
+
+    birsAsSuperIn($super, $a['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/'.$runA)->assertOk();
+
+    // And the school they picked is the boundary, not their platform role: B's run is a 404 to them
+    // exactly as it is to School A's bursar.
+    birsAsSuperIn($super, $a['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/'.$runB)->assertNotFound();
+});
+
 it('bills only School A when School A runs, even though both Schools have the same coordinates by name', function () {
     // The job's own isolation is BulkInvoiceRunTest's subject; what is asserted here is that the
     // SURFACE hands it the right School — the run's school_id comes from the model's own

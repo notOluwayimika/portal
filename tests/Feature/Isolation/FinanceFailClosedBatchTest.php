@@ -14,13 +14,24 @@
  *      cannot see the difference between "the default is right" and "this machine's .env happens
  *      to set it", and the second is not a protection, it is a coincidence that survived a deploy.
  *
- * WHY THESE TEN AND NOT THE OTHER SIX. The batch is the finance TRANSACTIONAL set — the models that
- * record what was owed, charged, paid and reversed. The catalog models (FeeSchedule, FeeItem,
+ * WHY THESE TWELVE AND NOT THE OTHER SIX. The batch is the finance TRANSACTIONAL set — the models
+ * that record what was owed, charged, paid and reversed. The catalog models (FeeSchedule, FeeItem,
  * DiscountPolicy, the two change tables, SchoolFinanceSettings) are a later batch on their own
  * evidence.
  *
+ * TWO OF THE TWELVE ARRIVED LATE AND ON MEASUREMENT, WHICH IS THE INTERESTING PART. U6's
+ * BulkInvoiceRun and BulkInvoiceRunRow shipped without an entry here, and a cold review found what
+ * that cost: a super admin with no school selected read EIGHT runs across both drive schools from
+ * GET /api/v1/finance/bulk-invoice-runs, and opened either school's run detail. They belong on this
+ * list and not with the catalog: a run is the record of a billing ACT, and its rows name a student,
+ * an enrollment and the invoice raised for them.
+ *
+ * THE LESSON GENERALISES AND IS TICKETED RATHER THAN FIXED HERE: this allowlist is OPT-IN, so every
+ * new School-owned finance model is fail-OPEN until someone remembers it, and remembering is not a
+ * control. See docs/handoff/tickets/fail-closed-allowlist-is-opt-in.md.
+ *
  * The behaviour arms READ the list rather than restating it, so they cannot drift into testing
- * their own agreement with themselves. The ten names appear literally exactly once, in the
+ * their own agreement with themselves. The twelve names appear literally exactly once, in the
  * provenance arm, because a list read from the thing it is checking cannot notice that thing
  * getting shorter.
  *
@@ -31,6 +42,8 @@
  */
 
 use App\Exceptions\MissingSchoolContextException;
+use App\Finance\Models\BulkInvoiceRun;
+use App\Finance\Models\BulkInvoiceRunRow;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\InvoiceLine;
@@ -142,6 +155,8 @@ it('ships the finance transactional batch as the default, with no env var set', 
         OpeningBalanceBatch::class,
         OpeningBalanceRow::class,
         VoidRequest::class,
+        BulkInvoiceRun::class,
+        BulkInvoiceRunRow::class,
     ], 'config/rbac.php no longer ships the finance transactional batch as its DEFAULT. If this '
         .'list moved into an environment variable, the protection became something a deploy can '
         .'forget: an environment that sets nothing would read every School\'s money rows unscoped.');

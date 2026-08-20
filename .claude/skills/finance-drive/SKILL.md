@@ -36,7 +36,7 @@ it. It paid on the first run.
 
 **U1's fee-schedules screen hit the same class one layer out — in the fixture.**
 `DriveCastSeeder` seeded no academic session, no term and no class level
-(`DriveCastSeeder.php:91-97` records this), and `SeedDriveFixture` gave School B
+(`DriveCastSeeder.php:127-131` records this), and `SeedDriveFixture` gave School B
 only a `plainInvoice`, which records no payment, so School B had **no bank
 account** while `school-b@drive.test` holds the ability to open the author screen
 (`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`). A drive would
@@ -135,11 +135,22 @@ by construction.
 ## Check the fixture before you drive anything
 
 The seed command prints a **count table** of the authoring slot per school
-(`SeedDriveFixture.php:162-169`) — academic sessions, terms, class levels, bank
-accounts, discount policies, and payments split by `origin`. It is counted from the
-database through `DB::table` and through the Finance side's own scoped counters,
-deliberately **not** from the seeder's own variables, which would only ever report
-what the seeder intended (`SeedDriveFixture.php:130-160`).
+(`SeedDriveFixture.php:195-202`) — **eleven columns**: academic sessions, terms,
+class levels, bank accounts, discount policies, payments split by `origin`, and, as
+of U6 commit 4, active fee schedules, the cohort at the fixture's pricing slot and
+the unplaceable count. It is counted from the database through `DB::table`, through
+the Finance side's own scoped counters and — for the last two — through the ACL
+PORT, deliberately **not** from the seeder's own variables, which would only ever
+report what the seeder intended (`SeedDriveFixture.php:147-192`).
+
+**THE COLUMN LIST GROWS, AND THAT IS THIS FILE'S OWN RULE BEING OBEYED.** It was
+eight columns until a bulk-run drive needed to know whether a cohort and a price
+list existed at all; that drive found the fixture placed EVERY episode at null
+coordinates and seeded no schedule, so a run would have billed nobody on a fixture
+that looked full. The columns landed in the same commit as the fixture change.
+**When your screen depends on something the table does not count, add the column
+before you open a browser** — and update the enumeration in this paragraph with it,
+which is the step U6 commit 4 missed and a cold review caught.
 
 **Nothing in this repository can execute that table.** `SeedDriveFixture` refuses
 outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the suite to
@@ -149,7 +160,7 @@ for it verbatim rather than summarised.
 
 Read it first, every time. The rule the table was built to serve, in the source's
 own words: **"Zero in any column means the screen cannot author anything"**
-(`SeedDriveFixture.php:135-137`). What follows from that is mine and not the
+(`SeedDriveFixture.php:150-152`). What follows from that is mine and not the
 source's: **the drive is then worthless before it starts**, so this is a check you
 run and act on, not one you record.
 
@@ -177,11 +188,33 @@ needs a browser — and that is a change to the fixture, in your commit, argued.
 Paste the table into your report verbatim. It is the fixture's own claim about
 itself, and it is the cheapest evidence in the whole drive.
 
+As of U6 commit 4 it prints eleven columns and looks like this on a fresh seed:
+
+```
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
+| School       | Academic sessions | Terms | Class levels | Bank accounts | Discount policies | Payments (portal) | Payments (migrated) | Active schedules | Cohort at slot | Unplaceable |
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
+| A (school#1) | 2                 | 2     | 2            | 1             | 1                 | 3                 | 0                   | 1                | 2              | 7           |
+| B (school#2) | 2                 | 2     | 2            | 1             | 1                 | 0                 | 0                   | 1                | 2              | 1           |
++--------------+-------------------+-------+--------------+---------------+-------------------+-------------------+---------------------+------------------+----------------+-------------+
+```
+
+Read the three right-hand columns together, because they only mean something as a
+set. **`Cohort at slot`** is the fixture's placed, unbilled students at (current
+term, JSS 1) — the only coordinates anything is enrolled at — so a run has somebody
+to bill. **`Active schedules`** is filtered to `active`, the only status a run may
+bill from, so a catalog of drafts cannot read as a usable price list.
+**`Unplaceable`** is School-wide and is deliberately NON-zero: those are the
+pre-existing episodes with no term and no class level, and a fixture where every
+episode was placeable could not render the one list on a run report that somebody
+has to act on. School A's 7 is fewer than its 8 unplaced episodes because one
+student holds two, and the ACL port takes at most one episode per student.
+
 ## The seats, and what each one proves
 
-Read `DriveCastSeeder::seedCast()` (`DriveCastSeeder.php:141-167`) for the current
+Read `DriveCastSeeder::seedCast()` (`DriveCastSeeder.php:232-258`) for the current
 list — it changes, and it has changed. The password is the constant
-`DriveCastSeeder::PASSWORD` (`DriveCastSeeder.php:35`); read it there rather than
+`DriveCastSeeder::PASSWORD` (`DriveCastSeeder.php:37`); read it there rather than
 from a brief, since a brief that pastes it goes stale silently.
 
 | Seat | Holds | What it proves |
@@ -193,7 +226,7 @@ from a brief, since a brief that pastes it goes stale silently.
 | `school-b@drive.test` | `accounts_officer`, School B | Isolation. See the next section; this is the seat that section is about. |
 
 `checker@drive.test` held `accounts_supervisor` until 2026-08-04 and now holds
-`executive_director` (`DriveCastSeeder.php:144-146`). If a brief you are working
+`executive_director` (`DriveCastSeeder.php:235-237`). If a brief you are working
 names a role for a seat, check the seeder rather than the brief.
 
 **The maker and the checker are two accounts and cannot be one.** Grant-time
@@ -207,10 +240,21 @@ browser profile or a private window keeps both sessions live.
 ## Isolation is checked by id, never by label
 
 `seedAcademicSlot()` runs identically for both schools
-(`DriveCastSeeder.php:111-139`): each gets a session named `2026/2027`, a term
-named `First Term`, and class levels `JSS 1` and `JSS 2`. **The labels are
-identical strings by construction.** A screen showing "First Term" therefore
-proves nothing whatsoever about which school's term it is.
+(`DriveCastSeeder.php:146-230`): each gets a **current** session named `2026/2027`
+holding a term named `First Term`, a **non-current** session named `2025/2026`
+holding a term named `Third Term`, class levels `JSS 1` and `JSS 2`, and an arm on
+`JSS 1` only. **Every one of those labels is an identical string across the two
+schools, by construction.** A screen showing "First Term" therefore proves nothing
+whatsoever about which school's term it is.
+
+Two of those are there for a reason worth knowing before you read a select. The
+**second, non-current session** exists so a screen that DEFAULTS a term can be
+caught defaulting it wrongly: its term is `active` too, sits at a higher `order`,
+and has a higher id, so "newest", "highest order", "first in the list" and "any
+active term" all land on the wrong one and only the current-session filter lands on
+the right one. And `JSS 2` is left **unarmed** on purpose, so there is a class level
+whose cohort is genuinely empty — a real state, and one a screen must be able to
+report without looking broken.
 
 What proves it is the **ids**, disjoint across the two seats. U1's drive is the
 recorded method
@@ -318,13 +362,14 @@ carries:
    need an *active* schedule, which only the ED's approval creates; a *rejected*
    proposal, because the ED approved everything; and **anything opening-balance**,
    for a blunter reason — the fixture seeds no opening-balance state whatsoever.
-   `DriveFinanceStates` exposes fourteen public methods besides its constructor,
+   `DriveFinanceStates` exposes **sixteen** public methods besides its constructor,
    spanning `ensureBankAccount` to `plainInvoice`
-   (`app/Finance/Console/DriveFinanceStates.php:66-250`), and not one of them stages
-   an opening-balance batch — three of them (`bankAccountCount`,
-   `discountPolicyCount`, `paymentCount`) are the count table's readers rather than
-   state at all; `SeedDriveFixture` and `DriveCastSeeder` between them
-   mention opening balances once, in a comment (`DriveCastSeeder.php:95`). So there
+   (`app/Finance/Console/DriveFinanceStates.php:76-351`), and not one of them stages
+   an opening-balance batch — four of them (`bankAccountCount`,
+   `discountPolicyCount`, `paymentCount`, `activeFeeScheduleCount`) are the count
+   table's readers rather than state at all; `SeedDriveFixture` and `DriveCastSeeder`
+   between them mention opening balances once, in a comment
+   (`DriveCastSeeder.php:130`). So there
    is nothing on this fixture to approve, and the "database we are willing to
    spend" condition is not what is stopping you — that condition was written about
    a production copy and does not transfer to a database that is thrown away.
@@ -356,7 +401,7 @@ is a precondition of the drive, not a finding from it. U1 commit 1 is the
 precedent — it added the academic slot and the per-school bank account to the
 seeder so that commit 2's drive would not open onto empty selects
 (`docs/handoff/reports/feat-fee-schedules-data-surface.md:437-450`,
-`DriveCastSeeder.php:91-97`). And a **drive-environment config** change — the
+`DriveCastSeeder.php:127-131`). And a **drive-environment config** change — the
 `:8001` Sanctum entry, added to `.env.drive.example` by the drive that hit it
 (`docs/handoff/drives/2026-07-25/README.md:77-83`) — is config, not the feature.
 Everything else, including the obvious one-line fix sitting in front of you, is

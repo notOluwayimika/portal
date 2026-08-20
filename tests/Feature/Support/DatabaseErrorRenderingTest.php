@@ -57,21 +57,58 @@ function dberrAssertNoLeak(string $body): void
 // ── X-1 — a CHECK violation (3819) renders 500, not 400 ──────────────────────
 
 it('X-1 — a CHECK violation (3819) renders 500 with a generic body', function () {
-    expect(dberrHasCheck('student_curricula_promoted_requires_link'))->toBeTrue();
+    // SPECIMEN CHANGED, AND THE ARM UNDER TEST IS UNCHANGED. This proof needs any live CHECK, purely
+    // to make MySQL raise 3819. It used student_curricula_promoted_requires_link until
+    // 2026_08_20_140000 converted that one to a trigger (it had been inert on production's MySQL 5.7
+    // since 2026-07-30, and the promotion jobs were about to become its fourth and fifth writers).
+    // A trigger raises 1644, which is X-2's arm — so continuing to use it here would have quietly
+    // turned this into a second 1644 test while still claiming 3819 in its name.
+    // terms_end_after_start_check is a real, still-live CHECK: end_date must be after start_date.
+    expect(dberrHasCheck('terms_end_after_start_check'))->toBeTrue();
 
     $school = School::factory()->create();
-    $student = Student::factory()->create(['school_id' => $school->id]);
-    $curriculum = Curriculum::factory()->create(['school_id' => $school->id]);
-
-    Route::get('/api/__dberr/check', fn () => DB::table('student_curricula')->insert([
-        'uuid' => (string) Str::uuid(), 'student_id' => $student->id, 'school_id' => $school->id,
-        'curriculum_id' => $curriculum->id, 'status' => 'promoted', 'promoted_to_id' => null,
+    $session = DB::table('academic_sessions')->insertGetId([
+        'uuid' => (string) Str::uuid(), 'school_id' => $school->id, 'name' => 'DBErr Session',
+        'slug' => 'dberr-'.Str::random(8), 'is_current' => false,
         'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    Route::get('/api/__dberr/check', fn () => DB::table('terms')->insert([
+        'uuid' => (string) Str::uuid(), 'academic_session_id' => $session, 'school_id' => $school->id,
+        'name' => 'Backwards Term', 'slug' => 'backwards-'.Str::random(8), 'order' => 1,
+        // The violation: it ends before it starts.
+        'start_date' => now()->addMonths(3)->toDateString(), 'end_date' => now()->toDateString(),
+        'status' => 'upcoming', 'created_at' => now(), 'updated_at' => now(),
     ]));
 
     $res = $this->getJson('/api/__dberr/check');
     $res->assertStatus(500);
     expect($res->json('message'))->toBe('A database error occurred.'); // NOTE: watched red by restoring the old handler — see the PR body (X-1 alone falls to default either way).
+    dberrAssertNoLeak($res->getContent());
+});
+
+/**
+ * X-1b — the guard that X-1 used to carry. Converting promoted_requires_link from a CHECK (3819) to a
+ * trigger (1644) moved it from X-1's arm to X-2's, and both map to 500 — so the rendering contract is
+ * unchanged. Asserted explicitly rather than left implied, because "it still returns 500" is the whole
+ * reason that conversion was safe to make.
+ */
+it('X-1b — the converted promotion-link guard (now 1644) still renders 500, not 400', function () {
+    expect(dberrHasTrigger('student_curricula_promoted_requires_link_bi'))->toBeTrue();
+
+    $school = School::factory()->create();
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $curriculum = Curriculum::factory()->create(['school_id' => $school->id]);
+
+    Route::get('/api/__dberr/promolink', fn () => DB::table('student_curricula')->insert([
+        'uuid' => (string) Str::uuid(), 'student_id' => $student->id, 'school_id' => $school->id,
+        'curriculum_id' => $curriculum->id, 'status' => 'promoted', 'promoted_to_id' => null,
+        'created_at' => now(), 'updated_at' => now(),
+    ]));
+
+    $res = $this->getJson('/api/__dberr/promolink');
+    $res->assertStatus(500);
+    expect($res->json('message'))->toBe('A database error occurred.');
     dberrAssertNoLeak($res->getContent());
 });
 

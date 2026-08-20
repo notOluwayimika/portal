@@ -1,6 +1,13 @@
 # TICKET — a merged pull request does not mean the branch head merged
 
-**Status:** open. Raised by PR #265 (`feat/u6-bulk-run-screen` → `staging`), which GitHub reported
+**Status:** the DETECTION is built and shipped — `bin/landed`, on branch `feat/landed-check`.
+It detects instance A through **check 1** and instance B through **check 2**. The second-parent
+comparison this ticket originally proposed as the stale-head detector **cannot work** and has been
+demoted to an explainer; see the closing section, and § 7–8 of
+`docs/handoff/reports/feat-landed-check.md` for the measurement. Both INSTANCES have since been
+closed on `origin/staging` (`ca12d92`, `fail_closed_models` back to twelve entries) — the re-derivation
+in the closing section was written while they were open, on 2026-08-20, and is left as the record.
+Raised by PR #265 (`feat/u6-bulk-run-screen` → `staging`), which GitHub reported
 merged while two commits of that branch — including the only behavioural fix on it — were not in
 `staging` and were not in the merge commit.
 
@@ -208,14 +215,24 @@ fix exists locally and `origin/staging` has not got it. Check 2 catches the stal
 
 Neither requires `gh`, a network beyond `fetch`, or trusting a "Merged" badge.
 
+> **The second command above does NOT do what this section says it does**, and the paragraph is left
+> as written because it is the record of what was proposed. Implementing it and pointing it at this
+> repository showed that a second-parent comparison cannot identify "the merge of this branch": the
+> stale-head shape is topologically identical to a branch that never merged and was merely cut from a
+> commit that later became a merge parent. Check 1 is the detector. See the closing section.
+
 ## Not proposed here
 
 Whether this becomes a hook, a `bin/` script, a step in `bin/quality-promote`, or a line in
 `CONTRIBUTING.md`; whether branches should be deleted at merge so they cannot drift; and whether a fix
 and its only test should be separable commits. The claims this ticket makes are that PR #265 merged a
 head two commits short of the branch's eventual tip, that the shortfall included the only behavioural
-change on the branch, that the only detector for that change travelled with it, and that the two
-commands above would have surfaced all of it.
+change on the branch, that the only detector for that change travelled with it, and that the
+**first** of the two commands above would have surfaced all of it.
+
+An earlier version of this sentence said *both* commands would have. The second — the second-parent
+comparison — would not have, and is retracted above as unable to identify the merge of a branch at
+all. `origin/<target>..origin/<branch>` carried the whole finding on its own.
 
 ## See also
 
@@ -223,3 +240,176 @@ commands above would have surfaced all of it.
   step earlier: a gate reporting on itself rather than on the outcome.
 - `docs/handoff/tickets/fail-closed-allowlist-is-opt-in.md` — why `fail_closed_models` had a
   registration to miss in the first place.
+
+---
+
+## Closing section — the check exists
+
+`bin/landed <branch> [target]`, with `tests/Feature/Quality/LandedCheckCoverageTest.php` behind it.
+Written on `feat/landed-check`, off `origin/staging` at `7894c39` (the #266 merge).
+
+### What it does
+
+Four checks, from refs alone, after one fetch — the script's only mutation, stated in its docblock
+and in `--help`. It never pushes, merges, checks out, resets or writes a branch ref, and it never
+calls `gh`.
+
+**THE FETCH NAMES THE TWO REFS IT IS ABOUT TO COMPARE**, and that is load-bearing rather than a
+detail. A bare `git fetch --prune origin` honours `remote.origin.fetch`, which in a `--single-branch`
+or `--depth` clone covers ONE branch: the fetch succeeds, the other remote-tracking ref does not move,
+and the script printed a ✓ and compared a stale ref — measured as **`✓ landed`, exit 0**, over a
+branch carrying two commits the target did not have. A false green in a verification tool is worse
+than no tool, because it turns "I did not check" into "I checked". Naming the refspec makes freshness
+a property of the fetch rather than of the clone. `--prune` then operates only within that refspec,
+which is intended.
+
+**A shallow clone exits 2 before anything else.** The merge sits below the graft, so containment
+cannot be seen and a landed branch reports NOT landed, with an outstanding count computed over a
+truncated graph. Both are answers the script cannot give.
+
+| # | Question | Verdict |
+| - | -------- | ------- |
+| 0 | is the graph whole, and could origin be reached? | shallow clone, unreadable shallow probe, or fetch failure → **exit 2**, never 0 |
+| 1 | `origin/<target>..origin/<branch>` empty? | non-empty → fail, commits listed. **Instance A** |
+| 2 | `origin/<target>..<target>` empty? | non-empty → fail, "not on origin". **Instance B** |
+| 3 | `<target>..origin/<target>` empty? | non-empty → **information**, not a failure |
+| 4 | **when the branch is contained**, did a merge take the head it now points at? | explains; **never fails**. See below — this check detects nothing |
+
+Exit codes: `0` all checks pass · `1` a check failed · `2` could not determine. **2 is not collapsed
+into 1.** A failed fetch, an unknown branch and an absent common ancestor are *unknown*, not *wrong*;
+accepting one for the other is the defect class this whole ticket is about, and a green meaning
+"I could not look" would be it wearing the script's own face.
+
+**CHECK 4 DOES NOT DETECT THE STALE HEAD, and an earlier version of this section said it did.**
+That claim was wrong and is retracted here. What detects instance A is **check 1** — the branch holds
+commits the target does not have — and check 1 names them.
+
+The first version of check 4 identified "the merge of this branch" as the merge on `origin/<target>`
+whose second parent equals `merge-base(origin/<target>, origin/<branch>)`. Pointed at this repository
+it reported `feat/landed-check` — a branch that has never merged — as having been merged at its own
+fork point, because a `git pull` reconciliation merge on `staging` (`ca12d92`) had that fork point
+(`7894c39`) as its second parent. Raw output and derivation:
+`docs/handoff/reports/feat-landed-check.md` § 7.
+
+**Instance A and that false positive are the same topology.** In both, a merge on the target has as
+its second parent a commit that is an ancestor of the branch and is not the branch head:
+
+| | the merge | its second parent | the branch |
+| --- | --- | --- | --- |
+| Instance A | `9849689` (PR #265) | `37500c8` — merged, then the branch advanced | `6e770ae` |
+| The false positive | `ca12d926` (a `git pull` reconciliation) | `7894c393` — the branch's own fork point | `0b26cef2` |
+
+Git records no branch identity in the DAG. A merge's second parent is a commit, not a branch, so
+there is no ancestry test that answers "was this a merge *of this branch*" — and a matcher sharpened
+until it passed one row would fail the other. The merge-base form was already the sharpened version,
+chosen over a looser ancestor form precisely to stop this class, with a fixture planted for it. It
+still got the real repository wrong.
+
+So check 4 now makes a topological claim **only when `origin/<branch>` is contained in
+`origin/<target>`** — a fact about the graph, not a guess about intent:
+
+- **contained, via a merge whose second parent is the branch head** → ✓, merge named. Reliable:
+  containment plus that equality leaves nothing else the merge could have taken.
+- **contained, no such merge** (fast-forward, or the branch merged the target back in) → ℹ, exit 0,
+  wording that does not claim a merge was checked.
+- **not contained** → ℹ "origin/`<branch>` is not contained in origin/`<target>` — no merge-head
+  claim is made. Check 1 above is the signal." It asserts nothing and adds nothing to the failure
+  count.
+
+The useful *sentence* for instance A — "PR merged `37500c8`, branch head is `6e770ae`" — is not
+derivable from topology, only from what a merge commit says about itself. For an uncontained branch
+the script scans merge subjects for `Merge pull request #N from <owner>/<branch>` or
+`Merge branch '<branch>'` and prints that merge's second parent as a **hint, labelled as read from
+the message**, contributing nothing to the failure count. A rename, an edited message or a squash
+defeats it. It is a lead for a human, never a verdict — the same treatment the PR number already had,
+for the same reason.
+
+### The arms that prove it fires
+
+Sixteen tests, each planting a real repository under `mktemp -d` with a bare repo wired as `origin`
+by path, so every arm runs offline. The nine below are the topological ones; the rest pin the fetch,
+the shallow guard, the merge-message hint and the four exit paths — see
+`docs/handoff/reports/feat-landed-check.md` § 9. Each asserts the exit code **and** the message: the failure modes that
+exit 1 are several, so a code-only arm would pass while the script reported the wrong one.
+
+| Arm | Planted | Asserts |
+| --- | ------- | ------- |
+| a | merged at its head, everything pushed | exit 0, PR subject read from the merge commit |
+| b | **instance A** — merge took an earlier sha, two commits added after | exit 1, check 1 names both commits, **1** check failed, check 4 makes no claim, the message hint appears and costs nothing |
+| c | **instance B** — local target one commit ahead of origin | exit 1, "not on origin", exactly 1 check failed |
+| d | local target behind origin, otherwise clean | exit 0, informational line present |
+| e | never merged, cut *past an unrelated merge* | exit 1, check 1 only, no verdict wording, no hint |
+| f | origin pointed at a nonexistent path, from a healthy state | **exit 2**, not 1, not 0 |
+| g | landed by fast-forward, no merge commit | exit 0, and the ordinary green's wording is *absent* |
+| h | branch deleted from origin | exit 2, "cannot determine whether it landed" |
+| i | **the false positive** — fork point is a later reconciliation merge's second parent | exit 1, check 1 only, and no stale-head text anywhere |
+
+Arms (f) and (h) build a fully healthy, fully pushed state *first* and only then break the remote, so
+a script that ignored the failure would sail through every check and print a green. That is what makes
+them non-vacuous rather than merely present.
+
+**Arms (e) and (i) now produce identical output**, modulo shas. That is the finding made visible:
+they are the same graph shape and the tool no longer pretends to tell them apart. Arm (e) was
+*necessary and insufficient* — it killed the loose ancestor-based match, but could not kill the
+merge-base match, because in (e) the unrelated merge commit **is** the merge-base, whereas in (i) the
+unrelated merge's **second parent** is. One fixture, one shape.
+
+Every arm was bite-proved by breaking `bin/landed` one line at a time; the mutation each caught is in
+`docs/handoff/reports/feat-landed-check.md` §§ 5 and 8. Arm (i) was written and confirmed RED against
+the pre-redesign script before anything was changed, so it is a measurement rather than a regression
+test written after the fact. Two mutations survived the first round and the arms were strengthened
+until they did not, and one later mutation is recorded as an *equivalent mutant* rather than left
+looking like a gap.
+
+### What a green does not mean
+
+It proves `origin/<target>` contains every commit on `origin/<branch>`, and — where a merge commit
+took that head — that it did. It proves **nothing** about whether the merge was correct, whether the
+reviewer read the right diff, whether the merged tree passes `bin/quality`, or whether the branch
+should have been merged. It also cannot see a squash or rebase merge as a merge: those leave neither a
+merge commit nor ancestry, so a squash-merged branch reports as not contained, exactly like one that
+never merged.
+
+**And a quiet check 4 is not evidence of anything.** On an uncontained branch it deliberately makes no
+claim; read check 1. Which check detects what: **check 1 detects instance A**, **check 2 detects
+instance B**, **check 4 explains**.
+
+`bin/landed` is deliberately **not** wired into `bin/quality` (that floor is offline by design,
+`.githooks/pre-push:3-20`, and the failure happens after a merge, which the per-push hook never
+observes) and **not** into a `post-merge` hook (local-only; it never fires for a web merge, which is
+how instance A happened). It is documented in `CLAUDE.md` § Workflow, where `.githooks/pre-push:20`
+already points readers.
+
+### The open question this does NOT answer
+
+The ticket's question — stale head at merge time, or commits pushed afterwards — **is answered
+above**, in "Was the head stale at merge time…", from `gh pr view 265` and commit timestamps: the two
+commits were written roughly four hours *after* the merge, so GitHub merged exactly the head the PR
+pointed at. `bin/landed` does not answer it and could not: it reads refs, and refs carry no timeline.
+It detects the outcome, not the cause. Had the cause been the other one, the same check would have
+fired the same way, which is the argument for it.
+
+The ticket's other open questions are untouched: whether a fix and its only test should be separable
+commits, and whether branches should be deleted at merge so they cannot drift.
+
+### Both instances were still open when this was written — since closed
+
+Re-derived on 2026-08-20 against `origin/staging` at `7894c39`, and `bin/landed` reported them. Left
+as written: `origin/staging` has since advanced to `ca12d92`, where `fail_closed_models` carries
+twelve entries and `bin/landed feat/u6-bulk-run-screen` exits 0. The paragraph below is the state at
+the time of measurement, not the state now.
+
+```
+$ git log --oneline origin/staging..origin/feat/u6-bulk-run-screen
+6e770ae docs(finance): the Referer mechanism was already written down, and the drive now prints two tables
+c7ec9a6 fix(finance): the run tables are fail-closed, and three documents stop claiming more than was measured
+
+$ git show origin/staging:config/rbac.php | sed -n "/'fail_closed_models'/,/^    \],/p" | grep -c "::class"
+10
+```
+
+`fail_closed_models` still stands at **ten** entries on `origin/staging`, with `BulkInvoiceRun` and
+`BulkInvoiceRunRow` still absent, and the local merge `5a3f212` that closed it is still unpushed —
+local `staging` is now *diverged*, three commits ahead of origin and three behind, because #266
+merged in the meantime. Building the detector did not land the fix; that is a separate push and is
+not part of this branch.

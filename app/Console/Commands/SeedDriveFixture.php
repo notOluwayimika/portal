@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Finance\Console\DriveFinanceStates;
+use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Support\ActiveSchool;
 use Database\Seeders\DriveCastSeeder;
 use Database\Seeders\RbacSeeder;
@@ -94,6 +95,22 @@ class SeedDriveFixture extends Command
         ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureDiscountPolicy($cast->schoolAId));
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureDiscountPolicy($cast->schoolBId, $cast->schoolBMaker));
 
+        // ONE ACTIVE FEE SCHEDULE PER SCHOOL, at the coordinates the cast placed its cohort at (U6).
+        // Without it EVERY bulk-run preview answers "No active fee schedule exists at these
+        // coordinates" and every run fails before writing a row — the screen would render exactly one
+        // sentence. Seeded through the real draft → submit → approve path, because an approved publish
+        // is the only thing that makes a schedule `active`; a status write would put a state in this
+        // fixture the application cannot reach. School B's proposal is made by School B's own bursar,
+        // as the discount policy above is, and the ED approves both.
+        foreach ([$cast->schoolAId, $cast->schoolBId] as $schoolId) {
+            $slot = $cast->coordinates[$schoolId];
+            $maker = $schoolId === $cast->schoolBId ? $cast->schoolBMaker : null;
+
+            ActiveSchool::runFor($schoolId, fn () => $states->ensureActiveFeeSchedule(
+                $schoolId, $slot['term_id'], $slot['class_level_id'], $maker,
+            ));
+        }
+
         ActiveSchool::runFor($cast->schoolAId, function () use ($states, $e) {
             $states->unpaid($e['ursula']);
             $states->partPaid($e['paula']);
@@ -162,6 +179,31 @@ class SeedDriveFixture extends Command
             $schoolId, fn () => $states->paymentCount($schoolId, $origin),
         );
 
+        // U6's three columns. `Active schedules` is filtered to `active` because that is the only
+        // status a run may bill from — a count of drafts would report a catalog the screen cannot use.
+        // The two enrollment columns come through the ACL PORT rather than through a join written here:
+        // the port is the single definition of "billable" and of what "placeable" means, and a second
+        // expression of either in this command would report a population the run does not bill.
+        $schedules = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->activeFeeScheduleCount($schoolId));
+
+        $port = app(BillableEnrollmentProvider::class);
+
+        $cohort = fn (int $schoolId): int => count($port->listForCohort(
+            $schoolId, $cast->coordinates[$schoolId]['term_id'], $cast->coordinates[$schoolId]['class_level_id'],
+        ));
+
+        $unplaceable = fn (int $schoolId): int => count($port->listUnplaceableForSchool($schoolId));
+
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable:');
+        $this->table(
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Active schedules', 'Cohort at slot', 'Unplaceable'],
+            [
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId)],
+            ],
+        );
+
+        $this->info('Bulk invoice runs: /finance/bulk-invoice-runs — the cohort above sits at (term, JSS 1); JSS 2 has an empty one on purpose.');
         // STUDENTS AND GUARDIANS, added for the guardian-create drive and counted for the
         // same reason as every column beside them. That screen links a new guardian to
         // children BY ADMISSION NUMBER, so a zero in the Students column means the drive

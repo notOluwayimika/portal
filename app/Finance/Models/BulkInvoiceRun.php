@@ -7,6 +7,8 @@ use App\Concerns\BelongsToSchool;
 use App\Finance\Enums\BulkInvoiceRunStatus;
 use App\Finance\Jobs\ProcessBulkInvoiceRun;
 use App\Finance\Services\FeeScheduleLineMapper;
+use App\Models\ClassLevel;
+use App\Models\Term;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -96,6 +98,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $unplaceable_count
  * @property int|null $billable_count the School's billable population, counted independently at run time
  * @property int|null $outside_coordinates_count SIGNED — billable students priced at other coordinates, NOT a miss count
+ * @property Carbon|null $created_at when the run was ASKED FOR, which is not when it started — a run can sit `pending` for minutes on a busy queue, and the two are separately useful
+ * @property Carbon|null $updated_at
  */
 class BulkInvoiceRun extends Model
 {
@@ -137,6 +141,31 @@ class BulkInvoiceRun extends Model
     public function startedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'started_by_user_id');
+    }
+
+    /**
+     * THE COORDINATES, FOR DISPLAY ONLY (U6 commit 4). Both mirror {@see FeeSchedule::term()} and
+     * {@see FeeSchedule::classLevel()} exactly, which is why they are relations rather than a label
+     * map assembled in the controller: the run and the schedule name the same pair, and two ways of
+     * turning that pair into words is how one screen comes to call a term something the next screen
+     * does not. `Term::displayLabel()` is the one expression of a term's name.
+     *
+     * NEITHER IS DOMAIN. The job reads `term_id` and `class_level_id` as integers and never touches
+     * these; nothing below the HTTP layer resolves a label.
+     *
+     * @return BelongsTo<Term, $this>
+     */
+    public function term(): BelongsTo
+    {
+        return $this->belongsTo(Term::class);
+    }
+
+    /**
+     * @return BelongsTo<ClassLevel, $this>
+     */
+    public function classLevel(): BelongsTo
+    {
+        return $this->belongsTo(ClassLevel::class);
     }
 
     public function getRouteKeyName(): string

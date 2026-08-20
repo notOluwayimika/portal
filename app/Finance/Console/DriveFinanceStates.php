@@ -4,19 +4,25 @@ namespace App\Finance\Console;
 
 use App\Finance\Actions\ApproveCreditNote;
 use App\Finance\Actions\ApproveDiscountPolicyChange;
+use App\Finance\Actions\ApproveFeeScheduleChange;
 use App\Finance\Actions\ApproveVoidRequest;
+use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\Actions\SubmitCreditNote;
 use App\Finance\Actions\SubmitDiscountPolicyChange;
+use App\Finance\Actions\SubmitFeeScheduleChange;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
+use App\Finance\Enums\FeeScheduleChangeKind;
+use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\DiscountPolicy;
+use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Models\User;
@@ -37,6 +43,9 @@ final class DriveFinanceStates
 {
     /** The seeded policy's name, in one place: both the create and the idempotence check read it. */
     private const DRIVE_POLICY_NAME = 'Sibling discount';
+
+    /** The seeded schedule's label, in one place: the create and the idempotence check read it. */
+    private const DRIVE_SCHEDULE_LABEL = 'Drive term bill v1';
 
     public function __construct(
         private readonly User $maker,
@@ -175,6 +184,97 @@ final class DriveFinanceStates
             ->where('school_id', $schoolId)
             ->where('name', self::DRIVE_POLICY_NAME)
             ->value('id');
+    }
+
+    /**
+     * AN ACTIVE FEE SCHEDULE AT ONE (term, class level) — the thing U6's bulk-run screen prices from,
+     * and the thing this fixture had none of until that screen needed one.
+     *
+     * WITHOUT IT THE WHOLE SCREEN IS ONE SENTENCE. `FeeScheduleLookup::activeFor()` admits only an
+     * `active` schedule, so with an empty catalog every preview answers "No active fee schedule exists
+     * at these coordinates" and every run fails before writing a row. A drive would have rendered the
+     * refusal path and nothing else — the same class of failure as the empty term select U1 commit 1
+     * seeded the academic slot to prevent, one table over.
+     *
+     * IT GOES THROUGH THE REAL PUBLISH PATH, not a status write. `CreateFeeSchedule` always authors a
+     * DRAFT — a draft is a proposal and never a price — and the ONLY thing that makes a schedule
+     * `active` is an approved publish change (S1 commit 4, proof 31). Writing `active` directly would
+     * put a state in this fixture that the application cannot reach, which is the one thing the drive
+     * environment promises it does not do.
+     *
+     * THE CHECKER IS SHARED ACROSS BOTH SCHOOLS, exactly as {@see ensureDiscountPolicy()} shares it and
+     * for the same reason: the ED holds every finance checker side, and what the maker ≠ checker rule
+     * (Policy, and the database CHECK behind it) actually requires is two different users.
+     *
+     * ONE MANDATORY ITEM AND ONE OPTIONAL ONE, deliberately. The mapper bills MANDATORY items only, so
+     * a schedule of one mandatory line proves an invoice can be raised and a schedule carrying an
+     * optional line beside it proves the run leaves it out — a distinction a single-line schedule
+     * cannot show. Both point at the school's own account: `finance_fee_items.bank_account_id` is NOT
+     * NULL and School-scoped.
+     *
+     * Idempotent by label, like the two ensure* methods above: a second call finds the row rather than
+     * proposing a duplicate, which `finance_fee_schedules_pending_unique` would refuse anyway.
+     */
+    public function ensureActiveFeeSchedule(int $schoolId, int $termId, int $classLevelId, ?User $maker = null): int
+    {
+        $existing = FeeSchedule::query()
+            ->where('school_id', $schoolId)
+            ->where('label', self::DRIVE_SCHEDULE_LABEL)
+            ->first();
+
+        if ($existing !== null) {
+            return (int) $existing->id;
+        }
+
+        $accountUuid = (string) BankAccount::query()->whereKey($this->ensureBankAccount($schoolId))->value('uuid');
+
+        $draft = app(CreateFeeSchedule::class)->handle($termId, $classLevelId, self::DRIVE_SCHEDULE_LABEL, [
+            [
+                'description' => 'Tuition',
+                'amount_minor' => 25000000,
+                'currency' => Money::DEFAULT_CURRENCY,
+                'is_mandatory' => true,
+                'is_discountable' => true,
+                'sort_order' => 0,
+                'bank_account_id' => $accountUuid,
+            ],
+            [
+                // OPTIONAL, and it is the point of the second line: no bulk run may bill it, because
+                // nothing in the schema records which child takes the bus.
+                'description' => 'Bus (optional)',
+                'amount_minor' => 4000000,
+                'currency' => Money::DEFAULT_CURRENCY,
+                'is_mandatory' => false,
+                'is_discountable' => false,
+                'sort_order' => 1,
+                'bank_account_id' => $accountUuid,
+            ],
+        ]);
+
+        $change = app(SubmitFeeScheduleChange::class)->handle(
+            FeeScheduleChangeKind::Publish,
+            $draft,
+            'Term prices agreed for the drive fixture.',
+            $maker ?? $this->maker,
+        );
+
+        app(ApproveFeeScheduleChange::class)->handle($change, $this->checker);
+
+        return (int) $draft->id;
+    }
+
+    /**
+     * How many ACTIVE fee schedules a school has, for the fixture's own report. Counted here for the
+     * reason bankAccountCount() gives — the boundary lint forbids a `finance_` table literal outside
+     * app/Finance — and filtered to `active` because that is the only status a run may bill from: a
+     * count of drafts would report a catalog the bulk-run screen cannot use as though it could.
+     */
+    public function activeFeeScheduleCount(int $schoolId): int
+    {
+        return FeeSchedule::query()
+            ->where('school_id', $schoolId)
+            ->where('status', FeeScheduleStatus::Active->value)
+            ->count();
     }
 
     /**

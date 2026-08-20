@@ -11,6 +11,7 @@ import {
     GraduationCap,
     Heart,
     History,
+    Layers,
     LayoutDashboard,
     MessageSquare,
     PenTool,
@@ -450,6 +451,19 @@ export function AppSidebar() {
                     title: 'Opening balances',
                     href: '/finance/opening-balances/import',
                     icon: FileSpreadsheet,
+                });
+            }
+
+            // Bulk invoice runs (U6) — bill a whole cohort. Keyed on `finance.invoice.generate`,
+            // the ability its route and all four of its API routes carry, and the SAME one the
+            // single-student generate already uses: bulk raises the same document under the same
+            // rule, so nothing new was coined for it. This is an ACT rather than configuration,
+            // which is why it sits beside Opening balances rather than with the config items below.
+            if (can('finance.invoice.generate')) {
+                financeItems.push({
+                    title: 'Bulk invoice runs',
+                    href: '/finance/bulk-invoice-runs',
+                    icon: Layers,
                 });
             }
 

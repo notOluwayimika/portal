@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+#
+# bin/is-docs-only-push — is every file in this push range documentation?
+#
+# THE COST THIS ANSWERS. Every push runs bin/quality: fifteen steps ending in the full
+# suite, roughly twenty minutes. Two commits on feat/u7-supplementary-invoice-wire —
+# 7237ad3 (12 files: ten drive PNGs, a report, a ticket) and 8570a0b (1 file: the same
+# report) — changed nothing but prose and screenshots, and each paid that price in full.
+#
+# WHAT THIS IS FOR. .githooks/pre-push is the only place that knows the push RANGE (git
+# feeds it `<local_ref> <local_sha> <remote_ref> <remote_sha>` on stdin), so the decision
+# belongs there. It lives HERE, as its own script with its own exit code, so that it can
+# be planted against real repositories and shown to refuse — a decision embedded in a hook
+# is a decision nothing can test.
+#
+# bin/quality IS NOT CHANGED BY THIS AND MUST NOT BE. It keeps meaning "run everything",
+# for a manual run and for bin/quality-promote. This script decides whether to CALL it;
+# it never changes what a call does.
+#
+# Usage:  bin/is-docs-only-push <base-sha> <head-sha>
+#
+# THE RULE, deliberately narrow — skip only when EVERY path in
+# `git diff --name-only <base>..<head>` begins with `docs/`. Nothing else is in this cut.
+# `.claude/**` and root-level *.md are the tempting next two and are NOT here: widening a
+# skip rule is how a gate stops gating, and each addition needs its own proof that nothing
+# reads the file. (Measured for THIS cut: no test and no lint in this repository reads a
+# file under docs/ — every one of the 28 mentions is a prose citation in a comment.)
+#
+# `docs*` WOULD BE WRONG, and that is the point of the prefix being `docs/` with the slash.
+# A file named `docsomething.php` at the repository root is a prefix match on `docs` and is
+# not documentation; a glob written the obvious way skips a PHP file. Arm (e) of
+# tests/Feature/Quality/DocsOnlyPushCoverageTest.php is exactly that file.
+#
+# --no-renames IS LOAD-BEARING. With rename detection on, `--name-only` reports a rename as
+# its DESTINATION only, so `a.php` -> `docs/a.md` would present as the single path
+# `docs/a.md` and skip a push that deleted a PHP file. --no-renames reports both halves as
+# a delete and an add, so both sides of every move are judged.
+#
+# TWO-DOT, NOT THREE. The range compares the two trees git is actually being asked to move
+# between, which is what the push changes. Where the remote holds commits the local ref does
+# not (a force-push), a two-dot diff reports the files being reverted as changed — so such a
+# push is judged NOT docs-only and runs the full gate. That is the safe direction and is why
+# the two-dot form is the correct one here.
+#
+# EXIT CODES — 0 docs-only, 1 not docs-only, 2 could not determine. 2 is not collapsed into
+# 1, for bin/landed's reason (:32-36): "wrong" and "unknown" are different answers. The
+# CALLER collapses them, because both mean "run the gate" — the safe direction is always
+# "run everything", so every non-zero must lead to the full gate and nothing here may exit 0
+# on a question it could not answer.
+#
+# AN EMPTY FILE LIST IS NOT DOCS-ONLY. "every file is under docs/" is vacuously true of no
+# files, and a vacuous truth that suppresses a gate is the false-green shape this repository
+# has paid for repeatedly. A range that changes nothing is refused explicitly.
+#
+# STDOUT IS THE FILE LIST IT JUDGED — one path per line, so the caller prints the same paths
+# the decision was made from rather than re-deriving them and risking a printed list that
+# disagrees with the verdict. Diagnostics go to stderr. (A path containing a newline would
+# display as two lines; the decision itself is made on NUL-separated data and is unaffected.)
+#
+# It operates on the repository containing the CURRENT DIRECTORY, like bin/landed and unlike
+# bin/quality: a script hard-wired to one checkout cannot be tested against planted
+# repositories.
+set -uo pipefail
+
+z40=0000000000000000000000000000000000000000
+
+usage() {
+    cat <<'USAGE'
+bin/is-docs-only-push — is every file in this push range documentation?
+
+  Usage:  bin/is-docs-only-push <base-sha> <head-sha>
+
+Exits 0 when every path in `git diff --name-only <base>..<head>` is under `docs/`,
+1 when any path is not (and when there is no base, or nothing changed), 2 when the
+range could not be computed at all.
+
+Prints the paths it judged on stdout. Callers must treat EVERY non-zero exit the same:
+run the full gate. This never decides that a push is safe on a question it could not answer.
+
+A 0 here is not a quality result. It means nothing was checked, on purpose.
+USAGE
+}
+
+case "${1:-}" in
+    -h|--help|help) usage; exit 0 ;;
+esac
+
+BASE="${1:-}"
+HEAD_SHA="${2:-}"
+
+if [ -z "$BASE" ] || [ -z "$HEAD_SHA" ]; then
+    usage >&2
+    printf '\nis-docs-only-push: need a base sha and a head sha\n' >&2
+    exit 2
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    printf 'is-docs-only-push: not a git repository — cannot determine anything\n' >&2
+    exit 2
+fi
+
+# A NEW BRANCH HAS NO BASE, and this is a rule, not a failure to compute. git sends all
+# zeros for a ref that does not exist on the remote, so there is nothing to diff against —
+# and the commits beneath a first push were never gated by this hook at all. Refusing here
+# is the difference between "skip the docs commit on top of gated code" and "skip an entire
+# branch because its newest commit happens to be prose".
+if [ "$BASE" = "$z40" ]; then
+    printf 'is-docs-only-push: base is all zeros — a new branch has no base to diff against\n' >&2
+    exit 1
+fi
+
+for sha in "$BASE" "$HEAD_SHA"; do
+    if ! git rev-parse --verify --quiet "$sha^{commit}" >/dev/null 2>&1; then
+        printf 'is-docs-only-push: %s is not a commit in this repository — cannot determine the range\n' "$sha" >&2
+        exit 2
+    fi
+done
+
+# THE DIFF GOES TO A FILE, NOT TO A VARIABLE, and that is not a style choice. `-z` is
+# mandatory — `git diff --name-only` QUOTES and octal-escapes any path holding a non-ASCII
+# byte (the hazard bin/lint-changed.sh:24-29 documents) — but bash DISCARDS NUL bytes in a
+# command substitution, so `raw="$(git diff -z …)"` returns every path concatenated with no
+# separator left in it. Measured: the loop below then read zero fields and EVERY range,
+# including the two real docs-only commits, reported "changes no files". That direction was
+# safe by luck; the same silent truncation with the empty-range guard removed would have been
+# a skip over an empty file list. A temp file carries NULs intact.
+#
+# `git diff` can also fail after its shas resolve (a corrupt or missing tree object), so its
+# status is captured rather than letting a failed diff read as an empty — and therefore
+# skippable — range.
+work="$(mktemp -t is-docs-only-push.XXXXXX)" || {
+    printf 'is-docs-only-push: could not create a temp file to read the diff\n' >&2
+    exit 2
+}
+trap 'rm -f "$work" "$work.err"' EXIT
+
+if ! git diff -z --name-only --no-renames "$BASE..$HEAD_SHA" >"$work" 2>"$work.err"; then
+    printf 'is-docs-only-push: could not diff %s..%s\n' "$BASE" "$HEAD_SHA" >&2
+    [ -s "$work.err" ] && cat "$work.err" >&2
+    exit 2
+fi
+
+files=()
+while IFS= read -r -d '' f; do
+    [ -n "$f" ] || continue
+    files+=("$f")
+done <"$work"
+
+if [ "${#files[@]}" -eq 0 ]; then
+    printf 'is-docs-only-push: %s..%s changes no files — refusing to call an empty range docs-only\n' \
+        "$BASE" "$HEAD_SHA" >&2
+    exit 1
+fi
+
+printf '%s\n' "${files[@]}"
+
+verdict=0
+for f in "${files[@]}"; do
+    case "$f" in
+        docs/?*) ;;
+        *) printf 'is-docs-only-push: not documentation: %s\n' "$f" >&2; verdict=1 ;;
+    esac
+done
+
+exit "$verdict"

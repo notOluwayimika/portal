@@ -67,8 +67,9 @@ import type {
  *
  * WHAT A READER CANNOT REACH FROM HERE. There is no invoice index — that is U7 and its own piece of
  * work — so a `billed` row links to the student's STATEMENT, which already lists their invoices. It
- * does not link to the invoice this run raised. The consequences are stated on the screen where they
- * bite, not only in this docblock.
+ * does not link to the invoice this run raised. ALL FOUR consequences are stated on the screen where
+ * they bite, not only in this docblock: an earlier version of the report claimed that and only two
+ * of the four were actually said.
  *
  * NO MONEY. A run reports counts; the table carries no money column at all.
  */
@@ -101,7 +102,13 @@ const BUCKET_COPY: Record<
 > = {
     unplaceable: {
         title: 'Could not be placed',
-        blurb: 'Billable, but with no term or no class level — so no fee schedule can be keyed to them and no run can ever bill them. This is the list to act on: give them coordinates, then re-run.',
+        // IT NAMES WHERE TO GO, and it does not link there. The only control on these rows is
+        // Statement, and "give them coordinates" without saying where is an instruction to nowhere.
+        // A link is NOT cheap here: the per-student academic record lives at
+        // setup/student-curricula/{student}, gated on `student_curriculum.view` — an ability a
+        // finance seat does not hold — and it is a READ-ONLY view besides, so it is not where a term
+        // or class level is set either. Offering a bursar a link that 403s is worse than a sentence.
+        blurb: 'Billable, but with no term or no class level — so no fee schedule can be keyed to them and no run can ever bill them. This is the list to act on, and it is not fixed in Finance: someone with academic access has to give each of these students a term and a class level on their academic record, and then this run can be re-run safely.',
         empty: 'Every billable student in this school has a term and a class level.',
         tone: 'amber',
     },
@@ -460,10 +467,17 @@ export default function BulkInvoiceRunShow({ runUuid }: { runUuid: string }) {
                             <p className="px-1 text-[11px] text-slate-400">
                                 A billed row opens that student&rsquo;s
                                 statement, which lists every invoice they carry.
-                                There is no invoice index yet, so this run
-                                cannot link to the individual invoice it raised,
-                                and there is nowhere to list the invoices of
-                                this run as a set.
+                                There is no invoice index yet, so four things
+                                are out of reach from here: the individual
+                                invoice this run raised (the statement shows all
+                                of them and you pick the term bill out by eye);
+                                the invoices of this run as a SET, with no
+                                filter, export or total; whether any of them has
+                                since been paid, part-paid, voided or credited,
+                                which only the statement answers, one student at
+                                a time; and, for a failed row, an invoice at all
+                                — there isn&rsquo;t one, and the reason is on
+                                the row.
                             </p>
                         </>
                     )}

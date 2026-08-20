@@ -402,5 +402,146 @@ red on it.
 - **Whether the two commits from instance A should now be landed.** They are still outside
   `origin/staging` and `fail_closed_models` is still at ten entries there. Landing them is a push this
   branch does not make.
-- **`bin/landed feat/landed-check` itself.** It cannot be run against this branch until this branch
-  merges. That is the first thing to run afterwards.
+- **`bin/landed feat/landed-check` itself.** It cannot report a landing until this branch merges.
+  It was run against this branch before merge and the result is in §7 — it did not print what was
+  expected, and that finding is recorded there.
+
+---
+
+## 7. Against the live repository
+
+Run on 2026-08-20 after `staging` was corrected: `origin/staging` is `ca12d92` and
+`config/rbac.php` there carries four `BulkInvoiceRun` lines — instance A's two commits have landed
+and `fail_closed_models` is at twelve entries. Local `staging` is in sync with origin, so checks 2
+and 3 are quiet in all three runs.
+
+Raw output, ANSI colour codes stripped and nothing else altered. Nothing is cut.
+
+### `./bin/landed feat/u6-bulk-run-screen staging` — expected exit 0
+
+```text
+LANDED?  feat/u6-bulk-run-screen → staging
+
+✓ fetched origin (--prune)
+  origin/feat/u6-bulk-run-screen = 6e770aea · origin/staging = ca12d926
+
+✓ origin/staging contains every commit on origin/feat/u6-bulk-run-screen
+✓ your local staging is not ahead of origin
+✓ the merge on origin/staging took the head origin/feat/u6-bulk-run-screen points at (6e770aea)
+  merge 5a3f2120 — "Merge feat/u6-bulk-run-screen: the two commits PR #265 left behind" (subject read from the merge commit)
+
+✓ landed — origin/staging contains origin/feat/u6-bulk-run-screen, and the merge took the reviewed head.
+This says nothing about whether the merge was correct or the merged tree is green.
+EXIT=0
+```
+
+### `./bin/landed docs/test-infrastructure-tickets staging` — expected exit 0
+
+```text
+LANDED?  docs/test-infrastructure-tickets → staging
+
+✓ fetched origin (--prune)
+  origin/docs/test-infrastructure-tickets = 8b3b680d · origin/staging = ca12d926
+
+✓ origin/staging contains every commit on origin/docs/test-infrastructure-tickets
+✓ your local staging is not ahead of origin
+✓ the merge on origin/staging took the head origin/docs/test-infrastructure-tickets points at (8b3b680d)
+  merge 7894c393 — "Merge pull request #266 from notOluwayimika/docs/test-infrastructure-tickets" (subject read from the merge commit)
+
+✓ landed — origin/staging contains origin/docs/test-infrastructure-tickets, and the merge took the reviewed head.
+This says nothing about whether the merge was correct or the merged tree is green.
+EXIT=0
+```
+
+### `./bin/landed feat/landed-check staging` — expected exit 1, "no merge … found"
+
+```text
+LANDED?  feat/landed-check → staging
+
+✓ fetched origin (--prune)
+  origin/feat/landed-check = 0b26cef2 · origin/staging = ca12d926
+
+✗ origin/feat/landed-check has 1 commit(s) that origin/staging does not have
+    0b26cef feat(quality): a command that answers whether the remote contains what was reviewed
+✓ your local staging is not ahead of origin
+✗ PR merged 7894c393, branch head is 0b26cef2, 1 commit(s) between them
+  merge ca12d926 — "Merge branch 'staging' of github.com:notOluwayimika/portal into staging # Please enter a commit message to explain why this merge is necessary, # especially if it merges an updated upstream into a topic branch. # # Lines starting with '#' will be ignored, and an empty message aborts # the commit." (subject read from the merge commit)
+    0b26cef feat(quality): a command that answers whether the remote contains what was reviewed
+
+✗ NOT landed (2 check(s) failed) — do not report feat/landed-check as merged.
+EXIT=1
+```
+
+---
+
+### RUN 3 DISAGREES WITH THE EXPECTATION, AND THAT IS THE FINDING
+
+The exit code is 1 as predicted, but for the **wrong reason**, and check 4 printed the wrong
+outcome. The prediction was `no merge of feat/landed-check found on origin/staging`. What it printed
+is a stale-head mismatch:
+
+```
+✗ PR merged 7894c393, branch head is 0b26cef2, 1 commit(s) between them
+  merge ca12d926 — "Merge branch 'staging' of github.com:notOluwayimika/portal into staging …"
+```
+
+`feat/landed-check` has never merged. There is no PR for it on `origin/staging`. Check 4 matched a
+`git pull` reconciliation merge and attributed it to this branch.
+
+The mechanism, derived rather than assumed:
+
+```
+$ git log -1 --format='%H%n  %P' ca12d926
+ca12d9269c41803d901327db58cfbec62b7b8df2
+  5a3f21200f5f2e1685e655e4b374ad3d3dc65230 7894c39327fa0821a96254c2f66a2e171b343417
+
+$ git rev-parse ca12d926^2
+7894c39327fa0821a96254c2f66a2e171b343417
+
+$ git merge-base origin/staging origin/feat/landed-check
+7894c39327fa0821a96254c2f66a2e171b343417
+```
+
+`feat/landed-check` was cut from `origin/staging` at `7894c39`. `staging` then diverged locally and
+was reconciled with `git pull`, producing `ca12d92` — a merge whose **second parent is `7894c39`**,
+the branch's own fork point. Check 4 looks for the merge on the target whose second parent equals
+`merge-base(origin/<target>, origin/<branch>)`; here that is `ca12d926`, so it matched, and reported
+the fork point as "the head the PR merged".
+
+**This is a false positive in check 4, in the repository, on the first branch it was pointed at.**
+The merge-base discriminator was chosen over the looser "newest merge whose second parent is an
+ancestor of the branch" precisely to stop an unrelated merge being read as this branch's — §2 says
+so and arm (e) plants a fixture for it. That fixture does not cover this shape: in arm (e) the
+unrelated merge commit **is** the merge-base, so no second parent equals it and the match correctly
+fails. Here the unrelated merge's **second parent** is the merge-base, which is the case the
+discriminator does not separate. Any branch cut from a commit that later becomes the second parent
+of a reconciliation merge on the target will report this way.
+
+**The script has not been changed to match the prediction.** The instruction for this commit was to
+publish what the runs produced and stop. The output above is what `bin/landed` at `0b26cef` does.
+The consequence for check 4 is stated and not repaired here.
+
+Runs 1 and 2 match their expectations, exit 0, and check 4 named the right merge in both — `5a3f212`
+for `feat/u6-bulk-run-screen` (the local merge that has now been pushed, not PR #265's `9849689`)
+and `7894c39` for `docs/test-infrastructure-tickets` (PR #266).
+
+### What is NOT in this section
+
+**The stale-head mismatch — the outcome the script was built for — could not be captured live,
+because staging was corrected before the tool was pointed at it. Instance A is reproducible only
+from the fixture in arm (b).**
+
+Run 1 is the branch that carried instance A, and it now exits 0: `origin/staging` contains
+`6e770ae`, and check 4 finds `5a3f212` whose second parent is that head. The live run demonstrates
+the *repaired* state. It does not demonstrate detection of the defect, and the three runs above must
+not be read as covering it.
+
+The mismatch text that **does** appear, in run 3, is the false positive analysed above — a branch
+that never merged, matched against a reconciliation merge. It is not instance A, it is not the
+outcome the script was built for, and it is not evidence that the script detects that outcome.
+
+Arm (b) in `tests/Feature/Quality/LandedCheckCoverageTest.php` is the only place instance A is
+reproduced: a branch merged at one sha with two commits pushed to it afterwards, asserting both shas
+and "2 commit(s) between them". §5's M5 records that pinning check 4's mismatch branch to pass turns
+that arm red, so the arm is load-bearing rather than decorative — but it is a fixture, not the
+repository.

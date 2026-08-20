@@ -193,6 +193,88 @@ it('b — the same episode STILL refuses a second SCHEDULED invoice, with the sa
     expect(Invoice::withoutGlobalScopes()->count())->toBe(2);
 });
 
+// ── b2 — WHICH LAYER ANSWERED ─────────────────────────────────────────────────
+
+it('b2 — the second SCHEDULED post is refused BY THE PRE-CHECK, not by the index it backstops', function () {
+    // ARM (b) ABOVE DOES NOT PIN THIS, AND SAYING SO IS THE POINT OF THIS ARM. Delete
+    // GenerateInvoice's `if ($kind->isEpisodeExclusive()) { $this->assertNoActiveInvoice(…); }` and
+    // arm (b) STILL PASSES: the unique index refuses the second term bill anyway, and the 1062
+    // translation further down throws the identical sentence, so the message assertion is satisfied
+    // by the exception path. The whole of tests/Feature/Finance comes back byte-identical with that
+    // block gone. A proof that survives deleting the thing it names is not proving that thing.
+    //
+    // WHY THIS IS AN INSTRUMENTATION ASSERTION AND NOT A BEHAVIOURAL ONE. Two obvious behavioural
+    // discriminators were tried and neither works:
+    //
+    //   - "the refusal consumes no invoice number". Sequences::next runs AFTER the pre-check, so on
+    //     the pre-check path no number is drawn — but Sequences::next opens a NESTED transaction, so
+    //     when the Action's transaction rolls back the increment rolls back with it. The counter
+    //     ends at the same value either way and cannot tell the paths apart.
+    //   - "no INSERT was attempted". DB::listen fires from Connection::logQuery, which runs only
+    //     after a statement SUCCEEDS; a failed INSERT is never logged. Absence of an insert is
+    //     therefore true on both paths and is vacuous.
+    //
+    // What IS observable is the pre-check's own SELECT — the kind-filtered existence read that
+    // InvoiceReadModel::activeScheduledInvoiceIdForEnrollment issues. It succeeds, so it is logged;
+    // it exists only on the pre-check path. Asserting it is present is asserting that the pre-check
+    // ran, which is the claim.
+    [$school, $admin, $student] = swSetup();
+
+    swPost($this, $school, $admin, $student, ['kind' => 'scheduled'])->assertCreated();
+
+    $statements = [];
+    DB::listen(function ($query) use (&$statements) {
+        $statements[] = $query->sql;
+    });
+
+    swPost($this, $school, $admin, $student, ['kind' => 'scheduled'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'This enrollment already has an active TERM invoice. Void it before billing the term again.');
+
+    $preCheckReads = array_values(array_filter(
+        $statements,
+        fn (string $sql) => str_contains($sql, 'finance_invoices')
+            && str_starts_with(ltrim(strtolower($sql)), 'select')
+            && str_contains($sql, '`kind`')
+            && str_contains($sql, '`student_curriculum_id`'),
+    ));
+
+    // AT LEAST ONE, not exactly one: the assertion is "the pre-check ran", and pinning a count
+    // would red on an unrelated extra read of the same table and prove nothing more.
+    expect($preCheckReads)->not->toBeEmpty();
+});
+
+// ── f — AN EMPTY KIND IS NOT AN ABSENT KIND ──────────────────────────────────
+
+it('f — an explicit null or empty-string `kind` is refused, not defaulted to scheduled', function () {
+    // THE PROPERTY `sometimes` BUYS, WHICH NOTHING ELSE IN THIS FILE COVERS. Arm (d) proves an
+    // ABSENT key defaults to scheduled; arm (e) proves a GARBLED value is a field error. Neither
+    // touches the case between them — a key that is present and EMPTY.
+    //
+    // Under `nullable` both payloads below would VALIDATE and return 201 with a term bill:
+    // `nullable` short-circuits the remaining rules on a null value, so Rule::enum never sees it and
+    // invoiceKind() takes the absent-means-scheduled branch. ConvertEmptyStringsToNull turns `""`
+    // into null before any rule runs, so the empty-string case is the same case — and `""` is what
+    // an untouched <select> posts. A client that rendered the control, never touched it, and posted
+    // would be billed for the term while believing it had chosen.
+    //
+    // THE WATCHED RED FOR THIS ARM IS `'sometimes'` → `'nullable'` on the rule. Nothing else in the
+    // suite distinguishes those two rules — the file is 6/6 green under both without this arm.
+    [$school, $admin, $student] = swSetup();
+
+    swPost($this, $school, $admin, $student, ['kind' => null])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['kind']);
+
+    swPost($this, $school, $admin, $student, ['kind' => ''])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['kind']);
+
+    // Nothing written by either — a 422 that still leaves a row is the other half of the failure.
+    expect(DB::table('finance_invoices')->count())->toBe(0)
+        ->and(DB::table('finance_invoice_lines')->count())->toBe(0);
+});
+
 // ── c — THE DATABASE, NOT THE APP ─────────────────────────────────────────────
 
 it('c — the generated-column unique index refuses a second SCHEDULED and permits a second SUPPLEMENTARY', function () {

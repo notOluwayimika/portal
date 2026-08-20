@@ -237,8 +237,18 @@ report described.
 **M3 answers 409, not 500 or 201.** Making `isEpisodeExclusive()` return `false` removes the
 Action's friendly pre-check *and* its 1062 translation, so the DB index still refuses the
 second term bill and its 1062 falls through to `bootstrap/app.php`'s 1062 → 409 mapping. The
-guard held; only its explanation was lost. This is also the concrete demonstration that arm
-(b)'s message assertion is doing work: an assertion of "some 4xx" would have been satisfied.
+guard held; only its explanation was lost.
+
+**What that does and does not demonstrate — corrected after the cold review.** This paragraph
+said M3 was "the concrete demonstration that arm (b)'s message assertion is doing work". It
+demonstrates something narrower. The message assertion discriminates **this** refusal from the
+other 422s these routes emit — a bad discount policy, a negative total, a missing enrollment —
+where a bare `assertStatus(422)` would not. It does **not** discriminate the pre-check from the
+index. Delete `GenerateInvoice`'s `if ($kind->isEpisodeExclusive()) { $this->assertNoActiveInvoice(…) }`
+block and arm (b) still passes: the unique index refuses the second term bill anyway, and the
+1062 translation further down throws the identical sentence, so the message assertion is
+satisfied by the exception path. Arm **(b2)** is what pins the layer; §12 carries its watched
+red and the measurement that the whole Finance directory stays green without that block.
 
 **M4 needed two attempts, and the first one is a finding about the migration rather than about
 this branch.** The obvious mutation — dropping `AND kind = 'scheduled'` from the generated
@@ -336,8 +346,20 @@ What this establishes, in order:
 
 ### 6.3 — AFTER the change (branch HEAD, rebuilt, fixture reseeded)
 
-Same seat, same class of episode (fresh fixture, so a new student uuid — re-derived, not
-carried).
+Same seat (`maker@drive.test`), same class of episode. **The three captures are three different
+fixture personas, not one student reseeded**, and this line implied otherwise by saying "same
+class of episode (fresh fixture, so a new student uuid)":
+
+- **before** — a school#1 student whose current episode already carries an active term invoice,
+  on the base build;
+- **after** — a *different* school#1 student in the same state, on the branch build (the fixture
+  was reseeded between the two runs, so the uuids do not correspond);
+- **plain label** — a *third* school#1 student whose episode is **not** yet invoiced.
+
+They are not a before/after pair on one row, and nothing here depends on their being one. The
+property under test is a property of the SCREEN GIVEN AN EPISODE STATE, and it holds in each:
+`already_invoiced: true` produces the labelled trap and the banner, `already_invoiced: false`
+produces the plain label and no banner, and `'scheduled'` is the selection in all three.
 
 ```
 statement url = http://localhost:8001/finance/students/a28c68a6-317b-.../statement | title = Statement — … - Laravel
@@ -501,13 +523,15 @@ Run locally on the changed files only:
 - **`already_invoiced` remaining `false` after a supplementary invoice** is covered by
   `FinanceApiAcceptanceTest` from #259 and was not re-proved here.
 - **The modal's invoice-kind reset between two students, in one browser session.** Re-derived
-  from source and it holds — the effect at
-  `resources/js/components/finance/new-invoice-modal.tsx:339-353` depends on
-  `[isOpen, loadEnrollment, loadPolicies]`; `loadEnrollment` is a `useCallback` over
-  `[student.uuid]` (`:305`), so changing student re-creates it and re-fires the effect; it calls
-  `setEnrollment(null)` (`:284`) and `setInvoiceKind('scheduled')` (`:287`) synchronously before
-  its first `await` (`:290`); and the select renders only inside `{enrollment && (` (`:449`), so
-  it is unmounted for the whole window. **Re-derived, not observed.** §6.3's second-student
+  from source and it holds — in `resources/js/components/finance/new-invoice-modal.tsx`, the
+  `useEffect` that runs on open depends on `[isOpen, loadEnrollment, loadPolicies]`;
+  `loadEnrollment` is a `useCallback` over `[student.uuid]`, so changing student re-creates it and
+  re-fires the effect; it calls `setEnrollment(null)` and `setInvoiceKind('scheduled')`
+  synchronously before its first `await`; and the select renders only inside `{enrollment && (`,
+  so it is unmounted for the whole window. (**Cited by symbol, not by line.** This paragraph
+  carried seven line numbers and all seven were wrong — derived against the working tree mid-edit,
+  every one drifted before the branch was pushed. Naming the symbols ends that, and is the
+  convention the third round of stale citations on this branch earned.) **Re-derived, not observed.** §6.3's second-student
   capture was a fresh page load, so it does not exercise carry-over, and no instrument on this
   platform can red this property — there is no JavaScript test runner
   (`docs/handoff/tickets/no-javascript-test-runner.md`, which now names this exact property).
@@ -606,7 +630,7 @@ from this file is still owed before merge.
   steps has executed on this branch"** and that this report's "the pre-push hook is the gate" was
   **"a forward-looking claim, not evidence"**. §10 is the answer to that and postdates it.
 - It **did not reproduce the drive** (no browser, no `portal_drive`) and took §6's captures **"as
-  told"**, including the two friction findings. It **did not open the eleven PNGs**.
+  told"**, including the two friction findings. It **did not open the ten PNGs** (this report said eleven; there are ten — `before-01`, `-02`, `-04`, `-05`, and `after-01` through `-06`).
 - It **did not reproduce the 996-test finance + RBAC run**, and flagged that given the concurrent
   `pest` it **"cannot say whether the report's run was clean of the same interference"**, noting
   `duration_ms 484730` sits above this project's ~350-440 s band. That caveat is live: §1's
@@ -672,3 +696,208 @@ read-path ticket's §6 said "nothing saying why there are two" allocation lines,
 it right. The two lines carry different invoice numbers and **are** distinguishable; what is
 missing is the **kind**. §6 now says that, and says it is the same claim as §3 rather than a
 stronger one.
+
+---
+
+## 12 — The cold review
+
+Independent session, fresh clone, its own database — the review §11.0 said the branch was still
+owed. Verdict: **ship after this commit.** Severities below are the project lead's, carried as
+given; nothing here is ranked by me.
+
+### 12.1 — Its stated limits
+
+- It **did not run `bin/quality`**. §10 remains this report's only evidence for the gate.
+- It **did not reproduce the drive**. §6's captures are still taken as told.
+- **Its throwaway database was created with `utf8mb4_0900_ai_ci`**, so `SchemaConventionsTest`
+  failed constantly and **trigger-collation behaviour went unverified there**. That is a defect in
+  the credential grant the reviewer was handed — the project lead's, recorded here as such. It is
+  not the reviewer's error and it is not this branch's: `bin/quality`'s own runs (§10) use the
+  project's collation and cover the arm the cold environment could not.
+
+### 12.2 — What it closed
+
+**§1's 996-test regression figure reproduced independently** — 996 tests, 4687 assertions, 2 risky,
+**243 s on an uncontended database**. That closes the caveat §11.1 left open, which was that the
+original run's 484 s elapsed sat above this project's band and could not be cleared of the §10
+collision. Two runs, two environments, same totals.
+
+### 12.3 — The findings
+
+| # | Finding | Severity | What changed |
+| --- | --- | --- | --- |
+| 1 | The `kind` rule's comment justifies `sometimes` with a failure the change cannot produce | fix | Comment rewritten; **arm (f) added**, bite-proved |
+| 2 | Arm (b) does not pin what §5.1 said it pinned — it survives deleting the pre-check | fix | §5.1 corrected; **arm (b2) added**, bite-proved |
+| 3 | Four falsified citations and seven fresh ones | ticket | All eleven re-derived; converted to symbols |
+| 4 | The accessor's docblock overstates `validated()` | ticket | Rewritten as defence in depth |
+| 5 | Two report nits and an orphaned docblock | ticket | Fixed |
+| — | `loadEnrollment` has no cancellation | ticket | **Filed**, not fixed |
+
+---
+
+**Finding 1 — the rule was right for the wrong reason.**
+
+The comment claimed `nullable` "would let `{"kind": "supplemenatry"}` through to `invoiceKind()`'s
+default and silently raise a TERM bill". **False, and I confirmed it rather than taking it:**
+`nullable` exempts only `null`, so `Rule::enum` refuses the typo under either rule and both answer
+422. A misspelt kind was never the exposure.
+
+The real one is an **empty** value. `nullable` short-circuits the remaining rules on `null`, so
+`{"kind": null}` validates and takes the absent-means-scheduled branch; `ConvertEmptyStringsToNull`
+turns `{"kind": ""}` into `null` before any rule runs, so the empty-string case lands identically —
+and `""` is what an untouched `<select>` and most form serialisers post. `sometimes` runs the rules
+whenever the **key is present**, whatever its value, so both are refused. Absence and emptiness are
+different requests and only `sometimes` tells them apart.
+
+**The property had no arm.** Arm (d) covers an absent key, arm (e) a garbled value; nothing covered
+the case between them, and the file was 6/6 green under **either** rule. **Arm (f)** now asserts
+that `{"kind": null}` and `{"kind": ""}` each 422 with `errors.kind` and write nothing to either
+table. Watched red in §12.4.
+
+**Finding 2 — a proof that survived deleting the thing it named.**
+
+§5.1 read M3 as "the concrete demonstration that arm (b)'s message assertion is doing work". Arm (b)
+itself was always honest about what it asserts; the report was not. Verified independently:
+**delete `GenerateInvoice`'s `if ($kind->isEpisodeExclusive()) { $this->assertNoActiveInvoice(…) }`
+block and the entire `tests/Feature/Finance` directory stays green — 662 tests, 662 passed, 3318
+assertions** (arm (b2) filtered out, since it is the arm that reds). The unique index refuses the
+second term bill regardless, and the 1062 translation throws the identical sentence, so the message
+assertion is satisfied by the exception path.
+
+§5.1 now says what the message actually discriminates — this refusal from the other 422s these
+routes emit — and says plainly that it does not discriminate the pre-check from the index.
+
+**Arm (b2) pins the layer, and it has to be an instrumentation assertion.** Two behavioural
+discriminators were tried and both fail, which is recorded in the arm because the next reader will
+reach for them:
+
+- *"the refusal consumes no invoice number"* — `Sequences::next` runs after the pre-check, so on the
+  pre-check path no number is drawn; but `Sequences::next` opens a **nested** transaction, so the
+  increment rolls back with the Action's transaction. The counter ends identical on both paths.
+- *"no INSERT was attempted"* — `DB::listen` fires from `Connection::logQuery`, which runs only
+  after a statement **succeeds**. A failed INSERT is never logged, so its absence is true on both
+  paths and the assertion is vacuous.
+
+What is observable is the pre-check's own SELECT — the kind-filtered existence read
+`InvoiceReadModel::activeScheduledInvoiceIdForEnrollment` issues. It succeeds, so it is logged, and
+it exists only on the pre-check path. Arm (b2) captures statements through `DB::listen` and asserts
+at least one such read ran during the refused POST. "At least one" and not a count: the claim is
+"the pre-check ran", and pinning an exact number would red on an unrelated read of the same table
+and prove nothing more.
+
+**Finding 3 — eleven citations, all re-derived here, none taken from the review.**
+
+Four were falsified **by this branch**, which added the invoice-kind type, `termBillLabel` and the
+select near the top of `new-invoice-modal.tsx` and pushed everything below them down:
+
+- `docs/handoff/tickets/a-malformed-200-renders-the-empty-state-not-the-error-state.md` cited the
+  modal's `setPolicies(selectablePolicies(data ?? []))` at `:291`. At `de48818` that was right; at
+  `b3014c5`, `:291` is `setInvoiceKind('scheduled')` — a line this branch added. Corrected to
+  `:334`, the one place in that table where a line number is the useful identifier because the table
+  is a list of call sites.
+- `ReductionPreCheckTest`'s docblock cited the modal post at `:349` (now `:408`) and the pre-check
+  call site as `InvoiceController.php:114` (now the `assertDiscountPoliciesUsable()` call in
+  `generateForStudent`).
+- `ReductionPreCheckTest`'s "TWO call sites of the pre-check (`:39` and `:83`)". **Re-derived, and I
+  reached a different answer from the brief**, which gave the real sites as `33` and `109`: those
+  are `assertMayReduce()`, which produces a 403 and is not what any arm in that file exercises. The
+  file's subject is `assertDiscountPoliciesUsable()`, whose two call sites are one per public
+  generate method. Worth recording: `:83` was **already wrong at `de48818`**, where it was a
+  docblock line, so that citation had been stale before this branch touched anything.
+- `GenerateInvoiceRequest`'s own "This runs at `InvoiceController:39`, the context refusal at
+  `GenerateInvoice:100`". `:39` happens to still be right; `GenerateInvoice:100` is a docblock line
+  — the refusal is in `handle()`.
+
+Seven more were **fresh, introduced by §9 and §11.2 of this report**, which presented them as
+re-derived from source. They were derived against the working tree mid-edit and every one had
+drifted by the time the branch was pushed: the effect, the `[student.uuid]` dep, `setEnrollment(null)`,
+`setInvoiceKind('scheduled')`, the first `await`, the `{enrollment && (` guard, and the accessor's
+own span.
+
+**All eleven are now cited by symbol wherever a symbol locates the target unambiguously**, and the
+line numbers are gone rather than corrected. That is the cheaper convention and it does not go
+stale — a function name does not move when something is inserted above it.
+`ReductionPreCheckTest`'s docblock now says so in place of its third round of corrected numbers.
+This is the failure `docs/handoff/tickets/stale-path-line-citations.md` exists for, and this branch
+committed it three times.
+
+**Finding 4 — `validated()` is defence in depth, not the guarantee.**
+
+The docblock called it "THE WHOLE GUARANTEE". Measured: swap `validated()` for `input('kind')` and
+`InvoiceKind::from()` for `tryFrom(…) ?? Scheduled`, and every arm still passes — because
+`Rule::enum` has already refused the bad value. **The guarantee is the rule**; if the rule is
+removed or weakened, that line catches nothing and arm (e) is what reds. The docblock now says
+that, and separately says why the line is still worth writing: it cannot be handed a value nothing
+checked if this method is later called from a path that skipped the rule, and `from()` dies loudly
+rather than quietly becoming a term bill.
+
+**Finding 5.**
+
+- §11.1 said "the eleven PNGs"; there are **ten**.
+- §6.3 said "same seat, same class of episode (fresh fixture, so a new student uuid)", implying one
+  student reseeded. The three shots are **three different fixture personas** — an already-invoiced
+  episode on the base build, a different already-invoiced episode on the branch build, and a third
+  student not yet invoiced. §6.3 now says what they are and why nothing depends on their being one
+  row: the property under test is a property of the screen given an episode state, and it holds in
+  each.
+- `GenerateInvoiceRequest`'s `@return list<InvoiceLineSpec>` block was orphaned above another
+  docblock, with `lineSpecs()` carrying none. Pre-existing and phpstan-clean, and **this branch
+  inserted `invoiceKind()` into the middle of it**, putting two unrelated methods between the
+  docblock and its subject. Reattached to `lineSpecs()`.
+
+**The filed ticket — `loadEnrollment` has no cancellation.**
+
+`docs/handoff/tickets/a-late-enrollment-response-repaints-the-wrong-students-dialog.md`. No
+`AbortController`, no generation token, so a late response for student A can `setEnrollment(dataA)`
+under student B's open dialog. **Pre-existing; what this branch changed is the blast radius** —
+`already_invoiced` used to drive only the amber banner and now also drives the banner's
+Supplementary sentence and, through `termBillLabel`, the label on the select itself, so a stale
+`true` prints an instruction to void a term invoice that does not exist, on the control the bursar
+is about to use.
+
+**It misleads; it does not misbill**, and the ticket says so plainly: the POST is addressed by
+`student.uuid`, a prop rather than fetched state, so stale `enrollment` cannot redirect the write,
+and the server re-resolves the episode and applies its own guard. The worst case is a wasted trip
+or an unwarned 422. Nothing on this platform can red it — cross-referenced to
+`no-javascript-test-runner.md`, with the note that a drive cannot reliably reproduce a promise-
+ordering race either, so a drive that misses it is not evidence of absence. **Not fixed here.**
+
+### 12.4 — The watched reds for the two new arms
+
+Both applied alone; the file restored from a copy afterwards and re-run green. Raw:
+
+```
+### BASELINE (green)
+{"tool":"pest","result":"passed","tests":8,"passed":8,"assertions":44,"duration_ms":9648}
+
+### M7 — 'sometimes' -> 'nullable' on the kind rule
+{"tool":"pest","result":"failed","tests":8,"passed":7,"assertions":37,"duration_ms":9558,"failed":1}
+   FAIL f — Expected response status code [422] but received 201.
+
+### M8 — GenerateInvoice's isEpisodeExclusive pre-check block DELETED
+{"tool":"pest","result":"failed","tests":8,"passed":7,"assertions":44,"duration_ms":10116,"failed":1}
+   FAIL b2 — Expecting [] not to be empty.
+
+### M8b — whole tests/Feature/Finance with that block still deleted, arm (b2) filtered out
+{"tool":"pest","result":"passed","tests":662,"passed":662,"assertions":3318,"duration_ms":156605}
+
+### RESTORED (green)
+{"tool":"pest","result":"passed","tests":8,"passed":8,"assertions":44,"duration_ms":9942}
+```
+
+**M7's red is the finding.** `Expected 422 but received 201` on arm (f) alone — under `nullable`,
+an empty `kind` does not refuse, it **creates a term bill and returns 201**. That is the silent
+wrong document the rewritten comment now describes, measured rather than argued.
+
+**M8's two lines are one finding read twice.** Arm (b2) reds with `Expecting [] not to be empty` —
+the pre-check's SELECT is gone, so nothing matched. **M8b is the part that matters:** with the same
+block still deleted, the entire Finance directory passes 662/662. Everything except the arm written
+for it is blind to that deletion — including arm (b), which is what §5.1 claimed otherwise.
+
+### 12.5 — A process note on the mutation runs
+
+M7's restore was done with `git checkout -- <file>` while that file also held **uncommitted** work
+from Fixes 1, 4 and 5. It restored the file to `HEAD` and discarded all three, which was caught
+immediately (a `grep` for the new text returned 0) and redone from the edit script — but the M7 red
+above was produced against the correct tree and re-verified after. Mutation restores in this session
+now copy from a saved file rather than going through git, which is what M8 used.

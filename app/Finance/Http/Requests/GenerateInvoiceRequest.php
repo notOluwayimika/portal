@@ -55,11 +55,27 @@ class GenerateInvoiceRequest extends FormRequest
             // construction — an absent key runs no rule at all, so nothing that already works can
             // start failing here.
             //
-            // A PRESENT-BUT-WRONG VALUE IS A FIELD ERROR, NOT A FALLBACK. The two are easy to
-            // conflate and they are opposite: `nullable` would let `{"kind": "supplemenatry"}`
-            // through to invoiceKind()'s default and silently raise a TERM bill for a request that
-            // asked for a supplementary charge — a typo billing the wrong document. Rule::enum
-            // refuses it as `errors.kind`, which the modal already renders (errorLinesFrom).
+            // `sometimes` AND NOT `nullable`, AND THE REASON IS AN EMPTY VALUE — NOT A TYPO. An
+            // earlier version of this comment said `nullable` "would let `{"kind": "supplemenatry"}`
+            // through to invoiceKind()'s default and silently raise a TERM bill". That is FALSE and
+            // was measured false: `nullable` exempts only null, so `Rule::enum` refuses the typo
+            // under either rule and both answer 422. A misspelt kind was never the exposure.
+            //
+            // What `nullable` would actually let through is an EMPTY one. `nullable` short-circuits
+            // the remaining rules when the value is null, so `{"kind": null}` would validate, arrive
+            // here as null, and take the absent-means-scheduled branch. `ConvertEmptyStringsToNull`
+            // runs before any rule, so `{"kind": ""}` becomes null first and lands the same way —
+            // and `""` is what an untouched `<select>` and most form serialisers post. A client that
+            // renders the control and never touches it would get a TERM bill with a 201 while
+            // believing it had sent a choice. THAT is the silent wrong document, and `sometimes`
+            // closes it: `sometimes` runs the rules whenever the KEY IS PRESENT, whatever its value,
+            // so an explicit null or `""` reaches `Rule::enum` and is refused as `errors.kind` —
+            // which the modal already renders (errorLinesFrom). Absence and emptiness are different
+            // requests and only `sometimes` tells them apart.
+            //
+            // Pinned by SupplementaryInvoiceWireTest's arm (f), whose watched red is exactly this
+            // substitution — `'sometimes'` → `'nullable'` — measured: arm (f) alone goes red with
+            // "Expected response status code [422] but received 201", the silent term bill.
             //
             // NO NEW PERMISSION. Supplementary reuses `finance.invoice.generate`, on the bulk-run
             // ruling (routes/endpoints/finance.php): the authority to raise the document is the
@@ -252,8 +268,10 @@ class GenerateInvoiceRequest extends FormRequest
      *   - a super_admin with NO School selected does resolve it unscoped, and is refused without
      *     anything being written — but WHICH LAYER refuses depends on the policy, and the earlier
      *     wording of this bullet ("GenerateInvoice:100 refuses it for want of a context") was made
-     *     false by this very method. This runs at InvoiceController:39, the context refusal at
-     *     GenerateInvoice:100, so for an active no-approval policy the Action answers ("No active
+     *     false by this very method. This runs from `InvoiceController::generate()` and
+     *     `::generateForStudent()`, the context refusal from `GenerateInvoice::handle()` — both cited
+     *     by symbol because the line numbers that were here (`InvoiceController:39`,
+     *     `GenerateInvoice:100`) went stale — so for an active no-approval policy the Action answers ("No active
      *     School context: an invoice cannot be raised.") and for a retired, superseded or
      *     approval-requiring one THIS method answers first, with the field error. Both arms are
      *     pinned in ReductionPreCheckTest. The consequence worth naming: that principal can now
@@ -338,21 +356,21 @@ class GenerateInvoiceRequest extends FormRequest
     }
 
     /**
-     * Typed, validated line specs for the Action — the FormRequest is where the
-     * wire becomes domain vocabulary, so the Action never sees raw request data.
-     *
-     * @return list<InvoiceLineSpec>
-     */
-    /**
      * WHICH INVOICE THE CALLER IS ASKING FOR — the wire's `kind`, become domain vocabulary here so
      * neither controller spells the default a second time.
      *
-     * READS `validated()`, NOT `input()`, AND THE DIFFERENCE IS THE WHOLE GUARANTEE. `validated()`
-     * carries only keys a rule passed, so an invalid value can never arrive here: rules() has
-     * already turned it into a 422 keyed on `kind`. `input()` would hand this method the raw string
-     * and leave `from()` to throw a ValueError — a 500 — or, with `tryFrom()`, to fall back to
-     * Scheduled and bill the wrong document silently. The two failure modes are why this is not a
-     * one-liner over `input()`.
+     * READS `validated()`, NOT `input()`, AS DEFENCE IN DEPTH — NOT AS THE GUARANTEE. This docblock
+     * called it "THE WHOLE GUARANTEE" and that overstated it: swap `validated()` for
+     * `input('kind')` and `InvoiceKind::from()` for `tryFrom(…) ?? Scheduled`, and every arm of
+     * SupplementaryInvoiceWireTest still passes, because `Rule::enum` in rules() has already refused
+     * the bad value before this method runs. **The guarantee is the rule.** If the rule is ever
+     * removed or weakened, this line does not catch it — arm (e) does.
+     *
+     * It is still the right line to write. `validated()` carries only keys a rule passed, so this
+     * method cannot be handed a value nothing checked even if it is later called from a path that
+     * skipped the rule, and `from()` rather than `tryFrom()` means a value that somehow arrives
+     * unvalidated dies loudly as a ValueError instead of quietly becoming a term bill. That is a
+     * second line of defence behind the rule, which is worth having and is not the same claim.
      *
      * ABSENT IS SCHEDULED, stated once, in one place. Both generate routes and every existing
      * caller — the harness POST, the bulk run's job, the seeder, forty-odd tests — send no `kind`
@@ -376,6 +394,12 @@ class GenerateInvoiceRequest extends FormRequest
         return collect($this->lineSpecs())->contains(fn (InvoiceLineSpec $spec) => $spec->isReduction());
     }
 
+    /**
+     * Typed, validated line specs for the Action — the FormRequest is where the
+     * wire becomes domain vocabulary, so the Action never sees raw request data.
+     *
+     * @return list<InvoiceLineSpec>
+     */
     public function lineSpecs(): array
     {
         // MEMOIZED, AND THE SECOND REASON IS THE ONE THAT MATTERS.

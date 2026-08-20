@@ -1,6 +1,8 @@
 # TICKET — a merged pull request does not mean the branch head merged
 
-**Status:** open. Raised by PR #265 (`feat/u6-bulk-run-screen` → `staging`), which GitHub reported
+**Status:** the DETECTION is built and shipped — `bin/landed`, on branch `feat/landed-check`.
+The two INSTANCES it was raised for are **both still open on `origin/staging`** as of 2026-08-20;
+see "Closing section" at the bottom, which re-derives them. Raised by PR #265 (`feat/u6-bulk-run-screen` → `staging`), which GitHub reported
 merged while two commits of that branch — including the only behavioural fix on it — were not in
 `staging` and were not in the merge commit.
 
@@ -223,3 +225,111 @@ commands above would have surfaced all of it.
   step earlier: a gate reporting on itself rather than on the outcome.
 - `docs/handoff/tickets/fail-closed-allowlist-is-opt-in.md` — why `fail_closed_models` had a
   registration to miss in the first place.
+
+---
+
+## Closing section — the check exists
+
+`bin/landed <branch> [target]`, with `tests/Feature/Quality/LandedCheckCoverageTest.php` behind it.
+Written on `feat/landed-check`, off `origin/staging` at `7894c39` (the #266 merge).
+
+### What it does
+
+Four checks, from refs alone, after one `git fetch origin --prune` — which is the script's only
+mutation, stated in its docblock and in `--help`. It never pushes, merges, checks out, resets or
+writes a branch ref, and it never calls `gh`.
+
+| # | Question | Verdict |
+| - | -------- | ------- |
+| 0 | could origin be reached? | fetch failure → **exit 2**, never 0 |
+| 1 | `origin/<target>..origin/<branch>` empty? | non-empty → fail, commits listed. **Instance A** |
+| 2 | `origin/<target>..<target>` empty? | non-empty → fail, "not on origin". **Instance B** |
+| 3 | `<target>..origin/<target>` empty? | non-empty → **information**, not a failure |
+| 4 | did the merge take the head the branch now points at? | mismatch → fail, both shas named |
+
+Exit codes: `0` all checks pass · `1` a check failed · `2` could not determine. **2 is not collapsed
+into 1.** A failed fetch, an unknown branch and an absent common ancestor are *unknown*, not *wrong*;
+accepting one for the other is the defect class this whole ticket is about, and a green meaning
+"I could not look" would be it wearing the script's own face.
+
+Check 4 finds the merge by **merge-base**: the merge commit on `origin/<target>` whose *second*
+parent equals `merge-base(origin/<target>, origin/<branch>)`. Matching instead on "the newest merge
+whose second parent is an ancestor of the branch" is wrong and was rejected with an arm — a branch
+cut from the target after some *other* branch merged carries that other branch's head in its
+ancestry, and would be reported as a stale-head mismatch against a merge that has nothing to do with
+it. Where no such merge exists the script distinguishes two further outcomes rather than forcing one:
+the branch is *contained anyway* (fast-forward, or the branch merged the target back in after its own
+PR closed) — reported, exit 0, with wording that does not claim a merge was checked; or it is *not
+contained* — "no merge of `<branch>` found on `origin/<target>`", exit 1.
+
+### The arms that prove it fires
+
+Eight, each planting a real repository under `mktemp -d` with a bare repo wired as `origin` by path,
+so every arm runs offline. Each asserts the exit code **and** the message: three of the failure modes
+exit 1, so a code-only arm would pass while the script reported the wrong one.
+
+| Arm | Planted | Asserts |
+| --- | ------- | ------- |
+| a | merged at its head, everything pushed | exit 0, PR subject read from the merge commit |
+| b | **instance A** — merge took an earlier sha, two commits added after | exit 1, both shas, "2 commit(s) between them", 2 checks failed |
+| c | **instance B** — local target one commit ahead of origin | exit 1, "not on origin", exactly 1 check failed |
+| d | local target behind origin, otherwise clean | exit 0, informational line present |
+| e | never merged, cut *past an unrelated merge* | exit 1, "no merge of feat/x found", no mismatch wording |
+| f | origin pointed at a nonexistent path, from a healthy state | **exit 2**, not 1, not 0 |
+| g | landed by fast-forward, no merge commit | exit 0, and the ordinary green's wording is *absent* |
+| h | branch deleted from origin | exit 2, "cannot determine whether it landed" |
+
+Arms (f) and (h) build a fully healthy, fully pushed state *first* and only then break the remote, so
+a script that ignored the failure would sail through every check and print a green. That is what makes
+them non-vacuous rather than merely present.
+
+Every arm was bite-proved by breaking `bin/landed` one line at a time; the mutation each caught is in
+`docs/handoff/reports/feat-landed-check.md`. Two mutations initially **survived** and the arms were
+strengthened until they did not — the no-merge outcome could not be told from check 1 by exit code
+alone (the count in the verdict line now discriminates), and the merge-base match had no arm at all
+until (e) gained its unrelated merge.
+
+### What a green does not mean
+
+It proves `origin/<target>` contains every commit on `origin/<branch>`, and that the merge took the
+head `origin/<branch>` now points at. It proves **nothing** about whether the merge was correct,
+whether the reviewer read the right diff, whether the merged tree passes `bin/quality`, or whether the
+branch should have been merged. It also cannot see a squash or rebase merge as a merge: those leave
+neither a merge commit nor ancestry, and arm (e)'s outcome is what such a branch would report.
+
+`bin/landed` is deliberately **not** wired into `bin/quality` (that floor is offline by design,
+`.githooks/pre-push:3-20`, and the failure happens after a merge, which the per-push hook never
+observes) and **not** into a `post-merge` hook (local-only; it never fires for a web merge, which is
+how instance A happened). It is documented in `CLAUDE.md` § Workflow, where `.githooks/pre-push:20`
+already points readers.
+
+### The open question this does NOT answer
+
+The ticket's question — stale head at merge time, or commits pushed afterwards — **is answered
+above**, in "Was the head stale at merge time…", from `gh pr view 265` and commit timestamps: the two
+commits were written roughly four hours *after* the merge, so GitHub merged exactly the head the PR
+pointed at. `bin/landed` does not answer it and could not: it reads refs, and refs carry no timeline.
+It detects the outcome, not the cause. Had the cause been the other one, the same check would have
+fired the same way, which is the argument for it.
+
+The ticket's other open questions are untouched: whether a fix and its only test should be separable
+commits, and whether branches should be deleted at merge so they cannot drift.
+
+### Both instances are still open
+
+Re-derived on 2026-08-20 against `origin/staging` at `7894c39`, and `bin/landed` reports them:
+
+```
+$ git log --oneline origin/staging..origin/feat/u6-bulk-run-screen
+6e770ae docs(finance): the Referer mechanism was already written down, and the drive now prints two tables
+c7ec9a6 fix(finance): the run tables are fail-closed, and three documents stop claiming more than was measured
+
+$ git show origin/staging:config/rbac.php | sed -n "/'fail_closed_models'/,/^    \],/p" | grep -c "::class"
+10
+```
+
+`fail_closed_models` still stands at **ten** entries on `origin/staging`, with `BulkInvoiceRun` and
+`BulkInvoiceRunRow` still absent, and the local merge `5a3f212` that closed it is still unpushed —
+local `staging` is now *diverged*, three commits ahead of origin and three behind, because #266
+merged in the meantime. Building the detector did not land the fix; that is a separate push and is
+not part of this branch.

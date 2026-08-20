@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+#
+# bin/landed — does the remote contain what was reviewed?
+#
+# THE DEFECT THIS ANSWERS. A merged pull request is not evidence that the branch merged.
+# PR #265 reported "Merged" while two commits of its branch — including the only
+# behavioural change on it, the fail_closed_models registration for BulkInvoiceRun and
+# BulkInvoiceRunRow — were not in the merge and are still not on origin/staging. The merge
+# commit's second parent was 37500c8 (a conflict-resolution merge), not the branch tip
+# 6e770ae. Nothing looked at origin again after the button was pressed, so nothing noticed.
+# The remedy for that gap then repeated the shape one step down: it was merged LOCALLY and
+# never pushed, so origin/staging kept a fail-open finance table while the working tree read
+# correct. `git status` printed "ahead of origin/staging by 1 commit" the whole time.
+# See docs/handoff/tickets/a-merged-pull-request-does-not-mean-the-branch-head-merged.md.
+#
+# MORE PRINTED TEXT IS NOT THE MECHANISM — the second instance was already visible in
+# `git status` and was read by nobody. What was missing is a command with an EXIT CODE, so
+# that "it landed" is a claim you can only make by running something that can refuse.
+#
+# Usage:  bin/landed <branch> [target]        # target defaults to staging
+#
+# THE ONE MUTATION. This is read-only except for `git fetch origin --prune`, which it always
+# runs and which is the only thing it writes (remote-tracking refs). It never pushes, merges,
+# checks out, resets or writes a branch ref. A verification tool that changes what it
+# verifies is not one.
+#
+# It operates on the repository containing the CURRENT DIRECTORY — deliberately, unlike
+# bin/quality and bin/quality-promote which cd to their own repo root. This is a question
+# about refs, not about a tree, and a script hard-wired to one checkout cannot be tested
+# against planted repositories.
+#
+# EXIT CODES — 0 pass, 1 a check failed, 2 could not determine (fetch failed, no such
+# branch, not a git repository). 2 IS NOT COLLAPSED INTO 1 ON PURPOSE: "wrong" and "unknown"
+# are different answers, and accepting one for the other is the entire defect class this
+# exists to close. In particular a failed fetch NEVER exits 0 — a green meaning "I could not
+# look" would be the same bug wearing this script's face.
+#
+# THE HONEST LIMIT, in the register of bin/quality's step-15 comment and .githooks/pre-push's
+# header. A green here proves exactly two things: that origin/<target> contains every commit
+# on origin/<branch>, and that the merge on origin/<target> took the branch head that
+# origin/<branch> now points at. It proves NOTHING about whether the merge was correct,
+# whether the reviewer read the right diff, whether the merged tree passes bin/quality, or
+# whether the branch should have been merged at all. It answers one question and no others.
+# It also cannot see a squash or rebase merge as a merge — see check 4's contained-anyway
+# branch, which reports that case rather than passing or failing it.
+#
+# NOT WIRED INTO bin/quality, deliberately. That gate is offline and self-contained
+# (.githooks/pre-push:3-20), and the failure this catches happens AFTER a merge — a moment
+# the per-push hook never observes. A network call in the per-push floor would make every
+# push depend on GitHub being reachable, to catch nothing the push itself can cause.
+set -uo pipefail
+
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+
+usage() {
+    cat <<'USAGE'
+bin/landed — does the remote contain what was reviewed?
+
+  Usage:  bin/landed <branch> [target]        # target defaults to staging
+
+Run it after ANY merge. It fetches origin (its only mutation: `git fetch origin --prune`)
+and then answers, from refs alone:
+
+  1. does origin/<target> contain every commit on origin/<branch>?
+  2. is your local <target> ahead of origin — i.e. is a merge sitting unpushed?
+  3. is your local <target> behind origin?                       (information, not a failure)
+  4. did the merge on origin/<target> take the head origin/<branch> now points at?
+
+It never pushes, merges, checks out, resets or writes a branch ref, and it never calls `gh`.
+
+Exit codes:  0 all checks pass · 1 a check failed · 2 could not determine.
+A failed fetch exits 2, never 0 — a green that means "I could not look" is the bug itself.
+
+A green proves origin/<target> contains origin/<branch> and that the merge took the reviewed
+head. It proves nothing about whether the merge was correct or the merged tree is green.
+USAGE
+}
+
+case "${1:-}" in
+    -h|--help|help) usage; exit 0 ;;
+esac
+
+BRANCH="${1:-}"
+TARGET="${2:-staging}"
+
+if [ -z "$BRANCH" ]; then
+    usage >&2
+    printf '\n%s✗ no branch given%s\n' "$RED" "$OFF" >&2
+    exit 2
+fi
+
+# Tolerate `bin/landed origin/feat/x` — the remote-tracking name is what a reader has in
+# front of them, and refusing it teaches nothing.
+BRANCH="${BRANCH#origin/}"
+TARGET="${TARGET#origin/}"
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    printf '%s✗ not a git repository — cannot determine anything%s\n' "$RED" "$OFF" >&2
+    exit 2
+fi
+
+BR_REF="refs/remotes/origin/$BRANCH"
+TG_REF="refs/remotes/origin/$TARGET"
+LOCAL_TG="refs/heads/$TARGET"
+
+printf '%s%sLANDED?%s  %s → %s\n\n' "$BOLD" "$YELLOW" "$OFF" "$BRANCH" "$TARGET"
+
+# --- 0. fetch ----------------------------------------------------------------
+# The only write this script performs. If it fails there is nothing to compare against and
+# every check below would report on a stale snapshot, so this is exit 2 and not exit 0.
+if ! fetch_out="$(git fetch --prune origin 2>&1)"; then
+    printf '%s✗ could not reach origin — this check is meaningless offline%s\n' "$RED" "$OFF"
+    [ -n "$fetch_out" ] && printf '%s%s%s\n' "$DIM" "$fetch_out" "$OFF"
+    exit 2
+fi
+printf '%s✓%s fetched origin (--prune)\n' "$GREEN" "$OFF"
+
+if ! git rev-parse --verify --quiet "$BR_REF" >/dev/null; then
+    printf '%s✗ no such branch origin/%s — cannot determine whether it landed%s\n' "$RED" "$BRANCH" "$OFF"
+    printf '%s  (a branch deleted at merge is indistinguishable from one that never existed)%s\n' "$DIM" "$OFF"
+    exit 2
+fi
+if ! git rev-parse --verify --quiet "$TG_REF" >/dev/null; then
+    printf '%s✗ no such branch origin/%s — cannot determine anything%s\n' "$RED" "$TARGET" "$OFF"
+    exit 2
+fi
+
+BR_SHA="$(git rev-parse "$BR_REF")"
+TG_SHA="$(git rev-parse "$TG_REF")"
+printf '%s  origin/%s = %s · origin/%s = %s%s\n\n' "$DIM" "$BRANCH" "${BR_SHA:0:8}" "$TARGET" "${TG_SHA:0:8}" "$OFF"
+
+FAILED=0
+CONTAINED_NO_MERGE=0
+
+# --- 1. the branch may not hold commits the target lacks ---------------------
+# This is instance A of the ticket, and it also catches instance B from the other side.
+OUTSTANDING="$(git rev-list --count "$TG_REF..$BR_REF")"
+if [ "$OUTSTANDING" != "0" ]; then
+    FAILED=$((FAILED + 1))
+    printf '%s✗ origin/%s has %s commit(s) that origin/%s does not have%s\n' \
+        "$RED" "$BRANCH" "$OUTSTANDING" "$TARGET" "$OFF"
+    git log --oneline "$TG_REF..$BR_REF" | sed 's/^/    /'
+else
+    printf '%s✓%s origin/%s contains every commit on origin/%s\n' "$GREEN" "$OFF" "$TARGET" "$BRANCH"
+fi
+
+# --- 2. the LOCAL target may not be ahead of origin --------------------------
+# Instance B: the merge that closes a gap, sitting on one machine. Only meaningful when a
+# local branch of that name exists — a clone that never checked out staging has nothing to
+# be ahead of.
+if git rev-parse --verify --quiet "$LOCAL_TG" >/dev/null; then
+    AHEAD="$(git rev-list --count "$TG_REF..$LOCAL_TG")"
+    if [ "$AHEAD" != "0" ]; then
+        FAILED=$((FAILED + 1))
+        printf '%s✗ your local %s has %s commit(s) that are not on origin%s\n' "$RED" "$TARGET" "$AHEAD" "$OFF"
+        git log --oneline "$TG_REF..$LOCAL_TG" | sed 's/^/    /'
+        printf '%s  a merge nobody else can see has not landed. Push %s.%s\n' "$DIM" "$TARGET" "$OFF"
+    else
+        printf '%s✓%s your local %s is not ahead of origin\n' "$GREEN" "$OFF" "$TARGET"
+    fi
+
+    # --- 3. behind is INFORMATION, not a failure -----------------------------
+    # Being behind is the normal state of any checkout between pulls. Being ahead is the
+    # defect. Reporting the two the same way would train the reader to ignore both.
+    BEHIND="$(git rev-list --count "$LOCAL_TG..$TG_REF")"
+    if [ "$BEHIND" != "0" ]; then
+        printf '%sℹ your local %s is %s commit(s) behind origin — normal; `git pull --ff-only` when you need them%s\n' \
+            "$YELLOW" "$TARGET" "$BEHIND" "$OFF"
+    fi
+else
+    printf '%sℹ no local %s branch — the ahead/behind checks do not apply%s\n' "$YELLOW" "$TARGET" "$OFF"
+fi
+
+# --- 4. the merge must have taken the head the branch now points at ----------
+# What makes instance A DETECTABLE rather than merely visible in hindsight. The merge that
+# took this branch is the one whose SECOND parent is the merge-base of the two refs: with a
+# healthy merge that merge-base IS the branch head, and with a stale one it is the older
+# commit the merge actually took. Matching on the merge-base rather than on "any second
+# parent that is an ancestor of the branch" is what stops an UNRELATED branch's merge from
+# being reported as this branch's: a branch cut from the target after some other merge has
+# that merge's second parent in its ancestry too, and would otherwise match it.
+MB="$(git merge-base "$TG_REF" "$BR_REF" 2>/dev/null || true)"
+if [ -z "$MB" ]; then
+    FAILED=$((FAILED + 1))
+    printf '%s✗ origin/%s and origin/%s have no common ancestor%s\n' "$RED" "$BRANCH" "$TARGET" "$OFF"
+else
+    # `git rev-list --merges --parents` prints "<merge> <parent1> <parent2> …", newest first;
+    # field 3 is the second parent. One pass, one process, no cap.
+    MERGE="$(git rev-list --merges --parents "$TG_REF" | awk -v mb="$MB" '$3 == mb { print $1; exit }')"
+
+    if [ -n "$MERGE" ]; then
+        # The PR number, when there is one, is READ FROM THE MERGE COMMIT'S OWN MESSAGE and
+        # labelled as such. `gh` is deliberately not consulted: it can be absent,
+        # unauthenticated or rate-limited, and every fact here is answerable from refs.
+        SUBJECT="$(git log -1 --format=%s "$MERGE")"
+        if [ "$MB" = "$BR_SHA" ]; then
+            printf '%s✓%s the merge on origin/%s took the head origin/%s points at (%s)\n' \
+                "$GREEN" "$OFF" "$TARGET" "$BRANCH" "${BR_SHA:0:8}"
+            printf '%s  merge %s — "%s" (subject read from the merge commit)%s\n' \
+                "$DIM" "${MERGE:0:8}" "$SUBJECT" "$OFF"
+        else
+            FAILED=$((FAILED + 1))
+            GAP="$(git rev-list --count "$MB..$BR_REF")"
+            printf '%s✗ PR merged %s, branch head is %s, %s commit(s) between them%s\n' \
+                "$RED" "${MB:0:8}" "${BR_SHA:0:8}" "$GAP" "$OFF"
+            printf '%s  merge %s — "%s" (subject read from the merge commit)%s\n' \
+                "$DIM" "${MERGE:0:8}" "$SUBJECT" "$OFF"
+            git log --oneline "$MB..$BR_REF" | sed 's/^/    /'
+        fi
+    elif git merge-base --is-ancestor "$BR_REF" "$TG_REF"; then
+        # No merge commit, yet the branch is contained. A fast-forward merge, or the branch
+        # merged the target back into itself after its own PR closed. Neither is the defect
+        # and neither is a clean pass of check 4, so it is reported as its own outcome.
+        CONTAINED_NO_MERGE=1
+        printf '%sℹ no merge commit of %s found on origin/%s, but origin/%s is contained in origin/%s%s\n' \
+            "$YELLOW" "$BRANCH" "$TARGET" "$BRANCH" "$TARGET" "$OFF"
+        printf '%s  fast-forward, or the branch merged %s back in after its own merge. Check 1 is the signal here.%s\n' \
+            "$DIM" "$TARGET" "$OFF"
+    else
+        # A DISTINCT OUTCOME from a mismatch, and it must not be reported as one: nothing on
+        # origin/<target> merged this branch, so there is no "reviewed head" to disagree
+        # with. A squash or rebase merge also lands here, because it leaves no merge commit
+        # and no ancestry — this script cannot tell it from a branch that never merged.
+        FAILED=$((FAILED + 1))
+        printf '%s✗ no merge of %s found on origin/%s%s\n' "$RED" "$BRANCH" "$TARGET" "$OFF"
+        printf '%s  (a squash or rebase merge leaves neither a merge commit nor ancestry, and is%s\n' "$DIM" "$OFF"
+        printf '%s   indistinguishable here from a branch that never merged at all)%s\n' "$DIM" "$OFF"
+    fi
+fi
+
+# --- verdict -----------------------------------------------------------------
+echo
+if [ "$FAILED" -eq 0 ]; then
+    # TWO DIFFERENT GREENS, AND THEY MUST NOT SHARE A SENTENCE. Where there is no merge commit
+    # there is no "reviewed head" to have been taken, and a verdict that claimed one anyway would
+    # be asserting more than the checks above established — which is the reporting habit the ticket
+    # this script closes is about.
+    if [ "$CONTAINED_NO_MERGE" -eq 1 ]; then
+        printf '%s✓ landed%s — origin/%s contains origin/%s, with no merge commit to check.\n' \
+            "$GREEN" "$OFF" "$TARGET" "$BRANCH"
+    else
+        printf '%s✓ landed%s — origin/%s contains origin/%s, and the merge took the reviewed head.\n' \
+            "$GREEN" "$OFF" "$TARGET" "$BRANCH"
+    fi
+    printf '%sThis says nothing about whether the merge was correct or the merged tree is green.%s\n' "$DIM" "$OFF"
+    exit 0
+fi
+
+printf '%s✗ NOT landed%s (%d check(s) failed) — do not report %s as merged.\n' "$RED" "$OFF" "$FAILED" "$BRANCH"
+exit 1

@@ -80,6 +80,19 @@ ADR 0053) → milestone merge to `main`. Never stack branches. Conventional
 Commits with scope. Rollout flags in `config/rbac.php` / `config/auth.php` ship
 dark.
 
+**A merged pull request is not evidence that the branch merged.** After any merge, run
+`bin/landed <branch>` — target defaults to `staging`. It fetches origin (its only
+mutation) and answers, from refs alone, whether `origin/<target>` contains every
+commit on `origin/<branch>` and whether the merge took the head `origin/<branch>` now
+points at. Nothing else answers that: PR #265 reported merged while two commits — the
+only behavioural change on the branch among them — stayed outside `staging`, and the
+local merge that closed the gap then sat unpushed while `git status` announced it to
+nobody. Exit 0 landed · 1 a check failed · 2 could not determine, and a failed fetch
+is 2, never 0. A green proves the remote contains what was reviewed; it proves nothing
+about whether the merge was correct or the merged tree passes the gate. It is
+deliberately **not** in `bin/quality` — that floor is offline, and the failure happens
+after a merge, which the per-push hook never observes.
+
 **Branch names carry a Conventional-Commits type prefix**, so the branch says what
 kind of change it is before anyone opens it — same vocabulary as the commits:
 `feat/` · `fix/` · `chore/` · `docs/` · `ci/` · `refactor/` · `test/` · `perf/`

@@ -20,7 +20,9 @@ use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -202,7 +204,9 @@ it('carries the roster into the next participating slot, opens the target active
     // Source closed, so the orchestrator will not re-select it.
     expect($w['source']->fresh()->status)->toBe('closed');
 
-    // Link AND status together — the CHECK rejects a promoted row with a NULL link.
+    // Link AND status together. NOT because "the CHECK rejects a NULL link" — that CHECK is inert on
+    // production's MySQL 5.7 — but because this job writing both in one update is the only thing
+    // holding the invariant there. See the dedicated test below.
     $carried = StudentCurriculum::where('student_id', $student->id)
         ->where('curriculum_id', $target->id)
         ->first();
@@ -362,6 +366,74 @@ it('is idempotent — a second run creates no duplicate curriculum, episodes or 
     expect(StudentSubject::where('student_curriculum_id',
         StudentCurriculum::where('student_id', $student->id)->where('curriculum_id', $target->id)->value('id')
     )->count())->toBe($subjectsAfterFirst);
+});
+
+it('refuses a completed target term rather than reaching backward into backfill territory', function () {
+    $w = mft_world([1, 2]);
+    mft_term($w['session'], 2, TermStatusEnum::COMPLETED->value);
+    mft_enroll($w);
+
+    mft_run($w);
+
+    expect(mft_target($w, 2))->toBeNull();
+    expect($w['source']->fresh()->status)->toBe('active');
+});
+
+/**
+ * THE PRODUCTION-MEANINGFUL PROMOTION-LINK ASSERTION.
+ *
+ * student_curricula_promoted_requires_link is a CHECK, and production is MySQL 5.7.23 where CHECK is
+ * parsed and ignored — so asserting "the database rejects a promoted row with a NULL link" would
+ * prove something true only on a developer's 8.0 machine. What actually holds the invariant on
+ * production is this job writing status and promoted_to_id in ONE update. That is an application
+ * fact, so it is asserted at the application level, here.
+ */
+it('leaves no promoted episode without its link — the invariant the CHECK cannot carry on 5.7', function () {
+    $w = mft_world([1, 2]);
+    mft_term($w['session'], 2);
+    mft_enroll($w);
+    mft_enroll($w);
+    mft_enroll($w, StudentStatusEnum::REPEATED->value);
+
+    mft_run($w);
+
+    $danglingPromoted = StudentCurriculum::where('status', StudentStatusEnum::PROMOTED->value)
+        ->whereNull('promoted_to_id')
+        ->count();
+
+    expect($danglingPromoted)->toBe(0);
+
+    // And every link resolves to a LIVE episode of the SAME pupil — the thing the composite FK
+    // guarantees structurally and which therefore must hold in the data too.
+    $promoted = StudentCurriculum::where('status', StudentStatusEnum::PROMOTED->value)->get();
+    expect($promoted)->toHaveCount(3);
+
+    foreach ($promoted as $episode) {
+        $targetEpisode = StudentCurriculum::find($episode->promoted_to_id);
+        expect($targetEpisode)->not->toBeNull();
+        expect($targetEpisode->student_id)->toBe($episode->student_id);
+    }
+});
+
+/**
+ * The composite FK (promoted_to_id, student_id, school_id) DOES enforce on 5.7, unlike the CHECK
+ * beside it — so it is worth bite-proving that it bites, rather than assuming.
+ */
+it('cannot link a promotion to another pupil episode — composite FK, enforced on 5.7 too', function () {
+    $w = mft_world([1, 2]);
+    mft_term($w['session'], 2);
+    [, $enrollmentA] = mft_enroll($w);
+    [, $enrollmentB] = mft_enroll($w);
+
+    mft_run($w);
+
+    // B's carried episode belongs to pupil B; pointing A's episode at it must be refused.
+    $bCarried = StudentCurriculum::find($enrollmentB->fresh()->promoted_to_id);
+
+    expect(fn () => DB::table('student_curricula')
+        ->where('id', $enrollmentA->id)
+        ->update(['promoted_to_id' => $bCarried->id])
+    )->toThrow(QueryException::class);
 });
 
 it('refuses a curriculum whose school does not match the declared schoolId', function () {

@@ -218,10 +218,15 @@ class MoveFromTermJob implements ShouldQueue
             return null;
         }
 
-        if ($targetTerm->status === TermStatusEnum::COMPLETED) {
-            Log::warning('MoveFromTermJob: target term is completed, aborting', [
+        // ALLOWLIST, not "anything but completed". `upcoming` is the NORMAL case — at the close of
+        // term N its successor has not started — and `active` covers running slightly late, which is
+        // still a forward move. Everything else is refused, so a status added to TermStatusEnum later
+        // is rejected by default rather than silently accepted as a promotion target.
+        if (! in_array($targetTerm->status, [TermStatusEnum::UPCOMING, TermStatusEnum::ACTIVE], true)) {
+            Log::warning('MoveFromTermJob: target term is not upcoming or active, aborting', [
                 'curriculum_id' => $this->curriculum->id,
                 'target_term_id' => $targetTerm->id,
+                'target_term_status' => $targetTerm->status->value,
             ]);
 
             return null;

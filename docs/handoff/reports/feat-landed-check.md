@@ -11,6 +11,11 @@ amended: `CLAUDE.md` § Workflow and the ticket itself.
 
 ## 1. The two instances, re-derived
 
+> **§8 SUPERSEDES THIS SECTION'S ATTRIBUTION OF THE DETECTION, and §9 supersedes its account of
+> the fetch.** Check 4 does not detect anything; it explains. §2 and §4 carried this banner and
+> §1 did not, which left the report's own first section still crediting a detector that had been
+> demoted three sections later.
+
 The brief said to re-derive both against the merged history and to write what was found if a sha did
 not say what the brief said it said. Both shas hold. **What has changed since the ticket was written
 is that neither instance has closed**, and `origin/staging` has moved on past both.
@@ -90,10 +95,13 @@ $ ./bin/landed feat/u6-bulk-run-screen
 EXIT=1
 ```
 
-All three failing checks fire on the real repository — instance A through checks 1 and 4, instance B
-through check 2 — and the behind-line is printed as information alongside them. On a healthy branch
-(`docs/test-infrastructure-tickets`, merged as #266) checks 1 and 4 pass and only check 2 fires, which
-is the same instance B seen from a different branch.
+All three failing checks fire on the real repository. **Instance A is detected by check 1** — the
+branch holds two commits the target does not have, and check 1 names them; check 4 also printed a
+line here, but §8 retracts the claim that it detected anything, and §7 is the measurement that
+retracted it. Instance B is detected by check 2, and the behind-line is printed as information
+alongside them. On a healthy branch (`docs/test-infrastructure-tickets`, merged as #266) check 1
+passes, check 4 names the merge, and only check 2 fires — the same instance B from a different
+branch.
 
 ---
 
@@ -125,7 +133,18 @@ repositories, and it is stated in the docblock.
 | 4 | second parent of the merge on `origin/<target>` vs `origin/<branch>` | mismatch → fail, "PR merged `<sha>`, branch head is `<sha>`, N commits between them", gap listed. |
 
 Exit codes: `0` all checks pass, `1` a check failed, `2` could not determine (fetch failed, no such
-branch, no common ancestor, not a git repository). **2 is not collapsed into 1.**
+branch, not a git repository — and, since §9, a shallow clone or an unreadable shallow probe).
+**2 is not collapsed into 1.**
+
+> **"no common ancestor" was listed here and is wrong.** Measured: an orphan branch exits **1**,
+> reported as one outstanding commit. The `merge-base` call that produced that exit-2 path was
+> removed with the redesign in §8 and the sentence was not updated with it.
+>
+> **Corrected rather than re-added, and the reason is the distinction the exit codes carry.** An
+> orphan branch is not undecidable: the target plainly does not contain it, check 1 names
+> everything on it, and "not landed" is the true answer. Exit 2 means *I could not tell*. Spending
+> it on a case the script can tell would weaken the one signal this whole script is built around.
+> Exit 2 is reserved for a graph or a remote it could not read.
 
 ### How check 4 finds the merge
 
@@ -776,3 +795,267 @@ EXIT=1
 
 `feat/u6-bulk-run-screen` and `docs/test-infrastructure-tickets` still exit 0 with check 4 naming
 `5a3f212` and `7894c39`, unchanged from §7.
+
+---
+
+## 9. Cold review — six findings, and the one that is a stop
+
+All of it in one commit with its arms. A behaviour change whose only test arrives later is the shape
+this branch's own ticket is about.
+
+### F1 — a stale remote-tracking ref reported as landed. **STOP.**
+
+Severity as set for this commit: **a stop**, raised from the review's own grading of it as a ticket.
+`#267` does not merge until it is closed.
+
+In a `--single-branch` or `--depth` clone, `remote.origin.fetch` covers one branch. A bare
+`git fetch --prune origin` honours that refspec: it **succeeds**, updates nothing for the other ref,
+and `refs/remotes/origin/<branch>` keeps whatever it last held. The script printed its ✓ fetch line
+and then compared a ref that had not moved — **reporting instance A as landed**.
+
+**A false green in a verification tool is worse than no tool, because it turns "I did not check" into
+"I checked."** Everything else this branch built rests on the exit code meaning something.
+
+Fixed by naming the two refs the script is about to compare:
+
+```bash
+git fetch --prune origin \
+  "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" \
+  "+refs/heads/$TARGET:refs/remotes/origin/$TARGET"
+```
+
+Freshness is now a property of the fetch this script runs, not of the clone's configuration.
+`--prune` consequently operates only within that refspec — intentional, and noted in the docblock:
+pruning unrelated remote-tracking refs was never this script's business, and a verification tool
+should not delete refs it is not talking about.
+
+The two unknowns stay distinct. A fetch that fails because the ref is absent on origin prints
+**"no such branch on origin"**; a fetch that fails because origin is unreachable prints **"could not
+reach origin"**. Collapsing them would leave a reader retrying the network over a typo. Mutation R11
+collapses them and reddens arms (h) and (n).
+
+### F2 — shallow clone
+
+`git rev-parse --is-shallow-repository` → exit 2. A shallow clone gives a **false red** (a landed
+branch reported NOT landed, because the merge sits below the graft and `--is-ancestor` cannot see
+containment) and a **wrong outstanding count**. Both are answers the script cannot give. Output that
+is neither `true` nor `false` also exits 2 — an unexpected value is not evidence of a whole graph.
+
+### F3 — the hint glob spanned slashes
+
+`*"/$BRANCH"` matches `/` like any other character, so `bin/landed x` attributed a merge of
+`feat/x`. Now the subject is split on `" from "` and the remainder must equal `"<owner>/$BRANCH"`
+with a slash-free owner — the branch component compared whole, not as a suffix. The hint stays out
+of the failure count.
+
+### F4 — the arms
+
+Seven, each measured against the pre-fix script before anything was changed: **(j)** stale ref,
+**(k)** shallow clone, **(l)** check 4's comparison, **(m)** arm (i)'s hint assertion, **(n)** the
+four unpinned exit paths, plus **(o)** and **(p)**, which close two branches of the fixes themselves
+that no arm would otherwise have bitten. Reds and mutants below.
+
+### F5 — the documentation corrections
+
+- **Report §1** carried no supersession banner while §2 and §4 did, and its prose credited
+  "instance A through checks 1 and 4". Both fixed: the banner is added and the attribution now
+  reads that **check 1 detects instance A**.
+- **Report's exit-2 cause list** included "no common ancestor". Measured: an orphan branch exits
+  **1**, reported as one outstanding commit; the `merge-base` call that produced that path was
+  removed in §8 and the sentence was not updated with it. **Corrected rather than re-added** — an
+  orphan branch is not undecidable, the target plainly does not contain it, and spending exit 2 on
+  a case the script *can* decide would weaken the one signal the script is built around.
+- **Ticket** — "the two commands above would have surfaced all of it". Corrected to the **first**
+  command; the second is the second-parent comparison retracted a few lines above it.
+
+### F6 — octopus merges
+
+The second-parent lookup reads field 3 of `git rev-list --merges --parents`, so a branch taken as a
+third or later parent is not found. **The exit code stays correct** — the branch is contained, check 1
+passes, the verdict is still "landed" — but check 4 explains it as "no merge commit found", which is
+the wrong explanation for the right answer. One paragraph in the docblock; no code. Verified on this
+repository before writing it: all **297** merges on `origin/staging` have exactly two parents.
+
+```
+$ git log --merges --format='%H %P' origin/staging | awk '{print NF-1}' | sort | uniq -c
+ 297 2
+```
+
+---
+
+## The arms, and the red measured for each
+
+Every new arm was run against the **pre-fix** script first. Two go red directly; the rest close
+mutants that were measured surviving the suite as it stood.
+
+| Arm | What it plants | Measured before |
+| --- | -------------- | --------------- |
+| **j** | stale remote-tracking ref | **RED — `✓ landed`, EXIT 0.** The false green itself |
+| **k** | `--depth 1` clone, target advanced | **RED — EXIT 1.** The false red |
+| **l** | arm (g) plus one unrelated merge on the target | arm passed; mutant `$3 == h` → `$3 != ""` **survived 10/10** |
+| **m** | arm (i) gains `not->toContain('READ FROM A MERGE MESSAGE')` | arm passed; mutant loosening `Merge branch '$BRANCH'` **survived 10/10** |
+| **n** | four unpinned exit paths | all four mutants **survived 10/10** |
+| **o** | branch `x`, target carries a merge of `feat/x` | mutant restoring the slash-spanning glob **survived** |
+| **p** | `git` shim answering the shallow probe `perhaps` | deleting the branch outright **survived 15/15** |
+
+### (j) — the false green, verbatim, against the pre-fix script
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin (--prune)
+  origin/feat/x = cee19efe · origin/staging = fe43e339
+
+✓ origin/staging contains every commit on origin/feat/x
+✓ your local staging is not ahead of origin
+✓ the merge on origin/staging took the head origin/feat/x points at (cee19efe)
+  merge fe43e339 — "Merge pull request #8 from o/feat/x" (subject read from the merge commit)
+
+✓ landed — origin/staging contains origin/feat/x, and the merge took the reviewed head.
+This says nothing about whether the merge was correct or the merged tree is green.
+EXIT=0
+```
+
+`origin`'s `feat/x` carried two commits `staging` did not have. Exit 0.
+
+### (j) — after the fix
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin/feat/x and origin/staging by name (--prune, within that refspec)
+  origin/feat/x = 2318cde3 · origin/staging = 5c060489
+
+✗ origin/feat/x has 2 commit(s) that origin/staging does not have
+    2318cde and one more
+    dabbbeb outstanding after the merge
+✓ your local staging is not ahead of origin
+ℹ origin/feat/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+  hint, READ FROM A MERGE MESSAGE and not from the graph: merge 5c060489 says it
+  merged this branch and took c874cadd; origin/feat/x is now 2318cde3, 2 commit(s) beyond that.
+  merge 5c060489 — "Merge pull request #8 from o/feat/x"
+  A hint, not a verdict: a rename, an edited message or a squash defeats it.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/x as merged.
+EXIT=1
+```
+
+The refspec brought the ref forward, check 1 names both commits, and the merge-message hint supplies
+instance A's diagnostic sentence without claiming it.
+
+### (k) — the false red, verbatim, against the pre-fix script
+
+```text
+LANDED?  feat/x → staging
+
+✓ fetched origin (--prune)
+  origin/feat/x = a61ebb37 · origin/staging = 4a817dc8
+
+✗ origin/feat/x has 1 commit(s) that origin/staging does not have
+    a61ebb3 the reviewed commit
+ℹ no local staging branch — the ahead/behind checks do not apply
+ℹ origin/feat/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+
+✗ NOT landed (1 check(s) failed) — do not report feat/x as merged.
+EXIT=1
+```
+
+`feat/x` **is** merged here. The merge is below the graft, so containment could not be seen and the
+outstanding count was computed over a truncated graph.
+
+### (k) — after the fix
+
+```text
+LANDED?  feat/x → staging
+
+✗ this is a SHALLOW clone — the merge may sit below the graft
+  containment and the outstanding count are both unanswerable here. Unshallow first:
+  git fetch --unshallow
+EXIT=2
+```
+
+### (m) — what the loosened hint printed
+
+The mutant that widens `Merge branch '$BRANCH'` to `Merge branch '`* matches arm (i)'s
+`Merge branch 'staging' of …` and prints:
+
+```
+  hint, READ FROM A MERGE MESSAGE and not from the graph: merge 2b96fb5e says it
+  merged this branch and took e8b46ac6; origin/feat/x is now 03022689, 1 commit(s) beyond that.
+```
+
+**That is § 7's false positive, verbatim, arriving through the message channel instead of the
+topological one** — the same defect returning by another door, in a repository where `feat/x` never
+merged. It survived 10/10 before arm (m)'s line existed.
+
+### (o) — after the fix
+
+```text
+LANDED?  x → staging
+
+✓ fetched origin/x and origin/staging by name (--prune, within that refspec)
+  origin/x = 6773dff1 · origin/staging = f6235876
+
+✗ origin/x has 1 commit(s) that origin/staging does not have
+    6773dff the branch actually being asked about
+✓ your local staging is not ahead of origin
+ℹ origin/x is not contained in origin/staging — no merge-head claim is made. Check 1 above is the signal.
+
+✗ NOT landed (1 check(s) failed) — do not report x as merged.
+EXIT=1
+```
+
+`feat/x`'s merge is not a lead about `x`. No hint at all.
+
+### (p)
+
+```
+✗ could not determine whether this clone is shallow (got [perhaps])
+EXIT=2
+```
+
+---
+
+## Mutation matrix after the fixes
+
+Sixteen arms, all green. Each mutation below reddens the named arms.
+
+| Mutation | RED |
+| -------- | --- |
+| R1 · refspec dropped, bare fetch restored | (j), source-shape |
+| R2 · shallow guard exits 1 instead of 2 | (k) |
+| R3 · shallow probe pinned `false` | (k) |
+| R4 · unparseable shallow output accepted as fine | (p) |
+| R5 · hint glob back to slash-spanning | (o) |
+| R6 · hint `Merge branch '<branch>'` loosened | (i) |
+| R7 · second-parent comparison dropped (`$3 != ""`) | (l) |
+| R8 · no branch given exits 1 | (n) |
+| R9 · not a git repository exits 1 | (n) |
+| R11 · the two fetch unknowns collapsed into one message | (h) (n) |
+
+**R10 — the post-fetch missing-target guard removed — now SURVIVES, and the reason is the fix.** With
+the refspec naming `refs/heads/<target>`, a target absent from origin fails at the *fetch*, so the
+`rev-parse` guard below it is no longer reached in any fixture that can be constructed. It is
+belt-and-braces against a remote that serves a ref-less success, which is a state not reproducible
+here. Recorded as unreachable rather than as covered; arm (n) still pins the outcome, which is now
+delivered by the fetch.
+
+### The fixture's last unguarded channel
+
+`GIT_CONFIG_COUNT` and its `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` pairs **outrank every config
+file**, including the two the fixture already redirects to `/dev/null`. They are now unset.
+
+**This closes a channel; it does not fix a live break.** The review measured that poisoning those
+variables kills the fixture **loudly** — the fixture's own `git` calls fail and the arm errors —
+rather than producing a false pass. It is closed because an isolation claim with a known hole in it
+is not an isolation claim.
+
+---
+
+## The review's own limits, in its words
+
+- the fresh clone could not complete (network); **a local clone at the identical commit was used and
+  `bin/landed`'s blob sha verified identical**
+- `composer install` and `npm run build` were skipped, because the ten arms need neither a database
+  nor a Vite manifest
+- the M-series mutations could not be re-derived, because that code is gone

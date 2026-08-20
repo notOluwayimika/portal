@@ -227,8 +227,12 @@ Whether this becomes a hook, a `bin/` script, a step in `bin/quality-promote`, o
 `CONTRIBUTING.md`; whether branches should be deleted at merge so they cannot drift; and whether a fix
 and its only test should be separable commits. The claims this ticket makes are that PR #265 merged a
 head two commits short of the branch's eventual tip, that the shortfall included the only behavioural
-change on the branch, that the only detector for that change travelled with it, and that the two
-commands above would have surfaced all of it.
+change on the branch, that the only detector for that change travelled with it, and that the
+**first** of the two commands above would have surfaced all of it.
+
+An earlier version of this sentence said *both* commands would have. The second — the second-parent
+comparison — would not have, and is retracted above as unable to identify the merge of a branch at
+all. `origin/<target>..origin/<branch>` carried the whole finding on its own.
 
 ## See also
 
@@ -246,13 +250,26 @@ Written on `feat/landed-check`, off `origin/staging` at `7894c39` (the #266 merg
 
 ### What it does
 
-Four checks, from refs alone, after one `git fetch origin --prune` — which is the script's only
-mutation, stated in its docblock and in `--help`. It never pushes, merges, checks out, resets or
-writes a branch ref, and it never calls `gh`.
+Four checks, from refs alone, after one fetch — the script's only mutation, stated in its docblock
+and in `--help`. It never pushes, merges, checks out, resets or writes a branch ref, and it never
+calls `gh`.
+
+**THE FETCH NAMES THE TWO REFS IT IS ABOUT TO COMPARE**, and that is load-bearing rather than a
+detail. A bare `git fetch --prune origin` honours `remote.origin.fetch`, which in a `--single-branch`
+or `--depth` clone covers ONE branch: the fetch succeeds, the other remote-tracking ref does not move,
+and the script printed a ✓ and compared a stale ref — measured as **`✓ landed`, exit 0**, over a
+branch carrying two commits the target did not have. A false green in a verification tool is worse
+than no tool, because it turns "I did not check" into "I checked". Naming the refspec makes freshness
+a property of the fetch rather than of the clone. `--prune` then operates only within that refspec,
+which is intended.
+
+**A shallow clone exits 2 before anything else.** The merge sits below the graft, so containment
+cannot be seen and a landed branch reports NOT landed, with an outstanding count computed over a
+truncated graph. Both are answers the script cannot give.
 
 | # | Question | Verdict |
 | - | -------- | ------- |
-| 0 | could origin be reached? | fetch failure → **exit 2**, never 0 |
+| 0 | is the graph whole, and could origin be reached? | shallow clone, unreadable shallow probe, or fetch failure → **exit 2**, never 0 |
 | 1 | `origin/<target>..origin/<branch>` empty? | non-empty → fail, commits listed. **Instance A** |
 | 2 | `origin/<target>..<target>` empty? | non-empty → fail, "not on origin". **Instance B** |
 | 3 | `<target>..origin/<target>` empty? | non-empty → **information**, not a failure |
@@ -309,8 +326,10 @@ for the same reason.
 
 ### The arms that prove it fires
 
-Nine, each planting a real repository under `mktemp -d` with a bare repo wired as `origin` by path,
-so every arm runs offline. Each asserts the exit code **and** the message: the failure modes that
+Sixteen tests, each planting a real repository under `mktemp -d` with a bare repo wired as `origin`
+by path, so every arm runs offline. The nine below are the topological ones; the rest pin the fetch,
+the shallow guard, the merge-message hint and the four exit paths — see
+`docs/handoff/reports/feat-landed-check.md` § 9. Each asserts the exit code **and** the message: the failure modes that
 exit 1 are several, so a code-only arm would pass while the script reported the wrong one.
 
 | Arm | Planted | Asserts |

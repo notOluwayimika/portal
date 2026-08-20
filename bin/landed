@@ -54,6 +54,16 @@
 # branch is defeated by a rename, an edited merge message or a squash; it is a lead, never a
 # verdict, and is labelled as read from the message wherever it appears.
 #
+# OCTOPUS MERGES ARE READ AS TWO-PARENT MERGES. The second-parent lookup reads field 3 of
+# `git rev-list --merges --parents`, so a branch taken as the THIRD or later parent of an
+# octopus merge is not found. The EXIT CODE stays correct — the branch is contained, so check 1
+# passes and the verdict is still "landed" — but check 4 explains it as "no merge commit found",
+# which is the wrong explanation for the right answer. Deliberately not coded around: this
+# repository merges one branch at a time (every merge inspected on origin/staging has exactly
+# two parents), and widening the field scan would add a loop to the one part of this script whose
+# whole recent history is about claiming less, not more. If octopus merges start appearing here,
+# that is the moment to revisit it — not before.
+#
 # NOT WIRED INTO bin/quality, deliberately. That gate is offline and self-contained
 # (.githooks/pre-push:3-20), and the failure this catches happens AFTER a merge — a moment
 # the per-push hook never observes. A network call in the per-push floor would make every
@@ -121,16 +131,67 @@ LOCAL_TG="refs/heads/$TARGET"
 
 printf '%s%sLANDED?%s  %s → %s\n\n' "$BOLD" "$YELLOW" "$OFF" "$BRANCH" "$TARGET"
 
-# --- 0. fetch ----------------------------------------------------------------
-# The only write this script performs. If it fails there is nothing to compare against and
-# every check below would report on a stale snapshot, so this is exit 2 and not exit 0.
-if ! fetch_out="$(git fetch --prune origin 2>&1)"; then
-    printf '%s✗ could not reach origin — this check is meaningless offline%s\n' "$RED" "$OFF"
+# --- 0a. the graph must be whole ---------------------------------------------
+# A SHALLOW CLONE CANNOT ANSWER EITHER QUESTION, and answers both anyway if allowed to. The
+# merge sits below the graft, so `git merge-base --is-ancestor` cannot see containment and a
+# LANDED branch reports NOT landed; the outstanding count is computed over a truncated graph
+# and is wrong. A false red and a wrong number are still answers this script cannot give, so
+# it says it cannot give them. Anything other than a clean `true`/`false` is also unknown —
+# an unexpected value is not evidence of a whole graph.
+SHALLOW="$(git rev-parse --is-shallow-repository 2>/dev/null || true)"
+case "$SHALLOW" in
+    false) ;;
+    true)
+        printf '%s✗ this is a SHALLOW clone — the merge may sit below the graft%s\n' "$RED" "$OFF"
+        printf '%s  containment and the outstanding count are both unanswerable here. Unshallow first:%s\n' "$DIM" "$OFF"
+        printf '%s  git fetch --unshallow%s\n' "$DIM" "$OFF"
+        exit 2 ;;
+    *)
+        printf '%s✗ could not determine whether this clone is shallow (got [%s])%s\n' "$RED" "$SHALLOW" "$OFF"
+        exit 2 ;;
+esac
+
+# --- 0b. fetch ----------------------------------------------------------------
+# The only write this script performs.
+#
+# THE TWO REFS ARE NAMED, and that is the whole point of this block rather than a detail of
+# it. A bare `git fetch --prune origin` honours remote.origin.fetch — and a `--single-branch`
+# or `--depth` clone leaves that refspec covering ONE branch. The fetch then succeeds, updates
+# nothing for the other ref, and the script printed a ✓ and compared a ref that had not moved:
+# measured as `✓ landed`, EXIT 0, over a branch carrying two commits the target did not have.
+# A FALSE GREEN IN A VERIFICATION TOOL IS WORSE THAN NO TOOL — it converts "I did not check"
+# into "I checked". Naming the refspec makes freshness a property of THIS fetch instead of a
+# property of the clone's configuration.
+#
+# --prune consequently operates only WITHIN this refspec, which is intentional: pruning
+# unrelated remote-tracking refs was never this script's business, and a verification tool
+# should not delete refs it is not talking about.
+#
+# TWO UNKNOWNS, TWO MESSAGES. A fetch that fails because the ref is absent on origin is a
+# different thing from a fetch that fails because origin is unreachable, and collapsing them
+# would leave a reader retrying the network over a typo.
+if ! fetch_out="$(git fetch --prune origin \
+    "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" \
+    "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>&1)"; then
+
+    case "$fetch_out" in
+        *"couldn't find remote ref"*|*"could not find remote ref"*)
+            printf '%s✗ no such branch on origin — cannot determine whether it landed%s\n' "$RED" "$OFF"
+            printf '%s  asked for refs/heads/%s and refs/heads/%s%s\n' "$DIM" "$BRANCH" "$TARGET" "$OFF"
+            printf '%s  (a branch deleted at merge is indistinguishable from one that never existed)%s\n' "$DIM" "$OFF"
+            ;;
+        *)
+            printf '%s✗ could not reach origin — this check is meaningless offline%s\n' "$RED" "$OFF"
+            ;;
+    esac
     [ -n "$fetch_out" ] && printf '%s%s%s\n' "$DIM" "$fetch_out" "$OFF"
     exit 2
 fi
-printf '%s✓%s fetched origin (--prune)\n' "$GREEN" "$OFF"
+printf '%s✓%s fetched origin/%s and origin/%s by name (--prune, within that refspec)\n' \
+    "$GREEN" "$OFF" "$BRANCH" "$TARGET"
 
+# Belt and braces: a fetch can succeed and still leave a ref unresolvable if the remote served
+# nothing for it. These two guards are what the checks below stand on.
 if ! git rev-parse --verify --quiet "$BR_REF" >/dev/null; then
     printf '%s✗ no such branch origin/%s — cannot determine whether it landed%s\n' "$RED" "$BRANCH" "$OFF"
     printf '%s  (a branch deleted at merge is indistinguishable from one that never existed)%s\n' "$DIM" "$OFF"
@@ -244,10 +305,19 @@ else
     #
     # A renamed branch, an edited merge message, or a squash defeats it entirely. It is a lead
     # for a human, never a verdict.
+    # `*"/$BRANCH"` WOULD SPAN SLASHES. A shell glob's `*` matches `/` freely, so
+    # `bin/landed x` matched `… from owner/feat/x` and attributed another branch's merge. The
+    # remainder after " from " must be exactly "<owner>/$BRANCH" with a SLASH-FREE owner, so
+    # the branch component is compared whole rather than as a suffix.
     HINT=""
     while IFS=' ' read -r msha msubject; do
         case "$msubject" in
-            "Merge pull request #"*" from "*"/$BRANCH") HINT="$msha"; break ;;
+            "Merge pull request #"*" from "*)
+                ref="${msubject#* from }"
+                owner="${ref%%/*}"
+                case "$owner" in */*) continue ;; esac
+                [ "$owner/$BRANCH" = "$ref" ] && { HINT="$msha"; break; }
+                ;;
             "Merge branch '$BRANCH'"|"Merge branch '$BRANCH' "*) HINT="$msha"; break ;;
         esac
     done < <(git log --merges --format='%H %s' "$TG_REF")

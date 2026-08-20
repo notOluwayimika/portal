@@ -43,7 +43,7 @@ uses()->group('arch');
  * $setup is bash, run with `set -e`, in a work repo on branch `staging` whose `origin` is a bare
  * repo at $ORIGIN, with one pushed commit already on staging.
  */
-function landedFixture(string $setup, string $args = 'feat/x'): array
+function landedFixture(string $setup, string $args = 'feat/x', string $runIn = 'work'): array
 {
     $root = dirname(__DIR__, 3);
     $tmp = rtrim(shell_exec('mktemp -d') ?? '', "\n");
@@ -66,6 +66,17 @@ export GIT_TERMINAL_PROMPT=0
 export HOME="$TMP/home"
 mkdir -p "$HOME"
 
+# GIT_CONFIG_COUNT and its GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n pairs OUTRANK EVERY CONFIG
+# FILE, including the two redirected to /dev/null above, so they were the one channel the
+# isolation did not close. Closing it is precautionary, not a repair: poisoning these was
+# measured to kill the fixture loudly — the fixture's own `git` calls fail and the arm errors —
+# rather than to produce a false pass. Unsetting COUNT alone disables the channel (git reads the
+# numbered pairs only when COUNT is set); the pairs are cleared too so nothing is left addressable.
+unset GIT_CONFIG_COUNT
+for n in $(seq 0 31); do
+    unset "GIT_CONFIG_KEY_$n" "GIT_CONFIG_VALUE_$n"
+done
+
 git init -q --bare "$ORIGIN"
 mkdir -p "$TMP/work"
 cd "$TMP/work"
@@ -85,13 +96,14 @@ git push -q origin staging
 %s
 
 set +e
-cd "$TMP/work"
+cd "$TMP/%s"
 "$ROOT/bin/landed" %s 2>&1
 echo "___EXIT:$?"
 BASH,
         escapeshellarg($tmp),
         escapeshellarg($root),
         $setup,
+        $runIn,
         $args,
     );
 
@@ -401,9 +413,16 @@ git push -q origin staging
 git push -q origin --delete feat/x
 BASH, 'feat/x');
 
+    // THE MESSAGE MOVED, THE ANSWER DID NOT. Once the fetch names its refspec, a branch absent
+    // from origin fails at the fetch rather than at the rev-parse guard below it — so the
+    // wording is the fetch's specific "no such branch on origin" rather than the guard's. The
+    // exit code is 2 either way, and that is the contract; the assertion follows the message to
+    // the place it is now printed rather than being loosened to match both.
     expect($exit)->toBe(2)
-        ->and($output)->toContain('no such branch origin/feat/x')
+        ->and($output)->toContain('no such branch on origin')
         ->and($output)->toContain('cannot determine whether it landed')
+        // The specific unknown, not the generic one: origin was perfectly reachable here.
+        ->and($output)->not->toContain('could not reach origin')
         ->and($output)->not->toContain('✗ NOT landed')
         ->and($output)->not->toContain('✓ landed');
 });
@@ -468,7 +487,235 @@ BASH);
         // AND NOT ONE WORD OF A VERDICT. These three are the shape of the false positive.
         ->and($output)->not->toContain('PR merged')
         ->and($output)->not->toContain('branch head is')
-        ->and($output)->not->toContain('commit(s) between them');
+        ->and($output)->not->toContain('commit(s) between them')
+        // AND NO HINT EITHER. The merge here says `Merge branch 'staging' …` — it names the
+        // TARGET, not this branch. Loosen the hint's `Merge branch '<branch>'` pattern to
+        // `Merge branch '`* and it matches, and the hint then prints this branch's own fork
+        // point as "the sha the merge took": run 3's false positive, verbatim, arriving through
+        // the message channel instead of the topological one. Measured — that mutant survived
+        // 10/10 before this line existed.
+        ->and($output)->not->toContain('READ FROM A MERGE MESSAGE');
+});
+
+it('(j) refuses a STALE remote-tracking ref instead of reporting it as landed', function () {
+    // THE STOP. A `--single-branch` or `--depth` clone leaves remote.origin.fetch covering only
+    // one branch, and `git fetch --prune origin` then honours that refspec: it returns success,
+    // updates nothing for the other branch, and refs/remotes/origin/<branch> keeps whatever it
+    // last held. The script printed its ✓ fetch line and compared a ref that had not moved.
+    //
+    // Measured against the pre-fix script in exactly this fixture: `✓ landed`, EXIT 0, while
+    // origin's feat/x carried two commits staging did not have. A FALSE GREEN IN A VERIFICATION
+    // TOOL IS WORSE THAN NO TOOL — it converts "I did not check" into "I checked".
+    //
+    // The fix makes freshness a property of the fetch this script runs rather than of the
+    // clone's configuration: the two refs about to be compared are named in the refspec.
+    [$exit, $output] = landedFixture(<<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "the reviewed commit"
+git push -q origin feat/x
+git checkout -q staging
+git merge -q --no-ff -m "Merge pull request #8 from o/feat/x" feat/x
+git push -q origin staging
+
+# What --single-branch leaves behind: a refspec that maps the target and nothing else.
+git config remote.origin.fetch "+refs/heads/staging:refs/remotes/origin/staging"
+
+# The branch advances on origin. Pushing an explicit refspec does NOT update the
+# remote-tracking ref, because nothing maps it any more — verified in this fixture.
+git checkout -q feat/x
+echo two >> f.txt
+git commit -qam "outstanding after the merge"
+echo three >> f.txt
+git commit -qam "and one more"
+git push -q origin feat/x:refs/heads/feat/x
+git checkout -q staging
+BASH);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('origin/feat/x has 2 commit(s) that origin/staging does not have')
+        ->and($output)->toContain('outstanding after the merge')
+        ->and($output)->toContain('and one more')
+        // The green this arm exists to forbid.
+        ->and($output)->not->toContain('✓ landed');
+});
+
+it('(k) exits 2 in a shallow clone rather than answering from a truncated graph', function () {
+    // A shallow clone gives a FALSE RED and a wrong number: the merge sits below the graft, so
+    // `git merge-base --is-ancestor` cannot see containment and a landed branch reports NOT
+    // landed, with an outstanding count computed over a truncated graph. Both are answers the
+    // script cannot give, so it must say it cannot give them — exit 2, the code that means
+    // unknown rather than wrong.
+    //
+    // `file://` matters: a plain path is a local clone and git ignores --depth for it.
+    [$exit, $output] = landedFixture(<<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "the reviewed commit"
+git push -q origin feat/x
+git checkout -q staging
+git merge -q --no-ff -m "Merge pull request #9 from o/feat/x" feat/x
+git push -q origin staging
+echo extra > e.txt
+git add e.txt
+git commit -qm "the target advances past the merge"
+git push -q origin staging
+
+git clone -q --depth 1 --no-single-branch "file://$ORIGIN" "$TMP/shallow"
+BASH, 'feat/x staging', 'shallow');
+
+    expect($exit)->toBe(2)
+        ->and($output)->toContain('shallow')
+        ->and($output)->not->toContain('✓ landed')
+        ->and($output)->not->toContain('✗ NOT landed');
+});
+
+it('(l) still reports contained-no-merge when the target does carry merges', function () {
+    // Arm (g) plants a fast-forward into a target with NO merge commits at all, so a mutant that
+    // stops comparing the second parent — `$3 == h` widened to `$3 != ""` — finds nothing to
+    // return and arm (g) stays green. Measured: that mutant survived 10/10.
+    //
+    // This is arm (g) plus one unrelated merge, which is all it takes: the mutant now returns
+    // that merge and prints "took the head origin/feat/x points at" naming a merge of some other
+    // branch. The comparison, not merely the lookup, is what this arm pins.
+    [$exit, $output] = landedFixture(<<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "the reviewed commit"
+git push -q origin feat/x
+git checkout -q staging
+git merge -q --ff-only feat/x
+git push -q origin staging
+
+git checkout -q -b other/z
+echo z > z.txt
+git add z.txt
+git commit -qm "an unrelated branch"
+git checkout -q staging
+git merge -q --no-ff -m "Merge pull request #10 from o/other/z" other/z
+git push -q origin staging
+BASH);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('no merge commit of feat/x found on origin/staging')
+        ->and($output)->toContain('is contained in origin/staging')
+        ->and($output)->toContain('with no merge commit to check')
+        // The unrelated merge must not be adopted as this branch's.
+        ->and($output)->not->toContain('took the head origin/feat/x points at')
+        ->and($output)->not->toContain('Merge pull request #10');
+});
+
+it('(n) pins the four exit paths that nothing pinned', function () {
+    // Four routes to exit 2 that no arm covered. Each was measured to SURVIVE mutation at 10/10
+    // before this test existed: change any of the three `exit 2`s to `exit 1`, or delete the
+    // missing-target guard outright, and the suite stayed green. An exit code no test reads is a
+    // convention, not a contract — and this script's whole argument is that 2 must never be
+    // mistaken for 1 or 0.
+
+    // 1. No branch given. Usage is not an answer about a branch.
+    [$exitNone, $outputNone] = landedFixture('', '');
+    expect($exitNone)->toBe(2)
+        ->and($outputNone)->toContain('no branch given');
+
+    // 2. Not a git repository. There is nothing to be right or wrong about.
+    [$exitNoRepo, $outputNoRepo] = landedFixture('mkdir -p "$TMP/notrepo"', 'feat/x', 'notrepo');
+    expect($exitNoRepo)->toBe(2)
+        ->and($outputNoRepo)->toContain('not a git repository');
+
+    // 3. The TARGET does not exist on origin. A typo in the target is unknown, not "not landed" —
+    //    reporting it as a failed check would teach a reader that a red here is routine.
+    $plantBranch = <<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "the reviewed commit"
+git push -q origin feat/x
+git checkout -q staging
+BASH;
+
+    [$exitNoTarget, $outputNoTarget] = landedFixture($plantBranch, 'feat/x nosuchtarget');
+    expect($exitNoTarget)->toBe(2)
+        ->and($outputNoTarget)->toContain('no such branch');
+
+    // 4. …and specifically NOT as a failed check. Delete the guard and the script falls through
+    //    to a check-1 comparison against a ref that does not resolve, which prints the verdict
+    //    line. This is the assertion that turns that mutation red.
+    expect($outputNoTarget)->not->toContain('✗ NOT landed')
+        ->and($outputNoTarget)->not->toContain('✓ landed');
+});
+
+it('(o) the hint refuses a merge of another branch whose name ends in this one', function () {
+    // `*"/$BRANCH"` SPANS SLASHES. A shell glob's `*` matches `/` like any other character, so
+    // the subject `Merge pull request #11 from o/feat/x` matched when the branch asked about was
+    // plain `x`, and the hint offered another branch's merge as a lead about this one. Measured:
+    // with the slash-spanning form restored, no arm went red.
+    //
+    // The branch here is `x`; the only merge on the target is of `feat/x`. A correct comparison
+    // splits on " from ", requires a slash-free owner, and compares the branch component whole.
+    [$exit, $output] = landedFixture(<<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "another branch entirely"
+git push -q origin feat/x
+git checkout -q staging
+git merge -q --no-ff -m "Merge pull request #11 from o/feat/x" feat/x
+git push -q origin staging
+
+git checkout -q -b x
+echo mine >> f.txt
+git commit -qam "the branch actually being asked about"
+git push -q origin x
+git checkout -q staging
+BASH, 'x');
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('origin/x has 1 commit(s) that origin/staging does not have')
+        ->and($output)->toContain('origin/x is not contained in origin/staging')
+        // feat/x's merge is not a lead about x. No hint at all.
+        ->and($output)->not->toContain('READ FROM A MERGE MESSAGE')
+        ->and($output)->not->toContain('Merge pull request #11')
+        ->and($output)->toContain('(1 check(s) failed)');
+});
+
+it('(p) exits 2 when it cannot tell whether the clone is shallow', function () {
+    // The third arm of the shallow guard, and the one that needs a stub: `--is-shallow-repository`
+    // is answered by git, so the only way to hand the script an answer that is neither `true` nor
+    // `false` is to put a shim ahead of git on PATH. Without this arm the branch survived
+    // mutation — deleting it entirely left the suite green at 15/15.
+    //
+    // AN UNEXPECTED VALUE IS NOT EVIDENCE OF A WHOLE GRAPH. Treating anything-not-true as false
+    // is how a guard becomes decoration: a future git that renames the flag, or prints a warning
+    // on the same stream, would silently re-open exactly the false red the guard exists to stop.
+    [$exit, $output] = landedFixture(<<<'BASH'
+git checkout -q -b feat/x
+echo one >> f.txt
+git commit -qam "the reviewed commit"
+git push -q origin feat/x
+git checkout -q staging
+git merge -q --no-ff -m "Merge pull request #12 from o/feat/x" feat/x
+git push -q origin staging
+
+# A pass-through git that answers only the shallow probe, with something unparseable.
+mkdir -p "$TMP/shim"
+REAL_GIT="$(command -v git)"
+cat > "$TMP/shim/git" <<SHIM
+#!/bin/sh
+if [ "\$1" = "rev-parse" ] && [ "\$2" = "--is-shallow-repository" ]; then
+    echo "perhaps"
+    exit 0
+fi
+exec $REAL_GIT "\$@"
+SHIM
+chmod +x "$TMP/shim/git"
+export PATH="$TMP/shim:$PATH"
+BASH);
+
+    expect($exit)->toBe(2)
+        ->and($output)->toContain('could not determine whether this clone is shallow')
+        // The value is echoed, so a reader can see what git actually said.
+        ->and($output)->toContain('perhaps')
+        // It is unknown, not wrong, and not fine.
+        ->and($output)->not->toContain('✓ landed')
+        ->and($output)->not->toContain('✗ NOT landed');
 });
 
 it('never writes anything but remote-tracking refs — no push, no merge, no checkout, no reset', function () {

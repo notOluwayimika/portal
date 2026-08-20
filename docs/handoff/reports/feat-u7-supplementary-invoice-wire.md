@@ -467,3 +467,59 @@ Run locally on the changed files only:
   guard; the rendering consequences are the filed ticket.
 - **`already_invoiced` remaining `false` after a supplementary invoice** is covered by
   `FinanceApiAcceptanceTest` from #259 and was not re-proved here.
+
+---
+
+## 10 — The gate (appended after the cold review, which ran before this had happened)
+
+Recorded here because §9 listed `bin/quality` as unverified and the cold review named the
+same gap: at review time not one of its steps had executed on this branch. It has now. This
+section adds that outcome and answers none of the review's findings — those are the project
+lead's.
+
+**`bin/quality`: PASS, 15/15,** on the pre-push hook. Every step green, including `arch`,
+Larastan, the six lints and the full suite against `tests/ratchet-baseline.txt`. Pushed;
+`git ls-remote --heads origin feat/u7-supplementary-invoice-wire` and `git rev-parse HEAD`
+both read `7237ad3f6f76bcdcb18ee245f42f8b7d9f675c45`, so the remote carries exactly what was
+reviewed and nothing sits unpushed.
+
+### 10.1 — The first attempt was blocked, and the cause was sequencing, not the diff
+
+The first push was refused at step 15 with 23 regressions printed against the ratchet. The
+run underneath that print was far worse than the print: **15 failed and 321 errors out of
+1833 tests**, dominated by
+
+```
+SQLSTATE[42S02]: Base table or view not found: 1146 Table 'portal_testing.schools' doesn't exist
+SQLSTATE[HY000]: General error: 1412 Table definition has changed, please retry transaction
+SQLSTATE[42S22]: Column not found: 1054 Unknown column 'roles.id' in 'on clause'
+```
+
+That is a second process running `migrate:fresh` on `portal_testing` underneath a live suite.
+**I caused it:** the cold-review subagent and `git push` were launched in the same message,
+and both use that database. The only Finance entry in the entire run was
+`TriggerBodiesAreDumpSafeTest` reporting *"no triggers found — this test would pass vacuously
+and prove nothing"* — which is that same dropped schema, and is a test doing exactly its job.
+No arm of this branch appeared.
+
+Artifacts and conditions were captured before anything was re-run, per the project's rule on
+this: the stamped suite log and junit copied out of `/var/folders/…/quality-runs/`, load
+average 7.39, elapsed 469 s — above the ~350-440 s band, consistent with contention.
+
+**This is not ADR 0053's non-determinism.** That signature is `FAIL 23` with no missing
+tables; this one is 321 errors with tables absent mid-run. The re-run is therefore not
+"retrying until green": the tree was byte-identical, the cause was identified from the
+artifacts and is independent of the diff, and the second run was made only after confirming
+no other `pest` process was alive.
+
+**The cold reviewer hit the same thing independently**, without being told about it — its
+first run of the new test file came back red with
+`1062 Duplicate entry … role_has_permissions.PRIMARY` and three deadlocks on `roles`, from a
+concurrent `pest` (PID 33834) on this same tree. It captured, waited, and re-ran clean at 6
+passed / 32 assertions. Two contexts, the same interference, the same discrimination.
+
+**The general lesson, since it will recur:** the cold review and the gated push must not run
+concurrently on this project — they share `portal_testing`, and the resulting corruption
+presents as a broad, alarming and entirely fictitious regression in whatever unrelated
+subsystem happens to be running when the tables vanish. `lsof`/`ps` for a live `pest` before
+believing a suite-wide red.

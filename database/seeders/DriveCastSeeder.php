@@ -73,6 +73,7 @@ class DriveCastSeeder extends Seeder
      * @var array<int, array{term_id: int, class_level_id: int, arm_id: int}>
      */
     public array $coordinates = [];
+
     /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
     public ?User $adminA = null;
 

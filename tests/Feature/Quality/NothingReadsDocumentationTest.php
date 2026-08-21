@@ -1,51 +1,91 @@
 <?php
 
 /*
- * NOTHING IN THE CODEBASE MAY READ A FILE THAT bin/is-docs-only-push WOULD SKIP.
+ * A REGRESSION TEST FOR ONE HISTORICAL SHAPE, AND A DRIFT-LOCK ON THE ALLOWLIST.
  *
- * WHY THIS EXISTS, and it is not a hypothetical. The first cut of the docs-only skip rule was
- * by LOCATION — every changed path under `docs/`. It shipped with a claim in its report that
- * no test and no lint in this repository reads a file under `docs/`, and that claim was FALSE.
- * `app/Console/Commands/AuthzObservations.php:22` holds
- * `const CLASSIFICATIONS_PATH = 'docs/runbooks/authz-observation-classifications.json'`,
- * resolves it through `base_path()` at :149 and reads it at :155;
- * `tests/Feature/Rbac/AuthzObservationsCommandTest.php` asserts against the real file and goes
- * from 5 passed to 3 passed 2 failed when it is edited the way
- * `docs/runbooks/authz-observation-review.md` step 3 tells a reviewer to edit it. That push was
- * judged documentation and skipped the gate.
+ * That is what this file is. It was previously headed "the invariant is not a claim about
+ * today's tree any more; it is this test", and it has not earned that sentence: six readers of
+ * `docs/**.md` could sit in app/ today and this stays green, because three of the shapes below
+ * are honestly beyond it. What it does hold is narrower and worth having.
  *
- * THE CLAIM WAS FALSE BECAUSE OF HOW IT WAS CHECKED. It came from `grep -rn "docs/" tests/`,
- * which matches the literal string `docs/` in a file — and the path is a CLASS CONSTANT, so the
- * only file that mattered was invisible at step one:
- * `grep -c "docs/" tests/Feature/Rbac/AuthzObservationsCommandTest.php` prints `0`.
+ * 1. IT IS A REGRESSION TEST for the shape that actually got through. A `self::` class constant
+ *    holding one string literal, read through `base_path()`:
+ *    `app/Console/Commands/AuthzObservations.php:22` → `:149` → `:155`, with a second reader in
+ *    `tests/Feature/Rbac/AuthzObservationsCommandTest.php:59`. That shape was invisible to
+ *    `grep -rn "docs/"` — the file scores 0 on it — and is caught here. Retyping the constant's
+ *    extension to `.md` reds this file and names both readers by path and line.
  *
- * So the invariant is not a claim about today's tree any more; it is this test. It enumerates
- * every `base_path(` / `realpath(` / `__DIR__` / `Storage::` / `File::get` / `file_get_contents(`
- * / `fopen(` call site across app, bin, tests, config, database, routes and bootstrap, RESOLVES
- * THE FIRST ARGUMENT — class constants included, which is the whole point — and fails if any of
- * them lands on a path under `docs/` carrying an extension bin/is-docs-only-push would skip.
+ * 2. IT IS A DRIFT-LOCK COUPLING `DOC_EXTENSIONS` TO THE KNOWN READER SET, and this is verified,
+ *    not asserted. Appending `json` to the allowlist in bin/is-docs-only-push — the single most
+ *    likely future edit, and the one that would silently re-open the original hole — reds this
+ *    file with:
  *
- * The allowlist is READ OUT OF THE SCRIPT rather than restated here, so the two cannot drift.
- * A path under docs/ that the skip rule REFUSES (the .json above, a .txt drive log, a .pdf
- * capture) is not a violation: the gate runs for those pushes, which is the entire point of the
- * rule being by format.
+ *        app/Console/Commands/AuthzObservations.php:149  base_path  →  docs/runbooks/authz-observation-classifications.json
+ *        tests/Feature/Rbac/AuthzObservationsCommandTest.php:59  base_path  →  docs/runbooks/authz-observation-classifications.json
  *
- * WHAT A GREEN HERE DOES NOT PROVE.
+ *    The allowlist cannot be widened past a known reader without a red that names it.
  *
- *   - A path built at RUNTIME is invisible. `base_path('docs/'.$name)`, a path assembled from a
- *     config value, an argument, an environment variable or any variable at all resolves to
- *     nothing here and is silently skipped. The count of unresolved call sites is asserted to be
- *     reported, not to be zero.
- *   - An IDIOM THIS SWEEP DOES NOT NAME is invisible. `include`, `require`, `SplFileObject`,
- *     `finfo`, `readfile`, `Symfony\Component\Finder`, a `Process` running `cat`, a
- *     `resource_path()`/`storage_path()` chain that happens to escape upward — none are scanned.
- *     The seven idioms here are the ones the review named, not a proof of closure.
- *   - NON-PHP READERS ARE INVISIBLE. Only `.php` files are tokenised, so a shell script under
- *     `bin/` that does `cat docs/something.md` is not seen. A grep for that would false-positive
- *     on every prose citation in those same scripts, so it is stated as a limit rather than
- *     approximated badly.
- *   - It says nothing about whether reading a documentation file is a good idea; only about
- *     whether the skip rule would let an edit to one through ungated.
+ * WHAT IT SWEEPS. Every `.php` file under app, bin, tests, config, database, routes and
+ * bootstrap is tokenised with `token_get_all`; every `base_path(` / `realpath(` /
+ * `file_get_contents(` / `fopen(` call, every `Storage::` / `File::` static call and every
+ * `__DIR__` is collected; the first argument is RESOLVED — string literals, `__DIR__`, and class
+ * constants declared as a single literal in the same file or readable through the autoloader —
+ * and a resolved path under `docs/` carrying an extension bin/is-docs-only-push would SKIP is a
+ * violation. A docs/ path whose extension the rule REFUSES is not: the gate runs for that push.
+ *
+ * THE HONEST COVERAGE NUMBER, measured on the current tree:
+ *
+ *     idiom               resolved   unresolved
+ *     __DIR__                   70            0
+ *     base_path                 18            5
+ *     file_get_contents          0           35
+ *     File::*                    0           23
+ *     Storage::*                10           21     (7 of the 10 resolved are Storage::fake)
+ *     fopen                      3            2
+ *     ------------------------------------------
+ *     total                    101           86     = 187 call sites
+ *
+ * 70 of those 187 "call sites" are BARE `__DIR__` TOKENS. They are not readers, they always
+ * resolve, and they inflate the denominator by 37%. Take them out and 31 of the remaining 117
+ * resolve — 26%, or 17% of the full 187, depending which denominator you quote. Either way the
+ * headline "187 call sites, 0 violations" describes far more coverage than exists: **in practice
+ * this invariant is `base_path` and its 18 resolved sites.** That is the number a reader should
+ * carry away.
+ *
+ * WHAT A GREEN DOES NOT PROVE.
+ *
+ *   - A path built at RUNTIME is invisible: `base_path('docs/'.$name)`, a config value, an
+ *     argument, a property, a heredoc. 86 of 187 sites resolve to nothing and are COUNTED as
+ *     unresolved — never as clean. That distinction is itself an arm.
+ *   - A CONCATENATED class constant is unresolved, not guessed. `const P = 'docs/notes'.'.md';`
+ *     once resolved to `docs/notes` and was reported clean; it is now admitted as unknown.
+ *     AuthzObservations::CLASSIFICATIONS_PATH is one refactor from that shape.
+ *   - An IDIOM THIS SWEEP DOES NOT NAME is invisible: `include`, `require`, `SplFileObject`,
+ *     `readfile`, `finfo`, Symfony `Finder`, a `Process` running `cat`, `app()->basePath()`.
+ *   - NON-PHP READERS are invisible: only `.php` files are tokenised, so a shell script under
+ *     `bin/` doing `cat docs/something.md` is not seen. A grep for that would false-positive on
+ *     every prose citation in those same scripts, so it is stated rather than approximated badly.
+ *   - `self::` AND `static::` never resolve through reflection — `class_exists('self')` is false.
+ *     They are covered by the same-file `const NAME = 'literal';` scan, which runs first. The
+ *     historical case was caught that way.
+ *
+ * HOW IT FAILS, measured rather than assumed — because a checker's failure DIRECTION is the
+ * property that decides whether a green means anything:
+ *
+ *   - an UNPARSEABLE file still yields its reader and still reds (token_get_all is a lexer, not
+ *     a parser): 1 violation, `docs/notes.md`, from a source with an unclosed brace;
+ *   - an UNREADABLE directory THROWS — `UnexpectedValueException … Failed to open directory:
+ *     Permission denied` — rather than being skipped silently;
+ *   - REFORMATTING the `DOC_EXTENSIONS` line in bin/is-docs-only-push (double quotes to single)
+ *     errors all 8 tests by name with "no longer carries a DOC_EXTENSIONS line this test can
+ *     read", rather than any of them defaulting to a built-in list;
+ *   - EMPTYING `DOC_EXTENSIONS` reds 7 of the 8.
+ *
+ * A ROOT MAY NOT DISAPPEAR SILENTLY. The roots list is a hardcoded literal and nothing keeps it
+ * honest: dropping `app/` from it leaves the union at 144 call sites, which clears any
+ * total-based floor while the sweep sees none of app/. Each root is therefore checked
+ * individually, app/ carries a named floor, and docs/module-blueprint.md's planned app/Finance/
+ * restructure is why that matters now rather than later.
  */
 
 uses()->group('arch');
@@ -175,10 +215,58 @@ function documentationReaderFileConstants(array $tokens): array
             continue;
         }
 
+        // THE LITERAL MUST BE THE WHOLE VALUE. This used to take the first
+        // T_CONSTANT_ENCAPSED_STRING after `=` and stop, never looking at what followed — so
+        // `const P = 'docs/notes'.'.md';` resolved to `docs/notes` and
+        // `const P = 'docs/'.'notes.md';` resolved to `docs/`. Both are REAL READERS, both were
+        // reported resolved and clean, and neither appeared in the unresolved tally this file
+        // offers as its own honesty measure. That is precisely what
+        // documentationReaderResolve()'s docblock forbids: a partly guessed path is worse than
+        // an admitted unknown. Requiring `;` or `,` next makes a concatenated constant
+        // unresolvable, which is the honest answer.
+        //
+        // AuthzObservations::CLASSIFICATIONS_PATH is one refactor away from this shape. Had the
+        // historical path been written as a concatenation, this test would have missed it
+        // exactly as the grep did.
+        $terminator = documentationReaderNext($tokens, $literal);
+
+        if ($terminator === null || ($tokens[$terminator] !== ';' && $tokens[$terminator] !== ',')) {
+            continue;
+        }
+
         $out[$tokens[$name][1]] = documentationReaderLiteral($tokens[$literal][1]);
     }
 
     return $out;
+}
+
+/**
+ * The bare function name a token denotes, or null if it is not a function-name token.
+ *
+ * `\base_path('docs/x.md')` tokenises as ONE T_NAME_FULLY_QUALIFIED token, not as `\` followed
+ * by T_STRING — so a collector that required T_STRING never saw a fully-qualified global call at
+ * its own site. Matching on the TRAILING SEGMENT is what makes `\base_path` and `base_path` the
+ * same idiom here. The cost of that choice, stated rather than hidden: a namespaced function
+ * genuinely named `Some\Ns\base_path` would also match. There is none in this repository, and
+ * a false POSITIVE in this direction produces a red to investigate, not a silent skip.
+ */
+function documentationReaderFunctionName(mixed $token): ?string
+{
+    if (! is_array($token)) {
+        return null;
+    }
+
+    if ($token[0] === T_STRING) {
+        return strtolower($token[1]);
+    }
+
+    if ($token[0] === T_NAME_FULLY_QUALIFIED) {
+        $name = ltrim($token[1], '\\');
+
+        return strtolower(str_contains($name, '\\') ? substr($name, strrpos($name, '\\') + 1) : $name);
+    }
+
+    return null;
 }
 
 /** Index of the next token that is not whitespace or a comment. */
@@ -221,15 +309,17 @@ function documentationReaderCallSites(array $tokens): array
             continue;
         }
 
-        if (! is_array($token) || $token[0] !== T_STRING) {
+        $callName = documentationReaderFunctionName($token);
+
+        if ($callName === null) {
             continue;
         }
 
-        $name = $token[1];
+        $name = is_array($token) ? $token[1] : '';
         $open = null;
         $idiom = null;
 
-        if (in_array(strtolower($name), $functions, true)) {
+        if (in_array($callName, $functions, true)) {
             $next = documentationReaderNext($tokens, $i);
             // A method named the same thing ($this->realpath()) is not the function; the token
             // before must not be `->`, `::` or `function`.
@@ -248,9 +338,9 @@ function documentationReaderCallSites(array $tokens): array
 
             if ($next !== null && $tokens[$next] === '(') {
                 $open = $next;
-                $idiom = strtolower($name);
+                $idiom = $callName;
             }
-        } elseif (in_array($name, $statics, true)) {
+        } elseif ($token[0] === T_STRING && in_array($name, $statics, true)) {
             $colon = documentationReaderNext($tokens, $i);
             $method = $colon === null ? null : documentationReaderNext($tokens, $colon);
             $paren = $method === null ? null : documentationReaderNext($tokens, $method);
@@ -295,7 +385,9 @@ function documentationReaderWrapsAnotherSite(array $args, array $functions): boo
         if (is_array($t) && in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
             continue;
         }
-        if (! is_array($t) || $t[0] !== T_STRING || ! in_array(strtolower($t[1]), $functions, true)) {
+        $inner = documentationReaderFunctionName($t);
+
+        if ($inner === null || ! in_array($inner, $functions, true)) {
             return false;
         }
 
@@ -462,7 +554,15 @@ function documentationReaderResolve(array $args, string $file, array $fileConsta
     return $value === '' ? null : $value;
 }
 
-/** A constant on a class named in another file, resolved through the autoloader. */
+/**
+ * A constant on a class named in ANOTHER file, resolved through the autoloader.
+ *
+ * `self::X` AND `static::X` NEVER GET HERE USEFULLY. They arrive as the literal tokens `self`
+ * and `static`, and `class_exists('self')` is false, so this returns null for both. They are
+ * covered — and the historical AuthzObservations case was caught — by the SAME-FILE
+ * `const NAME = 'literal';` scan in documentationReaderResolve(), which runs first. Recorded
+ * here because the code path otherwise reads as though reflection handled them, and it does not.
+ */
 function documentationReaderReflectConstant(string $classish, string $constant, string $file): ?string
 {
     $candidates = [$classish, '\\'.$classish];
@@ -540,22 +640,54 @@ function documentationReaderFixture(string $source): array
     }
 }
 
+/**
+ * The roots this sweep covers. A HARDCODED LITERAL that nothing keeps honest — which is why the
+ * arm below checks each one individually rather than trusting a total.
+ *
+ * @return array<string, string> name => absolute path
+ */
+function documentationReaderRoots(string $repoRoot): array
+{
+    $names = ['app', 'bin', 'tests', 'config', 'database', 'routes', 'bootstrap'];
+
+    return array_combine($names, array_map(fn ($n) => $repoRoot.'/'.$n, $names));
+}
+
 it('nothing in the codebase reads a documentation file the skip rule would let through', function () {
     $repoRoot = dirname(__DIR__, 3);
+    $roots = documentationReaderRoots($repoRoot);
 
-    $result = documentationReaderScan([
-        $repoRoot.'/app',
-        $repoRoot.'/bin',
-        $repoRoot.'/tests',
-        $repoRoot.'/config',
-        $repoRoot.'/database',
-        $repoRoot.'/routes',
-        $repoRoot.'/bootstrap',
-    ], $repoRoot);
+    // A ROOT MAY NOT DISAPPEAR SILENTLY. documentationReaderScan() skips a root that is not a
+    // directory, because a fixture may pass one that does not exist — but for the REAL sweep a
+    // missing root is total blindness over that subtree, and it must not be a `continue`.
+    // Measured: with app/ dropped from this list the union still reports 144 call sites, which
+    // clears any total-based floor, and the sweep sees none of app/. docs/module-blueprint.md
+    // plans an app/Finance/ restructure, so the list moving is a matter of when.
+    foreach ($roots as $name => $path) {
+        expect(is_dir($path))->toBeTrue("the sweep names a root that is not a directory: {$name}");
+    }
 
-    // NON-VACUITY FIRST. A sweep that stopped finding call sites would report zero violations
-    // and read exactly like a clean tree — the failure mode every lint in this repository has
-    // had at least once.
+    $result = documentationReaderScan(array_values($roots), $repoRoot);
+
+    // NON-VACUITY, PER ROOT AND NOT AS A TOTAL. A union floor is cleared by the other roots
+    // while one of them contributes nothing — the shape every lint in this repository has had at
+    // least once, one level up. `config/` and `database/` legitimately measure 0 today, so the
+    // floor is asserted only where there is something to count, and app/ — the root that matters
+    // most and the largest single non-test contributor — carries a named number.
+    $perRoot = [];
+    foreach ($roots as $name => $path) {
+        $perRoot[$name] = documentationReaderScan([$path], $repoRoot)['callSites'];
+    }
+
+    // NAMED, not indexed. A root removed from the list must fail as a sentence a reader can act
+    // on, not as an "Undefined array key" from deep inside the framework's error handler.
+    expect(array_key_exists('app', $perRoot))->toBeTrue('app/ is not among the roots this sweep covers');
+    expect($perRoot['app'])->toBeGreaterThan(20, 'app/ contributes almost nothing — the sweep has gone blind over it');
+
+    foreach (['bin', 'tests', 'routes', 'bootstrap'] as $name) {
+        expect($perRoot[$name])->toBeGreaterThan(0, "{$name}/ contributes no call sites at all");
+    }
+
     expect($result['callSites'])->toBeGreaterThan(50);
 
     $rendered = implode("\n", array_map(
@@ -668,4 +800,116 @@ PHP);
 
     expect($result['violations'])->toBe([])
         ->and($result['unresolved'])->toBeGreaterThan(0);
+});
+
+it('leaves a CONCATENATED class constant unresolved instead of resolving its first fragment', function () {
+    // MEASURED BEFORE THE FIX, and it is the sharpest failure this file can have: not a missed
+    // reader, but a reader reported RESOLVED AND CLEAN, absent from the unresolved tally that
+    // this file offers as its own honesty measure.
+    //
+    //   const P = 'docs/notes'.'.md'    →  resolved 'docs/notes'  unresolved=0  violations=0
+    //   const P = 'docs/' . 'notes.md'  →  resolved 'docs/'       unresolved=0  violations=0
+    //
+    // Both are real readers of docs/notes.md. Neither is visible anywhere in the output.
+    $tail = documentationReaderFixture(<<<'PHP'
+<?php
+
+class Fixture
+{
+    public const P = 'docs/notes'.'.md';
+
+    public function read(): string
+    {
+        return (string) file_get_contents(base_path(self::P));
+    }
+}
+PHP);
+
+    $head = documentationReaderFixture(<<<'PHP'
+<?php
+
+class Fixture
+{
+    public const P = 'docs/' . 'notes.md';
+
+    public function read(): string
+    {
+        return (string) file_get_contents(base_path(self::P));
+    }
+}
+PHP);
+
+    // Still not a violation — the path is not KNOWN, and inventing one would be the same defect
+    // pointing the other way. What must be true is that it is ADMITTED.
+    expect($tail['violations'])->toBe([])
+        ->and($tail['unresolved'])->toBeGreaterThan(0)
+        ->and($head['violations'])->toBe([])
+        ->and($head['unresolved'])->toBeGreaterThan(0);
+
+    // THE CONTROL, and it is what stops this arm passing because resolution broke entirely: the
+    // same constant written as one literal still resolves and still reds.
+    $plain = documentationReaderFixture(<<<'PHP'
+<?php
+
+class Fixture
+{
+    public const P = 'docs/notes.md';
+
+    public function read(): string
+    {
+        return (string) file_get_contents(base_path(self::P));
+    }
+}
+PHP);
+
+    expect($plain['violations'])->toHaveCount(1)
+        ->and($plain['violations'][0]['path'])->toBe('docs/notes.md')
+        ->and($plain['unresolved'])->toBe(0);
+});
+
+it('collects a fully-qualified global call at its own site', function () {
+    // `\base_path('docs/x.md')` is ONE T_NAME_FULLY_QUALIFIED token, not `\` plus T_STRING, so a
+    // collector requiring T_STRING never saw it. Before the fix the enclosing file_get_contents
+    // still landed it in the unresolved half rather than the clean half — the safe direction by
+    // accident, not by design. Now it is collected at its own site and RESOLVED, which is the
+    // difference between "we could not tell" and "we found it".
+    $result = documentationReaderFixture(<<<'PHP'
+<?php
+$a = file_get_contents(\base_path('docs/x.md'));
+PHP);
+
+    expect($result['violations'])->toHaveCount(1)
+        ->and($result['violations'][0]['path'])->toBe('docs/x.md')
+        ->and($result['violations'][0]['idiom'])->toBe('base_path');
+});
+
+it('puts every specimen it cannot see in the UNRESOLVED half, never in the clean half', function () {
+    // THE SIX PLANTED PROBES, and the acceptance criterion is NOT that all six go red. Three of
+    // them this sweep genuinely cannot follow, and the docblock says so. What it may never do is
+    // count one of them as resolved-and-clean — that is the only outcome that turns a blind spot
+    // into a false assurance.
+    $specimens = [
+        // seen, resolved, red — the two the fixes above added, plus the plain control
+        'fully-qualified \base_path' => ["<?php\n\$a = file_get_contents(\\base_path('docs/x.md'));", 'violation'],
+        'plain literal control' => ["<?php\n\$a = file_get_contents(base_path('docs/x.md'));", 'violation'],
+
+        // seen, honestly unresolvable
+        'self:: constant by concatenation' => ["<?php\nclass F { const P = 'docs/'.'x.md'; public function r() { return file_get_contents(base_path(self::P)); } }", 'unresolved'],
+        'app()->basePath()' => ["<?php\n\$a = file_get_contents(app()->basePath('docs/x.md'));", 'unresolved'],
+        'heredoc argument' => ["<?php\n\$a = file_get_contents(base_path(<<<'T'\ndocs/x.md\nT));", 'unresolved'],
+        'property \$this->p' => ["<?php\nclass F { private \$p = 'docs/x.md'; public function r() { return file_get_contents(base_path(\$this->p)); } }", 'unresolved'],
+    ];
+
+    foreach ($specimens as $label => [$source, $expected]) {
+        $result = documentationReaderFixture($source);
+
+        if ($expected === 'violation') {
+            expect($result['violations'])->toHaveCount(1, "{$label}: expected a violation");
+
+            continue;
+        }
+
+        expect($result['violations'])->toBe([], "{$label}: must not be reported as a violation on a guessed path")
+            ->and($result['unresolved'])->toBeGreaterThan(0, "{$label}: was counted CLEAN — a blind spot presented as an assurance");
+    }
 });

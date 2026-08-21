@@ -3,7 +3,7 @@
 Branch: `feat/docs-only-gate`, cut from `origin/staging` at `f5ac5ab`.
 Files: `bin/is-docs-only-push` (new), `.githooks/pre-push` (66 inserted lines, nothing
 removed or edited), `tests/Feature/Quality/DocsOnlyPushCoverageTest.php` (new, 25 arms) and
-`tests/Feature/Quality/NothingReadsDocumentationTest.php` (new, 5 arms), plus one ticket.
+`tests/Feature/Quality/NothingReadsDocumentationTest.php` (new, 8 arms), plus three tickets.
 
 `bin/quality` is not changed. It still means "run everything", for a manual run and for
 `bin/quality-promote`.
@@ -569,7 +569,7 @@ ___EXIT:0' [ASCII](length: 21) contains "docs/a\nb.md" [ASCII](length: 12).
 
 ### The invariant, as a test rather than a claim
 
-`tests/Feature/Quality/NothingReadsDocumentationTest.php`, 5 arms, group `arch`. It tokenises
+`tests/Feature/Quality/NothingReadsDocumentationTest.php`, 8 arms, group `arch`. It tokenises
 every `.php` file under `app`, `bin`, `tests`, `config`, `database`, `routes` and `bootstrap`
 with `token_get_all`, finds every `base_path(` / `realpath(` / `file_get_contents(` / `fopen(`
 call and every `Storage::` / `File::` static call and every `__DIR__`, **resolves the first
@@ -577,8 +577,18 @@ argument including class constants**, and fails if one lands on a path under `do
 extension `bin/is-docs-only-push` would skip. On the current tree:
 
 ```
-callSites=188  unresolved=86  violations=0
+callSites=187  unresolved=86  violations=0
 ```
+
+**That figure was published as 188 and is corrected to 187.** The over-count was the probe's
+own: the throwaway pest file used to print the number contained `file_get_contents($f)` in its
+breakdown loop, which is one of the seven idioms, so it counted itself. Measured twice —
+`implode('', file($f))` in the probe instead, and again with the probe deleted — both give 187.
+A measuring instrument inside the population it measures, which is the same class of error as
+the truncated `grep | head -40` in §2.
+
+The per-idiom breakdown, and what it says about how much of that 187 is coverage, is in §5's
+honest-coverage table below and in the test's own docblock.
 
 Constants resolve two ways: a `const NAME = 'literal';` declared in the same file (which is
 what makes an unautoloadable fixture — and the real defect's shape — resolvable), and through
@@ -693,7 +703,7 @@ Its result is recorded in §10.
   cold review states it did not re-derive the 630 s figure.
 - **The reader invariant cannot prove no reader exists.** Its own docblock says so, and the
   cold review says the same: it cannot prove no reader exists via an idiom its sweep does not
-  name. Concretely, three things are invisible to it — a path built at RUNTIME (86 of the 188
+  name. Concretely, three things are invisible to it — a path built at RUNTIME (86 of the 187
   call sites on the current tree resolve to nothing and are counted, not assumed clean); an
   IDIOM IT DOES NOT NAME (`include`, `require`, `SplFileObject`, `readfile`, `finfo`, Symfony
   `Finder`, a `Process` running `cat`); and a NON-PHP READER, since only `.php` files are
@@ -722,7 +732,9 @@ Its result is recorded in §10.
 | `bin/is-docs-only-push` | new. The decision, with its own exit code. Format allowlist, top-level diff with `diff.relative` forced off, escaped path printing. |
 | `.githooks/pre-push` | 66 lines inserted at line 72. Nothing removed, nothing edited; `git diff -U0` is a single hunk `@@ -71,0 +72,66 @@`. `.githooks/pre-push:41-70`, the release gate, is untouched — and `:33-39` is untouched, which is why its silent exits are a ticket and not a fix here. |
 | `tests/Feature/Quality/DocsOnlyPushCoverageTest.php` | new, 25 arms, group `arch`. |
-| `tests/Feature/Quality/NothingReadsDocumentationTest.php` | new, 5 arms, group `arch`. The invariant. |
+| `tests/Feature/Quality/NothingReadsDocumentationTest.php` | new, 8 arms, group `arch`. A regression test for the historical shape, and a drift-lock on the allowlist. |
+| `docs/handoff/tickets/a-symlink-under-docs-passes-the-format-test.md` | new ticket. |
+| `docs/handoff/tickets/a-gitkeep-makes-a-documentation-push-pay-the-full-gate.md` | new ticket. |
 | `docs/handoff/tickets/pre-push-exits-zero-silently-on-shapes-it-cannot-parse.md` | new ticket. |
 | `bin/quality` | **not changed.** |
 
@@ -853,3 +865,198 @@ to `bin/is-docs-only-push`, because that file is tracked. The checker silently r
 committed version between the verification that showed it working and the test run. Six arms
 went red and named it. Plants are now reverted with `git checkout HEAD -- <path>` on the
 specific file.
+
+## 12. Targeted review
+
+A targeted review of the reader sweep returned eight findings and **no stop**; the verdict was
+ship after one commit, then merge. Severities are **as set by the review**, carried unchanged and
+not re-ranked here.
+
+### FIX A — a concatenated class constant resolved to its first fragment and was counted CLEAN
+
+`documentationReaderFileConstants` took the first `T_CONSTANT_ENCAPSED_STRING` after `=` and
+stopped, never checking what followed. Reproduced here before the fix:
+
+```
+const P = 'docs/notes'.'.md'    →  violations=0  unresolved=0   (resolved 'docs/notes')
+const P = 'docs/' . 'notes.md'  →  violations=0  unresolved=0   (resolved 'docs/')
+const P = 'docs/notes.md'       →  violations=1  unresolved=0   (control)
+```
+
+Both concatenations are **real readers of `docs/notes.md`**, reported resolved and clean, and
+absent from the 86 the file offers as its own honesty measure — contradicting
+`documentationReaderResolve`'s own docblock, "a partly guessed path is worse than an admitted
+unknown".
+
+Fixed: the token after the literal must be `;` or `,`, otherwise the constant is left
+UNRESOLVED. All three shapes are planted as one arm, with the plain literal as the control that
+stops the arm passing because resolution broke entirely. The docblock records that
+`AuthzObservations::CLASSIFICATIONS_PATH` is one refactor from this shape — had the historical
+path been written as a concatenation, this test would have missed it exactly as the grep did.
+
+Mutation **M23**, the terminator check removed:
+
+```
+it leaves a CONCATENATED class constant unresolved instead of resolving its first fragment
+Failed asserting that 0 is greater than 0.
+```
+
+### FIX B — two idioms the collector never saw, neither among the stated limits
+
+**`\base_path('docs/x.md')`** tokenises as one `T_NAME_FULLY_QUALIFIED` token; the collector
+required `T_STRING`, so a fully-qualified global call was never collected at its own site. It now
+accepts `T_NAME_FULLY_QUALIFIED` and matches on the trailing segment — with the cost stated in
+the docblock rather than hidden: a namespaced function genuinely named `Some\Ns\base_path` would
+also match, and a false positive in that direction is a red to investigate, not a silent skip.
+
+**`self::X`** was handed to `documentationReaderReflectConstant` as the literal token `self`, and
+`class_exists('self')` is false. Same-file parsing already covers it — which is why the
+historical case was caught — and the docblock now says so, instead of leaving the code reading as
+though reflection handled it.
+
+All six of the review's planted probes are now one arm, and **the acceptance criterion is not
+that all six go red**: three of them this sweep genuinely cannot follow, and what it may never do
+is count one of them as resolved-and-clean.
+
+| specimen | before | after |
+| --- | --- | --- |
+| `\base_path('docs/x.md')` | not collected at its own site; unresolved via the wrapper | **violation** |
+| plain literal control | violation | violation |
+| `self::` constant by concatenation | **counted CLEAN** (FIX A) | unresolved |
+| `app()->basePath('docs/x.md')` | unresolved | unresolved |
+| heredoc argument | unresolved | unresolved |
+| property `$this->p` | unresolved | unresolved |
+
+Mutation **M24**, `T_NAME_FULLY_QUALIFIED` removed from the name helper — two arms red:
+
+```
+it collects a fully-qualified global call at its own site
+Failed asserting that actual size 0 matches expected size 1.
+
+it puts every specimen it cannot see in the UNRESOLVED half, never in the clean half
+fully-qualified \base_path: expected a violation
+Failed asserting that actual size 0 matches expected size 1.
+```
+
+### FIX C — the honest coverage number
+
+Measured on the current tree, and it is now in the test's docblock and here:
+
+| idiom | resolved | unresolved |
+| --- | ---: | ---: |
+| `__DIR__` | 70 | 0 |
+| `base_path` | 18 | 5 |
+| `file_get_contents` | 0 | 35 |
+| `File::*` | 0 | 23 |
+| `Storage::*` | 10 | 21 |
+| `fopen` | 3 | 2 |
+| **total** | **101** | **86** |
+
+101 + 86 = 187. Seven of the ten resolved `Storage::*` sites are `Storage::fake` (8 such sites in
+total, 7 of them resolved).
+
+**70 of the 187 are bare `__DIR__` tokens** — not readers, always resolvable, padding the
+denominator by 37%. Excluding them, 31 of the remaining 117 resolve. The review states that as
+31 of 187, 17%; against the 117 non-`__DIR__` sites it is 26%. Either denominator says the same
+thing, and it is the sentence the docblock now leads with: **in practice this invariant is
+`base_path` and its 18 resolved sites.**
+
+Two rows of the review's own breakdown differ from what is measured here — `File::*` 25 against
+23, and its rows sum to 189 rather than 187. The totals (101 / 86 / 187) and the `Storage::fake`
+figure agree exactly. The table above is what this tree produces; the command that produced it is
+a per-idiom tally over the same seven roots.
+
+### FIX D — the non-vacuity guard did not bite on partial blindness
+
+`documentationReaderScan` skips a root that is not a directory, and the guard was
+`callSites > 50` over the union. Measured: with `app/` dropped from the roots list the union
+still reports **144** call sites, the guard is untouched, and the test passes — while the sweep
+sees none of `app/`, which is 43 sites and the root that matters most.
+
+Fixed with a **per-root floor**, chosen over "assert app/ contributes" because it also catches
+the other roots going dark: every listed root must be a directory; `app/` carries a named floor
+of >20; and `bin`, `tests`, `routes`, `bootstrap` must each contribute at least one site.
+`config/` and `database/` legitimately measure 0 today, so they are checked for existence only —
+asserting a floor there would fail on the current tree. `docs/module-blueprint.md` plans an
+`app/Finance/` restructure and the roots list is a hardcoded literal nothing keeps honest.
+
+Mutation **M25**, `app` removed from the roots list:
+
+```
+it nothing in the codebase reads a documentation file the skip rule would let through
+app/ is not among the roots this sweep covers
+Failed asserting that false is true.
+```
+
+### FIX E — the file's own name
+
+The header claimed "the invariant is not a claim about today's tree any more; it is this test."
+It had not earned that: six readers of `docs/**.md` could sit in `app/` and it stays green. The
+header now leads with the two things it does hold, both verified rather than asserted:
+
+1. **A regression test** for the historical shape — a `self::` constant holding one literal, read
+   through `base_path` — which `grep -c "docs/"` scored 0 on.
+2. **A drift-lock** coupling `DOC_EXTENSIONS` to the known reader set. Appending `json` to the
+   allowlist reds it and names the reader:
+
+```
+it nothing in the codebase reads a documentation file the skip rule would let through
+A file under docs/ with an extension bin/is-docs-only-push SKIPS is read by code, so a push
+editing it would not run the gate. …
+
+  app/Console/Commands/AuthzObservations.php:149  base_path  →  docs/runbooks/authz-observation-classifications.json
+  tests/Feature/Rbac/AuthzObservationsCommandTest.php:59  base_path  →  docs/runbooks/authz-observation-classifications.json
+```
+
+**Failure directions, measured**, because a checker's failure direction is what decides whether
+its green means anything:
+
+| what is broken | what happens |
+| --- | --- |
+| an unparseable PHP file (unclosed brace, stray tokens) | still yields the reader and reds — 1 violation, `docs/notes.md`. `token_get_all` is a lexer, not a parser |
+| an unreadable directory | **throws** — `UnexpectedValueException … Failed to open directory: Permission denied` — rather than being skipped silently |
+| the `DOC_EXTENSIONS` line reformatted (double quotes → single) | **all 8 tests error by name**: `bin/is-docs-only-push no longer carries a DOC_EXTENSIONS line this test can read`. None falls back to a built-in list |
+| `DOC_EXTENSIONS` emptied | **7 of the 8 red** |
+
+### TICKET F — a symlink under `docs/` passes the format test
+
+`docs/handoff/tickets/a-symlink-under-docs-passes-the-format-test.md`. A `120000` blob named
+`docs/evil.md` is a pointer at source, not a document, and repointing it skips the gate.
+Both halves are stated in the ticket: nothing follows it today, and a reader of it would be
+caught by the sweep's `base_path` path. Three further shapes that pass and are inert —
+`docs/x.php.md`, `docs/.md`, `docs/a.php/b.md` — are recorded with the evidence that nothing
+treats `*.php.md` as PHP: `bin/lint-changed.sh:43` matches `*.php)` which requires the path to
+END in `.php`; `phpstan.neon:11-12` has `paths: - app`; `composer.json` autoload is PSR-4
+`App\ => app/` plus `Database\Factories\`/`Database\Seeders\`, one `files` entry
+`app/Helpers/Helper.php`, and autoload-dev `Tests\ => tests/`. All four paths measured at
+`exit=0` in a planted repository, with `git ls-tree` showing the `120000` mode.
+
+### TICKET G — a `.gitkeep` makes a documentation push pay the full gate
+
+`docs/handoff/tickets/a-gitkeep-makes-a-documentation-push-pay-the-full-gate.md`. Every new
+documentation directory carries one, its extension is `gitkeep`, and the push that creates the
+directory runs the full suite for a zero-byte placeholder. `docs/handoff/reports/.gitkeep` is
+tracked, so this is live. The ticket records the cost and explicitly does **not** widen the
+allowlist, leaving the decision to a person.
+
+### The review's own limits, in its words
+
+It did not re-derive the 630 s figure by instruction, and it cannot prove no reader exists via an
+idiom its sweep does not name. It also discloses that the harness injected an unrelated CodeGraph
+blob, which it did not use.
+
+### Two defects this round introduced, and what caught them
+
+**The probe counted itself.** The file used to print `callSites` contained
+`file_get_contents($f)`, one of the seven idioms, and reported 188. Caught by asking whether the
+instrument was inside its own population; re-measured at 187 two ways.
+
+**`toHaveKey($key, $value)` compares a value, not a message.** The per-root assertion added for
+FIX D was written as `expect($perRoot)->toHaveKey('app', 'app/ is not among the roots…')`, which
+compared `43` against the message string and failed unconditionally. It was added between a green
+run and a mutation run, so the mutation's red masked it. Surfaced by the drift-lock measurement
+producing the wrong red — `Failed asserting that 43 matches expected 'app/ is not among the roots
+this sweep covers'` — rather than the expected violation list. Rewritten as
+`expect(array_key_exists('app', $perRoot))->toBeTrue(...)`, re-run green, and both bites
+re-measured against the corrected arm. **A mutation run is not a substitute for a green run**:
+the red it produced looked plausible and was not the one the arm was written to produce.

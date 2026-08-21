@@ -474,3 +474,30 @@ matches nothing under the ticket's regex — see §9.
 - **No claim is made that the 163 baseline keys are the complete set of citations in the repo.**
   They are the complete set the ticket's regex finds in the scanned dirs, which excludes `docs/`,
   `resources/`, and every extensionless path.
+
+---
+
+## 11. The gate, and the remote read back
+
+`bin/quality` ran under `.githooks/pre-push` on `4c01086` and passed 16/16:
+
+```
+[13/16] citation lint (a new path:LINE citation names a symbol, and the symbol is there)
+   ✓ citation-lint
+...
+✓ quality: PASS — per-push floor. Promoting to main? run bin/quality-promote.
+```
+
+Step 3 reported `Pint (check) on 7 changed PHP file(s)`, which is the seven this branch touches.
+
+Read back from the remote rather than from the push output:
+
+```
+$ git fetch origin
+$ git rev-parse HEAD                       4c01086c90f48a9f3e01b67fdbc074d3ab9ff358
+$ git rev-parse origin/feat/citation-lint  4c01086c90f48a9f3e01b67fdbc074d3ab9ff358
+$ git diff --stat HEAD origin/feat/citation-lint     # empty
+```
+
+A PASS here is the per-push floor and nothing more: one PHP version, one machine, one MySQL, and
+`bin/quality` has produced both PASS 16/16 and a red on byte-identical code before (ADR 0053).

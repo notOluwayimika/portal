@@ -181,10 +181,22 @@ class CurriculumReassignmentService
         // until someone adds a refresh() and silently reintroduces the self-link.
         $destinationWasTheReferrer = (int) $destination->promoted_to_id === (int) $current->id;
 
-        // The exclusion keeps a self-link from ever being written, even transiently inside the
-        // transaction. It is defence in depth: the clear below is what actually carries the
-        // invariant, and a mutation removing this line alone does NOT fail the suite. Kept anyway,
-        // because "written then corrected" and "never written" differ under a partial failure.
+        // The exclusion keeps a self-link from ever being written. It is defence in depth: the clear
+        // below is what actually carries the invariant, and a mutation removing this line alone does
+        // NOT fail the suite.
+        //
+        // AND THE REASON FOR KEEPING IT IS NARROWER THAN IT FIRST LOOKS. It is NOT that a partial
+        // failure could leave the self-link committed — reassign() wraps find-or-revive, this
+        // repoint and the softEnd in ONE DB::transaction (softEnd's own transaction is a nested
+        // savepoint), so a failure between the write and the clear rolls both back, and InnoDB never
+        // exposes the intermediate row to another connection. Externally the two orderings are
+        // indistinguishable, and that rationale dissolves on inspection.
+        //
+        // What it actually defends against is the CLEAR NOT RUNNING AT ALL: a later refactor that
+        // reorders these two statements, early-returns between them, or swallows an exception so the
+        // transaction commits regardless. Under any of those, the exclusion is the difference between
+        // a self-link and none. Stated precisely because a guard kept for a reason that is not true
+        // is a guard the next reader will delete on the day they check it.
         StudentCurriculum::where('promoted_to_id', $current->id)
             ->where('id', '!=', $destination->id)
             ->update(['promoted_to_id' => $destination->id]);

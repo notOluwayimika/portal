@@ -119,9 +119,27 @@ it('the untouched CHECK constraints are NOT collateral damage', function () {
           WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'CHECK'"
     ))->pluck('name');
 
-    expect($present)->toContain('student_curricula_promoted_requires_link')
+    // `student_curricula_promoted_requires_link` USED TO BE the academics canary here. It is no
+    // longer a CHECK: 2026_08_20_140000 converted it to a BEFORE INSERT/UPDATE trigger pair, for the
+    // same 5.7 reason this whole file exists — it had been inert on production since 2026-07-30, and
+    // the promotion jobs were about to become its fourth and fifth writers. This test caught that
+    // drop, which is exactly its job; `terms_end_after_start_check` replaces it so the sweep still
+    // has a non-finance specimen, and the trigger that took over is asserted below.
+    expect($present)->toContain('terms_end_after_start_check')
         ->and($present)->toContain('finance_discount_policy_changes_terms_shape')
         ->and($present)->toContain('finance_payments_amount_currency_shape');
+
+    // The converted one must NOT be re-added as a CHECK over its triggers — the same trap the
+    // "re-added over the triggers" test above guards for the finance fourteen.
+    expect($present)->not->toContain('student_curricula_promoted_requires_link');
+
+    $triggers = collect(DB::select(
+        "SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = 'student_curricula'"
+    ))->pluck('name');
+
+    expect($triggers)->toContain('student_curricula_promoted_requires_link_bi')
+        ->and($triggers)->toContain('student_curricula_promoted_requires_link_bu');
 });
 
 it('BITE — the sixth table refuses maker = checker on an INSERT, the door a CHECK covered for free', function () {

@@ -219,6 +219,27 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:admin_area.access'])->g
     // Mirror an active curriculum into a past (completed) term for retroactive entry
     Route::post('/curricula/{curriculum:uuid}/backfill-term', [CurriculumController::class, 'backfillTerm']);
 
+    /*
+     * Which curricula already have one of the two migrations above sitting on the queue. The CCM and
+     * backfill screens poll this to disable a button they have already pressed.
+     *
+     * CurriculumController::queuedCurriculums has existed since those screens were written; it simply
+     * had no route, so /api/curricula/queued fell through to `GET /curricula/{curriculum:uuid}` in the
+     * academic_data.view group below, route-model binding looked for a curriculum whose uuid is the
+     * literal string "queued", and both screens showed "Resource not found" — a 404 that reads like a
+     * missing record rather than a missing route.
+     *
+     * ORDER MATTERS, AND IT IS WHY THIS SITS HERE. A literal segment must be registered BEFORE the
+     * `{curriculum:uuid}` wildcard or the wildcard swallows it — the same reason
+     * `/curricula/active` is declared immediately above `/curricula/{curriculum:uuid}` further down.
+     * This group is registered earlier in the file, so the ordering holds.
+     *
+     * IN THIS GROUP, NOT BESIDE `/curricula/active`, deliberately: it reports the state of the two
+     * admin-only migrations above, so it takes their privilege (admin_area.access) rather than the
+     * broader academic_data.view that reference reads use.
+     */
+    Route::get('/curricula/queued', [CurriculumController::class, 'queuedCurriculums']);
+
     // Teacher role assignments (boarding parent / form teacher / head of school)
     require __DIR__.'/endpoints/teacher-assignment.php';
 

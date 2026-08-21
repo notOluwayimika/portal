@@ -6,22 +6,28 @@
  * SqlClockLintCoverageTest's header records what the absence of this costs, and BoundaryLintCoverageTest's
  * before it: a lint whose BEHAVIOUR was forbidden but whose TOKEN was missing from the pattern printed
  * OK while the violation sat in the tree. The exposure here is wider than either, because this lint has
- * four moving parts that can each neuter it into a permanent green — the scanned-directory list, the
- * vendor resolver that decides what is EXEMPT before anything is checked, the symbol-shape matcher, and
- * a baseline whose key carries an occurrence COUNT. Nothing else in the suite would notice any of them.
+ * several moving parts that can each neuter it into a permanent green — the scanned-directory list, the
+ * path pattern, the vendor resolver that decides what is EXEMPT before anything is checked, the two
+ * symbol spellings, the two halves of the compliance rule, and a baseline whose key carries an
+ * occurrence COUNT.
  *
  * A lint rule that has never failed has not been tested; it has been written. So these plant real files
  * on disk, run the real script, and assert what it reports — no matcher is re-implemented here, because
  * a test that re-implements the thing it tests passes when both are wrong together.
  *
+ * THE ARMS BELOW ARE NOT DECORATION EITHER, and a cold review proved it: three mutations of the lint
+ * survived the first thirteen arms untouched — deleting the window's upper bound, dropping the range
+ * from the symbol-last pattern, and anchoring a range at its END line. Every one of them is pinned here
+ * now, and the arms that pin them say which mutation they exist for.
+ *
  * ⚠️ THESE PLANT INTO THE REAL TREE, SO THEY ARE SAFE ONLY WHILE PEST RUNS SEQUENTIALLY — the same
- * constraint the two sibling coverage tests carry, and for the same reason: one arm asserts the lint is
- * GREEN over the tree while other arms have violations planted in it. Verified at this commit:
+ * constraint the two sibling coverage tests carry, and for the same reason: several arms assert the lint
+ * is GREEN over the tree while other arms have violations planted in it. Verified at this commit:
  * `bin/quality` runs `pest --group=arch` and then plain `pest`, and `--parallel` appears only on Pint.
  *
- * TWO ARMS MUTATE TRACKED FILES rather than planting new ones — the duplicate-citation arm and the
- * shrink-lock arm — because both need a citation that is ALREADY in the baseline, which a new file by
- * definition never has. Each saves the exact bytes first and restores them in a finally, per path.
+ * FOUR ARMS MUTATE TRACKED FILES rather than planting new ones — the duplicate-citation arm, the
+ * shrink-lock arm, the untracked-generate arm and the exemplar arm — because each needs state a new
+ * file cannot have. Every one saves the exact bytes first and restores them per path in a finally.
  */
 
 use Illuminate\Support\Str;
@@ -64,11 +70,11 @@ function citationLintWith(array $files): array
 }
 
 /** @return array{0: int, 1: string} */
-function runCitationLint(): array
+function runCitationLint(string $mode = 'check'): array
 {
     $output = [];
     $exit = 0;
-    exec('php '.escapeshellarg(citationRoot().'/bin/ci-citation-lint.php').' 2>&1', $output, $exit);
+    exec('php '.escapeshellarg(citationRoot().'/bin/ci-citation-lint.php').' '.escapeshellarg($mode).' 2>&1', $output, $exit);
 
     return [$exit, implode("\n", $output)];
 }
@@ -81,9 +87,14 @@ function citationFixtureName(): string
 
 /**
  * The TARGET half of the symbol arms: a planted file whose contents are known, so the arms do not
- * depend on any real file keeping its line numbers. The caller is handed the line numbers back and
- * asserts on them, which is the point — a heredoc miscounted by one would otherwise make an arm test
- * the wrong thing quietly.
+ * depend on any real file keeping its line numbers. Its shape is deliberate — two methods with real
+ * BODIES, because the compliance rule has a nearest-preceding-declaration half that a file of one-line
+ * methods cannot exercise, and a third method far below for the out-of-window arms.
+ *
+ *   line  5  class CitationLintTarget
+ *   line  7  ensureBankAccount()     body runs to 19
+ *   line 21  laterMethod()           body runs to 29
+ *   line 31  farAwaySymbol()
  *
  * @return array{0: string, 1: string} [relativePath, contents]
  */
@@ -99,24 +110,27 @@ final class CitationLintTarget
 {
     public function ensureBankAccount(int $schoolId): int
     {
-        return $schoolId;
+        $a = 1;
+        $b = 2;
+        $c = 3;
+        $d = 4;
+        $e = 5;
+        $f = 6;
+        $g = 7;
+        $h = 8;
+
+        return $schoolId + $a + $b + $c + $d + $e + $f + $g + $h;
     }
 
-    public function padding01(): void {}
-
-    public function padding02(): void {}
-
-    public function padding03(): void {}
-
-    public function padding04(): void {}
-
-    public function padding05(): void {}
-
-    public function padding06(): void {}
-
-    public function padding07(): void {}
-
-    public function padding08(): void {}
+    public function laterMethod(): void
+    {
+        $x = 1;
+        $y = 2;
+        $z = 3;
+        $w = 4;
+        $v = 5;
+        $u = 6;
+    }
 
     public function farAwaySymbol(): void {}
 }
@@ -125,12 +139,24 @@ PHP;
     return ['app/Finance/'.$name.'.php', $body];
 }
 
+/** The heredoc above, asserted rather than trusted — a miscount would make an arm test the wrong thing. */
+function assertTargetShape(string $body): void
+{
+    $lines = explode("\n", $body);
+    expect($lines[4])->toContain('class CitationLintTarget')
+        ->and($lines[6])->toContain('ensureBankAccount')
+        ->and($lines[20])->toContain('laterMethod')
+        ->and($lines[30])->toContain('farAwaySymbol')
+        ->and(count($lines))->toBe(32);
+}
+
 it('a — reports a NEW bare path:LINE citation in app/, which is the whole rule', function () {
     [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
     $citer = 'app/Finance/'.citationFixtureName().'.php';
 
-    // A bare citation: a path, a line, and nothing to check it against. This is the form 98 of the
-    // 180 baselined citations are in, and the form the rule forbids from here on.
+    // A bare citation: a path, a line, and nothing to check it against. This is the form 107 of the
+    // 187 baselined citations are in, and the form the rule forbids from here on.
     [$exit, $output] = citationLintWith([
         $targetRel => $targetBody,
         $citer => "<?php\n\nnamespace App\\Finance;\n\n// see {$targetRel}:7 for the writer\nfinal class CiterA {}\n",
@@ -143,10 +169,12 @@ it('a — reports a NEW bare path:LINE citation in app/, which is the whole rule
 });
 
 it('b — does NOT report the same token in docs/, which is out of scope on purpose', function () {
-    // THE ARM SAYS WHY. Reports paste raw command output by rule, and `grep -n` output is
-    // byte-identical to a citation — the ticket measured SEVEN of the NINE past-EOF hits in the whole
-    // tree at 2b3cdbb as that ticket's own self-quotations of census output. A lint over docs/ opens
-    // with a baseline dominated by its own documentation.
+    // THE ARM SAYS WHY, and the why is VOLUME rather than false positives. Add `docs` to SCANNED_DIRS
+    // at this commit and `generate` produces 1,347 keys / 1,579 citations, of which docs/ contributes
+    // 1,177 keys / 1,392 citations — seven and a half times the code baseline of 187, essentially all
+    // of it unverifiable prose and pasted output. Skipping fenced blocks does not rescue it: only 372
+    // of the 1,444 citation tokens in docs/ sit inside a fence, so a prose-only baseline still opens
+    // at about 1,072.
     //
     // The cost is that citations inside tickets and reports stay unguarded, and two of the six
     // recorded instances of this defect were exactly that. This arm pins the exclusion as a decision;
@@ -162,23 +190,21 @@ it('b — does NOT report the same token in docs/, which is out of scope on purp
         ->and($output)->toContain('no new citation violations');
 });
 
-it('c — accepts path:LINE (symbol) when the symbol is within the window', function () {
+it('c — accepts path:LINE (symbol) when the symbol is within the window, in BOTH spellings', function () {
     [$targetRel, $targetBody] = citationTargetFile();
-
-    // Self-check on the heredoc FIRST: if the method is not on line 7 this arm proves nothing, and a
-    // miscounted heredoc is exactly the silent way that happens.
-    $lines = explode("\n", $targetBody);
-    expect($lines[6])->toContain('ensureBankAccount');
-
+    assertTargetShape($targetBody);
     $citer = 'app/Finance/'.citationFixtureName().'.php';
 
-    // Line 7 exactly, line 9 (two below, inside the window of 3), and line 4 (three above, the edge).
+    // Line 7 exactly, line 9 (two below), line 4 (three above, the edge) — then the same citation
+    // written SYMBOL-FIRST, which is this repository's own house style and which the first version of
+    // this lint refused while telling the author the citation "carries no symbol".
     [$exit, $output] = citationLintWith([
         $targetRel => $targetBody,
         $citer => "<?php\n\nnamespace App\\Finance;\n\n"
             ."// {$targetRel}:7 (ensureBankAccount)\n"
             ."// {$targetRel}:9 (ensureBankAccount)\n"
             ."// {$targetRel}:4 (ensureBankAccount)\n"
+            ."// ensureBankAccount ({$targetRel}:7)\n"
             ."final class CiterC {}\n",
     ]);
 
@@ -186,23 +212,63 @@ it('c — accepts path:LINE (symbol) when the symbol is within the window', func
         ->and($output)->not->toContain(basename($citer));
 });
 
-it('d — reports a symbol that is not there, AND one that is there but outside the window', function () {
+it('c2 — accepts a citation INSIDE a method that names that method (nearest preceding declaration)', function () {
     [$targetRel, $targetBody] = citationTargetFile();
-
-    $lines = explode("\n", $targetBody);
-    expect($lines[6])->toContain('ensureBankAccount');
-    // farAwaySymbol is real, and far: the second citation below is the one that proves the WINDOW is
-    // doing work rather than a bare "does this word appear in the file" check.
-    $far = 0;
-    foreach ($lines as $i => $l) {
-        if (str_contains($l, 'farAwaySymbol')) {
-            $far = $i + 1;
-        }
-    }
-    expect($far)->toBeGreaterThan(7 + 3);
-
+    assertTargetShape($targetBody);
     $citer = 'app/Finance/'.citationFixtureName().'.php';
 
+    // Line 18 is the `return` inside ensureBankAccount(), eleven lines below the declaration and far
+    // outside the window. Under the window alone this citation is refused, which would force every
+    // citation in the repository onto a declaration line — and this repository routinely cites a
+    // specific guard inside a method (`app/Support/ActiveSchool.php:42 (ActiveSchool::id)`, where
+    // `id()` spans 28-60 and :42 is the session branch the citing test is about).
+    //
+    // The rule is NEAREST preceding, not "any symbol above" — the arm for that distinction is below.
+    [$exit, $output] = citationLintWith([
+        $targetRel => $targetBody,
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// {$targetRel}:18 (ensureBankAccount)\n"
+            ."// ensureBankAccount ({$targetRel}:18)\n"
+            ."final class CiterC2 {}\n",
+    ]);
+
+    expect($exit)->toBe(0)
+        ->and($output)->not->toContain(basename($citer));
+});
+
+it('c3 — reports a symbol declared ABOVE the cited line that is not the NEAREST one [mutation: $from = 1]', function () {
+    [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    // THE MUTATION THIS ARM EXISTS FOR: `$from = max(1, $line - WINDOW)` becomes `$from = 1`, which
+    // deletes the window's upper half so that ANY symbol declared anywhere above the cited line
+    // passes — the class name, the namespace, every earlier method. Thirteen arms missed it.
+    //
+    // Line 27 sits inside laterMethod(). `ensureBankAccount` is declared at 7, well above it, and is
+    // NOT the nearest preceding declaration — laterMethod is. So this must be reported.
+    [$exit, $output] = citationLintWith([
+        $targetRel => $targetBody,
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// {$targetRel}:27 (ensureBankAccount)\n"
+            ."final class CiterC3 {}\n",
+    ]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain($targetRel.':27')
+        ->and($output)->toContain('citation-symbol-not-found');
+});
+
+it('d — reports a symbol that is not there, AND one that is there but outside the window', function () {
+    [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    // BOTH citations must be reported, and they are asserted SEPARATELY because they fail for
+    // different reasons: :7 names a symbol that is nowhere in the file, :8 names `farAwaySymbol`,
+    // which IS in the file, 23 lines away, and is not the nearest declaration above line 8 either.
+    // Widen the window to the whole file and the second finding vanishes while the first survives —
+    // so an arm that only asserted "exit 1" would stay green through the mutation that guts it.
     [$exit, $output] = citationLintWith([
         $targetRel => $targetBody,
         $citer => "<?php\n\nnamespace App\\Finance;\n\n"
@@ -211,15 +277,53 @@ it('d — reports a symbol that is not there, AND one that is there but outside 
             ."final class CiterD {}\n",
     ]);
 
-    // BOTH citations must be reported, and they are asserted SEPARATELY because they fail for
-    // different reasons: :7 names a symbol that is nowhere in the file, :8 names one that is in the
-    // file but 20-odd lines away. Widen the window to the whole file and the second finding vanishes
-    // while the first survives — so an arm that only asserted "exit 1" would stay green through
-    // exactly the mutation that guts the window.
     expect($exit)->toBe(1)
         ->and($output)->toContain('citation-symbol-not-found')
         ->and($output)->toContain($targetRel.':7')
         ->and($output)->toContain($targetRel.':8');
+});
+
+it('d2 — accepts a RANGE, anchored at its START line [mutations: dropped range, END anchor]', function () {
+    [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    // TWO MUTATIONS THIS ARM EXISTS FOR, and ranges had ZERO coverage across the first thirteen arms:
+    //
+    //   drop `(?:-\d+)?` from the symbol-last pattern -> the symbol is no longer seen at all and this
+    //                                                    citation becomes `citation-missing-symbol`.
+    //   anchor the range at its END line              -> line 31 is farAwaySymbol, so
+    //                                                    `(ensureBankAccount)` stops matching.
+    [$exit, $output] = citationLintWith([
+        $targetRel => $targetBody,
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// {$targetRel}:7-31 (ensureBankAccount)\n"
+            ."final class CiterD2 {}\n",
+    ]);
+
+    expect($exit)->toBe(0)
+        ->and($output)->not->toContain(basename($citer));
+});
+
+it('d3 — a RANGE does not approve itself: the symbol must be at the START, not somewhere inside', function () {
+    [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    // The other half of the range decision. `:7-31` spans the whole class; `farAwaySymbol` is at 31,
+    // INSIDE the range but nowhere near its start and not the nearest declaration above line 7.
+    // Widening the check to the whole range — or anchoring at the end — makes a long range
+    // self-approving, which is precisely what the header claims this does not do.
+    [$exit, $output] = citationLintWith([
+        $targetRel => $targetBody,
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// {$targetRel}:7-31 (farAwaySymbol)\n"
+            ."final class CiterD3 {}\n",
+    ]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain($targetRel.':7')
+        ->and($output)->toContain('citation-symbol-not-found');
 });
 
 it('e — reports a cited file that does not exist, and a bare basename it refuses to resolve', function () {
@@ -247,6 +351,7 @@ it('e — reports a cited file that does not exist, and a bare basename it refus
 
 it('f — reports a cited line past the end of the file', function () {
     [$targetRel, $targetBody] = citationTargetFile();
+    assertTargetShape($targetBody);
     $length = count(explode("\n", $targetBody));
     $citer = 'app/Finance/'.citationFixtureName().'.php';
 
@@ -270,10 +375,22 @@ it('g — is green on a baselined bare citation, and the baseline is not vacuous
     expect($exit)->toBe(0)
         ->and($output)->toContain('no new citation violations');
 
-    // …and the negative arm is not vacuous. The tree really does contain bare citations — 180 of them
+    // …and the negative arm is not vacuous. The tree really does contain bare citations — 187 of them
     // at this commit — and the lint is green only because they are recorded. This reads the baseline,
-    // takes a real entry, and asserts the citing file STILL carries that token, so a green above
+    // takes real entries, and asserts the citing file STILL carries that token, so a green above
     // cannot mean "the baselined citations were quietly deleted and nothing is being forgiven".
+    $entries = citationBaselineEntries();
+
+    expect(count($entries))->toBeGreaterThan(100);
+
+    foreach (array_slice($entries, 0, 5) as [$rule, $citing, $token, $count]) {
+        expect(file_get_contents(citationRoot().'/'.$citing))->toContain($token);
+    }
+});
+
+/** @return array<int, array{0: string, 1: string, 2: string, 3: string}> */
+function citationBaselineEntries(): array
+{
     $entries = [];
     foreach (file(citationRoot().'/citation-lint-baseline.txt') as $raw) {
         $raw = rtrim($raw, "\n");
@@ -283,12 +400,8 @@ it('g — is green on a baselined bare citation, and the baseline is not vacuous
         $entries[] = explode("\t", $raw);
     }
 
-    expect(count($entries))->toBeGreaterThan(100);
-
-    foreach (array_slice($entries, 0, 5) as [$rule, $citing, $token, $count]) {
-        expect(file_get_contents(citationRoot().'/'.$citing))->toContain($token);
-    }
-});
+    return $entries;
+}
 
 it('h — fails when the baseline grows by one, naming the new entry', function () {
     $citer = 'app/Finance/'.citationFixtureName().'.php';
@@ -313,7 +426,8 @@ it('i — does not manufacture a finding from a vendor citation, in either of th
     // NON-VACUITY FIRST, because this arm asserts a GREEN and a green proves nothing unless the trap
     // is really armed. app/Models/Role.php is short; the vendor file the citation actually points at
     // is long; so a basename resolver WOULD report :186 as past end-of-file. That is the manufactured
-    // finding the ticket measured, twice.
+    // finding the ticket measured, twice. It is also the tie the IN-RANGE test must still resolve
+    // toward vendor — vendor contains line 186, the in-tree file does not.
     $appRole = $root.'/app/Models/Role.php';
     $vendorRole = $root.'/vendor/spatie/laravel-permission/src/Models/Role.php';
     expect(is_file($appRole))->toBeTrue()
@@ -344,13 +458,41 @@ it('i — does not manufacture a finding from a vendor citation, in either of th
         ->and($output)->not->toContain('Models/Role.php:186');
 });
 
+it('i2 — the vendor exemption is CONDITIONAL on the cited line existing in a vendor candidate', function () {
+    $root = citationRoot();
+
+    // THE UNCONDITIONAL VERSION HID A LIVE STALE CITATION FOR A WHOLE BRANCH. There are three
+    // basenames in this tree that match on both sides, and only one of them should be exempt. The
+    // arm asserts the four file lengths that decide it, so the fixtures below are not resting on an
+    // assumption about somebody else's file.
+    $vendorUser = $root.'/vendor/laravel/framework/src/Illuminate/Foundation/Auth/User.php';
+    $vendorPermission = $root.'/vendor/spatie/laravel-permission/src/Models/Permission.php';
+    expect(count(file($vendorUser)))->toBeLessThan(412)                   // :412 cannot be in vendor
+        ->and(count(file($root.'/app/Models/User.php')))->toBeGreaterThanOrEqual(412)
+        ->and(count(file($vendorPermission)))->toBeGreaterThanOrEqual(158)  // both sides in range
+        ->and(count(file($root.'/app/Enums/Permission.php')))->toBeGreaterThanOrEqual(158);
+
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    [$exit, $output] = citationLintWith([
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// overridden at User.php:412\n"
+            ."// the submit half of the triple at Permission.php:158-160\n"
+            ."final class CiterI3 {}\n",
+    ]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('User.php:412')
+        ->and($output)->toContain('Permission.php:158')
+        ->and($output)->toContain('citation-not-repo-relative');
+});
+
 it('j — treats a citation inside a fenced block or a quoted grep -n line as a citation', function () {
     // THE DECISION, and it is a decision rather than an oversight: inside a SCANNED file, a
     // `path:LINE` token is a citation wherever it sits. The lint does not try to tell quoted tool
     // output from prose because it structurally cannot — `grep -n` output is byte-identical to a
-    // citation, which is the whole reason docs/ is out of scope (arm b). Inside app/, tests/, bin/
-    // and .claude/skills/ the consequence is accepted: a scanned file that pastes tool output gets a
-    // finding, and the answer is the baseline, argued once.
+    // citation. Inside app/, tests/, bin/ and .claude/skills/ the consequence is accepted: a scanned
+    // file that pastes tool output gets a finding, and the answer is the baseline, argued once.
     //
     // .claude/skills/ IS the file type where this bites, and it is in scope on purpose: skills are
     // what agents read as instructions, and one skill file needed two separate citation-correction
@@ -377,12 +519,7 @@ it('k — fails on a SECOND byte-identical citing line in a baselined file, whic
     $root = citationRoot();
 
     $entry = null;
-    foreach (file($root.'/citation-lint-baseline.txt') as $raw) {
-        $raw = rtrim($raw, "\n");
-        if ($raw === '' || str_starts_with($raw, '#')) {
-            continue;
-        }
-        [$rule, $citing, $token, $count] = explode("\t", $raw);
+    foreach (citationBaselineEntries() as [$rule, $citing, $token, $count]) {
         if ($rule === 'citation-missing-symbol' && (int) $count === 1 && str_ends_with($citing, '.php')) {
             $entry = [$citing, $token];
             break;
@@ -421,8 +558,7 @@ it('l — fails when a baselined citation has been fixed but left in the baselin
     // WARNED on a stale baseline entry and still exited 0, so the baseline could sit above the true
     // count indefinitely and a future regression could hide in the slack. This asserts the lock is a
     // failure here, not a note.
-    $root = citationRoot();
-    $path = $root.'/citation-lint-baseline.txt';
+    $path = citationRoot().'/citation-lint-baseline.txt';
     $original = file_get_contents($path);
 
     try {
@@ -439,7 +575,116 @@ it('l — fails when a baselined citation has been fixed but left in the baselin
     expect(file_get_contents($path))->toBe($original);
 });
 
-it('m — is clean on the tree as it stands', function () {
+it('m — sees an EXTENSIONLESS executable, which the path pattern could not match before', function () {
+    // `bin/quality`, `bin/landed`, `bin/is-docs-only-push`, `bin/quality-promote`, `bin/quality-clean-db`
+    // and `.githooks/pre-push` are cited throughout this repository and matched NOTHING: the path
+    // pattern needed a file extension to know a path when it sees one. `bin/quality:99999` passed.
+    //
+    // This branch walked into that hole itself — adding a step moved `bin/quality` by 13 lines and
+    // staled five in-scope citations of it that the gate could not see.
+    $root = citationRoot();
+    expect(count(file($root.'/bin/quality')))->toBeLessThan(99999)
+        ->and(count(file($root.'/.githooks/pre-push')))->toBeLessThan(99999);
+
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+
+    [$exit, $output] = citationLintWith([
+        $citer => "<?php\n\nnamespace App\\Finance;\n\n"
+            ."// bin/quality:99999 (thisSymbolIsNowhere)\n"
+            ."// .githooks/pre-push:99999 (alsoNowhere)\n"
+            ."final class CiterM {}\n",
+    ]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('bin/quality:99999')
+        ->and($output)->toContain('.githooks/pre-push:99999')
+        ->and($output)->toContain('citation-past-eof');
+});
+
+it('n — generate reads TRACKED files only, while check still reads the working tree', function () {
+    // An untracked file that got into `generate` would bake a path nobody else has into a shrink-only
+    // baseline, and every other checkout would then fail with "fixed (good!)" naming a file that does
+    // not exist there. The asymmetry with `check` is deliberate and is what every arm above depends
+    // on: `check` must still see a file you have just written.
+    $root = citationRoot();
+    $citer = 'app/Finance/'.citationFixtureName().'.php';
+    $baselinePath = $root.'/citation-lint-baseline.txt';
+    $originalBaseline = file_get_contents($baselinePath);
+
+    file_put_contents($root.'/'.$citer, "<?php\n\nnamespace App\\Finance;\n\n// app/Support/ActiveSchool.php:99\nfinal class CiterN {}\n");
+
+    try {
+        // check SEES it…
+        [$checkExit, $checkOutput] = runCitationLint();
+
+        // …and generate does NOT bake it in.
+        runCitationLint('generate');
+        $regenerated = file_get_contents($baselinePath);
+    } finally {
+        @unlink($root.'/'.$citer);
+        file_put_contents($baselinePath, $originalBaseline);
+    }
+
+    expect($checkExit)->toBe(1)
+        ->and($checkOutput)->toContain(basename($citer))
+        ->and($regenerated)->not->toContain(basename($citer));
+
+    // The regeneration is otherwise a no-op at this commit, which is also the assertion that the
+    // committed baseline is exactly what `generate` produces — a drifted baseline would show up here.
+    expect($regenerated)->toBe($originalBaseline);
+    expect(file_get_contents($baselinePath))->toBe($originalBaseline);
+});
+
+it('o — the lint reads its OWN file, and its worked example is compliant', function () {
+    // The lint used to exempt itself, and that is how its worked example came to cite
+    // `ActiveSchool.php` line 99 for `getOrFail`, which is at line 66 — the exemplar failing the
+    // exemplar's own rule, in the one file the rule could not read. Only the coverage test is exempt
+    // now.
+    $root = citationRoot();
+    $source = file_get_contents($root.'/bin/ci-citation-lint.php');
+
+    expect($source)->not->toContain("'bin/ci-citation-lint.php',")
+        ->and($source)->toContain('app/Support/ActiveSchool.php:66 (getOrFail)');
+
+    // The exemplar is a real citation about a real file, asserted here rather than assumed.
+    $activeSchool = file($root.'/app/Support/ActiveSchool.php', FILE_IGNORE_NEW_LINES);
+    expect($activeSchool[65])->toContain('getOrFail');
+
+    // …and the lint reds it if it drifts. The exemplar is moved to a line where `getOrFail` is not,
+    // and is not the nearest declaration above either, and the lint must say so about its own file.
+    $original = $source;
+    try {
+        file_put_contents(
+            $root.'/bin/ci-citation-lint.php',
+            str_replace('app/Support/ActiveSchool.php:66 (getOrFail)', 'app/Support/ActiveSchool.php:99 (getOrFail)', $original)
+        );
+        [$exit, $output] = runCitationLint();
+    } finally {
+        file_put_contents($root.'/bin/ci-citation-lint.php', $original);
+    }
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('bin/ci-citation-lint.php')
+        ->and($output)->toContain('app/Support/ActiveSchool.php:99');
+
+    expect(file_get_contents($root.'/bin/ci-citation-lint.php'))->toBe($original);
+});
+
+it('p — the measurement script and the lint share one declaration regex', function () {
+    // bin/citation-window-measure.php is what measured the nearest-preceding half of the compliance
+    // rule, and it carries its own copy of the declaration regex. If the two drift apart the published
+    // measurement silently stops describing the lint, which is the failure this whole branch is about
+    // one level up.
+    $root = citationRoot();
+
+    foreach (['bin/ci-citation-lint.php', 'bin/citation-window-measure.php'] as $file) {
+        $source = file_get_contents($root.'/'.$file);
+        expect($source)->toContain("'/\\b(?:function|class|interface|trait|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)/'")
+            ->and($source)->toContain("'/\\bconst\\s+([A-Z_][A-Z0-9_]*)/'");
+    }
+});
+
+it('q — is clean on the tree as it stands', function () {
     [$exit, $output] = runCitationLint();
 
     expect($exit)->toBe(0)

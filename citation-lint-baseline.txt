@@ -5,9 +5,12 @@
 # silently, which is the hole recorded against ci-boundary-lint.php in
 # docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md.
 #
+# Generated from TRACKED files only — an untracked path baked in here fails for everybody else.
+#
 # Every entry here is a citation the lint cannot verify — most of them bare `path:LINE` tokens
-# written before the symbol form existed. Burn one down by giving it a symbol
-# (`path:LINE (symbolName)`) and re-deriving the line, then regenerate:
+# written before the symbol form existed. Burn one down by giving it a symbol, in either
+# spelling (`path:LINE (symbolName)` or `symbolName (path:LINE)`), and re-deriving the line,
+# then regenerate:
 #
 #   php bin/ci-citation-lint.php generate
 #
@@ -20,6 +23,7 @@ citation-missing-symbol	.claude/skills/finance-context/SKILL.md	docs/handoff/c1-
 citation-missing-symbol	.claude/skills/finance-context/SKILL.md	docs/handoff/slice-2-brief.md:67	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	CLAUDE.md:72	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	app/Finance/Console/DriveFinanceStates.php:76	1
+citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	bin/quality:195	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	composer.json:54	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	docs/finance/drive-environment.md:17	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	docs/finance/drive-environment.md:51	2
@@ -50,7 +54,6 @@ citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	docs/handoff/repor
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	docs/handoff/reports/feat-rbac-fail-closed-finance.md:469	1
 citation-missing-symbol	.claude/skills/finance-drive/SKILL.md	phpunit.xml:29	2
 citation-missing-symbol	.claude/skills/finance-method/SKILL.md	docs/handoff/slice-2-brief.md:67	1
-citation-missing-symbol	app/Finance/Actions/GenerateInvoice.php	app/Models/StudentCurriculum.php:76	1
 citation-missing-symbol	app/Finance/Actions/GenerateInvoice.php	config/rbac.php:156	1
 citation-missing-symbol	app/Finance/Console/ImportOpeningBalances.php	app/Services/Validators/GuardianImportRowValidator.php:15	1
 citation-missing-symbol	app/Finance/Console/ImportOpeningBalances.php	bootstrap/app.php:37	1
@@ -64,23 +67,29 @@ citation-missing-symbol	app/Models/Term.php	app/Http/Resources/TermResource.php:
 citation-missing-symbol	app/Models/Term.php	app/Services/BroadsheetService.php:163	1
 citation-missing-symbol	app/Models/Term.php	app/Services/BroadsheetService.php:65	1
 citation-missing-symbol	app/Services/GuardianMatcher.php	app/Models/Guardian.php:88	1
-citation-missing-symbol	app/Services/GuardianService.php	app/Models/Scopes/SchoolScope.php:35	1
 citation-missing-symbol	bin/ci-grants-convergence-lint.php	bin/lint-changed.sh:51	1
 citation-missing-symbol	bin/ci-grants-convergence-lint.php	database/seeders/RbacSeeder.php:494	1
 citation-missing-symbol	bin/ci-sql-clock-lint.php	app/Support/Authz.php:78	1
 citation-missing-symbol	bin/is-docs-only-push	bin/lint-changed.sh:24	1
+citation-missing-symbol	bin/landed	.githooks/pre-push:3	1
+citation-missing-symbol	bin/quality	.githooks/pre-push:74	1
+citation-missing-symbol	bin/quality-promote	.githooks/pre-push:48	1
+citation-missing-symbol	bin/quality-promote	.githooks/pre-push:52	1
 citation-missing-symbol	config/rbac.php	app/Http/Middleware/SetSchoolContext.php:51	1
+citation-missing-symbol	database/migrations/2026_08_03_100000_converge_finance_change_grants.php	bin/quality-promote:79	1
+citation-missing-symbol	database/migrations/2026_08_05_100000_converge_finance_access_grants.php	bin/quality-promote:79	1
 citation-missing-symbol	database/migrations/2026_08_06_100000_move_head_of_school_finance_to_executive_director.php	app/Models/User.php:412	1
 citation-missing-symbol	database/migrations/2026_08_08_100000_realign_opening_balance_staging_for_per_fee_type_file.php	app/Finance/Console/ImportOpeningBalances.php:86	1
 citation-missing-symbol	database/migrations/2026_08_08_110000_opening_balance_posting_state_and_guards.php	app/Finance/Enums/InvoiceStatus.php:14	1
-citation-missing-symbol	database/migrations/2026_08_13_100000_timestamp_columns_drop_implicit_on_update.php	app/Notifications/Models/NotificationAction.php:68	1
 citation-missing-symbol	database/migrations/2026_08_13_100000_timestamp_columns_drop_implicit_on_update.php	app/Notifications/Services/NotificationActionResolver.php:14	1
 citation-missing-symbol	database/seeders/DriveCastSeeder.php	routes/api.php:47	1
 citation-missing-symbol	database/seeders/DriveCastSeeder.php	routes/web.php:353	1
 citation-missing-symbol	database/seeders/RbacSeeder.php	routes/endpoints/finance.php:24	1
 citation-missing-symbol	routes/web.php	routes/endpoints/finance.php:73	1
 citation-missing-symbol	tests/Arch/BoundaryLintCoverageTest.php	app/Models/StudentCurriculum.php:97	1
+citation-missing-symbol	tests/Arch/BoundaryLintCoverageTest.php	bin/quality:251	1
 citation-missing-symbol	tests/Arch/BoundaryLintCoverageTest.php	composer.json:67	1
+citation-missing-symbol	tests/Arch/SqlClockLintCoverageTest.php	bin/quality:251	1
 citation-missing-symbol	tests/Feature/Finance/ByStudentRouteIsolationTest.php	routes/endpoints/finance.php:228	1
 citation-missing-symbol	tests/Feature/Finance/FeeScheduleTest.php	routes/web.php:216	1
 citation-missing-symbol	tests/Feature/Finance/FeeSchedulesScreenTest.php	routes/web.php:207	1
@@ -88,12 +97,13 @@ citation-missing-symbol	tests/Feature/Finance/FinancePrefillRoundTripTest.php	ro
 citation-missing-symbol	tests/Feature/Finance/InvoiceWireIdsTest.php	bootstrap/app.php:47	1
 citation-missing-symbol	tests/Feature/Finance/OpeningBalanceOperatorScreenTest.php	phpunit.xml:45	1
 citation-missing-symbol	tests/Feature/Finance/PaymentReceiptTest.php	bootstrap/app.php:157	1
-citation-missing-symbol	tests/Feature/Finance/PaymentRecordGateTest.php	app/Support/ActiveSchool.php:42	1
 citation-missing-symbol	tests/Feature/Finance/PaymentRecordGateTest.php	config/sanctum.php:21	1
 citation-missing-symbol	tests/Feature/Finance/ReductionPreCheckTest.php	routes/endpoints/finance.php:222	1
 citation-missing-symbol	tests/Feature/Guardian/GuardianUniquenessTest.php	bootstrap/app.php:197	1
 citation-missing-symbol	tests/Feature/Isolation/FinanceFailClosedBatchTest.php	app/Http/Middleware/SetSchoolContext.php:51	2
 citation-missing-symbol	tests/Feature/Isolation/FinanceFailClosedBatchTest.php	routes/web.php:155	1
+citation-missing-symbol	tests/Feature/Quality/DocsOnlyPushCoverageTest.php	.githooks/pre-push:41	1
+citation-missing-symbol	tests/Feature/Quality/DocsOnlyPushCoverageTest.php	.githooks/pre-push:48	1
 citation-missing-symbol	tests/Feature/Quality/DocsOnlyPushCoverageTest.php	app/Console/Commands/AuthzObservations.php:22	1
 citation-missing-symbol	tests/Feature/Quality/DocsOnlyPushCoverageTest.php	bin/lint-changed.sh:24	1
 citation-missing-symbol	tests/Feature/Quality/NothingReadsDocumentationTest.php	app/Console/Commands/AuthzObservations.php:149	1

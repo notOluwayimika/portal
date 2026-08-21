@@ -1,8 +1,10 @@
 # TICKET — `path:LINE` citations in comments and docs go stale silently; a gate proposal
 
-**Status:** CLOSED by `feat/citation-lint` — tier 3, new citations only, shrink-only baseline,
-scoped to code and skills. See "The tier that shipped" at the end of this file; everything above it
-is the record as it stood when the tier was still open, kept unedited.
+**Status:** CLOSED by `feat/citation-lint` — tier 3, both citation spellings, new citations only,
+shrink-only baseline, scoped to code and skills. See "The tier that shipped" at the end of this
+file, and "Instances 7-10" after it — the mechanism shipped carrying four instances of its own
+subject. Everything above those two sections is the record as it stood when the tier was still open,
+kept unedited.
 
 Raised by `feat/u8-invoice-modal-discount-policy` (U8 commit 5),
 which corrected four of them and is the **third consecutive branch** to correct at least one. The
@@ -457,17 +459,23 @@ first sentence this section is the answer to.
 
 ## Tier 3, new citations only, shrink-only baseline, scoped to code and skills
 
-**The form.** A citation is compliant when it carries the symbol it points at and that symbol occurs
-within **±3 lines** of the cited line: `app/Support/ActiveSchool.php:99 (getOrFail)`. A range is
-checked at its start line. The regex is this ticket's own, reused verbatim.
+**The form.** A citation is compliant when it names the symbol it points at — in either of the two
+spellings this repository uses, `path:LINE (symbolName)` or `symbolName (path:LINE)` — and that
+symbol is really there, meaning EITHER within **±3 lines** of the cited line OR the nearest
+preceding declaration to it. A range is checked at its start line. The path pattern is this
+ticket's own regex plus a fixed alternation for the six extensionless executables under `bin/` and
+`.githooks/`, which this ticket already noted matched nothing.
 
 **Where.** `bin/ci-citation-lint.php`, `citation-lint-baseline.txt`,
-`tests/Arch/CitationLintCoverageTest.php` (13 arms), `bin/quality` step 13 of 16, state-based.
+`tests/Arch/CitationLintCoverageTest.php` (22 arms), `bin/citation-window-measure.php` (the
+committed extractor behind the ±3 and nearest-preceding measurements; not a gate), `bin/quality`
+step 13 of 16, state-based.
 
-**Baseline size at the commit that introduces it: 163 keys, 180 citations** — 194 matched in the
-scanned dirs, 14 exempt under vendor, 0 already compliant. By rule: 98 `citation-missing-symbol`,
-78 `citation-not-repo-relative`, 2 `citation-unresolvable`. By citing directory: `.claude` 61,
-`app` 40, `tests` 40, `database` 26, `bin` 8, `routes` 2, `config` 1.
+**Baseline size at the commit that introduces it: 170 keys, 187 citations.** By rule: 107
+`citation-missing-symbol`, 78 `citation-not-repo-relative`, 2 `citation-unresolvable`. By citing
+directory: `.claude` 62, `app` 39, `tests` 43, `database` 28, `bin` 12, `routes` 2, `config` 1.
+(The first commit on the branch reported 163 / 180; a cold review found that figure was taken before
+the matcher was narrowed, and nine of its findings are folded into the numbers above.)
 
 **Baseline key: `rule \t citingPath \t citedToken \t COUNT`.** The count is the fix
 `docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md` prescribes, adopted here rather
@@ -521,22 +529,57 @@ plants both of the spellings this ticket recorded.
    line can still be wrong about what it claims. The lint checks that the pointer lands somewhere
    sane. **Instances 3.3, 3.4 and 5 in this ticket were false when written with the citation itself
    well-formed, and a compliant citation of the same shape would still pass.**
-2. **`docs/` is not scanned, and that is deliberate.** Reports paste raw command output by rule and
-   `grep -n` output is byte-identical to a citation — the measurement in this ticket (seven of nine
-   past-EOF hits at `2b3cdbb` being self-quotations) is the reason. **The cost is that citations
-   inside tickets and reports — including every citation in THIS file — stay unguarded, and two of
-   the six instances recorded here were exactly that.** Nothing covers them.
-3. **Extensionless paths under `bin/` match nothing**, as this ticket already noted. The closing
-   branch hit it the same day: adding a step to `bin/quality` shifted its line numbers by +13 and
-   made five in-scope citations of `bin/quality` stale, none of which the lint could see. They were
-   corrected by hand, and the ones in `docs/` were left.
+2. **`docs/` is not scanned, and the reason is VOLUME rather than false positives.** The first
+   version of this section gave the reason as pasted `grep -n` output manufacturing findings — the
+   `2b3cdbb` self-quotation measurement above. That prediction does not describe the tree any more:
+   docs/ manufactures none. What it does is swamp. Adding `docs` to the scanned list produces
+   **1,347 keys / 1,579 citations, of which docs/ contributes 1,177 / 1,392** — seven and a half
+   times the code baseline, essentially all of it unverifiable prose and pasted output. Skipping
+   fenced blocks does not rescue it: only 372 of the 1,444 citation tokens in docs/ are inside a
+   fence. The reason matters because the old one invited a fence-skipper and a conclusion that
+   docs/ was then safe. **The cost is that citations inside tickets and reports — including every
+   citation in THIS file — stay unguarded, and two of the six instances recorded here were exactly
+   that.** Nothing covers them.
+3. **Only SIX extensionless paths are matched, and by name.** This ticket noted that extensionless
+   executables under `bin/` matched nothing; the closing branch hit it the same day, shifting
+   `bin/quality` by 13 lines and staling five in-scope citations the gate could not see. The six
+   that exist are now named in the pattern — 11 citations across 9 files became visible and were
+   baselined — but a seventh executable added later is invisible until someone adds it, and nothing
+   fails when that happens. The `docs/` citations that shift made stale were left.
 4. **The baseline forgives a target in a file, not a sentence.** Deleting a baselined bare citation
    and adding a different one to the same target in the same file keeps the count and stays green.
 5. **Two files are exempt entirely** — the lint and its coverage test — because both contain
    citations as data.
 
+## Instances 7-10 — the mechanism, born carrying four of these
+
+Recorded here rather than only in the branch report, because this ticket is where the class is
+counted and the mechanism is not exempt from its own subject.
+
+The first commit of `feat/citation-lint` shipped:
+
+1. **A worked example that failed its own rule by 33 lines.** The docblock and the report both used
+   `app/Support/ActiveSchool.php:99 (getOrFail)`; `getOrFail` is at `:66` and `:99` is `runFor`. It
+   sat in the one file the lint exempted from itself, so the gate could not have seen it.
+2. **A live citation 48 lines stale, hidden BY the lint.**
+   `app/Finance/Http/Controllers/OpeningBalanceBatchController.php:100` cited `Permission.php:158-160`
+   for a constant that moved to `:206` — correct at `b1d5e50`, wrong since. It went unbaselined and
+   unreported because an unconditional vendor tie-break swallowed the bare basename before anything
+   was checked.
+3. **Two symbol-first citations stale**, in `app/Finance/Actions/GenerateInvoice.php` (`:76-78` for
+   a `booted()` at 80) and `app/Services/GuardianService.php` (a class cited at `:35-37` where it is
+   declared at 13) — invisible because the lint refused the symbol-first spelling and told the
+   author the citations carried no symbol.
+4. **Four more of the class created by the branch itself**, when adding a `bin/quality` step shifted
+   its line numbers by +13; those were caught by hand, and the ones in `docs/` were left stale.
+
+All four were found by a cold review, which is the ninth, tenth and eleventh time in this ticket's
+history that a human found what nothing automatic did. They are fixed in the branch's second commit
+and each is pinned by an arm.
+
 ## The count this ticket keeps
 
-Six instances, four branches, every one found by a human or a cold review. From this commit there is
-a mechanism, and what it asserts is narrower than what those six needed: that a NEW citation names a
-symbol and the symbol is where the citation says it is.
+Six instances before the mechanism, four branches. Four more in the commit that built the mechanism,
+found the same way. From here there is something automatic, and what it asserts is narrower than
+what any of those ten needed: that a NEW citation names a symbol, in either spelling, and that the
+symbol is where the citation says it is.

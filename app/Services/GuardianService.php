@@ -319,8 +319,8 @@ class GuardianService
             // synthetic-address mint was retired, and Laravel's query builder turns
             // `where('email', null)` into `WHERE email IS NULL`
             // (Query\Builder::where, the `is_null($value)` short-cut) — NOT into a
-            // never-matching `email = NULL`. `User` is also explicitly exempt from
-            // SchoolScope (`app/Models/Scopes/SchoolScope.php:35-37`, "users are
+            // never-matching `email = NULL`. `User` is also explicitly exempt inside
+            // SchoolScope::apply (`app/Models/Scopes/SchoolScope.php:35-37`, "users are
             // identities, not tenant data"), so the lookup ran unscoped across every
             // school. Every email-less guardian creation therefore bound itself to
             // whichever email-less account the database returned first — a DIFFERENT

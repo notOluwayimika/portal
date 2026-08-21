@@ -195,8 +195,36 @@ it('PROOF 5 — account-first (W3) does not deadlock against invoice-first (#94)
         return $inv;
     });
     $accountId = StudentAccount::query()->where('student_id', $student->id)->value('id');
-    $paymentId = DB::table('finance_payments')->where('student_id', $student->id)->value('id');
     $y = DB::table('finance_invoices')->where('student_id', $student->id)->orderByDesc('id')->value('id');
+
+    // A SEPARATE, DELIBERATELY UNALLOCATED PAYMENT for B to settle from, and the reason is
+    // an invariant that did not exist when this proof was written. B's insert below used to
+    // draw on the 5000 payment above — which RecordPayment had ALREADY allocated in full
+    // against invoice X. Σ(allocations of that payment) would have become 6000 against a
+    // 5000 payment: an over-allocation on the PAYMENT axis, which nothing in the schema
+    // refused until
+    // `2026_08_21_110000_finance_allocation_not_over_payment_amount`. The fixture was
+    // illegal all along and the database had no opinion; now it does, and it is right.
+    //
+    // NOTHING ABOUT THE PROOF CHANGES. This test is about lock ORDERING — that an
+    // account-first sequence completes without waiting on an invoice row held
+    // invoice-first, so no 1213 — and the allocation is only the write at the end of that
+    // sequence. It still inserts, on the second connection, while A holds invoice X. Only
+    // the payment it draws on is now one with room in it.
+    $paymentId = DB::table('finance_payments')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'student_id' => $student->id,
+        'reference' => random_int(1, PHP_INT_MAX),
+        'amount_minor' => 1000,
+        'amount_currency' => 'NGN',
+        'received_at' => SchoolDay::today(),
+        'bank_account_id' => testBankAccountId(),
+        'payer_name' => 'Unallocated',
+        'method' => 'manual',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
     $second = w3SecondConn();
 

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
+use App\Http\Controllers\ClassLevelProgressionController;
 use App\Http\Controllers\CommentBandController;
 use App\Http\Controllers\CommentEntryController;
 use App\Http\Controllers\CurriculumController;
@@ -67,6 +68,35 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/class-structure/arms', [ClassLevelArmController::class, 'storeArm']);
     Route::put('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'updateArm']);
     Route::delete('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'destroyArm']);
+    /*
+     * Progression config, per class level (M1). Where a level's pupils go at end of year, which term
+     * slots it runs, and which exam types it offers — the tables the migration jobs read and which,
+     * until now, could only be populated with SQL.
+     *
+     * `academic_setup.manage` is the right gate and already exists: this is academic configuration,
+     * the same class of act as editing the class structure it sits beside. No new permission — one is
+     * not added until a screen checks it.
+     *
+     * Every segment here is literal before its `{uuid}` wildcard (`/progression`, `/participation`,
+     * `/exam-types` all follow `{classLevel:uuid}` rather than competing with it), so none can be
+     * swallowed the way `/curricula/queued` was (#277).
+     */
+    Route::get('/class-levels/{classLevel:uuid}/progression', [ClassLevelProgressionController::class, 'show']);
+    Route::put('/class-levels/{classLevel:uuid}/progression', [ClassLevelProgressionController::class, 'update']);
+    Route::post('/class-levels/{classLevel:uuid}/participation', [ClassLevelProgressionController::class, 'storeParticipation']);
+    /*
+     * withoutScopedBindings(): Laravel implicitly SCOPES a nested binding that uses a custom key,
+     * resolving the child through a relation named after the parameter (`participations()`), which
+     * this model does not have — it is `termParticipation()`. Rather than rename a relation to satisfy
+     * route-binding conventions, the binding is left unscoped and the CONTROLLER checks ownership
+     * explicitly (`abort_unless($participation->class_level_id === $classLevel->id, 404)`), which is
+     * visible, tested, and the same nested-route-integrity idiom StudentCurriculumController uses.
+     * Both models are School-scoped, so this closes the remaining same-school mismatch.
+     */
+    Route::patch('/class-levels/{classLevel:uuid}/participation/{participation:uuid}', [ClassLevelProgressionController::class, 'updateParticipation'])->withoutScopedBindings();
+    Route::delete('/class-levels/{classLevel:uuid}/participation/{participation:uuid}', [ClassLevelProgressionController::class, 'destroyParticipation'])->withoutScopedBindings();
+    Route::put('/class-levels/{classLevel:uuid}/exam-types', [ClassLevelProgressionController::class, 'syncExamTypes']);
+
     Route::post('/class-structure/streams', [ClassLevelArmController::class, 'storeStream']);
     Route::put('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'updateStream']);
     Route::delete('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'destroyStream']);

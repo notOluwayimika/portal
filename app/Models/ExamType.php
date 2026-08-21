@@ -12,6 +12,11 @@ use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * @property int $id
+ * @property string $uuid set in the creating hook below; annotated so Larastan can see it
+ * @property string $name
+ */
 class ExamType extends Model
 {
     use LogsActivity;

@@ -1,9 +1,16 @@
 import axios from 'axios';
-import { Pencil, Trash2 } from 'lucide-react';
+import { GitBranch, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { ProgressionPanel } from '@/components/setup/progression-panel';
 import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
-import type { Arm, ClassLevel, GradingScheme, Stream } from '@/types/models';
+import type {
+    Arm,
+    ClassLevel,
+    ExamType,
+    GradingScheme,
+    Stream,
+} from '@/types/models';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,6 +43,8 @@ export function ClassStructureTab() {
     const [arms, setArms] = useState<Arm[]>([]);
     const [streams, setStreams] = useState<Stream[]>([]);
     const [gradingSchemes, setGradingSchemes] = useState<GradingScheme[]>([]);
+    // For the progression panel's exam-type set. Same-school by the endpoint's own scoping.
+    const [examTypes, setExamTypes] = useState<ExamType[]>([]);
     const [loading, setLoading] = useState(false);
     const [lvlModal, setLvlModal] = useState<string | null>(null);
     const [armModal, setArmModal] = useState<string | null>(null);
@@ -55,6 +64,15 @@ export function ClassStructureTab() {
         ClassLevel | Arm | Stream
     > | null>(null);
 
+    /*
+     * Progression config opens as a PANEL from the level row rather than as its own setup tab:
+     * progression is a property of a specific level, so a standalone tab would need a level picker
+     * duplicating this very list.
+     */
+    const [progressionLevel, setProgressionLevel] = useState<ClassLevel | null>(
+        null,
+    );
+
     useEffect(() => {
         const fetchClassStructure = async () => {
             const response = await axios.get('/api/class-structure');
@@ -63,6 +81,10 @@ export function ClassStructureTab() {
             setStreams(response.data.streams);
             const schemesResponse = await axios.get('/api/grading-schemes');
             setGradingSchemes(schemesResponse.data.data ?? []);
+            const examTypesResponse = await axios.get('/api/exam-types');
+            setExamTypes(
+                examTypesResponse.data.data ?? examTypesResponse.data ?? [],
+            );
         };
         fetchClassStructure();
     }, [loading]);
@@ -401,6 +423,16 @@ export function ClassStructureTab() {
                                             >
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
+                                                    title="Configure progression"
+                                                    aria-label={`Configure progression for ${l.name}`}
+                                                    onClick={() =>
+                                                        setProgressionLevel(l)
+                                                    }
+                                                >
+                                                    <GitBranch className="h-3 w-3" />
+                                                </button>
+                                                <button
+                                                    className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() => {
                                                         setLvlForm({
                                                             name: l.name,
@@ -732,6 +764,16 @@ export function ClassStructureTab() {
                         />
                     </div>
                 </Modal>
+            )}
+
+            {progressionLevel && (
+                <ProgressionPanel
+                    classLevel={progressionLevel}
+                    /* Same-school by construction — this is the list already loaded here. */
+                    levels={levels}
+                    examTypes={examTypes}
+                    onClose={() => setProgressionLevel(null)}
+                />
             )}
 
             {confirm && (

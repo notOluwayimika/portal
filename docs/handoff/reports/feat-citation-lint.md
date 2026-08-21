@@ -642,6 +642,33 @@ $ git diff --stat HEAD origin/feat/citation-lint     # empty
 A PASS here is the per-push floor and nothing more: one PHP version, one machine, one MySQL, and
 `bin/quality` has produced both PASS 16/16 and a red on byte-identical code before (ADR 0053).
 
+### 11.1 The cold-review fixes
+
+`bin/quality` ran again under the hook on `59c4f99`, the commit carrying all nine findings, and
+passed 16/16:
+
+```
+[13/16] citation lint (a new path:LINE citation names a symbol, and the symbol is there)
+   ✓ citation-lint
+[14/16] architecture tests (§17.1)                     ✓ arch      (103 tests, 564 assertions)
+[15/16] static analysis (Larastan level 5 vs baseline) ✓ larastan  (0 errors)
+[16/16] tests (failure ratchet vs tests/ratchet-baseline.txt)  ✓ test-ratchet
+✓ quality: PASS
+```
+
+Step 3 reported `Pint (check) on 12 changed PHP file(s)`. Read back from the remote by sha rather
+than from the push output:
+
+```
+$ git rev-parse HEAD                       59c4f990dafb1610ed108f48f2afcd2bf5655919
+$ git rev-parse origin/feat/citation-lint  59c4f990dafb1610ed108f48f2afcd2bf5655919
+$ git diff --stat HEAD origin/feat/citation-lint     # empty
+```
+
+The same caveat applies, and one more: the arch group grew from 94 to 103 tests with this branch's
+arms, so a green there is a statement about 22 citation-lint arms among them, not about the arms
+being the right ones. §7.2 is the part that argues they are.
+
 ---
 
 ## 12. The cold review

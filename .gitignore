@@ -60,3 +60,10 @@ app/Finance/BoundaryLintFixture*.php
 # same residue on a SIGKILL.
 app/Finance/SqlClockLintFixture*.php
 database/sql/SqlClockLintFixture*.sql
+
+# Same, for tests/Arch/CitationLintCoverageTest.php — same plant-and-remove shape, same residue
+# on a SIGKILL. The markdown patterns matter as much as the PHP one: that lint scans markdown,
+# and two of its fixtures are planted under .claude/skills/ and docs/ deliberately.
+app/Finance/CitationLintFixture*.php
+.claude/skills/CitationLintFixture*.md
+docs/handoff/tickets/CitationLintFixture*.md

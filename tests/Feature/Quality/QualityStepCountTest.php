@@ -16,7 +16,7 @@
  *
  * WHAT IT DOES NOT COVER, and this matters more than what it does. It catches the FILE disagreeing
  * with ITSELF. It cannot catch documentation drift — the ADRs, tickets, briefs and test comments
- * that name a step by number ("the suite is step 15", "fifteen steps guarantee…") are prose in
+ * that name a step by number ("the suite is step 16", "sixteen steps guarantee…") are prose in
  * other files, and every one of those has to be moved by hand. Do not read a green here as "the
  * step count is consistent across the repo"; read it as "the script's own two numbers still match".
  * The wider half stays unmechanised.

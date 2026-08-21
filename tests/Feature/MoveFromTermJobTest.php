@@ -13,6 +13,7 @@ use App\Models\CurriculumSubject;
 use App\Models\ExamType;
 use App\Models\GradingScheme;
 use App\Models\MarkingComponent;
+use App\Models\MarkingScheme;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
@@ -344,6 +345,12 @@ it('excludes withdrawn pupils and lands promoted and repeated as active', functi
     expect($activeCarried->status)->toBe(StudentStatusEnum::ACTIVE);
 });
 
+/**
+ * This proves the GUARD, not the firstOrCreate convergence. The first run closes the source inside
+ * the same transaction, so the re-run aborts at passesGuards() before reaching any write — which is
+ * genuinely idempotent, but by a different mechanism than "firstOrCreate found the existing rows".
+ * Named explicitly so the green is not read as evidence for the anchor it does not exercise.
+ */
 it('is idempotent — a second run creates no duplicate curriculum, episodes or subjects', function () {
     $w = mft_world([1, 2]);
     mft_term($w['session'], 2);
@@ -366,6 +373,79 @@ it('is idempotent — a second run creates no duplicate curriculum, episodes or 
     expect(StudentSubject::where('student_curriculum_id',
         StudentCurriculum::where('student_id', $student->id)->where('curriculum_id', $target->id)->value('id')
     )->count())->toBe($subjectsAfterFirst);
+});
+
+/**
+ * SCHEME-BACKED FIXTURES. Every other fixture in this file leaves `marking_scheme_id` NULL and uses
+ * subject-local MarkingComponents — the LEGACY path. That left the entire scheme-backed branch of
+ * resolveTargetCurriculum unasserted, which is how a CCM mis-scheme survived review: the `is_ccm`
+ * test above checks the flag, not the scheme behind it.
+ */
+function mft_markingScheme(array $w, bool $isCcm, int $version = 1): MarkingScheme
+{
+    return MarkingScheme::create([
+        'school_id' => $w['school']->id,
+        'is_ccm' => $isCcm,
+        'version' => $version,
+        'status' => 'active',
+    ]);
+}
+
+it('carries the marking scheme across when the target is NON-CCM', function () {
+    $w = mft_world([1, 2]);
+    mft_term($w['session'], 2);
+    $scheme = mft_markingScheme($w, isCcm: false);
+    $w['source']->update(['marking_scheme_id' => $scheme->id]);
+    mft_enroll($w);
+
+    mft_run($w);
+
+    $target = mft_target($w, 2);
+    // The SOURCE's scheme, not the latest — a class keeps the exact version it has been marked
+    // against rather than jumping to a newer one mid-session.
+    expect($target->marking_scheme_id)->toBe($scheme->id);
+});
+
+it('gives a CCM target a CCM marking scheme, never the non-CCM one it came from', function () {
+    // THE BUG THIS TURNS RED. The source is always non-CCM (guarded), so its marking scheme is the
+    // FULL-TERM one. Copying it onto a CCM target stamps half-term work with full-term weights — and
+    // silently, because cloneCurriculumSubjects skips the subject-local component copy whenever
+    // marking_scheme_id is set, so every component then resolves through the wrong scheme.
+    $w = mft_world([1, 2], ccmSlots: [2]);
+    mft_term($w['session'], 2);
+    $nonCcmScheme = mft_markingScheme($w, isCcm: false);
+    $ccmScheme = mft_markingScheme($w, isCcm: true);
+    $w['source']->update(['marking_scheme_id' => $nonCcmScheme->id]);
+    mft_enroll($w);
+
+    mft_run($w);
+
+    $target = mft_target($w, 2);
+    expect((bool) $target->is_ccm)->toBeTrue();
+    expect($target->marking_scheme_id)->toBe($ccmScheme->id);
+    expect($target->marking_scheme_id)->not->toBe($nonCcmScheme->id);
+});
+
+it('drops a CCM target onto the legacy component path when the school has no CCM scheme', function () {
+    // NULL is a legitimate answer, not a failure: cloneCurriculumSubjects then copies subject-local
+    // components and stamps them is_ccm = the target's, which is already correct for CCM.
+    $w = mft_world([1, 2], ccmSlots: [2]);
+    mft_term($w['session'], 2);
+    $nonCcmScheme = mft_markingScheme($w, isCcm: false);
+    $w['source']->update(['marking_scheme_id' => $nonCcmScheme->id]);
+    mft_enroll($w);
+
+    mft_run($w);
+
+    $target = mft_target($w, 2);
+    expect($target->marking_scheme_id)->toBeNull();
+
+    $newSubject = CurriculumSubject::where('curriculum_id', $target->id)
+        ->where('subject_id', $w['compulsory']->subject_id)
+        ->first();
+    $components = $newSubject->markingComponents()->get();
+    expect($components)->toHaveCount(1);
+    expect((bool) $components[0]->is_ccm)->toBeTrue();
 });
 
 it('refuses a completed target term rather than reaching backward into backfill territory', function () {

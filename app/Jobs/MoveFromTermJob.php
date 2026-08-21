@@ -9,6 +9,7 @@ use App\Jobs\Middleware\SchoolAware;
 use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
+use App\Models\MarkingScheme;
 use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
@@ -50,13 +51,20 @@ use Spatie\Activitylog\CauserResolver;
  * two lines and every future curriculum starts life closed.
  *
  * ── IDEMPOTENCY ───────────────────────────────────────────────────────────────────────────────────
- * Anchored on firstOrCreate((student_id, curriculum_id)), which is sound HERE because the target is
- * deterministic: same arm, same exam type, one computed term slot. (End of YEAR cannot use this
- * anchor — its target arm varies under distribution, so a re-run would land a different curriculum_id
- * and mint a second live episode. That job anchors on the source's promoted_to_id instead.)
+ * THE GUARD IS THE REAL ANCHOR, and it is worth being precise about which mechanism does the work.
+ * handle() wraps everything in ONE transaction and closes the source INSIDE it, so a committed run
+ * always leaves the source closed — and a re-run therefore aborts at passesGuards() before reaching
+ * any write. A run that fails rolls the close back with everything else. There is no committed state
+ * in which the body runs twice.
  *
- * A second run is additionally a no-op at the guard: the first run closes the source, and a
- * non-active source aborts.
+ * The firstOrCreate((student_id, curriculum_id)) convergence is a second line, not the first, and is
+ * essentially unreachable given atomic rollback plus the in-transaction close. It still matters as
+ * defence for a target that already exists for another reason (a partially hand-built next term), so
+ * it stays — but the test that proves idempotency is proving the GUARD, and says so.
+ *
+ * (End of YEAR cannot lean on either: its target arm varies under distribution, so a re-run would
+ * land a different curriculum_id and mint a second live episode. That job anchors on the source's
+ * promoted_to_id instead.)
  *
  * ── ORDERING AGAINST THE CCM MOVE ─────────────────────────────────────────────────────────────────
  * A CCM source is REFUSED. MoveFromCcmJob leaves the non-CCM curriculum active at term end, so
@@ -242,10 +250,15 @@ class MoveFromTermJob implements ShouldQueue
      * `is_ccm` comes from CONFIG, not from the source: a class level may enter the CCM variant of the
      * next slot without having been CCM in this one. That is the whole point of holding CCM
      * participation at (class level, term slot) granularity.
+     *
+     * THE MARKING SCHEME IS NOT COPIED WHEN THE TARGET IS CCM — see resolveTargetMarkingSchemeId.
+     * The grading scheme IS copied either way: categorical-vs-numeric is a property of the class, not
+     * of half-term-vs-full-term, so it is is_ccm-agnostic.
      */
     private function resolveTargetCurriculum(Term $targetTerm, bool $targetIsCcm): Curriculum
     {
         $source = $this->curriculum;
+        $markingSchemeId = $this->resolveTargetMarkingSchemeId($targetIsCcm);
 
         $target = Curriculum::withoutGlobalScope(SchoolScope::class)->firstOrCreate(
             [
@@ -259,16 +272,18 @@ class MoveFromTermJob implements ShouldQueue
                 'min_subjects' => $source->min_subjects,
                 // Forward, into a term pupils are about to sit — see the class docblock.
                 'status' => 'active',
-                'marking_scheme_id' => $source->marking_scheme_id,
+                'marking_scheme_id' => $markingSchemeId,
                 'grading_scheme_id' => $source->grading_scheme_id,
             ]
         );
 
         // Repair a target created by a pre-scheme version of this job, but ONLY while it is unused:
-        // once any component, score or result exists its configuration is historical data.
-        if (! $target->wasRecentlyCreated && $this->canAdoptSourceSchemes($target)) {
+        // once any component, score or result exists its configuration is historical data. Uses the
+        // RESOLVED scheme, not the source's — otherwise the repair path re-introduces exactly the
+        // CCM mis-scheme the resolver above exists to prevent.
+        if (! $target->wasRecentlyCreated && $this->canAdoptSourceSchemes($target, $markingSchemeId)) {
             $target->update([
-                'marking_scheme_id' => $target->marking_scheme_id ?? $source->marking_scheme_id,
+                'marking_scheme_id' => $target->marking_scheme_id ?? $markingSchemeId,
                 'grading_scheme_id' => $target->grading_scheme_id ?? $source->grading_scheme_id,
             ]);
         }
@@ -276,12 +291,67 @@ class MoveFromTermJob implements ShouldQueue
         return $target;
     }
 
-    private function canAdoptSourceSchemes(Curriculum $target): bool
+    /**
+     * Which marking scheme the TARGET curriculum should carry.
+     *
+     * COPYING THE SOURCE'S IS ONLY CORRECT WHEN THE TARGET IS NON-CCM. The source is always non-CCM
+     * (passesGuards refuses a CCM source), so `$source->marking_scheme_id` is a NON-CCM scheme —
+     * full-term weights. When config says the next slot is the CCM variant, copying that stamps a
+     * half-term curriculum with full-term weights, and because cloneCurriculumSubjects skips the
+     * subject-local component copy whenever `marking_scheme_id` is set, EVERY component on that CCM
+     * curriculum then resolves through the non-CCM scheme. Half-term work scored on full-term
+     * weights, silently, for the whole CCM window before MoveFromCcmJob moves the class out of it.
+     *
+     * So a CCM target resolves its own scheme the way MoveFromCcmJob::attachMarkingComponents does —
+     * active, this school, `is_ccm` matching, latest version.
+     *
+     * NULL IS A LEGITIMATE ANSWER, not a failure: it drops the target onto the LEGACY path, where
+     * cloneCurriculumSubjects copies subject-local components and stamps them
+     * `'is_ccm' => $targetCurriculum->is_ccm` — which is already correct for CCM. Every CCM curriculum
+     * in this database today is legacy (17 of 17), which is why this bug is latent rather than live;
+     * school 2 nonetheless already has both an active is_ccm=1 marking scheme and 13 scheme-backed
+     * curricula, so it is one participation row away from firing.
+     *
+     * A NON-CCM target copies the source's scheme rather than looking up the latest, deliberately: the
+     * class keeps the exact scheme VERSION it has been marked against instead of jumping to a newer
+     * one mid-session.
+     */
+    private function resolveTargetMarkingSchemeId(bool $targetIsCcm): ?int
+    {
+        $source = $this->curriculum;
+
+        if (! $targetIsCcm) {
+            return $source->marking_scheme_id;
+        }
+
+        $ccmScheme = MarkingScheme::query()
+            ->withoutGlobalScope(SchoolScope::class)
+            ->active()
+            ->where('school_id', $source->school_id)
+            ->where('is_ccm', true)
+            ->latest('version')
+            ->first();
+
+        if ($ccmScheme === null) {
+            Log::info('MoveFromTermJob: CCM target has no active CCM marking scheme; using the legacy per-subject component path', [
+                'curriculum_id' => $source->id,
+            ]);
+        }
+
+        return $ccmScheme?->id;
+    }
+
+    /**
+     * Takes the RESOLVED marking scheme, not the source's — the repair has to be decided against the
+     * scheme that would actually be written, or a CCM target with a NULL resolved scheme looks
+     * repairable because the SOURCE has one.
+     */
+    private function canAdoptSourceSchemes(Curriculum $target, ?int $markingSchemeId): bool
     {
         $source = $this->curriculum;
 
         if (
-            (! $source->marking_scheme_id || $target->marking_scheme_id)
+            (! $markingSchemeId || $target->marking_scheme_id)
             && (! $source->grading_scheme_id || $target->grading_scheme_id)
         ) {
             return false;

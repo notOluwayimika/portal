@@ -30,7 +30,7 @@ uses()->group('arch');
  * ⚠️ THIS PLANTS INTO THE REAL TREE, SO IT IS SAFE ONLY WHILE PEST RUNS SEQUENTIALLY — the same
  * constraint BoundaryLintCoverageTest carries, and for the same reason: the third test asserts the
  * lint is GREEN over the tree while the first two have violations planted in it. Verified at this
- * commit: `bin/quality:238` is `pest --group=arch` and `:266` is plain `pest`; `--parallel` appears
+ * commit: `bin/quality:251` is `pest --group=arch` and `:279` is plain `pest`; `--parallel` appears
  * only on Pint. If you parallelise, give the lint a root argument and point the fixtures at a temp
  * directory first.
  */

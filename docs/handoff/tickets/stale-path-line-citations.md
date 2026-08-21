@@ -1,6 +1,10 @@
 # TICKET — `path:LINE` citations in comments and docs go stale silently; a gate proposal
 
-**Status:** open, not implemented. Raised by `feat/u8-invoice-modal-discount-policy` (U8 commit 5),
+**Status:** CLOSED by `feat/citation-lint` — tier 3, new citations only, shrink-only baseline,
+scoped to code and skills. See "The tier that shipped" at the end of this file; everything above it
+is the record as it stood when the tier was still open, kept unedited.
+
+Raised by `feat/u8-invoice-modal-discount-policy` (U8 commit 5),
 which corrected four of them and is the **third consecutive branch** to correct at least one. The
 lint sketched below is deliberately NOT built in that commit: it needs its own branch, its own
 measurement and its own coverage test, on the model of `bin/ci-sql-clock-lint.php`.
@@ -441,3 +445,98 @@ happens to the 59 unresolvable and 3 past-EOF citations already in the tree. The
 ticket makes is that three consecutive branches have shipped a stale citation, each was found by a
 human or a cold review rather than by anything automatic, and the cheap check that looks like it
 would have helped demonstrably would not have.
+
+
+---
+
+# The tier that shipped — `feat/citation-lint`
+
+Written by the branch that closed this. Everything above this heading is the record as it stood
+while the tier was open and is unedited, including the section headed "Not proposed here", whose
+first sentence this section is the answer to.
+
+## Tier 3, new citations only, shrink-only baseline, scoped to code and skills
+
+**The form.** A citation is compliant when it carries the symbol it points at and that symbol occurs
+within **±3 lines** of the cited line: `app/Support/ActiveSchool.php:99 (getOrFail)`. A range is
+checked at its start line. The regex is this ticket's own, reused verbatim.
+
+**Where.** `bin/ci-citation-lint.php`, `citation-lint-baseline.txt`,
+`tests/Arch/CitationLintCoverageTest.php` (13 arms), `bin/quality` step 13 of 16, state-based.
+
+**Baseline size at the commit that introduces it: 163 keys, 180 citations** — 194 matched in the
+scanned dirs, 14 exempt under vendor, 0 already compliant. By rule: 98 `citation-missing-symbol`,
+78 `citation-not-repo-relative`, 2 `citation-unresolvable`. By citing directory: `.claude` 61,
+`app` 40, `tests` 40, `database` 26, `bin` 8, `routes` 2, `config` 1.
+
+**Baseline key: `rule \t citingPath \t citedToken \t COUNT`.** The count is the fix
+`docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md` prescribes, adopted here rather
+than deferred: a second byte-identical citing line takes a key from 1 to 2 and fails. It cannot
+distinguish WHICH occurrence is forgiven, where in the file it sits, or how the sentence around it
+is worded.
+
+## Why not the other two, and not the ban
+
+**Tier 1 — file exists, line within length.** This ticket's own census is the argument and it did
+not change: 1035 of 1044 resolvable citations already passed it, all seven real defects known at the
+time would have passed it too, and the only failures it surfaced were two artefacts of its own
+basename resolver plus seven self-quotations. Tier 1 is not skipped — it is a strict subset of what
+shipped, arriving as `citation-past-eof` and `citation-unresolvable`, both of which fire only once
+the resolver question is settled the way §"Vendor" below settles it.
+
+**Tier 2 — a citation into a file this commit modified must be re-derived in this commit.** Not
+built, for the reason instance 4 measured: it pays on the MOVING branch and only for citations that
+carry a resolvable path, and its false positives are unbounded (touch a file for any reason and
+every citation into it from anywhere is flagged). The catch it was wanted for is reached here by
+other means — because the shipped lint is STATE-BASED, a citation whose symbol has drifted out of
+the window fails on the branch that moved the target, which is exactly the case tier 2 was
+introduced to reach and exactly the case a diff-aware rule cannot see from the citing side.
+
+**Ban line numbers, cite symbols only.** Rejected, and priced against tier 3 as this ticket asked.
+The ban gives up the thing line numbers are for — several citations here point into the middle of a
+400-line migration where the symbol name alone does not locate the arm — and it buys the same
+guarantee tier 3 gives while forbidding precision instead of verifying it. Tier 3's cost was the
+objection: "a new convention applied to 1074 existing citations, or a cutover date and a
+grandfathered baseline. Large." The baseline is the grandfathering, it is 163 keys, and the cutover
+date is the commit that adds the lint. That cost did not turn out to be large; the ban's cost —
+permanently coarser citations — would have been permanent.
+
+## Vendor: resolved against `vendor/`, and vendor wins ties
+
+This ticket showed a line-scoped `vendor` guard is insufficient because in one of the two
+manufactured hits the word opens the previous line. The lint therefore resolves against `vendor/` on
+disk, by prefix or by unique path suffix, and does so BEFORE anything is resolved in-tree. A bare
+basename is never resolved against the repo at all — `SeedDriveFixture.php:155` is reported as
+`citation-not-repo-relative`, which is this ticket's own "cheapest first step" adopted as the rule.
+
+Proved by building the resolver this ticket warns about and watching it manufacture the finding:
+with the vendor exemption removed and the basename fallback reinstated, `Models/Role.php:186` is
+reported past-EOF against the 36-line `app/Models/Role.php`, both on a planted fixture and on the
+real `tests/Feature/Rbac/RbacDiffGrantsTest.php`. The shipped lint reports neither. Coverage arm i
+plants both of the spellings this ticket recorded.
+
+## What the mechanism does NOT cover
+
+1. **A green does not prove the sentence is true.** A citation whose symbol appears near the cited
+   line can still be wrong about what it claims. The lint checks that the pointer lands somewhere
+   sane. **Instances 3.3, 3.4 and 5 in this ticket were false when written with the citation itself
+   well-formed, and a compliant citation of the same shape would still pass.**
+2. **`docs/` is not scanned, and that is deliberate.** Reports paste raw command output by rule and
+   `grep -n` output is byte-identical to a citation — the measurement in this ticket (seven of nine
+   past-EOF hits at `2b3cdbb` being self-quotations) is the reason. **The cost is that citations
+   inside tickets and reports — including every citation in THIS file — stay unguarded, and two of
+   the six instances recorded here were exactly that.** Nothing covers them.
+3. **Extensionless paths under `bin/` match nothing**, as this ticket already noted. The closing
+   branch hit it the same day: adding a step to `bin/quality` shifted its line numbers by +13 and
+   made five in-scope citations of `bin/quality` stale, none of which the lint could see. They were
+   corrected by hand, and the ones in `docs/` were left.
+4. **The baseline forgives a target in a file, not a sentence.** Deleting a baselined bare citation
+   and adding a different one to the same target in the same file keeps the count and stays green.
+5. **Two files are exempt entirely** — the lint and its coverage test — because both contain
+   citations as data.
+
+## The count this ticket keeps
+
+Six instances, four branches, every one found by a human or a cold review. From this commit there is
+a mechanism, and what it asserts is narrower than what those six needed: that a NEW citation names a
+symbol and the symbol is where the citation says it is.

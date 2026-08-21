@@ -9,6 +9,7 @@ use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\User;
 use App\Services\ProgressionGraph;
+use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -146,6 +147,44 @@ it('refuses a next level from another school, mirroring the composite FK', funct
     expect($w['a']->fresh()->next_class_level_id)->toBeNull();
 });
 
+it('reports BOTH field errors at once rather than one at a time', function () {
+    // The next-level and exam-type checks are unrelated, so bailing out of the whole closure on the
+    // first would make an operator fix one field, resubmit, and fail again on the other.
+    $w = clp_world();
+    $foreignLevel = clp_level(al_makeSchool(), 'Their Year 8', 2);
+    $foreignExamType = clp_examType(al_makeSchool(), 'Their Exam');
+
+    clp_put($w, $w['a'], [
+        'next_class_level_id' => $foreignLevel->uuid,
+        'default_exam_type_id' => $foreignExamType->uuid,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['next_class_level_id', 'default_exam_type_id']);
+});
+
+it('surfaces the unresolvable-exam-type advisory on READ, not only after an edit', function () {
+    // A level SITS in this state. An operator who configured everything else, navigated away and
+    // came back would never see the warning if it only came back from the exam-type edit.
+    $w = clp_world();
+
+    $response = test()->actingAs($w['admin'])
+        ->getJson("/api/class-levels/{$w['a']->uuid}/progression")
+        ->assertOk();
+
+    expect($response->json('warnings'))->not->toBeEmpty();
+    expect($response->json('warnings.0'))->toContain('unplaced');
+
+    // And it CLEARS once the state is resolved — a warning that never goes away is noise.
+    $waec = clp_examType($w['school'], 'WAEC Grading');
+    test()->actingAs($w['admin'])
+        ->putJson("/api/class-levels/{$w['a']->uuid}/exam-types", ['exam_type_ids' => [$waec->uuid]])
+        ->assertOk();
+
+    expect(test()->actingAs($w['admin'])
+        ->getJson("/api/class-levels/{$w['a']->uuid}/progression")
+        ->json('warnings'))->toBe([]);
+});
+
 it('refuses a distribution strategy outside the two the trigger allows', function () {
     $w = clp_world();
 
@@ -220,6 +259,73 @@ it('refuses to remove a term slot belonging to a different level', function () {
         ->assertStatus(404);
 
     expect(ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)->count())->toBe(1);
+});
+
+it('refuses a term slot from ANOTHER SCHOOL', function () {
+    // END TO END, and worth having — but read the test below before assuming this one isolates the
+    // school guard. It does not, and cannot: a foreign-SCHOOL slot is necessarily also a
+    // foreign-LEVEL slot, so the explicit abort_unless catches it whether or not the scope does.
+    // Verified by mutation: removing SchoolScope from the model leaves this test green.
+    $w = clp_world();
+
+    $theirSchool = al_makeSchool();
+    $theirLevel = clp_level($theirSchool, 'Their Year 7', 1);
+    $theirSlot = ClassLevelTermParticipation::forceCreate([
+        'school_id' => $theirSchool->id,
+        'class_level_id' => $theirLevel->id,
+        'term_order' => 1,
+        'is_ccm' => false,
+    ]);
+
+    test()->actingAs($w['admin'])
+        ->deleteJson("/api/class-levels/{$w['a']->uuid}/participation/{$theirSlot->uuid}")
+        ->assertStatus(404);
+
+    test()->actingAs($w['admin'])
+        ->patchJson("/api/class-levels/{$w['a']->uuid}/participation/{$theirSlot->uuid}")
+        ->assertStatus(404);
+
+    // Untouched — not merely "not deleted", but unchanged in every respect the PATCH would alter.
+    expect(ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)->find($theirSlot->id))
+        ->not->toBeNull();
+    expect((bool) ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
+        ->find($theirSlot->id)->is_ccm)->toBeFalse();
+});
+
+/**
+ * THE SCHOOL GUARD, ISOLATED — which the route cannot do.
+ *
+ * The route test above passes even with SchoolScope removed from the model, because a foreign-school
+ * slot is always also a foreign-level slot and the explicit abort_unless catches it. The two guards
+ * are therefore NOT independently observable through HTTP: the ownership check subsumes the scope
+ * check on every reachable request.
+ *
+ * So the scope is asserted where it actually lives — on the model, under a school context. If the
+ * BelongsToSchool trait were dropped, THIS fails while every route test stays green, which is the
+ * hole the route test alone would have left.
+ */
+it('hides another schools participation row from a scoped read', function () {
+    $w = clp_world();
+
+    $theirSchool = al_makeSchool();
+    $theirLevel = clp_level($theirSchool, 'Their Year 7', 1);
+    $theirSlot = ClassLevelTermParticipation::forceCreate([
+        'school_id' => $theirSchool->id,
+        'class_level_id' => $theirLevel->id,
+        'term_order' => 1,
+        'is_ccm' => false,
+    ]);
+
+    // Under MY school's context the row does not exist at all...
+    $found = ActiveSchool::runFor(
+        (int) $w['school']->id,
+        fn () => ClassLevelTermParticipation::find($theirSlot->id)
+    );
+    expect($found)->toBeNull();
+
+    // ...but it is really there, so the null above is the scope and not a missing row.
+    expect(ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)->find($theirSlot->id))
+        ->not->toBeNull();
 });
 
 it('syncs the exam-type set, adding and removing to match what was sent', function () {

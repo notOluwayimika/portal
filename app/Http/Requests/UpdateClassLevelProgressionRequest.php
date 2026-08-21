@@ -73,38 +73,40 @@ class UpdateClassLevelProgressionRequest extends FormRequest
                         'next_class_level_id',
                         'That class level does not belong to this school.'
                     );
-
-                    return;
-                }
-
-                if ((int) $next->id === (int) $level->id) {
+                } elseif ((int) $next->id === (int) $level->id) {
                     // MIRRORS class_levels_progression_guard_bi/_bu.
                     $validator->errors()->add(
                         'next_class_level_id',
                         'A class level cannot progress into itself.'
                     );
-
-                    return;
-                }
-
-                // MIRRORS NOTHING IN THE DATABASE — the trigger catches A -> A only; a multi-node ring
-                // is legal at every row. Asked of the graph AS IT WOULD BE with this pointer applied,
-                // so a ring is refused while the stored graph is still acyclic. Same walk the rollover
-                // gate runs, so the screen and the gate cannot disagree.
-                $cycle = ProgressionGraph::cycleIfPointed(
-                    (int) $school->id,
-                    (int) $level->id,
-                    (int) $next->id,
-                );
-
-                if ($cycle !== null) {
-                    $validator->errors()->add(
-                        'next_class_level_id',
-                        'This would create a progression loop: '.implode(' → ', $cycle)
-                        .'. Pupils in a loop swap levels at rollover instead of advancing.'
+                } else {
+                    // MIRRORS NOTHING IN THE DATABASE — the trigger catches A -> A only; a multi-node
+                    // ring is legal at every row. Asked of the graph AS IT WOULD BE with this pointer
+                    // applied, so a ring is refused while the stored graph is still acyclic. Same walk
+                    // the rollover gate runs, so the screen and the gate cannot disagree.
+                    $cycle = ProgressionGraph::cycleIfPointed(
+                        (int) $school->id,
+                        (int) $level->id,
+                        (int) $next->id,
                     );
+
+                    if ($cycle !== null) {
+                        $validator->errors()->add(
+                            'next_class_level_id',
+                            'This would create a progression loop: '.implode(' → ', $cycle)
+                            .'. Pupils in a loop swap levels at rollover instead of advancing.'
+                        );
+                    }
                 }
             }
+
+            /*
+             * NOT `return`-ing above, deliberately. The self and cycle checks legitimately need a
+             * RESOLVED $next, so they are chained on it — but bailing out of the whole closure would
+             * suppress this independent check, and a form with two bad fields would surface one, get
+             * corrected, and then fail again on the other. The two fields are unrelated; their
+             * validation should be too.
+             */
 
             $examTypeUuid = $this->input('default_exam_type_id');
 

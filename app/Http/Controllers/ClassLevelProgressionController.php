@@ -37,16 +37,24 @@ class ClassLevelProgressionController extends Controller
     {
         return response()->json([
             'progression' => new ClassLevelProgressionResource($this->hydrate($classLevel)),
+            // Advisories come back on EVERY read, not only from the edit that happens to compute
+            // them. A level SITS in the unresolvable-exam-type state; an operator who configured
+            // everything else, navigated away and came back to finish would otherwise never see it.
+            'warnings' => $this->warningsFor($classLevel),
         ]);
     }
 
     public function update(UpdateClassLevelProgressionRequest $request, ClassLevel $classLevel): JsonResponse
     {
         $classLevel->update($request->resolved());
+        $fresh = $classLevel->fresh();
 
         return response()->json([
             'message' => 'Progression updated.',
-            'progression' => new ClassLevelProgressionResource($this->hydrate($classLevel->fresh())),
+            'progression' => new ClassLevelProgressionResource($this->hydrate($fresh)),
+            // Clearing the default exam type can CREATE the unresolvable state, so this read has to
+            // report it too.
+            'warnings' => $this->warningsFor($fresh),
         ]);
     }
 
@@ -66,6 +74,7 @@ class ClassLevelProgressionController extends Controller
         return response()->json([
             'message' => 'Term slot added.',
             'progression' => new ClassLevelProgressionResource($this->hydrate($classLevel->fresh())),
+            'warnings' => $this->warningsFor($classLevel->fresh()),
         ], 201);
     }
 
@@ -83,6 +92,7 @@ class ClassLevelProgressionController extends Controller
         return response()->json([
             'message' => 'Term slot updated.',
             'progression' => new ClassLevelProgressionResource($this->hydrate($classLevel->fresh())),
+            'warnings' => $this->warningsFor($classLevel->fresh()),
         ]);
     }
 
@@ -102,6 +112,7 @@ class ClassLevelProgressionController extends Controller
         return response()->json([
             'message' => 'Term slot removed.',
             'progression' => new ClassLevelProgressionResource($this->hydrate($classLevel->fresh())),
+            'warnings' => $this->warningsFor($classLevel->fresh()),
         ]);
     }
 

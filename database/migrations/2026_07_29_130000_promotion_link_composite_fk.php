@@ -20,6 +20,20 @@ use Illuminate\Support\Facades\DB;
  * BackfillPastTermJob create the target with the same student/school, and MoveFromCcmJob (fixed in this
  * commit's Part 5c) copies student_id and runs under a school guard. Verified by the suite, not asserted here.
  *
+ * WRITER ENUMERATION, EXTENDED AFTER THIS MIGRATION SHIPPED (comment-only; the constraint is unchanged).
+ * Three more legitimate writers of `promoted_to_id` have landed since, so the list above is no longer the
+ * whole set. Recorded here because this docblock is where a reader looks for it:
+ *   4. MoveFromTermJob (2026-08, end of term) — fresh promotion, link + status in one update.
+ *   5. MoveToNextYearJob (2026-08, end of year) — fresh promotion, same shape.
+ *   6. CurriculumReassignmentService — the ODD ONE OUT, and deliberately so: it REPOINTS an existing
+ *      link (a single-column update on a row that is `promoted` with a non-null link before and after)
+ *      rather than writing a new promotion. It therefore never passes through the state the
+ *      promoted_requires_link trigger forbids, and the link-before-status ordering the other five must
+ *      observe does not apply to it. Do not "harmonise" it into the same helper as the others on the
+ *      strength of sharing this column — the operations differ in the one respect the guard cares about.
+ * All six satisfy the composite FK for the same reason: the target episode is the same pupil in the same
+ * school (the reassignment service refuses a cross-school target outright, before any write).
+ *
  * NULLABILITY is not a problem. `promoted_to_id` is nullable while `student_id`/`school_id` are NOT NULL;
  * InnoDB skips a foreign-key check when ANY of its columns is NULL, so an unpromoted row (link IS NULL) passes
  * unconditionally — exactly the existing meaning of NULL ("this is the student's current active row"). Proven

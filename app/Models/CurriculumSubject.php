@@ -17,6 +17,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * @property int $id
  * @property string $uuid
+ * @property int $curriculum_id annotated alongside StudentCurriculum's: both are integers at runtime
+ *                              (verified 2026-08-21), and typing only one side made Larastan read
+ *                              `$curriculumSubject->curriculum_id !== $enrollment->curriculum_id` in
+ *                              StudentSubjectService as int-vs-string — "always true", and the guard's
+ *                              body unreachable. The comparison is correct; the type knowledge was
+ *                              one-sided.
+ * @property int $subject_id
  */
 class CurriculumSubject extends Model
 {

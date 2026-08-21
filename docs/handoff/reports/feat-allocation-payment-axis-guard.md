@@ -46,38 +46,59 @@ guard first. When a row violates **both** axes the bursar sees the invoice-axis 
 which is the older, more familiar one. PROOF d2 pins that each axis answers only its own
 violation.
 
-### Body
+### Body — as it stands after the cold-review fixes
 
 ```sql
 BEGIN
                 DECLARE v_amount BIGINT;
                 DECLARE v_currency CHAR(3);
                 DECLARE v_already BIGINT;
+                DECLARE v_foreign BIGINT;
 
                 SELECT amount_minor, amount_currency INTO v_amount, v_currency
                   FROM finance_payments WHERE id = NEW.payment_id;
 
-                -- Defense in depth: an allocation must share the payment's currency, so the
-                -- sum below compares like with like. Without it the comparison is not merely
-                -- weak, it is undefined — minor units of two currencies summed into one
-                -- total and measured against a third quantity.
+                -- ARM 1 — the incoming allocation must be in the payment's currency.
                 --
-                -- BINARY, not a plain <>, for the reason the sibling trigger records at
-                -- length: a routine variable takes the connection collation while the column
-                -- takes the table collation, and on a database created with a different
-                -- default collation those disagree and MySQL raises 1267 on EVERY insert,
-                -- matching currency or not. A currency code is a 3-letter ASCII token, so a
-                -- byte comparison is exactly right and is collation-agnostic.
-                IF BINARY NEW.amount_currency <> BINARY v_currency THEN
+                -- CAST(x AS BINARY) and not BINARY x: the latter is deprecated and emits
+                -- warning 1287 twice per insert. Both forms are collation-agnostic, which
+                -- is what this comparison needs — a routine variable takes the connection
+                -- collation and the column takes the table collation, and where those
+                -- disagree a plain <> raises 1267 on EVERY insert, matching currency or
+                -- not, turning this guard into a total outage. A currency code is a
+                -- 3-letter ASCII token, so a byte comparison is exactly right.
+                IF CAST(NEW.amount_currency AS BINARY) <> CAST(v_currency AS BINARY) THEN
                     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                         'finance_payment_allocations.amount_currency must match the payment currency.';
                 END IF;
 
-                -- Sum of ALL prior allocations of this payment. The table is append-only, so
-                -- this is the whole history. COALESCE because the first allocation sees none
-                -- and SUM over no rows is NULL, not 0.
+                -- ARM 2 — the payment must not ALREADY carry an allocation in some other
+                -- currency. Arm 1 stops new ones; this stops a payment that legacy data
+                -- (or a 5.7 server on which no CHECK ever ran) left holding two. Without
+                -- it, scoping the sum below would let EACH currency be allocated up to the
+                -- full payment amount, which is a worse failure than the one being fixed.
+                SELECT COUNT(*) INTO v_foreign
+                  FROM finance_payment_allocations
+                 WHERE payment_id = NEW.payment_id
+                   AND CAST(amount_currency AS BINARY) <> CAST(v_currency AS BINARY);
+
+                IF v_foreign > 0 THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                        'This payment carries allocations in more than one currency; no total is comparable. Investigate before allocating more.';
+                END IF;
+
+                -- ARM 3 — the ceiling. SCOPED TO THE PAYMENT CURRENCY, so this statement
+                -- cannot add two currencies together even if arm 2 were deleted. The table
+                -- is append-only, so this is the whole history. COALESCE because the first
+                -- allocation sees no rows and SUM over none is NULL, not 0 — and NULL + x
+                -- > y is NULL, which is not true, so the row would be accepted.
+                --
+                -- NO READ OF allocation_rule ANYWHERE ABOVE, deliberately: the ceiling is a
+                -- property of the payment, not of why the allocation was written.
                 SELECT COALESCE(SUM(amount_minor), 0) INTO v_already
-                  FROM finance_payment_allocations WHERE payment_id = NEW.payment_id;
+                  FROM finance_payment_allocations
+                 WHERE payment_id = NEW.payment_id
+                   AND CAST(amount_currency AS BINARY) = CAST(v_currency AS BINARY);
 
                 -- <=, not <: an allocation exactly exhausting the payment is legal and is the
                 -- ordinary case (a payment that settles its invoice to the kobo).
@@ -476,9 +497,11 @@ The assertion is on the object, not on a bare exit-0.
   fourteen. Every measurement in this report is 8.0.43 and only 8.0.43.
 - **Whether any over-allocated payment exists in production today.** This migration installs a
   `BEFORE INSERT` trigger, so it does not inspect or repair existing rows and will deploy
-  cleanly over a violating one. The sibling's docblock calls for a deploy pre-flight asserting
-  zero exist; the same pre-flight is needed here and is not part of this branch. The query is
-  `SELECT payment_id FROM finance_payment_allocations GROUP BY payment_id HAVING SUM(amount_minor) > (SELECT amount_minor FROM finance_payments WHERE id = payment_id)`.
+  cleanly over a violating one. **The query this section originally published was itself
+  defective** — it performed the same cross-currency addition the trigger did, and on the
+  fixture in FIX 2 below it returns zero rows and reports a corrupt payment as clean. Both
+  corrected clauses now live in the migration docblock, which is where the July sibling puts
+  its equivalent, and both are pinned by PROOFS e4 and e5.
 - **The mixed-currency draw.** The currency arm of this trigger would refuse an
   `applyCreditForward` draw where the payment's currency differs from the invoice's — see the
   next section. No such row was found and none was looked for beyond the local test database;
@@ -506,3 +529,352 @@ code 1644 has no mapping and falls through to the generic handler, exactly like 
 blast radius should see it named rather than discover it in production. If the project would
 rather have that path bank the credit at the account level instead, that is a change to
 `applyCreditForward` — which this branch was told not to touch, and did not.
+
+---
+
+# Cold review, and the five fixes it produced
+
+The branch went to cold review after the first push. It returned four findings; a fifth was
+declined by the reviewer and reinstated by the project lead; a sixth became a ticket. **The
+severities below were set by the project lead, not by me and not by the reviewer.** All five are
+FIX. One commit: `fix(finance): the guard was untested against its own writer, and it was adding
+naira to dollars`.
+
+Two of the findings were serious. One of them — FIX 2 — is a defect in the shipped trigger, on a
+money table, that the first version of this report described as a feature.
+
+Every fix below was **reproduced before it was changed**, and every new arm was run green before
+its mutation. Suite: **676 → 692**, 3383 → 3452 assertions, all green.
+
+## FIX 1 — the guard was untested against the writer it exists for
+
+**Reproduced first.** The reviewer's mutation, applied to the migration body:
+
+```sql
+IF NEW.allocation_rule = 'payment_against_named_invoice' AND v_already + NEW.amount_minor > v_amount THEN
+```
+
+```
+tests: 676, passed: 676, assertions: 3383, duration: 257,175 ms
+```
+
+**All 676 Finance tests green** with the ceiling disabled for exactly
+`credit_applied_forward_oldest_first` — the rule `applyCreditForward` stamps
+(app/Finance/Actions/GenerateInvoice.php:479 (applyCreditForward)), and the one writer this very
+report calls a read-then-write with no payment-row lock. Every refusal arm hardcoded the other
+rule at the helper. The guard was untested against the writer it exists for, and the report's own
+concurrency section is what makes that the wrong writer to miss.
+
+**The fix.** `payAxisAllocate` takes the rule as a parameter, `payAxisRules()` returns both
+constants (from `PaymentAllocation::RULE_*`, not retyped, so a rename breaks the test instead of
+narrowing it), and four arms were added:
+
+- **a3** — exact fill permitted, under every rule (dataset over both).
+- **b4** — one kobo past refused, under every rule, same message (dataset over both).
+- **b5** — the cross case: a `credit_applied_forward_oldest_first` row blocks a
+  `payment_against_named_invoice` row, and the reverse. Neither single-rule arm reaches this.
+- **b6** — structural: the stored body does not contain `allocation_rule` at all, comments
+  stripped.
+
+**The mutation now reds**, three arms:
+
+```
+PROOF b4 [credit_applied_forward_oldest_first]  — The write was ACCEPTED. No trigger refused it.
+PROOF b5                                        — The write was ACCEPTED. No trigger refused it.
+PROOF b6                                        — Expecting 'BEGINDECLAR…   END' not to contain 'allocation_rule'.
+```
+
+`tests: 22, passed: 19, failed: 1, errors: 2` — and `b4 [payment_against_named_invoice]` stays
+green, which is correct and is what makes the dataset arm meaningful rather than duplicated.
+
+## FIX 2 — the trigger was adding naira to dollars
+
+**Reproduced first**, on the reviewer's fixture: an NGN payment of 10000 carrying legacy
+allocations of 5000 NGN and 5000 USD, planted with both allocation triggers dropped.
+
+```
+raw SUM(amount_minor)              => 10000     <- 5000 NGN + 5000 USD, added together
+finance_payments.amount_minor      => 10000
+pre-flight rows flagged            => 0         <- passes the database as clean
+real NGN room left                 => 5000
+1-kobo NGN allocation REFUSED with => "Allocation would exceed the payment amount:
+                                       Σ(allocations) must be ≤ finance_payments.amount_minor."
+```
+
+A payment holding 5000 NGN of genuine room, refusing a 1-kobo NGN allocation, on the strength of
+a total that added two currencies. And the pre-flight this report published would have called
+that payment clean on the way in.
+
+This is a defect in the **trigger**, not only in the pre-flight, and the schema permits the state:
+`applyCreditForward` selects a student's payments with **no currency filter** and stamps the
+**invoice's** currency on the allocation, so before this trigger existed nothing stopped it — and
+on 5.7, where no `CHECK` ever ran, nothing stopped it there either.
+
+### The shape chosen, and why, against both failure modes
+
+Two shapes were available. **Both were taken**, because each alone fails in a different direction:
+
+- **Scoping the sum alone is worse than the defect.** With a per-currency sum and nothing else,
+  *each* currency could be allocated up to the *full* payment amount — an NGN payment of 10000
+  accepting 10000 NGN **and** 10000 USD. That converts a wrong refusal into a wrong acceptance on
+  a money table, which is the worse direction.
+- **Refusing the mixed payment alone** leaves the addition in the code, one deleted line from
+  returning.
+
+Together they are exact. Arm 2 guarantees every surviving allocation of a payment shares its
+currency; the scoped sum guarantees that even with arm 2 removed the trigger still cannot add two
+currencies. The property *this trigger never adds two currencies* therefore holds **locally**,
+from the `WHERE` clause, rather than depending on a check three statements earlier.
+
+The message names the actual fault:
+`This payment carries allocations in more than one currency; no total is comparable. Investigate
+before allocating more.` — 119 characters, pure ASCII, under MySQL's 128 cap. A payment carrying
+two currencies is corrupt data, not an over-allocation, and sending a bursar to look at amounts
+when the fault is currencies sends them somewhere there is nothing wrong.
+
+### Arms, both directions
+
+- **e1** — the mixed payment is refused as **mixed currency**, and explicitly *not* with the
+  over-allocation message. Also pins that the raw cross-currency sum is 10000 while the scoped
+  sum is 5000, so the arm names the true figure the old trigger got wrong.
+- **e2** — the wrong-acceptance direction: with a foreign row planted, a 10000 NGN allocation is
+  refused (`more than one currency`) where a scope-only fix would have accepted it.
+- **e3** — the scope does not weaken the ordinary ceiling: 4000 + 6000 fills a 10000 payment and
+  a further kobo is refused.
+- **e4** — the pre-flight: the **naive query is pinned red-side**, returning zero rows on the
+  corrupt fixture, so nobody reinstates it; clause 1 is correctly silent; clause 2 finds it.
+- **e5** — clause 1 catches a genuine single-currency over-allocation, so its silence in e4 is
+  not vacuity.
+- **e6** — structural: the stored `SUM` statement is currency-scoped.
+
+**A limit, stated rather than papered over.** While arm 2 stands, a mixed payment is refused
+*before* the sum runs, so removing the currency scope from the `SUM` changes no observable
+behaviour and **no behavioural arm can go red for it**. The scope is defense in depth; e6 is a
+structural assertion because that is the only honest way to pin it.
+
+### Mutations
+
+**M7 — arm 2 deleted:**
+
+```
+PROOF e1 — The write was ACCEPTED. No trigger refused it.
+PROOF e2 — The write was ACCEPTED. No trigger refused it.
+```
+
+**M8 — arm 2 deleted AND the sum unscoped** (the body exactly as it shipped before this fix):
+
+```
+PROOF e1 — Failed asserting that 'Allocation would exceed the payment amount: Σ(allocations)
+           must be ≤ finance_payments.amount_minor.' contains "more than one currency".
+PROOF e2 — (same)
+PROOF e6 — Failed asserting that 'SELECT COALESCE(SUM(amount_minor), 0) INTO v_already …
+           WHERE payment_id = NEW.payment_id;' contains "amount_currency".
+```
+
+M8's e1 red **is** the reported defect, reproduced as a test failure.
+
+### The pre-flight, corrected
+
+Both clauses now ship in the migration docblock. Clause 1 is currency-scoped — the naive
+`HAVING SUM(amount_minor) > amount_minor` is the same cross-currency addition and finds nothing
+on the fixture above. Clause 2 selects any allocation whose currency differs from its payment's.
+Run against the planted fixture: clause 2 returns exactly one row, `payment_id` matching,
+`amount_currency = USD`, `payment_currency = NGN`.
+
+## FIX 3 — the pre-flight was not where it ships
+
+It lived in the ticket and the report. **Two places, not three** — the report never claimed
+three; that miscount was the project lead's, recorded here because the correction belongs next to
+the thing corrected. Neither location is executable and neither is the migration. The July
+sibling puts its equivalent in its own docblock; both clauses now sit in this migration's, in the
+same voice, with the reason stated: a `BEFORE INSERT` trigger does not inspect existing rows and
+installs cleanly over a violating one, so the assertion has to travel with the thing that makes
+it matter.
+
+## FIX 4 — `BINARY expr` is deprecated
+
+Changed in **this migration only**. Six occurrences (three comparisons × two operands) moved from
+`BINARY x` to `CAST(x AS BINARY)`. Verified from the stored body: zero deprecated forms remain,
+six `CAST(… AS BINARY)`.
+
+**The reviewer's mechanism is right and its timing is not, and this cost an arm.** The finding
+said 1287 fires "twice per insert". Measured on 8.0.43, on a scratch table, emulated prepares on
+so `SHOW WARNINGS` is reachable at all (over the binary protocol it answers 1295):
+
+```
+body using `BINARY expr`        CREATE TRIGGER: 2 warnings (1287)   INSERT: 0
+body using `CAST(… AS BINARY)`  CREATE TRIGGER: 0                   INSERT: 0
+```
+
+The warnings are raised when the body is **parsed**, not on each write. My first g1 arm inserted
+a row and read `SHOW WARNINGS` — and stayed **green under the mutation that reverts CAST to
+BINARY**. It was watching the wrong moment and proving nothing. The corrected arm takes the
+stored body out of `information_schema`, re-creates it under a scratch name, and reads the
+warnings from the `CREATE`; the scratch trigger is dropped in a `finally`, because DDL commits
+implicitly and `RefreshDatabase` cannot roll it back.
+
+**M9 — CAST reverted to BINARY**, against the corrected arm:
+
+```
+PROOF g1 — the trigger body still uses the deprecated `BINARY expr` form:
+           6 × {"Code":1287,"Message":"'BINARY expr' is deprecated and will be removed in a
+           future release. Please use CAST instead"}
+```
+
+**The collation property is preserved, measured not assumed** (PROOF g2). `BINARY` was never
+decoration: a routine variable takes the connection collation, a column takes the table
+collation, and where they disagree a plain `<>` raises 1267 on *every* insert — a total outage,
+not a loose guard.
+
+```
+comparing 'NGN' COLLATE utf8mb4_general_ci with 'NGN' COLLATE utf8mb4_unicode_ci
+  plain <>            ERROR 1267 Illegal mix of collations ... for operation '<>'
+  BINARY expr         OK, equal, 2 warnings (1287 × 2)
+  CAST(… AS BINARY)   OK, equal, 0 warnings
+and CAST still discriminates: 'NGN' <> 'USD' is 1, 'NGN' <> 'ngn' is 1
+```
+
+Collation-agnostic, still a case-sensitive byte comparison, and the currency refusal still fires
+end to end.
+
+## FIX 5 — the message-text read-back (declined by the reviewer, reinstated)
+
+`up()` now reads the trigger back from `information_schema` and refuses to record the migration
+unless the name, timing, event, table **and all three `SIGNAL` message texts** are what `CREATE`
+claimed.
+
+**A citation correction that matters to the reasoning.** The brief said the cited house pattern,
+`2026_08_17_100000`, "reads its SIGNAL message text back from information_schema at :126-130". It
+does not. Lines 126-130 are docblock prose, and its `assertTriggerShape()` reads
+`ACTION_TIMING`, `EVENT_MANIPULATION` and `EVENT_OBJECT_TABLE` — **shape only, no message text**.
+The requirement stands on its own evidence and I implemented it as a **superset** of the cited
+pattern: shape *and* messages.
+
+The reason is the one the project lead gave, and it is the single production-only risk on the
+list: `MSG_OVER` is 99 characters / **102 bytes** — it carries `Σ` and `≤`, the only non-ASCII in
+any `SIGNAL` here — and every other `Σ`/`≤` in this schema sits inside a `--` comment where
+mangling is invisible. A latin1 client on 5.7 could corrupt exactly this message, and the trigger
+would still fire, still refuse the right rows, and still pass every shape and behaviour assertion
+in the suite.
+
+**M10 — the message mangled as a latin1 client would mangle it** (`Σ` → `Î£`, `≤` → `â‰¤`), with
+the PHP constant untouched and no behaviour changed:
+
+```
+Trigger [finance_allocation_not_over_payment_amount] is stored without the expected SIGNAL
+message text [...]. The guard would still fire and still refuse the right rows, so no
+behavioural test can see this — it is what a latin1 client does to a message carrying Σ and ≤.
+Refusing to record the migration.
+  at database/migrations/2026_08_21_110000_…:281  assertTriggerShapeAndMessages()
+```
+
+The migration refuses to record. Bite-proven.
+
+## TICKET — `BINARY expr` in the merged triggers
+
+`docs/handoff/tickets/binary-expr-is-deprecated-in-the-july-allocation-trigger.md`. Not changed
+here: a merged trigger on a money table gets its own migration and its own proof.
+
+**Scope re-derived rather than taken from the finding.** The brief named the July sibling. It is
+one of **seven** triggers, and not the largest — measured from `information_schema` on a freshly
+migrated database, comments stripped, counting `BINARY` not preceded by `AS `:
+
+| Trigger | Occurrences |
+| --- | --- |
+| `finance_invoice_lines_reduction_guard` | 6 |
+| `finance_credit_notes_insert_guard` | 4 |
+| `finance_credit_notes_update_guard` | 2 |
+| `finance_fee_items_parent_state_guard_ins` | 2 |
+| `finance_fee_items_parent_state_guard_upd` | 2 |
+| `finance_fee_items_parent_state_guard_del` | 2 |
+| `finance_allocation_not_over_invoice_total` | 2 |
+
+**7 triggers, 20 occurrences, out of 61 in the schema.** The ticket carries the corrected
+firing-time measurement, the 5.7 validity of `CAST`, the collation evidence, and the note that an
+insert-time warning arm cannot see any of it.
+
+## Two things the reviewer verified that this report never claimed
+
+Both are load-bearing for this trigger and neither had been written down anywhere — which by the
+house rule made them wishes rather than rules. They are now pinned.
+
+**PROOF h1 — `finance_payments.amount_minor` cannot be mutated out from under an existing Σ.**
+The ceiling is read from the payment when the *allocation* is inserted. If the payment amount
+could later be lowered, a legal Σ would silently become an over-allocation with **no write to the
+allocations table for any trigger to see**. It cannot: `finance_payments_no_update` (BEFORE
+UPDATE, append-only) refuses with 1644, and the arm asserts the amount is unchanged afterwards.
+
+**PROOF h2 — an allocation naming a non-existent payment would be ACCEPTED by this trigger, and
+is stopped by the foreign key.** With no matching payment the `SELECT … INTO` leaves `v_amount`
+NULL, and `NULL + 1 > NULL` is NULL — not TRUE — so the `IF` does not fire. The arm demonstrates
+that directly (`SELECT (NULL + 1 > NULL)` is NULL) and then shows the composite FK
+`finance_payment_allocations_payment_school_foreign` `(school_id, payment_id) → finance_payments
+(school_id, id)` refusing with **1452, not 1644**. The distinction is the point: the trigger
+contributes nothing here and must not be credited with it.
+
+That arm also caught its own first version: at an amount of 999999 against a 100000 invoice, the
+*invoice*-axis trigger refused with 1644 and the arm would have passed for the wrong reason. The
+amount is now 100, which clears both ceilings and leaves the FK as the only refusal in the stack.
+
+## The reviewer's limits, in its words
+
+Recorded because a review's blind spots travel with its findings:
+
+- **no 5.7 server** — every reading it took, like every reading in this report, is 8.0.43;
+- **production state unknown** — it could not say whether any over-allocated or mixed-currency
+  payment exists today;
+- **one observation each side of the suite count** — the before/after numbers are single runs,
+  and ADR 0053 records byte-identical code producing both PASS and FAIL;
+- **Finance directory and arch group only** — it did not run the full suite;
+- **it disclosed an injected CodeGraph blob that it did not use** — surfaced in its context and
+  reported rather than silently relied on.
+
+## Numbers
+
+| | tests | passed | assertions | duration |
+| --- | --- | --- | --- | --- |
+| `origin/staging` `47de056` | 663 | 663 | 3325 | 240,074 ms |
+| first push | 676 | 676 | 3383 | 252,797 ms |
+| **after the cold-review fixes** | **692** | **692** | **3452** | 319,702 ms |
+
+`+16` arms in `PaymentAxisGuardTest` (8 → 24). `PaymentAxisConcurrencyTest` is unchanged at 5.
+
+## The gate caught one of these arms, and it was a real regression
+
+The first push of these fixes was **refused** by `bin/quality` at step 16/16. Steps 1-15 all
+green; the failure was the suite's own quality arm:
+
+```
+ratchet: 1 NEW test failure(s) not in the baseline (regression):
+  ✗ tests/Feature/Quality/PestNegatedExpectationMessagesTest.php::it no test passes a custom
+    failure message to a negated Pest expectation
+
+tests/Feature/Finance/PaymentAxisGuardTest.php:617  ->not->toBeEmpty (message is argument #1, 1 supplied)
+```
+
+PROOF e6 was written as
+`expect($m)->not->toBeEmpty('the ceiling SUM statement was not found in the stored body')`.
+**Pest discards a custom message passed to a negated expectation** — `->not->` runs the positive
+assertion and, when it succeeds, throws its own shortened-export sentence, so the message is
+never the failure description. An arm added to make a limit legible would have printed an
+exported array instead of the sentence explaining it.
+
+Rewritten per the quality test's own guidance, which prefers the rewrite carrying the most
+information: `expect(count($m))->toBeGreaterThan(0, $message)`, which also puts the count in the
+output. Not a flake and not re-run to green — a regression I introduced, caught by the floor,
+fixed. Artefacts were copied out before anything was re-run (`pest-20260821-222815-18011.log`,
+`junit-20260821-222815-18011.xml`), per the capture-before-you-re-run rule.
+
+That this is the one thing the gate found, on a branch whose entire subject is guards that do
+not do what they claim, is worth stating plainly rather than tidying away.
+
+## What still cannot be verified
+
+Unchanged from the first version, minus the pre-flight query which is now correct and shipped:
+
+- **MySQL 5.7.23-23**, which is production. No 5.7 server was available. `CAST(… AS BINARY)`,
+  `SIGNAL SQLSTATE '45000'` and `DROP TRIGGER IF EXISTS` are documented as valid there; none of
+  it is observed.
+- **Whether any over-allocated or mixed-currency payment exists in production today.** Both
+  pre-flight clauses now ship in the migration docblock; neither has been run against production.
+- **The suite's own determinism** (ADR 0053). Each number above is one observation.

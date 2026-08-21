@@ -73,6 +73,15 @@ use Spatie\Activitylog\CauserResolver;
  * relation, promotion reporting, BackfillPromotionLinks) would have to learn to exclude — a broad
  * audit for one back-pointer, and a silent miscount of repeaters as promotions until it was done.
  *
+ * ── GRADUATION IS NOT THIS JOB'S BUSINESS, AND THAT HAS A VISIBLE CONSEQUENCE ─────────────────────
+ * A terminal level (`next_class_level_id IS NULL`) advances nobody. Its pupils are skipped BEFORE any
+ * write, so `unresolved` stays 0 and the source curriculum closes with their episodes still reading
+ * `active`. That is correct for the scope — nothing here decides what "left school" means, and
+ * inventing a terminal status for leavers would be this job guessing at a records policy it has no
+ * standing to set. But it does mean the rollover leaves the graduating cohort reading `active` under
+ * a closed curriculum, so a later reader must not infer that end-of-year closes leavers out. If
+ * graduates need marking, that is a separate operation.
+ *
  * ── THE SOURCE IS CLOSED ONLY WHEN NOTHING WAS LEFT UNRESOLVED ────────────────────────────────────
  * Both sibling jobs close their source unconditionally. This one must not: a pupil can legitimately
  * be left unplaced (an `explicit_only` level with no label match, or no resolvable exam type), and

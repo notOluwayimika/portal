@@ -333,17 +333,19 @@ it('is idempotent across a manual reassignment — the promoted_to_id anchor, no
     // once a pupil has been moved off the arm the function computes. A firstOrCreate-by-curriculum
     // anchor mints a duplicate here; the link anchor does not.
     //
-    // The source is deliberately left OPEN by an unplaced pupil, so the re-run reaches the body
-    // rather than stopping at the guard — otherwise this would prove the guard, not the anchor.
+    // THE RE-OPEN BELOW IS A SIMULATION, AND SAYS SO. Everyone here is placeable, so run 1 closes the
+    // source legitimately; the test then re-opens it BY HAND to model a partial run, purely so the
+    // re-run reaches the body instead of stopping at the guard. That is honest scaffolding, not the
+    // real recovery path — the genuinely-open case is driven end to end in the reopen-and-resolve
+    // test below, which is where the conditional close earns its keep.
     $w = mny_world();
     $source = mny_source($w, 'B');
     [$moved] = mny_enroll($w, $source);
-    $unplaceable = mny_source($w, 'H');
 
     mny_run($w, $source);
     expect($source->fresh()->status)->toBe('closed');
 
-    // Re-open by hand to model the partial-run case, then move the pupil as Part 4's service would.
+    // Re-open by hand — see the note above. Then move the pupil as Part 4's service would.
     $source->update(['status' => 'active']);
     $landed = mny_landed($w, $moved);
     $reassigned = Curriculum::withoutGlobalScope(SchoolScope::class)->firstOrCreate([
@@ -360,7 +362,80 @@ it('is idempotent across a manual reassignment — the promoted_to_id anchor, no
     // No duplicate back in 12B, and the pupil stayed where they were moved to.
     expect(StudentCurriculum::where('student_id', $moved->id)->count())->toBe(2); // Y11 source + the moved Y12 one
     expect(mny_landed($w, $moved)->curriculum->class_level_arm_id)->toBe($w['y12Arms']['S']->id);
-    unset($unplaceable);
+});
+
+/**
+ * THE ARC THE CONDITIONAL CLOSE EXISTS FOR, driven end to end — and the one behaviour a refactor back
+ * to an unconditional close would break with every other test still green.
+ *
+ * Real unresolved state holds the source open; the config is then fixed; the re-run advances the
+ * laggard, skips the pupil who already succeeded (via the promoted_to_id anchor, on a re-run that
+ * genuinely reaches the body rather than stopping at the guard), and the source finally closes.
+ *
+ * Both halves existed separately before this: a source left open, and an anchor that skips. Neither
+ * proved they compose, which is the whole justification for diverging from the sibling jobs.
+ */
+it('reopens, resolves the laggard on a re-run, skips the already-promoted, then closes', function () {
+    // explicit_only, so placement comes ONLY from the arm map — which makes "unplaceable" a real
+    // configuration state a human fixes, not a contrivance.
+    $w = mny_world(['y12Strategy' => 'explicit_only']);
+    $source = mny_source($w, 'H'); // 11H: no 12H, so no label match either
+    [$placeable] = mny_enroll($w, $source);
+    [$laggard] = mny_enroll($w, $source);
+
+    // Only the first pupil can be placed: a per-ARM map cannot distinguish two pupils in one arm, so
+    // the map is added AFTER run 1 to model the fix. Run 1 therefore places nobody.
+    mny_run($w, $source);
+
+    expect(mny_landed($w, $placeable))->toBeNull();
+    expect(mny_landed($w, $laggard))->toBeNull();
+    // HELD OPEN by genuinely unresolved pupils — not re-opened by the test.
+    expect($source->fresh()->status)->toBe('active');
+
+    // A human fixes the configuration.
+    ClassLevelArmProgression::forceCreate([
+        'school_id' => $w['school']->id,
+        'source_class_level_arm_id' => $w['y11Arms']['H']->id,
+        'target_class_level_arm_id' => $w['y12Arms']['P']->id,
+    ]);
+
+    mny_run($w, $source);
+
+    // Both advance now, and the source closes because nothing is left unresolved.
+    expect(mny_landed($w, $placeable)->curriculum->class_level_arm_id)->toBe($w['y12Arms']['P']->id);
+    expect(mny_landed($w, $laggard)->curriculum->class_level_arm_id)->toBe($w['y12Arms']['P']->id);
+    expect($source->fresh()->status)->toBe('closed');
+
+    // A THIRD run must be a no-op even though the guard now stops it — assert the data, so the
+    // anchor's contribution is visible rather than inferred.
+    $episodeCount = StudentCurriculum::count();
+    mny_run($w, $source);
+    expect(StudentCurriculum::count())->toBe($episodeCount);
+});
+
+/**
+ * The same arc with the laggard as a REPEATER, so the held-repeater firstOrCreate anchor is exercised
+ * on a re-run that reaches the body — the one path the advancer anchor cannot cover.
+ */
+it('reconverges a held repeater on a re-run without minting a second same-level episode', function () {
+    $w = mny_world(['y12Strategy' => 'explicit_only']);
+    $source = mny_source($w, 'H');
+    [$repeater, $repeaterEpisode] = mny_enroll($w, $source, StudentStatusEnum::REPEATED->value);
+    mny_enroll($w, $source); // an advancer who cannot be placed, holding the source open
+
+    mny_run($w, $source);
+
+    $held = mny_landed($w, $repeater);
+    expect($held)->not->toBeNull();
+    expect($source->fresh()->status)->toBe('active');
+
+    mny_run($w, $source);
+
+    // Same episode, not a second one — and the source episode still untouched.
+    expect(StudentCurriculum::where('student_id', $repeater->id)->count())->toBe(2);
+    expect(mny_landed($w, $repeater)->id)->toBe($held->id);
+    expect($repeaterEpisode->fresh()->status)->toBe(StudentStatusEnum::REPEATED);
+    expect($repeaterEpisode->fresh()->promoted_to_id)->toBeNull();
 });
 
 it('holds a repeater in their own level, same arm, with no promotion link', function () {
@@ -395,16 +470,29 @@ it('holds a repeater in their own level, same arm, with no promotion link', func
     expect(mny_landed($w, $advancer)->curriculum->class_level_arm_id)->toBe($w['y12Arms']['B']->id);
 });
 
-it('no-ops for a terminal class level', function () {
+it('no-ops for a terminal class level, and leaves graduates untouched under a closed curriculum', function () {
+    // GRADUATION IS OUT OF SCOPE, PINNED IN BOTH DIRECTIONS. Advancers at a terminal level are
+    // skipped before any write, so `unresolved` stays 0 and the source closes — with their episodes
+    // still reading `active`. That is deliberate: nothing here decides what "left school" means.
+    // Asserted explicitly so neither half can drift silently, and so a reader cannot infer that
+    // end-of-year closes leavers out. If graduates need marking, that is a separate operation.
     $w = mny_world();
     $w['y11']->update(['next_class_level_id' => null]);
     $source = mny_source($w, 'B');
-    [$student] = mny_enroll($w, $source);
+    [$student, $episode] = mny_enroll($w, $source);
 
     mny_run($w, $source);
 
     expect(mny_landed($w, $student))->toBeNull();
     expect(StudentCurriculum::where('student_id', $student->id)->count())->toBe(1);
+
+    // The graduate's episode: untouched, still active, no promotion link.
+    expect($episode->fresh()->status)->toBe(StudentStatusEnum::ACTIVE);
+    expect($episode->fresh()->promoted_to_id)->toBeNull();
+    expect($episode->fresh()->ended_at)->toBeNull();
+
+    // Nothing was left unresolved, so the curriculum closes over them.
+    expect($source->fresh()->status)->toBe('closed');
 });
 
 it('no-ops and creates nothing when the target session has no Term row', function () {

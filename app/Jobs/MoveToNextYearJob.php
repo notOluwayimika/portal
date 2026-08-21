@@ -260,7 +260,7 @@ class MoveToNextYearJob implements ShouldQueue
      */
     private function holdRepeater(StudentCurriculum $sourceEnrollment, ClassLevelArm $sourceArm, ClassLevel $sourceLevel): bool
     {
-        $target = $this->resolveTargetCurriculum($sourceLevel, $sourceArm, $this->curriculum->exam_type_id);
+        $target = $this->resolveTargetCurriculum($sourceLevel, $sourceArm, (int) $this->curriculum->exam_type_id);
 
         if ($target === null) {
             Log::warning('MoveToNextYearJob: cannot hold repeater — no target curriculum for their own level', [
@@ -272,7 +272,7 @@ class MoveToNextYearJob implements ShouldQueue
         }
 
         // HELD-REPEATER ANCHOR — sound here because their target is fully deterministic.
-        $this->createEpisode($sourceEnrollment->student_id, $target);
+        $this->createEpisode((int) $sourceEnrollment->student_id, $target);
 
         return true;
     }
@@ -303,7 +303,7 @@ class MoveToNextYearJob implements ShouldQueue
             return false;
         }
 
-        $newEpisode = $this->createEpisode($sourceEnrollment->student_id, $target);
+        $newEpisode = $this->createEpisode((int) $sourceEnrollment->student_id, $target);
 
         // Link AND status in ONE update. The promoted_requires_link trigger (live on 5.7 since
         // 2026_08_20_140000) refuses status-before-link; one statement cannot trip it.

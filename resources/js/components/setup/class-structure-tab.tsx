@@ -1,7 +1,8 @@
 import axios from 'axios';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Network, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { ArmMapPanel } from '@/components/setup/arm-map-panel';
 import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 import type { Arm, ClassLevel, GradingScheme, Stream } from '@/types/models';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -54,6 +55,10 @@ export function ClassStructureTab() {
     const [confirm, setConfirm] = useState<ConfirmTarget<
         ClassLevel | Arm | Stream
     > | null>(null);
+
+    // Arm mapping opens per level, from the level row — the target arms it may offer are a property
+    // of THIS level's progression target, so there is nothing to configure "in the abstract".
+    const [armMapLevel, setArmMapLevel] = useState<ClassLevel | null>(null);
 
     useEffect(() => {
         const fetchClassStructure = async () => {
@@ -401,6 +406,16 @@ export function ClassStructureTab() {
                                             >
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
+                                                    title="Arm mapping"
+                                                    aria-label={`Arm mapping for ${l.name}`}
+                                                    onClick={() =>
+                                                        setArmMapLevel(l)
+                                                    }
+                                                >
+                                                    <Network className="h-3 w-3" />
+                                                </button>
+                                                <button
+                                                    className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() => {
                                                         setLvlForm({
                                                             name: l.name,
@@ -732,6 +747,13 @@ export function ClassStructureTab() {
                         />
                     </div>
                 </Modal>
+            )}
+
+            {armMapLevel && (
+                <ArmMapPanel
+                    classLevel={armMapLevel}
+                    onClose={() => setArmMapLevel(null)}
+                />
             )}
 
             {confirm && (

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
+use App\Http\Controllers\ClassLevelArmProgressionController;
 use App\Http\Controllers\CommentBandController;
 use App\Http\Controllers\CommentEntryController;
 use App\Http\Controllers\CurriculumController;
@@ -67,6 +68,17 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/class-structure/arms', [ClassLevelArmController::class, 'storeArm']);
     Route::put('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'updateArm']);
     Route::delete('/class-structure/arms/{arm:uuid}', [ClassLevelArmController::class, 'destroyArm']);
+    /*
+     * Arm progression map (M2). Which arm of a level feeds which arm of the level its pupils move
+     * into — the operator's override, consulted before label matching and distribution.
+     *
+     * Same `academic_setup.manage` gate as the rest of the progression config, and literal segments
+     * after the `{classLevel:uuid}` wildcard so nothing can be swallowed (#277).
+     */
+    Route::get('/class-levels/{classLevel:uuid}/arm-map', [ClassLevelArmProgressionController::class, 'index']);
+    Route::put('/class-levels/{classLevel:uuid}/arm-map', [ClassLevelArmProgressionController::class, 'sync']);
+    Route::delete('/class-levels/{classLevel:uuid}/arm-map', [ClassLevelArmProgressionController::class, 'destroyAll']);
+
     Route::post('/class-structure/streams', [ClassLevelArmController::class, 'storeStream']);
     Route::put('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'updateStream']);
     Route::delete('/class-structure/streams/{stream:uuid}', [ClassLevelArmController::class, 'destroyStream']);

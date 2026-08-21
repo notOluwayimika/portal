@@ -18,6 +18,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * @property int $id
  * @property string $uuid
+ * @property int $school_id the isolation boundary; annotated so Larastan can see the school guards
+ * @property int $student_id
+ * @property int $curriculum_id
+ * @property int|null $promoted_to_id
  */
 class StudentCurriculum extends Model
 {

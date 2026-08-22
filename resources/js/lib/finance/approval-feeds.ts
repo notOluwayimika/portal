@@ -351,8 +351,10 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
  * Derived rather than listed, for the reason APPROVAL_FEEDS itself exists: a second hardcoded list
  * is precisely the mechanism that lost two feeds off the approvals page.
  */
-export const DECIDED_FEEDS: ApprovalFeed[] = APPROVAL_FEEDS.filter(
-    (feed) => feed.decidedUrl !== undefined,
+export type DecidedFeed = ApprovalFeed & { decidedUrl: () => string };
+
+export const DECIDED_FEEDS: DecidedFeed[] = APPROVAL_FEEDS.filter(
+    (feed): feed is DecidedFeed => feed.decidedUrl !== undefined,
 );
 
 /** The feed a row belongs to. Undefined only for a `type` no feed declares. */

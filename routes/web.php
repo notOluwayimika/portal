@@ -418,6 +418,27 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ->name('admin.finance.approvals');
 
     /*
+     * U13 + U14 — the DECIDED half of the queue above, and it carries NO EXTRA MIDDLEWARE.
+     *
+     * The asymmetry with the line above is the decision. The queue is gated on holding a finance
+     * CHECKER ability because every row on it is an act about to be taken; this page renders rows
+     * that are status-terminal, where the money has already moved or has already been refused. So it
+     * takes the group's `finance.access` — the same gate the statement page carries, and the same
+     * reasoning U11's receipt route carries a few lines up: the ability to TAKE an action is not the
+     * ability to READ that it was taken.
+     *
+     * It widens nothing. The two feeds it fetches serve rows that `finance.access` already reaches
+     * through the statement's own feed, which filters on student and not on status
+     * (routes/endpoints/finance.php). What was missing was a LIST: a decided document left the queue
+     * and appeared on no screen unless you already knew whose it was.
+     *
+     * super_admin reaches this page and is refused the queue, and that is correct rather than a leak:
+     * the exclusion in ADR 0040 is from CHECKER abilities, and reading a decision is not one.
+     */
+    Route::get('/finance/decisions', fn () => Inertia::render('admin/finance/decisions'))
+        ->name('admin.finance.decisions');
+
+    /*
      * The opening-balance operator screen — U12b (§9 step 5b-iii). Gated on the MAKER ability, the
      * same one that gates the template and the upload: this is where a bursar-office operator brings
      * a school's closing position across from WCBS. A checker does not need it, and `finance.access`

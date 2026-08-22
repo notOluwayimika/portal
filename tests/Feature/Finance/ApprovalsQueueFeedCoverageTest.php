@@ -28,6 +28,8 @@ const AQF_FEEDS_MODULE = 'resources/js/lib/finance/approval-feeds.ts';
 
 const AQF_PAGE = 'resources/js/pages/admin/finance/approvals.tsx';
 
+const AQF_DECISIONS_PAGE = 'resources/js/pages/admin/finance/decisions.tsx';
+
 function aqfRead(string $relative): string
 {
     return (string) file_get_contents(dirname(__DIR__, 3).'/'.$relative);
@@ -554,6 +556,16 @@ it('the approvals page imports no Finance controller action directly — every f
 });
 
 /**
+ * THE DECISIONS PAGE HOLDS NO FEED KNOWLEDGE EITHER. Two hardcoded imports are how the approvals
+ * queue lost two types; the surface built on the other url of the same registry must not start with
+ * the same two. Identical assertion to the one above, one page along, because the defect is a
+ * property of hardcoding rather than of that particular file.
+ */
+it('the decisions page imports no Finance controller action directly — every feed comes off the declared list', function () {
+    expect(aqfDeclaredControllers(aqfRead(AQF_DECISIONS_PAGE)))->toBe([]);
+});
+
+/**
  * A DECLARED CONFIRMATION THE PAGE NEVER CONSULTS IS WORSE THAN NO CONFIRMATION, because the
  * declaration is then read — by the next person, and by the test above — as evidence that the guard
  * is there. The arm above pins the feed entry; this pins the one line that makes the entry matter.
@@ -606,4 +618,18 @@ it('the queue errors only when EVERY feed fails, expressed over the whole array'
         .'The error rule must be expressed over the whole feed array, not a fixed number of feeds.')
         ->and($fixedArity)->toBeFalse(AQF_PAGE.' errors on a FIXED-ARITY conjunction of rejections. '
             .'That rule was correct at two feeds and shows a one-ability checker a broken queue at five.');
+
+    // THE DECISIONS PAGE FANS OUT THE SAME WAY AND CARRIES THE SAME RULE. Its two feeds share one
+    // permission TODAY, which is exactly the condition under which a fixed-arity rule looks fine and
+    // is a trap: the day one decided feed gains its own gate, "any rejection" blanks the page for a
+    // reader holding the other. Pinned now, while it costs one line.
+    $decisions = aqfRead(AQF_DECISIONS_PAGE);
+
+    $decisionsArrayWide = str_contains($decisions, "settled.every((result) => result.status === 'rejected')");
+    $decisionsFixedArity = preg_match("/status === 'rejected' &&/", $decisions) === 1;
+
+    expect($decisionsArrayWide)->toBeTrue(AQF_DECISIONS_PAGE.' no longer errors on '
+        .'`settled.every(... rejected)`. The error rule must be expressed over the whole feed array.')
+        ->and($decisionsFixedArity)->toBeFalse(AQF_DECISIONS_PAGE.' errors on a FIXED-ARITY '
+            .'conjunction of rejections — the shape that breaks the moment the feeds stop sharing a gate.');
 });

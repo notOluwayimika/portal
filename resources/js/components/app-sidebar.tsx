@@ -441,6 +441,19 @@ export function AppSidebar() {
                 });
             }
 
+            // Decided approvals (U13/U14) — the other half of the queue above, and it is NOT
+            // behind the checker predicate. Its route carries only the group's `finance.access`,
+            // because reading a decision that has already been taken is a different capability
+            // from being trusted to take one; keying the item on `isFinanceChecker` would hide it
+            // from exactly the seat it was built for — the bursar reconciling a term's corrections,
+            // who signs none of them. Unconditional inside the `can('finance.access')` block, so
+            // the item and the route ask the same question and a visible entry cannot 403.
+            financeItems.push({
+                title: 'Decided approvals',
+                href: '/finance/decisions',
+                icon: History,
+            });
+
             // ADR 0040 makes this correct rather than lucky: `approve`/`reject` are
             // excluded from the super-admin Gate::before bypass, and EffectivePermissions
             // resolves through the Gate, so a super_admin's shared set holds NO finance

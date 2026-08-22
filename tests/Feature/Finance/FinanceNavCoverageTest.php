@@ -23,8 +23,9 @@
  *
  * THE EXEMPTIONS ARE NAMED, NOT DEFAULTED. A finance GET route that is not a nav destination has to
  * say why in this file, where a reader looking for the missing item will find it — and the thing
- * that DOES link it is asserted, not asserted-about. There are three: the per-student statement,
- * (U11) the per-payment receipt, and (U6) the per-run bulk-invoice-run report.
+ * that DOES link it is asserted, not asserted-about. There are four: the per-student statement,
+ * (U11) the per-payment receipt, (U6) the per-run bulk-invoice-run report, and (U10) the per-payment
+ * allocation screen.
  */
 
 use App\Models\User;
@@ -65,6 +66,13 @@ const FNC_NOT_NAV = [
     // failed one: a failed run's report is the only place its reason is readable, so hiding the link
     // there would hide the diagnosis. The arm below checks that link rather than trusting it.
     'finance/bulk-invoice-runs/{run}' => 'per-run; linked from every row of the runs list at /finance/bulk-invoice-runs',
+
+    // U10's allocation screen. Takes a PAYMENT uuid — the same reason as the receipt one level up —
+    // and it is reached from the statement's payments tab. Unlike the receipt, this link is
+    // CONDITIONAL and that is a rule rather than styling: a payment with nothing unallocated has
+    // nothing to direct, and the row shows the figure that says so beside the missing link. The arm
+    // below asserts both halves.
+    'finance/payments/{payment}/allocate' => 'per-payment; linked from the statement’s payments tab for every payment with an unallocated remainder',
 ];
 
 function fncRead(string $relative): string
@@ -302,4 +310,47 @@ it('a super_admin sees the Finance group but NOT Approvals, because ADR 0040 den
     // it, because neither is a checker action and the bypass reaches both.
     expect($effective)->toContain('finance.access')
         ->and($effective)->toContain('finance.opening-balance.submit');
+});
+
+it('the allocation-screen exemption really is linked from the statement, and the link is gated on the server’s own flag', function () {
+    /*
+     * The same check as the two above, for U10 — and like the receipt's it asserts more than "a link
+     * exists", because the interesting part is what the link is gated ON.
+     *
+     * THE GATE IS THE SERVER'S FLAG, NOT JS ARITHMETIC. `can_allocate` is derived in PaymentResource
+     * from Payment::unallocatedAmount(); the statement renders it. A `payment.unallocated.amount_minor
+     * > 0` in its place would be the UI re-deriving an eligibility rule the server owns — the
+     * can_approve lesson, and the reason InvoiceSettlement exists at all. It would also be a
+     * money-lint finding away from becoming money arithmetic in a page.
+     *
+     * AND THE FIGURE IS UNCONDITIONAL EVEN THOUGH THE LINK IS NOT. A payments tab that showed the
+     * unallocated column only for rows that have one would leave an operator unable to tell "settled
+     * in full" from "this column does not apply here".
+     *
+     * WHAT THIS CANNOT SEE, stated rather than implied — it is a text check on a file, and there is no
+     * JavaScript test runner in this repository: whether the link renders, whether the permission gate
+     * around it resolves, or whether the page it opens works. Only that the statement names the route,
+     * the flag and the figure.
+     */
+    $statement = fncRead('resources/js/pages/admin/finance/statement.tsx');
+
+    expect($statement)->toContain('/finance/payments/${payment.id}/allocate')
+        // Gated on the ability as well as on the flag — offering a control the server will refuse
+        // teaches an operator that the screen lies.
+        ->and($statement)->toContain('permission="finance.payment.allocate"')
+        ->and($statement)->toContain('payment.can_allocate')
+        // The figure, which is NOT behind the same condition.
+        ->and($statement)->toContain('payment.unallocated');
+
+    // The eligibility rule is the server's exactly once. A second mention has, on this very file's
+    // sibling arm, always turned out to be a HIDE — the cell wrapped in it, or the rows filtered by
+    // it — so the count is the assertion rather than a window between two offsets.
+    expect(substr_count($statement, 'can_allocate'))->toBe(1,
+        'The statement mentions `can_allocate` more than once. There is exactly one legitimate use — '
+        .'the condition on the Allocate link — and a second one has historically been a filter that '
+        .'removes the row entirely.');
+
+    // And the UI must not re-derive the rule from the amount. This is the shape the server flag exists
+    // to replace, and it is one edit away from being money arithmetic in a finance page.
+    expect($statement)->not->toContain('unallocated.amount_minor >');
 });

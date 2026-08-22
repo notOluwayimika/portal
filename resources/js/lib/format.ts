@@ -72,9 +72,16 @@ export function minorToNairaInput(money: Money): string {
 }
 
 /**
- * Sum integer minor-unit amounts (e.g. a live invoice-line running total). The third and
- * last sanctioned money op — display→formatNaira, input→nairaToMinor, total→sumMinor — so
- * the create form never does ad-hoc `+`/`reduce` on amounts (banned by the money-lint).
+ * Sum integer minor-unit amounts (e.g. a live invoice-line running total). One of the four
+ * sanctioned money ops — display→formatNaira, input→nairaToMinor, total→sumMinor,
+ * headroom→differenceMinor — so a form never does ad-hoc `+`/`reduce` on amounts (banned by
+ * the money-lint).
+ *
+ * THIS DOCBLOCK USED TO SAY "the third and LAST sanctioned money op", and that was a prediction
+ * rather than a rule. U10's allocation screen needs a live "still unallocated" figure, which is a
+ * subtraction, and the honest choices were a fourth op here or the same subtraction spelled inline
+ * in a page — which is precisely what the lint exists to refuse. The count is revised rather than
+ * the boundary: this file is still the only place money arithmetic happens.
  *
  * Float-SAFE precisely because it is INTEGER addition: minor units are whole numbers and
  * their sum is exact for any realistic total (far below 2^53). The danger the money rule
@@ -84,4 +91,22 @@ export function minorToNairaInput(money: Money): string {
  */
 export function sumMinor(amounts: number[]): number {
     return amounts.reduce((total, amount) => total + amount, 0);
+}
+
+/**
+ * a − b over integer minor units, for a live "how much of this is left" figure — U10's allocation
+ * screen, where an operator editing a table of amounts has to see the payment's remaining headroom
+ * change as they type.
+ *
+ * FLOAT-SAFE for the same reason sumMinor is: minor units are whole numbers, so their difference is
+ * exact for any realistic amount (far below 2^53). The float danger the money rule guards against is
+ * `0.1 + 0.2`, which cannot arise where nothing has a fractional part.
+ *
+ * IT MAY RETURN A NEGATIVE, and callers must not clamp it. Over-allocating is a state the operator
+ * needs to SEE while they are in it — the screen shows the overshoot and refuses the submit, which is
+ * better than a figure that sits at zero while the numbers above it do not add up. The server refuses
+ * it too, and the finance_allocation_not_over_payment_amount trigger is the floor under both.
+ */
+export function differenceMinor(a: number, b: number): number {
+    return a - b;
 }

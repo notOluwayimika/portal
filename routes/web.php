@@ -7,6 +7,7 @@ use App\Enums\TeacherStatusEnum;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Finance\Http\Controllers\PaymentReceiptController;
+use App\Finance\Models\Payment;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImpersonationController;
@@ -323,6 +324,33 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
             'student' => ['uuid' => $student->uuid, 'name' => $student->full_name],
         ]);
     })->name('admin.finance.statement');
+
+    /*
+     * U10 — the allocation screen. Takes a PAYMENT uuid, so there is no single URL a menu could point
+     * at; it is reached from the statement's payments tab, which links every row that still has
+     * something unallocated. FinanceNavCoverageTest carries the exemption WITH that link asserted, so
+     * this cannot quietly become a screen nobody can open.
+     *
+     * `finance.payment.allocate`, the same ability both API routes carry. The statement page beside it
+     * takes only the group's `finance.access`, and the difference is the point: reading where a
+     * payment went is not the authority to decide where it goes.
+     *
+     * THE PAYMENT IS BOUND, the student is not — it is read THROUGH the payment. Passing a student
+     * uuid alongside would let a caller name a payment and a statement that do not belong together,
+     * and the page would then link "back" to a student the payment is not on. One bound row, one
+     * source.
+     */
+    Route::get('/finance/payments/{payment:uuid}/allocate', function (Payment $payment) {
+        $student = $payment->student;
+
+        return Inertia::render('admin/finance/allocate', [
+            'paymentUuid' => $payment->uuid,
+            'studentUuid' => $student?->uuid,
+            'studentName' => $student?->full_name,
+        ]);
+    })
+        ->middleware('permission:finance.payment.allocate')
+        ->name('admin.finance.payment-allocate');
 
     /*
      * U11 — the printable payment receipt. ONE payment per page; there is no batch and no

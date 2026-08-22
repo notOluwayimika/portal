@@ -17,10 +17,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { INVOICE_KIND_LABEL } from '@/lib/finance/invoice-kind';
 import { formatNaira, nairaToMinor, sumMinor } from '@/lib/format';
 import type {
     BillableEnrollmentInfo,
     DraftLine,
+    InvoiceKind,
     SelectablePolicy,
 } from '@/types/finance';
 
@@ -85,7 +87,7 @@ export function selectablePolicies(
  * INVOICE is a term bill or a supplementary charge. Kept as its own named type so a future edit
  * cannot pass one where the other belongs.
  */
-export type InvoiceKindChoice = 'scheduled' | 'supplementary';
+export type InvoiceKindChoice = InvoiceKind;
 
 /**
  * The label on the "Term bill" option.
@@ -107,9 +109,12 @@ export type InvoiceKindChoice = 'scheduled' | 'supplementary';
  * which is how someone raises a supplementary charge believing they raised the term bill.
  */
 export function termBillLabel(alreadyInvoiced: boolean): string {
+    // The WORD comes from the shared vocabulary (U7) so this select and every surface that reads an
+    // invoice back afterwards name one document identically; the parenthetical warning is this
+    // screen's own and belongs nowhere else.
     return alreadyInvoiced
-        ? 'Term bill (will be rejected — void first)'
-        : 'Term bill';
+        ? `${INVOICE_KIND_LABEL.scheduled} (will be rejected — void first)`
+        : INVOICE_KIND_LABEL.scheduled;
 }
 
 /**
@@ -488,7 +493,7 @@ export function NewInvoiceModal({
                                         )}
                                     </SelectItem>
                                     <SelectItem value="supplementary">
-                                        Supplementary charge
+                                        {INVOICE_KIND_LABEL.supplementary}
                                     </SelectItem>
                                 </SelectContent>
                             </Select>

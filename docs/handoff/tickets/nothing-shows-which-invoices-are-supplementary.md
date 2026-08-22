@@ -1,5 +1,16 @@
 # Nothing on any read path shows which invoices are supplementary
 
+> **Status — closed by `feat/u7-invoice-list-and-detail`.** Five of the six read paths are CLOSED
+> and the sixth (§4, the billed total) is DECIDED rather than changed; each carries its own marker
+> below, written as that path was closed rather than all at the end. The ticket's own instruction —
+> that whoever builds U7's list treats this as part of that work — is what that branch did.
+>
+> **What is deliberately still open, named:** `PaymentResource`'s own `allocations` block (§6's last
+> sentence) carries `invoice_id` and `amount` and gains no kind, because nothing renders one from it.
+> **Checked and still NOT affected:** the bulk-run screens, for the reason this ticket already gives
+> — `ProcessBulkInvoiceRun` raises `InvoiceKind::Scheduled` as a literal, so every invoice a run
+> produces is a term bill by construction.
+
 **Raised by** `feat/u7-supplementary-invoice-wire` (the branch that made the state
 reachable). **Not a defect in that branch** — it is what that branch's own change to the
 write path now makes visible on the read paths, which it did not touch.
@@ -20,7 +31,10 @@ the same fields it used when only one could exist.
 ## The read paths, each checked rather than assumed
 
 **1 — `app/Finance/Http/Resources/InvoiceResource.php`. The wire does not carry `kind` at
-all, and this is the root of everything below it.** `toArray()` serialises fifteen keys —
+all, and this is the root of everything below it.** — **CLOSED** (U7 commit 1). The resource now
+serialises `'kind' => $this->kind->value` beside `status`, and both values are asserted over HTTP on
+both read directions — the generate 201 and the per-student read — by
+`tests/Feature/Finance/InvoiceKindOnReadPathsTest.php` arms a and b. The original text follows. `toArray()` serialises fifteen keys —
 `id`, `number`, `display_number`, `status`, `billed_to_name`, `academic_context`, `total`,
 `outstanding`, `settlement_state`, the four `can_*`/`void_blocked_reason` flags, `lines`,
 `cancelled_at`, `cancel_reason` — and `kind` is not among them. It is the **only** invoice
@@ -33,30 +47,65 @@ The model does carry it — `Invoice::$casts` has `'kind' => InvoiceKind::class`
 (`app/Finance/Models/Invoice.php:67`) — and `InvoiceReadModel::forStudent()` returns whole
 models. The value is loaded and then dropped at the resource.
 
-**2 — `resources/js/types/finance.ts`, the `Invoice` type.** Mirrors the resource key for
+**2 — `resources/js/types/finance.ts`, the `Invoice` type.** — **CLOSED** (U7 commit 1). `InvoiceKind`
+is declared beside `InvoiceStatus` and `Invoice.kind` mirrors the resource key. The words a screen
+renders live in one place, `resources/js/lib/finance/invoice-kind.ts`, which the "New invoice"
+modal's own select now reads from too, so the label a bursar picks at creation is the label they read
+back everywhere afterwards. The original text follows. Mirrors the resource key for
 key and has no `kind`. A screen adding a badge would have to widen this first.
 
-**3 — `resources/js/pages/admin/finance/statement.tsx`, the invoices table.** Renders
+**3 — `resources/js/pages/admin/finance/statement.tsx`, the invoices table.** — **CLOSED** (U7
+commit 3). Every row now carries a kind badge beside its number and links to the invoice detail;
+the table's client-side search matches the kind's LABEL, so typing "supplementary" filters to the
+one-off charges. The link is unconditional — a voided row links too, because voidness is a
+reporting default and the detail renders the void trail rather than 404-ing — and
+`FinanceNavCoverageTest` pins both the link and its unconditionality, bite-proved by gating the
+link on `status !== 'void'` and watching the count arm red. The original text follows. Renders
 `invoice.display_number` (`:399`, and again at `:516` where the row is matched against a
 pending void request), `invoice.settlement_state` (`:426`, `:450`) and the money columns.
 Two invoices on the same episode — the term bill and a "Damaged locker door" charge —
 appear as two rows differing only in number and amount. The bursar cannot tell which is
 which without opening the lines.
 
-**4 — the statement's billed total.** `InvoiceReadModel::billedTotalForStudent()`
+**4 — the statement's billed total.** — **DECIDED: no breakdown, and the figure is unchanged**
+(U7 commit 3). The ticket says this is "arguably correct as a total", and that is the ruling: it is
+what the student was billed, which is the question the number is asked. Three reasons it does not
+gain a per-kind split. The rows now answer it directly — every invoice on the same screen states
+its own kind, so a reader wanting the split reads it off the table rather than off a second
+aggregate. A second money figure on the wire is a second surface to keep in step with the first,
+and `bin/ci-money-lint.php` forbids the UI deriving it, so it would have to be a new server-side
+total with its own arms — infrastructure ahead of a caller that has not asked for it. And a
+term-bill subtotal is not the receivable: the account balance already carries the operative
+position, including credit, and putting a second "billed" figure beside it invites the two to be
+read against each other. **If a per-kind total is ever wanted it belongs beside the rows and
+computed server-side**, not as a second reduce over the same collection. The original text
+follows. `InvoiceReadModel::billedTotalForStudent()`
 (`:60-68`) reduces `forStudent()` with `Money::plus` and applies **no `kind` filter**, so
 the figure on the statement is now term bill *plus* supplementary charges with no
 breakdown anywhere on the page. Arguably correct as a total — it is what the student owes
 — and it is the number that changed meaning without changing shape.
 
-**5 — the three modals that act on a chosen invoice.** `request-void-modal.tsx:99`,
+**5 — the three modals that act on a chosen invoice.** — **CLOSED** (U7 commit 1). All three now
+title themselves through `invoiceLabel()` — kind and number — and
+`InvoiceKindOnReadPathsTest` arm c reds on either half being dropped (proved by mutation, not by
+inspection). What that arm cannot see is written on it: there is no JavaScript test runner here, so
+it is a text check, and the browser drive covers whether the title actually renders. The original
+text follows. `request-void-modal.tsx:99`,
 `issue-credit-note-modal.tsx:117` and `record-payment-modal.tsx:158` each title themselves
 with `invoice.display_number` and nothing else. **This is the most expensive one.**
 Voiding the wrong invoice discards its payment allocations, and the confirmation a bursar
 reads before doing it now names a number that no longer implies which document it is.
 
 **6 — `resources/js/pages/admin/finance/receipt.tsx` and
-`app/Finance/Http/Controllers/PaymentReceiptController.php`.** The allocation rows are
+`app/Finance/Http/Controllers/PaymentReceiptController.php`.** — **CLOSED** (U7 commit 3). Each
+allocation row now carries `invoice_kind` and the receipt renders it under the number — as muted
+text rather than a badge, because this is a printed document where a colour chip is a grey
+rectangle. `PaymentReceiptTest` pins the pairing by NUMBER rather than by position, over an
+account-level payment drawn forward across both invoices (the invoice-allocated door records
+against one named invoice and cannot produce two rows). `PaymentResource`'s own thinner
+`allocations` block is **NOT** changed and is named here as still open: it carries `invoice_id` and
+`amount`, it is the statement's payments tab rather than a document, and nothing renders a kind
+from it today. The original text follows. The allocation rows are
 built at `:156-157` from `$a->invoice?->displayNumber()` and
 `$a->invoice?->academic_context`. A payment settled across an episode's term bill and its
 supplementary charge produces two allocation lines carrying two **different invoice

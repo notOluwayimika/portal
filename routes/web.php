@@ -6,6 +6,7 @@ use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Exports\OpeningBalanceImportTemplateExport;
+use App\Finance\Http\Controllers\InvoiceDetailController;
 use App\Finance\Http\Controllers\PaymentReceiptController;
 use App\Finance\Models\Payment;
 use App\Http\Controllers\ClassResultsController;
@@ -318,6 +319,34 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     ]))
         ->middleware('permission:finance.invoice.generate')
         ->name('admin.finance.bulk-invoice-run');
+
+    /*
+     * U7 — ONE INVOICE: the detail screen, and the printable document beside it. Both take an
+     * INVOICE uuid, so neither is a URL a menu could point at; the detail is reached from the
+     * statement's invoices table (every row) and the printable view from the detail. Both carry
+     * their exemption in FinanceNavCoverageTest WITH the link asserted, so neither can quietly
+     * become a screen nobody can open.
+     *
+     * NO EXTRA MIDDLEWARE, deliberately — the group's `finance.access`, which is what the statement
+     * page beside them carries and what the statement's own feed carries
+     * (routes/endpoints/finance.php). These pages show strictly LESS than that feed already returns
+     * for the same invoice. The ACTIONS are gated separately and individually: `<Can>` on the
+     * button, the ability on the API route behind it, and the invoice's own server-derived `can_*`
+     * flags deciding whether the operation is legal at all.
+     *
+     * A VOIDED INVOICE RESOLVES HERE. Voidness is a named scope and never a global one, precisely
+     * so `{invoice:uuid}` binding does not miss a voided row (Invoice::scopeExcludingVoid()); the
+     * controller does not re-impose it, and the pages state the void instead of 404-ing on it.
+     *
+     * THE STUDENT IS NOT IN THE PATH, and that is the allocation route's reasoning one document
+     * over: passing a student uuid alongside would let a caller name an invoice and a statement
+     * that do not belong together. One bound row, one source — the controller reads the student
+     * THROUGH the invoice.
+     */
+    Route::get('/finance/invoices/{invoice:uuid}', [InvoiceDetailController::class, 'show'])
+        ->name('admin.finance.invoice');
+    Route::get('/finance/invoices/{invoice:uuid}/print', [InvoiceDetailController::class, 'print'])
+        ->name('admin.finance.invoice-print');
 
     Route::get('/finance/students/{student:uuid}/statement', function (Student $student) {
         return Inertia::render('admin/finance/statement', [

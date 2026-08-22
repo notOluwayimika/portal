@@ -25,10 +25,35 @@ use Illuminate\Routing\Controller;
  *
  * Controllers validate → authorize → delegate → respond; the transaction lives in
  * the Action, and the DB facade is never touched here (arch rule).
+ *
+ * ── BOTH 201s GO THROUGH InvoiceReadModel::withSettlement() ──
+ *
+ * The invariant is: any Invoice handed to InvoiceResource that did not come through the read model
+ * reports a settlement position of ZERO, true or not, because InvoiceSettlement reads the two
+ * aggregates as plain attributes and treats an absent one as zero.
+ * See `for` (app/Finance/Services/InvoiceSettlement.php:51).
+ *
+ * That bites HERE and not only on the page routes, and this is the caller where it shipped.
+ * GenerateInvoice applies carry-forward credit inside its own transaction: it writes
+ * PaymentAllocation rows against the invoice it has just created, through
+ * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns that
+ * freshly created model. Serialising it directly answered `settlement_state:
+ * 'unpaid'`, the full total outstanding, `can_record_payment: true` and `can_request_void: true`
+ * with no blocked reason, for an invoice that had just been settled on the way in.
+ *
+ * IT IS THE ORDINARY CUTOVER PATH, not a corner.
+ * `PostOpeningBalanceBatch` (app/Finance/Actions/PostOpeningBalanceBatch.php:114)
+ * turns every negative migrated balance into
+ * a real payment row, so a student arriving from WCBS in credit has an unallocated payment waiting
+ * and the FIRST invoice raised for them takes this branch.
+ *
+ * The re-read is at the SERIALISATION site rather than inside the Action's return on purpose:
+ * ProcessBulkInvoiceRun generates one invoice per student and renders none of them, and it should
+ * not pay a query per invoice for a payload nobody builds.
  */
 class InvoiceController extends Controller
 {
-    public function generate(GenerateInvoiceRequest $request, GenerateInvoice $action): JsonResponse
+    public function generate(GenerateInvoiceRequest $request, GenerateInvoice $action, InvoiceReadModel $invoices): JsonResponse
     {
         $this->assertMayReduce($request);
 
@@ -55,7 +80,7 @@ class InvoiceController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return response()->json(new InvoiceResource($invoice), 201);
+        return response()->json(new InvoiceResource($invoices->withSettlement($invoice)), 201);
     }
 
     /**
@@ -103,6 +128,7 @@ class InvoiceController extends Controller
         Student $student,
         BillableEnrollmentProvider $enrollments,
         GenerateInvoice $action,
+        InvoiceReadModel $invoices,
     ): JsonResponse {
         $enrollment = $enrollments->currentForStudent($student->id);
 
@@ -133,7 +159,7 @@ class InvoiceController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return response()->json(new InvoiceResource($invoice), 201);
+        return response()->json(new InvoiceResource($invoices->withSettlement($invoice)), 201);
     }
 
     /**

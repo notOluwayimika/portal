@@ -8,9 +8,11 @@ use App\Concerns\BelongsToSchool;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Exceptions\LedgerImmutableException;
+use App\Models\Student;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -88,6 +90,30 @@ class Invoice extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(InvoiceLine::class);
+    }
+
+    /**
+     * The student this invoice bills — a LOOKUP for display and for linking back to their
+     * statement, never the isolation boundary (that is `school_id`, via BelongsToSchool).
+     *
+     * NAMING App\Models\Student FROM INSIDE App\Finance IS ALLOWED AND IS PRECEDENTED: Payment
+     * declares the identical relation — `student` (app/Finance/Models/Payment.php:173) — and
+     * PaymentReceiptController reads
+     * `$payment->student?->full_name` through it. What the boundary forbids is a `DB::table` on a
+     * `finance_` literal outside this module (bin/ci-boundary-lint.php) and Finance reaching into
+     * ACADEMICS tables — `student_curricula` is the one this module resolves through the ACL port
+     * for exactly that reason, which is why GenerateInvoice takes an enrollment UUID and hands
+     * back an invoice that already knows its student.
+     *
+     * `billed_to_name` stays the name every DOCUMENT renders: it is the snapshot taken at billing
+     * time and is what the invoice said when it was issued. This relation is for the uuid, and for
+     * a caller that genuinely wants the student as they are TODAY.
+     *
+     * @return BelongsTo<Student, $this>
+     */
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class);
     }
 
     /**

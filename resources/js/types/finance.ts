@@ -7,6 +7,13 @@ export type Money = { amount_minor: number; currency: string };
 
 export type InvoiceStatus = 'issued' | 'void';
 
+// WHAT THE DOCUMENT IS — the third axis, and orthogonal to both of the two below. `scheduled` is
+// the term bill (the episode's fees, from the fee schedule); `supplementary` is a charge raised
+// outside the schedule against an episode that is already billed. An episode carries at most one
+// active term bill and any number of live supplementary charges, so this is what tells two rows on
+// one episode apart. Immutable at the database (finance_invoices_kind_immutable); never a status.
+export type InvoiceKind = 'scheduled' | 'supplementary';
+
 // Two ORTHOGONAL axes (never one badge): `status` above is the DOCUMENT state; this is the
 // derived SETTLEMENT state. `null` on a voided invoice — a void has no meaningful settlement.
 export type SettlementState = 'unpaid' | 'part_paid' | 'settled' | null;
@@ -25,6 +32,9 @@ export type Invoice = {
     number: number;
     display_number: string;
     status: InvoiceStatus;
+    // Term bill or supplementary charge. Rendered through @/lib/finance/invoice-kind so every
+    // surface names one document the same way.
+    kind: InvoiceKind;
     billed_to_name: string;
     academic_context: string;
     total: Money;

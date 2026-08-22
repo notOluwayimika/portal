@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
+import { invoiceLabel } from '@/lib/finance/invoice-kind';
 import type { Invoice } from '@/types/finance';
 
 type Props = {
@@ -92,11 +93,15 @@ export function RequestVoidModal({
         }
     };
 
+    // THE TITLE NAMES KIND AND NUMBER (U7), and the ticket calls this the most expensive of the
+    // three: voiding an invoice discards its payment allocations, and the confirmation a maker
+    // reads before proposing it named a number that stopped implying which document it was the
+    // moment an episode could carry a term bill and live supplementary charges together.
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={`Request void for approval — ${invoice.display_number}`}
+            title={`Request void for approval — ${invoiceLabel(invoice)}`}
             size="md"
         >
             <div className="space-y-4">

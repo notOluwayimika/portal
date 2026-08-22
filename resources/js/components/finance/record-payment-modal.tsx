@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
+import { invoiceLabel } from '@/lib/finance/invoice-kind';
 import { nairaToMinor } from '@/lib/format';
 import type { Invoice } from '@/types/finance';
 
@@ -155,7 +156,17 @@ export function RecordPaymentModal({
     // nothing more; if the server's rule changes, this is the line that has to change with it.
     const backDated = receivedAt !== today;
 
-    const heading = accountMode ? student!.name : invoice!.display_number;
+    // THE INVOICE IS NAMED BY KIND AND NUMBER, never by number alone (U7 / the supplementary-
+    // invoice ticket §5). An episode can carry an active term bill and any number of live
+    // supplementary charges at once, so a number on its own no longer says which document the
+    // money is about to be applied to. Account mode names the STUDENT because there is no invoice
+    // to name — the money banks to the account and settles oldest-first at the next billing.
+    const heading = accountMode
+        ? student!.name
+        : invoiceLabel({
+              kind: invoice!.kind,
+              display_number: invoice!.display_number,
+          });
 
     const submit = async () => {
         setErrors({});

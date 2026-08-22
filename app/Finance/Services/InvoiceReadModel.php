@@ -11,6 +11,7 @@ use App\Finance\Models\Payment;
 use App\Finance\Models\StudentAccount;
 use App\Finance\Models\VoidRequest;
 use App\Support\Money;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -39,13 +40,114 @@ final class InvoiceReadModel
             ->where('student_id', $studentId)
             ->when(! $includeVoid, fn ($q) => $q->excludingVoid())
             ->with('lines')
-            // Per-invoice settlement sums (Decision 1: derived, never stored). SQL aggregates,
-            // one query for the set — no N+1. `allocated_minor` covers ordinary payments AND
-            // applied carry-forward credit; `approved_credit_minor` counts only APPROVED credit
-            // notes (a pending proposal moves no money). InvoiceSettlement reads both.
-            ->withSum('allocations as allocated_minor', 'amount_minor')
-            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor')
+            ->tap($this->settlementSums(...))
             ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * THE TWO SETTLEMENT AGGREGATES, FOR THIS READ PATH.
+     *
+     * ── THE INVARIANT, AND IT IS NOT ABOUT ROUTE-MODEL BINDING ──
+     *
+     * InvoiceSettlement reads `allocated_minor` and `approved_credit_minor` off the model as plain
+     * attributes and treats an ABSENT one as zero — see
+     * `for` (app/Finance/Services/InvoiceSettlement.php:51). So the rule is:
+     * **any Invoice handed to InvoiceResource that did not come through this method reports a
+     * settlement position of zero, whether or not that is true.** An invoice with money against it
+     * then serialises `settlement_state: 'unpaid'`, `outstanding` equal to its full total,
+     * `can_record_payment: true` and `can_request_void: true` with no blocked reason — a response
+     * offering to void an invoice that carries a payment allocation, answering 200, invisible to
+     * any test asserting that a page or an endpoint responds.
+     *
+     * AN EARLIER VERSION OF THIS PARAGRAPH BLAMED `{invoice:uuid}` BINDING, and that is one way in
+     * rather than the rule. The other way in is a FRESHLY CREATED model that acquired allocations
+     * inside its own transaction — `GenerateInvoice` writes carry-forward PaymentAllocation rows
+     * against the invoice it has just created, through
+     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns that
+     * model. That is the way in
+     * that shipped: both generate routes answered their 201 through InvoiceResource without passing
+     * here.
+     *
+     * `allocated_minor` covers ordinary payments AND applied carry-forward credit;
+     * `approved_credit_minor` counts only APPROVED credit notes, because a pending proposal moves
+     * no money. Both are SQL aggregates — one query for the whole set, never an N+1.
+     *
+     * ── IT IS THE ONE SPELLING **THIS READ PATH** USES, NOT THE ONLY ONE IN THE CODEBASE ──
+     *
+     * That stronger claim was made here and it was false. The `withSum` pair is written out in
+     * three places — this method, `AllocationProposal::openInvoices()` and
+     * `DriveFinanceStates::openInvoiceCount()` — and the outstanding arithmetic over them in two:
+     * `InvoiceSettlement::for()` and `AllocationProposal::outstandingKobo()`. They agree today,
+     * compared character by character. Converging them is its own change with its own arms; see
+     * docs/handoff/tickets/three-spellings-of-the-settlement-aggregates.md, which is why this
+     * method is deliberately NOT made public here — a primitive widened ahead of a consumer is
+     * front-loading, and AllocationProposal is merged code with arms of its own.
+     *
+     * @param  Builder<Invoice>  $query
+     */
+    private function settlementSums(Builder $query): void
+    {
+        $query
+            ->withSum('allocations as allocated_minor', 'amount_minor')
+            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor');
+    }
+
+    /**
+     * ONE invoice, carrying its settlement position — what every caller about to hand an Invoice to
+     * InvoiceResource passes it through first.
+     *
+     * NAMED FOR THE INVARIANT AND NOT FOR ONE SCREEN. This was `forDetail()` when the detail page
+     * was its only caller, and that name is part of why the generate 201 kept the defect for a
+     * commit longer: the two POST routes were not "the detail", so nothing about the name suggested
+     * they needed it. They did — see settlementSums() above.
+     *
+     * IT TAKES A MODEL AND RE-QUERIES IT rather than calling `loadSum` on it, so this and
+     * forStudent() express the aggregates through the SAME method above. The re-query is scoped by
+     * BelongsToSchool a second time; on the page routes that is redundant (route-model binding
+     * already resolved it under SchoolScope) and it is kept because the alternative is a read of a
+     * Finance model that is NOT scoped at its own call site. On the generate routes it is not
+     * redundant at all: the model arrives straight from `create()`.
+     *
+     * ONE EXTRA QUERY PER CALL, and it is only paid where an invoice is about to be SERIALISED.
+     * `ProcessBulkInvoiceRun` calls GenerateInvoice per student and renders nothing, so it does not
+     * come through here — which is why this is at the InvoiceResource call sites rather than inside
+     * the Action's return.
+     *
+     * VOIDED INVOICES RESOLVE HERE, deliberately. `excludingVoid()` is the REPORTING default and
+     * this is not a report — it is the document. The route's own comment records why voidness was
+     * never made a global scope (it would turn the double-void 422 into a 404); a detail page that
+     * 404'd on a voided invoice would recreate that hole one surface over, and the void decision
+     * trail is exactly what someone opening a voided invoice has come to read.
+     */
+    public function withSettlement(Invoice $invoice): Invoice
+    {
+        return Invoice::query()
+            ->whereKey($invoice->getKey())
+            ->with('lines')
+            ->tap($this->settlementSums(...))
+            ->firstOrFail();
+    }
+
+    /**
+     * The void requests against ONE invoice — newest first, maker eager-loaded.
+     *
+     * MATCHED ON THE FOREIGN KEY, not on a rendered number. The statement pairs its rows against
+     * pending requests by `display_number` (statement.tsx), because the invoice it holds carries a
+     * uuid while the void request references the numeric PK — a real constraint of that screen and
+     * a string comparison all the same. The detail page holds the invoice ROW, so it asks the
+     * question the database can answer exactly.
+     *
+     * @return Collection<int, VoidRequest>
+     */
+    public function voidRequestsForInvoice(Invoice $invoice): Collection
+    {
+        return VoidRequest::query()
+            ->where('invoice_id', $invoice->getKey())
+            // `invoice` as well as the maker: VoidRequestResource reads the invoice for the number
+            // and the amount at stake, and renders both as null when it is not loaded.
+            ->with(['invoice', 'submittedBy'])
+            ->orderByDesc('id')
             ->get();
     }
 

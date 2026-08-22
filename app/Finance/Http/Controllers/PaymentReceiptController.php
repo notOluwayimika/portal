@@ -154,6 +154,13 @@ class PaymentReceiptController extends Controller
             ],
             'allocations' => $allocations->map(fn (PaymentAllocation $a) => [
                 'invoice_number' => $a->invoice?->displayNumber(),
+                // WHICH DOCUMENT EACH ROW IS (U7 — the supplementary-invoice ticket §6). A payment
+                // settled across an episode's term bill and its supplementary charge produces two
+                // allocation rows carrying two different invoice NUMBERS and the SAME
+                // `academic_context`. Those rows were always distinguishable — the numbers differ —
+                // and what was missing was the kind: a reader could separate the rows without being
+                // able to identify either. That is the whole claim §6 makes, and this closes it.
+                'invoice_kind' => $a->invoice?->kind->value,
                 'academic_context' => $a->invoice?->academic_context,
                 'amount' => $a->amount,
                 // Which of the two allocation rules put this money here. A receipt that showed an

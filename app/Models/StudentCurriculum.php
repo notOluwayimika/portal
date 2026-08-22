@@ -22,6 +22,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $student_id
  * @property int $curriculum_id
  * @property int|null $promoted_to_id
+ * @property StudentStatusEnum|null $status the cast target, annotated so the enum's own methods
+ *                                          (displayLabel) resolve through the resource's @mixin
+ *                                          instead of reading as mixed
  */
 class StudentCurriculum extends Model
 {

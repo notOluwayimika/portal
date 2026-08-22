@@ -492,6 +492,11 @@ export interface StudentCurriculum {
     student: Student;
     curriculum: Curriculum;
     status: string;
+    // The word to PRINT for `status`, decided server-side (StudentStatusEnum::displayLabel). The raw
+    // value stays authoritative for badge colours and filtering; only the wording moved, because
+    // `transferred` on an episode means REASSIGNED and must never render as "Transferred" — that
+    // word belongs to students.status, where it means the pupil left the school.
+    status_label?: string;
     principal_approval: boolean;
     // The episode this one was promoted into (S1 commit 5): its uuid plus that episode's curriculum — NOT a
     // bare Curriculum. Both server presenters emit this wrapper shape.

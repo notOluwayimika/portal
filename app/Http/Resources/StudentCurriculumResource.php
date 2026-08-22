@@ -63,6 +63,12 @@ class StudentCurriculumResource extends JsonResource
             }),
             'subjects' => StudentSubjectResource::collection($this->whenLoaded('studentSubjects')),
             'status' => $this->status,
+            // The word to PRINT, decided server-side — see StudentStatusEnum::displayLabel() on why
+            // `transferred` must never reach a screen as "Transferred". The raw value above stays as
+            // it is: the frontend still keys badge colours and filters off it, and only the label
+            // moved. Null-safe because `status` is cast to the enum but the column is not NOT NULL
+            // on every legacy row.
+            'status_label' => $this->status?->displayLabel(),
             'principal_approval' => (bool) $this->principal_approval,
             'behavioral_assessments' => BehavioralAssessmentResource::collection($this->whenLoaded('behavioralAssessments')),
             'psychomotor_skills' => PsychomotorSkillResource::collection($this->whenLoaded('psychomotorSkills')),

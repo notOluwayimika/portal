@@ -1,5 +1,13 @@
 # Fee-item tie order differs between the bulk mapper and every other read path
 
+> **⚠️ LOCAL BASELINE MOVED — 2026-08-22.** The developer machine went **MySQL 8.0.43 → 9.7.1**
+> (Homebrew). Every measurement in this file was taken on **8.0.43** and has **not** been re-taken on
+> 9.7.1, so read its numbers as "measured on 8.0.43" rather than "measured locally". Re-verification
+> is tracked in
+> [`mysql-9-local-baseline-reverification.md`](mysql-9-local-baseline-reverification.md).
+> Production is unaffected: it remains **5.7.23**.
+
+
 **Raised by:** cold review of `feat/u6-schedule-to-invoice-lines` (U6 commit 2), 2026-08-18.
 **Severity:** ticket — real, recorded, not ship-blocking for the mapper.
 

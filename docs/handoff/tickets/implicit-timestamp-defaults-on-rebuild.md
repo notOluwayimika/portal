@@ -1,5 +1,13 @@
 # TICKET — the implicit `ON UPDATE` materialises on REBUILD, not on deploy
 
+> **⚠️ LOCAL BASELINE MOVED — 2026-08-22.** The developer machine went **MySQL 8.0.43 → 9.7.1**
+> (Homebrew). Every measurement in this file was taken on **8.0.43** and has **not** been re-taken on
+> 9.7.1, so read its numbers as "measured on 8.0.43" rather than "measured locally". Re-verification
+> is tracked in
+> [`mysql-9-local-baseline-reverification.md`](mysql-9-local-baseline-reverification.md).
+> Production is unaffected: it remains **5.7.23**.
+
+
 **Status:** **NOT LATENT. PRODUCTION CARRIES IT ON THREE COLUMNS**, read 2026-08-13. The migration
 `2026_08_13_100000_timestamp_columns_drop_implicit_on_update.php` on
 `fix/notices-starts-at-server-clock` cleans all three. It has **not been run on production** — that

@@ -8,7 +8,8 @@ pushed and gated on its own push.
 | 1 | `8acc3d2` the wire, and the three irreversible surfaces | PASS 16/16 |
 | 2 | `d7f9d1c` the invoice detail, and the printable invoice | PASS 16/16 |
 | 3 | `90b06b8` the list, the receipt, and the ticket's remaining paths | PASS 16/16 (second run — see § 6) |
-| 4 | this report and the drive captures | — |
+| 4 | `945aedc` this report and the drive captures | docs-only, gate SKIPPED by design |
+| 5 | the cold review's three findings | see § 9 |
 
 `bin/quality` is **16** steps on this branch, re-derived from the gate's own `[n/16]` output rather
 than carried; the finance-context skill's line still says 15.
@@ -88,19 +89,43 @@ download" is a printable page, and the void request lifecycle is linked to rathe
 
 ---
 
-## 3. The defect that would have shipped silently
+## 3. The invariant, and the two doors into it
+
+**Stated narrowly in the first version of this report, and the narrow version is what let the second
+door stay open for three commits.** The rule is not about route-model binding:
+
+> **Any `Invoice` handed to `InvoiceResource` that did not come through
+> `InvoiceReadModel::withSettlement()` reports a settlement position of zero, true or not.**
 
 `InvoiceSettlement` reads `allocated_minor` and `approved_credit_minor` off the model as plain
-attributes and treats an absent one as **zero** (`app/Finance/Services/InvoiceSettlement.php:57-58`).
-That is correct for a freshly-created invoice and a lie for one loaded without those aggregates.
+attributes and treats an absent one as **zero** (`for`, `app/Finance/Services/InvoiceSettlement.php:51`).
+An invoice with money against it then serialises `settlement_state: 'unpaid'`, `outstanding` equal to
+its full total, `can_record_payment: true` and `can_request_void: true` with no blocked reason — a
+surface offering to void an invoice that carries a payment allocation, answering 200, rendering
+correctly, invisible to any test that asserts a page or an endpoint responds.
 
-The route binds `{invoice:uuid}`, which loads the row with no sums whatsoever. A controller
-serialising the bound model therefore renders a **fully-settled invoice as `unpaid`, its whole total
-outstanding, offering "Record payment" and "Request void" on money already banked** — answering 200,
-rendering correctly, and invisible to any test that asserts a page loads.
+**Door one — the binding.** `{invoice:uuid}` loads the row with no sums. This is the one commit 2
+found and closed, and it is what proof B2 pins.
 
-`InvoiceReadModel::settlementSums()` is the one expression of those two aggregates and `forStudent()`
-and `forDetail()` both pass through it. The mutation and its output are proof B2 below.
+**Door two — a freshly created model that acquired allocations inside its own transaction.**
+`GenerateInvoice` applies carry-forward credit by writing `PaymentAllocation` rows against the
+invoice it has just created (`applyCreditForward`, `app/Finance/Actions/GenerateInvoice.php:479`)
+and then returns that model. Both generate routes serialised it directly. **This one shipped**, and
+it is closed in § 9 / F1 with proof E below.
+
+**It is reachable on the ordinary cutover path**, which is what makes it a fix rather than a note:
+`PostOpeningBalanceBatch` (`app/Finance/Actions/PostOpeningBalanceBatch.php:114`) turns every
+negative migrated balance into a real payment row, so a student arriving from WCBS in credit has an
+unallocated payment waiting, and the **first invoice a bursar raises for them** takes exactly this
+branch.
+
+**Both doors were in view when commit 2 was written, and one was fixed.** The generate routes are
+pre-existing — neither `InvoiceController.php` nor `GenerateInvoice.php` appears in
+`git diff ae2d97b..945aedc` — so the defect is not this branch's, but the branch closed the same
+class one caller over without looking at the caller beside it.
+
+`settlementSums()` is the one expression **this read path** uses; § 9 / F2 corrects the stronger
+claim that was made here.
 
 ---
 
@@ -108,6 +133,10 @@ and `forDetail()` both pass through it. The mutation and its output are proof B2
 
 Every arm was watched GREEN, then watched RED against a deliberate mutation, then restored per path
 from a backup and the restore verified with `git diff --stat`. No whole-tree revert was used.
+
+**Nine mutations plus one free red**, counted from the entries below rather than asserted: A1, A2,
+B1, B2, B3, C2, D1 here, and E1, F1 in § 9. C1 is the free red. (An earlier draft of this line said
+six; the entries it was counting were already eight.)
 
 ### A — `InvoiceKindOnReadPathsTest` (commit 1)
 
@@ -206,6 +235,14 @@ of times than when this arm was written. … Failed asserting that 3 is identica
 ```
 
 Caught: the audit view (`?include_void=1`) losing its way into the page that renders the void trail.
+
+**What it does not catch, in the test's own words** — carried here because a caveat that lives only
+in the test does not reach the person reading the report. The arm is a text check on a file and
+there is no JavaScript test runner in this repository, so it cannot see *"a row hidden by something
+that does not spell `'void'`"* — a filter applied server-side in the feed, or one on `cancelled_at` —
+nor whether the link, once rendered, is clickable or reaches anything. The count is also a blunt
+instrument: an unrelated third use of the literal reds it, which is by design and is stated in the
+failure message.
 
 ### D — `PaymentReceiptTest` (commit 3, ticket § 6)
 
@@ -492,8 +529,32 @@ produces is a term bill by construction.
   screen, not a printed sheet or a PDF. Whether the sidebar, the breadcrumb header and the three
   overlay layers really disappear under `@media print` is unproven by anything here. The selectors
   are copied from the receipt's, which has the same gap.
-- **The dark-mode print path.** `.invoice-document` forces colour back to light for the reason the
-  receipt records; not driven, in either theme.
+- **The dark-mode print path is UNREACHABLE, not merely undriven** — and the earlier wording of this
+  line ("not driven, in either theme") was wrong in the direction that invites the next person to go
+  and drive it. `isDarkMode()` takes an `appearance` and returns `false` unconditionally
+  (`isDarkMode`, resources/js/hooks/use-appearance.tsx:40), and `applyTheme` is its only reader, so
+  the `dark` class is never applied for any user under any setting. **Inherited, not this branch's:**
+  `git log` on that file gives `83447b3 feat: remove dark mode`, and the file does not appear in
+  `git diff ae2d97b..945aedc`. Already covered by
+  [docs/handoff/tickets/dark-mode-is-unreachable-for-every-user.md](../tickets/dark-mode-is-unreachable-for-every-user.md)
+  — itself corrected after a cold review — and by
+  [docs/handoff/tickets/ui-chrome-components-have-no-dark-variants.md](../tickets/ui-chrome-components-have-no-dark-variants.md).
+  No third ticket is filed.
+
+  **The consequence for this branch's own work, both halves.** Every `dark:` variant on the new
+  surfaces is vestigial — 46 of them across `invoice.tsx`, `invoice-print.tsx` and
+  `invoice-kind.ts`, including `.invoice-document`'s `dark:bg-card` and both `INVOICE_KIND_BADGE`
+  dark treatments. And the colour-force inside `PRINT_STYLES` **still works and is correct
+  insurance**: the reviewer measured it by forcing the class by hand. What is not live is its stated
+  motivation — the docblock says a page printed from dark mode would put `dark:text-white` on white
+  paper, and no user can reach that state today. Keep the rule, and read its comment as a guard
+  against the class returning rather than as a description of something happening now.
+
+  Same paragraph, minor: two of the eight selectors in the `display: none` block —
+  `[data-slot="sidebar-rail"]` and `[data-sonner-toaster]` — match nothing on this page. They are
+  harmless defensive breadth copied from the receipt's set; noted as **unexercised** rather than
+  removed, since the cost of carrying them is zero and the cost of being wrong about which layers
+  mount is a printed sheet with an overlay on it.
 - **The actions actually completing from the detail page.** No payment was recorded, no credit note
   submitted and no void request submitted THROUGH the detail screen — the modal was opened and its
   title read, then the drive moved on. `router.reload()` as the post-action refresh is therefore
@@ -501,7 +562,195 @@ produces is a term bill by construction.
 - **`super_admin` on these two routes.** Not driven. Bypass is authorization and never isolation
   (ADR 0036), and nothing here changes either; the seat was simply not exercised.
 - **Concurrency.** Nothing was driven with two sessions acting on one invoice.
+- **`voided_at`'s value.** § 9 / F3 put an arm on `issued_at`; `voided_at` is still asserted only as
+  "not null", so a controller sending today's date for it would pass.
 - **The suite's determinism**, as § 6 says: one red explained is not a statement about the rest.
 - **The fixture's `academic_context`** prints as `Enrollment <uuid>` on every capture. That is what
   the drive fixture's episodes carry; whether a production episode's context string reads usefully
   on the printed document is not something this drive can show.
+---
+
+## 9. The cold review, and the three findings it returned
+
+A cold review ran against this branch in a separate context, on its own database. It returned three
+findings and no stop. **The severities below were set by the project lead, not by me and not by the
+reviewer**, and are recorded as given.
+
+### F1 — `fix` — the generate 201 tells the same lie the detail route was fixed for
+
+`GenerateInvoice` writes carry-forward `PaymentAllocation` rows inside its own transaction
+(`applyCreditForward`, `app/Finance/Actions/GenerateInvoice.php:479`) and returns
+`$invoice->load('lines')`, which never passes through the read model. Both generate routes serialised
+it. See § 3 for the invariant and its reachability on the cutover path.
+
+**Reproduced over HTTP before anything changed**, with the ground truth taken from the DATABASE
+first so the arm could not pass on the payload it is testing. Term bill of 2000 minor units overpaid
+to 22000; a 12000 supplementary charge then raised through
+`POST /api/v1/finance/students/{uuid}/invoices`:
+
+```
+DATABASE SAYS allocated_to_this_invoice = 12000
+PRE-FIX 201 SAYS: {"settlement_state":"unpaid","outstanding":{"amount_minor":12000,"currency":"NGN"},
+                   "can_record_payment":true,"can_request_void":true,"void_blocked_reason":null}
+```
+
+All five fields wrong, exactly as reported. The arm's first run failed on the ground-truth guard
+instead (`Failed asserting that 0 is identical to 12000`) because the test helper hard-coded
+`amount_minor` and silently ignored the amounts passed to it — the guard did its job, which is why
+it is there.
+
+**Fixed at the two `InvoiceResource` call sites**, not inside the Action's return:
+`InvoiceController::generate` and `::generateForStudent` now serialise
+`$invoices->withSettlement($invoice)`. `ProcessBulkInvoiceRun` calls `GenerateInvoice` once per
+student and renders none of them, so putting the re-read in the Action would have charged a query
+per invoice for a payload nobody builds.
+
+`InvoiceReadModel::forDetail()` is renamed **`withSettlement()`**. The old name is part of why this
+survived a commit: the two POST routes were not "the detail", so nothing about the name suggested
+they needed it.
+
+**Proof E1 — mutation: `generateForStudent` returns `new InvoiceResource($invoice)` again.** The
+mutation was asserted to have landed by `diff` against the backup before the run:
+
+```
+159c159
+<         return response()->json(new InvoiceResource($invoices->withSettlement($invoice)), 201);
+---
+>         return response()->json(new InvoiceResource($invoice), 201);
+```
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":4,"failures":[{"test":"…it_d_—_the_generate_201_reports_the_credit_it_just_applied…",
+"message":"Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+-'settled'
++'unpaid'"}]}
+```
+
+Restored, `diff` clean, green: `{"result":"passed","tests":1,"passed":1,"assertions":8}`.
+
+**The narrow statement of the invariant is corrected wherever it appeared**: § 3 of this report,
+`InvoiceReadModel::settlementSums()`' docblock, `InvoiceDetailController::props()`' comment, and
+`InvoiceDetailScreenTest`'s file header. Each now states the rule as "any Invoice handed to
+InvoiceResource that did not come through the read model", with the binding named as one door.
+
+### F2a — `split` — the "one expression" claim was false, three ways
+
+`InvoiceReadModel::settlementSums()` called itself "THE TWO SETTLEMENT AGGREGATES, IN ONE PLACE" and
+this report repeated it. Re-derived at HEAD:
+
+```
+$ grep -n "withSum('allocations as allocated_minor'" -r app/
+app/Finance/Services/AllocationProposal.php:188
+app/Finance/Services/InvoiceReadModel.php:89
+app/Finance/Console/DriveFinanceStates.php:497
+
+$ grep -n "getAttribute('allocated_minor')" -r app/
+app/Finance/Services/AllocationProposal.php:209
+app/Finance/Services/InvoiceSettlement.php:57
+app/Finance/Console/DriveFinanceStates.php:501
+```
+
+Both claims are corrected to what is true: it is the one expression **this read path** uses, and
+there are others that currently agree. `AllocationProposal` is untouched and `settlementSums()`
+stays private — a primitive widened ahead of a consumer is front-loading, and `AllocationProposal`
+is merged code with its own arms.
+
+**Re-derived rather than carried, and it differs from the finding by one.** The review named five
+sites — three `withSum`, two arithmetic. The arithmetic is spelled **three** times: `DriveFinanceStates`
+spells both expressions, at `:497-498` and `:499-503`. It is a fixture counter rather than a surface
+a bursar reads, which is a fair reason to weigh it less and not a reason to leave it off a list.
+
+### F2b — `split` — the ticket
+
+`docs/handoff/tickets/three-spellings-of-the-settlement-aggregates.md`. It names every site, records
+that they agree today (compared character by character by the reviewer, and again when the ticket was
+written), and carries the sharpest part: `AllocationProposal::openInvoices()`' own docblock at
+`app/Finance/Services/AllocationProposal.php:175-178` says *"A second spelling of that sum is how two
+surfaces come to disagree about what a student owes"* — while being the second spelling — and
+`settlementSums()` is private, so it could not have called it even if someone tried. The ticket
+states that converging them is its own change with its own arms, weighs the three obvious moves, and
+says explicitly not to do it there. **Nothing enforces the agreement today**; that is the ticket.
+
+### F3 — `fix` — a printable invoice could claim it was issued today
+
+`issued_at` and `voided_at` appeared in the whole `tests/` tree exactly twice, both as
+`whereNot(…, null)` — arms that assert a date was SENT and say nothing about which date. `issued_at`
+is what the paper prints under ISSUED.
+
+**The reviewer's mutation reproduced:** `'issued_at' => now()->format('j F Y')` passes the whole
+suite and the ratchet.
+
+**Arm h added** to `InvoiceDetailScreenTest`: the printed issue date equals the invoice's own
+`created_at` and is not today's. The invoice is raised **40 days in the past** with `travelTo` — an
+arm written against an invoice created today passes whether the controller sends `created_at` or
+`now()`, vacuously, forever. Time is travelled rather than the row UPDATE-ed, because
+`finance_invoices` is append-only and an UPDATE is the wrong tool for arranging a fixture. The arm
+asserts the row really is in the past before it asserts anything about the response.
+
+**Proof F1 — the reviewer's mutation, landed (`grep` confirmed `'issued_at' => now()->format('j F Y'),`
+at line 153) and run:**
+
+```
+{"tool":"pest","result":"failed","tests":1,"passed":0,"assertions":14,"failures":[{"test":"…it_h_—_the_printable_invoice_prints_the_date_it_was_ISSUED…",
+"message":"Property [issued_at] does not match the expected value.
+--- Expected
++++ Actual
+-'13 July 2026'
++'22 August 2026'"}]}
+```
+
+Restored, `diff` clean, green: `{"result":"passed","tests":1,"passed":1,"assertions":23}`.
+
+**`voided_at` is NOT covered by an equivalent arm** and remains `whereNot(…, null)` only. The same
+mutation against it would pass.
+
+### F4 — `fix` — §8's dark-mode residual was mis-stated
+
+Raised as an addendum. §8 said the dark-mode print path was "not driven, in either theme"; it is
+**unreachable**. Corrected in place, with the provenance verified rather than accepted, both tickets
+cross-referenced, no third one filed, and both halves of the consequence for this branch's own
+surfaces stated. See § 8.
+
+### This commit's own first gate run was red, on a real regression I introduced
+
+Not a flake, and recorded here rather than quietly re-run. Step 16 failed with **one** new failure:
+
+```
+ratchet: 1 NEW test failure(s) not in the baseline (regression):
+  ✗ tests/Feature/Quality/PestNegatedExpectationMessagesTest.php::it no test passes a custom failure message to a negated Pest expectation
+```
+
+F1's new arm ended with `expect($supp->json('void_blocked_reason'))->not->toBeNull($message)`. Pest's
+`->not->` is a proxy, not a matcher: `OppositeExpectation::__call` runs the positive assertion and,
+when it succeeds, discards it and composes a generic sentence with every argument — the author's
+message included — run through `Exporter::shortenedExport()`. The assertion held; the diagnostic
+would have been exported and truncated. That gate ships with zero exemptions and no baseline, and it
+was right.
+
+Rewritten as a positive expectation that keeps the message and says more than the original —
+`is_string($reason) && $reason !== ''`, which is what the disabled button's tooltip actually needs.
+
+**Why the file-scoped runs could not see it.** That gate walks the whole `tests/` tree, so it only
+runs in a full-suite invocation. Every run I made while building these arms was file-scoped, for the
+reason the session was told to be careful about: a cold review was holding two `pest` processes at
+the time. Nothing about that was wrong, and the consequence is worth stating — **a file-scoped run
+is not a rehearsal of the gate**, and a repo-walking guard is invisible to it by construction.
+
+### The reviewer's own limits, in its words
+
+Recorded because a review's blind spots belong beside its findings:
+
+- **no `PROCESS` on the grant** — it could not read the process list, so it could not tell a running
+  suite from a finished one;
+- **the wrong collation on the throwaway database** — its `u7_review_*` database was created with a
+  collation the application does not use;
+- both of those are **defects in the credential grant it was given, not in the review**;
+- **the drive was blocked on a database name** — the drive fixture's seed command refuses unless the
+  database name carries a `drive` token, which its `u7_review_*` database does not, so it drove
+  nothing in a browser;
+- **one full-suite run only**;
+- **PHP 8.3.32 only** — the version matrix is a permanent residual of the local enforcement floor;
+- and it disclosed that it **ran quarantined with an injected memory index**, and **demonstrated
+  provenance for each finding** rather than asserting it.

@@ -114,12 +114,14 @@ class InvoiceDetailController extends Controller
      */
     private function props(Request $request, Invoice $invoice, InvoiceReadModel $invoices): array
     {
-        // forDetail(), NOT the bound model. InvoiceSettlement reads `allocated_minor` and
-        // `approved_credit_minor` as plain attributes and treats an absent one as zero, so the
-        // bound model — loaded by uuid with no aggregates — would serialise a fully-paid invoice
-        // as unpaid, its full total outstanding, offering to void it. The read model owns that
-        // expression for both callers; see its settlementSums().
-        $loaded = $invoices->forDetail($invoice);
+        // withSettlement(), NOT the bound model. The invariant is not about route-model binding:
+        // ANY Invoice handed to InvoiceResource that did not come through the read model reports a
+        // settlement position of zero, because InvoiceSettlement treats an absent aggregate as
+        // zero. Here the way in is the binding, which loads the row with no sums; on the generate
+        // routes it is a freshly created model that acquired allocations inside its own
+        // transaction. Both would serialise a settled invoice as unpaid, its full total
+        // outstanding, offering to void it. See InvoiceReadModel::settlementSums().
+        $loaded = $invoices->withSettlement($invoice);
 
         // ONE read of the trail, used twice below. Two calls would be two identical queries on
         // every page load for one question.

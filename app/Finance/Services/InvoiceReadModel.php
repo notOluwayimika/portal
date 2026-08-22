@@ -46,21 +46,43 @@ final class InvoiceReadModel
     }
 
     /**
-     * THE TWO SETTLEMENT AGGREGATES, IN ONE PLACE — and this method exists because the second
-     * caller arrived (U7's invoice detail) and the failure mode of a second hand-written copy is
-     * silent rather than loud.
+     * THE TWO SETTLEMENT AGGREGATES, FOR THIS READ PATH.
+     *
+     * ── THE INVARIANT, AND IT IS NOT ABOUT ROUTE-MODEL BINDING ──
      *
      * InvoiceSettlement reads `allocated_minor` and `approved_credit_minor` off the model as plain
-     * attributes and treats an ABSENT one as zero, which is correct for a freshly-created invoice
-     * and is a lie for one loaded without these sums: a fully-paid invoice would serialise
-     * `settlement_state: 'unpaid'`, `outstanding` equal to its total, `can_record_payment: true`
-     * and `can_request_void: true` — a screen offering to void a settled invoice, answering 200,
-     * with nothing in a test that asserts the page renders able to see it. So a query feeding
-     * InvoiceResource passes through here, always.
+     * attributes and treats an ABSENT one as zero — see
+     * `for` (app/Finance/Services/InvoiceSettlement.php:51). So the rule is:
+     * **any Invoice handed to InvoiceResource that did not come through this method reports a
+     * settlement position of zero, whether or not that is true.** An invoice with money against it
+     * then serialises `settlement_state: 'unpaid'`, `outstanding` equal to its full total,
+     * `can_record_payment: true` and `can_request_void: true` with no blocked reason — a response
+     * offering to void an invoice that carries a payment allocation, answering 200, invisible to
+     * any test asserting that a page or an endpoint responds.
+     *
+     * AN EARLIER VERSION OF THIS PARAGRAPH BLAMED `{invoice:uuid}` BINDING, and that is one way in
+     * rather than the rule. The other way in is a FRESHLY CREATED model that acquired allocations
+     * inside its own transaction — `GenerateInvoice` writes carry-forward PaymentAllocation rows
+     * against the invoice it has just created, through
+     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns that
+     * model. That is the way in
+     * that shipped: both generate routes answered their 201 through InvoiceResource without passing
+     * here.
      *
      * `allocated_minor` covers ordinary payments AND applied carry-forward credit;
      * `approved_credit_minor` counts only APPROVED credit notes, because a pending proposal moves
      * no money. Both are SQL aggregates — one query for the whole set, never an N+1.
+     *
+     * ── IT IS THE ONE SPELLING **THIS READ PATH** USES, NOT THE ONLY ONE IN THE CODEBASE ──
+     *
+     * That stronger claim was made here and it was false. The `withSum` pair is written out in
+     * three places — this method, `AllocationProposal::openInvoices()` and
+     * `DriveFinanceStates::openInvoiceCount()` — and the outstanding arithmetic over them in two:
+     * `InvoiceSettlement::for()` and `AllocationProposal::outstandingKobo()`. They agree today,
+     * compared character by character. Converging them is its own change with its own arms; see
+     * docs/handoff/tickets/three-spellings-of-the-settlement-aggregates.md, which is why this
+     * method is deliberately NOT made public here — a primitive widened ahead of a consumer is
+     * front-loading, and AllocationProposal is merged code with arms of its own.
      *
      * @param  Builder<Invoice>  $query
      */
@@ -72,13 +94,25 @@ final class InvoiceReadModel
     }
 
     /**
-     * ONE invoice, loaded exactly as the statement's list loads its rows — U7's detail page.
+     * ONE invoice, carrying its settlement position — what every caller about to hand an Invoice to
+     * InvoiceResource passes it through first.
      *
-     * IT TAKES THE BOUND MODEL AND RE-QUERIES IT rather than calling `loadSum` on it, so this and
+     * NAMED FOR THE INVARIANT AND NOT FOR ONE SCREEN. This was `forDetail()` when the detail page
+     * was its only caller, and that name is part of why the generate 201 kept the defect for a
+     * commit longer: the two POST routes were not "the detail", so nothing about the name suggested
+     * they needed it. They did — see settlementSums() above.
+     *
+     * IT TAKES A MODEL AND RE-QUERIES IT rather than calling `loadSum` on it, so this and
      * forStudent() express the aggregates through the SAME method above. The re-query is scoped by
-     * BelongsToSchool a second time; that is redundant (route-model binding already resolved it
-     * under SchoolScope) and it is kept because the alternative is a read of a Finance model that
-     * is NOT scoped at its own call site.
+     * BelongsToSchool a second time; on the page routes that is redundant (route-model binding
+     * already resolved it under SchoolScope) and it is kept because the alternative is a read of a
+     * Finance model that is NOT scoped at its own call site. On the generate routes it is not
+     * redundant at all: the model arrives straight from `create()`.
+     *
+     * ONE EXTRA QUERY PER CALL, and it is only paid where an invoice is about to be SERIALISED.
+     * `ProcessBulkInvoiceRun` calls GenerateInvoice per student and renders nothing, so it does not
+     * come through here — which is why this is at the InvoiceResource call sites rather than inside
+     * the Action's return.
      *
      * VOIDED INVOICES RESOLVE HERE, deliberately. `excludingVoid()` is the REPORTING default and
      * this is not a report — it is the document. The route's own comment records why voidness was
@@ -86,7 +120,7 @@ final class InvoiceReadModel
      * 404'd on a voided invoice would recreate that hole one surface over, and the void decision
      * trail is exactly what someone opening a voided invoice has come to read.
      */
-    public function forDetail(Invoice $invoice): Invoice
+    public function withSettlement(Invoice $invoice): Invoice
     {
         return Invoice::query()
             ->whereKey($invoice->getKey())

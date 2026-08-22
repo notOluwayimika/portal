@@ -23,14 +23,20 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * ARM b IS THE REASON THIS FILE EXISTS AND EVERY OTHER ARM IS SECONDARY TO IT. InvoiceSettlement
  * reads `allocated_minor` and `approved_credit_minor` off the model as PLAIN ATTRIBUTES and treats
- * an absent one as zero — correct for a freshly-created invoice, and a lie for one loaded without
- * those aggregates. The route binds `{invoice:uuid}`, which loads the row with no sums whatsoever,
- * so a controller that serialised the BOUND model would render a fully-settled invoice as `unpaid`,
- * its whole total outstanding, offering "Record payment" and "Request void" on money that is
- * already in. It would answer 200. It would render. Every assertion that a page loads would pass.
- * That is the design system's most-repeated defect exactly — a screen making a confident false
- * statement — and it is why InvoiceReadModel::forDetail() exists rather than a `loadSum` at the
- * call site, and why this arm asserts the DERIVED values and not the page's presence.
+ * an absent one as zero. The invariant that follows is broader than this file's own route: **any
+ * Invoice handed to InvoiceResource that did not come through InvoiceReadModel::withSettlement()
+ * reports a settlement position of zero, true or not.** It would render a fully-settled invoice as
+ * `unpaid`, its whole total outstanding, offering "Record payment" and "Request void" on money that
+ * is already in — answering 200, rendering, with every assertion that a page loads still passing.
+ * That is the design system's most-repeated defect exactly: a surface making a confident false
+ * statement.
+ *
+ * THE BINDING IS ONE WAY IN AND NOT THE RULE. An earlier version of this paragraph named it as the
+ * cause. Here it is the way in — `{invoice:uuid}` loads the row with no sums — but the other way in
+ * is a FRESHLY CREATED model that acquired allocations inside its own transaction, which is what
+ * both generate 201s were doing (see InvoiceKindOnReadPathsTest arm d). Same invariant, different
+ * door, and the second one shipped. Hence `withSettlement()` rather than a `loadSum` at each call
+ * site, and hence this arm asserting the DERIVED values rather than the page's presence.
  *
  * ARM c is the route comment's promise kept: voidness is a NAMED scope and never a global one, so
  * that `{invoice:uuid}` binding does not miss a voided invoice and turn the double-void 422 into a
@@ -289,4 +295,56 @@ it('g — a seat holding only finance.access can read the invoice and its printa
 
     test()->actingAs($reader)->withSession(['school_id' => $school->id])
         ->get("/finance/invoices/{$invoice->uuid}/print")->assertOk();
+});
+
+// ── h — WHAT THE PAPER SAYS THE DATE IS ───────────────────────────────────────
+
+it('h — the printable invoice prints the date it was ISSUED, not the date it was printed', function () {
+    /*
+     * `issued_at` is what the printed document shows under ISSUED (invoice-print.tsx). Before this
+     * arm, `issued_at` and `voided_at` appeared in the entire tests/ tree exactly twice, both as
+     * `whereNot(…, null)` — arms that assert a date was SENT and say nothing about which date.
+     *
+     * The mutation that motivated it: `'issued_at' => now()->format('j F Y')`. That passes the whole
+     * suite and the ratchet, and it makes every invoice ever printed claim it was issued today —
+     * a false statement on a financial document, produced by a controller nobody would look at
+     * twice, about a value the page cannot check because money-lint forbids it formatting a date
+     * at all.
+     *
+     * THE INVOICE IS RAISED IN THE PAST, DELIBERATELY. An arm written against an invoice created
+     * today passes whether the controller sends `created_at` or `now()` — vacuously, on the day it
+     * is written, and forever after. Time is travelled rather than the row being UPDATE-ed, because
+     * finance_invoices is append-only and an UPDATE is the wrong tool for arranging a fixture.
+     */
+    [$school, $user, $student] = idsSetup('ids_bursar_h');
+
+    $issuedOn = now()->subDays(40);
+
+    test()->travelTo($issuedOn);
+    $invoice = idsInvoice(idsGenerate(test(), $school, $user, $student, 'scheduled', 'Tuition', 300000));
+    test()->travelBack();
+
+    // GROUND TRUTH FROM THE ROW, not from the response — and it must really be in the past, or the
+    // arm below is the vacuous one it exists to replace.
+    expect($invoice->created_at->isSameDay($issuedOn))->toBeTrue();
+    expect($invoice->created_at->isToday())->toBeFalse();
+
+    $expected = $issuedOn->format('j F Y');
+    $today = now()->format('j F Y');
+    expect($expected)->not->toBe($today);
+
+    test()->actingAs($user)->withSession(['school_id' => $school->id])
+        ->get("/finance/invoices/{$invoice->uuid}/print")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('admin/finance/invoice-print')
+            // THE DATE ITSELF, both directions: it is the invoice's own, and it is not today's.
+            // The second half is what reds on `now()->format(…)`; the first alone would too, but
+            // stating both makes the claim legible to the next reader.
+            ->where('issued_at', $expected));
+
+    test()->actingAs($user)->withSession(['school_id' => $school->id])
+        ->get("/finance/invoices/{$invoice->uuid}/print")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->whereNot('issued_at', $today));
 });

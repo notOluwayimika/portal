@@ -1,5 +1,7 @@
 <?php
 
+use App\Finance\Models\BankAccount;
+use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -10,6 +12,7 @@ use App\Models\User;
 use App\Support\ActiveSchool;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -39,18 +42,18 @@ uses(RefreshDatabase::class);
 beforeEach(fn () => (new RbacSeeder)->run());
 
 /** @return array{0: School, 1: User, 2: Student} */
-function ikSetup(): array
+function ikSetup(string $roleName = 'ik_bursar', array $abilities = ['finance.access', 'finance.invoice.generate']): array
 {
     $school = School::factory()->create();
     $admin = User::factory()->create(['school_id' => $school->id]);
 
     setPermissionsTeamId($school->id);
-    $role = Role::firstOrCreate(['name' => 'ik_bursar', 'guard_name' => 'web']);
-    foreach (['finance.access', 'finance.invoice.generate'] as $p) {
+    $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+    foreach ($abilities as $p) {
         Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
     }
-    $role->syncPermissions(['finance.access', 'finance.invoice.generate']);
-    $admin->assignRole('ik_bursar');
+    $role->syncPermissions($abilities);
+    $admin->assignRole($roleName);
     setPermissionsTeamId(null);
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -64,12 +67,12 @@ function ikSetup(): array
     return [$school, $admin, $student];
 }
 
-function ikGenerate($test, School $school, User $admin, Student $student, string $kind, string $what)
+function ikGenerate($test, School $school, User $admin, Student $student, string $kind, string $what, int $minor = 150000)
 {
     return $test->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
             'kind' => $kind,
-            'lines' => [['description' => $what, 'amount_minor' => 150000, 'kind' => 'charge']],
+            'lines' => [['description' => $what, 'amount_minor' => $minor, 'kind' => 'charge']],
         ]);
 }
 
@@ -165,4 +168,91 @@ it('c — every modal that precedes an act on a chosen invoice names the KIND, n
         .'. An episode can carry an active term bill AND live supplementary charges at the same '
         .'time, so a number does not say which document is about to be voided, credited or paid. '
         .'Title it through invoiceLabel() in resources/js/lib/finance/invoice-kind.ts.');
+});
+
+// ── d — THE 201 AFTER CARRY-FORWARD CREDIT ────────────────────────────────────
+
+it('d — the generate 201 reports the credit it just applied, and does not offer to void a settled invoice', function () {
+    /*
+     * THE SAME LIE THE DETAIL ROUTE WAS FIXED FOR, ONE CALLER OVER, AND THIS ONE SHIPPED.
+     *
+     * GenerateInvoice applies carry-forward credit INSIDE its own transaction: it writes
+     * PaymentAllocation rows against the invoice it has just created, through
+     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns
+     * `$invoice->load('lines')`. That model was built by `create()`, so it
+     * carries no `allocated_minor` and no `approved_credit_minor`, and InvoiceSettlement reads an
+     * absent aggregate as zero — see `for` (app/Finance/Services/InvoiceSettlement.php:51). Both
+     * generate routes serialise that model through InvoiceResource.
+     *
+     * So the 201 for an invoice that was SETTLED on the way in says `unpaid`, its whole total
+     * outstanding, `can_record_payment: true` and `can_request_void: true` with no blocked reason —
+     * a response offering to void an invoice that carries a payment allocation.
+     *
+     * IT IS REACHABLE ON THE ORDINARY CUTOVER PATH, which is what makes it worth an arm.
+     * `PostOpeningBalanceBatch` (app/Finance/Actions/PostOpeningBalanceBatch.php:114)
+     * turns every
+     * negative migrated balance into a real payment row, so a student arriving from WCBS in credit
+     * has an unallocated payment waiting, and the FIRST invoice a bursar raises for them is exactly this
+     * case.
+     *
+     * THE GROUND TRUTH IS ASSERTED FROM THE DATABASE FIRST, deliberately. If this arm read the
+     * allocation off the same 201 it is testing, a response that reported nothing would satisfy it
+     * by agreeing with itself. The allocation row is the fact; the payload is the claim.
+     */
+    [$school, $admin, $student] = ikSetup('ik_bursar_d', [
+        'finance.access', 'finance.invoice.generate', 'finance.payment.record',
+    ]);
+
+    // A small term bill, massively overpaid — the overpayment banks as account credit (W2).
+    $termBill = ikGenerate($this, $school, $admin, $student, 'scheduled', 'Tuition', 2000);
+    $termBillId = Invoice::withoutGlobalScopes()->where('uuid', $termBill->json('id'))->value('id');
+
+    $account = ActiveSchool::runFor($school->id, fn () => BankAccount::create([
+        'school_id' => $school->id,
+        'label' => 'Test account',
+        'bank_name' => 'Test Bank',
+        'account_number' => '0123456789',
+    ]));
+
+    $this->actingAs($admin)->withSession(['school_id' => $school->id])
+        ->postJson("/api/v1/finance/invoices/{$termBill->json('id')}/payments", [
+            'amount_minor' => 22000,
+            'payer_name' => 'Guardian',
+            'received_at' => now()->format('Y-m-d'),
+            'bank_account_id' => $account->uuid,
+        ])->assertCreated();
+
+    // The supplementary charge. 20000 of credit is waiting; this invoice is 12000, so
+    // applyCreditForward settles it entirely on the way in.
+    $supp = ikGenerate($this, $school, $admin, $student, 'supplementary', 'Damaged locker door', 12000);
+    $suppId = Invoice::withoutGlobalScopes()->where('uuid', $supp->json('id'))->value('id');
+
+    // GROUND TRUTH, FROM THE DATABASE, BEFORE ANY ASSERTION ABOUT THE PAYLOAD.
+    $allocatedToSupp = (int) DB::table('finance_payment_allocations')
+        ->where('invoice_id', $suppId)
+        ->sum('amount_minor');
+
+    expect($allocatedToSupp)->toBe(12000,
+        'the fixture did not reach the state this arm is about — no carry-forward credit was '
+        .'applied to the supplementary invoice, so the 201 has nothing to under-report');
+    expect($termBillId)->not->toBe($suppId);
+
+    // THE CLAIM. Five fields, and none of them is satisfiable by accident once the first two are
+    // right: the derivation, the arithmetic, and the three eligibility flags a bursar acts on.
+    $supp->assertJsonPath('settlement_state', 'settled')
+        ->assertJsonPath('outstanding.amount_minor', 0)
+        ->assertJsonPath('can_record_payment', false)
+        ->assertJsonPath('can_request_void', false);
+
+    // POSITIVE, AND DELIBERATELY SO. This was `->not->toBeNull($message)` and
+    // PestNegatedExpectationMessagesTest reds on it: Pest's `->not->` is a proxy, and a custom
+    // message written under it is exported and truncated into a generic sentence rather than
+    // printed — the assertion holds, the diagnostic is lost. The positive form below both keeps the
+    // message and says more: not merely non-null, but a non-empty string, which is what the UI puts
+    // in the disabled button's tooltip.
+    $reason = $supp->json('void_blocked_reason');
+
+    expect(is_string($reason) && $reason !== '')->toBeTrue(
+        'a settled invoice must say WHY it cannot be voided — the UI disables-with-reason rather '
+        .'than hiding the control, and an empty reason renders a disabled button with no tooltip');
 });

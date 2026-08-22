@@ -11,6 +11,7 @@ use App\Finance\Models\Payment;
 use App\Finance\Models\StudentAccount;
 use App\Finance\Models\VoidRequest;
 use App\Support\Money;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -39,13 +40,80 @@ final class InvoiceReadModel
             ->where('student_id', $studentId)
             ->when(! $includeVoid, fn ($q) => $q->excludingVoid())
             ->with('lines')
-            // Per-invoice settlement sums (Decision 1: derived, never stored). SQL aggregates,
-            // one query for the set — no N+1. `allocated_minor` covers ordinary payments AND
-            // applied carry-forward credit; `approved_credit_minor` counts only APPROVED credit
-            // notes (a pending proposal moves no money). InvoiceSettlement reads both.
-            ->withSum('allocations as allocated_minor', 'amount_minor')
-            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor')
+            ->tap($this->settlementSums(...))
             ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * THE TWO SETTLEMENT AGGREGATES, IN ONE PLACE — and this method exists because the second
+     * caller arrived (U7's invoice detail) and the failure mode of a second hand-written copy is
+     * silent rather than loud.
+     *
+     * InvoiceSettlement reads `allocated_minor` and `approved_credit_minor` off the model as plain
+     * attributes and treats an ABSENT one as zero, which is correct for a freshly-created invoice
+     * and is a lie for one loaded without these sums: a fully-paid invoice would serialise
+     * `settlement_state: 'unpaid'`, `outstanding` equal to its total, `can_record_payment: true`
+     * and `can_request_void: true` — a screen offering to void a settled invoice, answering 200,
+     * with nothing in a test that asserts the page renders able to see it. So a query feeding
+     * InvoiceResource passes through here, always.
+     *
+     * `allocated_minor` covers ordinary payments AND applied carry-forward credit;
+     * `approved_credit_minor` counts only APPROVED credit notes, because a pending proposal moves
+     * no money. Both are SQL aggregates — one query for the whole set, never an N+1.
+     *
+     * @param  Builder<Invoice>  $query
+     */
+    private function settlementSums(Builder $query): void
+    {
+        $query
+            ->withSum('allocations as allocated_minor', 'amount_minor')
+            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor');
+    }
+
+    /**
+     * ONE invoice, loaded exactly as the statement's list loads its rows — U7's detail page.
+     *
+     * IT TAKES THE BOUND MODEL AND RE-QUERIES IT rather than calling `loadSum` on it, so this and
+     * forStudent() express the aggregates through the SAME method above. The re-query is scoped by
+     * BelongsToSchool a second time; that is redundant (route-model binding already resolved it
+     * under SchoolScope) and it is kept because the alternative is a read of a Finance model that
+     * is NOT scoped at its own call site.
+     *
+     * VOIDED INVOICES RESOLVE HERE, deliberately. `excludingVoid()` is the REPORTING default and
+     * this is not a report — it is the document. The route's own comment records why voidness was
+     * never made a global scope (it would turn the double-void 422 into a 404); a detail page that
+     * 404'd on a voided invoice would recreate that hole one surface over, and the void decision
+     * trail is exactly what someone opening a voided invoice has come to read.
+     */
+    public function forDetail(Invoice $invoice): Invoice
+    {
+        return Invoice::query()
+            ->whereKey($invoice->getKey())
+            ->with('lines')
+            ->tap($this->settlementSums(...))
+            ->firstOrFail();
+    }
+
+    /**
+     * The void requests against ONE invoice — newest first, maker eager-loaded.
+     *
+     * MATCHED ON THE FOREIGN KEY, not on a rendered number. The statement pairs its rows against
+     * pending requests by `display_number` (statement.tsx), because the invoice it holds carries a
+     * uuid while the void request references the numeric PK — a real constraint of that screen and
+     * a string comparison all the same. The detail page holds the invoice ROW, so it asks the
+     * question the database can answer exactly.
+     *
+     * @return Collection<int, VoidRequest>
+     */
+    public function voidRequestsForInvoice(Invoice $invoice): Collection
+    {
+        return VoidRequest::query()
+            ->where('invoice_id', $invoice->getKey())
+            // `invoice` as well as the maker: VoidRequestResource reads the invoice for the number
+            // and the amount at stake, and renders both as null when it is not loaded.
+            ->with(['invoice', 'submittedBy'])
+            ->orderByDesc('id')
             ->get();
     }
 

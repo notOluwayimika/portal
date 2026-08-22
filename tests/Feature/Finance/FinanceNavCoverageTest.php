@@ -73,6 +73,26 @@ const FNC_NOT_NAV = [
     // nothing to direct, and the row shows the figure that says so beside the missing link. The arm
     // below asserts both halves.
     'finance/payments/{payment}/allocate' => 'per-payment; linked from the statement’s payments tab for every payment with an unallocated remainder',
+
+    // U7's invoice detail. Takes an INVOICE uuid — the same reason as the three above. It is
+    // reached from the statement's invoices table, which links EVERY row including a voided one:
+    // voidness is a REPORTING default and not an existence one, the detail page renders the void
+    // trail rather than 404-ing, and a reader who has opened the audit view (?include_void=1) has
+    // come precisely to read it.
+    //
+    // THE LINK ARRIVES IN THE NEXT COMMIT ON THIS BRANCH, and this note says so rather than
+    // claiming a link that is not there yet: U7's sequence builds the detail before the list, so
+    // between the two commits this page is reachable only by URL. The arm asserting the statement
+    // links it lands WITH the link, in the same commit, exactly as the four exemptions above are
+    // asserted.
+    'finance/invoices/{invoice}' => 'per-invoice; linked from every row of the statement’s invoices table',
+
+    // U7's printable invoice. Takes an INVOICE uuid, one level in from the detail — the receipt's
+    // shape and the receipt's reasoning. It is reached from the detail's toolbar, UNCONDITIONALLY:
+    // the link is offered on a voided invoice too, because the person who needs the document on
+    // paper after a void is the one reconciling why the charge is gone, and the printed page states
+    // the void rather than refusing to print. The arm below checks that link.
+    'finance/invoices/{invoice}/print' => 'per-invoice; linked from the invoice detail’s toolbar',
 ];
 
 function fncRead(string $relative): string
@@ -353,4 +373,40 @@ it('the allocation-screen exemption really is linked from the statement, and the
     // And the UI must not re-derive the rule from the amount. This is the shape the server flag exists
     // to replace, and it is one edit away from being money arithmetic in a finance page.
     expect($statement)->not->toContain('unallocated.amount_minor >');
+});
+
+it('the printable-invoice exemption really is linked from the invoice detail, and the link is unconditional', function () {
+    /*
+     * The same check the receipt's exemption carries, one document over — and it asserts the
+     * SECOND half for the same reason the receipt's does. The receipt's entry point is
+     * unconditional because the opening-balance spec forbids silently hiding the row; this one is
+     * unconditional because a VOIDED invoice is still a document somebody reconciles from, and a
+     * page that offered "Print" only while an invoice was live would hide it at the one moment the
+     * paper is actually wanted.
+     *
+     * MEASURED AS: the detail page builds the print href, and the file names `isVoid` a bounded
+     * number of times — never inside a condition wrapping the toolbar. A count is used rather than
+     * a window between two offsets because a window is what a cold review broke twice on the
+     * receipt's arm: wrapping the whole toolbar, or filtering upstream, both sit OUTSIDE any window
+     * and both passed. Every shape that would hide this link names `isVoid` an extra time.
+     *
+     * WHAT IT CANNOT SEE, stated rather than implied — a text check on a file, with no JavaScript
+     * test runner in this repository: whether the link renders, whether it is clickable, and
+     * whether the page it reaches renders anything. The browser drive covers those.
+     */
+    $detail = fncRead('resources/js/pages/admin/finance/invoice.tsx');
+
+    expect($detail)->toContain('/print')
+        ->and($detail)->toContain('/finance/invoices/${invoice.id}/print');
+
+    // `isVoid` appears exactly FOUR times, counted from the file rather than assumed: the
+    // derivation (:129), the status badge's colour (:212), the void banner (:268) and the actions
+    // block a voided invoice does not get (:344). The toolbar carrying the print link is NOT one of
+    // them, and a fifth occurrence is the shape that would make it one.
+    expect(substr_count($detail, 'isVoid'))->toBe(4,
+        'resources/js/pages/admin/finance/invoice.tsx names `isVoid` a different number of times '
+        .'than when this arm was written. If a void now gates the PRINT link or the toolbar, that '
+        .'is the defect this arm exists for: the document is what someone reconciling a reversed '
+        .'charge needs on paper. If it is an unrelated addition, re-derive the count and say in '
+        .'this comment what the new occurrence is.');
 });

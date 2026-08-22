@@ -130,7 +130,7 @@ function dafSeats(): array
  * Returns the wire ids so an arm can assert on a NAMED row rather than on "the first one", which is
  * what an ordering change would silently turn into a different assertion.
  *
- * @return array{approved_note: string, rejected_note: string, approved_void: string, rejected_void: string, pending_note: string}
+ * @return array{approved_note: string, rejected_note: string, approved_void: string, rejected_void: string, pending_note: string, pending_void: string}
  */
 function dafDriveDecisions(array $seats): array
 {
@@ -163,9 +163,24 @@ function dafDriveDecisions(array $seats): array
     $as($checker)->postJson("/api/v1/finance/void-requests/{$rejectedVoid}/reject",
         ['reason' => 'not a duplicate — two supplementary charges in one episode is legal'])->assertOk();
 
-    // And one note left PENDING, so every arm below can assert the boundary rather than assume it.
+    // AND ONE OF EACH TYPE LEFT PENDING, so every arm below asserts the decided/pending boundary
+    // rather than assuming it — ON BOTH FEEDS.
+    //
+    // THE VOID ONE WAS MISSING AND ITS ABSENCE HID A REAL GAP. Only a pending NOTE was staged, so
+    // `decidedCreditNotes()`'s status filter was guarded and `decidedVoidRequests()`'s was not:
+    // adding `Submitted` to the VOID `whereIn` left this file green at 7/7 and the whole suite with
+    // it. The code was right; nothing was watching it. A guard that has only ever been seen green on
+    // one of two symmetric queries is a guard on one of them.
+    //
+    // Each pending document sits on its OWN invoice. `finance_void_requests.open_key` is a stored
+    // generated column (= invoice_id while submitted, else NULL) under a UNIQUE index, so a second
+    // OPEN request against an invoice that already has one is refused by the database — staging this
+    // on either decided void's invoice would fail the seed rather than the assertion.
     $pendingNote = $as($maker)->postJson('/api/v1/finance/invoices/'.dafInvoice($school, $maker, 500000).'/credit-notes',
         ['amount_minor' => 50000])->assertCreated()->json('id');
+
+    $pendingVoid = $as($maker)->postJson('/api/v1/finance/invoices/'.dafInvoice($school, $maker, 550000).'/void-requests',
+        ['reason' => 'still deciding whether this episode was billed twice'])->assertCreated()->json('id');
 
     return [
         'approved_note' => $approvedNote,
@@ -173,6 +188,7 @@ function dafDriveDecisions(array $seats): array
         'approved_void' => $approvedVoid,
         'rejected_void' => $rejectedVoid,
         'pending_note' => $pendingNote,
+        'pending_void' => $pendingVoid,
     ];
 }
 
@@ -227,7 +243,12 @@ it('returns exactly the approved and rejected documents, and never a pending one
 
     expect(array_column($voids, 'id'))->toHaveCount(2)
         ->toContain($ids['approved_void'])
-        ->toContain($ids['rejected_void']);
+        ->toContain($ids['rejected_void'])
+        // THE SYMMETRIC HALF OF THE NOTE ASSERTION ABOVE, and it is the one that was missing. The
+        // pending void is live, submitted, and in the same School — its absence is this feed's own
+        // status filter doing work, not an empty table. Without it, widening
+        // `decidedVoidRequests()`'s `whereIn` to include `submitted` is invisible to the suite.
+        ->not->toContain($ids['pending_void']);
     expect(array_column($voids, 'status'))->each->toBeIn(['approved', 'rejected']);
 });
 

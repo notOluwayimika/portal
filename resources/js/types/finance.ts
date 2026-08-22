@@ -217,7 +217,85 @@ export type Payment = {
     // off the wire; see PaymentResource's docblock for why this is the narrower disclosure.
     receiptable: boolean;
     receipt_refusal_reason: string | null;
+    // What this payment has NOT yet settled — amount − Σ(allocations), UNFLOORED. A negative value
+    // means the allocation table holds more than the payment carries, which is a violating row; the
+    // ticket behind the payment-axis trigger names flooring it at zero as explicitly not the fix.
+    unallocated: Money;
+    // Server-derived (Payment::unallocatedAmount). The statement row gates the "Allocate" link on
+    // this and never compares amounts itself. It says only that there is something left to direct —
+    // whether the student has an open invoice to direct it AT is the allocation screen's answer.
+    can_allocate: boolean;
     allocations?: { id: string; invoice_id: number; amount: Money }[];
+};
+
+// ── U10, the allocation screen ────────────────────────────────────────────────────────────────
+// GET /api/v1/finance/payments/{payment}/allocation-proposal
+
+// WHERE THIS INVOICE'S CHARGES WERE DESTINED, against where the money landed. THREE-VALUED, and the
+// middle value is the point: `unrecorded` is NOT `matches`. The destination is derived through the
+// invoice line's nullable `fee_item_id` — finance_invoice_lines has no bank_account_id of its own,
+// deliberately (2026_08_10_120000) — so an invoice whose lines are free text has no readable
+// destination at all, and rendering that as agreement is the "silently allocate across it" the MVP
+// cut brief forbids, one level more subtle.
+export type AllocationDestinationState = 'matches' | 'differs' | 'unrecorded';
+
+export type AllocationDestination = {
+    state: AllocationDestinationState;
+    // The distinct accounts this invoice's charge lines resolve to. Named, because "there is a
+    // mismatch" without saying which account is a warning an operator cannot act on.
+    accounts: { label: string; bank_name: string }[];
+    // The SUBSET of `accounts` that is not the account the money landed in — empty unless `state` is
+    // `differs`. It exists because an invoice can resolve to more than one destination: rendering the
+    // whole of `accounts` under "Not the account this money landed in" named the MATCHING account
+    // under a sentence saying it did not match.
+    differing_accounts: { label: string; bank_name: string }[];
+    // How much of the invoice the answer does not cover. `matches` with a non-zero count here means
+    // "as far as we can read", and the screen says so rather than showing a bare tick.
+    charge_lines_without_destination: number;
+};
+
+export type AllocationCandidate = {
+    id: string; // invoice uuid
+    display_number: string;
+    // scheduled (the term bill) or supplementary (a trip, a damaged appliance) — #269's wire. An
+    // operator directing money needs to know which of several open bills is the term bill.
+    kind: string;
+    academic_context: string;
+    total: Money;
+    outstanding: Money;
+    // What the engine would allocate here if it ran now: oldest invoice first, capped at outstanding.
+    proposed: Money;
+    allocatable: boolean;
+    blocked_reason: string | null;
+    destination: AllocationDestination;
+};
+
+export type AllocationProposal = {
+    payment: {
+        id: string;
+        reference: number;
+        payer_name: string;
+        method: string;
+        amount: Money;
+        allocated: Money;
+        unallocated: Money;
+        // Formatted server-side; the money-lint bans date formatting in finance pages too.
+        received_at: string;
+        received_at_reason: string | null;
+        // Null for a migrated payment — the origin pairing trigger enforces exactly that — so the
+        // screen renders an absence rather than assuming a label.
+        bank_account: { label: string; bank_name: string } | null;
+    };
+    invoices: AllocationCandidate[];
+    proposed_total: Money;
+    // What the proposal could not place: no open invoice left to absorb it. It stays on the account
+    // and the next invoice generation draws it forward.
+    unproposed_remainder: Money;
+    // The position this proposal was computed from, hashed. Posted back on submit so the server can
+    // tell an operator's edit from the world moving underneath them — without it, a concurrent
+    // invoice generation would get the operator's rows stamped as overridden, permanently, on a table
+    // that has no UPDATE. See AllocationProposal::fingerprint in PHP.
+    fingerprint: string;
 };
 
 // GET .../students/{student}/billable-enrollment — the "New invoice" modal's episode

@@ -5,7 +5,9 @@ namespace App\Finance\Models;
 use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use App\Finance\Http\Resources\PaymentResource;
 use App\Finance\Models\Concerns\AppendOnly;
+use App\Finance\Services\AllocationProposal;
 use App\Models\Student;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
@@ -130,6 +132,34 @@ class Payment extends Model
     public function allocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);
+    }
+
+    /**
+     * Amount − Σ(allocations): what this payment has NOT yet settled and is therefore still sitting on
+     * the account as credit.
+     *
+     * ONE EXPRESSION WITH TWO CONSUMERS, which is why it is on the model rather than in either of
+     * them. {@see PaymentResource} puts it on the statement so a row can
+     * offer the allocation screen, and {@see AllocationProposal} builds the
+     * proposal from it. A second spelling is how two surfaces come to disagree about how much of a
+     * payment is unspent — and one of them would be the screen that writes rows about it.
+     *
+     * UNFLOORED, deliberately. `docs/handoff/tickets/nothing-constrains-allocations-to-a-payments-amount.md`
+     * names flooring this at zero as explicitly NOT the fix: it hides the state on the one surface
+     * that would have shown it, and leaves the row in the ledger. A negative value means the
+     * allocation table holds more than this payment carries — a violating row that predates the
+     * payment-axis trigger, or arrived around it — and it must surface rather than clamp.
+     *
+     * Uses the loaded relation when there is one (the statement eager-loads it) and queries otherwise,
+     * so a list read does not become N+1 and a single payment still answers correctly.
+     */
+    public function unallocatedAmount(): Money
+    {
+        $allocatedKobo = $this->relationLoaded('allocations')
+            ? $this->allocations->sum(fn (PaymentAllocation $allocation) => $allocation->amount->toKobo())
+            : (int) $this->allocations()->sum('amount_minor');
+
+        return $this->amount->minus(Money::fromKobo((int) $allocatedKobo, $this->amount->currency));
     }
 
     /**

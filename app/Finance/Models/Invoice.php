@@ -77,6 +77,14 @@ class Invoice extends Model
         });
     }
 
+    /**
+     * The generic is not decoration, and the reason is the one Payment::allocations() records: without
+     * it Larastan reads `$invoice->lines` as a `Collection<int, Model>`, so every typed closure mapped
+     * over it is a `method.notFound` on InvoiceLine's own methods. AllocationProposal's destination
+     * derivation is the first caller to filter these lines in PHP rather than render them.
+     *
+     * @return HasMany<InvoiceLine, $this>
+     */
     public function lines(): HasMany
     {
         return $this->hasMany(InvoiceLine::class);

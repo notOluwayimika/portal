@@ -137,18 +137,28 @@ by construction.
 The seed command prints **TWO count tables**, not one, and a reader who takes the
 first one for the whole thing will look for a column that is in the other.
 
-**Table 1 — the bulk-run slot** (`SeedDriveFixture.php:198-205`), eleven columns:
-academic sessions, terms, class levels, bank accounts, discount policies, payments
-split by `origin`, then **active fee schedules, cohort at slot, unplaceable**.
+**Table 1 — the bulk-run slot**, thirteen columns: academic sessions, terms, class
+levels, bank accounts, discount policies, payments split by `origin`, then
+**payments w/ remainder, open invoices**, then **active fee schedules, cohort at
+slot, unplaceable**.
 
-**Table 2 — the guardians slot** (`SeedDriveFixture.php:217-224`), ten columns: the
-same first eight, then **students, guardians**.
+**Table 2 — the guardians slot**, twelve columns: the same first ten, then
+**students, guardians**.
 
-**THE FIRST EIGHT COLUMNS ARE DUPLICATED, VALUE FOR VALUE.** Both tables are built
+**`Payments w/ remainder` and `Open invoices` were added for U10's allocation
+drive**, and they are the current instance of the rule two paragraphs down. That
+screen's entire subject is a payment with something left ON it; every payment the
+fixture had before U10 was recorded AGAINST an invoice and capped at its
+outstanding, so its remainder was zero and the screen would have opened on nothing
+while `Payments (portal)` read 3. `Open invoices` is a separate question, not the
+same one twice: a payment with a remainder and no open invoice is a real state — the
+money banks as credit — but it is a screen with an empty table.
+
+**THE FIRST TEN COLUMNS ARE DUPLICATED, VALUE FOR VALUE.** Both tables are built
 from the same four closures over the same two schools, so those eight are the same
 numbers printed twice; only the tail of each row is new. That is worth knowing for
 two reasons. Reading them as one wide table double-counts nothing but wastes the
-check, and — more usefully — **if the shared eight ever DISAGREE between the two
+check, and — more usefully — **if the shared ten ever DISAGREE between the two
 tables, something is wrong with the counting rather than with the fixture**, because
 nothing writes between the two `$this->table()` calls.
 
@@ -168,7 +178,9 @@ NOW.** It was eight columns until a bulk-run drive needed to know whether a coho
 and a price list existed at all; that drive found the fixture placed EVERY episode at
 null coordinates and seeded no schedule, so a run would have billed nobody on a
 fixture that looked full. A guardians drive then needed students and guardians, and
-added a second table rather than widening the first. **When your screen depends on
+added a second table rather than widening the first. U10's allocation drive then
+needed payments with a remainder and open invoices, and found the same shape a third
+time: three payments, none of them allocatable. **When your screen depends on
 something the tables do not count, add the column before you open a browser** — and
 update the enumeration in this paragraph with it. That last step has now been missed
 twice and caught twice, which is the argument for reading the command's ACTUAL output
@@ -233,8 +245,14 @@ Authoring slot per school — … the guardians screen links a new guardian to s
   School B (school#2) admission numbers: ADM95186, ADM38125, ADM66309
 ```
 
-The first eight columns of the second table repeat the first table's, value for
+The first ten columns of the second table repeat the first table's, value for
 value.
+
+**The sample tables above predate U10's two columns** and are kept as they were
+rather than hand-edited: a pasted sample that nobody re-ran is a claim about output,
+and the rule this section states is to read the command's ACTUAL output. Yours will
+carry `Payments w/ remainder` and `Open invoices` between `Payments (migrated)` and
+whatever follows.
 
 `Guardians` is **zero on a fresh fixture and printed anyway** — a second exempt
 column, alongside `Payments (migrated)`, and for a different reason: it is the
@@ -268,7 +286,7 @@ from a brief, since a brief that pastes it goes stale silently.
 
 | Seat | Holds | What it proves |
 | --- | --- | --- |
-| `maker@drive.test` | `accounts_officer`, School A | The flow works end to end: the authoring screens open, the selects are populated, a thing can be created, edited and submitted. |
+| `maker@drive.test` | `accounts_officer`, School A | The flow works end to end: the authoring screens open, the selects are populated, a thing can be created, edited and submitted. Since U10 this seat also holds `finance.payment.allocate` — it is the only seat that does, and the only one the allocation screen opens for. |
 | `checker@drive.test` | `executive_director`, School A | The approvals queue, and therefore every outcome a proposal has. The ED holds **every** finance checker side — fee-schedule, discount-policy, credit-note, invoice-void and opening-balance, approve and reject (`RbacSeeder.php:413-444`), the placement rule being *"a new finance checker ability lands on ED, full stop"* (`RbacSeeder.php:427-432`). |
 | `void-checker@drive.test` | a dedicated role holding **only** `finance.access` and the two void-request abilities | A **partial** checker is not locked out. This seat exists because the first drive found exactly that: `/finance/approvals` was gated on one permission, so the unified queue's per-feed 403-tolerance never executed and a void-only checker got a full-page 403 (`docs/handoff/drives/2026-07-25/README.md:30-46`). |
 | `super@drive.test` | `super_admin`, no finance grant | The bypass exclusion — a super admin does not approve: *"checker abilities are never bypassed — ADR 0040/0045"* (`docs/handoff/drives/2026-07-25/README.md:92`). Bypass is *authorization*, never *isolation*. |

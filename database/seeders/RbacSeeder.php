@@ -374,6 +374,19 @@ class RbacSeeder extends Seeder
                 // NOT accounts_supervisor (matrix row 4 gives AS view, not do), finance_lead, head_of_school,
                 // principal or admin — so "takes the money in" separates from "approves the write-off".
                 PermissionEnum::FINANCE_PAYMENT_RECORD->value,
+                // Direct where a recorded payment's unallocated remainder settles (U10). Held by AO ONLY,
+                // for the same reason and on the same seat as FINANCE_PAYMENT_RECORD directly above:
+                // directing money that has already arrived is the same operator's job as recording it
+                // arriving. NOT held by accounts_supervisor, finance_lead, head_of_school, principal or
+                // admin — an allocation moves which receivable a payment discharges, and the seat that
+                // approves write-offs must not also be the seat that decides what a payment settles.
+                //
+                // `accounts_officer` is NOT governed by the forcing convergence migration
+                // 2026_08_06_100000_move_head_of_school_finance_to_executive_director (its docblock names
+                // the three roles it freezes, and this is not one), so this new grant lands via rbac:sync
+                // and is not revoked on the next deploy. That is obligation 3 in Permission's checklist,
+                // checked rather than assumed.
+                PermissionEnum::FINANCE_PAYMENT_ALLOCATE->value,
                 // Billing (S1 Part 0): the bursar raises invoices and applies policy-backed reductions.
                 PermissionEnum::FINANCE_INVOICE_GENERATE->value,
                 PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,

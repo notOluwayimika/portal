@@ -713,6 +713,11 @@ export default function FinanceStatement({ student }: Props) {
                                             <th
                                                 className={cn(TH, 'text-right')}
                                             >
+                                                Unallocated
+                                            </th>
+                                            <th
+                                                className={cn(TH, 'text-right')}
+                                            >
                                                 Receipt
                                             </th>
                                         </tr>
@@ -721,7 +726,7 @@ export default function FinanceStatement({ student }: Props) {
                                         {paymentsTable.filtered.length === 0 ? (
                                             <tr>
                                                 <td
-                                                    colSpan={6}
+                                                    colSpan={7}
                                                     className="py-10 text-center text-xs text-slate-400"
                                                 >
                                                     {statement.payments
@@ -755,6 +760,50 @@ export default function FinanceStatement({ student }: Props) {
                                                             {formatNaira(
                                                                 payment.amount,
                                                             )}
+                                                        </td>
+                                                        {/*
+                                                            U10 — what is still sitting on the
+                                                            account, and the way to direct it.
+                                                            The FIGURE is always shown, including
+                                                            zero: an operator asking "did this
+                                                            payment settle anything" is asking
+                                                            about the rows that did not, and a
+                                                            column that appears only sometimes
+                                                            cannot answer them.
+
+                                                            The LINK is gated on the server's own
+                                                            eligibility flag below — never on JS
+                                                            comparing amounts — and on holding
+                                                            finance.payment.allocate, because
+                                                            offering a control the server will
+                                                            refuse teaches the operator that this
+                                                            screen lies. It differs from the
+                                                            receipt link beside it on purpose: a
+                                                            receipt is refused for a property of
+                                                            the ROW and the refusal is worth
+                                                            reading, whereas a fully-allocated
+                                                            payment has nothing to direct at all
+                                                            and the figure beside it already says
+                                                            so.
+                                                        */}
+                                                        <td className="px-4 py-2.5 text-right">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <span className="font-semibold text-slate-500 tabular-nums">
+                                                                    {formatNaira(
+                                                                        payment.unallocated,
+                                                                    )}
+                                                                </span>
+                                                                {payment.can_allocate && (
+                                                                    <Can permission="finance.payment.allocate">
+                                                                        <Link
+                                                                            href={`/finance/payments/${payment.id}/allocate`}
+                                                                            className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                                                                        >
+                                                                            Allocate
+                                                                        </Link>
+                                                                    </Can>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                         {/*
                                                             U11 — the receipt entry point. It is

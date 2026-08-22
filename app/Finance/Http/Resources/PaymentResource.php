@@ -54,6 +54,11 @@ class PaymentResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        // Computed ONCE. Payment::unallocatedAmount() falls back to a query when the allocations
+        // relation is not loaded, so calling it per field would be three queries per row on any
+        // caller that does not eager-load — an N+1 hidden inside a resource.
+        $unallocated = $this->unallocatedAmount();
+
         return [
             'id' => $this->uuid,
             'reference' => $this->reference,
@@ -65,6 +70,18 @@ class PaymentResource extends JsonResource
             // UI renders these; it never re-derives them, and it never hides a row on them.
             'receiptable' => $this->isReceiptable(),
             'receipt_refusal_reason' => $this->receiptRefusalReason(),
+            // WHAT IS STILL SITTING ON THE ACCOUNT, computed the same way PaymentReceiptController
+            // does it (amount − Σ allocations) and UNFLOORED for the same reason: the ticket that
+            // asked for the payment-axis trigger names flooring this at zero as explicitly not the
+            // fix, because it hides the state on the surface that would have shown it. A negative
+            // here means the table holds more than the payment carries, which an operator must see.
+            'unallocated' => $unallocated,
+            // ELIGIBILITY IS THE SERVER'S (the can_approve lesson, and InvoiceSettlement's rule): the
+            // statement renders this flag, it never compares amounts itself. It says only that there
+            // is something left to direct — NOT that a destination exists. Whether the student has an
+            // open invoice to direct it at is a per-payment query this list read would pay N+1 for,
+            // and the allocation screen answers it in full, with the reason, on arrival.
+            'can_allocate' => ! $unallocated->isNegative() && ! $unallocated->isZero(),
             'allocations' => $this->whenLoaded('allocations', fn () => $this->allocations->map(fn ($a) => [
                 'id' => $a->uuid,
                 'invoice_id' => $a->invoice_id,

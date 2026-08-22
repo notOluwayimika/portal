@@ -125,8 +125,6 @@ citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	RbacSeeder.php:
 citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	RbacSeeder.php:427	1
 citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:150	1
 citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:155	1
-citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:198	1
-citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:217	1
 citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:44	1
 citation-not-repo-relative	.claude/skills/finance-drive/SKILL.md	SeedDriveFixture.php:49	2
 citation-not-repo-relative	.claude/skills/finance-method/SKILL.md	RbacSync.php:11	1

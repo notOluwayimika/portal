@@ -163,6 +163,7 @@ enum PermissionGroup: string
             self::FINANCE => [
                 Permission::FINANCE_ACCESS,
                 Permission::FINANCE_PAYMENT_RECORD,
+                Permission::FINANCE_PAYMENT_ALLOCATE,
                 Permission::FINANCE_CREDIT_NOTE_SUBMIT,
                 Permission::FINANCE_CREDIT_NOTE_APPROVE,
                 Permission::FINANCE_CREDIT_NOTE_REJECT,

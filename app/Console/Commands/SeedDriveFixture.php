@@ -111,7 +111,7 @@ class SeedDriveFixture extends Command
             ));
         }
 
-        ActiveSchool::runFor($cast->schoolAId, function () use ($states, $e) {
+        ActiveSchool::runFor($cast->schoolAId, function () use ($cast, $states, $e) {
             $states->unpaid($e['ursula']);
             $states->partPaid($e['paula']);
             $states->settledByPayment($e['sam']);
@@ -120,6 +120,22 @@ class SeedDriveFixture extends Command
             $states->pendingCreditNote($e['patCredit']);
             $states->pendingVoid($e['patVoid']);
             $states->approvedVoid($e['otto']); // only invoice is void
+
+            /*
+             * U10 — the allocation screen's subject, and the fixture had no way to reach it. Every
+             * other payment above is recorded AGAINST an invoice and capped at its outstanding, so its
+             * remainder is zero; `settledThenCredited` leaves the ACCOUNT in credit, which lives on the
+             * balance rather than on an unallocated payment. Without these two the screen opens on
+             * nothing.
+             *
+             * ALMA'S MONEY LANDS IN THE SECOND ACCOUNT AND ARUN'S IN THE FIRST. That is the whole
+             * bank-account mismatch axis the MVP cut brief (§9 item 6) requires this screen to show
+             * rather than allocate across silently — with one account per school it is unreachable,
+             * which is why ensureSecondBankAccount exists and why it is seeded for School A only.
+             */
+            $states->ensureSecondBankAccount($cast->schoolAId);
+            $states->unallocatedRemainder($e['allocAlma'], $cast->schoolAId, intoSecondAccount: true);
+            $states->unallocatedRemainder($e['allocArun'], $cast->schoolAId, intoSecondAccount: false);
         });
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->plainInvoice($e['bola'], 250000));
 
@@ -179,6 +195,17 @@ class SeedDriveFixture extends Command
             $schoolId, fn () => $states->paymentCount($schoolId, $origin),
         );
 
+        // U10's TWO COLUMNS, and they answer two different questions rather than one twice. The
+        // allocation screen's entire subject is a payment with something left ON it — every other
+        // payment in this fixture is recorded against an invoice and capped at its outstanding, so its
+        // remainder is zero and the screen opens on nothing. `Open invoices` is the other half: a
+        // payment with a remainder and no open invoice is a real state (the money banks as credit) but
+        // it is a screen with an empty table, so the payments column alone could still read as
+        // coverage. Both come through DriveFinanceStates for the boundary-lint reason above.
+        $remainders = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->paymentsWithRemainderCount($schoolId));
+
+        $openInvoices = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->openInvoiceCount($schoolId));
+
         // U6's three columns. `Active schedules` is filtered to `active` because that is the only
         // status a run may bill from — a count of drafts would report a catalog the screen cannot use.
         // The two enrollment columns come through the ACL PORT rather than through a join written here:
@@ -196,10 +223,10 @@ class SeedDriveFixture extends Command
 
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Active schedules', 'Cohort at slot', 'Unplaceable'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Unplaceable'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId)],
             ],
         );
 
@@ -215,10 +242,10 @@ class SeedDriveFixture extends Command
         // started rather than asserted.
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Students', 'Guardians'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId)],
             ],
         );
 

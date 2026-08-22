@@ -10,6 +10,7 @@
         "finance.invoice.reduction.apply",
         "finance.invoice.void-request.submit",
         "finance.opening-balance.submit",
+        "finance.payment.allocate",
         "finance.payment.record"
     ],
     "accounts_supervisor": [

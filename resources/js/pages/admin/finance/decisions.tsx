@@ -14,6 +14,7 @@ import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useClientTable } from '@/hooks/use-client-table';
+import { usePermissions } from '@/hooks/use-permissions';
 import {
     DECIDED_FEEDS,
     feedFor,
@@ -72,6 +73,30 @@ const BADGE =
  * school while the pending queue does not.
  */
 export default function FinanceDecisions() {
+    /**
+     * WHETHER TO OFFER THE LINK BACK TO THE QUEUE — and the predicate is DERIVED, never listed.
+     *
+     * The drive caught this button offering itself to `maker@drive.test`, an accounts_officer who
+     * holds `finance.access` and no checker ability: the control rendered, and clicking it answered
+     * 403. That is the failure this repository already has a name for — a row an approver can see,
+     * press and fail on is worse than an absent one, because absent is honestly broken and
+     * present-and-dead is dishonestly broken (lib/finance/approval-feeds.ts's `decidedElsewhere`
+     * carries the same argument).
+     *
+     * The queue's route gate is built from `Permission::cases()` filtered by the ApprovalAbility
+     * convention, so the same predicate is applied here to the user's own effective set rather than
+     * a hardcoded pair of abilities. A hardcoded list would hide the link from a future
+     * `finance.refund.approve` checker whom the route would happily admit — the defect
+     * approval-feeds.ts exists to kill, rebuilt one component along. app-sidebar.tsx computes this
+     * identically, for the identical reason.
+     */
+    const { permissions } = usePermissions();
+    const isFinanceChecker = [...permissions].some(
+        (ability) =>
+            ability.startsWith('finance.') &&
+            (ability.endsWith('.approve') || ability.endsWith('.reject')),
+    );
+
     const [rows, setRows] = useState<PendingApproval[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -164,17 +189,19 @@ export default function FinanceDecisions() {
                                 </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
-                                <Button
-                                    asChild
-                                    size="sm"
-                                    variant="outline"
-                                    className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
-                                >
-                                    <Link href="/finance/approvals">
-                                        <ShieldCheck className="mr-1.5 h-4 w-4" />
-                                        Pending approvals
-                                    </Link>
-                                </Button>
+                                {isFinanceChecker && (
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        variant="outline"
+                                        className="rounded-lg border-slate-200 font-semibold text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        <Link href="/finance/approvals">
+                                            <ShieldCheck className="mr-1.5 h-4 w-4" />
+                                            Pending approvals
+                                        </Link>
+                                    </Button>
+                                )}
                                 <Button
                                     size="sm"
                                     variant="outline"

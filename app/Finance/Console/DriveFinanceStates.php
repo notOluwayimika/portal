@@ -22,12 +22,15 @@ use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
+use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\BankAccount;
+use App\Finance\Models\CreditNote;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeItem;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
+use App\Finance\Models\VoidRequest;
 use App\Models\User;
 use App\Support\Money;
 use App\Support\SchoolDay;
@@ -500,6 +503,43 @@ final class DriveFinanceStates
             ->filter(fn (Invoice $invoice) => $invoice->total->toKobo()
                 - (int) ($invoice->getAttribute('allocated_minor') ?? 0)
                 - (int) ($invoice->getAttribute('approved_credit_minor') ?? 0) > 0)
+            ->count();
+    }
+
+    /**
+     * HOW MANY CREDIT NOTES HAVE ALREADY BEEN DECIDED — U13's precondition, and the column the
+     * decisions surface opens onto.
+     *
+     * The count table's rule is that a zero means the screen cannot show anything, and this screen's
+     * whole subject is documents that have LEFT the pending queue. Every other column beside it
+     * counts something a screen authors; this one counts something a screen reads back, and the
+     * fixture's pending credit note — which the queue shows — is deliberately NOT in it.
+     *
+     * Counted by the same predicate the read model uses ({@see InvoiceReadModel::decidedCreditNotes})
+     * rather than by "not submitted", so a status added later does not silently join the count.
+     */
+    public function decidedCreditNoteCount(int $schoolId): int
+    {
+        return CreditNote::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('status', [CreditNoteStatus::Approved->value, CreditNoteStatus::Rejected->value])
+            ->count();
+    }
+
+    /**
+     * HOW MANY VOID REQUESTS HAVE ALREADY BEEN DECIDED — U14's half, and a SEPARATE question from the
+     * one above rather than the same one twice.
+     *
+     * The decisions surface merges two feeds. A fixture carrying decided credit notes and no decided
+     * voids renders a full-looking table in which one of the two types is missing entirely, and the
+     * type badge is the only thing that would say so — which is exactly the reading a single combined
+     * column would hide.
+     */
+    public function decidedVoidRequestCount(int $schoolId): int
+    {
+        return VoidRequest::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('status', [VoidRequestStatus::Approved->value, VoidRequestStatus::Rejected->value])
             ->count();
     }
 

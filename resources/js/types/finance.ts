@@ -66,11 +66,19 @@ export type CreditNote = {
     display_number: string;
     invoice_id: number;
     invoice_display_number?: string; // present in the pending queue (invoice eager-loaded)
+    // WHICH document the note acts on, not just which number — U7 put `kind` on the wire because an
+    // episode can carry a term bill and several supplementary charges at once. Present wherever the
+    // invoice is eager-loaded (the pending queue and the decided feed).
+    invoice_kind?: InvoiceKind | null;
     kind: CreditNoteKind;
     amount: Money;
     note: string | null;
     status: CreditNoteStatus;
     submitted_by_name?: string | null;
+    // THE CHECKER (U13). Emitted through whenLoaded('decidedBy'), which only the DECIDED feed loads,
+    // so the key is ABSENT on a pending row rather than null — "this document has no checker" and
+    // "the checker is unknown" are different statements and the wire keeps them apart.
+    decided_by_name?: string | null;
     decided_at?: string | null;
     rejection_reason?: string | null;
     // Policy-computed, viewer-relative: disabled on one's own submission (maker ≠ checker).
@@ -91,11 +99,15 @@ export type VoidRequest = {
     id: string; // uuid
     invoice_id: number;
     invoice_display_number?: string | null;
+    // The kind beside the number, for the reason CreditNote carries it.
+    invoice_kind?: InvoiceKind | null;
     amount?: Money | null;
     reason: string;
     note?: string | null; // = reason, so the unified queue reads one field
     status: VoidRequestStatus;
     submitted_by_name?: string | null;
+    // THE CHECKER (U14) — CreditNote's twin field, absent on a pending row for the same reason.
+    decided_by_name?: string | null;
     decided_at?: string | null;
     rejection_reason?: string | null;
     can_approve: boolean;

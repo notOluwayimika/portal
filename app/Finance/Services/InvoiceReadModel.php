@@ -223,6 +223,62 @@ final class InvoiceReadModel
     }
 
     /**
+     * THE DECIDED CREDIT NOTES — U13's read, and the twin of pendingCreditNotes() on the other side
+     * of the decision. Every note in the active School that a checker has already approved or
+     * rejected, newest DECISION first, with the invoice, the maker AND the checker eager-loaded.
+     *
+     * `decidedBy` is the load that makes this feed worth having. A decided document already appeared
+     * on its student's statement (InvoiceController::forStudent), but that read loads the maker
+     * alone — so "who approved this", which is the only question maker-checker exists to answer, was
+     * unanswerable on every surface in the application. It is answerable here.
+     *
+     * ORDERED BY `decided_at` AND THEN BY id. Both terminal states stamp decided_at (CreditNote::
+     * decide()), so the column is never null in this set; the id tiebreak is for two decisions taken
+     * inside the same second, which a checker working through a queue produces routinely.
+     *
+     * NOT PAGINATED, and that is a bounded claim rather than an oversight: this set grows for the
+     * life of a school, unlike the pending queue it mirrors, and the screen pages it CLIENT-side the
+     * way the approvals queue does. That holds while corrections stay rare — each one costs two
+     * people — and it is recorded as a limit in the implementation report rather than left to be
+     * discovered.
+     *
+     * @return Collection<int, CreditNote>
+     */
+    public function decidedCreditNotes(): Collection
+    {
+        return CreditNote::query()
+            ->whereIn('status', [CreditNoteStatus::Approved->value, CreditNoteStatus::Rejected->value])
+            ->with(['invoice', 'submittedBy', 'decidedBy'])
+            ->orderByDesc('decided_at')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
+     * THE DECIDED VOID REQUESTS — U14, the twin of decidedCreditNotes() exactly as
+     * pendingVoidRequests() is pendingCreditNotes()'s. Approved or rejected, newest decision first,
+     * invoice + maker + checker eager-loaded.
+     *
+     * An APPROVED row here names an invoice that is now void and whose charge has been reversed; a
+     * REJECTED one names an invoice that still stands, and carries the checker's reason for letting
+     * it stand. Both are readings of something that has already happened — nothing on this path
+     * writes, and the rows themselves are status-terminal.
+     *
+     * Same non-pagination limit as decidedCreditNotes(), for the same reason.
+     *
+     * @return Collection<int, VoidRequest>
+     */
+    public function decidedVoidRequests(): Collection
+    {
+        return VoidRequest::query()
+            ->whereIn('status', [VoidRequestStatus::Approved->value, VoidRequestStatus::Rejected->value])
+            ->with(['invoice', 'submittedBy', 'decidedBy'])
+            ->orderByDesc('decided_at')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    /**
      * A student's void requests, for the statement — so a pending request is visible ("void
      * requested, awaiting approval") while the invoice is still active, and the decision trail
      * survives after. Newest first; invoice + maker eager-loaded. School isolation automatic.

@@ -448,3 +448,51 @@ it('the invoice-detail exemption really is linked from the statement, and the li
         .'be able to reach it. If it is an unrelated addition, re-derive the count and say in this '
         .'comment what the new occurrence is.');
 });
+
+/**
+ * THE MIRROR OF THIS FILE'S RULE — a link must not point where its viewer is refused.
+ *
+ * Everything above asks whether a page is reachable from somewhere. This asks the inverse, and the
+ * BROWSER DRIVE is what found it: `/finance/decisions` is gated on the group's `finance.access`
+ * while `/finance/approvals` needs a finance CHECKER ability, and the decisions page's toolbar
+ * offered a "Pending approvals" button to every viewer. `maker@drive.test` — an accounts_officer
+ * holding `finance.access` and no checker ability — saw the control, and the route answered 403.
+ *
+ * That is a failure this repository already has a name for: a control a user can see, press and
+ * fail on is worse than an absent one, because absent is honestly broken and present-and-dead is
+ * dishonestly broken (`resources/js/lib/finance/approval-feeds.ts`, on `decidedElsewhere`).
+ *
+ * MEASURED AS: the href exists, and it is NOT unconditional. `isFinanceChecker` is named twice —
+ * once where the predicate is derived from the viewer's own effective set, once where the button is
+ * conditioned on it — so a whole-source count reds on the deletion of either, including the exact
+ * edit that restores the defect (dropping the `{isFinanceChecker && (…)}` wrapper and leaving the
+ * derivation in place, which looks guarded and is not).
+ *
+ * AND THE PREDICATE MUST STAY DERIVED. A hardcoded pair of abilities would hide the link from a
+ * future `finance.refund.approve` checker whom the route would admit — the defect approval-feeds.ts
+ * exists to kill, rebuilt one component along — so the arm asserts the convention's own shape
+ * (`.approve` / `.reject` over `finance.`) rather than any particular ability name.
+ *
+ * WHAT IT CANNOT SEE, stated rather than implied: this is a text check on a file, and there is no
+ * JavaScript test runner in this repository. It does not prove what React renders for a given
+ * permission set. The drive covers that, and the drive is what is being pinned here.
+ */
+it('the decisions page offers the queue link only to a checker, on a DERIVED predicate', function () {
+    $decisions = fncRead('resources/js/pages/admin/finance/decisions.tsx');
+
+    $names = substr_count($decisions, 'isFinanceChecker');
+
+    expect(str_contains($decisions, '/finance/approvals'))->toBeTrue(
+        'resources/js/pages/admin/finance/decisions.tsx no longer links the pending queue at all. '
+        .'The two surfaces are halves of one story and a checker arriving on one should be able to '
+        .'reach the other; if the link was removed deliberately, remove this arm and say why.')
+        ->and($names)->toBe(2,
+            'resources/js/pages/admin/finance/decisions.tsx names `isFinanceChecker` '.$names.' times, '
+            .'not 2 (the derivation, and the condition on the button). One occurrence is the defect '
+            .'the browser drive found: the derivation left in place while the button renders '
+            .'unconditionally — which looks guarded and 403s for every non-checker who presses it.')
+        ->and(str_contains($decisions, "ability.endsWith('.approve')"))->toBeTrue(
+            'resources/js/pages/admin/finance/decisions.tsx no longer derives the checker predicate '
+            .'from the ApprovalAbility convention. A hardcoded ability list hides the link from the '
+            .'next checker type the route already admits.');
+});

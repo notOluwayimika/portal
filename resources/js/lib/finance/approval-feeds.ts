@@ -1,5 +1,6 @@
 import {
     approve as approveCredit,
+    decided as decidedCredit,
     pending as pendingCredit,
     reject as rejectCredit,
 } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
@@ -20,6 +21,7 @@ import {
 } from '@/actions/App/Finance/Http/Controllers/OpeningBalanceBatchController';
 import {
     approve as approveVoid,
+    decided as decidedVoid,
     pending as pendingVoid,
     reject as rejectVoid,
 } from '@/actions/App/Finance/Http/Controllers/VoidRequestController';
@@ -77,6 +79,20 @@ import type {
  * there reproduces this branch's own defect, a visible row nobody can act on, and the fix for a hard
  * label is to put the subject on the wire.
  *
+ * THE DECIDED FEED IS DECLARED HERE TOO (U13/U14), AND IT IS GATED MORE BROADLY THAN `pendingUrl`.
+ * A `/pending` route carries its type's approve ability because it precedes an act; a `/decided`
+ * route carries only the API group's `finance.access`, because reading what already happened is a
+ * different capability from being trusted to decide it. Both live on the SAME entry rather than in a
+ * second list, so a type cannot gain one and lose the other silently — and the decisions surface
+ * (pages/admin/finance/decisions.tsx) consumes this list exactly as the approvals queue consumes
+ * `pendingUrl`, with no per-type knowledge of its own.
+ *
+ * TWO OF THE FIVE CARRY ONE TODAY, AND THE OTHER THREE SAY SO IN WORDS. `decidedUrl` is optional and
+ * `decidedNotImplemented` is required whenever it is absent, because a type nobody has built a
+ * decided feed for and a type whose decided feed somebody FORGOT are indistinguishable in a list of
+ * optional members — and one is a decision while the other is a defect. The coverage test asserts
+ * exactly one of the two on every entry, so the distinction is enforced rather than described.
+ *
  * `confirm` IS THE OTHER OPTIONAL MEMBER, AND IT IS NOT A UI PREFERENCE. It exists for approvals that
  * cannot be undone, and it is declared PER TYPE for the reason a blanket confirmation would defeat:
  * a dialog on every approval is a dialog nobody reads, which is how the one that matters gets clicked
@@ -94,6 +110,24 @@ export type ApprovalFeed = {
     badgeClass: string;
     /** GET — the pending feed. Every one answers `{"data": [...]}`. */
     pendingUrl: () => string;
+    /**
+     * GET — the DECIDED feed: the same documents AFTER a checker approved or rejected them.
+     * Every one answers `{"data": [...]}`, exactly as `pendingUrl` does.
+     *
+     * Absent ⇒ `decidedNotImplemented` MUST say why, and ApprovalsQueueFeedCoverageTest refuses an
+     * entry carrying neither or both. That pairing is the whole design of this field: a type with no
+     * decided feed and a type whose decided feed somebody forgot look identical in a list of
+     * optional members, and the second one is a defect while the first is a decision.
+     */
+    decidedUrl?: () => string;
+    /**
+     * WHY this type has no decided feed yet — required exactly when `decidedUrl` is absent.
+     *
+     * It is a sentence and not a boolean because the reason is the thing worth reading: whoever adds
+     * the missing feed needs to know what was deferred and what it costs, and a `false` tells them
+     * nothing. Nothing consumes it at runtime; it exists to be read here and asserted by the test.
+     */
+    decidedNotImplemented?: string;
     /** POST urls for the decision. Absent ⇒ this queue does not decide this type. */
     decide?: {
         approve: (id: string) => string;
@@ -159,6 +193,7 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
         pendingUrl: () => pendingCredit.url(),
+        decidedUrl: () => decidedCredit.url(),
         decide: {
             approve: (id) => approveCredit.url(id),
             reject: (id) => rejectCredit.url(id),
@@ -174,6 +209,7 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
         pendingUrl: () => pendingVoid.url(),
+        decidedUrl: () => decidedVoid.url(),
         decide: {
             approve: (id) => approveVoid.url(id),
             reject: (id) => rejectVoid.url(id),
@@ -191,6 +227,16 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-400',
         pendingUrl: () => pendingScheduleChange.url(),
+        // No `…/decided` route exists. The read side is one controller method and one route — the
+        // same template U13 and U14 followed — but the GATE is not a template: a decided feed takes
+        // the group's `finance.access`, and the same rows are ALREADY readable under it for credit
+        // notes and voids (the statement's feed returns them in every status). A fee-schedule change
+        // is readable today under `finance.fee-schedule.change.approve` and nowhere else, so putting
+        // one on `finance.access` is a fresh exposure decision rather than a precedent applied.
+        // Two model edits precede it too: FeeScheduleChange declares no `decided_at` and no
+        // `decidedBy()` relation, though the column exists (2026_07_28_120000:50).
+        decidedNotImplemented:
+            'Fee-schedule changes have no decided feed yet — the route, the `decidedBy()` relation and the `decided_at` cast are unbuilt, and the exposure decision (a decided feed sits on finance.access) has not been taken for this type.',
         decide: {
             approve: (id) => approveScheduleChange.url(id),
             reject: (id) => rejectScheduleChange.url(id),
@@ -219,6 +265,11 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400',
         pendingUrl: () => pendingDiscountChange.url(),
+        // Same shape and same two reasons as the fee-schedule entry above: no route, no
+        // `decidedBy()` relation, no `decided_at` cast (the column exists —
+        // 2026_07_26_140001:49), and the exposure decision untaken.
+        decidedNotImplemented:
+            'Discount-policy changes have no decided feed yet — same position as fee-schedule changes: route, relation and cast unbuilt, and the finance.access exposure decision untaken for this type.',
         decide: {
             approve: (id) => approveDiscountChange.url(id),
             reject: (id) => rejectDiscountChange.url(id),
@@ -245,6 +296,15 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         badgeClass:
             'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400',
         pendingUrl: () => pendingOpeningBalance.url(),
+        // NOT THE SAME TEMPLATE, and that is why this one is listed separately rather than lumped in
+        // with the two above. An opening-balance batch has no `approved` status at all — approval
+        // goes straight to `posted` (OpeningBalanceBatchStatus) — so "decided" here is
+        // {posted, rejected}, a different predicate from the other four's {approved, rejected}. And
+        // its checker column is `decided_by_user_id`, a LOOKUP rather than an FK
+        // (OpeningBalanceBatch.php:72), so it carries no `decidedBy()` relation to eager-load. A
+        // decided feed for this type is a design question, not a copy of U13's method.
+        decidedNotImplemented:
+            'Opening-balance batches have no decided feed yet, and it is not the same build: there is no `approved` status (approval goes straight to `posted`), so the decided predicate differs, and the checker is a lookup id rather than an FK relation.',
         decide: {
             approve: (id) => approveOpeningBalance.url(id),
             reject: (id) => rejectOpeningBalance.url(id),
@@ -283,6 +343,19 @@ export const APPROVAL_FEEDS: ApprovalFeed[] = [
         }),
     },
 ];
+
+/**
+ * The feeds that HAVE a decided read — what the decisions surface fetches, the way the approvals
+ * queue fetches every entry's `pendingUrl`.
+ *
+ * Derived rather than listed, for the reason APPROVAL_FEEDS itself exists: a second hardcoded list
+ * is precisely the mechanism that lost two feeds off the approvals page.
+ */
+export type DecidedFeed = ApprovalFeed & { decidedUrl: () => string };
+
+export const DECIDED_FEEDS: DecidedFeed[] = APPROVAL_FEEDS.filter(
+    (feed): feed is DecidedFeed => feed.decidedUrl !== undefined,
+);
 
 /** The feed a row belongs to. Undefined only for a `type` no feed declares. */
 export function feedFor(row: PendingApproval): ApprovalFeed | undefined {

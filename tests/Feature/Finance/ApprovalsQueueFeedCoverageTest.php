@@ -28,6 +28,8 @@ const AQF_FEEDS_MODULE = 'resources/js/lib/finance/approval-feeds.ts';
 
 const AQF_PAGE = 'resources/js/pages/admin/finance/approvals.tsx';
 
+const AQF_DECISIONS_PAGE = 'resources/js/pages/admin/finance/decisions.tsx';
+
 function aqfRead(string $relative): string
 {
     return (string) file_get_contents(dirname(__DIR__, 3).'/'.$relative);
@@ -48,20 +50,25 @@ function aqfFeedsArrayBody(string $source): string
 }
 
 /**
- * Every registered pending feed under the Finance API prefix, as `controller short name => uri`.
- * Derived from the ROUTER, never from a list in this file — a second hardcoded list is the thing
- * being guarded against, and writing one here would make this test agree with itself.
+ * Every registered feed under the Finance API prefix whose uri ends in `/$suffix`, as
+ * `controller short name => uri`. Derived from the ROUTER, never from a list in this file — a second
+ * hardcoded list is the thing being guarded against, and writing one here would make this test agree
+ * with itself.
+ *
+ * Parameterised by suffix rather than duplicated when U13/U14 added `/decided`: the pending arm and
+ * the decided arm ask the SAME question of two route families, and a copy of this function would be
+ * the second list one door along.
  *
  * @return array<string, string>
  */
-function aqfPendingRoutes(): array
+function aqfFeedRoutes(string $suffix): array
 {
     $found = [];
 
     foreach (Route::getRoutes() as $route) {
         $uri = $route->uri();
 
-        if (! str_starts_with($uri, 'api/v1/finance/') || ! str_ends_with($uri, '/pending')) {
+        if (! str_starts_with($uri, 'api/v1/finance/') || ! str_ends_with($uri, '/'.$suffix)) {
             continue;
         }
 
@@ -74,6 +81,18 @@ function aqfPendingRoutes(): array
     ksort($found);
 
     return $found;
+}
+
+/** @return array<string, string> */
+function aqfPendingRoutes(): array
+{
+    return aqfFeedRoutes('pending');
+}
+
+/** @return array<string, string> */
+function aqfDecidedRoutes(): array
+{
+    return aqfFeedRoutes('decided');
 }
 
 /**
@@ -104,18 +123,30 @@ function aqfDeclaredControllers(string $source): array
  *
  * @return list<string>
  */
-function aqfImportedPendingAliases(string $source): array
+function aqfImportedAliases(string $source, string $verb): array
 {
-    preg_match_all('/^\s+pending as ([A-Za-z]+),?$/m', $source, $matches);
+    preg_match_all('/^\s+'.$verb.' as ([A-Za-z]+),?$/m', $source, $matches);
 
     // The single-line import form (`import { pending as x } from '…';`) does not match the
     // multi-line shape above, so it is picked up separately.
-    preg_match_all('/^import \{ pending as ([A-Za-z]+) \} from /m', $source, $single);
+    preg_match_all('/^import \{ '.$verb.' as ([A-Za-z]+) \} from /m', $source, $single);
 
     $aliases = [...$matches[1], ...$single[1]];
     sort($aliases);
 
     return $aliases;
+}
+
+/** @return list<string> */
+function aqfImportedPendingAliases(string $source): array
+{
+    return aqfImportedAliases($source, 'pending');
+}
+
+/** @return list<string> */
+function aqfImportedDecidedAliases(string $source): array
+{
+    return aqfImportedAliases($source, 'decided');
 }
 
 /**
@@ -124,14 +155,26 @@ function aqfImportedPendingAliases(string $source): array
  *
  * @return list<string>
  */
-function aqfWiredPendingAliases(string $source): array
+function aqfWiredAliases(string $source, string $field): array
 {
-    preg_match_all('/pendingUrl: \(\) => ([A-Za-z]+)\.url\(\)/', $source, $matches);
+    preg_match_all('/'.$field.': \(\) => ([A-Za-z]+)\.url\(\)/', $source, $matches);
 
     $aliases = $matches[1];
     sort($aliases);
 
     return $aliases;
+}
+
+/** @return list<string> */
+function aqfWiredPendingAliases(string $source): array
+{
+    return aqfWiredAliases($source, 'pendingUrl');
+}
+
+/** @return list<string> */
+function aqfWiredDecidedAliases(string $source): array
+{
+    return aqfWiredAliases($source, 'decidedUrl');
 }
 
 it('every pending feed the API registers is declared on the approvals queue, and nothing else is', function () {
@@ -182,6 +225,168 @@ it('every imported pending alias is wired to exactly one entry, and every entry 
     expect($wired)->toBe($imported, 'The declared feed list imports ['.implode(', ', $imported)
         .'] but its entries fetch ['.implode(', ', $wired).']. A duplicate on the right means one '
         .'type is fetched twice and another never — its rows render on no screen.');
+});
+
+/**
+ * THE ALIAS → CONTROLLER MAP, read off the import blocks themselves.
+ *
+ * `pendingCredit` comes from CreditNoteController and `decidedVoid` from VoidRequestController, and
+ * neither name can be derived from the other by string surgery — the aliases are shortened. So the
+ * mapping is PARSED rather than guessed, which also makes the arms below independent of the naming
+ * convention: rename every alias tomorrow and they still hold.
+ *
+ * @return array<string, string> alias => controller short name
+ */
+function aqfAliasControllers(string $source): array
+{
+    preg_match_all(
+        "#import \{([^}]*)\} from '@/actions/App/Finance/Http/Controllers/([A-Za-z]+)';#s",
+        $source,
+        $blocks,
+        PREG_SET_ORDER
+    );
+
+    $map = [];
+
+    foreach ($blocks as $block) {
+        preg_match_all('/([a-z]+) as ([A-Za-z]+)/', $block[1], $aliases, PREG_SET_ORDER);
+
+        foreach ($aliases as $alias) {
+            $map[$alias[2]] = $block[2];
+        }
+    }
+
+    return $map;
+}
+
+/**
+ * THE DECIDED FEED, COVERED THE WAY THE PENDING FEED IS (U13/U14).
+ *
+ * `/decided` is the read of what a checker already approved or rejected, and it exists because a
+ * decided document used to leave the approvals queue and appear on no list anywhere. It is declared
+ * on the SAME entries as `pendingUrl`, so it inherits the same failure modes and needs the same
+ * pins: a route rendered on no screen, and an entry pointed at a URL that does not exist.
+ *
+ * Only two of the five carry one today. The other three are not silently absent — they declare
+ * `decidedNotImplemented`, which the next arm requires — so what is compared here is the set of
+ * DECLARED decided feeds against the set of REGISTERED decided routes, both directions.
+ */
+it('every decided feed the API registers is declared on the feed list, and nothing else is', function () {
+    $source = aqfRead(AQF_FEEDS_MODULE);
+    $aliasControllers = aqfAliasControllers($source);
+
+    $wired = array_values(array_unique(array_map(
+        fn (string $alias) => $aliasControllers[$alias] ?? "UNKNOWN-ALIAS({$alias})",
+        aqfWiredDecidedAliases(aqfFeedsArrayBody($source)),
+    )));
+    sort($wired);
+
+    $registered = array_keys(aqfDecidedRoutes());
+
+    $unrendered = array_values(array_diff($registered, $wired));
+    $phantom = array_values(array_diff($wired, $registered));
+
+    expect($unrendered)->toBe([], 'A DECIDED feed is live at the API and declared on NO entry: '
+        .implode(', ', $unrendered).' — add its `decidedUrl` in '.AQF_FEEDS_MODULE.'. This is the '
+        .'pending-feed defect one door along: the rows exist, they are reachable, and nobody can see '
+        .'them.')
+        ->and($phantom)->toBe([], 'An entry declares a `decidedUrl` with no registered route: '
+            .implode(', ', $phantom).' — the surface would fetch a URL that does not exist.');
+
+    // Not vacuous: a regex that matched nothing would make both diffs empty and the arm silent.
+    //
+    // Asserted as a POSITIVE boolean, not `->not->toBe([], "…")`. `->not->` discards the custom
+    // message on every matcher — the reasoning is written out in full at the decide-url arm below,
+    // and PestNegatedExpectationMessagesTest fails the repository over it.
+    expect($wired !== [])->toBeTrue('No entry was parsed as carrying a `decidedUrl` — the comparison '
+        .'above compared two empty lists and asserted nothing.');
+});
+
+/**
+ * EVERY ENTRY DECLARES EXACTLY ONE OF `decidedUrl` / `decidedNotImplemented` — and this is the arm
+ * that makes a DELIBERATE absence different from a FORGOTTEN one.
+ *
+ * Optional members do not distinguish those two states. `decidedUrl?: () => string` on a five-entry
+ * list is satisfied by an entry somebody meant to wire and did not, exactly as it is satisfied by
+ * one whose feed genuinely does not exist — and the first is a defect while the second is a
+ * decision. Requiring the sentence means the deferral has to be WRITTEN DOWN, by the person
+ * deferring it, at the moment they defer it.
+ *
+ * Both failure directions are pinned. Neither member: the type is unaccounted for. Both: the entry
+ * claims a feed and simultaneously explains its absence, which means one of the two is stale and a
+ * reader cannot tell which.
+ */
+it('every entry either fetches a decided feed or says in words why it has none — never both, never neither', function () {
+    $entries = aqfEntriesByType(aqfFeedsArrayBody(aqfRead(AQF_FEEDS_MODULE)));
+
+    // Positive boolean for the same reason as the arm above: a negated matcher would eat this
+    // sentence, and the sentence is the whole diagnostic.
+    expect($entries !== [])->toBeTrue('No entries parsed — the loop below would assert nothing.');
+
+    $problems = [];
+
+    foreach ($entries as $type => $entry) {
+        $hasUrl = preg_match('/^\s+decidedUrl: /m', $entry) === 1;
+        $hasReason = preg_match('/^\s+decidedNotImplemented:/m', $entry) === 1;
+
+        if ($hasUrl && $hasReason) {
+            $problems[] = "[{$type}] declares BOTH a decidedUrl and a decidedNotImplemented — one of "
+                .'them is stale and a reader cannot tell which.';
+        }
+
+        if (! $hasUrl && ! $hasReason) {
+            $problems[] = "[{$type}] declares NEITHER a decidedUrl nor a decidedNotImplemented. If "
+                .'this type has no decided feed, say so in words on the entry; a silent absence is '
+                .'indistinguishable from a forgotten one.';
+        }
+    }
+
+    expect($problems)->toBe([], implode("\n", $problems));
+});
+
+/**
+ * THE DECIDED-URL EQUIVALENT OF THE PENDING ALIAS PIN, and the same defect it was written for:
+ *
+ *     { type: 'void', …, pendingUrl: () => pendingVoid.url(), decidedUrl: () => decidedCredit.url() }
+ *
+ * Every import present, both entries carrying a decided feed, the route comparison above satisfied
+ * on suffixes — and decided credit notes fetched twice while decided voids are fetched never. The
+ * multiset comparison catches the duplicate; the per-entry suffix agreement below catches the entry.
+ */
+it('every imported decided alias is wired to exactly one entry, at the same controller as that entry’s pending feed', function () {
+    $source = aqfRead(AQF_FEEDS_MODULE);
+
+    $imported = aqfImportedDecidedAliases($source);
+    $wired = aqfWiredDecidedAliases(aqfFeedsArrayBody($source));
+
+    expect($wired)->toBe($imported, 'The declared feed list imports ['.implode(', ', $imported)
+        .'] but its entries fetch ['.implode(', ', $wired).']. A duplicate on the right means one '
+        .'type\'s decisions are fetched twice and another\'s never — its rows render on no screen.');
+
+    // And each entry's decided url must sit on the SAME controller its pending url does — resolved
+    // through the import blocks rather than by stripping a verb, so a renamed alias cannot make this
+    // pass by accident.
+    $aliasControllers = aqfAliasControllers($source);
+    $entries = aqfEntriesByType(aqfFeedsArrayBody($source));
+    $checked = 0;
+
+    foreach ($entries as $type => $entry) {
+        if (preg_match('/decidedUrl: \(\) => ([A-Za-z]+)\.url\(\)/', $entry, $decided) !== 1) {
+            continue;
+        }
+
+        $checked++;
+        preg_match('/pendingUrl: \(\) => ([A-Za-z]+)\.url\(\)/', $entry, $pending);
+
+        $controllerOf = fn (string $alias) => $aliasControllers[$alias] ?? "UNKNOWN-ALIAS({$alias})";
+
+        expect($controllerOf($decided[1]))->toBe($controllerOf((string) ($pending[1] ?? '')),
+            "The [{$type}] entry fetches pending with [{$pending[1]}] but decided with [{$decided[1]}] "
+            .'— one type\'s decisions rendered under another type\'s badge, subject and columns.');
+    }
+
+    expect($checked)->toBeGreaterThan(0, 'No entry was parsed as carrying a decidedUrl — the loop '
+        .'above asserted nothing.');
 });
 
 /**
@@ -351,6 +556,16 @@ it('the approvals page imports no Finance controller action directly — every f
 });
 
 /**
+ * THE DECISIONS PAGE HOLDS NO FEED KNOWLEDGE EITHER. Two hardcoded imports are how the approvals
+ * queue lost two types; the surface built on the other url of the same registry must not start with
+ * the same two. Identical assertion to the one above, one page along, because the defect is a
+ * property of hardcoding rather than of that particular file.
+ */
+it('the decisions page imports no Finance controller action directly — every feed comes off the declared list', function () {
+    expect(aqfDeclaredControllers(aqfRead(AQF_DECISIONS_PAGE)))->toBe([]);
+});
+
+/**
  * A DECLARED CONFIRMATION THE PAGE NEVER CONSULTS IS WORSE THAN NO CONFIRMATION, because the
  * declaration is then read — by the next person, and by the test above — as evidence that the guard
  * is there. The arm above pins the feed entry; this pins the one line that makes the entry matter.
@@ -403,4 +618,18 @@ it('the queue errors only when EVERY feed fails, expressed over the whole array'
         .'The error rule must be expressed over the whole feed array, not a fixed number of feeds.')
         ->and($fixedArity)->toBeFalse(AQF_PAGE.' errors on a FIXED-ARITY conjunction of rejections. '
             .'That rule was correct at two feeds and shows a one-ability checker a broken queue at five.');
+
+    // THE DECISIONS PAGE FANS OUT THE SAME WAY AND CARRIES THE SAME RULE. Its two feeds share one
+    // permission TODAY, which is exactly the condition under which a fixed-arity rule looks fine and
+    // is a trap: the day one decided feed gains its own gate, "any rejection" blanks the page for a
+    // reader holding the other. Pinned now, while it costs one line.
+    $decisions = aqfRead(AQF_DECISIONS_PAGE);
+
+    $decisionsArrayWide = str_contains($decisions, "settled.every((result) => result.status === 'rejected')");
+    $decisionsFixedArity = preg_match("/status === 'rejected' &&/", $decisions) === 1;
+
+    expect($decisionsArrayWide)->toBeTrue(AQF_DECISIONS_PAGE.' no longer errors on '
+        .'`settled.every(... rejected)`. The error rule must be expressed over the whole feed array.')
+        ->and($decisionsFixedArity)->toBeFalse(AQF_DECISIONS_PAGE.' errors on a FIXED-ARITY '
+            .'conjunction of rejections — the shape that breaks the moment the feeds stop sharing a gate.');
 });

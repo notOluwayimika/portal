@@ -206,6 +206,21 @@ class SeedDriveFixture extends Command
 
         $openInvoices = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->openInvoiceCount($schoolId));
 
+        // U13/U14's TWO COLUMNS, added for the same reason as every pair before them and counted
+        // through DriveFinanceStates for the boundary-lint reason above. The decisions surface
+        // (/finance/decisions) renders documents that have ALREADY LEFT the pending queue, which is
+        // the one thing no column here counted: `Payments (portal)` and `Open invoices` can both be
+        // healthy on a fixture where nothing has ever been approved or rejected, and that screen
+        // would open onto an empty table looking exactly like a broken feed.
+        //
+        // SPLIT BY TYPE, not summed. The surface merges two feeds, and a fixture with decided credit
+        // notes and no decided voids renders a full-looking table in which one of the two types is
+        // absent entirely — the type badge would be the only witness, which is precisely the reading
+        // a single combined column would hide.
+        $decidedNotes = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->decidedCreditNoteCount($schoolId));
+
+        $decidedVoids = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->decidedVoidRequestCount($schoolId));
+
         // U6's three columns. `Active schedules` is filtered to `active` because that is the only
         // status a run may bill from — a count of drafts would report a catalog the screen cannot use.
         // The two enrollment columns come through the ACL PORT rather than through a join written here:
@@ -221,12 +236,12 @@ class SeedDriveFixture extends Command
 
         $unplaceable = fn (int $schoolId): int => count($port->listUnplaceableForSchool($schoolId));
 
-        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable:');
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable; the decisions surface (U13/U14) reads back what a checker has already settled:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Unplaceable'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Unplaceable', 'Decided credit notes', 'Decided voids'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId), $decidedNotes($cast->schoolBId), $decidedVoids($cast->schoolBId)],
             ],
         );
 

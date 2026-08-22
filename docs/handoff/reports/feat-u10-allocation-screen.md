@@ -567,6 +567,210 @@ invoice whose lines resolve to **two different** accounts, which the read model 
 
 ---
 
+## 9. Cold review — what it found, and what changed
+
+A cold review of this branch returned **one stop, two fixes and three tickets**. The severities below
+are the reviewer's, carried as set. Everything in this section landed in one commit,
+`fix(finance): a numeric string wrote an override nobody made, and the invoice axis was never the
+trigger's to guarantee`.
+
+### STOP 1 — a JSON string wrote a false override marker onto an append-only row
+
+`AllocatePaymentRequest` validated `amount_minor` with `integer`, which is
+`filter_var($value, FILTER_VALIDATE_INT) !== false`
+(`Illuminate\Validation\Concerns\ValidatesAttributes::validateInteger` — read, not assumed: the
+`:strict` branch is `is_int($value)` and the default branch is the filter). The numeric **string**
+`"3000"` passed, nothing cast it, and `AllocatePayment` decides the override marker with `!==`. So
+`"3000" !== 3000` was **true**, and a submission byte-identical to the proposal was recorded as an
+override the operator never made — with a reason they were compelled to invent — on a table carrying
+`_no_update` and `_no_delete`.
+
+**Reproduced against the live route before anything was changed**, all four cases, raw:
+
+```
+CASE 3  string "3000", no reason   -> 422 {"override_reason":["You changed the proposed split, so a reason
+                                     is required. It is written onto the allocation rows and cannot be
+                                     edited afterwards."]}   rows: NO ROWS
+CASE 2  string "3000", with reason -> 201  rows: invoice#1 3000 overridden=true
+                                     reason='A reason nobody should have been asked for.'
+CASE 1  int 3000, no reason        -> 201  rows: invoice#2 3000 overridden=false reason=NULL
+CASE 4  proposal as computed: 000003=>2000, 000004=>0
+CASE 4a proposal verbatim, "0" str, no reason -> 422 {"override_reason":["You changed the proposed split…"]}
+CASE 4b same, with the reason it demanded     -> 201  rows: invoice#3 2000 overridden=false reason=NULL
+```
+
+Case 4 is the quietest and the reviewer was right to single it out. The submission **is** the
+proposal — 2000 on the row proposed 2000, zero on the row proposed zero — with the zero sent as a
+string. A reason was demanded, and then written **nowhere**: the zero row writes no allocation at all,
+and the row that does write is not a departure, so `allocation_override_reason` is NULL. The reason
+was extracted from the operator and discarded, which is precisely what `AllocatePayment` says in its
+own words, at the guard immediately below, that it refuses to do.
+
+**Fixed in both places, and neither is sufficient alone.** `'integer:strict'` in the FormRequest
+shuts the HTTP door; an explicit `(int)` cast in the Action's loop covers the callers the FormRequest
+cannot see, because that Action's docblock states it is reachable off-HTTP and a job or console
+caller handing it `['amount_minor' => '3000']` meets no FormRequest anywhere in the path.
+
+Four new arms — PROOF 13 (a–d, over the real route) and PROOF 14 (the Action called directly). The
+mutations, each verified to have landed before its result was believed:
+
+```
+### M1 — revert BOTH halves
+  result failed 21 / 23
+   RED: PROOF_13 …  Failed to find a validation error for key 'allocations.0.amount_minor' |
+        Response has the following JSON validation errors: { "override_reason": [ …
+   RED: PROOF_14 …  You changed the proposed split, so a reason is required.
+
+### M2 — revert ONLY the request rule; the Action's cast stays
+  result failed 22 / 23
+   RED: PROOF_13
+
+### M3 — revert ONLY the Action's cast; the request rule stays
+  MUTATION LANDED
+  result failed 14 / 15
+   RED: PROOF_14 …  You changed the proposed split, so a reason is required.
+
+### restored
+  result passed 23 / 23
+```
+
+M1's red is worth reading rather than counting: the response carries `override_reason` where the arm
+expected an amount error — the defect itself, printed by the arm that now catches it. M2 and M3
+together are the argument for fixing both places: each guard reds an arm the other keeps green.
+
+**M3 was a false green on its first attempt and is recorded rather than quietly redone.** The
+substitution was passed through `python3 -c "…"` in a double-quoted shell string; bash left `\$`
+intact, Python warned `SyntaxWarning: invalid escape sequence '\$'`, the pattern never matched, and
+the suite came back 23/23. A green after a mutation that did not land is indistinguishable from a
+guard that works. Re-run with a heredoc and an assertion on the pattern, it printed `MUTATION LANDED`
+and then went red. This is the second time on this branch that a mutation harness lied; both are in
+the record.
+
+### FIX 2 — the page's permission gate was asserted nowhere
+
+Removing `->middleware('permission:finance.payment.allocate')` from the **web** route left
+`tests/Feature/Finance` 715/715, `tests/Feature/Rbac` 335/335 and `--group=arch` 103/103 all green.
+PROOF 11 covers the two API doors; `FinanceNavCoverageTest`'s arm is a text check on `statement.tsx`
+that issues no request. § 7 of this report enumerates gate arms and did not notice the page had none
+— an omission in this report's own frame.
+
+PROOF 15 adds it: a `finance.access`-only seat gets **403**, the officer gets **200**.
+
+```
+### M4 — remove the PAGE route middleware
+  result failed 22 / 23
+   RED: PROOF_15_—_the_PAGE_route_is_gated_too__and_not_only_the_two_API_routes
+```
+
+### FIX 3 — the Action claimed an authority the trigger does not have
+
+`AllocatePayment` said `finance_allocation_not_over_invoice_total` "is the authority and stays
+reachable for any writer that does not come through here". Measured false, the same way the
+payment-axis ticket demolished the identical claim for this trigger's sibling: `RecordPayment` locks
+the **invoice** row, while `applyCreditForward` and `AllocatePayment` lock the **account** row and
+never touch the invoice row. Disjoint locks, and the trigger's `SELECT SUM` cannot see across
+transactions. **The reviewer measured Σ = 20000 against a 10000 invoice.**
+
+The sentence now says what is true — the trigger refuses what a single transaction can see, and the
+invoice axis is not serialised across writers — and points at TICKET 4. The axis is deliberately not
+fixed here.
+
+### FIX 7 — a two-account invoice named the matching account as a mismatch
+
+`state` is `differs` as soon as one resolved destination disagrees, and the cell rendered the **whole**
+of `accounts` under "Not the account this money landed in." An invoice resolving to two accounts, one
+of them the payment's, therefore listed the matching account under a sentence that is false of it.
+§ 8 of this report recorded two-account invoices as handled by the read model and never rendered;
+this is what would have been seen.
+
+`differing_accounts` is now on the wire as a subset of `accounts`, and the screen lists only that
+under the sentence, with a second line saying the remaining lines are destined for the account the
+money is in. Narrowing `accounts` instead would have hidden the agreeing half, which is part of the
+operator's picture of where the invoice's money was meant to go.
+
+```
+### M5 — render the FULL account list as the mismatch (the pre-fix rendering)
+  result failed 22 / 23
+   RED: PROOF_4b_—_an_invoice_resolving_to_TWO_accounts_names_only_the_DIFFERING
+```
+
+### Tickets 4, 5 and 6
+
+- [`the-invoice-axis-is-not-serialised-across-writers.md`](../tickets/the-invoice-axis-is-not-serialised-across-writers.md)
+  — the measurement, the three writers and which row each locks, and that the disjoint pair
+  (`RecordPayment` × `applyCreditForward`) **pre-dates this branch**, which adds a third writer on an
+  axis that was already uncovered. It also records the falsified prediction: the reviewer looked for
+  FK-check contention on the invoice row that would have made the "account row and no other row lock"
+  claim false, and found none — so that claim stands as measured rather than reasoned.
+- [`server-side-money-has-no-single-formatter-and-no-lint.md`](../tickets/server-side-money-has-no-single-formatter-and-no-lint.md)
+  — `NGN 1500.00` beside `₦1,500.00`, `Money::toNaira()` emitting no thousands separator so a real
+  term bill reads `NGN 125000.00`, `SubmitCreditNote:92` using the identical notation so patching one
+  site creates a third, and `bin/ci-money-lint.php` walking `resources/js` only with no server-side
+  arm — so no baseline hides this; the lint never looked. **Not patched**, deliberately.
+- [`the-proposal-fingerprint-does-not-cover-destination.md`](../tickets/the-proposal-fingerprint-does-not-cover-destination.md)
+  — a fee item's `bank_account_id` is mutable and is not in the token, so an operator can submit
+  against a stale `Same account` reading with no reload prompt. **No legality consequence** — the
+  destination decides nothing and every rule that governs the write is re-derived under the lock —
+  **and** it is the one figure on the screen the token does not defend. Both halves are in the ticket.
+
+### What the reviewer verified that this report had not claimed
+
+Two findings in the branch's favour, recorded because a review that only subtracts is not being read
+properly:
+
+- **The engines cannot be stamped with the operator rule.** `RecordPayment` and
+  `applyCreditForward` both pass `allocated_by_user_id` as NULL, so an attempt to write either of them
+  under `operator_directed_remainder` trips **arm 1** of the pairing trigger. The report argued arm 2
+  (an engine row with an actor); the reverse direction is closed too, and by a different arm.
+- **The two trigger arms this report does not list are armed.** § 2.4's table names all seven raw-write
+  refusals, but § 7's mutation table listed mutations for arms 1 and 3 only. The reviewer mutated the
+  **actor-forbidden** and **override-rule** arms as well and both went red.
+
+### A pre-existing flake this work ran into, with its mechanism
+
+Not a cold-review finding and not this branch's — recorded because it went red once during
+verification and the next reader deserves the diagnosis rather than a retry.
+
+`tests/Feature/Finance/SubledgerClockFrameTest.php` failed inside a full `tests/Feature/Finance` run:
+
+```
+finance suite: failed 718 / 719
+  RED: it_lands_the_ledger_row_and_the_account_projection_in_ONE_CLOCK_FRAME…
+       Failed asserting that 91 is identical to 90.
+```
+
+Neither that file nor `SubledgerPoster` is touched by any commit on this branch
+(`git log origin/staging..HEAD --` on both paths is empty), and it is not in
+`tests/ratchet-baseline.txt`. Re-run alone three times at 13:24:30, 13:24:46 and 13:25:03 it passed
+2/2 every time.
+
+**The mechanism, and it contradicts the test's own docblock.** The arm does
+`test()->travel(90)->seconds()` between two posts and then asserts
+`strtotime($secondPostedAt) - strtotime($postedAt) === 90`. Its comment says the difference "is
+IMPOSED by the test clock, not raced for, so it is deterministic on any machine." That is false as
+written: `travel()` anchors to `Carbon::now()` **at the moment it is called**, not to the first post's
+instant, so the observed gap is `(t_travel + 90) − t_firstPost`. Any wall-clock second boundary
+crossed between the first post and the `travel()` call yields **91**. The window is sub-second, which
+is why it survives in isolation and lost once under the load of a 719-test run.
+
+It is a real intermittent in a test that asserts it cannot be one — the same shape as a rule with no
+enforcement behind it. Left alone here: it belongs to `SubledgerPoster`'s stream, not to U10, and a
+drive-by fix to someone else's timing arm is how a green gets bought rather than earned.
+
+### The reviewer's limits, in its words
+
+Carried because a review's blind spots belong beside its findings:
+
+- **No `PROCESS` privilege**, so its `information_schema.processlist` check could see only its own
+  threads. That is a defect in the credential grant available to the review, not in the review.
+- **MySQL 5.7 unavailable** — every measurement is 8.0.43, as with the original branch. The pairing
+  trigger is written as a trigger *because* production is 5.7.23, and that remains unexercised.
+- **The scratchpad artefacts are unverifiable by design** — the first gate run's junit and suite log
+  live outside the repository and the review could not confirm they are what § 0 says they are.
+- **The drive captures were not re-derived.** The review read the report's transcript of them; it did
+  not re-run the drive.
+- **True concurrency beyond deterministic two-connection interleaves is unmeasured**, on either axis.
+
 ## 9. Not built, and ticketed if you want them
 
 **Out of scope by the brief, and untouched:** reallocation or un-allocation of existing rows; bulk
@@ -575,10 +779,11 @@ locks are exactly as they were.
 
 **Found while building, not fixed:**
 
-- The Action's over-allocation message renders money as `NGN 1500.00` (server-side `Money::toNaira()`
-  with the currency code) while every other figure on the screen is `₦1,500.00` via `formatNaira`.
-  Correct and plain, but inconsistent in a money surface. Not changed here because it is cosmetic and
-  a fix costs a full gate cycle; worth a ticket.
+- The Action's over-allocation message renders money as `NGN 1500.00` while the screen renders
+  `₦1,500.00`. Now [ticketed](../tickets/server-side-money-has-no-single-formatter-and-no-lint.md) and
+  **deliberately not patched** — the cold review established that `toNaira()` plus a currency code is
+  the repository's only server-side money rendering and that `SubmitCreditNote:92` uses it identically,
+  so changing one site would create a third notation rather than remove the second.
 - The login redirect for `maker@drive.test` still lands back on `/login` (the `/dashboard` 403 the
   discount-policies drive filed). Pre-existing, unrelated, and it makes a working login look broken to
   a first-time driver.

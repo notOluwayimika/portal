@@ -264,6 +264,26 @@ final class AllocationProposal
                 $resolved[$accountId] = $accounts->get($accountId);
             }
 
+            // THE ACCOUNTS THAT ARE NOT THE ONE THE MONEY LANDED IN, separated from the full set —
+            // and the separation is a correctness fix, not presentation.
+            //
+            // An invoice can resolve to MORE THAN ONE destination: `accounts` has always been a list,
+            // because its lines may cite fee items on different accounts. `state` is `differs` as soon
+            // as ONE of them disagrees, and the screen rendered the whole list under the sentence "Not
+            // the account this money landed in." So an invoice resolving to two accounts, one of them
+            // the payment's, named the MATCHING account under a sentence saying it did not match. The
+            // report's § 8 recorded two-account invoices as never rendered; this is what would have
+            // been seen.
+            //
+            // Both lists are now on the wire and both are used: the screen names only the differing
+            // ones under that sentence, and says separately that the rest are destined for the account
+            // the money is in. Narrowing `accounts` instead would have hidden the agreeing half, which
+            // is the operator's picture of where this invoice's money was meant to go.
+            $differing = array_values(array_filter(
+                $resolved,
+                fn (BankAccount $account) => $account->id !== $paymentAccountId,
+            ));
+
             $out[$invoice->id] = [
                 // THREE STATES. `unrecorded` is not `matches`; see the class docblock. A payment with
                 // no bank account of its own (a migrated row) can never match, so it reports
@@ -278,6 +298,11 @@ final class AllocationProposal
                     fn (BankAccount $account) => ['label' => $account->label, 'bank_name' => $account->bank_name],
                     $resolved,
                 )),
+                // A SUBSET of `accounts`, never a replacement for it. Empty unless `state` is `differs`.
+                'differing_accounts' => array_map(
+                    fn (BankAccount $account) => ['label' => $account->label, 'bank_name' => $account->bank_name],
+                    $differing,
+                ),
                 // How much of the invoice this answer does NOT cover. `matches` with a non-zero count
                 // here means "as far as we can read", and the screen must say that rather than
                 // rendering an unqualified agreement.

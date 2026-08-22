@@ -157,7 +157,21 @@ final class AllocatePayment
 
             foreach ($directions as $index => $direction) {
                 $uuid = $direction['invoice_id'];
-                $amountKobo = $direction['amount_minor'];
+
+                // CAST, AND THE CAST IS LOAD-BEARING — it is not defensive tidying.
+                //
+                // The departure comparison below is `!==`, and the JSON string "3000" is not identical
+                // to the integer 3000. Uncast, a submission byte-identical to the proposal was recorded
+                // as an OVERRIDE nobody made: `allocation_overridden = 1` plus a reason the operator was
+                // compelled to invent for a change they had not made, written onto a row that carries
+                // `_no_update` and `_no_delete`. Measured against the live route before this line
+                // existed; the four reproductions are in this branch's report.
+                //
+                // THE FORMREQUEST'S `integer:strict` IS THE OTHER HALF AND NEITHER IS SUFFICIENT ALONE.
+                // That rule shuts the HTTP door; this Action is documented above as reachable off-HTTP,
+                // and a job or console caller passing a numeric string meets no FormRequest at all. A
+                // guard placed only at the edge protects only the callers that go through the edge.
+                $amountKobo = (int) $direction['amount_minor'];
 
                 if (array_key_exists($uuid, $byUuid)) {
                     // Two rows for one invoice. Summing them would be a guess about what the operator
@@ -207,8 +221,26 @@ final class AllocatePayment
                 }
 
                 if ($amountKobo > $row['outstanding']->toKobo()) {
-                    // The invoice axis, refused in words. finance_allocation_not_over_invoice_total is
-                    // the authority and stays reachable for any writer that does not come through here.
+                    // The invoice axis, refused in words — and THIS COMMENT USED TO CLAIM MORE THAN IS
+                    // TRUE. It said `finance_allocation_not_over_invoice_total` "is the authority and
+                    // stays reachable for any writer that does not come through here", which is the same
+                    // sentence the payment-axis ticket demolished for that trigger's sibling, and it is
+                    // false here for the same reason.
+                    //
+                    // WHAT THE TRIGGER ACTUALLY GUARANTEES: it refuses what a SINGLE TRANSACTION can
+                    // see. Its `SELECT SUM` is a plain read and cannot see another transaction's
+                    // uncommitted allocation, so it is a single-write backstop and not a serialisation
+                    // point — exactly as its payment-axis sibling is.
+                    //
+                    // AND THE INVOICE AXIS IS NOT SERIALISED ACROSS WRITERS. The three writers hold
+                    // DISJOINT locks: RecordPayment locks the INVOICE row, GenerateInvoice::
+                    // applyCreditForward and this Action lock the ACCOUNT row and never touch the
+                    // invoice row. Two of them therefore never block each other, and the cold review
+                    // measured Σ = 20000 against a 10000 invoice. That pair PRE-DATES this branch; what
+                    // this Action adds is a third writer on the uncovered axis. It is recorded, with the
+                    // measurement, in docs/handoff/tickets/the-invoice-axis-is-not-serialised-across-writers.md
+                    // and is deliberately NOT fixed here — closing it needs its own concurrency
+                    // argument, which is how the payment axis was handled.
                     throw new AllocationRefused(
                         'That is more than invoice '.$row['display_number'].' still owes ('.$row['outstanding']->currency.' '.$row['outstanding']->toNaira().').',
                         "allocations.{$index}.amount_minor",

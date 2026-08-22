@@ -244,6 +244,11 @@ export type AllocationDestination = {
     // The distinct accounts this invoice's charge lines resolve to. Named, because "there is a
     // mismatch" without saying which account is a warning an operator cannot act on.
     accounts: { label: string; bank_name: string }[];
+    // The SUBSET of `accounts` that is not the account the money landed in — empty unless `state` is
+    // `differs`. It exists because an invoice can resolve to more than one destination: rendering the
+    // whole of `accounts` under "Not the account this money landed in" named the MATCHING account
+    // under a sentence saying it did not match.
+    differing_accounts: { label: string; bank_name: string }[];
     // How much of the invoice the answer does not cover. `matches` with a non-zero count here means
     // "as far as we can read", and the screen says so rather than showing a bare tick.
     charge_lines_without_destination: number;

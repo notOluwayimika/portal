@@ -397,6 +397,204 @@ it('PROOF 11 — both routes are gated on finance.payment.allocate, and the POST
         ->assertStatus(201);
 });
 
+it('PROOF 13 — a NUMERIC STRING amount is not a departure, and does not write an override nobody made', function () {
+    /*
+     * THE COLD REVIEW'S STOP, ARMED. `integer` in a FormRequest is
+     * `filter_var($value, FILTER_VALIDATE_INT) !== false`, so the JSON string "3000" passed validation
+     * and arrived as a string; the Action decides `allocation_overridden` with `!==`, and
+     * `"3000" !== 3000` is TRUE. A submission byte-identical to the proposal was therefore recorded as
+     * an override, with a reason the operator was compelled to invent, on a table that has no UPDATE.
+     *
+     * Every arm below posts through the REAL ROUTE with a genuine JSON string, because that is the only
+     * way the defect is reachable — no existing arm posted a non-int at all, which is why twelve green
+     * proofs and three green suites did not see it.
+     */
+    [$school, $officer, $student] = apwSetup();
+
+    // ── a. THE STRING THAT IS THE PROPOSAL: no reason needed, no override written.
+    [$a, $payA, $fpA] = ActiveSchool::runFor($school->id, function () use ($school, $officer, $student) {
+        $a = apwInvoice($school, $student, 3000);
+        $payA = apwPayment($school, $student, $officer, 3000);
+
+        return [$a, $payA, apwFingerprint($payA)];
+    });
+
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payA->uuid.'/allocations', [
+            'fingerprint' => $fpA,
+            'allocations' => [['invoice_id' => $a->uuid, 'amount_minor' => '3000']],
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['allocations.0.amount_minor']);
+
+    expect(PaymentAllocation::query()->where('payment_id', $payA->id)->count())->toBe(0,
+        'a string amount must be refused at the edge, not cast and written');
+
+    // The same submission as a real integer lands, and lands as NOT overridden.
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payA->uuid.'/allocations', [
+            'fingerprint' => $fpA,
+            'allocations' => [['invoice_id' => $a->uuid, 'amount_minor' => 3000]],
+        ])
+        ->assertStatus(201);
+
+    $rowA = PaymentAllocation::query()->where('payment_id', $payA->id)->sole();
+    expect($rowA->allocation_overridden)->toBeFalse()
+        ->and($rowA->allocation_override_reason)->toBeNull();
+
+    // ── b. A STRING THAT IS A REAL DEPARTURE still needs its reason, and still records the override.
+    [$b, $payB, $fpB] = ActiveSchool::runFor($school->id, function () use ($school, $officer) {
+        $st = Student::factory()->create(['school_id' => $school->id]);
+        $b = apwInvoice($school, $st, 3000);
+        $payB = apwPayment($school, $st, $officer, 3000);
+
+        return [$b, $payB, apwFingerprint($payB)];
+    });
+
+    // Refused at the edge as a string — the rule does not care whether the value is a departure.
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payB->uuid.'/allocations', [
+            'fingerprint' => $fpB,
+            'allocations' => [['invoice_id' => $b->uuid, 'amount_minor' => '1000']],
+            'override_reason' => 'Part-settle only.',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['allocations.0.amount_minor']);
+
+    // As an integer it is a genuine departure: the marker and the reason are still written. Fixing the
+    // false positive must not have cost the true one.
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payB->uuid.'/allocations', [
+            'fingerprint' => $fpB,
+            'allocations' => [['invoice_id' => $b->uuid, 'amount_minor' => 1000]],
+            'override_reason' => 'Part-settle only.',
+        ])
+        ->assertStatus(201);
+
+    $rowB = PaymentAllocation::query()->where('payment_id', $payB->id)->sole();
+    expect($rowB->allocation_overridden)->toBeTrue()
+        ->and($rowB->allocation_override_reason)->toBe('Part-settle only.');
+
+    // ── c. THE QUIETEST CASE: "0" as a string on a row the proposal already proposed zero for.
+    //    Uncast, this demanded a reason for a submission identical to the proposal and then wrote the
+    //    reason NOWHERE — the zero row writes no row at all — which is the silent discard the Action's
+    //    own guard exists to refuse.
+    [$c1, $c2, $payC, $fpC] = ActiveSchool::runFor($school->id, function () use ($school, $officer) {
+        $st = Student::factory()->create(['school_id' => $school->id]);
+        $c1 = apwInvoice($school, $st, 3000);
+        $c2 = apwInvoice($school, $st, 1000);
+        $payC = apwPayment($school, $st, $officer, 2000);   // proposal: 2000 on c1, 0 on c2
+
+        return [$c1, $c2, $payC, apwFingerprint($payC)];
+    });
+
+    expect(app(AllocationProposal::class)->for($payC)['invoices'][1]['proposed']->toKobo())->toBe(0,
+        'the fixture must actually produce a zero-proposed row, or this arm proves nothing');
+
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payC->uuid.'/allocations', [
+            'fingerprint' => $fpC,
+            'allocations' => [
+                ['invoice_id' => $c1->uuid, 'amount_minor' => 2000],
+                ['invoice_id' => $c2->uuid, 'amount_minor' => '0'],
+            ],
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['allocations.1.amount_minor']);
+
+    // The same thing as integers is the proposal verbatim: it lands with NO reason asked for.
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payC->uuid.'/allocations', [
+            'fingerprint' => $fpC,
+            'allocations' => [
+                ['invoice_id' => $c1->uuid, 'amount_minor' => 2000],
+                ['invoice_id' => $c2->uuid, 'amount_minor' => 0],
+            ],
+        ])
+        ->assertStatus(201);
+
+    $rowsC = PaymentAllocation::query()->where('payment_id', $payC->id)->get();
+    expect($rowsC)->toHaveCount(1, 'the zero row still writes nothing')
+        ->and($rowsC->first()->allocation_overridden)->toBeFalse()
+        ->and($rowsC->first()->allocation_override_reason)->toBeNull();
+
+    // ── d. A NON-NUMERIC STRING is a field error, never a silent cast to zero.
+    [$d, $payD, $fpD] = ActiveSchool::runFor($school->id, function () use ($school, $officer) {
+        $st = Student::factory()->create(['school_id' => $school->id]);
+        $d = apwInvoice($school, $st, 3000);
+        $payD = apwPayment($school, $st, $officer, 3000);
+
+        return [$d, $payD, apwFingerprint($payD)];
+    });
+
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])
+        ->postJson('/api/v1/finance/payments/'.$payD->uuid.'/allocations', [
+            'fingerprint' => $fpD,
+            'allocations' => [['invoice_id' => $d->uuid, 'amount_minor' => 'three thousand']],
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['allocations.0.amount_minor']);
+
+    expect(PaymentAllocation::query()->where('payment_id', $payD->id)->count())->toBe(0);
+});
+
+it('PROOF 14 — the Action itself refuses a numeric string, for the off-HTTP callers its docblock names', function () {
+    /*
+     * THE OTHER HALF OF THE SAME STOP. `integer:strict` shuts the HTTP door and nothing else: this
+     * Action is documented as reachable off-HTTP, and a job or a console command handing it
+     * `['amount_minor' => '3000']` meets no FormRequest anywhere in the path. This arm calls the Action
+     * DIRECTLY, which is the only way to see whether the cast inside it is doing anything.
+     */
+    [$school, $officer, $student] = apwSetup();
+
+    ActiveSchool::runFor($school->id, function () use ($school, $officer, $student) {
+        $a = apwInvoice($school, $student, 3000);
+        $payment = apwPayment($school, $student, $officer, 3000);
+
+        // The proposal is 3000 on $a. Handed in as a STRING, with no reason — which is what the
+        // uncast comparison used to refuse, because "3000" !== 3000.
+        app(AllocatePayment::class)->handle(
+            $payment,
+            [['invoice_id' => $a->uuid, 'amount_minor' => '3000']],
+            apwFingerprint($payment),
+            $officer,
+        );
+
+        $row = PaymentAllocation::query()->where('payment_id', $payment->id)->sole();
+
+        expect($row->amount->toKobo())->toBe(3000)
+            ->and($row->allocation_overridden)->toBeFalse()
+            ->and($row->allocation_override_reason)->toBeNull();
+    });
+});
+
+it('PROOF 15 — the PAGE route is gated too, and not only the two API routes', function () {
+    /*
+     * THE COLD REVIEW'S SECOND FINDING. Removing the middleware from the web route left
+     * tests/Feature/Finance 715/715, tests/Feature/Rbac 335/335 and --group=arch 103/103 all green:
+     * PROOF 11 covers the two API doors, and FinanceNavCoverageTest's arm is a TEXT check on
+     * statement.tsx that issues no request at all. The page's own gate was asserted nowhere.
+     */
+    [$school, $officer, $student] = apwSetup();
+
+    $payment = ActiveSchool::runFor($school->id, function () use ($school, $officer, $student) {
+        apwInvoice($school, $student, 3000);
+
+        return apwPayment($school, $student, $officer, 3000);
+    });
+
+    $url = '/finance/payments/'.$payment->uuid.'/allocate';
+
+    // `admin` carries finance.access — enough for the statement this page is reached from — and must
+    // still be refused here. Directing money is not the same authority as reading where it went.
+    $admin = User::factory()->create(['school_id' => $school->id]);
+    $admin->grantSchoolAccess($school, 'admin');
+    $admin->flushSchoolAccessCache();
+
+    $this->actingAs($admin)->withSession(['school_id' => $school->id])->get($url)->assertForbidden();
+    $this->actingAs($officer)->withSession(['school_id' => $school->id])->get($url)->assertOk();
+});
+
 it('PROOF 12 — the DATABASE is still the floor: every guard fires on a write that never enters the Action', function () {
     [$school, $officer, $student] = apwSetup();
 

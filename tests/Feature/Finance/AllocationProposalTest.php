@@ -228,6 +228,56 @@ it('PROOF 4 — the bank-account destination is THREE-VALUED: matches / differs 
         ->and($result['invoices'][0]['destination']['charge_lines_without_destination'])->toBe(0);
 });
 
+it('PROOF 4b — an invoice resolving to TWO accounts names only the DIFFERING one as the mismatch', function () {
+    /*
+     * THE COLD REVIEW'S SEVENTH FINDING. `state` is `differs` as soon as ONE resolved destination
+     * disagrees, and the screen rendered the WHOLE of `accounts` under the sentence "Not the account
+     * this money landed in." An invoice whose lines cite fee items on two accounts — one of them the
+     * payment's — therefore named the MATCHING account under a claim that is false of it.
+     *
+     * § 8 of this branch's report recorded two-account invoices as handled by the read model and never
+     * rendered. This is the arm that renders them, and `differing_accounts` is what the screen lists.
+     */
+    [$school, $officer, $student] = apxSetup();
+
+    $result = ActiveSchool::runFor($school->id, function () use ($school, $officer, $student) {
+        $landed = BankAccount::withoutGlobalScopes()->find(testBankAccountId($school->id));
+        $other = apxOtherAccount($school);
+
+        $itemHere = apxFeeItem($school, $landed, 'Tuition');
+        $itemThere = apxFeeItem($school, $other, 'Transport');
+
+        // ONE invoice, TWO charge lines, two different destinations — one of them the account the
+        // money lands in.
+        apxInvoice($school, $student, 2000, [
+            new InvoiceLineSpec('Tuition', Money::fromKobo(1000), $itemHere->id),
+            new InvoiceLineSpec('Transport', Money::fromKobo(1000), $itemThere->id),
+        ]);
+
+        $payment = app(RecordAccountPayment::class)->handle(
+            $student->id, Money::fromKobo(2000), 'Parent', $officer, SchoolDay::today(), $landed->id,
+        );
+
+        return app(AllocationProposal::class)->for($payment);
+    });
+
+    $destination = $result['invoices'][0]['destination'];
+
+    // One account disagrees, so the invoice as a whole differs.
+    expect($destination['state'])->toBe('differs');
+
+    // `accounts` is still the FULL picture — both destinations, because that is where this invoice's
+    // money was meant to go and an operator directing it should see all of it.
+    expect(collect($destination['accounts'])->pluck('label')->sort()->values()->all())
+        ->toBe(['Second account', 'Test account']);
+
+    // …and `differing_accounts` is only the one the sentence is TRUE of. Before this fix the screen
+    // rendered the line above under "Not the account this money landed in", which named the account
+    // the money IS in as the account it is not in.
+    expect($destination['differing_accounts'])
+        ->toBe([['label' => 'Second account', 'bank_name' => 'Other Bank']]);
+});
+
 it('PROOF 5 — a cross-currency invoice is LISTED AND BLOCKED, never hidden and never proposed', function () {
     [$school, $officer, $student] = apxSetup();
 

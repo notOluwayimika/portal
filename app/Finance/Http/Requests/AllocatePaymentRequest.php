@@ -53,7 +53,21 @@ class AllocatePaymentRequest extends FormRequest
             // Integer MINOR UNITS, never a decimal (ADR 0037/0039). `min:0` and not `min:1`: zero is a
             // meaningful direction and the Action writes no row for it. A negative is refused here AND
             // again in the Action, because the Action is also reachable off-HTTP.
-            'allocations.*.amount_minor' => ['required', 'integer', 'min:0'],
+            //
+            // `integer:strict`, AND THE `:strict` IS THE WHOLE RULE. Plain `integer` is
+            // `filter_var($value, FILTER_VALIDATE_INT) !== false`
+            // (Illuminate\Validation\Concerns\ValidatesAttributes::validateInteger), so the JSON STRING
+            // "3000" passes it and arrives as a string. Nothing downstream cast it, and the Action
+            // decides `allocation_overridden` with `!==` — so `"3000" !== 3000` was TRUE and a
+            // submission identical to the proposal was recorded as an override the operator never made,
+            // with a reason they were wrongly compelled to invent, on a table that has no UPDATE.
+            // `:strict` is `is_int($value)` and refuses the string at the edge.
+            //
+            // THE ACTION CASTS TOO, and that is not belt-and-braces. This rule protects the HTTP door
+            // only, and AllocatePayment's own docblock says it is reachable off-HTTP; a job or a console
+            // command handing it `['amount_minor' => '3000']` would reach the same comparison with no
+            // FormRequest anywhere in the path. Each guard covers callers the other cannot see.
+            'allocations.*.amount_minor' => ['required', 'integer:strict', 'min:0'],
 
             // Required only when the submission departs from the proposal, which cannot be known until
             // the proposal is re-derived under the lock — so it is nullable here and REQUIRED there.

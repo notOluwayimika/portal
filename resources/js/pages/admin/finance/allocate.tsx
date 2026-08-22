@@ -672,22 +672,37 @@ function Destination({ invoice }: { invoice: AllocationCandidate }) {
     const {
         state,
         accounts,
+        differing_accounts: differing,
         charge_lines_without_destination: unread,
     } = invoice.destination;
 
     if (state === 'differs') {
+        // ONLY THE DIFFERING ACCOUNTS GO UNDER THE SENTENCE, and the rest get their own line. An
+        // invoice can resolve to MORE THAN ONE destination — `accounts` has always been a list —
+        // and `state` is `differs` as soon as one of them disagrees. Listing all of them under
+        // "Not the account this money landed in" named the MATCHING account under a claim that is
+        // false of it. The agreeing half is still shown, because it is part of where this
+        // invoice's money was meant to go; it is simply not shown under that sentence.
+        const alsoMatching = accounts.length - differing.length;
+
         return (
             <div className="flex items-start gap-1.5">
                 <Landmark className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                 <div>
                     <p className="font-semibold text-amber-700 dark:text-amber-400">
-                        {accounts.map((a) => a.label).join(', ')}
+                        {differing.map((a) => a.label).join(', ')}
                     </p>
                     <p className="text-[10px] text-amber-600/80">
                         Not the account this money landed in.
                         {unread > 0 &&
                             ` ${unread} more line(s) name no account.`}
                     </p>
+                    {alsoMatching > 0 && (
+                        <p className="text-[10px] text-slate-500">
+                            Other lines on this invoice are destined for the
+                            account this money landed in.
+                        </p>
+                    )}
                 </div>
             </div>
         );

@@ -41,6 +41,25 @@ Route::get('/v1/finance/payments/{payment:uuid}/allocation-proposal', [PaymentAl
     ->middleware('permission:finance.payment.allocate');
 
 /*
+ * …and the submit that turns an edited proposal into rows. SAME permission as the read above, because
+ * it is one act: directing money that has already arrived.
+ *
+ * NOT MAKER-CHECKER, and that is a decision with its reasoning written down in
+ * App\Finance\Actions\AllocatePayment — every action behind ApprovalRequirement reduces a receivable,
+ * and an allocation reduces nothing: the student's balance is identical before and after, because the
+ * ledger credit was posted when the payment was recorded. What is proportionate instead is on the row:
+ * the operator is named (allocated_by_user_id), a departure from the proposal carries a marker and a
+ * required reason, and the table is append-only. The Action's docblock also records what would reopen
+ * the decision.
+ *
+ * THE WRITE IS APPEND-ONLY AND THEREFORE FINAL. finance_payment_allocations carries _no_update and
+ * _no_delete (2026_07_19_110000), so there is no un-allocate route here and there must not be one
+ * added casually — a correction is a compensating write with its own design, not an edit.
+ */
+Route::post('/v1/finance/payments/{payment:uuid}/allocations', [PaymentAllocationController::class, 'store'])
+    ->middleware('permission:finance.payment.allocate');
+
+/*
  * Invoice VOID is MAKER-CHECKER (Ph3b) — the second instance of the credit-note template. The
  * one-step cancel is RETIRED: reversing a whole charge takes two people, so it is a lifecycle:
  *   • SUBMIT (maker) proposes a void — the invoice stays issued, in the balance, no money moves.

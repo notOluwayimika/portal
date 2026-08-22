@@ -8,7 +8,6 @@ use App\Finance\Models\BankAccount;
 use App\Finance\Models\FeeItem;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
-use App\Finance\Models\PaymentAllocation;
 use App\Support\Money;
 use Illuminate\Support\Collection;
 
@@ -66,24 +65,31 @@ final class AllocationProposal
      *   invoices: list<array<string, mixed>>,
      *   proposed_total: Money,
      *   unproposed_remainder: Money,
+     *   fingerprint: string,
      * }
      */
     public function for(Payment $payment): array
     {
         $payment->loadMissing('bankAccount');
 
+        // FORCE A FRESH READ OF THE ALLOCATIONS, and this line is load-bearing rather than defensive.
+        // Payment::unallocatedAmount() uses the loaded relation when there is one, which is right for
+        // a list read and WRONG here: AllocatePayment calls this method after taking the account-row
+        // lock, on a Payment instance that may have been loaded — with its allocations — before the
+        // lock was granted. Trusting that relation would make the re-derivation the lock exists to
+        // enable read from exactly the stale snapshot the lock was taken to escape, and the remainder
+        // would be computed as though a competitor's committed rows did not exist.
+        $payment->unsetRelation('allocations');
+
         $currency = $payment->amount->currency;
 
-        // UNFLOORED, exactly as PaymentReceiptController:130 computes it. The ticket that asked for
-        // the payment-axis trigger names flooring this at zero as explicitly NOT the fix — it hides
-        // the state on the one surface that would have shown it. A negative remainder here means the
-        // table already holds more than the payment carries, which is a violating row and something
-        // the operator must see rather than a number to clamp.
-        $allocatedKobo = (int) PaymentAllocation::query()
-            ->where('payment_id', $payment->id)
-            ->sum('amount_minor');
-
-        $remaining = $payment->amount->minus(Money::fromKobo($allocatedKobo, $currency));
+        // THROUGH THE MODEL'S OWN EXPRESSION, not a second copy of it. Payment::unallocatedAmount() is
+        // what a statement row reads to decide whether to offer this screen at all, and this proposal
+        // is what the screen shows once opened — two spellings of "how much of this payment is
+        // unspent" would put an offer and the thing it opens in disagreement. Unfloored there and so
+        // here: see that method for why a negative must surface rather than clamp.
+        $remaining = $payment->unallocatedAmount();
+        $allocatedKobo = $payment->amount->toKobo() - $remaining->toKobo();
 
         $invoices = $this->openInvoices($payment);
         $destinations = $this->destinationsFor($invoices, $payment->bank_account_id);
@@ -154,6 +160,7 @@ final class AllocationProposal
             // (or what remains is cross-currency). It stays on the account as credit and the next
             // generation draws it forward. Stated so the operator is not left comparing two figures.
             'unproposed_remainder' => Money::fromKobo($remainingKobo, $currency),
+            'fingerprint' => $this->fingerprint($payment, $remaining, $rows),
         ];
     }
 
@@ -279,5 +286,54 @@ final class AllocationProposal
         }
 
         return $out;
+    }
+
+    /**
+     * THE POSITION THIS PROPOSAL WAS COMPUTED FROM, hashed — an optimistic-concurrency token, and it
+     * exists for one specific defect rather than for tidiness.
+     *
+     * {@see \\App\\Finance\\Actions\\AllocatePayment} decides `allocation_overridden` by comparing what the
+     * operator submitted against the proposal RE-COMPUTED under the account-row lock. Without a token,
+     * a concurrent `GenerateInvoice` drawing this remainder forward — or another payment landing on
+     * one of these invoices — moves that baseline between the render and the submit, and an operator
+     * who accepted the proposal verbatim gets their rows stamped `allocation_overridden = 1` and is
+     * asked for a reason for a change they did not make. The table is append-only, so that false
+     * attribution is permanent, and PaymentAllocation's own docblock is explicit that a wrong
+     * attribution is harder to notice than a missing one.
+     *
+     * So the Action refuses on a stale token — "reload and look again" — instead of guessing which of
+     * the two happened. The token is the ONLY thing that tells the operator's edit apart from the
+     * world moving underneath it.
+     *
+     * IT IS NOT A LOCK AND NOT A PERMISSION. It says the position is unchanged since this render; the
+     * account-row lock is what makes the re-derivation trustworthy, and the two allocation triggers
+     * are the floor under both.
+     *
+     * Hashed rather than sent as a structure so a client cannot construct a plausible-looking one by
+     * hand: reproducing it requires the server's own view of every figure it covers.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function fingerprint(Payment $payment, Money $unallocated, array $rows): string
+    {
+        $canonical = [
+            $payment->uuid,
+            $unallocated->toKobo(),
+            $unallocated->currency,
+        ];
+
+        foreach ($rows as $row) {
+            // Every figure the operator's decision rests on: WHICH invoices were offered, in what
+            // ORDER, what each one still owed, whether it could be allocated to at all, and what was
+            // proposed for it. A change to any of them is a different question being answered.
+            $canonical[] = implode('|', [
+                $row['id'],
+                $row['outstanding']->toKobo(),
+                $row['allocatable'] ? '1' : '0',
+                $row['proposed']->toKobo(),
+            ]);
+        }
+
+        return hash('sha256', implode("\n", $canonical));
     }
 }

@@ -124,8 +124,30 @@ it('PROOF f0 — the isolation level this connection ACTUALLY uses, read from th
     expect($row->session_level)->toBe('REPEATABLE-READ')
         ->and($row->global_level)->toBe('REPEATABLE-READ');
 
-    // Recorded so a future reader can tell whether the measurement still applies.
-    expect($row->version)->toStartWith('8.0.');
+    /*
+     * Recorded so a future reader can tell whether the measurement still applies — and RE-ARMED
+     * rather than widened when it fired.
+     *
+     * It was `toStartWith('8.0.')`, which is patch-tolerant and re-fires on a minor or major move.
+     * That is exactly what happened: the local server went 8.0.43 -> 9.7.1 (Homebrew) and this
+     * assertion caught it, which is the whole reason it is here.
+     *
+     * BOTH PREFIXES ARE VERIFIED READINGS, NOT A WIDENING. On 9.7.1 the isolation levels above were
+     * re-measured and are unchanged — REPEATABLE-READ, session and global — so every claim f1 and f3
+     * make about snapshot staleness still holds. A bare `9.` would have blessed 9.8 and everything
+     * after it sight unseen, which is switching the alarm off while appearing to update it. Two
+     * specific verified prefixes keep it a tripwire: the next minor move re-fires.
+     *
+     * Both are listed because both environments are live — a developer machine on 9.7.1 and any
+     * checkout still on 8.0.x — so a single-version assertion would only move the failure elsewhere.
+     */
+    expect(
+        str_starts_with($row->version, '8.0.') || str_starts_with($row->version, '9.7.')
+    )->toBeTrue(
+        "Isolation was verified on MySQL 8.0.43 and 9.7.1; this server reports {$row->version}. "
+        .'Re-read the isolation levels above on it, then add its prefix here — do not widen this to '
+        .'a bare major, which would stop the check from ever firing again.'
+    );
 });
 
 it('PROOF f1 — two concurrent GenerateInvoice drawing credit from ONE payment: the ACCOUNT row serialises them, and the PAYMENT row is not locked at all', function () {

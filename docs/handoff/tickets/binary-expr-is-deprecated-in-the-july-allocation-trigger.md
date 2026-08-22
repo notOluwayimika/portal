@@ -1,5 +1,22 @@
 # TICKET — `BINARY expr` is deprecated, and seven merged triggers still use it
 
+> **⚠️ LOCAL BASELINE MOVED — 2026-08-22.** The developer machine went **MySQL 8.0.43 → 9.7.1**
+> (Homebrew). Every measurement in this file was taken on **8.0.43** and has **not** been re-taken on
+> 9.7.1, so read its numbers as "measured on 8.0.43" rather than "measured locally". Re-verification
+> is tracked in
+> [`mysql-9-local-baseline-reverification.md`](mysql-9-local-baseline-reverification.md).
+> Production is unaffected: it remains **5.7.23**.
+
+> **What IS re-verified on 9.7.1**, because it was measured while re-arming the isolation tripwire:
+> `BINARY expr` and `COLLATE utf8mb4_bin` both still **evaluate** on 9.7.1, and the triggers that use
+> them still **bite** — `student_curricula_promoted_requires_link_bi/_bu` (which compares
+> `status = BINARY 'promoted'`) and `class_levels_progression_guard_bi/_bu` (which uses
+> `COLLATE utf8mb4_bin`) all rejected the writes they exist to reject, on 9.7.1, measured directly.
+> The whole suite also runs there, so every migration carrying these forms still applies and creates.
+> So this remains **deprecated-not-removed** on 9.7 and the shipped code is fine; the ticket's subject
+> is a FUTURE removal, and 9.7 brings that future closer without arriving at it.
+
+
 **Status:** open, not implemented. Raised while fixing the payment-axis allocation guard on
 `feat/allocation-payment-axis-guard` (2026-08-21), where cold review caught the same form. The
 payment-axis trigger has **already moved** to `CAST(… AS BINARY)` — see

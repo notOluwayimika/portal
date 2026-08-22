@@ -116,7 +116,7 @@ final class GenerateInvoice
         // student_curricula_student_school_foreign (student_id, school_id) -> students
         // (id, school_id), added by
         // 2026_07_19_130000_add_school_id_to_student_curricula.php:80,:85-88 — and
-        // StudentCurriculum::booted() (app/Models/StudentCurriculum.php:76-78) registers
+        // StudentCurriculum::booted() (app/Models/StudentCurriculum.php:80-82) registers
         // a bare SchoolScope. The guard is CORRECT; only its justification was wrong.
         //
         // WHAT ACTUALLY MAKES IT NECESSARY, three things, none of which the scope covers:

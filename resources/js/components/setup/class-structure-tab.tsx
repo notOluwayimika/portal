@@ -1,10 +1,17 @@
 import axios from 'axios';
-import { Network, Pencil, Trash2 } from 'lucide-react';
+import { GitBranch, Network, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArmMapPanel } from '@/components/setup/arm-map-panel';
+import { ProgressionPanel } from '@/components/setup/progression-panel';
 import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
-import type { Arm, ClassLevel, GradingScheme, Stream } from '@/types/models';
+import type {
+    Arm,
+    ClassLevel,
+    ExamType,
+    GradingScheme,
+    Stream,
+} from '@/types/models';
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSIONS TAB
 // ═══════════════════════════════════════════════════════════════════════════
@@ -37,6 +44,8 @@ export function ClassStructureTab() {
     const [arms, setArms] = useState<Arm[]>([]);
     const [streams, setStreams] = useState<Stream[]>([]);
     const [gradingSchemes, setGradingSchemes] = useState<GradingScheme[]>([]);
+    // For the progression panel's exam-type set. Same-school by the endpoint's own scoping.
+    const [examTypes, setExamTypes] = useState<ExamType[]>([]);
     const [loading, setLoading] = useState(false);
     const [lvlModal, setLvlModal] = useState<string | null>(null);
     const [armModal, setArmModal] = useState<string | null>(null);
@@ -56,8 +65,15 @@ export function ClassStructureTab() {
         ClassLevel | Arm | Stream
     > | null>(null);
 
-    // Arm mapping opens per level, from the level row — the target arms it may offer are a property
-    // of THIS level's progression target, so there is nothing to configure "in the abstract".
+    /*
+     * Both progression config and arm mapping open as PANELS from the level row rather than as their
+     * own setup tabs: each is a property of a SPECIFIC level, so a standalone tab would need a level
+     * picker duplicating this very list. The arm map's choices are in turn a property of the
+     * progression target configured in the first panel, which is why they sit side by side.
+     */
+    const [progressionLevel, setProgressionLevel] = useState<ClassLevel | null>(
+        null,
+    );
     const [armMapLevel, setArmMapLevel] = useState<ClassLevel | null>(null);
 
     useEffect(() => {
@@ -68,6 +84,10 @@ export function ClassStructureTab() {
             setStreams(response.data.streams);
             const schemesResponse = await axios.get('/api/grading-schemes');
             setGradingSchemes(schemesResponse.data.data ?? []);
+            const examTypesResponse = await axios.get('/api/exam-types');
+            setExamTypes(
+                examTypesResponse.data.data ?? examTypesResponse.data ?? [],
+            );
         };
         fetchClassStructure();
     }, [loading]);
@@ -404,6 +424,16 @@ export function ClassStructureTab() {
                                                     justifyContent: 'flex-end',
                                                 }}
                                             >
+                                                <button
+                                                    className="btn btn-ghost btn-sm btn-icon"
+                                                    title="Configure progression"
+                                                    aria-label={`Configure progression for ${l.name}`}
+                                                    onClick={() =>
+                                                        setProgressionLevel(l)
+                                                    }
+                                                >
+                                                    <GitBranch className="h-3 w-3" />
+                                                </button>
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
                                                     title="Arm mapping"
@@ -747,6 +777,16 @@ export function ClassStructureTab() {
                         />
                     </div>
                 </Modal>
+            )}
+
+            {progressionLevel && (
+                <ProgressionPanel
+                    classLevel={progressionLevel}
+                    /* Same-school by construction — this is the list already loaded here. */
+                    levels={levels}
+                    examTypes={examTypes}
+                    onClose={() => setProgressionLevel(null)}
+                />
             )}
 
             {armMapLevel && (

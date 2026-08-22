@@ -82,4 +82,20 @@ class VoidRequestController extends Controller
             'data' => VoidRequestResource::collection($read->pendingVoidRequests()),
         ]);
     }
+
+    /**
+     * U14 — THE DECIDED VOID REQUESTS, the twin of {@see CreditNoteController::decided()} and gated
+     * the same way, for the reasons written out in full there: this is a read of what has already
+     * happened, so it carries the API group's `finance.access` rather than the approve ability that
+     * gates the worklist preceding the act.
+     *
+     * An APPROVED row names an invoice that is now void with its charge reversed; a REJECTED one
+     * names an invoice that still stands and carries the checker's reason for letting it stand.
+     */
+    public function decided(InvoiceReadModel $read): JsonResponse
+    {
+        return response()->json([
+            'data' => VoidRequestResource::collection($read->decidedVoidRequests()),
+        ]);
+    }
 }

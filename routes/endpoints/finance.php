@@ -73,6 +73,12 @@ Route::post('/v1/finance/invoices/{invoice:uuid}/void-requests', [VoidRequestCon
     ->middleware('permission:finance.invoice.void-request.submit');
 Route::get('/v1/finance/void-requests/pending', [VoidRequestController::class, 'pending'])
     ->middleware('permission:finance.invoice.void-request.approve');
+/*
+ * U14 — THE DECIDED FEED, AND IT IS GATED MORE BROADLY THAN /pending ON PURPOSE. See the block above
+ * the credit-note twin for the full argument; in one line: `…approve` gates a worklist that precedes
+ * an act, and this is a read of an act already taken.
+ */
+Route::get('/v1/finance/void-requests/decided', [VoidRequestController::class, 'decided']);
 Route::post('/v1/finance/void-requests/{voidRequest:uuid}/approve', [VoidRequestController::class, 'approve'])
     ->middleware('permission:finance.invoice.void-request.approve');
 Route::post('/v1/finance/void-requests/{voidRequest:uuid}/reject', [VoidRequestController::class, 'reject'])
@@ -92,6 +98,37 @@ Route::post('/v1/finance/invoices/{invoice:uuid}/credit-notes', [CreditNoteContr
     ->middleware('permission:finance.credit-note.submit');
 Route::get('/v1/finance/credit-notes/pending', [CreditNoteController::class, 'pending'])
     ->middleware('permission:finance.credit-note.approve');
+/*
+ * U13 — THE DECIDED FEED. NO MIDDLEWARE BEYOND THE GROUP'S `finance.access`, and the asymmetry with
+ * the line above it is the decision, not an omission.
+ *
+ * `/pending` carries `finance.credit-note.approve` because it PRECEDES AN ACT: it is the checker's
+ * worklist and every row on it is something they are about to do. This route precedes nothing. Both
+ * statuses it serves are terminal, the money has already moved or has already been refused, and no
+ * route in this file can move either row again. Reading what happened is a different capability from
+ * being trusted to decide it, and the seat that reconciles the term's corrections is not the seat
+ * that signs them.
+ *
+ * NOTHING IS COINED, AND NOTHING IS WIDENED. A new `finance.credit-note.view-decided` would gate a
+ * set that `finance.access` ALREADY reaches: the statement's own feed
+ * (GET /v1/finance/students/{student}/invoices, no middleware beyond the group) returns
+ * creditNotesForStudent() and voidRequestsForStudent(), neither of which filters on status — so
+ * every decided note and void request on this branch is readable today by any holder of
+ * `finance.access` who knows which student to open. What was missing was not secrecy but
+ * FINDABILITY: no surface anywhere lists them, so a decided document leaves the approvals queue and
+ * appears on no list in the application.
+ *
+ * The precedent is U11's receipt, one door along and reasoned identically (routes/web.php):
+ * `finance.payment.record` is the authority to TAKE money and the receipt takes only
+ * `finance.access`, because it is a read of money already taken. ADR 0048's D1 draws the same line
+ * from the other side — money-in is its own capability BECAUSE it moves receivables; a read moves
+ * nothing.
+ *
+ * WHAT IS NEW ON THE WIRE HERE is the CHECKER's name (`decided_by_name`), which no resource emitted
+ * before. It is the maker's counterpart, the maker's name has been served under `finance.access`
+ * since Ph3, and an audit trail that names one of the two signatures answers nothing.
+ */
+Route::get('/v1/finance/credit-notes/decided', [CreditNoteController::class, 'decided']);
 Route::post('/v1/finance/credit-notes/{creditNote:uuid}/approve', [CreditNoteController::class, 'approve'])
     ->middleware('permission:finance.credit-note.approve');
 Route::post('/v1/finance/credit-notes/{creditNote:uuid}/reject', [CreditNoteController::class, 'reject'])

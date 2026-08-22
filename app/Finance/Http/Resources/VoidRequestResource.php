@@ -35,6 +35,10 @@ class VoidRequestResource extends JsonResource
             'id' => $this->uuid,
             'invoice_id' => $this->invoice_id,
             'invoice_display_number' => $invoice?->displayNumber(),
+            // The kind beside the number, for the reason CreditNoteResource carries it: a number
+            // alone stopped naming one document once an episode could hold a term bill and a
+            // supplementary charge at the same time (U7).
+            'invoice_kind' => $invoice?->kind->value,
             // The reversal at stake = the invoice's full total, in the sanctioned wire shape.
             'amount' => $invoice?->total,
             // `reason` is the maker's justification (credit note calls its free text `note`); the
@@ -43,6 +47,11 @@ class VoidRequestResource extends JsonResource
             'note' => $this->reason,
             'status' => $this->status->value,
             'submitted_by_name' => $this->whenLoaded('submittedBy', fn () => $this->submittedBy instanceof User ? $this->submittedBy->name : null),
+            // THE CHECKER (U14) — CreditNoteResource's twin field, present only where `decidedBy` is
+            // eager-loaded, so the pending queue's payload does not change. maker ≠ checker is
+            // enforced by the Policy and by `finance_void_requests`'s CHECK; this is where the two
+            // names become readable, which is the whole point of recording them.
+            'decided_by_name' => $this->whenLoaded('decidedBy', fn () => $this->decidedBy instanceof User ? $this->decidedBy->name : null),
             'decided_at' => $this->decided_at?->toIso8601String(),
             'rejection_reason' => $this->rejection_reason,
             // Policy-computed, viewer-relative (approve/reject disabled on one's own submission).

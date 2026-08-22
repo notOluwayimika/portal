@@ -104,6 +104,23 @@ class DriveCastSeeder extends Seeder
             'oscar' => $this->enroll($schoolA, 'Oscar', 'Overcredit'),
             'otto' => $this->enroll($schoolA, 'Otto', 'Onlyvoid'),
             'bola' => $this->enroll($schoolB, 'Bola', 'SchoolB'),
+
+            /*
+             * U10 — two students who will each hold an unallocated payment and two open invoices.
+             *
+             * TWO AND NOT ONE, because the allocation screen's bank-account comparison has three
+             * outcomes and a single student can only show two of them. `alma`'s payment lands in the
+             * school's SECOND account, so her term bill's destination DIFFERS from where the money is;
+             * `arun`'s lands in the primary one, so his MATCHES. The third state, `unrecorded`, comes
+             * free on both — their supplementary invoices are free text with no fee item, which is what
+             * every line the "New invoice" modal writes looks like today.
+             *
+             * Unplaced, like every episode above except the cohort pair: U10 bills them directly rather
+             * than through a run, so they need no coordinates, and placing them would move the
+             * `Cohort at slot` count the bulk-run drive reads.
+             */
+            'allocAlma' => $this->enroll($schoolA, 'Alma', 'Allocate'),
+            'allocArun' => $this->enroll($schoolA, 'Arun', 'Allocate'),
         ];
 
         /*

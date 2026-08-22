@@ -8,6 +8,7 @@ use App\Finance\Actions\ApproveFeeScheduleChange;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Actions\RecordPayment;
 use App\Finance\Actions\SubmitCreditNote;
 use App\Finance\Actions\SubmitDiscountPolicyChange;
@@ -15,6 +16,7 @@ use App\Finance\Actions\SubmitFeeScheduleChange;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
+use App\Finance\Enums\CreditNoteStatus;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\FeeScheduleChangeKind;
@@ -22,6 +24,7 @@ use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\DiscountPolicy;
+use App\Finance\Models\FeeItem;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
@@ -43,6 +46,9 @@ final class DriveFinanceStates
 {
     /** The seeded policy's name, in one place: both the create and the idempotence check read it. */
     private const DRIVE_POLICY_NAME = 'Sibling discount';
+
+    /** The SECOND account's label — see ensureSecondBankAccount(). */
+    private const DRIVE_SECOND_ACCOUNT_LABEL = 'Drive trips account';
 
     /** The seeded schedule's label, in one place: the create and the idempotence check read it. */
     private const DRIVE_SCHEDULE_LABEL = 'Drive term bill v1';
@@ -351,6 +357,150 @@ final class DriveFinanceStates
     public function plainInvoice(string $enrollmentUuid, int $kobo): void
     {
         $this->invoice($enrollmentUuid, $kobo);
+    }
+
+    /**
+     * A SECOND bank account for a school — the one U10's drive needs and no earlier screen did.
+     *
+     * WHY THE FIXTURE NEEDED A SECOND ONE AT ALL. The MVP cut brief (§9 item 6) says money received
+     * into account A settling lines destined for account B "is now an ordinary occurrence, not a
+     * hypothetical", and that the allocation screen has to SHOW it. With one account per school that
+     * state is unreachable: every payment and every fee item point at the same row, so the screen's
+     * mismatch branch could only ever be proven by test and never rendered. This is the fixture
+     * precondition the finance-drive skill puts in scope — U1 commit 1's precedent, where the
+     * academic slot and the first bank account were added so commit 2's drive would not open onto
+     * empty selects.
+     *
+     * SEEDED FOR SCHOOL A ONLY, by its caller. School B's seat exists to prove isolation, and a
+     * second account there would add a row nothing renders.
+     *
+     * `firstOrCreate` on (school_id, account_number) exactly as {@see ensureBankAccount()} does, so
+     * calling it twice finds the row. The account_number formula differs in its prefix — `91` against
+     * `90` — which is what keeps the two rows distinct under that key.
+     */
+    public function ensureSecondBankAccount(int $schoolId): int
+    {
+        return (int) BankAccount::query()->firstOrCreate(
+            ['school_id' => $schoolId, 'account_number' => '91'.str_pad((string) $schoolId, 8, '0', STR_PAD_LEFT)],
+            ['label' => self::DRIVE_SECOND_ACCOUNT_LABEL, 'bank_name' => 'Drive Bank'],
+        )->id;
+    }
+
+    /**
+     * U10 — MONEY AT THE WINDOW WITH NOTHING NAMED, AND OPEN INVOICES TO DIRECT IT AT.
+     *
+     * No earlier state produces this. Every payment in this fixture is recorded AGAINST an invoice
+     * and capped at that invoice's outstanding, so its remainder is zero and the allocation screen
+     * would have had nothing to open on. `settledThenCredited` leaves the ACCOUNT in credit, which is
+     * a different thing: the credit is on the balance, not on an unallocated payment.
+     *
+     * THE ORDER OF THE THREE STEPS IS LOAD-BEARING. The invoices are raised FIRST and the payment
+     * second, because `GenerateInvoice::applyCreditForward` draws every earlier payment's unallocated
+     * remainder into each new invoice as it is raised. Record the payment first and the invoices eat
+     * it on the way in, leaving exactly the zero remainder this method exists to avoid.
+     *
+     * TWO INVOICES, ONE OF EACH KIND, and both are needed for what the screen must show:
+     *
+     *   · the TERM BILL is raised from the ACTIVE fee schedule's mandatory item, so its line carries a
+     *     `fee_item_id` and therefore a readable destination account — the only way the screen's
+     *     bank-account comparison has a left-hand side at all;
+     *   · the SUPPLEMENTARY is free text with no fee item, which is what EVERY line the "New invoice"
+     *     modal writes looks like today. It renders the `unrecorded` destination state, and having it
+     *     beside a readable one is the point: a fixture with only readable destinations would make the
+     *     screen look more certain than it is.
+     *
+     * `$intoSecondAccount` chooses which account the money lands in, and that is the whole mismatch
+     * axis: false → the payment's account equals the fee item's, so the term bill reads `matches`;
+     * true → they differ, and the cut brief's ordinary term-one occurrence is on screen. Both are
+     * seeded, on two different students, so one drive sees all three destination states.
+     *
+     * The payment is deliberately SMALLER than the two invoices together, so the proposal fills the
+     * older invoice, part-fills the newer one, and the operator has something to move.
+     */
+    public function unallocatedRemainder(string $enrollmentUuid, int $schoolId, bool $intoSecondAccount): void
+    {
+        // The mandatory item on the school's active drive schedule — the one with a destination.
+        $feeItemId = (int) FeeItem::query()
+            ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
+            ->where('is_mandatory', true)
+            ->value('id');
+
+        $termBill = app(GenerateInvoice::class)->handle(
+            $enrollmentUuid,
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000), $feeItemId)],
+            InvoiceKind::Scheduled,
+        );
+
+        app(GenerateInvoice::class)->handle(
+            $enrollmentUuid,
+            [new InvoiceLineSpec('Field trip — coach and entry', Money::fromKobo(100000))],
+            InvoiceKind::Supplementary,
+        );
+
+        // THE STUDENT COMES OFF THE INVOICE, not from a query against `student_curricula`. This class
+        // is inside App\Finance and the arch boundary forbids it naming an Academics table at all —
+        // the enrollment arrives as a UUID and is resolved through the ACL port by GenerateInvoice,
+        // which is exactly why the Action hands back an Invoice that already knows the student.
+        $studentId = (int) $termBill->student_id;
+
+        app(RecordAccountPayment::class)->handle(
+            $studentId,
+            Money::fromKobo(200000),
+            'Guardian at the window',
+            $this->maker,
+            SchoolDay::today(),
+            $intoSecondAccount ? $this->ensureSecondBankAccount($schoolId) : $this->ensureBankAccount($schoolId),
+        );
+    }
+
+    /**
+     * HOW MANY PAYMENTS STILL CARRY AN UNALLOCATED REMAINDER — U10's subject, and a column the count
+     * table did not have.
+     *
+     * The finance-drive skill's rule is that a screen depending on something the table does not count
+     * needs the column before the drive needs a browser, and this is that column: the allocation
+     * screen's entire subject is a payment with something left on it. A plain payments count reads as
+     * coverage while every one of them is fully allocated and the screen can open on none.
+     *
+     * Counted through the scoped models rather than a raw join, so it must be called inside
+     * `ActiveSchool::runFor($schoolId, …)` — the same placement reasoning as bankAccountCount().
+     */
+    public function paymentsWithRemainderCount(int $schoolId): int
+    {
+        return Payment::query()
+            ->where('school_id', $schoolId)
+            // Eager-loaded so unallocatedAmount() sums the loaded relation rather than issuing a
+            // query per row — the count table is printed on every seed and should not be an N+1.
+            ->with('allocations')
+            ->get()
+            ->filter(fn (Payment $payment) => ! $payment->unallocatedAmount()->isZero()
+                && ! $payment->unallocatedAmount()->isNegative())
+            ->count();
+    }
+
+    /**
+     * HOW MANY INVOICES ARE STILL OPEN — issued, not void, and still owing something.
+     *
+     * The other half of U10's precondition, and it is a separate question from the one above. A
+     * payment with a remainder and NO open invoice is a real state — the money simply banks as credit
+     * — but it is a screen with an empty table, so a drive that saw only the payments column could
+     * still open onto nothing to direct.
+     *
+     * Σ(allocations) and Σ(approved credit notes) are the same two aggregates InvoiceSettlement reads,
+     * so this counts open by the same definition the screen displays.
+     */
+    public function openInvoiceCount(int $schoolId): int
+    {
+        return Invoice::query()
+            ->where('school_id', $schoolId)
+            ->excludingVoid()
+            ->withSum('allocations as allocated_minor', 'amount_minor')
+            ->withSum(['creditNotes as approved_credit_minor' => fn ($q) => $q->where('status', CreditNoteStatus::Approved->value)], 'amount_minor')
+            ->get()
+            ->filter(fn (Invoice $invoice) => $invoice->total->toKobo()
+                - (int) ($invoice->getAttribute('allocated_minor') ?? 0)
+                - (int) ($invoice->getAttribute('approved_credit_minor') ?? 0) > 0)
+            ->count();
     }
 
     private function invoice(string $enrollmentUuid, int $kobo): Invoice

@@ -1,7 +1,8 @@
 import axios from 'axios';
-import { GitBranch, Pencil, Trash2 } from 'lucide-react';
+import { GitBranch, Network, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { ArmMapPanel } from '@/components/setup/arm-map-panel';
 import { ProgressionPanel } from '@/components/setup/progression-panel';
 import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
 import type {
@@ -65,13 +66,15 @@ export function ClassStructureTab() {
     > | null>(null);
 
     /*
-     * Progression config opens as a PANEL from the level row rather than as its own setup tab:
-     * progression is a property of a specific level, so a standalone tab would need a level picker
-     * duplicating this very list.
+     * Both progression config and arm mapping open as PANELS from the level row rather than as their
+     * own setup tabs: each is a property of a SPECIFIC level, so a standalone tab would need a level
+     * picker duplicating this very list. The arm map's choices are in turn a property of the
+     * progression target configured in the first panel, which is why they sit side by side.
      */
     const [progressionLevel, setProgressionLevel] = useState<ClassLevel | null>(
         null,
     );
+    const [armMapLevel, setArmMapLevel] = useState<ClassLevel | null>(null);
 
     useEffect(() => {
         const fetchClassStructure = async () => {
@@ -433,6 +436,16 @@ export function ClassStructureTab() {
                                                 </button>
                                                 <button
                                                     className="btn btn-ghost btn-sm btn-icon"
+                                                    title="Arm mapping"
+                                                    aria-label={`Arm mapping for ${l.name}`}
+                                                    onClick={() =>
+                                                        setArmMapLevel(l)
+                                                    }
+                                                >
+                                                    <Network className="h-3 w-3" />
+                                                </button>
+                                                <button
+                                                    className="btn btn-ghost btn-sm btn-icon"
                                                     onClick={() => {
                                                         setLvlForm({
                                                             name: l.name,
@@ -773,6 +786,13 @@ export function ClassStructureTab() {
                     levels={levels}
                     examTypes={examTypes}
                     onClose={() => setProgressionLevel(null)}
+                />
+            )}
+
+            {armMapLevel && (
+                <ArmMapPanel
+                    classLevel={armMapLevel}
+                    onClose={() => setArmMapLevel(null)}
                 />
             )}
 

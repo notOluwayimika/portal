@@ -91,6 +91,20 @@ function prInvoice(School $school, Student $student, int $kobo): Invoice
     ));
 }
 
+/**
+ * A SUPPLEMENTARY charge against the same episode — a one-off raised outside the schedule while the
+ * term bill is live. `prInvoice` above names InvoiceKind::Scheduled and cannot be reused: an
+ * episode's active SCHEDULED invoice is unique by index, and a second one is refused.
+ */
+function prSupplementaryInvoice(School $school, Student $student, int $kobo): Invoice
+{
+    return ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
+        StudentCurriculum::where('student_id', $student->id)->value('uuid'),
+        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo($kobo))],
+        InvoiceKind::Supplementary,
+    ));
+}
+
 /** A payment recorded AGAINST AN INVOICE — the invoice-allocated door. */
 function prInvoicePayment(School $school, Invoice $invoice, User $actor, int $kobo): Payment
 {
@@ -294,6 +308,50 @@ it('renders the allocated invoices for an INVOICE-ALLOCATED payment', function (
             ->where('receipt.held_on_account', false)
             ->where('receipt.nothing_applied', false)
         );
+});
+
+it('names the KIND of each invoice a payment reached, not only its number', function () {
+    /*
+     * TICKET §6, and the ticket is careful about what the claim IS — so this arm is too. The two
+     * allocation rows a payment across an episode's term bill and its supplementary charge produces
+     * were ALWAYS distinguishable: the invoice numbers differ. What was missing was the KIND. A
+     * reader could separate the rows without being able to identify either, and both rows carry the
+     * SAME `academic_context` because they are the same episode — which is why that column cannot
+     * do this job.
+     *
+     * THE PAYMENT IS ACCOUNT-LEVEL, ON PURPOSE. The invoice-allocated door records against ONE named
+     * invoice, so it cannot produce two allocation rows at all; carry-forward credit drawn oldest-
+     * first across both invoices is how one payment reaches both, and it is the ordinary shape here
+     * (GenerateInvoice::applyCreditForward). The invoices are therefore raised AFTER the payment,
+     * which is the reverse of the fixture's allocation state and correct for this one.
+     */
+    $school = School::factory()->create();
+    $bursar = prUser($school, ['finance.access', 'finance.payment.record']);
+    $student = prStudent($school);
+
+    // Money at the window with nothing named — it banks as credit and is drawn forward.
+    $payment = prAccountPayment($school, $student, $bursar, 500_00);
+
+    $termBill = prInvoice($school, $student, 300_00);
+    $supplementary = prSupplementaryInvoice($school, $student, 150_00);
+
+    prGet($bursar, $school, $payment->uuid)
+        ->assertOk()
+        ->assertInertia(function ($page) use ($termBill, $supplementary) {
+            // KEYED BY NUMBER, NOT BY POSITION. Asserting `allocations.0` and `allocations.1` would
+            // pass a receipt that stamped one kind onto every row whenever the draw order happened
+            // to match, and would red on an ordering change that is not a defect. The PAIRING is
+            // the claim: this number is the term bill, that number is the supplementary charge.
+            $byNumber = collect($page->toArray()['props']['receipt']['allocations'])
+                ->pluck('invoice_kind', 'invoice_number');
+
+            expect($byNumber->all())->toBe([
+                $termBill->displayNumber() => 'scheduled',
+                $supplementary->displayNumber() => 'supplementary',
+            ]);
+
+            return $page;
+        });
 });
 
 it('says an ACCOUNT-LEVEL payment sits on the account, applied to nothing', function () {

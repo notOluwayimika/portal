@@ -2,8 +2,9 @@ import { Head } from '@inertiajs/react';
 import { ArrowLeft, Ban, Printer, Receipt as ReceiptIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { handleBack } from '@/helpers';
+import { INVOICE_KIND_LABEL } from '@/lib/finance/invoice-kind';
 import { formatNaira } from '@/lib/format';
-import type { Money } from '@/types/finance';
+import type { InvoiceKind, Money } from '@/types/finance';
 
 /**
  * U11 — the printable payment receipt. ONE payment, one page.
@@ -29,6 +30,9 @@ import type { Money } from '@/types/finance';
 
 type Allocation = {
     invoice_number: string | null;
+    // Term bill or supplementary charge — null only when the allocation's invoice could not be
+    // read, the same condition that leaves `invoice_number` null.
+    invoice_kind: InvoiceKind | null;
     academic_context: string | null;
     amount: Money;
     applied_on_receipt: boolean;
@@ -339,6 +343,28 @@ export default function PaymentReceipt({
                                                                 <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
                                                                     {a.invoice_number ??
                                                                         '—'}
+                                                                    {/*
+                                                                        WHICH DOCUMENT THIS ROW IS
+                                                                        (ticket §6). Two rows on one
+                                                                        episode already differed by
+                                                                        number; what a reader could
+                                                                        not do was identify either
+                                                                        of them. Rendered as plain
+                                                                        muted text and not a badge:
+                                                                        this is a printed document,
+                                                                        where a colour chip is a
+                                                                        grey rectangle.
+                                                                    */}
+                                                                    {a.invoice_kind && (
+                                                                        <span className="receipt-muted block text-[10px] font-medium text-slate-500">
+                                                                            {
+                                                                                INVOICE_KIND_LABEL[
+                                                                                    a
+                                                                                        .invoice_kind
+                                                                                ]
+                                                                            }
+                                                                        </span>
+                                                                    )}
                                                                     {!a.applied_on_receipt && (
                                                                         <span className="receipt-muted ml-2 text-[10px] font-medium text-slate-500">
                                                                             (credit

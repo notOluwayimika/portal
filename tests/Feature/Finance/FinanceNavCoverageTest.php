@@ -80,11 +80,8 @@ const FNC_NOT_NAV = [
     // trail rather than 404-ing, and a reader who has opened the audit view (?include_void=1) has
     // come precisely to read it.
     //
-    // THE LINK ARRIVES IN THE NEXT COMMIT ON THIS BRANCH, and this note says so rather than
-    // claiming a link that is not there yet: U7's sequence builds the detail before the list, so
-    // between the two commits this page is reachable only by URL. The arm asserting the statement
-    // links it lands WITH the link, in the same commit, exactly as the four exemptions above are
-    // asserted.
+    // The arm below checks that link, the way the statement's own exemption and the receipt's are
+    // checked, so this cannot quietly become "unreachable by a different route".
     'finance/invoices/{invoice}' => 'per-invoice; linked from every row of the statement’s invoices table',
 
     // U7's printable invoice. Takes an INVOICE uuid, one level in from the detail — the receipt's
@@ -409,4 +406,45 @@ it('the printable-invoice exemption really is linked from the invoice detail, an
         .'is the defect this arm exists for: the document is what someone reconciling a reversed '
         .'charge needs on paper. If it is an unrelated addition, re-derive the count and say in '
         .'this comment what the new occurrence is.');
+});
+
+it('the invoice-detail exemption really is linked from the statement, and the link is unconditional', function () {
+    /*
+     * U7's detail, checked exactly as the receipt's exemption is checked one document over — and
+     * the second half is again a RULE rather than styling.
+     *
+     * The link exists: the statement's invoices table builds `/finance/invoices/{id}` from the
+     * invoice's own uuid.
+     *
+     * And it is UNCONDITIONAL — every row, including a VOIDED one. Voidness is a REPORTING default
+     * here (the audit view opts in with `?include_void=1`) and never an existence one, and the
+     * detail page renders the void trail rather than 404-ing. A link rendered only while an invoice
+     * is live would hide the page at the one moment somebody is asking why a charge disappeared.
+     *
+     * MEASURED AS: the href is present, and the file names the literal `'void'` a bounded number of
+     * times — never around the link. A whole-source occurrence count rather than a window between
+     * two offsets, for the reason the receipt's arm records: a cold review broke the windowed
+     * version twice, by wrapping the enclosing element and by filtering the rows upstream, and both
+     * mutations sat outside the window and passed. Every shape that would gate this link on
+     * voidness names that literal an extra time.
+     *
+     * WHAT IT CANNOT SEE, stated rather than implied — a text check on a file, and there is no
+     * JavaScript test runner in this repository: a row hidden by something that does not spell
+     * `'void'` (a filter server-side in the feed, or on `cancelled_at`), and whether the link, once
+     * rendered, is clickable or reaches anything. The browser drive covers the second.
+     */
+    $statement = fncRead('resources/js/pages/admin/finance/statement.tsx');
+
+    expect($statement)->toContain('/finance/invoices/${invoice.id}');
+
+    // `'void'` appears exactly TWICE in this file, counted from it rather than assumed (`grep -n
+    // "'void'"`): the row's document-badge colour, and the actions cell a voided invoice does not
+    // get. NEITHER is the link, and a third occurrence is the shape that would make one.
+    expect(substr_count($statement, "'void'"))->toBe(2,
+        'resources/js/pages/admin/finance/statement.tsx names the literal `\'void\'` a different '
+        .'number of times than when this arm was written. If a void now gates the link to the '
+        .'invoice detail, that is the defect this arm exists for: voidness is a reporting default '
+        .'and the detail page renders the void trail rather than 404-ing, so the audit view must '
+        .'be able to reach it. If it is an unrelated addition, re-derive the count and say in this '
+        .'comment what the new occurrence is.');
 });

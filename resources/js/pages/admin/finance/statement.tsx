@@ -27,6 +27,10 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useClientTable } from '@/hooks/use-client-table';
 import { useInitials } from '@/hooks/use-initials';
+import {
+    INVOICE_KIND_BADGE,
+    INVOICE_KIND_LABEL,
+} from '@/lib/finance/invoice-kind';
 import { formatNaira } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Invoice, Statement } from '@/types/finance';
@@ -144,6 +148,11 @@ export default function FinanceStatement({ student }: Props) {
         i.display_number,
         i.academic_context,
         i.status,
+        // THE KIND IS SEARCHABLE BY ITS LABEL, not by its wire value. A bursar looking for the
+        // one-off charges on an episode types "supplementary" or "term", which is what the badge
+        // in the row says; matching `i.kind` alone would filter on 'scheduled' — a word that
+        // appears nowhere on this screen.
+        INVOICE_KIND_LABEL[i.kind],
     ]);
     const creditsTable = useClientTable(statement?.credit_notes ?? [], (c) => [
         c.display_number,
@@ -394,10 +403,52 @@ export default function FinanceStatement({ student }: Props) {
                                                         key={invoice.id}
                                                         className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
                                                     >
-                                                        <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
-                                                            {
-                                                                invoice.display_number
-                                                            }
+                                                        {/*
+                                                            THE ROW'S IDENTITY — the number, the
+                                                            kind, and the way in.
+
+                                                            THE KIND IS WHY THIS BRANCH EXISTS. An
+                                                            episode can carry an active term bill
+                                                            AND any number of live supplementary
+                                                            charges at once, so two rows here
+                                                            differing only in number and amount were
+                                                            two documents a bursar could not tell
+                                                            apart without opening the lines.
+
+                                                            THE LINK IS UNCONDITIONAL, including on
+                                                            a voided invoice: voidness is a
+                                                            REPORTING default (the audit view opts
+                                                            in with ?include_void=1) and never an
+                                                            existence one, and the detail page
+                                                            renders the void trail rather than
+                                                            404-ing — which is exactly what a reader
+                                                            who has opened the audit view came for.
+                                                        */}
+                                                        <td className="px-4 py-2.5">
+                                                            <Link
+                                                                href={`/finance/invoices/${invoice.id}`}
+                                                                className="font-semibold text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+                                                            >
+                                                                {
+                                                                    invoice.display_number
+                                                                }
+                                                            </Link>
+                                                            <span
+                                                                className={cn(
+                                                                    'mt-1 flex w-fit items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                                                    INVOICE_KIND_BADGE[
+                                                                        invoice
+                                                                            .kind
+                                                                    ],
+                                                                )}
+                                                            >
+                                                                {
+                                                                    INVOICE_KIND_LABEL[
+                                                                        invoice
+                                                                            .kind
+                                                                    ]
+                                                                }
+                                                            </span>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-slate-500">
                                                             {

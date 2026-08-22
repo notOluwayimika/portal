@@ -128,7 +128,16 @@ function swDriverCode(Closure $write): ?int
     return null;
 }
 
-/** The invoice a 201 body names, read back from the database — InvoiceResource does not carry `kind`. */
+/**
+ * The invoice a 201 body names, read back from the DATABASE.
+ *
+ * This used to say "— InvoiceResource does not carry `kind`", which was true when it was written and
+ * is not any more: U7 put `kind` on the resource, and InvoiceKindOnReadPathsTest asserts the 201
+ * carries it. The database read stays, deliberately. These arms are about what GenerateInvoice
+ * WROTE, and reading the row is the only way to assert that independently of the serialiser — an
+ * arm that trusted the response body would go green on a resource that echoed the requested `kind`
+ * back without the write having happened.
+ */
 function swCreated($response): Invoice
 {
     return Invoice::withoutGlobalScopes()->where('uuid', $response->json('id'))->firstOrFail();

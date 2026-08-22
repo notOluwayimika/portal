@@ -26,6 +26,17 @@ class InvoiceResource extends JsonResource
             // …and the human-facing form beside it. Additive: no field changed shape.
             'display_number' => $this->displayNumber(),
             'status' => $this->status->value,
+            // WHAT THE DOCUMENT IS, beside what state it is in. `status` says issued/void; this says
+            // term bill or one-off charge, and the two are orthogonal (InvoiceKind's docblock:
+            // "DELIBERATELY NOT A STATUS"). It is here because an episode can now carry an active
+            // term bill AND any number of live supplementary charges at once (#259 re-keyed the
+            // generated column to permit exactly that), so a number on a screen no longer implies
+            // which document it is. This resource is the ONLY invoice serialiser in the codebase —
+            // both generate routes answer their 201 through it and the per-student read returns a
+            // collection of it — so a client could not distinguish the two kinds by any route until
+            // this line existed. See docs/handoff/tickets/nothing-shows-which-invoices-are-
+            // supplementary.md §1, which is what this closes.
+            'kind' => $this->kind->value,
             'billed_to_name' => $this->billed_to_name,
             'academic_context' => $this->academic_context,
             // Money serialises to {amount_minor, currency} via the VO — the only

@@ -13,6 +13,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { invoiceLabel } from '@/lib/finance/invoice-kind';
 import { nairaToMinor } from '@/lib/format';
 import type { CreditNoteKind, Invoice } from '@/types/finance';
 
@@ -110,11 +111,15 @@ export function IssueCreditNoteModal({
         }
     };
 
+    // THE TITLE NAMES KIND AND NUMBER (U7). Forgiving money against the wrong document is not
+    // undone by rejecting the note afterwards — the approval is a second person's, and this title
+    // is what they are shown. A number alone stopped identifying the document the moment an episode
+    // could carry a term bill and a supplementary charge at the same time.
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={`Submit credit note for approval — ${invoice.display_number}`}
+            title={`Submit credit note for approval — ${invoiceLabel(invoice)}`}
             size="md"
         >
             <div className="space-y-4">

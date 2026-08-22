@@ -125,6 +125,19 @@ enum Permission: string
     // approve/reject, so ApprovalAbility derives no matching maker and the super-admin Gate::before bypass
     // still applies (super_admin stays on both payment routes).
     case FINANCE_PAYMENT_RECORD = 'finance.payment.record';
+    // Direct where an ALREADY-RECORDED payment's unallocated remainder settles (U10). Distinct from
+    // FINANCE_PAYMENT_RECORD above and deliberately NOT folded into it: `record` is the authority to
+    // bring money in, `allocate` is the authority to say which receivables it discharges. They are the
+    // same operator's job today — both are granted to `accounts_officer` and to nobody else, which is
+    // ADR 0048 D1's reasoning about who takes money in, applied to who directs it — but they are two
+    // acts, and a school that later wants the second on a different seat can move it without moving
+    // the first. Splitting later is a permission rename with a convergence migration; splitting now is
+    // one enum case.
+    //
+    // NOT a maker-checker ability. Its terminal segment is `allocate`, not approve/reject, so
+    // ApprovalAbility derives no matching maker and the super-admin Gate::before bypass still applies.
+    // Why an allocation is not maker-checker at all is argued in App\Finance\Actions\AllocatePayment.
+    case FINANCE_PAYMENT_ALLOCATE = 'finance.payment.allocate';
     // Credit-note issuance is MAKER-CHECKER (Ph3): forgiving money takes two people.
     // `submit` is the maker side (propose, no money moves); `approve`/`reject` are the
     // checker side. The terminal `approve`/`reject` names are load-bearing — the Kernel's

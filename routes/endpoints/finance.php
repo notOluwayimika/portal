@@ -10,6 +10,7 @@ use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\OpeningBalanceBatchController;
+use App\Finance\Http\Controllers\PaymentAllocationController;
 use App\Finance\Http\Controllers\PaymentController;
 use App\Finance\Http\Controllers\VoidRequestController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,18 @@ Route::post('/v1/finance/invoices', [InvoiceController::class, 'generate'])
     ->middleware('permission:finance.invoice.generate');
 Route::post('/v1/finance/invoices/{invoice:uuid}/payments', [PaymentController::class, 'store'])
     ->middleware('permission:finance.payment.record');
+
+/*
+ * U10 — WHERE AN ALREADY-RECORDED PAYMENT'S REMAINDER SETTLES. Read half (this commit): the engine's
+ * proposed split across the student's open invoices, computed and returned, with no write path.
+ *
+ * `finance.payment.allocate` and NOT the group's `finance.access`, even though every figure this
+ * returns is already on the statement. The gate is here so the proposal and the submit that follows
+ * answer to one seat; see PaymentAllocationController's docblock, and ADR 0048 D1 for what happened
+ * the last time a payment surface shipped under `finance.access` alone.
+ */
+Route::get('/v1/finance/payments/{payment:uuid}/allocation-proposal', [PaymentAllocationController::class, 'proposal'])
+    ->middleware('permission:finance.payment.allocate');
 
 /*
  * Invoice VOID is MAKER-CHECKER (Ph3b) — the second instance of the credit-note template. The

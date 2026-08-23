@@ -183,6 +183,19 @@ it('moves billability from the vacated episode to the destination, and only on s
         'ended_at' => now(),
     ]);
 
+    // ── THE ORDERING IS WHAT MAKES THIS FIXTURE DISCRIMINATE, SO IT IS PINNED ─────────────────────
+    // BillableEnrollmentAdapter admits one episode per pupil via `MAX(id) ... WHERE status = ACTIVE`.
+    // The ENDED destination row must hold the HIGHER id, so that a status-blind MAX(id) would select
+    // IT — which is precisely what makes "destination not billable before" a real decision about the
+    // status filter rather than a coincidence of row order.
+    //
+    // Without this assertion the fixture proves the ordering but never states it: renumber the seed,
+    // or change a factory so insertion order flips, and the live episode becomes the higher id. A
+    // status-blind MAX would then pick the LIVE row, "not billable before" would pass for the wrong
+    // reason, and this test would quietly stop testing what it was built for — with nothing going red
+    // to say so. Measured 2026-08-22: ended = 2, live = 1.
+    expect($priorInS->id)->toBeGreaterThan($w['episode']->id);
+
     $billableUuids = function () use ($w): array {
         return ActiveSchool::runFor($w['school']->id, fn () => array_map(
             fn ($enrollment) => $enrollment->enrollmentUuid,

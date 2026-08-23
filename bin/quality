@@ -265,7 +265,40 @@ step "architecture tests (§17.1)"
 check "arch" env DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
 
 step "static analysis (Larastan level 5 vs baseline)"
-check "larastan" composer analyse
+# CALLED DIRECTLY, NOT THROUGH `composer analyse` — Composer imposes a 300-second process
+# timeout on every script it runs. That is Composer's built-in default, not ours: nothing
+# in composer.json's `config` block sets it, the global config is empty, and
+# `composer config process-timeout` reports 300. A COLD analysis of app/ takes longer than
+# that, so the step was killed mid-run and reported red:
+#
+#   The following exception is caused by a process timeout
+#   [Symfony\Component\Process\Exception\ProcessTimedOutException]
+#   The process "phpstan analyse --no-progress --memory-limit=1G" exceeded the timeout of 300 seconds.
+#
+# Measured on this tree: warm 3s; cold, called directly, 1107s and 0 errors; cold through
+# Composer, killed at 303s. The analysis is 3.7x the limit it is given, so the timeout was
+# not a slow machine on a bad day — cold could never pass. The red said nothing about the
+# code, and it is not a rare state: step 1's dependency-integrity lint drops build/phpstan
+# whenever composer.lock moves, and a fresh clone has no result cache at all. The release
+# gate could not pass on a clone that had never run it.
+#
+# The two shortcuts are both worse. `composer config process-timeout 0` writes the
+# developer's GLOBAL config, so green would depend on machine state no clone carries;
+# COMPOSER_PROCESS_TIMEOUT depends on every future caller remembering it. Calling the
+# binary is what the other fifteen steps already do (pest, immediately above), and it has
+# no timeout of its own — PHPStan's only timeout is `parallel: processTimeout: 600.0`,
+# which bounds a worker process, not the run.
+#
+# THE ARGUMENTS ARE THE COMPOSER SCRIPT'S, VERBATIM: `phpstan analyse --no-progress
+# --memory-limit=1G`. Level, paths, baseline and tmpDir still come from phpstan.neon by
+# auto-discovery from the repo root this script cd's to near the top — the same cwd
+# Composer ran the script in. Nothing about what is checked changed. Do not add or drop a
+# flag here without changing composer.json's `analyse` script, which is KEPT: lint.yml,
+# CONTRIBUTING.md and CLAUDE.md all still name it.
+#
+# So this is a DELIBERATE divergence from lint.yml's mirror (see the header): same binary,
+# same arguments, same config, different wrapper. Do not "restore" it.
+check "larastan" ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
 # 16. Full suite + failure ratchet. Pest is allowed to "fail" (the baseline is
 #     non-empty); the ratchet script is the gate, exactly as in tests.yml.
